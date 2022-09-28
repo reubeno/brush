@@ -1,0 +1,12 @@
+{
+    "editor.formatOnSave": true,
+    "files.exclude": {
+        "target/": true
+    },
+    "terminal.integrated.defaultProfile.linux": "zsh",
+    "terminal.integrated.profiles.linux": {
+        "zsh": {
+            "path": "/bin/zsh"
+        }
+    }
+}

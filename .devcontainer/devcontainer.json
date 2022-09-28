@@ -1,13 +1,15 @@
 {
-    "name": "Dev container",
-    "dockerFile": "Dockerfile",
-    "extensions": [
-        "eamodio.gitlens"
-    ],
-    "features": {
-        "ghcr.io/devcontainers/features/github-cli:1": {
-            "version": "latest"
+    "build": {
+        "dockerfile": "./Dockerfile",
+        "context": "."
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer"
+            ]
         }
     },
-    "remoteUser": "vscode"
+    "features": {},
+    "remoteUser": "devel"
 }
