@@ -1,0 +1,21 @@
+Notes
+
+token = { operator | word }
+operator = { control_operator | redirection_operator }
+control_operator = { "&" | "&&" | "(" | ")" | ";;" | ";" | NEWLINE | "||" | "|" }
+redirection_operator = { "<" | ">" | ">|" | "<<" | ">>" | "<&" | ">&" | "<<-" | "<>" }
+
+
+// EOI ends token
+// backslash, ', or " start quoting
+// $, ${, $(, `, or $(( start a substitution/expansion thing
+// blank breaks a token (when unquoted)
+// # starts eol comment (when unquoted)
+
+///
+
+line = { tokens* }
+token = { operator | word }
+control_operator = { "&" | "&&" | "(" | ")" | ";;" | ";" | NEWLINE | "||" | "|" }
+redirection_operator = { "<" | ">" | ">|" | "<<" | ">>" | "<&" | ">&" | "<<-" | "<>" }
+word = ???

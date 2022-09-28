@@ -1,54 +1,46 @@
-# Use Ubuntu 20.04 with .NET 6.0 installed
-FROM mcr.microsoft.com/vscode/devcontainers/rust:bullseye
+FROM mcr.microsoft.com/onebranch/cbl-mariner/build:2.0
 
-# Make sure pipe failures trigger build failures
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG DEFAULT_USER=devel
 
-# Install native components
-WORKDIR /tmp/work
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        curl \
-        dos2unix \
-        git \
-        gnupg2 \
-        sudo \
-        zsh \
-    && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    \
-    rm -rf /tmp/work
+# Fail fast (on error)!
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-# Switch to non-root user
-USER vscode
+# Install dnf for a better package management experience, and then use it to install prerequisites:
+#   - vim: for developer convenience (text editing)
+#   - vim-extra: for developer convenience (syntax highlighting)
+#   - zsh: for developer convenience
+RUN tdnf install -qy dnf dnf-plugins-core && \
+    dnf install -y \
+        man \
+        vim \
+        vim-extra \
+        zsh
 
-# Download external components
-# Validate components against known hashes
-# Clone additional oh-my-zsh plugins
-# Setup oh-my-zsh plugins
-# Install 'trunk'
-WORKDIR /tmp/work
-COPY hashes.txt .
-RUN curl https://github.com/sharkdp/bat/releases/download/v0.22.1/bat-musl_0.22.1_amd64.deb -L --output ./bat-musl_0.22.1_amd64.deb && \
-    curl https://github.com/ogham/exa/releases/download/v0.10.1/exa-linux-x86_64-v0.10.1.zip -L --output ./exa-linux-x86_64-v0.10.1.zip && \
-    sha256sum --check hashes.txt && \
-    \
-    git clone https://github.com/zsh-users/zsh-autosuggestions.git ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions && \
-    git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting && \
-    sed -i "s/^plugins=.*/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/" ~/.zshrc && \
-    \
-    sudo dpkg -i ./bat-musl_0.22.1_amd64.deb && \
-    sudo apt-get install -f && \
-    \
-    unzip ./exa-linux-x86_64-v0.10.1.zip && \
-    sudo mv ./bin/* /usr/bin && \
-    sudo mv ./completions/exa.zsh /usr/share/zsh/vendor-completions/_exa && \
-    \
-    curl https://get.trunk.io -fsSL | sudo bash -s - -y && \
-    sudo chmod a+r /usr/local/bin/trunk && \
-    \
-    rm -rf /tmp/work
+# Add a non-root user that we'll do our best to use for development.
+RUN useradd -m devel && \
+    echo "devel ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Use zsh as the default shell
-ENV SHELL /bin/zsh
+# Switch to user.
+USER ${DEFAULT_USER}
+
+# Set up path to include rust components.
+ENV PATH="${PATH}:/home/${DEFAULT_USER}/.cargo/bin"
+WORKDIR /tmp
+
+# Copy scripts to temp dir.
+WORKDIR /tmp
+
+# Install rust and plugins
+COPY install-rust-and-friends.sh .
+RUN ./install-rust-and-friends.sh
+
+# Install assorted development utilities
+COPY install-dev-tools.sh .
+RUN ./install-dev-tools.sh
+
+# Bring modern conveniences to shell.
+COPY make-shell-comfortable.sh .
+RUN ./make-shell-comfortable.sh
+
+# Switch back to home dir for normal usage.
+WORKDIR /home/${DEFAULT_USER}
