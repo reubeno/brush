@@ -11,6 +11,11 @@ pub struct ExecutionContext {
     // TODO: options
     // TODO: async lists
     pub aliases: HashMap<String, String>,
+
+    //
+    // Additional state
+    //
+    pub last_pipeline_exit_status: u32,
 }
 
 type ShellFunction = parser::ast::FunctionDefinition;

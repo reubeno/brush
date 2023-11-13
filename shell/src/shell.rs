@@ -34,6 +34,7 @@ impl Shell {
                 parameters,
                 funcs: Default::default(),
                 aliases: Default::default(),
+                last_pipeline_exit_status: 0,
             },
         };
 
@@ -185,16 +186,6 @@ impl Shell {
     }
 
     fn compose_prompt(&self) -> Result<String> {
-        //
-        // Each time an interactive shell is ready to read a command, the value of this
-        // variable shall be subjected to parameter expansion and written to standard error.
-        // The default value shall be "$ ". For users who have specific additional
-        // implementation-defined privileges, the default may be another, implementation-
-        // defined value. The shell shall replace each instance of the character '!' in PS1
-        // with the history file number of the next command to be typed. Escaping the '!'
-        // with another '!' (that is, "!!" ) shall place the literal character '!' in the
-        // prompt.
-        //
         const DEFAULT_PROMPT: &'static str = "$ ";
 
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
