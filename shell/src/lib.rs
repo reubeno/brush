@@ -1,4 +1,5 @@
 mod context;
+mod expansion;
 mod interp;
 mod shell;
 

@@ -52,23 +52,6 @@ impl<R: std::io::BufRead> Parser<R> {
         //
         // Apply aliases.
         //
-        // After a token has been delimited, but before applying the grammatical rules
-        // in Shell Grammar, a resulting word that is identified to be the command name
-        // word of a simple command shall be examined to determine whether it is an
-        // unquoted, valid alias name. However, reserved words in correct grammatical
-        // context shall not be candidates for alias substitution. A valid alias name
-        // (see XBD Alias Name) shall be one that has been defined by the alias utility
-        // and not subsequently undefined using unalias. Implementations also may provide
-        // predefined valid aliases that are in effect when the shell is invoked. To
-        // prevent infinite loops in recursive aliasing, if the shell is not currently
-        // processing an alias of the same name, the word shall be replaced by the value
-        // of the alias; otherwise, it shall not be replaced.
-        //
-        // If the value of the alias replacing the word ends in a <blank>, the shell shall
-        // check the next command word for alias substitution; this process shall continue
-        // until a word is found that is not a valid alias or an alias value does not end
-        // in a <blank>.
-        //
         // TODO: implement aliasing
         //
 
@@ -349,17 +332,20 @@ peg::parser! {
             io_redirect()+
 
         rule io_redirect() -> ast::IoRedirect =
-            n:io_number()? f:io_file() { ast::IoRedirect::File(n, f) } /
+            n:io_number()? f:io_file() {
+                let (kind, filename) = f;
+                ast::IoRedirect::File(n, kind, filename.to_owned())
+            } /
             n:io_number()? h:io_here() { ast::IoRedirect::Here(n, h) }
 
-        rule io_file() -> ast::IoFileRedirectKind =
-            [Token::Operator(o) if o.as_str() == "<"] filename() { ast::IoFileRedirectKind::Read } /
-            [Token::Operator(o) if o.as_str() == "<&"] filename() { ast::IoFileRedirectKind::DuplicateInput } /
-            [Token::Operator(o) if o.as_str() == ">"] filename() { ast::IoFileRedirectKind::Write } /
-            [Token::Operator(o) if o.as_str() == ">&"] filename() { ast::IoFileRedirectKind::DuplicateOutput } /
-            [Token::Operator(o) if o.as_str() == ">>"] filename() { ast::IoFileRedirectKind::Append } /
-            [Token::Operator(o) if o.as_str() == "<>"] filename() { ast::IoFileRedirectKind::ReadAndWrite } /
-            [Token::Operator(o) if o.as_str() == ">|"] filename() { ast::IoFileRedirectKind::Clobber }
+        rule io_file() -> (ast::IoFileRedirectKind, &'input str) =
+            [Token::Operator(o) if o.as_str() == "<"]  f:filename() { (ast::IoFileRedirectKind::Read, f) } /
+            [Token::Operator(o) if o.as_str() == "<&"] f:filename() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
+            [Token::Operator(o) if o.as_str() == ">"]  f:filename() { (ast::IoFileRedirectKind::Write, f) } /
+            [Token::Operator(o) if o.as_str() == ">&"] f:filename() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
+            [Token::Operator(o) if o.as_str() == ">>"] f:filename() { (ast::IoFileRedirectKind::Append, f) } /
+            [Token::Operator(o) if o.as_str() == "<>"] f:filename() { (ast::IoFileRedirectKind::ReadAndWrite, f) } /
+            [Token::Operator(o) if o.as_str() == ">|"] f:filename() { (ast::IoFileRedirectKind::Clobber, f) }
 
         rule filename() -> &'input str =
             word()
@@ -424,14 +410,14 @@ peg::parser! {
         }
 
         rule assignment_word() -> (String, String) =
-            // TODO: implement assignment_word
+            // TODO: implement assignment_word more accurately.
             [Token::Word(x) if x.find('=').is_some()] {
                 let (first, second) = x.split_once('=').unwrap();
                 (first.to_owned(), second.to_owned())
             }
 
         rule io_number() -> u32 =
-            // TODO: implement io_number
-            [Token::Word(w) if w.as_str() == "UNIMPLEMENTED io_number"] { 0 }
+            // TODO: implement io_number more accurately.
+            [Token::Word(w)] {? w.parse().or(Err("u32")) }
     }
 }

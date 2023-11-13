@@ -4,6 +4,7 @@ use log::error;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
 
 use crate::context::ExecutionContext;
+use crate::expansion::WordExpander;
 
 pub struct ExecutionResult {
     pub exit_code: i32,
@@ -15,8 +16,24 @@ impl ExecutionResult {
     }
 }
 
+struct PipelineExecutionContext<'a> {
+    context: &'a mut ExecutionContext,
+
+    current_pipeline_index: usize,
+    pipeline_len: usize,
+
+    children: Vec<Option<std::process::Child>>,
+}
+
 pub trait Execute {
-    fn execute(&self, _context: &mut ExecutionContext) -> Result<ExecutionResult>;
+    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult>;
+}
+
+trait ExecuteInPipeline {
+    fn execute_in_pipeline(
+        &self,
+        context: &mut PipelineExecutionContext,
+    ) -> Result<ExecutionResult>;
 }
 
 impl Execute for ast::Program {
@@ -77,27 +94,41 @@ impl Execute for ast::Pipeline {
         //
 
         let mut result = ExecutionResult { exit_code: 0 };
+        let mut pipeline_context = PipelineExecutionContext {
+            context,
+            current_pipeline_index: 0,
+            pipeline_len: self.seq.len(),
+            children: std::iter::repeat_with(|| None)
+                .take(self.seq.len())
+                .collect(),
+        };
 
-        for command in self.seq.iter() {
-            result = command.execute(context)?;
+        for (i, command) in self.seq.iter().enumerate() {
+            result = command.execute_in_pipeline(&mut pipeline_context)?;
+            pipeline_context.current_pipeline_index += 1;
         }
 
         Ok(result)
     }
 }
 
-impl Execute for ast::Command {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+impl ExecuteInPipeline for ast::Command {
+    fn execute_in_pipeline(
+        &self,
+        pipeline_context: &mut PipelineExecutionContext,
+    ) -> Result<ExecutionResult> {
         match self {
-            ast::Command::Simple(simple) => simple.execute(context),
+            ast::Command::Simple(simple) => simple.execute_in_pipeline(pipeline_context),
             ast::Command::Compound(compound, _redirects) => {
                 //
                 // TODO: handle redirects
+                // TODO: Need to execute in the pipeline.
                 //
 
-                compound.execute(context)
+                compound.execute(pipeline_context.context)
             }
-            ast::Command::Function(func) => func.execute(context),
+            // TODO: Need to execute in pipeline.
+            ast::Command::Function(func) => func.execute(pipeline_context.context),
         }
     }
 }
@@ -141,27 +172,13 @@ impl Execute for ast::ForClauseCommand {
 }
 
 impl Execute for ast::CaseClauseCommand {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, _context: &mut ExecutionContext) -> Result<ExecutionResult> {
         todo!("execute case clause command")
     }
 }
 
 impl Execute for ast::IfClauseCommand {
     fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
-        //
-        // The if command shall execute a compound-list and use its exit status to
-        // determine whether to execute another compound-list.
-        //
-        // The if compound-list shall be executed; if its exit status is zero, the
-        // then compound-list shall be executed and the command shall complete.
-        // Otherwise, each elif compound-list shall be executed, in turn, and if
-        // its exit status is zero, the then compound-list shall be executed and the
-        // command shall complete. Otherwise, the else compound-list shall be executed.
-        //
-        // The exit status of the if command shall be the exit status of the then or
-        // else compound-list that was executed, or zero, if none was executed.
-        //
-
         let condition = self.condition.execute(context)?;
 
         if condition.is_success() {
@@ -189,7 +206,7 @@ impl Execute for ast::IfClauseCommand {
 }
 
 impl Execute for (WhileOrUtil, &ast::WhileClauseCommand) {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, _context: &mut ExecutionContext) -> Result<ExecutionResult> {
         todo!("execute while clause command")
     }
 }
@@ -205,12 +222,11 @@ impl Execute for ast::FunctionDefinition {
     }
 }
 
-impl Execute for ast::SimpleCommand {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
-        //
-        // TODO: do something with redirects
-        //
-
+impl ExecuteInPipeline for ast::SimpleCommand {
+    fn execute_in_pipeline(
+        &self,
+        context: &mut PipelineExecutionContext,
+    ) -> Result<ExecutionResult> {
         let mut redirects = vec![];
         let mut env_vars = vec![];
 
@@ -226,6 +242,12 @@ impl Execute for ast::SimpleCommand {
             }
         }
 
+        //
+        // 2. The words that are not variable assignments or redirections shall be expanded.
+        // If any fields remain following their expansion, the first field shall be considered
+        // the command name and remaining fields are the arguments for the command.
+        //
+
         let mut args = vec![];
         if let Some(suffix_items) = &self.suffix {
             for item in suffix_items {
@@ -239,6 +261,18 @@ impl Execute for ast::SimpleCommand {
             }
         }
 
+        // Expand the command words.
+        // TODO: Deal with the fact that an expansion might introduce multiple fields.
+        let args: Vec<String> = args
+            .iter()
+            .map(|a| expand_word(context.context, a))
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
+
+        //
+        // 3. Redirections shall be performed.
+        //
+
         if redirects.len() > 0 {
             //
             // TODO: handle redirects
@@ -246,19 +280,34 @@ impl Execute for ast::SimpleCommand {
             error!("simple command redirects not implemented: {:?}", redirects);
         }
 
+        //
+        // 4. Each variable assignment shall be expanded for tilde expansion, parameter
+        // expansion, command substitution, arithmetic expansion, and quote removal
+        // prior to assigning the value.
+        //
+
+        let env_vars: Vec<_> = env_vars
+            .iter()
+            .map(|(n, v)| {
+                let expanded_value = expand_word(context.context, v)?;
+                Ok((n.clone(), expanded_value))
+            })
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
+
         if let Some(cmd_name) = &self.word_or_name {
             if !cmd_name.contains('/') {
                 if let Some(utility) = try_parse_name_as_special_builtin_utility(cmd_name) {
-                    execute_special_builtin_utility(utility, &args, env_vars)
-                } else if let Some(function_definition) = context.funcs.get(cmd_name) {
-                    invoke_shell_function(function_definition, &args, env_vars)
+                    execute_special_builtin_utility(utility, &args, &env_vars)
+                } else if let Some(function_definition) = context.context.funcs.get(cmd_name) {
+                    invoke_shell_function(function_definition, &args, &env_vars)
                 } else if let Some(utility) = try_parse_name_as_well_known_utility(cmd_name) {
-                    execute_well_known_utility(utility, &args, env_vars)
+                    execute_well_known_utility(utility, &args, &env_vars)
                 } else {
-                    execute_external_command(cmd_name, &args, env_vars)
+                    execute_external_command(context, cmd_name, &args, &env_vars)
                 }
             } else {
-                execute_external_command(cmd_name, &args, env_vars)
+                execute_external_command(context, cmd_name, &args, &env_vars)
             }
         } else {
             //
@@ -267,7 +316,10 @@ impl Execute for ast::SimpleCommand {
 
             for (name, value) in env_vars {
                 // TODO: Handle readonly variables.
-                context.parameters.insert(name.clone(), value.clone());
+                context
+                    .context
+                    .parameters
+                    .insert(name.clone(), value.clone());
             }
 
             Ok(ExecutionResult { exit_code: 0 })
@@ -276,9 +328,10 @@ impl Execute for ast::SimpleCommand {
 }
 
 fn execute_external_command(
+    context: &mut PipelineExecutionContext,
     cmd_name: &str,
-    args: &Vec<&String>,
-    env_vars: Vec<&(String, String)>,
+    args: &Vec<String>,
+    env_vars: &Vec<(String, String)>,
 ) -> Result<ExecutionResult> {
     let mut cmd = std::process::Command::new(cmd_name);
     for arg in args {
@@ -287,6 +340,20 @@ fn execute_external_command(
 
     for (name, value) in env_vars {
         cmd.env(name, value);
+    }
+
+    // See if we need to set up piping.
+    // TODO: Handle stderr/other redirects/etc.
+    if context.pipeline_len > 1 {
+        if context.current_pipeline_index > 0 {
+            // Set up stdin of this process to take stdout of the preceding process.
+            // TODO
+        }
+
+        if context.current_pipeline_index < context.pipeline_len - 1 {
+            // Set up stdout of this process to go to stdin of the succeeding process.
+            cmd.stdout(std::process::Stdio::piped());
+        }
     }
 
     match cmd.spawn() {
@@ -324,6 +391,7 @@ enum SpecialBuiltinUtility {
 
 fn try_parse_name_as_special_builtin_utility(cmd_name: &str) -> Option<SpecialBuiltinUtility> {
     match cmd_name {
+        // Handle POSIX-specified builtins.
         "break" => Some(SpecialBuiltinUtility::Break),
         ":" => Some(SpecialBuiltinUtility::Colon),
         "continue" => Some(SpecialBuiltinUtility::Continue),
@@ -339,16 +407,20 @@ fn try_parse_name_as_special_builtin_utility(cmd_name: &str) -> Option<SpecialBu
         "times" => Some(SpecialBuiltinUtility::Times),
         "trap" => Some(SpecialBuiltinUtility::Trap),
         "unset" => Some(SpecialBuiltinUtility::Unset),
+
+        // Handle bash extensions (ref: https://www.gnu.org/software/bash/manual/html_node/Bash-Builtins.html).
+        "source" => Some(SpecialBuiltinUtility::Dot),
+
         _ => None,
     }
 }
 
 fn execute_special_builtin_utility(
     utility: SpecialBuiltinUtility,
-    _args: &Vec<&String>,
-    _env_vars: Vec<&(String, String)>,
+    _args: &Vec<String>,
+    _env_vars: &Vec<(String, String)>,
 ) -> Result<ExecutionResult> {
-    log::error!("unimplemented: special built-in utility {:?}", utility);
+    log::error!("UNIMPLEMENTED: special built-in utility {:?}", utility);
     Ok(ExecutionResult { exit_code: 99 })
 }
 
@@ -404,18 +476,23 @@ fn try_parse_name_as_well_known_utility(cmd_name: &str) -> Option<WellKnownUtili
 
 fn execute_well_known_utility(
     utility: WellKnownUtility,
-    _args: &Vec<&String>,
-    _env_vars: Vec<&(String, String)>,
+    _args: &Vec<String>,
+    _env_vars: &Vec<(String, String)>,
 ) -> Result<ExecutionResult> {
-    log::error!("unimplemented: well-known utility {:?}", utility);
+    log::error!("UNIMPLEMENTED: well-known utility {:?}", utility);
     Ok(ExecutionResult { exit_code: 99 })
 }
 
 fn invoke_shell_function(
-    function_definition: &ast::FunctionDefinition,
-    _args: &Vec<&String>,
-    _env_vars: Vec<&(String, String)>,
+    _function_definition: &ast::FunctionDefinition,
+    _args: &Vec<String>,
+    _env_vars: &Vec<(String, String)>,
 ) -> Result<ExecutionResult> {
-    log::error!("unimplemented: invoke shell function");
+    log::error!("UNIMPLEMENTED: invoke shell function");
     Ok(ExecutionResult { exit_code: 99 })
+}
+
+fn expand_word(context: &ExecutionContext, word: &str) -> Result<String> {
+    let expander = WordExpander::new(context);
+    expander.expand(word)
 }

@@ -119,7 +119,7 @@ pub type RedirectList = Vec<IoRedirect>;
 
 #[derive(Clone, Debug)]
 pub enum IoRedirect {
-    File(Option<u32>, IoFileRedirectKind),
+    File(Option<u32>, IoFileRedirectKind, String),
     Here(Option<u32>, IoHere),
 }
 
