@@ -20,10 +20,6 @@ impl<'a> WordExpander<'a> {
             .collect::<Result<Vec<_>>>()?;
 
         let expansion = expanded_pieces.concat();
-
-        // DBG:RRO
-        log::debug!("expand: {{{}}} -> {{{}}}", word, expansion);
-
         Ok(expansion)
     }
 }
@@ -59,43 +55,43 @@ impl Expandable for parser::word::ParameterExpression {
         match self {
             parser::word::ParameterExpression::Parameter { parameter } => parameter.expand(context),
             parser::word::ParameterExpression::UseDefaultValues {
-                parameter,
-                test_type,
-                default_value,
+                parameter: _,
+                test_type: _,
+                default_value: _,
             } => todo!("expansion: use default values expressions"),
             parser::word::ParameterExpression::AssignDefaultValues {
-                parameter,
-                test_type,
-                default_value,
+                parameter: _,
+                test_type: _,
+                default_value: _,
             } => todo!("expansion: assign default values expressions"),
             parser::word::ParameterExpression::IndicateErrorIfNullOrUnset {
-                parameter,
-                test_type,
-                error_message,
+                parameter: _,
+                test_type: _,
+                error_message: _,
             } => todo!("expansion: indicate error if null or unset expressions"),
             parser::word::ParameterExpression::UseAlternativeValue {
-                parameter,
-                test_type,
-                alternative_value,
+                parameter: _,
+                test_type: _,
+                alternative_value: _,
             } => todo!("expansion: use alternative value expressions"),
-            parser::word::ParameterExpression::StringLength { parameter } => {
+            parser::word::ParameterExpression::StringLength { parameter: _ } => {
                 todo!("expansion: string length expression")
             }
             parser::word::ParameterExpression::RemoveSmallestSuffixPattern {
-                parameter,
-                pattern,
+                parameter: _,
+                pattern: _,
             } => todo!("expansion: remove smallest suffix pattern expressions"),
             parser::word::ParameterExpression::RemoveLargestSuffixPattern {
-                parameter,
-                pattern,
+                parameter: _,
+                pattern: _,
             } => todo!("expansion: remove largest suffix pattern expressions"),
             parser::word::ParameterExpression::RemoveSmallestPrefixPattern {
-                parameter,
-                pattern,
+                parameter: _,
+                pattern: _,
             } => todo!("expansion: remove smallest prefix pattern expressions"),
             parser::word::ParameterExpression::RemoveLargestPrefixPattern {
-                parameter,
-                pattern,
+                parameter: _,
+                pattern: _,
             } => todo!("expansion: remove largest prefix pattern expressions"),
         }
     }
@@ -104,7 +100,7 @@ impl Expandable for parser::word::ParameterExpression {
 impl Expandable for parser::word::Parameter {
     fn expand(&self, context: &ExecutionContext) -> Result<String> {
         match self {
-            parser::word::Parameter::Positional(p) => todo!("positional parameter expansion"),
+            parser::word::Parameter::Positional(_p) => todo!("positional parameter expansion"),
             parser::word::Parameter::Special(s) => s.expand(context),
             parser::word::Parameter::Named(n) => Ok(context
                 .parameters
@@ -117,7 +113,7 @@ impl Expandable for parser::word::Parameter {
 impl Expandable for parser::word::SpecialParameter {
     fn expand(&self, context: &ExecutionContext) -> Result<String> {
         match self {
-            parser::word::SpecialParameter::AllPositionalParameters { concatenate } => {
+            parser::word::SpecialParameter::AllPositionalParameters { concatenate: _ } => {
                 todo!("expansion: all positional parameters")
             }
             parser::word::SpecialParameter::PositionalParameterCount => {
