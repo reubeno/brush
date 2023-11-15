@@ -16,13 +16,18 @@ impl ExecutionResult {
     }
 }
 
+enum SpawnResult {
+    SpawnedChild(std::process::Child),
+    ImmediateExit(i32),
+}
+
 struct PipelineExecutionContext<'a> {
     context: &'a mut ExecutionContext,
 
     current_pipeline_index: usize,
     pipeline_len: usize,
 
-    children: Vec<Option<std::process::Child>>,
+    spawn_results: Vec<SpawnResult>,
 }
 
 pub trait Execute {
@@ -30,10 +35,7 @@ pub trait Execute {
 }
 
 trait ExecuteInPipeline {
-    fn execute_in_pipeline(
-        &self,
-        context: &mut PipelineExecutionContext,
-    ) -> Result<ExecutionResult>;
+    fn execute_in_pipeline(&self, context: &mut PipelineExecutionContext) -> Result<SpawnResult>;
 }
 
 impl Execute for ast::Program {
@@ -93,19 +95,34 @@ impl Execute for ast::Pipeline {
         // TODO: confirm whether exit code comes from first or last in pipeline
         //
 
-        let mut result = ExecutionResult { exit_code: 0 };
         let mut pipeline_context = PipelineExecutionContext {
             context,
             current_pipeline_index: 0,
             pipeline_len: self.seq.len(),
-            children: std::iter::repeat_with(|| None)
-                .take(self.seq.len())
-                .collect(),
+            spawn_results: vec![],
         };
 
-        for (i, command) in self.seq.iter().enumerate() {
-            result = command.execute_in_pipeline(&mut pipeline_context)?;
+        for command in self.seq.iter() {
+            let spawn_result = command.execute_in_pipeline(&mut pipeline_context)?;
+            pipeline_context.spawn_results.push(spawn_result);
+
             pipeline_context.current_pipeline_index += 1;
+        }
+
+        let mut result = ExecutionResult { exit_code: 0 };
+
+        for child in pipeline_context.spawn_results.into_iter() {
+            match child {
+                SpawnResult::SpawnedChild(child) => {
+                    let output = child.wait_with_output()?;
+
+                    // TODO: Confirm what to return if it was signaled.
+                    result = ExecutionResult {
+                        exit_code: output.status.code().unwrap_or(127),
+                    };
+                }
+                SpawnResult::ImmediateExit(exit_code) => result = ExecutionResult { exit_code },
+            }
         }
 
         Ok(result)
@@ -116,7 +133,7 @@ impl ExecuteInPipeline for ast::Command {
     fn execute_in_pipeline(
         &self,
         pipeline_context: &mut PipelineExecutionContext,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<SpawnResult> {
         match self {
             ast::Command::Simple(simple) => simple.execute_in_pipeline(pipeline_context),
             ast::Command::Compound(compound, _redirects) => {
@@ -125,10 +142,14 @@ impl ExecuteInPipeline for ast::Command {
                 // TODO: Need to execute in the pipeline.
                 //
 
-                compound.execute(pipeline_context.context)
+                let result = compound.execute(pipeline_context.context)?;
+                Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             // TODO: Need to execute in pipeline.
-            ast::Command::Function(func) => func.execute(pipeline_context.context),
+            ast::Command::Function(func) => {
+                let result = func.execute(pipeline_context.context)?;
+                Ok(SpawnResult::ImmediateExit(result.exit_code))
+            }
         }
     }
 }
@@ -223,10 +244,7 @@ impl Execute for ast::FunctionDefinition {
 }
 
 impl ExecuteInPipeline for ast::SimpleCommand {
-    fn execute_in_pipeline(
-        &self,
-        context: &mut PipelineExecutionContext,
-    ) -> Result<ExecutionResult> {
+    fn execute_in_pipeline(&self, context: &mut PipelineExecutionContext) -> Result<SpawnResult> {
         let mut redirects = vec![];
         let mut env_vars = vec![];
 
@@ -277,7 +295,10 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             //
             // TODO: handle redirects
             //
-            error!("simple command redirects not implemented: {:?}", redirects);
+            error!(
+                "UNIMPLEMENTED: simple command redirects not implemented: {:?}",
+                self
+            );
         }
 
         //
@@ -322,7 +343,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     .insert(name.clone(), value.clone());
             }
 
-            Ok(ExecutionResult { exit_code: 0 })
+            Ok(SpawnResult::ImmediateExit(0))
         }
     }
 }
@@ -332,7 +353,7 @@ fn execute_external_command(
     cmd_name: &str,
     args: &Vec<String>,
     env_vars: &Vec<(String, String)>,
-) -> Result<ExecutionResult> {
+) -> Result<SpawnResult> {
     let mut cmd = std::process::Command::new(cmd_name);
     for arg in args {
         cmd.arg(arg);
@@ -346,8 +367,21 @@ fn execute_external_command(
     // TODO: Handle stderr/other redirects/etc.
     if context.pipeline_len > 1 {
         if context.current_pipeline_index > 0 {
-            // Set up stdin of this process to take stdout of the preceding process.
-            // TODO
+            // Find the stdout from the preceding process.
+            if let Some(mut preceding_result) = context.spawn_results.pop() {
+                match &mut preceding_result {
+                    SpawnResult::SpawnedChild(child) => {
+                        // Set up stdin of this process to take stdout of the preceding process.
+                        cmd.stdin(std::process::Stdio::from(child.stdout.take().unwrap()));
+                    }
+                    SpawnResult::ImmediateExit(_code) => {
+                        return Err(anyhow::anyhow!("Unable to retrieve piped command output"));
+                    }
+                }
+
+                // Push it back so we can wait on it later.
+                context.spawn_results.push(preceding_result);
+            }
         }
 
         if context.current_pipeline_index < context.pipeline_len - 1 {
@@ -357,14 +391,10 @@ fn execute_external_command(
     }
 
     match cmd.spawn() {
-        Ok(mut child) => {
-            let status = child.wait()?;
-            let exit_code = status.code().unwrap();
-            Ok(ExecutionResult { exit_code })
-        }
+        Ok(child) => Ok(SpawnResult::SpawnedChild(child)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             log::error!("command not found: {}", cmd_name);
-            Ok(ExecutionResult { exit_code: 127 })
+            Ok(SpawnResult::ImmediateExit(127))
         }
         Err(e) => Err(e.into()),
     }
@@ -419,9 +449,9 @@ fn execute_special_builtin_utility(
     utility: SpecialBuiltinUtility,
     _args: &Vec<String>,
     _env_vars: &Vec<(String, String)>,
-) -> Result<ExecutionResult> {
+) -> Result<SpawnResult> {
     log::error!("UNIMPLEMENTED: special built-in utility {:?}", utility);
-    Ok(ExecutionResult { exit_code: 99 })
+    Ok(SpawnResult::ImmediateExit(99))
 }
 
 #[derive(Debug)]
@@ -478,18 +508,18 @@ fn execute_well_known_utility(
     utility: WellKnownUtility,
     _args: &Vec<String>,
     _env_vars: &Vec<(String, String)>,
-) -> Result<ExecutionResult> {
+) -> Result<SpawnResult> {
     log::error!("UNIMPLEMENTED: well-known utility {:?}", utility);
-    Ok(ExecutionResult { exit_code: 99 })
+    Ok(SpawnResult::ImmediateExit(99))
 }
 
 fn invoke_shell_function(
     _function_definition: &ast::FunctionDefinition,
     _args: &Vec<String>,
     _env_vars: &Vec<(String, String)>,
-) -> Result<ExecutionResult> {
+) -> Result<SpawnResult> {
     log::error!("UNIMPLEMENTED: invoke shell function");
-    Ok(ExecutionResult { exit_code: 99 })
+    Ok(SpawnResult::ImmediateExit(99))
 }
 
 fn expand_word(context: &ExecutionContext, word: &str) -> Result<String> {

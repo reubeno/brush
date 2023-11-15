@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::debug;
-use std::{collections::HashMap, path};
+use std::collections::HashMap;
 
 use crate::{context::ExecutionContext, interp::Execute};
 
@@ -216,7 +216,6 @@ impl Shell {
 
 enum ShellPromptPiece {
     Literal(String),
-    CurrentUserName,
 }
 
 fn parse_prompt(s: &str) -> Result<Vec<ShellPromptPiece>> {
@@ -230,7 +229,6 @@ fn parse_prompt(s: &str) -> Result<Vec<ShellPromptPiece>> {
 fn format_prompt_piece(piece: &ShellPromptPiece) -> Result<String> {
     let formatted = match piece {
         ShellPromptPiece::Literal(l) => l.to_owned(),
-        ShellPromptPiece::CurrentUserName => todo!("formatting prompt with current username"),
     };
 
     Ok(formatted)
