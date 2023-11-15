@@ -11,3 +11,4 @@ colored = "2.0.4"
 log = "0.4.20"
 parser = { path = "../parser" }
 rustyline = "12.0.0"
+users = "0.11.0"
