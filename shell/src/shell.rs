@@ -2,6 +2,7 @@ use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
 
+use crate::prompt::format_prompt_piece;
 use crate::{context::ExecutionContext, interp::Execute};
 
 type Editor = rustyline::Editor<(), rustyline::history::MemHistory>;
@@ -189,11 +190,11 @@ impl Shell {
         const DEFAULT_PROMPT: &'static str = "$ ";
 
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
-        let prompt_pieces = parse_prompt(&ps1)?;
+        let prompt_pieces = parser::prompt::parse_prompt(&ps1)?;
 
         let formatted_prompt = prompt_pieces
             .iter()
-            .map(format_prompt_piece)
+            .map(|p| format_prompt_piece(&self.context, p))
             .into_iter()
             .collect::<Result<Vec<_>>>()?
             .join("");
@@ -212,24 +213,4 @@ impl Shell {
             .get(name)
             .map_or_else(|| default.to_owned(), |s| s.to_owned())
     }
-}
-
-enum ShellPromptPiece {
-    Literal(String),
-}
-
-fn parse_prompt(s: &str) -> Result<Vec<ShellPromptPiece>> {
-    //
-    // TODO: implement parsing of prompt specifier
-    //
-
-    Ok(vec![ShellPromptPiece::Literal(s.to_owned())])
-}
-
-fn format_prompt_piece(piece: &ShellPromptPiece) -> Result<String> {
-    let formatted = match piece {
-        ShellPromptPiece::Literal(l) => l.to_owned(),
-    };
-
-    Ok(formatted)
 }

@@ -1,6 +1,7 @@
 pub mod ast;
 mod asttransformer;
 mod parser;
+pub mod prompt;
 mod tokenizer;
 pub mod word;
 
