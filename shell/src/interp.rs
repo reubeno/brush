@@ -3,7 +3,9 @@ use anyhow::Result;
 use log::error;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
 
-use crate::context::ExecutionContext;
+use crate::builtins;
+use crate::context;
+use crate::context::{BuiltinCommand, ExecutionContext};
 use crate::expansion::WordExpander;
 
 pub struct ExecutionResult {
@@ -267,6 +269,11 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         //
 
         let mut args = vec![];
+
+        if let Some(cmd_name) = &self.word_or_name {
+            args.push(cmd_name);
+        }
+
         if let Some(suffix_items) = &self.suffix {
             for item in suffix_items {
                 match item {
@@ -318,17 +325,20 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         if let Some(cmd_name) = &self.word_or_name {
             if !cmd_name.contains('/') {
-                if let Some(utility) = try_parse_name_as_special_builtin_utility(cmd_name) {
-                    execute_special_builtin_utility(utility, &args, &env_vars)
+                if let Some(builtin) = builtins::SPECIAL_BUILTINS.get(cmd_name.as_str()) {
+                    execute_builtin(builtin, context, &args, &env_vars)
                 } else if let Some(function_definition) = context.context.funcs.get(cmd_name) {
-                    invoke_shell_function(function_definition, &args, &env_vars)
-                } else if let Some(utility) = try_parse_name_as_well_known_utility(cmd_name) {
-                    execute_well_known_utility(utility, &args, &env_vars)
+                    // Strip the function name off args.
+                    invoke_shell_function(function_definition, &args[1..], &env_vars)
+                } else if let Some(builtin) = builtins::BUILTINS.get(cmd_name.as_str()) {
+                    execute_builtin(builtin, context, &args, &env_vars)
                 } else {
-                    execute_external_command(context, cmd_name, &args, &env_vars)
+                    // Strip the command name off args.
+                    execute_external_command(context, cmd_name, &args[1..], &env_vars)
                 }
             } else {
-                execute_external_command(context, cmd_name, &args, &env_vars)
+                // Strip the command name off args.
+                execute_external_command(context, cmd_name, &args[1..], &env_vars)
             }
         } else {
             //
@@ -351,7 +361,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 fn execute_external_command(
     context: &mut PipelineExecutionContext,
     cmd_name: &str,
-    args: &Vec<String>,
+    args: &[String],
     env_vars: &Vec<(String, String)>,
 ) -> Result<SpawnResult> {
     let mut cmd = std::process::Command::new(cmd_name);
@@ -400,122 +410,28 @@ fn execute_external_command(
     }
 }
 
-#[derive(Debug)]
-enum SpecialBuiltinUtility {
-    Break,
-    Colon,
-    Continue,
-    Dot,
-    Eval,
-    Exec,
-    Exit,
-    Export,
-    Readonly,
-    Return,
-    Set,
-    Shift,
-    Times,
-    Trap,
-    Unset,
-}
-
-fn try_parse_name_as_special_builtin_utility(cmd_name: &str) -> Option<SpecialBuiltinUtility> {
-    match cmd_name {
-        // Handle POSIX-specified builtins.
-        "break" => Some(SpecialBuiltinUtility::Break),
-        ":" => Some(SpecialBuiltinUtility::Colon),
-        "continue" => Some(SpecialBuiltinUtility::Continue),
-        "." => Some(SpecialBuiltinUtility::Dot),
-        "eval" => Some(SpecialBuiltinUtility::Eval),
-        "exec" => Some(SpecialBuiltinUtility::Exec),
-        "exit" => Some(SpecialBuiltinUtility::Exit),
-        "export" => Some(SpecialBuiltinUtility::Export),
-        "readonly" => Some(SpecialBuiltinUtility::Readonly),
-        "return" => Some(SpecialBuiltinUtility::Return),
-        "set" => Some(SpecialBuiltinUtility::Set),
-        "shift" => Some(SpecialBuiltinUtility::Shift),
-        "times" => Some(SpecialBuiltinUtility::Times),
-        "trap" => Some(SpecialBuiltinUtility::Trap),
-        "unset" => Some(SpecialBuiltinUtility::Unset),
-
-        // Handle bash extensions (ref: https://www.gnu.org/software/bash/manual/html_node/Bash-Builtins.html).
-        "source" => Some(SpecialBuiltinUtility::Dot),
-
-        _ => None,
-    }
-}
-
-fn execute_special_builtin_utility(
-    utility: SpecialBuiltinUtility,
-    _args: &Vec<String>,
+fn execute_builtin(
+    builtin: &BuiltinCommand,
+    context: &mut PipelineExecutionContext,
+    args: &[String],
     _env_vars: &Vec<(String, String)>,
 ) -> Result<SpawnResult> {
-    log::error!("UNIMPLEMENTED: special built-in utility {:?}", utility);
-    Ok(SpawnResult::ImmediateExit(99))
-}
+    let args: Vec<_> = args.iter().map(AsRef::as_ref).collect();
+    let builtin_result = builtin(context.context, args.as_slice())?;
 
-#[derive(Debug)]
-enum WellKnownUtility {
-    Alias,
-    Bg,
-    Cd,
-    Command,
-    False,
-    Fc,
-    Fg,
-    Getopts,
-    Hash,
-    Jobs,
-    Kill,
-    Newgrp,
-    Pwd,
-    Read,
-    True,
-    Type,
-    Ulimit,
-    Umask,
-    Unalias,
-    Wait,
-}
+    let exit_code = match builtin_result.exit_code {
+        context::BuiltinExitCode::Success => 0,
+        context::BuiltinExitCode::InvalidUsage => 2,
+        context::BuiltinExitCode::Unimplemented => 99,
+        context::BuiltinExitCode::Custom(code) => code,
+    };
 
-fn try_parse_name_as_well_known_utility(cmd_name: &str) -> Option<WellKnownUtility> {
-    match cmd_name {
-        "alias" => Some(WellKnownUtility::Alias),
-        "bg" => Some(WellKnownUtility::Bg),
-        "cd" => Some(WellKnownUtility::Cd),
-        "command" => Some(WellKnownUtility::Command),
-        "false" => Some(WellKnownUtility::False),
-        "fc" => Some(WellKnownUtility::Fc),
-        "fg" => Some(WellKnownUtility::Fg),
-        "getopts" => Some(WellKnownUtility::Getopts),
-        "hash" => Some(WellKnownUtility::Hash),
-        "jobs" => Some(WellKnownUtility::Jobs),
-        "kill" => Some(WellKnownUtility::Kill),
-        "newgrp" => Some(WellKnownUtility::Newgrp),
-        "pwd" => Some(WellKnownUtility::Pwd),
-        "read" => Some(WellKnownUtility::Read),
-        "true" => Some(WellKnownUtility::True),
-        "type" => Some(WellKnownUtility::Type),
-        "ulimit" => Some(WellKnownUtility::Ulimit),
-        "umask" => Some(WellKnownUtility::Umask),
-        "unalias" => Some(WellKnownUtility::Unalias),
-        "wait" => Some(WellKnownUtility::Wait),
-        _ => None,
-    }
-}
-
-fn execute_well_known_utility(
-    utility: WellKnownUtility,
-    _args: &Vec<String>,
-    _env_vars: &Vec<(String, String)>,
-) -> Result<SpawnResult> {
-    log::error!("UNIMPLEMENTED: well-known utility {:?}", utility);
-    Ok(SpawnResult::ImmediateExit(99))
+    Ok(SpawnResult::ImmediateExit(exit_code))
 }
 
 fn invoke_shell_function(
     _function_definition: &ast::FunctionDefinition,
-    _args: &Vec<String>,
+    _args: &[String],
     _env_vars: &Vec<(String, String)>,
 ) -> Result<SpawnResult> {
     log::error!("UNIMPLEMENTED: invoke shell function");

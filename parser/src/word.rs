@@ -81,6 +81,9 @@ pub enum ParameterExpression {
 
 pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
     let pieces = expansion_parser::unexpanded_word(word)?;
+
+    log::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
+
     Ok(pieces)
 }
 
@@ -121,10 +124,10 @@ peg::parser! {
             double_quoted_word_piece()
 
         rule single_quoted_literal_text() -> &'input str =
-            "\'" inner:$([^'\'']) "\'" { inner }
+            "\'" inner:$([^'\'']*) "\'" { inner }
 
         rule unquoted_literal_text() -> &'input str =
-            $((normal_escape_sequence() / [^'$'])+)
+            $((normal_escape_sequence() / [^'$' | '\'' | '\"'])+)
 
         rule double_quoted_text() -> WordPiece =
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }

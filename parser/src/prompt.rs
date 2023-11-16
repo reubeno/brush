@@ -53,6 +53,9 @@ peg::parser! {
             special_sequence() /
             literal_sequence()
 
+        //
+        // Reference: https://www.gnu.org/software/bash/manual/bash.html#Controlling-the-Prompt
+        //
         rule special_sequence() -> ShellPromptPiece =
             "\\a" { ShellPromptPiece::BellCharacter } /
             "\\d" { ShellPromptPiece::Date(ShellPromptDateFormat::WeekdayMonthDate) } /

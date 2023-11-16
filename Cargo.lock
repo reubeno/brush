@@ -436,7 +436,9 @@ name = "shell"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "colored",
+ "lazy_static",
  "log",
  "parser",
  "rustyline",

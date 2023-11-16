@@ -8,5 +8,6 @@
         "zsh": {
             "path": "/bin/zsh"
         }
-    }
+    },
+    "rewrap.wrappingColumn": 90
 }
