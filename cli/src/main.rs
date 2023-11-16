@@ -23,7 +23,9 @@ struct ShellCommandArgs {
 
 fn main() {
     // Initialize logging. Default log level to INFO if not explicitly specified by the env.
+    // Keep verbosity on rustyline no more than WARNING, since it otherwise gets quite noisy.
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .filter_module("rustyline", log::LevelFilter::Warn)
         .format_timestamp(None)
         .format_target(false)
         .init();

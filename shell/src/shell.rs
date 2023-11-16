@@ -34,6 +34,7 @@ impl Shell {
                 file_size_limit: Default::default(), // TODO: populate file size limit
                 parameters,
                 funcs: Default::default(),
+                options: Default::default(),
                 aliases: Default::default(),
                 last_pipeline_exit_status: 0,
             },

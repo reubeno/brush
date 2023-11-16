@@ -42,11 +42,28 @@ impl Expandable for parser::word::WordPiece {
                     .collect::<Result<Vec<_>>>()?;
                 expanded_pieces.concat()
             }
-            parser::word::WordPiece::TildePrefix(_t) => todo!("tilde prefix expansion"),
+            parser::word::WordPiece::TildePrefix(prefix) => {
+                expand_tilde_expression(context, prefix)?
+            }
             parser::word::WordPiece::ParameterExpansion(p) => p.expand(context)?,
         };
 
         Ok(expansion)
+    }
+}
+
+fn expand_tilde_expression(context: &ExecutionContext, prefix: &str) -> Result<String> {
+    if prefix != "" {
+        log::error!("UNIMPLEMENTED: complex tilde expression: {}", prefix);
+        todo!("expansion: complex tilde expression");
+    }
+
+    if let Some(home) = context.parameters.get("HOME") {
+        Ok(home.to_owned())
+    } else {
+        Err(anyhow::anyhow!(
+            "cannot expand tilde expression with HOME not set"
+        ))
     }
 }
 
