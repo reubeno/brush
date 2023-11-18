@@ -1,10 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
 
-use crate::context::{BuiltinExitCode, BuiltinResult, ExecutionContext};
+use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
 #[derive(Parser, Debug)]
-struct AliasOptions {
+pub(crate) struct AliasCommand {
     #[arg(short = 'p', help = "print all defined aliases in a reusable format")]
     print: bool,
 
@@ -12,48 +12,40 @@ struct AliasOptions {
     aliases: Vec<String>,
 }
 
-pub(crate) fn builtin_alias(
-    context: &mut ExecutionContext,
-    args: &[&str],
-) -> Result<BuiltinResult> {
-    let parse_result = AliasOptions::try_parse_from(args);
-    let options = match parse_result {
-        Ok(options) => options,
-        Err(e) => {
-            log::error!("{}", e);
-            return Ok(BuiltinResult {
-                exit_code: BuiltinExitCode::InvalidUsage,
-            });
-        }
-    };
+impl BuiltinCommand for AliasCommand {
+    fn execute(
+        &self,
+        context: &mut crate::builtin::BuiltinExecutionContext,
+    ) -> Result<crate::builtin::BuiltinExitCode> {
+        //
+        // TODO: implement flags
+        // TODO: Don't use println
+        //
 
-    //
-    // TODO: implement flags
-    // TODO: Don't use println
-    //
+        let mut exit_code = BuiltinExitCode::Success;
 
-    let mut exit_code = BuiltinExitCode::Success;
-
-    if options.print || options.aliases.len() == 0 {
-        for (name, value) in context.aliases.iter() {
-            println!("{}='{}'", name, value);
-        }
-    } else {
-        for alias in options.aliases {
-            if let Some((name, unexpanded_value)) = alias.split_once('=') {
-                context
-                    .aliases
-                    .insert(name.to_owned(), unexpanded_value.to_owned());
-            } else {
-                if let Some(value) = context.aliases.get(&alias) {
-                    println!("{}='{}'", alias, value);
+        if self.print || self.aliases.len() == 0 {
+            for (name, value) in context.context.aliases.iter() {
+                println!("{}='{}'", name, value);
+            }
+        } else {
+            for alias in &self.aliases {
+                if let Some((name, unexpanded_value)) = alias.split_once('=') {
+                    context
+                        .context
+                        .aliases
+                        .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else {
-                    eprintln!("{}: {}: not found", args[0], alias);
-                    exit_code = BuiltinExitCode::Custom(1);
+                    if let Some(value) = context.context.aliases.get(alias) {
+                        println!("{}='{}'", alias, value);
+                    } else {
+                        eprintln!("{}: {}: not found", context.builtin_name, alias);
+                        exit_code = BuiltinExitCode::Custom(1);
+                    }
                 }
             }
         }
-    }
 
-    Ok(BuiltinResult { exit_code })
+        Ok(exit_code)
+    }
 }

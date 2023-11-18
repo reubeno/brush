@@ -1,13 +1,19 @@
-use crate::context::{BuiltinExitCode, BuiltinResult, ExecutionContext};
+use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
 use anyhow::Result;
+use clap::Parser;
 
-pub(crate) fn builtin_unimplemented(
-    _context: &mut ExecutionContext,
-    args: &[&str],
-) -> Result<BuiltinResult> {
-    log::error!("built-in unimplemented: {}", args[0]);
-    Ok(BuiltinResult {
-        exit_code: BuiltinExitCode::Unimplemented,
-    })
+#[derive(Parser, Debug)]
+pub(crate) struct UnimplementedCommand {
+    pub ignored_args: Vec<String>,
+}
+
+impl BuiltinCommand for UnimplementedCommand {
+    fn execute(
+        &self,
+        context: &mut crate::builtin::BuiltinExecutionContext,
+    ) -> Result<crate::builtin::BuiltinExitCode> {
+        log::error!("built-in unimplemented: {}", context.builtin_name);
+        Ok(BuiltinExitCode::Unimplemented)
+    }
 }

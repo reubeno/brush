@@ -3,10 +3,9 @@ use anyhow::Result;
 use log::error;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
 
-use crate::builtins;
-use crate::context;
-use crate::context::{BuiltinCommand, ExecutionContext};
+use crate::context::ExecutionContext;
 use crate::expansion::WordExpander;
+use crate::{builtin, builtins};
 
 pub struct ExecutionResult {
     pub exit_code: i32,
@@ -288,7 +287,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         // Expand the command words.
         // TODO: Deal with the fact that an expansion might introduce multiple fields.
-        let args: Vec<String> = args
+        let mut args: Vec<String> = args
             .iter()
             .map(|a| expand_word(context.context, a))
             .into_iter()
@@ -324,21 +323,40 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             .collect::<Result<Vec<_>>>()?;
 
         if let Some(cmd_name) = &self.word_or_name {
+            let mut cmd_name = cmd_name.to_owned();
+
+            //
+            // TODO: Reevaluate if this is an appropriate place to handle aliases.
+            //
+            if let Some(alias_value) = context.context.aliases.get(&cmd_name) {
+                //
+                // TODO: This is a total hack.
+                //
+                for (i, alias_piece) in alias_value.split_ascii_whitespace().enumerate() {
+                    if i == 0 {
+                        cmd_name = alias_piece.to_owned();
+                        args[0] = alias_piece.to_owned();
+                    } else {
+                        args.insert(i, alias_piece.to_owned());
+                    }
+                }
+            }
+
             if !cmd_name.contains('/') {
                 if let Some(builtin) = builtins::SPECIAL_BUILTINS.get(cmd_name.as_str()) {
-                    execute_builtin(builtin, context, &args, &env_vars)
-                } else if let Some(function_definition) = context.context.funcs.get(cmd_name) {
+                    execute_builtin_command(builtin, context, &args, &env_vars)
+                } else if let Some(function_definition) = context.context.funcs.get(&cmd_name) {
                     // Strip the function name off args.
                     invoke_shell_function(function_definition, &args[1..], &env_vars)
                 } else if let Some(builtin) = builtins::BUILTINS.get(cmd_name.as_str()) {
-                    execute_builtin(builtin, context, &args, &env_vars)
+                    execute_builtin_command(builtin, context, &args, &env_vars)
                 } else {
                     // Strip the command name off args.
-                    execute_external_command(context, cmd_name, &args[1..], &env_vars)
+                    execute_external_command(context, cmd_name.as_ref(), &args[1..], &env_vars)
                 }
             } else {
                 // Strip the command name off args.
-                execute_external_command(context, cmd_name, &args[1..], &env_vars)
+                execute_external_command(context, cmd_name.as_ref(), &args[1..], &env_vars)
             }
         } else {
             //
@@ -410,20 +428,24 @@ fn execute_external_command(
     }
 }
 
-fn execute_builtin(
-    builtin: &BuiltinCommand,
+fn execute_builtin_command(
+    builtin: &builtin::BuiltinCommandExecuteFunc,
     context: &mut PipelineExecutionContext,
     args: &[String],
     _env_vars: &Vec<(String, String)>,
 ) -> Result<SpawnResult> {
     let args: Vec<_> = args.iter().map(AsRef::as_ref).collect();
-    let builtin_result = builtin(context.context, args.as_slice())?;
+    let mut builtin_context = builtin::BuiltinExecutionContext {
+        context: &mut context.context,
+        builtin_name: args[0],
+    };
+    let builtin_result = builtin(&mut builtin_context, args.as_slice())?;
 
     let exit_code = match builtin_result.exit_code {
-        context::BuiltinExitCode::Success => 0,
-        context::BuiltinExitCode::InvalidUsage => 2,
-        context::BuiltinExitCode::Unimplemented => 99,
-        context::BuiltinExitCode::Custom(code) => code,
+        builtin::BuiltinExitCode::Success => 0,
+        builtin::BuiltinExitCode::InvalidUsage => 2,
+        builtin::BuiltinExitCode::Unimplemented => 99,
+        builtin::BuiltinExitCode::Custom(code) => code,
     };
 
     Ok(SpawnResult::ImmediateExit(exit_code))

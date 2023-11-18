@@ -1,12 +1,16 @@
 use anyhow::Result;
+use clap::Parser;
 
-use crate::context::{BuiltinExitCode, BuiltinResult, ExecutionContext};
+use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
-pub(crate) fn builtin_colon(
-    _context: &mut ExecutionContext,
-    _args: &[&str],
-) -> Result<BuiltinResult> {
-    Ok(BuiltinResult {
-        exit_code: BuiltinExitCode::Success,
-    })
+#[derive(Parser, Debug)]
+pub(crate) struct ColonCommand {}
+
+impl BuiltinCommand for ColonCommand {
+    fn execute(
+        &self,
+        _context: &mut crate::builtin::BuiltinExecutionContext,
+    ) -> Result<crate::builtin::BuiltinExitCode> {
+        Ok(BuiltinExitCode::Success)
+    }
 }

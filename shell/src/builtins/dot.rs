@@ -1,22 +1,33 @@
 use anyhow::Result;
+use clap::Parser;
 
-use crate::context::{BuiltinExitCode, BuiltinResult, ExecutionContext};
+use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
-pub(crate) fn builtin_dot(_context: &mut ExecutionContext, args: &[&str]) -> Result<BuiltinResult> {
-    if args.len() != 1 {
-        log::error!("UNIMPLEMENTED: dot builtin with multiple args: {:?}", args);
-        return Ok(BuiltinResult {
-            exit_code: BuiltinExitCode::Unimplemented,
-        });
+#[derive(Debug, Parser)]
+pub(crate) struct DotCommand {
+    pub script_path: String,
+    pub script_args: Vec<String>,
+}
+
+impl BuiltinCommand for DotCommand {
+    fn execute(
+        &self,
+        _context: &mut crate::builtin::BuiltinExecutionContext,
+    ) -> Result<crate::builtin::BuiltinExitCode> {
+        if self.script_args.len() > 0 {
+            log::error!(
+                "UNIMPLEMENTED: dot builtin with args: {:?}",
+                self.script_args
+            );
+            return Ok(BuiltinExitCode::Unimplemented);
+        }
+
+        //
+        // TODO: Handle trap inheritance.
+        // TODO: Handle args.
+        //
+
+        log::error!("UNIMPLEMENTED: source {}", self.script_path);
+        Ok(BuiltinExitCode::Unimplemented)
     }
-
-    //
-    // TODO: Handle trap inheritance.
-    //
-
-    let script_path = args[0];
-    log::error!("UNIMPLEMENTED: source {}", script_path);
-    Ok(BuiltinResult {
-        exit_code: BuiltinExitCode::Unimplemented,
-    })
 }

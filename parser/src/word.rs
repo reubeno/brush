@@ -156,31 +156,31 @@ peg::parser! {
             }
 
         rule parameter_expression() -> ParameterExpression =
-            parameter:parameter() test_type:parameter_test_type() "-" default_value:word()? {
+            parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
                 ParameterExpression::UseDefaultValues { parameter, test_type, default_value }
             } /
-            parameter:parameter() test_type:parameter_test_type() "=" default_value:word()? {
+            parameter:parameter() test_type:parameter_test_type() "=" default_value:parameter_expression_word()? {
                 ParameterExpression::AssignDefaultValues { parameter, test_type, default_value }
             } /
-            parameter:parameter() test_type:parameter_test_type() "?" error_message:word()? {
+            parameter:parameter() test_type:parameter_test_type() "?" error_message:parameter_expression_word()? {
                 ParameterExpression::IndicateErrorIfNullOrUnset { parameter, test_type, error_message }
             } /
-            parameter:parameter() test_type:parameter_test_type() "+" alternative_value:word()? {
+            parameter:parameter() test_type:parameter_test_type() "+" alternative_value:parameter_expression_word()? {
                 ParameterExpression::UseAlternativeValue { parameter, test_type, alternative_value }
             } /
             "#" parameter:parameter() {
                 ParameterExpression::StringLength { parameter }
             } /
-            parameter:parameter() "%" pattern:word()? {
+            parameter:parameter() "%" pattern:parameter_expression_word()? {
                 ParameterExpression::RemoveSmallestSuffixPattern { parameter, pattern }
             } /
-            parameter:parameter() "%%" pattern:word()? {
+            parameter:parameter() "%%" pattern:parameter_expression_word()? {
                 ParameterExpression::RemoveLargestSuffixPattern { parameter, pattern }
             } /
-            parameter:parameter() "#" pattern:word()? {
+            parameter:parameter() "#" pattern:parameter_expression_word()? {
                 ParameterExpression::RemoveSmallestPrefixPattern { parameter, pattern }
             } /
-            parameter:parameter() "##" pattern:word()? {
+            parameter:parameter() "##" pattern:parameter_expression_word()? {
                 ParameterExpression::RemoveLargestPrefixPattern { parameter, pattern }
             } /
             parameter:parameter() {
@@ -218,12 +218,26 @@ peg::parser! {
             $(!['0'..='9'] ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z']+)
 
         rule command_substitution() -> WordPiece =
-            "UNIMPLEMENTED" { todo!("") }
+            "$(" command() ")" {
+                todo!("command substitution")
+            } /
+            "`" backquoted_command() "`" {
+                todo!("backquoted command substitution")
+            }
+
+        rule command() -> () =
+            "UNIMPLEMENTED" { () }
+
+        rule backquoted_command() -> () =
+            "UNIMPLEMENTED" { () }
 
         rule arithmetic_expansion() -> WordPiece =
-            "UNIMPLEMENTED" { todo!("") }
+            "$((" arithmetic_expression() "))" { todo!("arithmetic expression") }
 
-        rule word() -> String =
+        rule arithmetic_expression() -> () =
+            "UNIMPLEMENTED" { () }
+
+        rule parameter_expression_word() -> String =
             "UNIMPLEMENTED" { "".to_owned() }
     }
 }

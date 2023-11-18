@@ -1,7 +1,8 @@
+use anyhow::Result;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
-use crate::context::BuiltinCommand;
+use crate::builtin::{self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinResult};
 
 mod alias;
 mod colon;
@@ -9,8 +10,15 @@ mod dot;
 mod pwd;
 mod unimp;
 
+fn exec_builtin<T: BuiltinCommand>(
+    context: &mut builtin::BuiltinExecutionContext,
+    args: &[&str],
+) -> Result<BuiltinResult> {
+    T::execute_args(context, args)
+}
+
 lazy_static! {
-    pub static ref SPECIAL_BUILTINS: HashMap<&'static str, BuiltinCommand> =
+    pub static ref SPECIAL_BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> =
         HashMap::from([
             //
             // POSIX special builtins
@@ -18,45 +26,45 @@ lazy_static! {
             // N.B. There seems to be some inconsistency as to whether 'times'
             // should be a special built-in.
             //
-            ("break", unimp::builtin_unimplemented as BuiltinCommand),
-            (":", colon::builtin_colon),
-            ("continue", unimp::builtin_unimplemented),
-            (".", dot::builtin_dot),
-            ("eval", unimp::builtin_unimplemented),
-            ("exec", unimp::builtin_unimplemented),
-            ("exit", unimp::builtin_unimplemented),
-            ("export", unimp::builtin_unimplemented),
-            ("readonly", unimp::builtin_unimplemented),
-            ("return", unimp::builtin_unimplemented),
-            ("set", unimp::builtin_unimplemented),
-            ("shift", unimp::builtin_unimplemented),
-            ("times", unimp::builtin_unimplemented),
-            ("trap", unimp::builtin_unimplemented),
-            ("unset", unimp::builtin_unimplemented),
+            ("break", exec_builtin::<unimp::UnimplementedCommand> as BuiltinCommandExecuteFunc),
+            (":", exec_builtin::<colon::ColonCommand>),
+            ("continue", exec_builtin::<unimp::UnimplementedCommand>),
+            (".", exec_builtin::<dot::DotCommand>),
+            ("eval", exec_builtin::<unimp::UnimplementedCommand>),
+            ("exec", exec_builtin::<unimp::UnimplementedCommand>),
+            ("exit", exec_builtin::<unimp::UnimplementedCommand>),
+            ("export", exec_builtin::<unimp::UnimplementedCommand>),
+            ("readonly", exec_builtin::<unimp::UnimplementedCommand>),
+            ("return", exec_builtin::<unimp::UnimplementedCommand>),
+            ("set", exec_builtin::<unimp::UnimplementedCommand>),
+            ("shift", exec_builtin::<unimp::UnimplementedCommand>),
+            ("times", exec_builtin::<unimp::UnimplementedCommand>),
+            ("trap", exec_builtin::<unimp::UnimplementedCommand>),
+            ("unset", exec_builtin::<unimp::UnimplementedCommand>),
             // Bash extension builtins
-            ("source", dot::builtin_dot),
+            ("source", exec_builtin::<dot::DotCommand>),
         ]);
 
-    pub static ref BUILTINS: HashMap<&'static str, BuiltinCommand> = HashMap::from([
-        ("alias", alias::builtin_alias as BuiltinCommand),
-        ("bg", unimp::builtin_unimplemented),
-        ("cd", unimp::builtin_unimplemented),
-        ("command", unimp::builtin_unimplemented),
-        ("false", unimp::builtin_unimplemented),
-        ("fc", unimp::builtin_unimplemented),
-        ("fg", unimp::builtin_unimplemented),
-        ("getopts", unimp::builtin_unimplemented),
-        ("hash", unimp::builtin_unimplemented),
-        ("jobs", unimp::builtin_unimplemented),
-        ("kill", unimp::builtin_unimplemented),
-        ("newgrp", unimp::builtin_unimplemented),
-        ("pwd", pwd::builtin_pwd),
-        ("read", unimp::builtin_unimplemented),
-        ("true", unimp::builtin_unimplemented),
-        ("type", unimp::builtin_unimplemented),
-        ("ulimit", unimp::builtin_unimplemented),
-        ("umask", unimp::builtin_unimplemented),
-        ("unalias", unimp::builtin_unimplemented),
-        ("wait", unimp::builtin_unimplemented),
+    pub static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = HashMap::from([
+        ("alias", exec_builtin::<alias::AliasCommand> as BuiltinCommandExecuteFunc),
+        ("bg", exec_builtin::<unimp::UnimplementedCommand>),
+        ("cd", exec_builtin::<unimp::UnimplementedCommand>),
+        ("command", exec_builtin::<unimp::UnimplementedCommand>),
+        ("false", exec_builtin::<unimp::UnimplementedCommand>),
+        ("fc", exec_builtin::<unimp::UnimplementedCommand>),
+        ("fg", exec_builtin::<unimp::UnimplementedCommand>),
+        ("getopts", exec_builtin::<unimp::UnimplementedCommand>),
+        ("hash", exec_builtin::<unimp::UnimplementedCommand>),
+        ("jobs", exec_builtin::<unimp::UnimplementedCommand>),
+        ("kill", exec_builtin::<unimp::UnimplementedCommand>),
+        ("newgrp", exec_builtin::<unimp::UnimplementedCommand>),
+        ("pwd", exec_builtin::<pwd::PwdCommand>),
+        ("read", exec_builtin::<unimp::UnimplementedCommand>),
+        ("true", exec_builtin::<unimp::UnimplementedCommand>),
+        ("type", exec_builtin::<unimp::UnimplementedCommand>),
+        ("ulimit", exec_builtin::<unimp::UnimplementedCommand>),
+        ("umask", exec_builtin::<unimp::UnimplementedCommand>),
+        ("unalias", exec_builtin::<unimp::UnimplementedCommand>),
+        ("wait", exec_builtin::<unimp::UnimplementedCommand>),
     ]);
 }
