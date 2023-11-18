@@ -1,21 +1,4 @@
-use anyhow::Result;
 use std::{collections::HashMap, path::PathBuf};
-
-#[derive(Debug)]
-pub struct BuiltinResult {
-    pub exit_code: BuiltinExitCode,
-}
-
-#[derive(Debug)]
-pub enum BuiltinExitCode {
-    Success,
-    InvalidUsage,
-    Unimplemented,
-    Custom(i32),
-}
-
-pub type BuiltinCommand =
-    fn(context: &mut ExecutionContext, args: &[&str]) -> Result<BuiltinResult>;
 
 pub struct ExecutionContext {
     // TODO: open files

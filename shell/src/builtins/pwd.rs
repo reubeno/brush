@@ -1,10 +1,9 @@
+use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use anyhow::Result;
-use clap::{arg, Parser};
-
-use crate::context::{BuiltinExitCode, BuiltinResult, ExecutionContext};
+use clap::Parser;
 
 #[derive(Parser, Debug)]
-struct PwdOptions {
+pub(crate) struct PwdCommand {
     #[arg(
         short = 'P',
         help = "print the physical directory, without any symbolic links"
@@ -17,36 +16,26 @@ struct PwdOptions {
     allow_symlinks: bool,
 }
 
-pub(crate) fn builtin_pwd(context: &mut ExecutionContext, args: &[&str]) -> Result<BuiltinResult> {
-    let parse_result = PwdOptions::try_parse_from(args);
-    let options = match parse_result {
-        Ok(options) => options,
-        Err(e) => {
-            log::error!("{}", e);
-            return Ok(BuiltinResult {
-                exit_code: BuiltinExitCode::InvalidUsage,
-            });
+impl BuiltinCommand for PwdCommand {
+    fn execute(
+        &self,
+        context: &mut crate::builtin::BuiltinExecutionContext,
+    ) -> Result<crate::builtin::BuiltinExitCode> {
+        //
+        // TODO: implement flags
+        // TODO: look for 'physical' option in execution context
+        //
+
+        if self.physical || self.allow_symlinks {
+            log::error!("UNIMPLEMENTED: pwd with -P or -L");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
-    };
 
-    //
-    // TODO: implement flags
-    // TODO: look for 'physical' option in execution context
-    //
+        let cwd = context.context.working_dir.to_string_lossy().into_owned();
 
-    if options.physical || options.allow_symlinks {
-        log::error!("UNIMPLEMENTED: pwd with -P or -L");
-        return Ok(BuiltinResult {
-            exit_code: BuiltinExitCode::Unimplemented,
-        });
+        // TODO: Need to print to whatever the stdout is for the shell.
+        println!("{}", cwd);
+
+        Ok(BuiltinExitCode::Success)
     }
-
-    let cwd = context.working_dir.to_string_lossy().into_owned();
-
-    // TODO: Need to print to whatever the stdout is for the shell.
-    println!("{}", cwd);
-
-    Ok(BuiltinResult {
-        exit_code: BuiltinExitCode::Success,
-    })
 }

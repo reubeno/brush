@@ -1,3 +1,4 @@
+mod builtin;
 mod builtins;
 mod context;
 mod expansion;
