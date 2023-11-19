@@ -5,10 +5,7 @@ use std::collections::HashMap;
 use crate::prompt::format_prompt_piece;
 use crate::{context::ExecutionContext, interp::Execute};
 
-type Editor = rustyline::Editor<(), rustyline::history::MemHistory>;
-
 pub struct Shell {
-    editor: Editor,
     context: ExecutionContext,
 }
 
@@ -27,7 +24,6 @@ impl Shell {
 
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
-            editor: Self::new_editor()?,
             context: ExecutionContext {
                 working_dir: std::env::current_dir()?,
                 umask: Default::default(),           // TODO: populate umask
@@ -94,22 +90,6 @@ impl Shell {
         self.run_parsed_result(&parse_result)
     }
 
-    fn new_editor() -> Result<Editor> {
-        let config = rustyline::config::Builder::new()
-            .max_history_size(1000)?
-            .history_ignore_dups(true)?
-            .auto_add_history(true)
-            .build();
-
-        // TODO: Create an editor with a helper object so we can do completion.
-        let editor = rustyline::Editor::<(), _>::with_history(
-            config,
-            rustyline::history::MemHistory::with_config(config),
-        )?;
-
-        Ok(editor)
-    }
-
     pub fn run_string(&mut self, command: &str) -> Result<()> {
         let mut reader = std::io::BufReader::new(command.as_bytes());
         let mut parser = parser::Parser::new(&mut reader);
@@ -156,16 +136,6 @@ impl Shell {
         Ok(())
     }
 
-    pub fn run_interactively(&mut self) -> Result<()> {
-        loop {
-            if self.run_interactively_once()? {
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn run_stdin(&self) -> Result<()> {
         let mut reader = std::io::stdin().lock();
         let mut parser = parser::Parser::new(&mut reader);
@@ -174,20 +144,7 @@ impl Shell {
         Ok(())
     }
 
-    fn run_interactively_once(&mut self) -> Result<bool> {
-        let prompt = self.compose_prompt()?;
-
-        match self.editor.readline(&prompt) {
-            Ok(read_result) => {
-                self.run_string(&read_result)?;
-                Ok(false)
-            }
-            Err(rustyline::error::ReadlineError::Eof) => Ok(true),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn compose_prompt(&self) -> Result<String> {
+    pub fn compose_prompt(&self) -> Result<String> {
         const DEFAULT_PROMPT: &'static str = "$ ";
 
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
