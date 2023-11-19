@@ -47,22 +47,17 @@ fn run(cli_args: impl Iterator<Item = String>) -> Result<i32> {
     //
     // TODO: Look for '-' prefix in argv[0] (or -l perhaps) to indicate login shell.
     //
-    let shell_options = shell::ShellOptions {
-        login: false,
-        interactive: true,
-    };
-
-    let mut shell = shell::Shell::new(&shell_options)?;
+    let mut shell = interactive_shell::InteractiveShell::new(false)?;
 
     match parsed_args.command {
         CommandLineCommand::Shell(cmd_args) => {
             if let Some(command) = cmd_args.command {
-                shell.run_string(&command)?;
+                shell.shell.run_string(&command)?;
             } else {
                 shell.run_interactively()?;
             }
         }
     }
 
-    Ok(shell.last_result())
+    Ok(shell.shell.last_result())
 }
