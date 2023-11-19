@@ -31,7 +31,7 @@ impl BuiltinCommand for PwdCommand {
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
-        let cwd = context.context.working_dir.to_string_lossy().into_owned();
+        let cwd = context.shell.working_dir.to_string_lossy().into_owned();
 
         // TODO: Need to print to whatever the stdout is for the shell.
         println!("{}", cwd);

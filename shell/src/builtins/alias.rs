@@ -25,18 +25,18 @@ impl BuiltinCommand for AliasCommand {
         let mut exit_code = BuiltinExitCode::Success;
 
         if self.print || self.aliases.len() == 0 {
-            for (name, value) in context.context.aliases.iter() {
+            for (name, value) in context.shell.aliases.iter() {
                 println!("{}='{}'", name, value);
             }
         } else {
             for alias in &self.aliases {
                 if let Some((name, unexpanded_value)) = alias.split_once('=') {
                     context
-                        .context
+                        .shell
                         .aliases
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else {
-                    if let Some(value) = context.context.aliases.get(alias) {
+                    if let Some(value) = context.shell.aliases.get(alias) {
                         println!("{}='{}'", alias, value);
                     } else {
                         eprintln!("{}: {}: not found", context.builtin_name, alias);

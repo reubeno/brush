@@ -1,21 +1,20 @@
 use anyhow::Result;
 
-use crate::context::ExecutionContext;
-
+use crate::shell::Shell;
 pub struct WordExpander<'a> {
-    context: &'a ExecutionContext,
+    shell: &'a Shell,
 }
 
 impl<'a> WordExpander<'a> {
-    pub fn new(context: &'a ExecutionContext) -> Self {
-        Self { context }
+    pub fn new(shell: &'a Shell) -> Self {
+        Self { shell }
     }
 
     pub fn expand(&self, word: &str) -> Result<String> {
         let pieces = parser::parse_word_for_expansion(word)?;
         let expanded_pieces = pieces
             .iter()
-            .map(|p| p.expand(self.context))
+            .map(|p| p.expand(self.shell))
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
 
@@ -25,11 +24,11 @@ impl<'a> WordExpander<'a> {
 }
 
 pub trait Expandable {
-    fn expand(&self, context: &ExecutionContext) -> Result<String>;
+    fn expand(&self, shell: &Shell) -> Result<String>;
 }
 
 impl Expandable for parser::word::WordPiece {
-    fn expand(&self, context: &ExecutionContext) -> Result<String> {
+    fn expand(&self, shell: &Shell) -> Result<String> {
         let expansion = match self {
             // TODO: Handle escape sequences inside text or double-quoted text! Probably need to parse them differently.
             parser::word::WordPiece::Text(t) => t.to_owned(),
@@ -37,28 +36,26 @@ impl Expandable for parser::word::WordPiece {
             parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
                 let expanded_pieces = pieces
                     .iter()
-                    .map(|p| p.expand(context))
+                    .map(|p| p.expand(shell))
                     .into_iter()
                     .collect::<Result<Vec<_>>>()?;
                 expanded_pieces.concat()
             }
-            parser::word::WordPiece::TildePrefix(prefix) => {
-                expand_tilde_expression(context, prefix)?
-            }
-            parser::word::WordPiece::ParameterExpansion(p) => p.expand(context)?,
+            parser::word::WordPiece::TildePrefix(prefix) => expand_tilde_expression(shell, prefix)?,
+            parser::word::WordPiece::ParameterExpansion(p) => p.expand(shell)?,
         };
 
         Ok(expansion)
     }
 }
 
-fn expand_tilde_expression(context: &ExecutionContext, prefix: &str) -> Result<String> {
+fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
     if prefix != "" {
         log::error!("UNIMPLEMENTED: complex tilde expression: {}", prefix);
         todo!("expansion: complex tilde expression");
     }
 
-    if let Some(home) = context.parameters.get("HOME") {
+    if let Some(home) = shell.parameters.get("HOME") {
         Ok(home.to_owned())
     } else {
         Err(anyhow::anyhow!(
@@ -68,9 +65,9 @@ fn expand_tilde_expression(context: &ExecutionContext, prefix: &str) -> Result<S
 }
 
 impl Expandable for parser::word::ParameterExpression {
-    fn expand(&self, context: &ExecutionContext) -> Result<String> {
+    fn expand(&self, shell: &Shell) -> Result<String> {
         match self {
-            parser::word::ParameterExpression::Parameter { parameter } => parameter.expand(context),
+            parser::word::ParameterExpression::Parameter { parameter } => parameter.expand(shell),
             parser::word::ParameterExpression::UseDefaultValues {
                 parameter: _,
                 test_type: _,
@@ -115,11 +112,11 @@ impl Expandable for parser::word::ParameterExpression {
 }
 
 impl Expandable for parser::word::Parameter {
-    fn expand(&self, context: &ExecutionContext) -> Result<String> {
+    fn expand(&self, shell: &Shell) -> Result<String> {
         match self {
             parser::word::Parameter::Positional(_p) => todo!("positional parameter expansion"),
-            parser::word::Parameter::Special(s) => s.expand(context),
-            parser::word::Parameter::Named(n) => Ok(context
+            parser::word::Parameter::Special(s) => s.expand(shell),
+            parser::word::Parameter::Named(n) => Ok(shell
                 .parameters
                 .get(n)
                 .map_or_else(|| "".to_owned(), |v| v.to_owned())),
@@ -128,7 +125,7 @@ impl Expandable for parser::word::Parameter {
 }
 
 impl Expandable for parser::word::SpecialParameter {
-    fn expand(&self, context: &ExecutionContext) -> Result<String> {
+    fn expand(&self, shell: &Shell) -> Result<String> {
         match self {
             parser::word::SpecialParameter::AllPositionalParameters { concatenate: _ } => {
                 todo!("expansion: all positional parameters")
@@ -137,7 +134,7 @@ impl Expandable for parser::word::SpecialParameter {
                 todo!("expansion: positional parameter count")
             }
             parser::word::SpecialParameter::LastExitStatus => {
-                Ok(context.last_pipeline_exit_status.to_string())
+                Ok(shell.last_pipeline_exit_status.to_string())
             }
             parser::word::SpecialParameter::CurrentOptionFlags => {
                 todo!("expansion: current option flags")

@@ -3,6 +3,7 @@ mod builtins;
 mod context;
 mod expansion;
 mod interp;
+mod patterns;
 mod prompt;
 mod shell;
 
