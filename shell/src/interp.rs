@@ -3,8 +3,9 @@ use anyhow::Result;
 use log::error;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
 
-use crate::context::ExecutionContext;
 use crate::expansion::WordExpander;
+use crate::patterns;
+use crate::shell::Shell;
 use crate::{builtin, builtins};
 
 pub struct ExecutionResult {
@@ -23,7 +24,7 @@ enum SpawnResult {
 }
 
 struct PipelineExecutionContext<'a> {
-    context: &'a mut ExecutionContext,
+    shell: &'a mut Shell,
 
     current_pipeline_index: usize,
     pipeline_len: usize,
@@ -32,7 +33,7 @@ struct PipelineExecutionContext<'a> {
 }
 
 pub trait Execute {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult>;
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult>;
 }
 
 trait ExecuteInPipeline {
@@ -40,11 +41,11 @@ trait ExecuteInPipeline {
 }
 
 impl Execute for ast::Program {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
         let mut result = ExecutionResult { exit_code: 0 };
 
         for command in &self.complete_commands {
-            result = command.execute(context)?;
+            result = command.execute(shell)?;
         }
 
         Ok(result)
@@ -52,7 +53,7 @@ impl Execute for ast::Program {
 }
 
 impl Execute for ast::CompleteCommand {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
         let mut result = ExecutionResult { exit_code: 0 };
 
         for (ao_list, sep) in self {
@@ -62,7 +63,7 @@ impl Execute for ast::CompleteCommand {
                 todo!("asynchronous execution")
             }
 
-            result = ao_list.first.execute(context)?;
+            result = ao_list.first.execute(shell)?;
 
             for next_ao in &ao_list.additional {
                 let (is_and, pipeline) = match next_ao {
@@ -80,7 +81,7 @@ impl Execute for ast::CompleteCommand {
                     }
                 }
 
-                result = pipeline.execute(context)?;
+                result = pipeline.execute(shell)?;
             }
         }
 
@@ -89,7 +90,7 @@ impl Execute for ast::CompleteCommand {
 }
 
 impl Execute for ast::Pipeline {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
         //
         // TODO: handle bang
         // TODO: implement logic deciding when to abort
@@ -97,7 +98,7 @@ impl Execute for ast::Pipeline {
         //
 
         let mut pipeline_context = PipelineExecutionContext {
-            context,
+            shell,
             current_pipeline_index: 0,
             pipeline_len: self.seq.len(),
             spawn_results: vec![],
@@ -143,12 +144,12 @@ impl ExecuteInPipeline for ast::Command {
                 // TODO: Need to execute in the pipeline.
                 //
 
-                let result = compound.execute(pipeline_context.context)?;
+                let result = compound.execute(pipeline_context.shell)?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             // TODO: Need to execute in pipeline.
             ast::Command::Function(func) => {
-                let result = func.execute(pipeline_context.context)?;
+                let result = func.execute(pipeline_context.shell)?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
         }
@@ -161,31 +162,37 @@ enum WhileOrUtil {
 }
 
 impl Execute for ast::CompoundCommand {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
         match self {
-            ast::CompoundCommand::BraceGroup(g) => g.execute(context),
+            ast::CompoundCommand::BraceGroup(g) => g.execute(shell),
             ast::CompoundCommand::Subshell(_) => todo!("subshell command"),
-            ast::CompoundCommand::ForClause(f) => f.execute(context),
-            ast::CompoundCommand::CaseClause(c) => c.execute(context),
-            ast::CompoundCommand::IfClause(i) => i.execute(context),
-            ast::CompoundCommand::WhileClause(w) => (WhileOrUtil::While, w).execute(context),
-            ast::CompoundCommand::UntilClause(u) => (WhileOrUtil::Util, u).execute(context),
+            ast::CompoundCommand::ForClause(f) => f.execute(shell),
+            ast::CompoundCommand::CaseClause(c) => c.execute(shell),
+            ast::CompoundCommand::IfClause(i) => i.execute(shell),
+            ast::CompoundCommand::WhileClause(w) => (WhileOrUtil::While, w).execute(shell),
+            ast::CompoundCommand::UntilClause(u) => (WhileOrUtil::Util, u).execute(shell),
         }
     }
 }
 
 impl Execute for ast::ForClauseCommand {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
         let mut result = ExecutionResult { exit_code: 0 };
 
-        if let Some(vs) = &self.values {
-            for value in vs {
+        if let Some(unexpanded_values) = &self.values {
+            let expanded_values = unexpanded_values
+                .iter()
+                .map(|v| expand_word(shell, v))
+                .into_iter()
+                .collect::<Result<Vec<_>>>()?;
+
+            for value in expanded_values {
                 // Update the variable.
-                context
+                shell
                     .parameters
                     .insert(self.variable_name.clone(), value.clone());
 
-                result = self.body.execute(context)?;
+                result = self.body.execute(shell)?;
             }
         }
 
@@ -194,30 +201,49 @@ impl Execute for ast::ForClauseCommand {
 }
 
 impl Execute for ast::CaseClauseCommand {
-    fn execute(&self, _context: &mut ExecutionContext) -> Result<ExecutionResult> {
-        todo!("execute case clause command")
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+        let expanded_value = expand_word(shell, self.value.as_str())?;
+        for case in self.cases.iter() {
+            let mut matches = false;
+
+            for pattern in case.patterns.iter() {
+                let expanded_pattern = expand_word(shell, pattern)?;
+                if patterns::pattern_matches(expanded_pattern.as_str(), expanded_value.as_str())? {
+                    matches = true;
+                    break;
+                }
+            }
+
+            if matches {
+                if let Some(case_cmd) = &case.cmd {
+                    return case_cmd.execute(shell);
+                }
+            }
+        }
+
+        Ok(ExecutionResult { exit_code: 0 })
     }
 }
 
 impl Execute for ast::IfClauseCommand {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
-        let condition = self.condition.execute(context)?;
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+        let condition = self.condition.execute(shell)?;
 
         if condition.is_success() {
-            return self.then.execute(context);
+            return self.then.execute(shell);
         }
 
         if let Some(elses) = &self.elses {
             for else_clause in elses {
                 match &else_clause.condition {
                     Some(else_condition) => {
-                        let else_condition_result = else_condition.execute(context)?;
+                        let else_condition_result = else_condition.execute(shell)?;
                         if else_condition_result.is_success() {
-                            return else_clause.body.execute(context);
+                            return else_clause.body.execute(shell);
                         }
                     }
                     None => {
-                        return else_clause.body.execute(context);
+                        return else_clause.body.execute(shell);
                     }
                 }
             }
@@ -228,18 +254,18 @@ impl Execute for ast::IfClauseCommand {
 }
 
 impl Execute for (WhileOrUtil, &ast::WhileClauseCommand) {
-    fn execute(&self, _context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, _shell: &mut Shell) -> Result<ExecutionResult> {
         todo!("execute while clause command")
     }
 }
 
 impl Execute for ast::FunctionDefinition {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
         //
         // TODO: confirm whether defining a function resets the last execution.
         //
 
-        context.funcs.insert(self.fname.clone(), self.clone());
+        shell.funcs.insert(self.fname.clone(), self.clone());
         Ok(ExecutionResult { exit_code: 0 })
     }
 }
@@ -289,7 +315,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         // TODO: Deal with the fact that an expansion might introduce multiple fields.
         let mut args: Vec<String> = args
             .iter()
-            .map(|a| expand_word(context.context, a))
+            .map(|a| expand_word(context.shell, a))
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
 
@@ -316,7 +342,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         let env_vars: Vec<_> = env_vars
             .iter()
             .map(|(n, v)| {
-                let expanded_value = expand_word(context.context, v)?;
+                let expanded_value = expand_word(context.shell, v)?;
                 Ok((n.clone(), expanded_value))
             })
             .into_iter()
@@ -328,7 +354,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             //
             // TODO: Reevaluate if this is an appropriate place to handle aliases.
             //
-            if let Some(alias_value) = context.context.aliases.get(&cmd_name) {
+            if let Some(alias_value) = context.shell.aliases.get(&cmd_name) {
                 //
                 // TODO: This is a total hack.
                 //
@@ -345,7 +371,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             if !cmd_name.contains('/') {
                 if let Some(builtin) = builtins::SPECIAL_BUILTINS.get(cmd_name.as_str()) {
                     execute_builtin_command(builtin, context, &args, &env_vars)
-                } else if let Some(function_definition) = context.context.funcs.get(&cmd_name) {
+                } else if let Some(function_definition) = context.shell.funcs.get(&cmd_name) {
                     // Strip the function name off args.
                     invoke_shell_function(function_definition, &args[1..], &env_vars)
                 } else if let Some(builtin) = builtins::BUILTINS.get(cmd_name.as_str()) {
@@ -365,10 +391,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             for (name, value) in env_vars {
                 // TODO: Handle readonly variables.
-                context
-                    .context
-                    .parameters
-                    .insert(name.clone(), value.clone());
+                context.shell.parameters.insert(name.clone(), value.clone());
             }
 
             Ok(SpawnResult::ImmediateExit(0))
@@ -436,7 +459,7 @@ fn execute_builtin_command(
 ) -> Result<SpawnResult> {
     let args: Vec<_> = args.iter().map(AsRef::as_ref).collect();
     let mut builtin_context = builtin::BuiltinExecutionContext {
-        context: &mut context.context,
+        shell: &mut context.shell,
         builtin_name: args[0],
     };
     let builtin_result = builtin(&mut builtin_context, args.as_slice())?;
@@ -460,7 +483,7 @@ fn invoke_shell_function(
     Ok(SpawnResult::ImmediateExit(99))
 }
 
-fn expand_word(context: &ExecutionContext, word: &str) -> Result<String> {
-    let expander = WordExpander::new(context);
+fn expand_word(shell: &Shell, word: &str) -> Result<String> {
+    let expander = WordExpander::new(shell);
     expander.expand(word)
 }

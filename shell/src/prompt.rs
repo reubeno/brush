@@ -1,9 +1,8 @@
 use anyhow::Result;
 
-use crate::context::ExecutionContext;
-
+use crate::shell::Shell;
 pub(crate) fn format_prompt_piece(
-    context: &ExecutionContext,
+    shell: &Shell,
     piece: &parser::prompt::ShellPromptPiece,
 ) -> Result<String> {
     let formatted = match piece {
@@ -22,7 +21,7 @@ pub(crate) fn format_prompt_piece(
         parser::prompt::ShellPromptPiece::CurrentWorkingDirectory {
             tilde_replaced,
             basename,
-        } => format_current_working_directory(context, *tilde_replaced, *basename)?,
+        } => format_current_working_directory(shell, *tilde_replaced, *basename)?,
         parser::prompt::ShellPromptPiece::Date(_) => todo!("prompt: date"),
         parser::prompt::ShellPromptPiece::DollarOrPound => {
             if users::get_current_uid() == 0 {
@@ -60,18 +59,18 @@ fn get_current_username() -> Result<String> {
 }
 
 fn format_current_working_directory(
-    context: &ExecutionContext,
+    shell: &Shell,
     tilde_replaced: bool,
     basename: bool,
 ) -> Result<String> {
-    let mut working_dir_str = context.working_dir.to_string_lossy().to_string();
+    let mut working_dir_str = shell.working_dir.to_string_lossy().to_string();
 
     if basename {
         todo!("prompt: basename of working dir");
     }
 
     if tilde_replaced {
-        let home_dir_opt = context.parameters.get("HOME");
+        let home_dir_opt = shell.parameters.get("HOME");
         if let Some(home_dir) = home_dir_opt {
             if let Some(stripped) = working_dir_str.strip_prefix(home_dir) {
                 working_dir_str = format!("~{}", stripped);

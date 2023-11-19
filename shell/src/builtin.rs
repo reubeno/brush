@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use crate::context::ExecutionContext;
+use crate::shell::Shell;
 
 #[derive(Debug)]
 pub struct BuiltinResult {
@@ -17,7 +17,7 @@ pub enum BuiltinExitCode {
 }
 
 pub struct BuiltinExecutionContext<'a> {
-    pub context: &'a mut ExecutionContext,
+    pub shell: &'a mut Shell,
     pub builtin_name: &'a str,
 }
 

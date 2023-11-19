@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::Result;
 use clap::Parser;
 
@@ -12,7 +14,7 @@ pub(crate) struct DotCommand {
 impl BuiltinCommand for DotCommand {
     fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         if self.script_args.len() > 0 {
             log::error!(
@@ -27,7 +29,13 @@ impl BuiltinCommand for DotCommand {
         // TODO: Handle args.
         //
 
-        log::error!("UNIMPLEMENTED: source {}", self.script_path);
-        Ok(BuiltinExitCode::Unimplemented)
+        let script_args: Vec<_> = self.script_args.iter().map(|a| a.as_str()).collect();
+
+        context
+            .shell
+            .source(Path::new(&self.script_path), script_args.as_slice())?;
+
+        // TODO: Get exit status from source() above.
+        Ok(BuiltinExitCode::Success)
     }
 }

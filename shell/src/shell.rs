@@ -1,18 +1,45 @@
 use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
+use crate::interp::Execute;
 use crate::prompt::format_prompt_piece;
-use crate::{context::ExecutionContext, interp::Execute};
 
 pub struct Shell {
-    context: ExecutionContext,
+    // TODO: open files
+    pub working_dir: PathBuf,
+    pub umask: u32,
+    pub file_size_limit: u64,
+    // TODO: traps
+    pub parameters: HashMap<String, String>,
+    pub funcs: HashMap<String, ShellFunction>,
+    pub options: ShellRuntimeOptions,
+    // TODO: async lists
+    pub aliases: HashMap<String, String>,
+
+    //
+    // Additional state
+    //
+    pub last_pipeline_exit_status: u32,
+}
+
+pub struct ShellRuntimeOptions {
+    // TODO: Add other options.
+}
+
+impl Default for ShellRuntimeOptions {
+    fn default() -> Self {
+        Self {}
+    }
 }
 
 pub struct ShellOptions {
     pub login: bool,
     pub interactive: bool,
 }
+
+type ShellFunction = parser::ast::FunctionDefinition;
 
 impl Shell {
     pub fn new(options: &ShellOptions) -> Result<Shell> {
@@ -24,16 +51,14 @@ impl Shell {
 
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
-            context: ExecutionContext {
-                working_dir: std::env::current_dir()?,
-                umask: Default::default(),           // TODO: populate umask
-                file_size_limit: Default::default(), // TODO: populate file size limit
-                parameters,
-                funcs: Default::default(),
-                options: Default::default(),
-                aliases: Default::default(),
-                last_pipeline_exit_status: 0,
-            },
+            working_dir: std::env::current_dir()?,
+            umask: Default::default(),           // TODO: populate umask
+            file_size_limit: Default::default(), // TODO: populate file size limit
+            parameters,
+            funcs: Default::default(),
+            options: Default::default(),
+            aliases: Default::default(),
+            last_pipeline_exit_status: 0,
         };
 
         // Load profiles/configuration.
@@ -43,17 +68,25 @@ impl Shell {
     }
 
     fn load_config(&mut self, options: &ShellOptions) -> Result<()> {
-        if options.interactive {
-            if options.login {
-                //
-                // TODO: Do something appropriate for login shells.
-                //
-            } else {
+        if options.login {
+            //
+            // TODO: source /etc/profile if it exists
+            // TODO: source the first of these that exists and is readable (if any):
+            //     * ~/.bash_profile
+            //     * ~/.bash_login
+            //     * ~/.profile
+            // TODO: implement --noprofile to inhibit
+            //
+            todo!("config for a login shell")
+        } else {
+            if options.interactive {
                 //
                 // For non-login interactive shells, load in this order:
                 //
                 //     /etc/bash.bashrc
                 //     ~/.bashrc
+                //
+                // TODO: implement support for --norc
                 //
                 self.source_if_exists(std::path::Path::new("/etc/bash.bashrc"))?;
                 if let Ok(home_path) = std::env::var("HOME") {
@@ -61,11 +94,12 @@ impl Shell {
                         std::path::Path::new(&home_path).join(".bashrc").as_path(),
                     )?;
                 }
+            } else {
+                //
+                // TODO: look at $BASH_ENV; source its expansion if that file exists
+                //
+                todo!("config for a non-interactive, non-login shell")
             }
-        } else {
-            //
-            // TODO: Do something appropriate for non-interactive shells.
-            //
         }
 
         Ok(())
@@ -73,19 +107,24 @@ impl Shell {
 
     fn source_if_exists(&mut self, path: &std::path::Path) -> Result<()> {
         if path.exists() {
-            self.source(path)
+            self.source(path, &[])
         } else {
             debug!("skipping non-existent file: {}", path.display());
             Ok(())
         }
     }
 
-    fn source(&mut self, path: &std::path::Path) -> Result<()> {
+    pub fn source(&mut self, path: &std::path::Path, args: &[&str]) -> Result<()> {
         debug!("sourcing: {}", path.display());
 
         let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
         let mut parser = parser::Parser::new(&mut reader);
         let parse_result = parser.parse(false)?;
+
+        // TODO: handle args
+        if args.len() > 0 {
+            todo!("source with args");
+        }
 
         self.run_parsed_result(&parse_result)
     }
@@ -113,7 +152,7 @@ impl Shell {
     }
 
     pub fn run_program(&mut self, program: &parser::ast::Program) -> Result<()> {
-        program.execute(&mut self.context)?;
+        program.execute(self)?;
 
         //
         // Perform any necessary redirections and remove the redirection
@@ -152,7 +191,7 @@ impl Shell {
 
         let formatted_prompt = prompt_pieces
             .iter()
-            .map(|p| format_prompt_piece(&self.context, p))
+            .map(|p| format_prompt_piece(self, p))
             .into_iter()
             .collect::<Result<Vec<_>>>()?
             .join("");
@@ -166,8 +205,7 @@ impl Shell {
     }
 
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
-        self.context
-            .parameters
+        self.parameters
             .get(name)
             .map_or_else(|| default.to_owned(), |s| s.to_owned())
     }
