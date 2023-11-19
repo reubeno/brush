@@ -5,7 +5,7 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 pub(crate) struct UnimplementedCommand {
-    pub ignored_args: Vec<String>,
+    pub args: Vec<String>,
 }
 
 impl BuiltinCommand for UnimplementedCommand {
@@ -13,7 +13,11 @@ impl BuiltinCommand for UnimplementedCommand {
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext,
     ) -> Result<crate::builtin::BuiltinExitCode> {
-        log::error!("built-in unimplemented: {}", context.builtin_name);
+        log::error!(
+            "built-in unimplemented: {} {}",
+            context.builtin_name,
+            self.args.join(" ")
+        );
         Ok(BuiltinExitCode::Unimplemented)
     }
 }
