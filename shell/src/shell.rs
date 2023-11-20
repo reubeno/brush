@@ -6,13 +6,14 @@ use std::path::PathBuf;
 use crate::interp::Execute;
 use crate::prompt::format_prompt_piece;
 
+#[derive(Debug)]
 pub struct Shell {
     // TODO: open files
     pub working_dir: PathBuf,
     pub umask: u32,
     pub file_size_limit: u64,
     // TODO: traps
-    pub parameters: HashMap<String, String>,
+    pub parameters: HashMap<String, ShellVariable>,
     pub funcs: HashMap<String, ShellFunction>,
     pub options: ShellRuntimeOptions,
     // TODO: async lists
@@ -24,6 +25,14 @@ pub struct Shell {
     pub last_pipeline_exit_status: u32,
 }
 
+#[derive(Debug)]
+pub struct ShellVariable {
+    pub value: String,
+    pub exported: bool,
+    pub readonly: bool,
+}
+
+#[derive(Debug)]
 pub struct ShellRuntimeOptions {
     // TODO: Add other options.
 }
@@ -34,6 +43,7 @@ impl Default for ShellRuntimeOptions {
     }
 }
 
+#[derive(Debug)]
 pub struct ShellOptions {
     pub login: bool,
     pub interactive: bool,
@@ -46,7 +56,14 @@ impl Shell {
         // Seed parameters from environment.
         let mut parameters = HashMap::new();
         for (k, v) in std::env::vars() {
-            parameters.insert(k, v);
+            parameters.insert(
+                k,
+                ShellVariable {
+                    value: v,
+                    exported: true,
+                    readonly: false,
+                },
+            );
         }
 
         // Instantiate the shell with some defaults.
@@ -207,6 +224,6 @@ impl Shell {
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
         self.parameters
             .get(name)
-            .map_or_else(|| default.to_owned(), |s| s.to_owned())
+            .map_or_else(|| default.to_owned(), |s| s.value.to_owned())
     }
 }

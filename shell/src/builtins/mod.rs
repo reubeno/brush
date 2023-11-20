@@ -9,6 +9,7 @@ mod colon;
 mod dot;
 mod pwd;
 mod unimp;
+mod unset;
 
 fn exec_builtin<T: BuiltinCommand>(
     context: &mut builtin::BuiltinExecutionContext,
@@ -40,7 +41,7 @@ lazy_static! {
             ("shift", exec_builtin::<unimp::UnimplementedCommand>),
             ("times", exec_builtin::<unimp::UnimplementedCommand>),
             ("trap", exec_builtin::<unimp::UnimplementedCommand>),
-            ("unset", exec_builtin::<unimp::UnimplementedCommand>),
+            ("unset", exec_builtin::<unset::UnsetCommand>),
             // Bash extension builtins
             ("source", exec_builtin::<dot::DotCommand>),
         ]);

@@ -4,9 +4,9 @@ use log::error;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
 
 use crate::expansion::WordExpander;
-use crate::patterns;
 use crate::shell::Shell;
 use crate::{builtin, builtins};
+use crate::{patterns, shell};
 
 pub struct ExecutionResult {
     pub exit_code: i32,
@@ -188,9 +188,14 @@ impl Execute for ast::ForClauseCommand {
 
             for value in expanded_values {
                 // Update the variable.
-                shell
-                    .parameters
-                    .insert(self.variable_name.clone(), value.clone());
+                shell.parameters.insert(
+                    self.variable_name.clone(),
+                    shell::ShellVariable {
+                        value,
+                        exported: false,
+                        readonly: false,
+                    },
+                );
 
                 result = self.body.execute(shell)?;
             }
@@ -391,7 +396,14 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             for (name, value) in env_vars {
                 // TODO: Handle readonly variables.
-                context.shell.parameters.insert(name.clone(), value.clone());
+                context.shell.parameters.insert(
+                    name.clone(),
+                    shell::ShellVariable {
+                        value: value.to_owned(),
+                        exported: false,
+                        readonly: false,
+                    },
+                );
             }
 
             Ok(SpawnResult::ImmediateExit(0))
