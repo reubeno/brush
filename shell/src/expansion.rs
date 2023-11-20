@@ -56,7 +56,7 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
     }
 
     if let Some(home) = shell.parameters.get("HOME") {
-        Ok(home.to_owned())
+        Ok(home.value.to_owned())
     } else {
         Err(anyhow::anyhow!(
             "cannot expand tilde expression with HOME not set"
@@ -119,7 +119,7 @@ impl Expandable for parser::word::Parameter {
             parser::word::Parameter::Named(n) => Ok(shell
                 .parameters
                 .get(n)
-                .map_or_else(|| "".to_owned(), |v| v.to_owned())),
+                .map_or_else(|| "".to_owned(), |v| v.value.to_owned())),
         }
     }
 }
