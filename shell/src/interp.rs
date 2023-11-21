@@ -334,7 +334,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             //
             error!(
                 "UNIMPLEMENTED: simple command redirects not implemented: {:?}",
-                self
+                redirects
             );
         }
 
