@@ -7,4 +7,4 @@ mod patterns;
 mod prompt;
 mod shell;
 
-pub use shell::{Shell, ShellOptions};
+pub use shell::{Shell, ShellCreateOptions};

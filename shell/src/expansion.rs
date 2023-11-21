@@ -136,9 +136,7 @@ impl Expandable for parser::word::SpecialParameter {
             parser::word::SpecialParameter::LastExitStatus => {
                 Ok(shell.last_pipeline_exit_status.to_string())
             }
-            parser::word::SpecialParameter::CurrentOptionFlags => {
-                todo!("expansion: current option flags")
-            }
+            parser::word::SpecialParameter::CurrentOptionFlags => Ok(shell.current_option_flags()),
             parser::word::SpecialParameter::ProcessId => todo!("expansion: process id"),
             parser::word::SpecialParameter::LastBackgroundProcessId => {
                 todo!("expansion: last background process id")

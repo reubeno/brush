@@ -12,7 +12,7 @@ impl InteractiveShell {
     pub fn new(login: bool) -> Result<InteractiveShell> {
         Ok(InteractiveShell {
             editor: Self::new_editor()?,
-            shell: shell::Shell::new(&shell::ShellOptions {
+            shell: shell::Shell::new(&shell::ShellCreateOptions {
                 login,
                 interactive: true,
             })?,

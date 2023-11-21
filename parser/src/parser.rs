@@ -148,7 +148,7 @@ peg::parser! {
         rule pipeline() -> ast::Pipeline =
             bang:bang()? seq:pipe_sequence() { ast::Pipeline { bang: bang.is_some(), seq } }
         rule bang() -> bool =
-            [Token::Operator(n) if n.as_str() == "!"] { true }
+            [Token::Word(n) if n.as_str() == "!"] { true }
 
         rule pipe_sequence() -> Vec<ast::Command> =
             c:command() ++ ([Token::Operator(n) if n.as_str() == "|"] linebreak()) { c }

@@ -226,18 +226,18 @@ peg::parser! {
             }
 
         rule command() -> () =
-            "UNIMPLEMENTED" { () }
+            "<COMMAND SUBSTITUTION UNIMPLEMENTED>" { () }
 
         rule backquoted_command() -> () =
-            "UNIMPLEMENTED" { () }
+            "<BACKQUOTES UNIMPLEMENTED>" { () }
 
         rule arithmetic_expansion() -> WordPiece =
             "$((" arithmetic_expression() "))" { todo!("arithmetic expression") }
 
         rule arithmetic_expression() -> () =
-            "UNIMPLEMENTED" { () }
+            "<ARITHMETIC EXPRESSIONS UNIMPLEMENTED>" { () }
 
         rule parameter_expression_word() -> String =
-            "UNIMPLEMENTED" { "".to_owned() }
+            "<PARAMETER EXPRESSION UNIMPLEMENTED>" { "".to_owned() }
     }
 }
