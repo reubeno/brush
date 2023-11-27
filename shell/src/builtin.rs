@@ -13,7 +13,8 @@ pub enum BuiltinExitCode {
     Success,
     InvalidUsage,
     Unimplemented,
-    Custom(i32),
+    Custom(u8),
+    ExitShell(u8),
 }
 
 pub struct BuiltinExecutionContext<'a> {

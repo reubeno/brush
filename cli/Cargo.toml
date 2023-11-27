@@ -1,9 +1,9 @@
 [package]
 name = "rush"
-version = "0.1.0"
-edition = "2021"
-description = "CLI"
-license = "MIT"
+description = "rush shell"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
 
 [dependencies]
 anyhow = "1.0.75"

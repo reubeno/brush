@@ -24,7 +24,7 @@ pub(crate) fn format_prompt_piece(
         } => format_current_working_directory(shell, *tilde_replaced, *basename)?,
         parser::prompt::ShellPromptPiece::Date(_) => todo!("prompt: date"),
         parser::prompt::ShellPromptPiece::DollarOrPound => {
-            if users::get_current_uid() == 0 {
+            if uzers::get_current_uid() == 0 {
                 "#".to_owned()
             } else {
                 "$".to_owned()
@@ -54,7 +54,7 @@ pub(crate) fn format_prompt_piece(
 
 fn get_current_username() -> Result<String> {
     let username =
-        users::get_current_username().ok_or_else(|| anyhow::anyhow!("no current user"))?;
+        uzers::get_current_username().ok_or_else(|| anyhow::anyhow!("no current user"))?;
     Ok(username.to_string_lossy().to_string())
 }
 
@@ -70,7 +70,7 @@ fn format_current_working_directory(
     }
 
     if tilde_replaced {
-        let home_dir_opt = shell.parameters.get("HOME");
+        let home_dir_opt = shell.variables.get("HOME");
         if let Some(home_dir) = home_dir_opt {
             if let Some(stripped) = working_dir_str.strip_prefix(home_dir.value.as_str()) {
                 working_dir_str = format!("~{}", stripped);

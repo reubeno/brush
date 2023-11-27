@@ -55,7 +55,7 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
         todo!("expansion: complex tilde expression");
     }
 
-    if let Some(home) = shell.parameters.get("HOME") {
+    if let Some(home) = shell.variables.get("HOME") {
         Ok(home.value.to_owned())
     } else {
         Err(anyhow::anyhow!(
@@ -117,7 +117,7 @@ impl Expandable for parser::word::Parameter {
             parser::word::Parameter::Positional(_p) => todo!("positional parameter expansion"),
             parser::word::Parameter::Special(s) => s.expand(shell),
             parser::word::Parameter::Named(n) => Ok(shell
-                .parameters
+                .variables
                 .get(n)
                 .map_or_else(|| "".to_owned(), |v| v.value.to_owned())),
         }
@@ -131,17 +131,20 @@ impl Expandable for parser::word::SpecialParameter {
                 todo!("expansion: all positional parameters")
             }
             parser::word::SpecialParameter::PositionalParameterCount => {
-                todo!("expansion: positional parameter count")
+                Ok(shell.positional_parameters.len().to_string())
             }
             parser::word::SpecialParameter::LastExitStatus => {
-                Ok(shell.last_pipeline_exit_status.to_string())
+                Ok(shell.last_exit_status.to_string())
             }
             parser::word::SpecialParameter::CurrentOptionFlags => Ok(shell.current_option_flags()),
-            parser::word::SpecialParameter::ProcessId => todo!("expansion: process id"),
+            parser::word::SpecialParameter::ProcessId => Ok(std::process::id().to_string()),
             parser::word::SpecialParameter::LastBackgroundProcessId => {
                 todo!("expansion: last background process id")
             }
-            parser::word::SpecialParameter::ShellName => todo!("expansion: shell name"),
+            parser::word::SpecialParameter::ShellName => Ok(shell
+                .shell_name
+                .as_ref()
+                .map_or_else(|| "".to_owned(), |name| name.to_owned())),
         }
     }
 }

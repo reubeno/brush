@@ -7,8 +7,10 @@ use crate::builtin::{self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinRes
 mod alias;
 mod colon;
 mod dot;
+mod exit;
 mod export;
 mod pwd;
+mod umask;
 mod unimp;
 mod unset;
 
@@ -34,7 +36,7 @@ lazy_static! {
             (".", exec_builtin::<dot::DotCommand>),
             ("eval", exec_builtin::<unimp::UnimplementedCommand>),
             ("exec", exec_builtin::<unimp::UnimplementedCommand>),
-            ("exit", exec_builtin::<unimp::UnimplementedCommand>),
+            ("exit", exec_builtin::<exit::ExitCommand>),
             ("export", exec_builtin::<export::ExportCommand>),
             ("readonly", exec_builtin::<unimp::UnimplementedCommand>),
             ("return", exec_builtin::<unimp::UnimplementedCommand>),
@@ -65,7 +67,7 @@ lazy_static! {
         ("true", exec_builtin::<unimp::UnimplementedCommand>),
         ("type", exec_builtin::<unimp::UnimplementedCommand>),
         ("ulimit", exec_builtin::<unimp::UnimplementedCommand>),
-        ("umask", exec_builtin::<unimp::UnimplementedCommand>),
+        ("umask", exec_builtin::<umask::UmaskCommand>),
         ("unalias", exec_builtin::<unimp::UnimplementedCommand>),
         ("wait", exec_builtin::<unimp::UnimplementedCommand>),
     ]);

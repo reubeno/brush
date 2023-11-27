@@ -7,4 +7,5 @@ mod patterns;
 mod prompt;
 mod shell;
 
+pub use interp::ExecutionResult;
 pub use shell::{Shell, ShellCreateOptions};

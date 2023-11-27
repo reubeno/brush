@@ -62,14 +62,14 @@ impl BuiltinCommand for UnsetCommand {
 
         for name in &self.names {
             if unspecified || self.name_interpretation.names_are_shell_variables {
-                if let Some(variable) = context.shell.parameters.get(name) {
+                if let Some(variable) = context.shell.variables.get(name) {
                     if variable.readonly {
                         log::error!("unset: {}: cannot unset: readonly variable", name);
                         errors = true;
                     }
                 }
 
-                if context.shell.parameters.remove(name).is_some() {
+                if context.shell.variables.remove(name).is_some() {
                     continue;
                 }
             }

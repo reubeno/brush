@@ -157,6 +157,10 @@ fn transform_command<T: AstTransformer>(command: &Command, transformer: &mut T) 
             },
         ),
         Command::Function(f) => Command::Function(transform_function_definition(f, transformer)?),
+        Command::ExtendedTest(e) => {
+            log::error!("UNIMPLEMENTED: extended test expression: {:?}", e);
+            todo!("extended test command")
+        }
     };
     transformer.on_command(&inner)
 }

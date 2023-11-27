@@ -1,9 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::debug;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::interp::Execute;
+use crate::interp::{Execute, ExecutionResult};
 use crate::prompt::format_prompt_piece;
 
 #[derive(Debug)]
@@ -13,7 +13,7 @@ pub struct Shell {
     pub umask: u32,
     pub file_size_limit: u64,
     // TODO: traps
-    pub parameters: HashMap<String, ShellVariable>,
+    pub variables: HashMap<String, ShellVariable>,
     pub funcs: HashMap<String, ShellFunction>,
     pub options: ShellRuntimeOptions,
     // TODO: async lists
@@ -22,7 +22,13 @@ pub struct Shell {
     //
     // Additional state
     //
-    pub last_pipeline_exit_status: u32,
+    pub last_exit_status: u8,
+
+    // Positional parameters ($1 and beyond)
+    pub positional_parameters: Vec<String>,
+
+    // Shell name
+    pub shell_name: Option<String>,
 }
 
 #[derive(Debug)]
@@ -291,6 +297,9 @@ impl Default for ShellRuntimeOptions {
 pub struct ShellCreateOptions {
     pub login: bool,
     pub interactive: bool,
+    pub no_profile: bool,
+    pub no_rc: bool,
+    pub shell_name: Option<String>,
 }
 
 type ShellFunction = parser::ast::FunctionDefinition;
@@ -302,32 +311,21 @@ enum ProgramOrigin {
 
 impl Shell {
     pub fn new(options: &ShellCreateOptions) -> Result<Shell> {
-        // Seed parameters from environment.
-        let mut parameters = HashMap::new();
-        for (k, v) in std::env::vars() {
-            parameters.insert(
-                k,
-                ShellVariable {
-                    value: v,
-                    exported: true,
-                    readonly: false,
-                },
-            );
-        }
-
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
             working_dir: std::env::current_dir()?,
             umask: Default::default(),           // TODO: populate umask
             file_size_limit: Default::default(), // TODO: populate file size limit
-            parameters,
+            variables: Self::initialize_vars()?,
             funcs: Default::default(),
             options: ShellRuntimeOptions {
                 interactive: options.interactive,
                 ..Default::default()
             },
             aliases: Default::default(),
-            last_pipeline_exit_status: 0,
+            last_exit_status: 0,
+            positional_parameters: vec![],
+            shell_name: options.shell_name.clone(),
         };
 
         // Load profiles/configuration.
@@ -336,32 +334,97 @@ impl Shell {
         Ok(shell)
     }
 
+    pub fn set_var<S: AsRef<str>, T: AsRef<str>>(
+        &mut self,
+        name: S,
+        value: T,
+        exported: bool,
+        readonly: bool,
+    ) -> Result<()> {
+        Self::set_var_in(&mut self.variables, name, value, exported, readonly)?;
+        Ok(())
+    }
+
+    fn set_var_in<S: AsRef<str>, T: AsRef<str>>(
+        vars: &mut HashMap<String, ShellVariable>,
+        name: S,
+        value: T,
+        exported: bool,
+        readonly: bool,
+    ) -> Result<()> {
+        vars.insert(
+            name.as_ref().to_owned(),
+            ShellVariable {
+                value: value.as_ref().to_owned(),
+                exported,
+                readonly,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn initialize_vars() -> Result<HashMap<String, ShellVariable>> {
+        let mut vars = HashMap::new();
+
+        // Seed parameters from environment.
+        for (k, v) in std::env::vars() {
+            Self::set_var_in(&mut vars, k, v, true, false)?;
+        }
+
+        // Set some additional ones.
+        Self::set_var_in(
+            &mut vars,
+            "EUID",
+            format!("{}", uzers::get_effective_uid()),
+            false,
+            true,
+        )?;
+
+        Ok(vars)
+    }
+
     fn load_config(&mut self, options: &ShellCreateOptions) -> Result<()> {
         if options.login {
+            // --noprofile means skip this.
+            if options.no_profile {
+                return Ok(());
+            }
+
             //
-            // TODO: source /etc/profile if it exists
-            // TODO: source the first of these that exists and is readable (if any):
+            // Source /etc/profile if it exists.
+            //
+            // Next source the first of these that exists and is readable (if any):
             //     * ~/.bash_profile
             //     * ~/.bash_login
             //     * ~/.profile
-            // TODO: implement --noprofile to inhibit
             //
-            todo!("config for a login shell")
+            self.source_if_exists(Path::new("/etc/profile"))?;
+            if let Ok(home_path) = std::env::var("HOME") {
+                if !self.source_if_exists(Path::new(&home_path).join(".bash_profile").as_path())? {
+                    if !self
+                        .source_if_exists(Path::new(&home_path).join(".bash_login").as_path())?
+                    {
+                        self.source_if_exists(Path::new(&home_path).join(".profile").as_path())?;
+                    }
+                }
+            }
         } else {
             if options.interactive {
+                // --norc means skip this.
+                if options.no_rc {
+                    return Ok(());
+                }
+
                 //
                 // For non-login interactive shells, load in this order:
                 //
                 //     /etc/bash.bashrc
                 //     ~/.bashrc
                 //
-                // TODO: implement support for --norc
-                //
-                self.source_if_exists(std::path::Path::new("/etc/bash.bashrc"))?;
+                self.source_if_exists(Path::new("/etc/bash.bashrc"))?;
                 if let Ok(home_path) = std::env::var("HOME") {
-                    self.source_if_exists(
-                        std::path::Path::new(&home_path).join(".bashrc").as_path(),
-                    )?;
+                    self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())?;
                 }
             } else {
                 //
@@ -374,31 +437,56 @@ impl Shell {
         Ok(())
     }
 
-    fn source_if_exists(&mut self, path: &std::path::Path) -> Result<()> {
+    fn source_if_exists(&mut self, path: &Path) -> Result<bool> {
         if path.exists() {
-            self.source(path, &[])
+            let args: Vec<String> = vec![];
+            self.source(path, &args)?;
+            Ok(true)
         } else {
             debug!("skipping non-existent file: {}", path.display());
-            Ok(())
+            Ok(false)
         }
     }
 
-    pub fn source(&mut self, path: &std::path::Path, args: &[&str]) -> Result<()> {
+    pub fn source<S: AsRef<str>>(&mut self, path: &Path, args: &[S]) -> Result<ExecutionResult> {
         debug!("sourcing: {}", path.display());
 
-        let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
+        let opened_file = std::fs::File::open(path).context(path.to_string_lossy().to_string())?;
+        if !opened_file.metadata()?.is_file() {
+            return Err(anyhow::anyhow!(
+                "{}: path is a directory",
+                path.to_string_lossy().to_string()
+            ));
+        }
+
+        let mut reader = std::io::BufReader::new(opened_file);
         let mut parser = parser::Parser::new(&mut reader);
         let parse_result = parser.parse(false)?;
 
+        // TODO: Find a cleaner way to change args.
+        let orig_shell_name = self.shell_name.take();
+        let orig_params = self.positional_parameters.clone();
+        self.shell_name = Some(path.to_string_lossy().to_string());
+        self.positional_parameters = vec![];
+
         // TODO: handle args
         if args.len() > 0 {
-            todo!("source with args");
+            log::error!(
+                "UNIMPLEMENTED: source built-in invoked with args: {:?}",
+                path
+            );
         }
 
-        self.run_parsed_result(&parse_result, &ProgramOrigin::File(path.to_owned()))
+        let result = self.run_parsed_result(&parse_result, &ProgramOrigin::File(path.to_owned()));
+
+        // Restore.
+        self.shell_name = orig_shell_name;
+        self.positional_parameters = orig_params;
+
+        result
     }
 
-    pub fn run_string(&mut self, command: &str) -> Result<()> {
+    pub fn run_string(&mut self, command: &str) -> Result<ExecutionResult> {
         let mut reader = std::io::BufReader::new(command.as_bytes());
         let mut parser = parser::Parser::new(&mut reader);
         let parse_result = parser.parse(true)?;
@@ -406,13 +494,22 @@ impl Shell {
         self.run_parsed_result(&parse_result, &ProgramOrigin::String)
     }
 
+    pub fn run_script<S: AsRef<str>>(
+        &mut self,
+        script_path: &Path,
+        args: &[S],
+    ) -> Result<ExecutionResult> {
+        self.source(script_path, args)
+    }
+
     fn run_parsed_result(
         &mut self,
         parse_result: &parser::ParseResult,
         origin: &ProgramOrigin,
-    ) -> Result<()> {
+    ) -> Result<ExecutionResult> {
+        let result;
         if let Some(prog) = &parse_result.program {
-            self.run_program(&prog)?;
+            result = self.run_program(&prog)?;
         } else {
             let mut error_prefix = "".to_owned();
 
@@ -421,21 +518,27 @@ impl Shell {
             }
 
             if let Some(token_near_error) = &parse_result.token_near_error {
+                let error_loc = &token_near_error.location().start;
+
                 log::error!(
-                    "{}syntax error near token `{}'",
+                    "{}syntax error near token `{}' (line {} col {})",
                     error_prefix,
-                    token_near_error
+                    token_near_error.to_str(),
+                    error_loc.line,
+                    error_loc.column,
                 );
             } else {
                 log::error!("{}syntax error at end of input", error_prefix);
             }
+
+            result = ExecutionResult::new(2);
         }
 
-        Ok(())
+        Ok(result)
     }
 
-    pub fn run_program(&mut self, program: &parser::ast::Program) -> Result<()> {
-        program.execute(self)?;
+    pub fn run_program(&mut self, program: &parser::ast::Program) -> Result<ExecutionResult> {
+        let result = program.execute(self)?;
 
         //
         // Perform any necessary redirections and remove the redirection
@@ -455,15 +558,7 @@ impl Shell {
         //
         // TODO
 
-        Ok(())
-    }
-
-    pub fn run_stdin(&self) -> Result<()> {
-        let mut reader = std::io::stdin().lock();
-        let mut parser = parser::Parser::new(&mut reader);
-        parser.parse(true)?;
-
-        Ok(())
+        Ok(result)
     }
 
     pub fn compose_prompt(&self) -> Result<String> {
@@ -482,13 +577,12 @@ impl Shell {
         Ok(formatted_prompt)
     }
 
-    pub fn last_result(&self) -> i32 {
-        // TODO: implement last_result
-        0
+    pub fn last_result(&self) -> u8 {
+        self.last_exit_status
     }
 
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
-        self.parameters
+        self.variables
             .get(name)
             .map_or_else(|| default.to_owned(), |s| s.value.to_owned())
     }

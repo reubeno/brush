@@ -1,9 +1,9 @@
 [package]
 name = "shell"
-version = "0.1.0"
-edition = "2021"
 description = "Shell"
-license = "MIT"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
 
 [dependencies]
 anyhow = "1.0.75"
@@ -12,4 +12,4 @@ glob = "0.3.1"
 lazy_static = "1.4.0"
 log = "0.4.20"
 parser = { path = "../parser" }
-users = "0.11.0"
+uzers = "0.11.3"

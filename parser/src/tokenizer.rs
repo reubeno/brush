@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::Result;
 use utf8_chars::BufReadCharsExt;
 
@@ -16,16 +18,41 @@ pub(crate) enum TokenEndReason {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Token {
-    Operator(String),
-    Word(String),
+pub struct SourcePosition {
+    pub line: i32,
+    pub column: i32,
+}
+
+impl Display for SourcePosition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("line {} col {}", self.line, self.column))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TokenLocation {
+    pub start: SourcePosition,
+    pub end: SourcePosition,
+}
+
+#[derive(Clone, Debug)]
+pub enum Token {
+    Operator(String, TokenLocation),
+    Word(String, TokenLocation),
 }
 
 impl Token {
     pub fn to_str(&self) -> &str {
         match self {
-            Token::Operator(s) => s,
-            Token::Word(s) => s,
+            Token::Operator(s, _) => s,
+            Token::Word(s, _) => s,
+        }
+    }
+
+    pub fn location(&self) -> &TokenLocation {
+        match self {
+            Token::Operator(_, l) => l,
+            Token::Word(_, l) => l,
         }
     }
 }
@@ -62,17 +89,29 @@ impl QuoteState {
 
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
     char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
+    cursor: SourcePosition,
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     pub fn new(reader: &'a mut R) -> Tokenizer<'a, R> {
         Tokenizer {
             char_reader: reader.chars().peekable(),
+            cursor: SourcePosition { line: 1, column: 1 },
         }
     }
 
     fn next_char(&mut self) -> Result<Option<char>> {
         let c = self.char_reader.next().transpose()?;
+
+        if let Some(ch) = c {
+            if ch == '\n' {
+                self.cursor.line += 1;
+                self.cursor.column = 1;
+            } else {
+                self.cursor.column += 1;
+            }
+        }
+
         Ok(c)
     }
 
@@ -91,6 +130,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     }
 
     fn next_token_until(&mut self, terminating_char: Option<char>) -> Result<TokenizeResult> {
+        let start_position = self.cursor.clone();
         let mut token_so_far = String::new();
         let mut token_is_operator = false;
         let mut quote_state = QuoteState {
@@ -177,7 +217,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 && c == '\"'
             {
                 next_quote_state.quote_mode = QuoteMode::None;
-            } else if (quote_state.unquoted() || quote_state.quote_mode == QuoteMode::Double)
+            } else if (quote_state.unquoted()
+                || (quote_state.quote_mode == QuoteMode::Double && !quote_state.in_escape))
                 && (c == '$' || c == '`')
             {
                 // TODO: handle quoted $ or ` in a double quote
@@ -254,6 +295,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // the starting backquote.
                     consume_char = false;
                     include_char = false;
+                    let backquote_loc = self.cursor.clone();
                     let _ = self.next_char()?;
 
                     // Add the opening backquote to the token.
@@ -280,7 +322,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 escaping_enabled = false;
                             }
                         } else {
-                            return Err(anyhow::anyhow!("Unterminated backquote"));
+                            return Err(anyhow::anyhow!(
+                                "Unterminated backquote near {}",
+                                backquote_loc
+                            ));
                         }
                     }
                 }
@@ -324,10 +369,15 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
             if let Some(reason) = delimit_token_reason {
                 let token = if token_so_far.len() > 0 {
+                    let token_location = TokenLocation {
+                        start: start_position,
+                        end: self.cursor.clone(),
+                    };
+
                     if token_is_operator {
-                        Some(Token::Operator(token_so_far))
+                        Some(Token::Operator(token_so_far, token_location))
                     } else {
-                        Some(Token::Word(token_so_far))
+                        Some(Token::Word(token_so_far, token_location))
                     }
                 } else {
                     None
