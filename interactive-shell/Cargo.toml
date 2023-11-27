@@ -1,9 +1,9 @@
 [package]
 name = "interactive-shell"
-version = "0.1.0"
-edition = "2021"
 description = "Shell"
-license = "MIT"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
 
 [dependencies]
 anyhow = "1.0.75"

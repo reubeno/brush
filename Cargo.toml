@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["cli", "parser", "shell", "interactive-shell"]
+members = ["cli", "parser", "shell", "interactive-shell", "integration-tests"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
 
 [profile.release]
 opt-level = "z"

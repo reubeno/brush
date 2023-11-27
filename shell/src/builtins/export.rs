@@ -1,10 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    shell,
-};
+use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
 #[derive(Parser, Debug)]
 pub(crate) struct ExportCommand {
@@ -31,24 +28,17 @@ impl BuiltinCommand for ExportCommand {
                 // See if we have a name=value pair; if so, then update the variable
                 // with the provided value and then mark it exported.
                 if let Some((name, value)) = name.split_once('=') {
-                    context.shell.parameters.insert(
-                        name.to_owned(),
-                        shell::ShellVariable {
-                            value: value.to_owned(),
-                            exported: true,
-                            readonly: false,
-                        },
-                    );
+                    context.shell.set_var(name, value, true, false)?;
                 } else {
                     // Try to find the variable already present; if we find it, then mark it
                     // exported.
-                    if let Some(variable) = context.shell.parameters.get_mut(name) {
+                    if let Some(variable) = context.shell.variables.get_mut(name) {
                         variable.exported = true;
                     }
                 }
             }
         } else {
-            for (name, variable) in &context.shell.parameters {
+            for (name, variable) in &context.shell.variables {
                 if variable.exported {
                     println!("declare -x {}=\"{}\"", name, variable.value.as_str());
                 }

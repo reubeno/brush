@@ -1,18 +1,32 @@
-use anyhow::Result;
+use std::collections::HashMap;
+use std::process::Stdio;
 
-use log::error;
-use parser::ast::{self, CommandPrefixOrSuffixItem};
+use anyhow::{Context, Result};
+
+use parser::ast::{self, CommandPrefixOrSuffixItem, IoFileRedirectTarget};
 
 use crate::expansion::WordExpander;
+use crate::patterns;
 use crate::shell::Shell;
 use crate::{builtin, builtins};
-use crate::{patterns, shell};
 
 pub struct ExecutionResult {
-    pub exit_code: i32,
+    pub exit_code: u8,
+    pub exit_shell: bool,
 }
 
 impl ExecutionResult {
+    pub fn new(exit_code: u8) -> ExecutionResult {
+        ExecutionResult {
+            exit_code,
+            exit_shell: false,
+        }
+    }
+
+    pub fn success() -> ExecutionResult {
+        Self::new(0)
+    }
+
     pub fn is_success(&self) -> bool {
         self.exit_code == 0
     }
@@ -20,7 +34,8 @@ impl ExecutionResult {
 
 enum SpawnResult {
     SpawnedChild(std::process::Child),
-    ImmediateExit(i32),
+    ImmediateExit(u8),
+    ExitShell(u8),
 }
 
 struct PipelineExecutionContext<'a> {
@@ -30,6 +45,40 @@ struct PipelineExecutionContext<'a> {
     pipeline_len: usize,
 
     spawn_results: Vec<SpawnResult>,
+}
+
+enum OpenFile {
+    File(std::fs::File),
+}
+
+impl OpenFile {
+    pub fn try_dup(&self) -> Result<OpenFile> {
+        let result = match self {
+            OpenFile::File(f) => OpenFile::File(f.try_clone()?),
+        };
+
+        Ok(result)
+    }
+}
+
+impl From<OpenFile> for Stdio {
+    fn from(open_file: OpenFile) -> Self {
+        match open_file {
+            OpenFile::File(f) => f.into(),
+        }
+    }
+}
+
+struct OpenFiles {
+    pub files: HashMap<u32, OpenFile>,
+}
+
+impl OpenFiles {
+    pub fn new() -> OpenFiles {
+        OpenFiles {
+            files: HashMap::new(),
+        }
+    }
 }
 
 pub trait Execute {
@@ -42,10 +91,13 @@ trait ExecuteInPipeline {
 
 impl Execute for ast::Program {
     fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
-        let mut result = ExecutionResult { exit_code: 0 };
+        let mut result = ExecutionResult::success();
 
         for command in &self.complete_commands {
             result = command.execute(shell)?;
+            if result.exit_shell {
+                break;
+            }
         }
 
         Ok(result)
@@ -54,7 +106,7 @@ impl Execute for ast::Program {
 
 impl Execute for ast::CompleteCommand {
     fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
-        let mut result = ExecutionResult { exit_code: 0 };
+        let mut result = ExecutionResult::success();
 
         for (ao_list, sep) in self {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
@@ -66,6 +118,10 @@ impl Execute for ast::CompleteCommand {
             result = ao_list.first.execute(shell)?;
 
             for next_ao in &ao_list.additional {
+                if result.exit_shell {
+                    break;
+                }
+
                 let (is_and, pipeline) = match next_ao {
                     ast::AndOr::And(p) => (true, p),
                     ast::AndOr::Or(p) => (false, p),
@@ -111,19 +167,27 @@ impl Execute for ast::Pipeline {
             pipeline_context.current_pipeline_index += 1;
         }
 
-        let mut result = ExecutionResult { exit_code: 0 };
+        let mut result = ExecutionResult::success();
 
         for child in pipeline_context.spawn_results.into_iter() {
             match child {
                 SpawnResult::SpawnedChild(child) => {
                     let output = child.wait_with_output()?;
+                    let exit_code: u8 = (output.status.code().unwrap_or(127) & 0xFF) as u8;
 
                     // TODO: Confirm what to return if it was signaled.
-                    result = ExecutionResult {
-                        exit_code: output.status.code().unwrap_or(127),
-                    };
+                    result = ExecutionResult::new(exit_code);
                 }
-                SpawnResult::ImmediateExit(exit_code) => result = ExecutionResult { exit_code },
+                SpawnResult::ImmediateExit(exit_code) => result = ExecutionResult::new(exit_code),
+                SpawnResult::ExitShell(exit_code) => {
+                    // TODO: This should be handled as part of general status updating.
+                    shell.last_exit_status = exit_code;
+
+                    result = ExecutionResult {
+                        exit_code,
+                        exit_shell: true,
+                    }
+                }
             }
         }
 
@@ -152,8 +216,35 @@ impl ExecuteInPipeline for ast::Command {
                 let result = func.execute(pipeline_context.shell)?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
+            ast::Command::ExtendedTest(e) => Ok(SpawnResult::ImmediateExit(eval_expression(
+                e,
+                pipeline_context.shell,
+            )?)),
         }
     }
+}
+
+fn eval_expression(expr: &ast::ExtendedTestExpression, shell: &Shell) -> Result<u8> {
+    let result = match expr {
+        ast::ExtendedTestExpression::StringsAreEqual(left, right) => {
+            let expanded_str = expand_word(shell, left)?;
+            let expanded_pattern = expand_word(shell, right)?;
+            let matches =
+                patterns::pattern_matches(expanded_pattern.as_str(), expanded_str.as_str())?;
+            if matches {
+                0
+            } else {
+                1
+            }
+        }
+        _ => {
+            // TODO: implement eval_expression
+            log::error!("UNIMPLEMENTED: eval test expression: {:?}", expr);
+            0
+        }
+    };
+
+    Ok(result)
 }
 
 enum WhileOrUtil {
@@ -177,7 +268,7 @@ impl Execute for ast::CompoundCommand {
 
 impl Execute for ast::ForClauseCommand {
     fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
-        let mut result = ExecutionResult { exit_code: 0 };
+        let mut result = ExecutionResult::success();
 
         if let Some(unexpanded_values) = &self.values {
             let expanded_values = unexpanded_values
@@ -188,14 +279,7 @@ impl Execute for ast::ForClauseCommand {
 
             for value in expanded_values {
                 // Update the variable.
-                shell.parameters.insert(
-                    self.variable_name.clone(),
-                    shell::ShellVariable {
-                        value,
-                        exported: false,
-                        readonly: false,
-                    },
-                );
+                shell.set_var(&self.variable_name, value, false, false)?;
 
                 result = self.body.execute(shell)?;
             }
@@ -226,7 +310,7 @@ impl Execute for ast::CaseClauseCommand {
             }
         }
 
-        Ok(ExecutionResult { exit_code: 0 })
+        Ok(ExecutionResult::success())
     }
 }
 
@@ -254,7 +338,7 @@ impl Execute for ast::IfClauseCommand {
             }
         }
 
-        return Ok(ExecutionResult { exit_code: 0 });
+        return Ok(ExecutionResult::success());
     }
 }
 
@@ -271,7 +355,7 @@ impl Execute for ast::FunctionDefinition {
         //
 
         shell.funcs.insert(self.fname.clone(), self.clone());
-        Ok(ExecutionResult { exit_code: 0 })
+        Ok(ExecutionResult::success())
     }
 }
 
@@ -328,14 +412,71 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         // 3. Redirections shall be performed.
         //
 
+        let mut open_files = OpenFiles::new();
         if redirects.len() > 0 {
-            //
-            // TODO: handle redirects
-            //
-            error!(
-                "UNIMPLEMENTED: simple command redirects not implemented: {:?}",
-                redirects
-            );
+            for redirect in redirects.into_iter() {
+                match redirect {
+                    ast::IoRedirect::File(fd_num, kind, target) => {
+                        let fd_num = fd_num.unwrap_or(1);
+
+                        let target_file;
+                        match target {
+                            IoFileRedirectTarget::Filename(f) => {
+                                let mut options = std::fs::File::options();
+
+                                match kind {
+                                    ast::IoFileRedirectKind::Read => {
+                                        options.read(true);
+                                    }
+                                    ast::IoFileRedirectKind::Write => {
+                                        // TODO: observe noclobber options
+                                        options.create(true);
+                                        options.write(true);
+                                        options.truncate(true);
+                                    }
+                                    ast::IoFileRedirectKind::Append => {
+                                        options.create(true);
+                                        options.append(true);
+                                    }
+                                    ast::IoFileRedirectKind::ReadAndWrite => {
+                                        options.create(true);
+                                        options.read(true);
+                                        options.write(true);
+                                    }
+                                    ast::IoFileRedirectKind::Clobber => {
+                                        options.create(true);
+                                        options.write(true);
+                                        options.truncate(true);
+                                    }
+                                    ast::IoFileRedirectKind::DuplicateInput => {
+                                        options.read(true);
+                                    }
+                                    ast::IoFileRedirectKind::DuplicateOutput => {
+                                        options.create(true);
+                                        options.write(true);
+                                    }
+                                }
+
+                                let opened_file = options
+                                    .open(f)
+                                    .context(format!("opening {} for I/O redirection", f))?;
+                                target_file = OpenFile::File(opened_file);
+                            }
+                            IoFileRedirectTarget::Fd(fd) => {
+                                if let Some(f) = open_files.files.get(fd) {
+                                    target_file = f.try_dup()?;
+                                } else {
+                                    log::error!("{}: Bad file descriptor", fd);
+                                    return Ok(SpawnResult::ImmediateExit(1));
+                                }
+                            }
+                        }
+
+                        open_files.files.insert(fd_num, target_file);
+                    }
+                    ast::IoRedirect::Here(_, _) => todo!("here I/O redirect"),
+                }
+            }
         }
 
         //
@@ -383,11 +524,23 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     execute_builtin_command(builtin, context, &args, &env_vars)
                 } else {
                     // Strip the command name off args.
-                    execute_external_command(context, cmd_name.as_ref(), &args[1..], &env_vars)
+                    execute_external_command(
+                        context,
+                        &mut open_files,
+                        cmd_name.as_ref(),
+                        &args[1..],
+                        &env_vars,
+                    )
                 }
             } else {
                 // Strip the command name off args.
-                execute_external_command(context, cmd_name.as_ref(), &args[1..], &env_vars)
+                execute_external_command(
+                    context,
+                    &mut open_files,
+                    cmd_name.as_ref(),
+                    &args[1..],
+                    &env_vars,
+                )
             }
         } else {
             //
@@ -396,14 +549,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             for (name, value) in env_vars {
                 // TODO: Handle readonly variables.
-                context.shell.parameters.insert(
-                    name.clone(),
-                    shell::ShellVariable {
-                        value: value.to_owned(),
-                        exported: false,
-                        readonly: false,
-                    },
-                );
+                context.shell.set_var(name, value, false, false)?;
             }
 
             Ok(SpawnResult::ImmediateExit(0))
@@ -413,6 +559,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
 fn execute_external_command(
     context: &mut PipelineExecutionContext,
+    open_files: &mut OpenFiles,
     cmd_name: &str,
     args: &[String],
     env_vars: &Vec<(String, String)>,
@@ -426,9 +573,37 @@ fn execute_external_command(
         cmd.env(name, value);
     }
 
+    // See if we need to set up redirection.
+    if let Some(stdin_file) = open_files.files.remove(&0) {
+        let as_stdio: Stdio = stdin_file.into();
+        cmd.stdin(as_stdio);
+    }
+
+    let redirected_stdout;
+    if let Some(stdout_file) = open_files.files.remove(&1) {
+        let as_stdio: Stdio = stdout_file.into();
+        cmd.stdout(as_stdio);
+        redirected_stdout = true;
+    } else {
+        redirected_stdout = false;
+    }
+
+    if let Some(stderr_file) = open_files.files.remove(&2) {
+        let as_stdio: Stdio = stderr_file.into();
+        cmd.stderr(as_stdio);
+    }
+
     // See if we need to set up piping.
-    // TODO: Handle stderr/other redirects/etc.
     if context.pipeline_len > 1 {
+        // TODO: Handle stderr/other redirects/etc.
+        if (context.current_pipeline_index < context.pipeline_len - 1) && redirected_stdout {
+            log::warn!(
+                "UNIMPLEMENTED: {}: mix of redirection and pipes in command '{}'",
+                context.shell.shell_name.as_ref().map_or("", |sn| sn),
+                cmd_name,
+            );
+        }
+
         if context.current_pipeline_index > 0 {
             // Find the stdout from the preceding process.
             if let Some(mut preceding_result) = context.spawn_results.pop() {
@@ -437,7 +612,7 @@ fn execute_external_command(
                         // Set up stdin of this process to take stdout of the preceding process.
                         cmd.stdin(std::process::Stdio::from(child.stdout.take().unwrap()));
                     }
-                    SpawnResult::ImmediateExit(_code) => {
+                    SpawnResult::ImmediateExit(_code) | SpawnResult::ExitShell(_code) => {
                         return Err(anyhow::anyhow!("Unable to retrieve piped command output"));
                     }
                 }
@@ -481,6 +656,7 @@ fn execute_builtin_command(
         builtin::BuiltinExitCode::InvalidUsage => 2,
         builtin::BuiltinExitCode::Unimplemented => 99,
         builtin::BuiltinExitCode::Custom(code) => code,
+        builtin::BuiltinExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
     };
 
     Ok(SpawnResult::ImmediateExit(exit_code))

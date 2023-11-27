@@ -8,14 +8,16 @@ pub struct InteractiveShell {
     editor: Editor,
 }
 
+enum InteractiveExecutionResult {
+    Executed(shell::ExecutionResult),
+    Eof,
+}
+
 impl InteractiveShell {
-    pub fn new(login: bool) -> Result<InteractiveShell> {
+    pub fn new(options: &shell::ShellCreateOptions) -> Result<InteractiveShell> {
         Ok(InteractiveShell {
             editor: Self::new_editor()?,
-            shell: shell::Shell::new(&shell::ShellCreateOptions {
-                login,
-                interactive: true,
-            })?,
+            shell: shell::Shell::new(options)?,
         })
     }
 
@@ -37,23 +39,32 @@ impl InteractiveShell {
 
     pub fn run_interactively(&mut self) -> Result<()> {
         loop {
-            if self.run_interactively_once()? {
-                break;
+            let result = self.run_interactively_once()?;
+            match result {
+                InteractiveExecutionResult::Executed(shell::ExecutionResult {
+                    exit_code: _,
+                    exit_shell,
+                }) => {
+                    if exit_shell {
+                        break;
+                    }
+                }
+                InteractiveExecutionResult::Eof => break,
             }
         }
 
         Ok(())
     }
 
-    fn run_interactively_once(&mut self) -> Result<bool> {
+    fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult> {
         let prompt = self.shell.compose_prompt()?;
 
         match self.editor.readline(&prompt) {
             Ok(read_result) => {
-                self.shell.run_string(&read_result)?;
-                Ok(false)
+                let result = self.shell.run_string(&read_result)?;
+                Ok(InteractiveExecutionResult::Executed(result))
             }
-            Err(rustyline::error::ReadlineError::Eof) => Ok(true),
+            Err(rustyline::error::ReadlineError::Eof) => Ok(InteractiveExecutionResult::Eof),
             Err(e) => Err(e.into()),
         }
     }

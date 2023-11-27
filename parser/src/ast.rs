@@ -35,6 +35,7 @@ pub enum Command {
     Simple(SimpleCommand),
     Compound(CompoundCommand, Option<RedirectList>),
     Function(FunctionDefinition),
+    ExtendedTest(ExtendedTestExpression),
 }
 
 #[derive(Clone, Debug)]
@@ -119,7 +120,7 @@ pub type RedirectList = Vec<IoRedirect>;
 
 #[derive(Clone, Debug)]
 pub enum IoRedirect {
-    File(Option<u32>, IoFileRedirectKind, String),
+    File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
     Here(Option<u32>, IoHere),
 }
 
@@ -135,7 +136,54 @@ pub enum IoFileRedirectKind {
 }
 
 #[derive(Clone, Debug)]
+pub enum IoFileRedirectTarget {
+    Filename(String),
+    Fd(u32),
+}
+
+#[derive(Clone, Debug)]
 pub struct IoHere {
     pub remove_tabs: bool,
     pub here_end: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum ExtendedTestExpression {
+    FileExists(String),
+    FileExistsAndIsBlockSpecialFile(String),
+    FileExistsAndIsCharSpecialFile(String),
+    FileExistsAndIsDir(String),
+    FileExistsAndIsRegularFile(String),
+    FileExistsAndIsSetgid(String),
+    FileExistsAndIsSymlink(String),
+    FileExistsAndHasStickyBit(String),
+    FileExistsAndIsFifo(String),
+    FileExistsAndIsReadable(String),
+    FileExistsAndIsNotZeroLength(String),
+    FdIsOpenTerminal(String),
+    FileExistsAndIsSetuid(String),
+    FileExistsAndIsWritable(String),
+    FileExistsAndIsExecutable(String),
+    FileExistsAndOwnedByEffectiveGroupId(String),
+    FileExistsAndModifiedSinceLastRead(String),
+    FileExistsAndOwnedByEffectiveUserId(String),
+    FileExistsAndIsSocket(String),
+    FilesReferToSameDeviceAndInodeNumbers(String, String),
+    LeftFileIsNewerOrExistsWhenRightDoesNot(String, String),
+    LeftFileIsOlderOrDoesNotExistWhenRightDoes(String, String),
+    ShellOptionEnabled(String),
+    ShellVariableIsSetAndAssigned(String),
+    ShellVariableIsSetAndNameRef(String),
+    StringHasZeroLength(String),
+    StringHasNonZeroLength(String),
+    StringsAreEqual(String, String),
+    StringsNotEqual(String, String),
+    LeftSortsBeforeRight(String, String),
+    LeftSortsAfterRight(String, String),
+    ArithmeticEqualTo(String, String),
+    ArithmeticNotEqualTo(String, String),
+    ArithmeticLessThan(String, String),
+    ArithmeticLessThanOrEqualTo(String, String),
+    ArithmeticGreaterThan(String, String),
+    ArithmeticGreaterThanOrEqualTo(String, String),
 }

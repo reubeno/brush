@@ -1,0 +1,38 @@
+name: 'Sample test set'
+cases:
+- name: 'Basic -c usage'
+  args:
+    - '-c'
+    - 'echo hi'
+
+# - name: 'Basic usage'
+#   env:
+#     TERM: 'dumb'
+#   args:
+#     - '-i'
+
+- name: 'Basic stdin usage'
+  stdin: |
+    echo hi
+
+- name: 'Single-line for loop'
+  stdin: |
+    for f in 1 2 3; do echo $f; done
+
+- name: 'Redirection to null'
+  stdin: |
+    echo hi >/dev/null
+
+- name: 'Redirection to file'
+  stdin: |
+    echo hi >out.txt
+    ls out.txt
+    cat out.txt
+
+- name: 'Basic pipe'
+  stdin: |
+    echo hi | grep -l h
+
+- name: 'Exit with code'
+  stdin: |
+    exit 10
