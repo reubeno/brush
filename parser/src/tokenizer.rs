@@ -87,9 +87,20 @@ impl QuoteState {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum HereState {
+    None,
+    NextTokenIsHereTag,
+    CurrentTokenIsHereTag,
+    NextLineIsHereDoc,
+    InHereDocs,
+}
+
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
     char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
     cursor: SourcePosition,
+    here_state: HereState,
+    current_here_tags: Vec<String>,
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
@@ -97,6 +108,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Tokenizer {
             char_reader: reader.chars().peekable(),
             cursor: SourcePosition { line: 1, column: 1 },
+            here_state: HereState::None,
+            current_here_tags: vec![],
         }
     }
 
@@ -155,6 +168,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     return Err(anyhow::anyhow!("Unterminated quote or escape sequence"));
                 }
 
+                // Verify we're not in a here document.
+                if self.here_state != HereState::None {
+                    return Err(anyhow::anyhow!("Unterminated here document sequence"));
+                }
+
                 delimit_token_reason = Some(TokenEndReason::EndOfInput);
                 include_char = false;
             //
@@ -164,6 +182,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 delimit_token_reason = Some(TokenEndReason::SpecifiedTerminatingChar);
                 include_char = false;
                 consume_char = false;
+            //
+            // Handle being in a here document.
+            //
+            } else if self.here_state == HereState::InHereDocs {
+                //
+                // For now, just include the character in the current token.
+                //
             } else if token_is_operator {
                 let mut hypothetical_token = token_so_far.to_owned();
                 hypothetical_token.push(c);
@@ -173,6 +198,14 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 } else {
                     assert!(token_so_far.len() > 0);
                     delimit_token_reason = Some(TokenEndReason::Other);
+
+                    //
+                    // N.B. If the completed operator indicates a here-document.
+                    //
+                    if token_so_far == "<<" || token_so_far == "<<-" {
+                        // Keep track that the next token should be the here-tag.
+                        self.here_state = HereState::NextTokenIsHereTag;
+                    }
                 }
             } else if does_char_newly_affect_quoting(&quote_state, c) {
                 if c == '\\' {
@@ -374,6 +407,40 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         end: self.cursor.clone(),
                     };
 
+                    // TODO: Make sure the here-tag meets criteria (and isn't a newline).
+                    match self.here_state {
+                        HereState::NextTokenIsHereTag => {
+                            self.here_state = HereState::CurrentTokenIsHereTag;
+                        }
+                        HereState::CurrentTokenIsHereTag => {
+                            if token_so_far == "\n" {
+                                return Err(anyhow::anyhow!(
+                                    "Missing here tag '{}'",
+                                    token_so_far.as_str()
+                                ));
+                            }
+
+                            self.here_state = HereState::NextLineIsHereDoc;
+
+                            if token_so_far.contains('\"')
+                                || token_so_far.contains('\'')
+                                || token_so_far.contains('\\')
+                            {
+                                todo!("UNIMPLEMENTED: quoted or escaped here tag");
+                            }
+
+                            // Include the \n in the here tag so it's easier to check against.
+                            self.current_here_tags
+                                .push(std::format!("\n{}\n", token_so_far.as_str()));
+                        }
+                        HereState::NextLineIsHereDoc => {
+                            if token_so_far == "\n" {
+                                self.here_state = HereState::InHereDocs;
+                            }
+                        }
+                        _ => (),
+                    }
+
                     if token_is_operator {
                         Some(Token::Operator(token_so_far, token_location))
                     } else {
@@ -404,6 +471,22 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 next_quote_state.in_escape = false;
             }
             quote_state = next_quote_state;
+
+            // Check for the end of a here-document.
+            if self.here_state == HereState::InHereDocs && self.current_here_tags.len() > 0 {
+                if let Some(without_suffix) =
+                    token_so_far.strip_suffix(self.current_here_tags[0].as_str())
+                {
+                    // We hit the end of the here document.
+                    self.current_here_tags.remove(0);
+                    if self.current_here_tags.is_empty() {
+                        self.here_state = HereState::None;
+                    }
+
+                    token_so_far = without_suffix.to_owned();
+                    token_so_far.push('\n');
+                }
+            }
         }
     }
 }

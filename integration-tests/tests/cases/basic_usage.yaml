@@ -19,6 +19,11 @@ cases:
   stdin: |
     for f in 1 2 3; do echo $f; done
 
+- name: 'Basic variables'
+  stdin: |
+    key=value
+    echo "Found key: ${key}"
+
 - name: 'Redirection to null'
   stdin: |
     echo hi >/dev/null
@@ -36,3 +41,67 @@ cases:
 - name: 'Exit with code'
   stdin: |
     exit 10
+
+- name: 'Basic &&'
+  stdin: |
+    false && echo 1
+    true && echo 2
+
+- name: 'Basic ||'
+  stdin: |
+    false || echo 1
+    true || echo 2
+
+- name: 'Basic if'
+  stdin: |
+    if false; then echo 1; fi
+    if true; then echo 2; fi
+
+- name: 'Basic sequence'
+  stdin: |
+    echo 'hi'; echo 'there'
+
+- name: 'Brace command'
+  stdin: |
+    { echo 'hi'; }
+
+- name: 'Basic alias usage'
+  args:
+    - '-i'
+  env:
+    PS1: '$ '
+  ignore_stderr: true
+  stdin: |
+    alias myalias=echo
+    alias
+    myalias 'hello'
+
+- name: 'Basic cd usage'
+  ignore_stderr: true
+  stdin: |
+    cd /
+    echo $?
+    echo "pwd: $PWD"
+    cd
+    echo $?
+    echo "pwd: $PWD"
+
+- name: 'Basic script execution'
+  test_files:
+    - path: 'script.sh'
+      contents: |
+        echo 'hi'
+        exit 22
+  args:
+    - './script.sh'
+
+- name: 'Basic here doc'
+  test_files:
+    - path: 'script.sh'
+      contents: |
+          cat <<EOF
+          Something here...
+          ...and here.
+          EOF
+  args:
+    - './script.sh'

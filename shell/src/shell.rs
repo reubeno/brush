@@ -532,6 +532,7 @@ impl Shell {
             }
 
             result = ExecutionResult::new(2);
+            self.last_exit_status = result.exit_code;
         }
 
         Ok(result)

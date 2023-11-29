@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::process::Stdio;
 
 use anyhow::{Context, Result};
 
+use itertools::Itertools;
 use parser::ast::{self, CommandPrefixOrSuffixItem, IoFileRedirectTarget};
 
 use crate::expansion::WordExpander;
@@ -49,12 +51,14 @@ struct PipelineExecutionContext<'a> {
 
 enum OpenFile {
     File(std::fs::File),
+    HereDocument(String),
 }
 
 impl OpenFile {
     pub fn try_dup(&self) -> Result<OpenFile> {
         let result = match self {
             OpenFile::File(f) => OpenFile::File(f.try_clone()?),
+            OpenFile::HereDocument(doc) => OpenFile::HereDocument(doc.clone()),
         };
 
         Ok(result)
@@ -65,6 +69,7 @@ impl From<OpenFile> for Stdio {
     fn from(open_file: OpenFile) -> Self {
         match open_file {
             OpenFile::File(f) => f.into(),
+            OpenFile::HereDocument(_) => Stdio::piped(),
         }
     }
 }
@@ -100,6 +105,7 @@ impl Execute for ast::Program {
             }
         }
 
+        shell.last_exit_status = result.exit_code;
         Ok(result)
     }
 }
@@ -141,6 +147,7 @@ impl Execute for ast::CompleteCommand {
             }
         }
 
+        shell.last_exit_status = result.exit_code;
         Ok(result)
     }
 }
@@ -178,19 +185,21 @@ impl Execute for ast::Pipeline {
                     // TODO: Confirm what to return if it was signaled.
                     result = ExecutionResult::new(exit_code);
                 }
-                SpawnResult::ImmediateExit(exit_code) => result = ExecutionResult::new(exit_code),
+                SpawnResult::ImmediateExit(exit_code) => {
+                    result = ExecutionResult::new(exit_code);
+                }
                 SpawnResult::ExitShell(exit_code) => {
-                    // TODO: This should be handled as part of general status updating.
-                    shell.last_exit_status = exit_code;
-
                     result = ExecutionResult {
                         exit_code,
                         exit_shell: true,
-                    }
+                    };
                 }
             }
+
+            shell.last_exit_status = result.exit_code;
         }
 
+        shell.last_exit_status = result.exit_code;
         Ok(result)
     }
 }
@@ -285,6 +294,7 @@ impl Execute for ast::ForClauseCommand {
             }
         }
 
+        shell.last_exit_status = result.exit_code;
         Ok(result)
     }
 }
@@ -310,7 +320,10 @@ impl Execute for ast::CaseClauseCommand {
             }
         }
 
-        Ok(ExecutionResult::success())
+        let result = ExecutionResult::success();
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
     }
 }
 
@@ -338,7 +351,10 @@ impl Execute for ast::IfClauseCommand {
             }
         }
 
-        return Ok(ExecutionResult::success());
+        let result = ExecutionResult::success();
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
     }
 }
 
@@ -355,7 +371,11 @@ impl Execute for ast::FunctionDefinition {
         //
 
         shell.funcs.insert(self.fname.clone(), self.clone());
-        Ok(ExecutionResult::success())
+
+        let result = ExecutionResult::success();
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
     }
 }
 
@@ -417,6 +437,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             for redirect in redirects.into_iter() {
                 match redirect {
                     ast::IoRedirect::File(fd_num, kind, target) => {
+                        // If not specified, we default fd to stdout.
+                        // TODO: Validate this is correct.
                         let fd_num = fd_num.unwrap_or(1);
 
                         let target_file;
@@ -474,7 +496,18 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                         open_files.files.insert(fd_num, target_file);
                     }
-                    ast::IoRedirect::Here(_, _) => todo!("here I/O redirect"),
+                    ast::IoRedirect::Here(fd_num, io_here) => {
+                        // If not specified, default to stdin (fd 0).
+                        let fd_num = fd_num.unwrap_or(0);
+
+                        if io_here.remove_tabs {
+                            log::error!("UNIMPLEMENTED: removing tabs from here document");
+                        }
+
+                        open_files
+                            .files
+                            .insert(fd_num, OpenFile::HereDocument(io_here.doc.clone()));
+                    }
                 }
             }
         }
@@ -565,20 +598,42 @@ fn execute_external_command(
     env_vars: &Vec<(String, String)>,
 ) -> Result<SpawnResult> {
     let mut cmd = std::process::Command::new(cmd_name);
+
+    // Pass through args.
     for arg in args {
         cmd.arg(arg);
     }
 
+    // Use the shell's current working dir.
+    cmd.current_dir(context.shell.working_dir.as_path());
+
+    // Start with a clear environment.
+    cmd.env_clear();
+
+    // Add in exported variables.
+    for (name, var) in &context.shell.variables {
+        if var.exported {
+            cmd.env(name, &var.value);
+        }
+    }
+
+    // Overlay any variables explicitly provided as part of command execution.
     for (name, value) in env_vars {
         cmd.env(name, value);
     }
 
-    // See if we need to set up redirection.
+    // Redirect stdin, if applicable.
+    let mut stdin_here_doc = None;
     if let Some(stdin_file) = open_files.files.remove(&0) {
+        if let OpenFile::HereDocument(doc) = &stdin_file {
+            stdin_here_doc = Some(doc.clone());
+        }
+
         let as_stdio: Stdio = stdin_file.into();
         cmd.stdin(as_stdio);
     }
 
+    // Redirect stdout, if applicable.
     let redirected_stdout;
     if let Some(stdout_file) = open_files.files.remove(&1) {
         let as_stdio: Stdio = stdout_file.into();
@@ -588,6 +643,7 @@ fn execute_external_command(
         redirected_stdout = false;
     }
 
+    // Redirect stderr, if applicable.
     if let Some(stderr_file) = open_files.files.remove(&2) {
         let as_stdio: Stdio = stderr_file.into();
         cmd.stderr(as_stdio);
@@ -628,8 +684,27 @@ fn execute_external_command(
         }
     }
 
+    log::debug!(
+        "Spawning: {} {}",
+        cmd.get_program().to_string_lossy().to_string(),
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .join(" ")
+    );
+
     match cmd.spawn() {
-        Ok(child) => Ok(SpawnResult::SpawnedChild(child)),
+        Ok(mut child) => {
+            log::debug!("Process spawned: {}", child.id());
+
+            // Special case: handle writing here document, if needed.
+            if let Some(doc) = stdin_here_doc {
+                if let Some(mut child_stdin) = child.stdin.take() {
+                    child_stdin.write_all(doc.as_bytes())?;
+                }
+            }
+
+            Ok(SpawnResult::SpawnedChild(child))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             log::error!("command not found: {}", cmd_name);
             Ok(SpawnResult::ImmediateExit(127))

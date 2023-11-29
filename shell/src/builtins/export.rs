@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use itertools::Itertools;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -38,7 +39,8 @@ impl BuiltinCommand for ExportCommand {
                 }
             }
         } else {
-            for (name, variable) in &context.shell.variables {
+            // Enumerate variables, sorted by key.
+            for (name, variable) in context.shell.variables.iter().sorted_by_key(|v| v.0) {
                 if variable.exported {
                     println!("declare -x {}=\"{}\"", name, variable.value.as_str());
                 }

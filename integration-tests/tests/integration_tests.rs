@@ -1,7 +1,8 @@
 use anyhow::Result;
+use assert_fs::fixture::{FileWriteStr, PathChild};
 use colored::*;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, process::ExitStatus};
+use std::{collections::HashMap, path::PathBuf, process::ExitStatus};
 
 #[test]
 fn cli_tests() -> Result<()> {
@@ -79,6 +80,22 @@ struct TestCase {
     pub env: HashMap<String, String>,
     #[serde(default)]
     pub stdin: Option<String>,
+    #[serde(default)]
+    pub ignore_exit_status: bool,
+    #[serde(default)]
+    pub ignore_stderr: bool,
+    #[serde(default)]
+    pub ignore_stdout: bool,
+    #[serde(default)]
+    pub test_files: Vec<TestFile>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct TestFile {
+    /// Relative path to test file
+    pub path: PathBuf,
+    /// Contents to seed the file with
+    pub contents: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -206,12 +223,24 @@ impl TestCase {
         Ok(success)
     }
 
+    fn create_test_files_in(&self, temp_dir: &assert_fs::TempDir) -> Result<()> {
+        for test_file in &self.test_files {
+            temp_dir
+                .child(test_file.path.as_path())
+                .write_str(test_file.contents.as_str())?;
+        }
+
+        Ok(())
+    }
+
     fn run_with_oracle_and_test(&self) -> Result<RunComparison> {
         let oracle_temp_dir = assert_fs::TempDir::new()?;
+        self.create_test_files_in(&oracle_temp_dir)?;
         let oracle_result =
             self.run_with_shell(&WhichShell::NamedShell("bash".to_owned()), &oracle_temp_dir)?;
 
         let test_temp_dir = assert_fs::TempDir::new()?;
+        self.create_test_files_in(&test_temp_dir)?;
         let test_result = self.run_with_shell(
             &WhichShell::ShellUnderTest("rush".to_owned()),
             &test_temp_dir,
@@ -225,7 +254,9 @@ impl TestCase {
         };
 
         // Compare exit status
-        if oracle_result.exit_status == test_result.exit_status {
+        if self.ignore_exit_status {
+            comparison.exit_status = ExitStatusComparison::Ignored;
+        } else if oracle_result.exit_status == test_result.exit_status {
             comparison.exit_status = ExitStatusComparison::Same(oracle_result.exit_status);
         } else {
             comparison.exit_status = ExitStatusComparison::TestDiffers {
@@ -235,7 +266,9 @@ impl TestCase {
         }
 
         // Compare stdout
-        if oracle_result.stdout == test_result.stdout {
+        if self.ignore_stdout {
+            comparison.stdout = StringComparison::Ignored;
+        } else if oracle_result.stdout == test_result.stdout {
             comparison.stdout = StringComparison::Same(oracle_result.stdout);
         } else {
             comparison.stdout = StringComparison::TestDiffers {
@@ -245,7 +278,9 @@ impl TestCase {
         }
 
         // Compare stderr
-        if oracle_result.stderr == test_result.stderr {
+        if self.ignore_stderr {
+            comparison.stderr = StringComparison::Ignored;
+        } else if oracle_result.stderr == test_result.stderr {
             comparison.stderr = StringComparison::Same(oracle_result.stderr);
         } else {
             comparison.stderr = StringComparison::TestDiffers {
