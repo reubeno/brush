@@ -5,11 +5,14 @@ use std::collections::HashMap;
 use crate::builtin::{self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinResult};
 
 mod alias;
+mod cd;
 mod colon;
 mod dot;
 mod exit;
 mod export;
+mod fals;
 mod pwd;
+mod tru;
 mod umask;
 mod unimp;
 mod unset;
@@ -52,9 +55,9 @@ lazy_static! {
     pub static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = HashMap::from([
         ("alias", exec_builtin::<alias::AliasCommand> as BuiltinCommandExecuteFunc),
         ("bg", exec_builtin::<unimp::UnimplementedCommand>),
-        ("cd", exec_builtin::<unimp::UnimplementedCommand>),
+        ("cd", exec_builtin::<cd::CdCommand>),
         ("command", exec_builtin::<unimp::UnimplementedCommand>),
-        ("false", exec_builtin::<unimp::UnimplementedCommand>),
+        ("false", exec_builtin::<fals::FalseCommand>),
         ("fc", exec_builtin::<unimp::UnimplementedCommand>),
         ("fg", exec_builtin::<unimp::UnimplementedCommand>),
         ("getopts", exec_builtin::<unimp::UnimplementedCommand>),
@@ -64,7 +67,8 @@ lazy_static! {
         ("newgrp", exec_builtin::<unimp::UnimplementedCommand>),
         ("pwd", exec_builtin::<pwd::PwdCommand>),
         ("read", exec_builtin::<unimp::UnimplementedCommand>),
-        ("true", exec_builtin::<unimp::UnimplementedCommand>),
+        ("shopt", exec_builtin::<unimp::UnimplementedCommand>),
+        ("true", exec_builtin::<tru::TrueCommand>),
         ("type", exec_builtin::<unimp::UnimplementedCommand>),
         ("ulimit", exec_builtin::<unimp::UnimplementedCommand>),
         ("umask", exec_builtin::<umask::UmaskCommand>),

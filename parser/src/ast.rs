@@ -145,6 +145,7 @@ pub enum IoFileRedirectTarget {
 pub struct IoHere {
     pub remove_tabs: bool,
     pub here_end: String,
+    pub doc: String,
 }
 
 #[derive(Clone, Debug)]

@@ -1,0 +1,5 @@
+cat <<HERE
+SOMETHING
+ELSE
+HERE
+

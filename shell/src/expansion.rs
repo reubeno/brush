@@ -11,12 +11,17 @@ impl<'a> WordExpander<'a> {
     }
 
     pub fn expand(&self, word: &str) -> Result<String> {
+        // Expand: tildes, parameters, command substitutions, arithmetic.
         let pieces = parser::parse_word_for_expansion(word)?;
         let expanded_pieces = pieces
             .iter()
             .map(|p| p.expand(self.shell))
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
+
+        // TODO: Split fields
+        // TODO: Expand pathnames
+        // TODO: Remove quotes
 
         let expansion = expanded_pieces.concat();
         Ok(expansion)

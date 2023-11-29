@@ -26,7 +26,7 @@ impl BuiltinCommand for AliasCommand {
 
         if self.print || self.aliases.len() == 0 {
             for (name, value) in context.shell.aliases.iter() {
-                println!("{}='{}'", name, value);
+                println!("alias {}='{}'", name, value);
             }
         } else {
             for alias in &self.aliases {
@@ -37,7 +37,7 @@ impl BuiltinCommand for AliasCommand {
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else {
                     if let Some(value) = context.shell.aliases.get(alias) {
-                        println!("{}='{}'", alias, value);
+                        println!("alias {}='{}'", alias, value);
                     } else {
                         eprintln!("{}: {}: not found", context.builtin_name, alias);
                         exit_code = BuiltinExitCode::Custom(1);

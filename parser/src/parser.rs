@@ -346,8 +346,13 @@ peg::parser! {
         rule until_clause() -> ast::UntilClauseCommand =
             [Token::Word(w, _) if w.as_str() == "until"] c:compound_list() d:do_group() { (c, d) }
 
+        // N.B. bash allows use of the 'function' word to indicate a function definition.
+        // TODO: Validate usage of this keyword.
         rule function_definition() -> ast::FunctionDefinition =
             fname:fname() [Token::Operator(n, _) if n.as_str() == "("] [Token::Operator(n, _) if n.as_str() == ")"] linebreak() body:function_body() {
+                ast::FunctionDefinition { fname: fname.to_owned(), body }
+            } /
+            [Token::Word(w, _) if w.as_str() == "function"] fname:fname() linebreak() body:function_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body }
             } /
             expected!("function definition")
@@ -419,8 +424,8 @@ peg::parser! {
             word()
 
         rule io_here() -> ast::IoHere =
-            [Token::Operator(o, _) if o.as_str() == "<<"] here_end:here_end() { ast::IoHere { remove_tabs: false, here_end: here_end.to_owned() } } /
-            [Token::Operator(o, _) if o.as_str() == "<<-"] here_end:here_end() { ast::IoHere { remove_tabs: true, here_end: here_end.to_owned() } }
+            [Token::Operator(o, _) if o.as_str() == "<<"] here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: false, here_end: here_end.to_owned(), doc: doc.to_str().to_owned() } } /
+            [Token::Operator(o, _) if o.as_str() == "<<-"] here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: true, here_end: here_end.to_owned(), doc: doc.to_str().to_owned() } }
 
         rule here_end() -> &'input str =
             word()
