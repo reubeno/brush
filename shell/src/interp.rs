@@ -500,10 +500,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                         // If not specified, default to stdin (fd 0).
                         let fd_num = fd_num.unwrap_or(0);
 
-                        if io_here.remove_tabs {
-                            log::error!("UNIMPLEMENTED: removing tabs from here document");
-                        }
-
                         open_files
                             .files
                             .insert(fd_num, OpenFile::HereDocument(io_here.doc.clone()));
@@ -669,7 +665,7 @@ fn execute_external_command(
                         cmd.stdin(std::process::Stdio::from(child.stdout.take().unwrap()));
                     }
                     SpawnResult::ImmediateExit(_code) | SpawnResult::ExitShell(_code) => {
-                        return Err(anyhow::anyhow!("Unable to retrieve piped command output"));
+                        return Err(anyhow::anyhow!("unable to retrieve piped command output"));
                     }
                 }
 
