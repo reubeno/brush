@@ -74,10 +74,19 @@ impl Expandable for parser::word::ParameterExpression {
         match self {
             parser::word::ParameterExpression::Parameter { parameter } => parameter.expand(shell),
             parser::word::ParameterExpression::UseDefaultValues {
-                parameter: _,
+                parameter,
                 test_type: _,
-                default_value: _,
-            } => todo!("expansion: use default values expressions"),
+                default_value,
+            } => {
+                let expanded_parameter = parameter.expand(shell)?;
+                if !expanded_parameter.is_empty() {
+                    Ok(expanded_parameter)
+                } else if let Some(default_value) = default_value {
+                    Ok(WordExpander::new(shell).expand(default_value.as_str())?)
+                } else {
+                    Ok("".to_owned())
+                }
+            }
             parser::word::ParameterExpression::AssignDefaultValues {
                 parameter: _,
                 test_type: _,
@@ -119,7 +128,20 @@ impl Expandable for parser::word::ParameterExpression {
 impl Expandable for parser::word::Parameter {
     fn expand(&self, shell: &Shell) -> Result<String> {
         match self {
-            parser::word::Parameter::Positional(_p) => todo!("positional parameter expansion"),
+            parser::word::Parameter::Positional(p) => {
+                if *p == 0 {
+                    return Err(anyhow::anyhow!("unexpected positional parameter"));
+                }
+
+                let parameter: &str =
+                    if let Some(parameter) = shell.positional_parameters.get((p - 1) as usize) {
+                        parameter
+                    } else {
+                        ""
+                    };
+
+                Ok(parameter.to_owned())
+            }
             parser::word::Parameter::Special(s) => s.expand(shell),
             parser::word::Parameter::Named(n) => Ok(shell
                 .variables

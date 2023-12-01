@@ -1,0 +1,12 @@
+name: 'Here docs'
+cases:
+- name: 'Basic here doc'
+  test_files:
+    - path: 'script.sh'
+      contents: |
+          cat <<EOF
+          Something here...
+          ...and here.
+          EOF
+  args:
+    - './script.sh'

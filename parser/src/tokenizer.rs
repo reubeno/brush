@@ -90,17 +90,23 @@ impl QuoteState {
 #[derive(Clone, Debug, PartialEq)]
 enum HereState {
     None,
-    NextTokenIsHereTag,
-    CurrentTokenIsHereTag,
+    NextTokenIsHereTag { remove_tabs: bool },
+    CurrentTokenIsHereTag { remove_tabs: bool },
     NextLineIsHereDoc,
     InHereDocs,
+}
+
+#[derive(Clone, Debug)]
+struct HereTag {
+    tag: String,
+    remove_tabs: bool,
 }
 
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
     char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
     cursor: SourcePosition,
     here_state: HereState,
-    current_here_tags: Vec<String>,
+    current_here_tags: Vec<HereTag>,
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
@@ -132,7 +138,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         match self.char_reader.peek() {
             Some(result) => match result {
                 Ok(c) => Ok(Some(c.clone())),
-                Err(_) => Err(anyhow::anyhow!("Failed to decode UTF-8 characters")),
+                Err(_) => Err(anyhow::anyhow!("failed to decode UTF-8 characters")),
             },
             None => Ok(None),
         }
@@ -165,12 +171,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             if next.is_none() {
                 // Verify we're out of all quotes.
                 if !quote_state.unquoted() {
-                    return Err(anyhow::anyhow!("Unterminated quote or escape sequence"));
+                    return Err(anyhow::anyhow!("unterminated quote or escape sequence"));
                 }
 
                 // Verify we're not in a here document.
                 if self.here_state != HereState::None {
-                    return Err(anyhow::anyhow!("Unterminated here document sequence"));
+                    return Err(anyhow::anyhow!("unterminated here document sequence"));
                 }
 
                 delimit_token_reason = Some(TokenEndReason::EndOfInput);
@@ -187,8 +193,17 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             } else if self.here_state == HereState::InHereDocs {
                 //
-                // For now, just include the character in the current token.
+                // For now, just include the character in the current token. We also check
+                // if there are leading tabs to be removed.
                 //
+                if self.current_here_tags.len() > 0
+                    && self.current_here_tags[0].remove_tabs
+                    && (token_so_far.is_empty() || token_so_far.ends_with('\n'))
+                {
+                    if c == '\t' {
+                        include_char = false;
+                    }
+                }
             } else if token_is_operator {
                 let mut hypothetical_token = token_so_far.to_owned();
                 hypothetical_token.push(c);
@@ -200,11 +215,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     delimit_token_reason = Some(TokenEndReason::Other);
 
                     //
-                    // N.B. If the completed operator indicates a here-document.
+                    // N.B. If the completed operator indicates a here-document, then keep
+                    // track that the *next* token should be the here-tag.
                     //
-                    if token_so_far == "<<" || token_so_far == "<<-" {
-                        // Keep track that the next token should be the here-tag.
-                        self.here_state = HereState::NextTokenIsHereTag;
+                    if token_so_far == "<<" {
+                        self.here_state = HereState::NextTokenIsHereTag { remove_tabs: false };
+                    } else if token_so_far == "<<-" {
+                        self.here_state = HereState::NextTokenIsHereTag { remove_tabs: true };
                     }
                 }
             } else if does_char_newly_affect_quoting(&quote_state, c) {
@@ -409,10 +426,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                     // TODO: Make sure the here-tag meets criteria (and isn't a newline).
                     match self.here_state {
-                        HereState::NextTokenIsHereTag => {
-                            self.here_state = HereState::CurrentTokenIsHereTag;
+                        HereState::NextTokenIsHereTag { remove_tabs } => {
+                            self.here_state = HereState::CurrentTokenIsHereTag { remove_tabs };
                         }
-                        HereState::CurrentTokenIsHereTag => {
+                        HereState::CurrentTokenIsHereTag { remove_tabs } => {
                             if token_so_far == "\n" {
                                 return Err(anyhow::anyhow!(
                                     "Missing here tag '{}'",
@@ -430,8 +447,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             }
 
                             // Include the \n in the here tag so it's easier to check against.
-                            self.current_here_tags
-                                .push(std::format!("\n{}\n", token_so_far.as_str()));
+                            self.current_here_tags.push(HereTag {
+                                tag: std::format!("\n{}\n", token_so_far.as_str()),
+                                remove_tabs,
+                            });
                         }
                         HereState::NextLineIsHereDoc => {
                             if token_so_far == "\n" {
@@ -475,7 +494,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             // Check for the end of a here-document.
             if self.here_state == HereState::InHereDocs && self.current_here_tags.len() > 0 {
                 if let Some(without_suffix) =
-                    token_so_far.strip_suffix(self.current_here_tags[0].as_str())
+                    token_so_far.strip_suffix(self.current_here_tags[0].tag.as_str())
                 {
                     // We hit the end of the here document.
                     self.current_here_tags.remove(0);

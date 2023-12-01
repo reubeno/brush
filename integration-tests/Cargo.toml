@@ -14,5 +14,7 @@ assert_fs = "1.0.13"
 colored = "2.0.4"
 dir-diff = "0.3.2"
 glob = "0.3.1"
+indent = "0.1.1"
+prettydiff = "0.6.4"
 serde = { version = "1.0.193", features = [ "derive" ] }
 serde_yaml = "0.9.27"

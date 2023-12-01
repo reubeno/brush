@@ -49,8 +49,14 @@ impl InteractiveShell {
                         break;
                     }
                 }
-                InteractiveExecutionResult::Eof => break,
+                InteractiveExecutionResult::Eof => {
+                    break;
+                }
             }
+        }
+
+        if self.shell.options.interactive {
+            eprintln!("exit");
         }
 
         Ok(())
@@ -65,6 +71,15 @@ impl InteractiveShell {
                 Ok(InteractiveExecutionResult::Executed(result))
             }
             Err(rustyline::error::ReadlineError::Eof) => Ok(InteractiveExecutionResult::Eof),
+            Err(rustyline::error::ReadlineError::Interrupted) => {
+                self.shell.last_exit_status = 130;
+                Ok(InteractiveExecutionResult::Executed(
+                    shell::ExecutionResult {
+                        exit_code: 130,
+                        exit_shell: false,
+                    },
+                ))
+            }
             Err(e) => Err(e.into()),
         }
     }

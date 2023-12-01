@@ -44,66 +44,66 @@ pub struct ShellRuntimeOptions {
     // Single-character options.
     //
     /// -a
-    export_variables_on_modification: bool,
+    pub export_variables_on_modification: bool,
     /// -b
-    notify_job_termination_immediately: bool,
+    pub notify_job_termination_immediately: bool,
     /// -e
-    exit_on_nonzero_command_exit: bool,
+    pub exit_on_nonzero_command_exit: bool,
     /// -f
-    disable_filename_globbing: bool,
+    pub disable_filename_globbing: bool,
     /// -h
-    remember_command_locations: bool,
+    pub remember_command_locations: bool,
     /// -k
-    place_all_assignment_args_in_command_env: bool,
+    pub place_all_assignment_args_in_command_env: bool,
     /// -m
-    enable_job_control: bool,
+    pub enable_job_control: bool,
     /// -n
-    do_not_execute_commands: bool,
+    pub do_not_execute_commands: bool,
     /// -p
-    real_effective_uid_mismatch: bool,
+    pub real_effective_uid_mismatch: bool,
     /// -t
-    exit_after_one_command: bool,
+    pub exit_after_one_command: bool,
     /// -u
-    treat_unset_variables_as_error: bool,
+    pub treat_unset_variables_as_error: bool,
     /// -v
-    print_shell_input_lines: bool,
+    pub print_shell_input_lines: bool,
     /// -x
-    print_commands_and_arguments: bool,
+    pub print_commands_and_arguments: bool,
     /// -B
-    perform_brace_expansion: bool,
+    pub perform_brace_expansion: bool,
     /// -C
-    disallow_overwriting_regular_files_via_output_redirection: bool,
+    pub disallow_overwriting_regular_files_via_output_redirection: bool,
     /// -E
-    shell_functions_inherit_err_trap: bool,
+    pub shell_functions_inherit_err_trap: bool,
     /// -H
-    enable_bang_style_history_substitution: bool,
+    pub enable_bang_style_history_substitution: bool,
     /// -P
-    do_not_resolve_symlinks_when_changing_dir: bool,
+    pub do_not_resolve_symlinks_when_changing_dir: bool,
     /// -T
-    shell_functions_inherit_debug_and_return_traps: bool,
+    pub shell_functions_inherit_debug_and_return_traps: bool,
 
     //
     // Options set through -o.
     //
     /// 'emacs'
-    emacs_mode: bool,
+    pub emacs_mode: bool,
     /// 'history'
-    enable_command_history: bool,
+    pub enable_command_history: bool,
     /// 'ignoreeof'
-    ignore_eof: bool,
+    pub ignore_eof: bool,
     /// 'interactive-comments'
-    allow_comments_in_interactive_commands: bool,
+    pub allow_comments_in_interactive_commands: bool,
     /// 'pipefail'
-    return_first_failure_from_pipeline: bool,
+    pub return_first_failure_from_pipeline: bool,
     /// 'posix'
-    posix_mode: bool,
+    pub posix_mode: bool,
     /// 'vi'
-    vi_mode: bool,
+    pub vi_mode: bool,
 
     //
     // Options set by the shell.
     //
-    interactive: bool,
+    pub interactive: bool,
 }
 
 impl ShellRuntimeOptions {
@@ -427,10 +427,12 @@ impl Shell {
                     self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())?;
                 }
             } else {
-                //
-                // TODO: look at $BASH_ENV; source its expansion if that file exists
-                //
-                todo!("config for a non-interactive, non-login shell")
+                if self.variables.contains_key("BASH_ENV") {
+                    //
+                    // TODO: look at $BASH_ENV; source its expansion if that file exists
+                    //
+                    todo!("load config from $BASH_ENV for non-interactive, non-login shell")
+                }
             }
         }
 
@@ -507,33 +509,39 @@ impl Shell {
         parse_result: &parser::ParseResult,
         origin: &ProgramOrigin,
     ) -> Result<ExecutionResult> {
-        let result;
-        if let Some(prog) = &parse_result.program {
-            result = self.run_program(&prog)?;
-        } else {
-            let mut error_prefix = "".to_owned();
+        let mut error_prefix = "".to_owned();
 
-            if let ProgramOrigin::File(file_path) = origin {
-                error_prefix = format!("{}: ", file_path.display());
-            }
-
-            if let Some(token_near_error) = &parse_result.token_near_error {
-                let error_loc = &token_near_error.location().start;
-
-                log::error!(
-                    "{}syntax error near token `{}' (line {} col {})",
-                    error_prefix,
-                    token_near_error.to_str(),
-                    error_loc.line,
-                    error_loc.column,
-                );
-            } else {
-                log::error!("{}syntax error at end of input", error_prefix);
-            }
-
-            result = ExecutionResult::new(2);
-            self.last_exit_status = result.exit_code;
+        if let ProgramOrigin::File(file_path) = origin {
+            error_prefix = format!("{}: ", file_path.display());
         }
+
+        let result = match parse_result {
+            parser::ParseResult::Program(prog) => self.run_program(&prog)?,
+            parser::ParseResult::ParseError(token_near_error) => {
+                if let Some(token_near_error) = &token_near_error {
+                    let error_loc = &token_near_error.location().start;
+
+                    log::error!(
+                        "{}syntax error near token `{}' (line {} col {})",
+                        error_prefix,
+                        token_near_error.to_str(),
+                        error_loc.line,
+                        error_loc.column,
+                    );
+                } else {
+                    log::error!("{}syntax error at end of input", error_prefix);
+                }
+
+                self.last_exit_status = 2;
+                ExecutionResult::new(2)
+            }
+            parser::ParseResult::TokenizerError(message) => {
+                log::error!("{}{}", error_prefix, message);
+
+                self.last_exit_status = 2;
+                ExecutionResult::new(2)
+            }
+        };
 
         Ok(result)
     }

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
 use colored::*;
 use serde::{Deserialize, Serialize};
@@ -7,14 +7,38 @@ use std::{collections::HashMap, path::PathBuf, process::ExitStatus};
 #[test]
 fn cli_tests() -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
     for entry in glob::glob(format!("{}/tests/cases/**/*.yaml", dir).as_ref()).unwrap() {
         let entry = entry.unwrap();
 
-        let yaml_file = std::fs::File::open(entry)?;
-        let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)?;
+        let yaml_file = std::fs::File::open(entry.as_path())?;
+        let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
+            .context(format!("parsing {}", entry.to_string_lossy().to_string()))?;
 
-        test_case_set.run()?;
+        let results = test_case_set.run()?;
+
+        success_count += results.success_count;
+        fail_count += results.fail_count;
     }
+
+    let formatted_fail_count = if fail_count > 0 {
+        fail_count.to_string().red()
+    } else {
+        fail_count.to_string().green()
+    };
+
+    println!("==============================================================");
+    println!(
+        "{} test case(s) ran: {} succeeded, {} failed.",
+        success_count + fail_count,
+        success_count.to_string().green(),
+        formatted_fail_count,
+    );
+    println!("==============================================================");
+
+    assert!(fail_count == 0);
 
     Ok(())
 }
@@ -27,10 +51,15 @@ struct TestCaseSet {
     pub cases: Vec<TestCase>,
 }
 
+struct TestCaseSetResults {
+    pub success_count: u32,
+    pub fail_count: u32,
+}
+
 impl TestCaseSet {
-    pub fn run(&self) -> Result<()> {
+    pub fn run(&self) -> Result<TestCaseSetResults> {
         println!(
-            "{}: [{}]...",
+            "=================== {}: [{}] ===================",
             "Running test case set".blue(),
             self.name
                 .as_ref()
@@ -38,30 +67,20 @@ impl TestCaseSet {
                 .italic()
         );
 
-        let mut success = true;
-        let mut cases_succeeded = 0;
-
+        let mut success_count = 0;
+        let mut fail_count = 0;
         for test_case in self.cases.iter() {
-            let current_success = test_case.run()?;
-            if current_success {
-                cases_succeeded += 1;
+            if test_case.run()? {
+                success_count += 1;
+            } else {
+                fail_count += 1;
             }
-
-            success = success && current_success;
         }
 
-        println!("==============================================================");
-        println!(
-            "{} test case(s) ran: {} succeeded, {} failed.",
-            self.cases.len(),
-            cases_succeeded.to_string().green(),
-            (self.cases.len() - cases_succeeded).to_string().red(),
-        );
-        println!("==============================================================");
-
-        assert!(success);
-
-        Ok(())
+        Ok(TestCaseSetResults {
+            success_count,
+            fail_count,
+        })
     }
 }
 
@@ -117,8 +136,8 @@ enum WhichShell {
 
 impl TestCase {
     pub fn run(&self) -> Result<bool> {
-        println!(
-            "{}: [{}]... ",
+        print!(
+            "* {}: [{}]... ",
             "Running test case".bright_yellow(),
             self.name
                 .as_ref()
@@ -128,7 +147,13 @@ impl TestCase {
 
         let comparison = self.run_with_oracle_and_test()?;
 
-        let mut success = true;
+        let success = !comparison.is_failure();
+        if success {
+            println!("{}", "ok.".bright_green());
+            return Ok(true);
+        }
+
+        println!("");
 
         match comparison.exit_status {
             ExitStatusComparison::Ignored => println!("    status {}", "ignored".cyan()),
@@ -148,7 +173,6 @@ impl TestCase {
                     format!("{}", oracle_exit_status).cyan(),
                     format!("{}", test_exit_status).bright_red()
                 );
-                success = false;
             }
         }
 
@@ -159,24 +183,25 @@ impl TestCase {
                 test_string: t,
                 oracle_string: o,
             } => {
-                println!("    Stdout {}", "DIFFERS".bright_red());
+                println!("    stdout {}", "DIFFERS:".bright_red());
+
+                println!(
+                    "        {}",
+                    "------ Oracle <> Test: stdout ---------------------------------".cyan()
+                );
 
                 println!(
                     "{}",
-                    "------ Oracle's stdout ---------------------------------".cyan()
-                );
-                println!("{}", o);
-                println!(
-                    "{}",
-                    "------ Test's stdout -----------------------------------".cyan()
-                );
-                println!("{}", t);
-                println!(
-                    "{}",
-                    "--------------------------------------------------------".cyan()
+                    indent::indent_all_by(
+                        8,
+                        prettydiff::diff_lines(o.as_str(), t.as_str()).format()
+                    )
                 );
 
-                success = false;
+                println!(
+                    "        {}",
+                    "---------------------------------------------------------------".cyan()
+                );
             }
         }
 
@@ -187,24 +212,25 @@ impl TestCase {
                 test_string: t,
                 oracle_string: o,
             } => {
-                println!("    stderr {}", "DIFFERS".bright_red());
+                println!("    stderr {}", "DIFFERS:".bright_red());
+
+                println!(
+                    "        {}",
+                    "------ Oracle <> Test: stderr ---------------------------------".cyan()
+                );
 
                 println!(
                     "{}",
-                    "------ Oracle's stderr ---------------------------------".cyan()
-                );
-                println!("{}", o);
-                println!(
-                    "{}",
-                    "------ Test's stderr -----------------------------------".cyan()
-                );
-                println!("{}", t);
-                println!(
-                    "{}",
-                    "--------------------------------------------------------".cyan()
+                    indent::indent_all_by(
+                        8,
+                        prettydiff::diff_lines(o.as_str(), t.as_str()).format()
+                    )
                 );
 
-                success = false;
+                println!(
+                    "        {}",
+                    "---------------------------------------------------------------".cyan()
+                );
             }
         }
 
@@ -214,13 +240,9 @@ impl TestCase {
             DirComparison::TestDiffers => println!("    temp dir {}", "DIFFERS".bright_red()),
         }
 
-        if success {
-            println!("    {}", "ok.".bright_green());
-        } else {
-            println!("    {}", "FAILED.".bright_red());
-        }
+        println!("    {}", "FAILED.".bright_red());
 
-        Ok(success)
+        Ok(false)
     }
 
     fn create_test_files_in(&self, temp_dir: &assert_fs::TempDir) -> Result<()> {
@@ -353,6 +375,15 @@ struct RunComparison {
     pub temp_dir: DirComparison,
 }
 
+impl RunComparison {
+    pub fn is_failure(&self) -> bool {
+        self.exit_status.is_failure()
+            || self.stdout.is_failure()
+            || self.stderr.is_failure()
+            || self.temp_dir.is_failure()
+    }
+}
+
 enum ExitStatusComparison {
     Ignored,
     Same(ExitStatus),
@@ -360,6 +391,18 @@ enum ExitStatusComparison {
         test_exit_status: ExitStatus,
         oracle_exit_status: ExitStatus,
     },
+}
+
+impl ExitStatusComparison {
+    pub fn is_failure(&self) -> bool {
+        matches!(
+            self,
+            ExitStatusComparison::TestDiffers {
+                test_exit_status: _,
+                oracle_exit_status: _
+            }
+        )
+    }
 }
 
 enum StringComparison {
@@ -371,8 +414,26 @@ enum StringComparison {
     },
 }
 
+impl StringComparison {
+    pub fn is_failure(&self) -> bool {
+        matches!(
+            self,
+            StringComparison::TestDiffers {
+                test_string: _,
+                oracle_string: _
+            }
+        )
+    }
+}
+
 enum DirComparison {
     Ignored,
     Same,
     TestDiffers,
+}
+
+impl DirComparison {
+    pub fn is_failure(&self) -> bool {
+        matches!(self, DirComparison::TestDiffers)
+    }
 }

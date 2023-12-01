@@ -151,7 +151,7 @@ peg::parser! {
             "${" e:parameter_expression() "}" {
                 WordPiece::ParameterExpansion(e)
             } /
-            "$" parameter:parameter() {
+            "$" parameter:unbraced_parameter() {
                 WordPiece::ParameterExpansion(ParameterExpression::Parameter { parameter })
             }
 
@@ -196,6 +196,11 @@ peg::parser! {
                 }
             }
 
+        rule unbraced_parameter() -> Parameter =
+            p:unbraced_positional_parameter() { Parameter::Positional(p) } /
+            p:special_parameter() { Parameter::Special(p) } /
+            p:variable_name() { Parameter::Named(p.to_owned()) }
+
         rule parameter() -> Parameter =
             p:positional_parameter() { Parameter::Positional(p) } /
             p:special_parameter() { Parameter::Special(p) } /
@@ -203,6 +208,8 @@ peg::parser! {
 
         rule positional_parameter() -> u32 =
             n:$(['1'..='9'](['0'..='9']*)) {? n.parse().or(Err("u32")) }
+        rule unbraced_positional_parameter() -> u32 =
+            n:$(['1'..='9']) {? n.parse().or(Err("u32")) }
 
         rule special_parameter() -> SpecialParameter =
             "@" { SpecialParameter::AllPositionalParameters { concatenate: false } } /

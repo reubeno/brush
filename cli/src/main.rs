@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{io::IsTerminal, path::Path};
 
 use anyhow::Result;
 use clap::Parser;
@@ -45,6 +45,24 @@ struct CommandLineArgs {
     script_args: Vec<String>,
 }
 
+impl CommandLineArgs {
+    pub fn is_interactive(&self) -> bool {
+        if self.interactive {
+            return true;
+        }
+
+        if self.command.is_some() || self.script_path.is_some() {
+            return false;
+        }
+
+        if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+            return false;
+        }
+
+        true
+    }
+}
+
 fn main() {
     // Initialize logging. Default log level to INFO if not explicitly specified by the env.
     // Keep verbosity on rustyline no more than WARNING, since it otherwise gets quite noisy.
@@ -76,7 +94,7 @@ fn run(cli_args: Vec<String>) -> Result<u8> {
 
     let options = shell::ShellCreateOptions {
         login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with("-")),
-        interactive: true,
+        interactive: args.is_interactive(),
         no_profile: args.no_profile,
         no_rc: args.no_rc,
         shell_name: argv0.clone(),

@@ -4,9 +4,10 @@ use log::debug;
 use crate::ast::{self, SeparatorOperator};
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, Tokens};
 
-pub struct ParseResult {
-    pub program: Option<ast::Program>,
-    pub token_near_error: Option<Token>,
+pub enum ParseResult {
+    Program(ast::Program),
+    ParseError(Option<Token>),
+    TokenizerError(String),
 }
 
 pub struct Parser<R> {
@@ -31,7 +32,13 @@ impl<R: std::io::BufRead> Parser<R> {
 
         let mut tokens = vec![];
         loop {
-            let result = tokenizer.next_token()?;
+            let result = match tokenizer.next_token() {
+                Ok(result) => result,
+                Err(e) => {
+                    return Ok(ParseResult::TokenizerError(e.to_string()));
+                }
+            };
+
             if let Some(token) = result.token {
                 if log::log_enabled!(log::Level::Debug) {
                     debug!("TOKEN {}: {:?}", tokens.len(), token);
@@ -59,10 +66,7 @@ impl<R: std::io::BufRead> Parser<R> {
         let parse_result = token_parser::program(&tokens);
 
         let result = match parse_result {
-            Ok(program) => ParseResult {
-                program: Some(program),
-                token_near_error: None,
-            },
+            Ok(program) => ParseResult::Program(program),
             Err(parse_error) => {
                 debug!("Parse error: {:?}", parse_error);
 
@@ -75,15 +79,14 @@ impl<R: std::io::BufRead> Parser<R> {
                     token_near_error = None;
                 }
 
-                ParseResult {
-                    program: None,
-                    token_near_error,
-                }
+                ParseResult::ParseError(token_near_error)
             }
         };
 
-        if log::log_enabled!(log::Level::Debug) && result.program.is_some() {
-            debug!("PROG: {:#?}", result.program);
+        if log::log_enabled!(log::Level::Debug) {
+            if let ParseResult::Program(program) = &result {
+                debug!("PROG: {:#?}", program);
+            }
         }
 
         Ok(result)
@@ -415,7 +418,7 @@ peg::parser! {
             io_filename()
 
         rule io_fd() -> u32 =
-            [Token::Word(w, _)] {? w.as_str().parse().or(Err("u32")) }
+            [Token::Word(w, _)] {? w.as_str().parse().or(Err("io_fd u32")) }
 
         rule io_filename() -> ast::IoFileRedirectTarget =
             f:filename() { ast::IoFileRedirectTarget::Filename(f.to_owned()) }
@@ -497,6 +500,6 @@ peg::parser! {
 
         rule io_number() -> u32 =
             // TODO: implement io_number more accurately.
-            [Token::Word(w, _)] {? w.parse().or(Err("u32")) }
+            [Token::Word(w, _)] {? w.parse().or(Err("io_number u32")) }
     }
 }
