@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 #[derive(Debug)]
 pub enum WordPiece {
@@ -80,7 +80,10 @@ pub enum ParameterExpression {
 }
 
 pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
-    let pieces = expansion_parser::unexpanded_word(word)?;
+    log::debug!("Parsing word '{}'", word);
+
+    let pieces =
+        expansion_parser::unexpanded_word(word).context(format!("parsing word '{}'", word))?;
 
     log::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
 
@@ -233,7 +236,14 @@ peg::parser! {
             }
 
         rule command() -> () =
-            "<COMMAND SUBSTITUTION UNIMPLEMENTED>" { () }
+            command_token()* { () }
+
+        rule command_token() -> () =
+            command_piece()+ { () } /
+            [' ' | '\t']+ { () }
+
+        rule command_piece() -> WordPiece =
+            ![')'] p:word_piece() { p }
 
         rule backquoted_command() -> () =
             "<BACKQUOTES UNIMPLEMENTED>" { () }

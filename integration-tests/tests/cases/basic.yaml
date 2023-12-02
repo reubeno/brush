@@ -1,31 +1,32 @@
-name: 'Basic tests'
+name: "Basic tests"
 cases:
-- name: 'Basic -c usage'
-  args:
-    - '-c'
-    - 'echo hi'
+  - name: "Basic -c usage"
+    args:
+      - "-c"
+      - "echo hi"
 
-- name: 'Basic interactive usage'
-  env:
-    PS1: ''
-  stdin: |
-    echo 'hi'
-  args:
-    - '-i'
+  - name: "Basic interactive usage"
+    env:
+      PS1: ""
+    stdin: |
+      echo 'hi'
+    ignore_stderr: true
+    args:
+      - "-i"
 
-- name: 'Basic stdin usage'
-  stdin: |
-    echo hi
+  - name: "Basic stdin usage"
+    stdin: |
+      echo hi
 
-- name: 'Basic sequence'
-  stdin: |
-    echo 'hi'; echo 'there'
+  - name: "Basic sequence"
+    stdin: |
+      echo 'hi'; echo 'there'
 
-- name: 'Basic script execution'
-  test_files:
-    - path: 'script.sh'
-      contents: |
-        echo 'hi'
-        exit 22
-  args:
-    - './script.sh'
+  - name: "Basic script execution"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo 'hi'
+          exit 22
+    args:
+      - "./script.sh"

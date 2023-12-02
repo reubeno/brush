@@ -146,17 +146,16 @@ peg::parser! {
             first:pipeline() additional:_and_or_item()* { ast::AndOrList { first, additional } }
 
         rule _and_or_item() -> ast::AndOr =
-            [Token::Operator(n, _) if n.as_str() == "&&"] linebreak() p:pipeline() { ast::AndOr::And(p) } /
-            [Token::Operator(n, _) if n.as_str() == "||"] linebreak() p:pipeline() { ast::AndOr::Or(p) }
+            specific_operator("&&") linebreak() p:pipeline() { ast::AndOr::And(p) } /
+            specific_operator("||") linebreak() p:pipeline() { ast::AndOr::Or(p) }
 
 
         rule pipeline() -> ast::Pipeline =
             bang:bang()? seq:pipe_sequence() { ast::Pipeline { bang: bang.is_some(), seq } }
-        rule bang() -> bool =
-            [Token::Word(n, _) if n.as_str() == "!"] { true }
+        rule bang() -> bool = specific_word("!") { true }
 
         rule pipe_sequence() -> Vec<ast::Command> =
-            c:command() ++ ([Token::Operator(n, _) if n.as_str() == "|"] linebreak()) { c }
+            c:command() ++ (specific_operator("|") linebreak()) { c }
 
         // TODO: Figure out why we needed to move the function definition branch up
         rule command() -> ast::Command =
@@ -178,7 +177,7 @@ peg::parser! {
             expected!("compound command")
 
         rule subshell() -> ast::SubshellCommand =
-            [Token::Operator(n, _) if n.as_str() == "("] c:compound_list() [Token::Operator(n, _) if n.as_str() == ")"] { c }
+            specific_operator("(") c:compound_list() specific_operator(")") { c }
 
         rule compound_list() -> ast::CompoundList =
             linebreak() first:and_or() remainder:(s:separator() l:and_or() { (s, l) })* last_sep:separator()? {
@@ -203,85 +202,87 @@ peg::parser! {
             }
 
         rule for_clause() -> ast::ForClauseCommand =
-            [Token::Word(w, _) if w.as_str() == "for"] n:name() linebreak() _in() w:wordlist()? sequential_sep() d:do_group() {
+            specific_word("for") n:name() linebreak() _in() w:wordlist()? sequential_sep() d:do_group() {
                 ast::ForClauseCommand { variable_name: n.to_owned(), values: w, body: d }
             } /
-            [Token::Word(w, _) if w.as_str() == "for"] n:name() sequential_sep()? d:do_group() {
+            specific_word("for") n:name() sequential_sep()? d:do_group() {
                 ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d }
             }
 
         rule extended_test_command() -> ast::ExtendedTestExpression =
-            [Token::Word(w, _) if w.as_str() == "[["] e:extended_test_expression() [Token::Word(w, _) if w.as_str() == "]]"] { e }
+            specific_word("[[") e:extended_test_expression() specific_word("]]") { e }
 
         // TODO: implement test expressions
         rule extended_test_expression() -> ast::ExtendedTestExpression =
-            [Token::Word(w, _) if w.as_str() == "-a"] f:word() { ast::ExtendedTestExpression::FileExists(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-b"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsBlockSpecialFile(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-c"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsCharSpecialFile(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-d"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsDir(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-e"] f:word() { ast::ExtendedTestExpression::FileExists(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-f"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsRegularFile(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-g"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsSetgid(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-h"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsSymlink(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-k"] f:word() { ast::ExtendedTestExpression::FileExistsAndHasStickyBit(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-n"] f:word() { ast::ExtendedTestExpression::StringHasNonZeroLength(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-o"] f:word() { ast::ExtendedTestExpression::ShellOptionEnabled(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-p"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsFifo(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-r"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsReadable(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-s"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsNotZeroLength(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-t"] f:word() { ast::ExtendedTestExpression::FdIsOpenTerminal(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-u"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsSetuid(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-v"] f:word() { ast::ExtendedTestExpression::ShellVariableIsSetAndAssigned(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-w"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsWritable(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-x"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsExecutable(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-z"] f:word() { ast::ExtendedTestExpression::StringHasZeroLength(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-G"] f:word() { ast::ExtendedTestExpression::FileExistsAndOwnedByEffectiveGroupId(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-L"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsSymlink(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-N"] f:word() { ast::ExtendedTestExpression::FileExistsAndModifiedSinceLastRead(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-O"] f:word() { ast::ExtendedTestExpression::FileExistsAndOwnedByEffectiveUserId(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-R"] f:word() { ast::ExtendedTestExpression::ShellVariableIsSetAndNameRef(w.to_owned()) } /
-            [Token::Word(w, _) if w.as_str() == "-S"] f:word() { ast::ExtendedTestExpression::FileExistsAndIsSocket(w.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-ef"] right:word() { ast::ExtendedTestExpression::FilesReferToSameDeviceAndInodeNumbers(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-eq"] right:word() { ast::ExtendedTestExpression::ArithmeticEqualTo(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-ge"] right:word() { ast::ExtendedTestExpression::ArithmeticGreaterThanOrEqualTo(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-gt"] right:word() { ast::ExtendedTestExpression::ArithmeticGreaterThan(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-le"] right:word() { ast::ExtendedTestExpression::ArithmeticLessThanOrEqualTo(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-lt"] right:word() { ast::ExtendedTestExpression::ArithmeticLessThan(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-ne"] right:word() { ast::ExtendedTestExpression::ArithmeticNotEqualTo(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-nt"] right:word() { ast::ExtendedTestExpression::LeftFileIsNewerOrExistsWhenRightDoesNot(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "-ot"] right:word() { ast::ExtendedTestExpression::LeftFileIsOlderOrDoesNotExistWhenRightDoes(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "=="] right:word() { ast::ExtendedTestExpression::StringsAreEqual(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "="] right:word() { ast::ExtendedTestExpression::StringsAreEqual(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "!="] right:word() { ast::ExtendedTestExpression::StringsNotEqual(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == "<"] right:word() { ast::ExtendedTestExpression::LeftSortsBeforeRight(left.to_owned(), right.to_owned()) } /
-            left:word() [Token::Word(w, _) if w.as_str() == ">"] right:word() { ast::ExtendedTestExpression::LeftSortsAfterRight(left.to_owned(), right.to_owned()) } /
+            specific_word("-a") f:word() { ast::ExtendedTestExpression::FileExists(f.to_owned()) } /
+            specific_word("-b") f:word() { ast::ExtendedTestExpression::FileExistsAndIsBlockSpecialFile(f.to_owned()) } /
+            specific_word("-c") f:word() { ast::ExtendedTestExpression::FileExistsAndIsCharSpecialFile(f.to_owned()) } /
+            specific_word("-d") f:word() { ast::ExtendedTestExpression::FileExistsAndIsDir(f.to_owned()) } /
+            specific_word("-e") f:word() { ast::ExtendedTestExpression::FileExists(f.to_owned()) } /
+            specific_word("-f") f:word() { ast::ExtendedTestExpression::FileExistsAndIsRegularFile(f.to_owned()) } /
+            specific_word("-g") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSetgid(f.to_owned()) } /
+            specific_word("-h") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSymlink(f.to_owned()) } /
+            specific_word("-k") f:word() { ast::ExtendedTestExpression::FileExistsAndHasStickyBit(f.to_owned()) } /
+            specific_word("-n") f:word() { ast::ExtendedTestExpression::StringHasNonZeroLength(f.to_owned()) } /
+            specific_word("-o") f:word() { ast::ExtendedTestExpression::ShellOptionEnabled(f.to_owned()) } /
+            specific_word("-p") f:word() { ast::ExtendedTestExpression::FileExistsAndIsFifo(f.to_owned()) } /
+            specific_word("-r") f:word() { ast::ExtendedTestExpression::FileExistsAndIsReadable(f.to_owned()) } /
+            specific_word("-s") f:word() { ast::ExtendedTestExpression::FileExistsAndIsNotZeroLength(f.to_owned()) } /
+            specific_word("-t") f:word() { ast::ExtendedTestExpression::FdIsOpenTerminal(f.to_owned()) } /
+            specific_word("-u") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSetuid(f.to_owned()) } /
+            specific_word("-v") f:word() { ast::ExtendedTestExpression::ShellVariableIsSetAndAssigned(f.to_owned()) } /
+            specific_word("-w") f:word() { ast::ExtendedTestExpression::FileExistsAndIsWritable(f.to_owned()) } /
+            specific_word("-x") f:word() { ast::ExtendedTestExpression::FileExistsAndIsExecutable(f.to_owned()) } /
+            specific_word("-z") f:word() { ast::ExtendedTestExpression::StringHasZeroLength(f.to_owned()) } /
+            specific_word("-G") f:word() { ast::ExtendedTestExpression::FileExistsAndOwnedByEffectiveGroupId(f.to_owned()) } /
+            specific_word("-L") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSymlink(f.to_owned()) } /
+            specific_word("-N") f:word() { ast::ExtendedTestExpression::FileExistsAndModifiedSinceLastRead(f.to_owned()) } /
+            specific_word("-O") f:word() { ast::ExtendedTestExpression::FileExistsAndOwnedByEffectiveUserId(f.to_owned()) } /
+            specific_word("-R") f:word() { ast::ExtendedTestExpression::ShellVariableIsSetAndNameRef(f.to_owned()) } /
+            specific_word("-S") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSocket(f.to_owned()) } /
+            left:word() specific_word("-ef") right:word() { ast::ExtendedTestExpression::FilesReferToSameDeviceAndInodeNumbers(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-eq") right:word() { ast::ExtendedTestExpression::ArithmeticEqualTo(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-ge") right:word() { ast::ExtendedTestExpression::ArithmeticGreaterThanOrEqualTo(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-gt") right:word() { ast::ExtendedTestExpression::ArithmeticGreaterThan(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-le") right:word() { ast::ExtendedTestExpression::ArithmeticLessThanOrEqualTo(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-lt") right:word() { ast::ExtendedTestExpression::ArithmeticLessThan(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-ne") right:word() { ast::ExtendedTestExpression::ArithmeticNotEqualTo(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-nt") right:word() { ast::ExtendedTestExpression::LeftFileIsNewerOrExistsWhenRightDoesNot(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("-ot") right:word() { ast::ExtendedTestExpression::LeftFileIsOlderOrDoesNotExistWhenRightDoes(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("==") right:word() { ast::ExtendedTestExpression::StringsAreEqual(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("=") right:word() { ast::ExtendedTestExpression::StringsAreEqual(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("!=") right:word() { ast::ExtendedTestExpression::StringsNotEqual(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word("<") right:word() { ast::ExtendedTestExpression::LeftSortsBeforeRight(left.to_owned(), right.to_owned()) } /
+            left:word() specific_word(">") right:word() { ast::ExtendedTestExpression::LeftSortsAfterRight(left.to_owned(), right.to_owned()) } /
             [Token::Word(w, _)] { ast::ExtendedTestExpression::StringHasNonZeroLength(w.to_owned()) }
 
         rule name() -> &'input str =
             [Token::Word(w, _)] { w }
 
         rule _in() -> () =
-            [Token::Word(w, _) if w.as_str() == "in"] { () }
+            specific_word("in") { () }
 
         rule wordlist() -> Vec<String> =
             (w:word() { w.to_owned() })+
 
-        rule case_clause() -> ast::CaseClauseCommand =
-            [Token::Word(case_word, _) if case_word.as_str() == "case"] w:word() linebreak() _in() linebreak() c:case_list() [Token::Word(esac_word, _) if esac_word.as_str() == "esac"] {
+        pub(crate) rule case_clause() -> ast::CaseClauseCommand =
+            specific_word("case") w:word() linebreak() _in() linebreak() c:case_list() specific_word("esac") {
                 ast::CaseClauseCommand { value: w.to_owned(), cases: c }
             } /
-            [Token::Word(case_word, _) if case_word.as_str() == "case"] w:word() linebreak() _in() linebreak() c:case_list_ns() [Token::Word(esac_word, _) if esac_word.as_str() == "esac"] {
+            specific_word("case") w:word() linebreak() _in() linebreak() c:case_list_ns() specific_word("esac") {
                 ast::CaseClauseCommand { value: w.to_owned(), cases: c }
             } /
-            [Token::Word(case_word, _) if case_word.as_str() == "case"] w:word() linebreak() _in() linebreak() [Token::Word(esac_word, _) if esac_word.as_str() == "esac"] {
+            specific_word("case") w:word() linebreak() _in() linebreak() specific_word("esac") {
                 ast::CaseClauseCommand{ value: w.to_owned(), cases: vec![] }
             }
 
         rule case_list_ns() -> Vec<ast::CaseItem> =
-            first:case_list() last:case_item_ns() {
+            first:case_list()? last:case_item_ns() {
                 let mut items = vec![];
-                for item in first.into_iter() {
-                    items.push(item);
+                if let Some(mut first) = first {
+                    for item in first.into_iter() {
+                        items.push(item);
+                    }
                 }
                 items.push(last);
                 items
@@ -290,27 +291,27 @@ peg::parser! {
         rule case_list() -> Vec<ast::CaseItem> =
             c:case_item()+
 
-        rule case_item_ns() -> ast::CaseItem =
-            [Token::Operator(w, _) if w.as_str() == "("]? p:pattern() [Token::Operator(n, _) if n.as_str() == ")"] linebreak() {
-                ast::CaseItem { patterns: p, cmd: None }
-            } /
-            [Token::Operator(w, _) if w.as_str() == "("]? p:pattern() [Token::Operator(n, _) if n.as_str() == ")"] c:compound_list() {
+        pub(crate) rule case_item_ns() -> ast::CaseItem =
+            specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
                 ast::CaseItem { patterns: p, cmd: Some(c) }
+            } /
+            specific_operator("(")? p:pattern() specific_operator(")") linebreak() {
+                ast::CaseItem { patterns: p, cmd: None }
             }
 
-        rule case_item() -> ast::CaseItem =
-            [Token::Operator(w, _) if w.as_str() == "("]? p:pattern() [Token::Operator(n, _) if n.as_str() == ")"] linebreak() [Token::Operator(n, _) if n.as_str() == ";;"] linebreak() {
+        pub(crate) rule case_item() -> ast::CaseItem =
+            specific_operator("(")? p:pattern() specific_operator(")") linebreak() specific_operator(";;") linebreak() {
                 ast::CaseItem { patterns: p, cmd: None }
             } /
-            [Token::Operator(w, _) if w.as_str() == "("]? p:pattern() [Token::Operator(n, _) if n.as_str() == ")"] c:compound_list() [Token::Operator(n, _) if n.as_str() == ";;"] linebreak() {
+            specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() specific_operator(";;") linebreak() {
                 ast::CaseItem { patterns: p, cmd: Some(c) }
             }
 
         rule pattern() -> Vec<String> =
-            (w:word() { w.to_owned() }) ++ [Token::Operator(n, _) if n.as_str() == "|"]
+            (w:word() { w.to_owned() }) ++ specific_operator("|")
 
         rule if_clause() -> ast::IfClauseCommand =
-            [Token::Word(w, _) if w.as_str() == "if"] condition:compound_list() [Token::Word(w, _) if w.as_str() == "then"] then:compound_list() elses:else_part()? [Token::Word(w, _) if w.as_str() == "fi"] {
+            specific_word("if") condition:compound_list() specific_word("then") then:compound_list() elses:else_part()? specific_word("fi") {
                 ast::IfClauseCommand {
                     condition,
                     then,
@@ -334,28 +335,28 @@ peg::parser! {
             e:_unconditional_else_part() { vec![e] }
 
         rule _conditional_else_part() -> ast::ElseClause =
-            [Token::Word(w, _) if w.as_str() == "elif"] condition:compound_list() [Token::Word(w, _) if w.as_str() == "then"] body:compound_list() {
+            specific_word("elif") condition:compound_list() specific_word("then") body:compound_list() {
                 ast::ElseClause { condition: Some(condition), body }
             }
 
         rule _unconditional_else_part() -> ast::ElseClause =
-            [Token::Word(w, _) if w.as_str() == "else"] body:compound_list() {
+            specific_word("else") body:compound_list() {
                 ast::ElseClause { condition: None, body }
              }
 
         rule while_clause() -> ast::WhileClauseCommand =
-            [Token::Word(w, _) if w.as_str() == "while"] c:compound_list() d:do_group() { (c, d) }
+            specific_word("while") c:compound_list() d:do_group() { (c, d) }
 
         rule until_clause() -> ast::UntilClauseCommand =
-            [Token::Word(w, _) if w.as_str() == "until"] c:compound_list() d:do_group() { (c, d) }
+            specific_word("until") c:compound_list() d:do_group() { (c, d) }
 
         // N.B. bash allows use of the 'function' word to indicate a function definition.
         // TODO: Validate usage of this keyword.
         rule function_definition() -> ast::FunctionDefinition =
-            fname:fname() [Token::Operator(n, _) if n.as_str() == "("] [Token::Operator(n, _) if n.as_str() == ")"] linebreak() body:function_body() {
+            fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body }
             } /
-            [Token::Word(w, _) if w.as_str() == "function"] fname:fname() linebreak() body:function_body() {
+            specific_word("function") fname:fname() linebreak() body:function_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body }
             } /
             expected!("function definition")
@@ -367,10 +368,10 @@ peg::parser! {
             name()
 
         rule brace_group() -> ast::BraceGroupCommand =
-            [Token::Word(n, _) if n.as_str() == "{"] c:compound_list() [Token::Word(n, _) if n.as_str() == "}"] { c }
+            specific_word("{") c:compound_list() specific_word("}") { c }
 
         rule do_group() -> ast::DoGroupCommand =
-            [Token::Word(w, _) if w.as_str() == "do"] c:compound_list() [Token::Word(w, _) if w.as_str() == "done"] { c }
+            specific_word("do") c:compound_list() specific_word("done") { c }
 
         rule simple_command() -> ast::SimpleCommand =
             prefix:cmd_prefix() word_or_name:cmd_word() suffix:cmd_suffix()? { ast::SimpleCommand { prefix: Some(prefix), word_or_name: Some(word_or_name.to_owned()), suffix } } /
@@ -405,13 +406,13 @@ peg::parser! {
             expected!("I/O redirect")
 
         rule io_file() -> (ast::IoFileRedirectKind, ast::IoFileRedirectTarget) =
-            [Token::Operator(o, _) if o.as_str() == "<"]  f:io_filename() { (ast::IoFileRedirectKind::Read, f) } /
-            [Token::Operator(o, _) if o.as_str() == "<&"] f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
-            [Token::Operator(o, _) if o.as_str() == ">"]  f:io_filename() { (ast::IoFileRedirectKind::Write, f) } /
-            [Token::Operator(o, _) if o.as_str() == ">&"] f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
-            [Token::Operator(o, _) if o.as_str() == ">>"] f:io_filename() { (ast::IoFileRedirectKind::Append, f) } /
-            [Token::Operator(o, _) if o.as_str() == "<>"] f:io_filename() { (ast::IoFileRedirectKind::ReadAndWrite, f) } /
-            [Token::Operator(o, _) if o.as_str() == ">|"] f:io_filename() { (ast::IoFileRedirectKind::Clobber, f) }
+            specific_operator("<")  f:io_filename() { (ast::IoFileRedirectKind::Read, f) } /
+            specific_operator("<&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
+            specific_operator(">")  f:io_filename() { (ast::IoFileRedirectKind::Write, f) } /
+            specific_operator(">&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
+            specific_operator(">>") f:io_filename() { (ast::IoFileRedirectKind::Append, f) } /
+            specific_operator("<>") f:io_filename() { (ast::IoFileRedirectKind::ReadAndWrite, f) } /
+            specific_operator(">|") f:io_filename() { (ast::IoFileRedirectKind::Clobber, f) }
 
         rule io_filename_or_fd() -> ast::IoFileRedirectTarget =
             fd:io_fd() { ast::IoFileRedirectTarget::Fd(fd) } /
@@ -427,8 +428,8 @@ peg::parser! {
             word()
 
         rule io_here() -> ast::IoHere =
-            [Token::Operator(o, _) if o.as_str() == "<<"] here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: false, here_end: here_end.to_owned(), doc: doc.to_str().to_owned() } } /
-            [Token::Operator(o, _) if o.as_str() == "<<-"] here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: true, here_end: here_end.to_owned(), doc: doc.to_str().to_owned() } }
+            specific_operator("<<") here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: false, here_end: here_end.to_owned(), doc: doc.to_str().to_owned() } } /
+            specific_operator("<<-") here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: true, here_end: here_end.to_owned(), doc: doc.to_str().to_owned() } }
 
         rule here_end() -> &'input str =
             word()
@@ -436,21 +437,23 @@ peg::parser! {
         rule newline_list() -> () =
             newline()* { () }
 
+        // N.B. We don't need to add a '?' to the invocation of the newline_list()
+        // rule because it already allows 0 newlines.
         rule linebreak() -> () =
             quiet! {
-                newline_list()? { () }
+                newline_list() { () }
             }
 
         rule separator_op() -> ast::SeparatorOperator =
-            [Token::Operator(n, _) if n.as_str() == "&"] { ast::SeparatorOperator::Async } /
-            [Token::Operator(n, _) if n.as_str() == ";"] { ast::SeparatorOperator::Sequence }
+            specific_operator("&") { ast::SeparatorOperator::Async } /
+            specific_operator(";") { ast::SeparatorOperator::Sequence }
 
         rule separator() -> Option<ast::SeparatorOperator> =
             s:separator_op() linebreak() { Some(s) } /
             newline_list() { None }
 
         rule sequential_sep() -> () =
-            [Token::Operator(n, _) if n.as_str() == ";"] linebreak() /
+            specific_operator(";") linebreak() /
             newline_list()
 
         //
@@ -464,31 +467,31 @@ peg::parser! {
             t:reserved_word_token() { t.to_str() }
 
         rule reserved_word_token() -> &'input Token =
-            [Token::Word(w, _) if w.as_str() == "!"] /
-            [Token::Word(w, _) if w.as_str() == "{"] /
-            [Token::Word(w, _) if w.as_str() == "}"] /
-            [Token::Word(w, _) if w.as_str() == "case"] /
-            [Token::Word(w, _) if w.as_str() == "do"] /
-            [Token::Word(w, _) if w.as_str() == "done"] /
-            [Token::Word(w, _) if w.as_str() == "elif"] /
-            [Token::Word(w, _) if w.as_str() == "else"] /
-            [Token::Word(w, _) if w.as_str() == "esac"] /
-            [Token::Word(w, _) if w.as_str() == "fi"] /
-            [Token::Word(w, _) if w.as_str() == "for"] /
-            [Token::Word(w, _) if w.as_str() == "if"] /
-            [Token::Word(w, _) if w.as_str() == "in"] /
-            [Token::Word(w, _) if w.as_str() == "then"] /
-            [Token::Word(w, _) if w.as_str() == "until"] /
-            [Token::Word(w, _) if w.as_str() == "while"] /
+            specific_word("!") /
+            specific_word("{") /
+            specific_word("}") /
+            specific_word("case") /
+            specific_word("do") /
+            specific_word("done") /
+            specific_word("elif") /
+            specific_word("else") /
+            specific_word("esac") /
+            specific_word("fi") /
+            specific_word("for") /
+            specific_word("if") /
+            specific_word("in") /
+            specific_word("then") /
+            specific_word("until") /
+            specific_word("while") /
 
             // N.B. bash also treats the following as reserved.
-            [Token::Word(w, _) if w.as_str() == "[["] /
-            [Token::Word(w, _) if w.as_str() == "]]"] /
-            [Token::Word(w, _) if w.as_str() == "function"] /
-            [Token::Word(w, _) if w.as_str() == "select"]
+            specific_word("[[") /
+            specific_word("]]") /
+            specific_word("function") /
+            specific_word("select")
 
         rule newline() -> () = quiet! {
-            [Token::Operator(n, _) if n.as_str() == "\n"] { () }
+            specific_operator("\n") { () }
         }
 
         rule assignment_word() -> (String, String) =
@@ -501,5 +504,73 @@ peg::parser! {
         rule io_number() -> u32 =
             // TODO: implement io_number more accurately.
             [Token::Word(w, _)] {? w.parse().or(Err("io_number u32")) }
+
+        //
+        // Helpers
+        //
+        rule specific_operator(expected: &str) -> &'input Token =
+            [Token::Operator(w, _) if w.as_str() == expected]
+
+        rule specific_word(expected: &str) -> &'input Token =
+            [Token::Word(w, _) if w.as_str() == expected]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_case() -> Result<()> {
+        let input = r#"\
+case x in
+x)
+    echo y;;
+esac\
+"#;
+
+        let tokens = tokenize(input)?;
+        let command = super::token_parser::case_clause(&tokens)?;
+
+        assert_eq!(command.cases.len(), 1);
+        assert_eq!(command.cases[0].patterns.len(), 1);
+        assert_eq!(command.cases[0].patterns[0], "x");
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_case_ns() -> Result<()> {
+        let input = r#"\
+case x in
+x)
+    echo y
+esac\
+"#;
+
+        let tokens = tokenize(input)?;
+        let command = super::token_parser::case_clause(&tokens)?;
+
+        assert_eq!(command.cases.len(), 1);
+        assert_eq!(command.cases[0].patterns.len(), 1);
+        assert_eq!(command.cases[0].patterns[0], "x");
+
+        Ok(())
+    }
+
+    fn tokenize(input: &str) -> Result<Tokens> {
+        let mut reader = std::io::BufReader::new(input.as_bytes());
+        let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader);
+
+        let mut tokens = vec![];
+        loop {
+            if let Some(token) = tokenizer.next_token()?.token {
+                tokens.push(token);
+            } else {
+                break;
+            }
+        }
+
+        Ok(Tokens { tokens })
     }
 }

@@ -15,6 +15,7 @@ use crate::{builtin, builtins};
 pub struct ExecutionResult {
     pub exit_code: u8,
     pub exit_shell: bool,
+    pub return_from_function_or_script: bool,
 }
 
 impl ExecutionResult {
@@ -22,6 +23,7 @@ impl ExecutionResult {
         ExecutionResult {
             exit_code,
             exit_shell: false,
+            return_from_function_or_script: false,
         }
     }
 
@@ -38,6 +40,7 @@ enum SpawnResult {
     SpawnedChild(std::process::Child),
     ImmediateExit(u8),
     ExitShell(u8),
+    ReturnFromFunctionOrScript(u8),
 }
 
 struct PipelineExecutionContext<'a> {
@@ -100,7 +103,7 @@ impl Execute for ast::Program {
 
         for command in &self.complete_commands {
             result = command.execute(shell)?;
-            if result.exit_shell {
+            if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
         }
@@ -124,7 +127,7 @@ impl Execute for ast::CompleteCommand {
             result = ao_list.first.execute(shell)?;
 
             for next_ao in &ao_list.additional {
-                if result.exit_shell {
+                if result.exit_shell || result.return_from_function_or_script {
                     break;
                 }
 
@@ -192,7 +195,15 @@ impl Execute for ast::Pipeline {
                     result = ExecutionResult {
                         exit_code,
                         exit_shell: true,
+                        return_from_function_or_script: false,
                     };
+                }
+                SpawnResult::ReturnFromFunctionOrScript(exit_code) => {
+                    result = ExecutionResult {
+                        exit_code,
+                        exit_shell: false,
+                        return_from_function_or_script: true,
+                    }
                 }
             }
 
@@ -664,7 +675,9 @@ fn execute_external_command(
                         // Set up stdin of this process to take stdout of the preceding process.
                         cmd.stdin(std::process::Stdio::from(child.stdout.take().unwrap()));
                     }
-                    SpawnResult::ImmediateExit(_code) | SpawnResult::ExitShell(_code) => {
+                    SpawnResult::ImmediateExit(_code)
+                    | SpawnResult::ExitShell(_code)
+                    | SpawnResult::ReturnFromFunctionOrScript(_code) => {
                         return Err(anyhow::anyhow!("unable to retrieve piped command output"));
                     }
                 }
@@ -728,6 +741,9 @@ fn execute_builtin_command(
         builtin::BuiltinExitCode::Unimplemented => 99,
         builtin::BuiltinExitCode::Custom(code) => code,
         builtin::BuiltinExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
+        builtin::BuiltinExitCode::ReturnFromFunctionOrScript(code) => {
+            return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
+        }
     };
 
     Ok(SpawnResult::ImmediateExit(exit_code))

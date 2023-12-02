@@ -44,9 +44,14 @@ impl InteractiveShell {
                 InteractiveExecutionResult::Executed(shell::ExecutionResult {
                     exit_code: _,
                     exit_shell,
+                    return_from_function_or_script,
                 }) => {
                     if exit_shell {
                         break;
+                    }
+
+                    if return_from_function_or_script {
+                        log::error!("return from non-function/script");
                     }
                 }
                 InteractiveExecutionResult::Eof => {
@@ -74,10 +79,7 @@ impl InteractiveShell {
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 self.shell.last_exit_status = 130;
                 Ok(InteractiveExecutionResult::Executed(
-                    shell::ExecutionResult {
-                        exit_code: 130,
-                        exit_shell: false,
-                    },
+                    shell::ExecutionResult::new(130),
                 ))
             }
             Err(e) => Err(e.into()),
