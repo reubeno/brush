@@ -12,6 +12,8 @@ mod exit;
 mod export;
 mod fals;
 mod pwd;
+mod retur;
+mod shopt;
 mod tru;
 mod umask;
 mod unimp;
@@ -42,7 +44,7 @@ lazy_static! {
             ("exit", exec_builtin::<exit::ExitCommand>),
             ("export", exec_builtin::<export::ExportCommand>),
             ("readonly", exec_builtin::<unimp::UnimplementedCommand>),
-            ("return", exec_builtin::<unimp::UnimplementedCommand>),
+            ("return", exec_builtin::<retur::ReturnCommand>),
             ("set", exec_builtin::<unimp::UnimplementedCommand>),
             ("shift", exec_builtin::<unimp::UnimplementedCommand>),
             ("times", exec_builtin::<unimp::UnimplementedCommand>),
@@ -67,7 +69,7 @@ lazy_static! {
         ("newgrp", exec_builtin::<unimp::UnimplementedCommand>),
         ("pwd", exec_builtin::<pwd::PwdCommand>),
         ("read", exec_builtin::<unimp::UnimplementedCommand>),
-        ("shopt", exec_builtin::<unimp::UnimplementedCommand>),
+        ("shopt", exec_builtin::<shopt::ShoptCommand>),
         ("true", exec_builtin::<tru::TrueCommand>),
         ("type", exec_builtin::<unimp::UnimplementedCommand>),
         ("ulimit", exec_builtin::<unimp::UnimplementedCommand>),

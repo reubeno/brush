@@ -15,6 +15,7 @@ pub enum BuiltinExitCode {
     Unimplemented,
     Custom(u8),
     ExitShell(u8),
+    ReturnFromFunctionOrScript(u8),
 }
 
 pub struct BuiltinExecutionContext<'a> {

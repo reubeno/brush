@@ -15,7 +15,12 @@ impl BuiltinCommand for UnimplementedCommand {
         context: &mut crate::builtin::BuiltinExecutionContext,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         log::error!(
-            "UNIMPLEMENTED: built-in unimplemented: {} {}",
+            "UNIMPLEMENTED: {}: built-in unimplemented: {} {}",
+            context
+                .shell
+                .shell_name
+                .as_ref()
+                .map_or("(unknown shell)", |sn| sn),
             context.builtin_name,
             self.args.join(" ")
         );
