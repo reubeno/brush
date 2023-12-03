@@ -1,3 +1,8 @@
+#![deny(clippy::all)]
+// #![deny(clippy::pedantic)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_else_if)]
+
 use std::{io::IsTerminal, path::Path};
 
 use anyhow::Result;
@@ -84,7 +89,7 @@ fn main() {
 }
 
 fn run(cli_args: Vec<String>) -> Result<u8> {
-    let argv0 = if cli_args.len() >= 1 {
+    let argv0 = if !cli_args.is_empty() {
         Some(cli_args[0].to_owned())
     } else {
         None
@@ -93,7 +98,7 @@ fn run(cli_args: Vec<String>) -> Result<u8> {
     let args = CommandLineArgs::parse_from(cli_args.clone());
 
     let options = shell::ShellCreateOptions {
-        login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with("-")),
+        login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
         interactive: args.is_interactive(),
         no_profile: args.no_profile,
         no_rc: args.no_rc,

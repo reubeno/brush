@@ -140,10 +140,8 @@ impl Execute for ast::CompleteCommand {
                     if !result.is_success() {
                         break;
                     }
-                } else {
-                    if result.is_success() {
-                        break;
-                    }
+                } else if result.is_success() {
+                    break;
                 }
 
                 result = pipeline.execute(shell)?;
@@ -294,7 +292,6 @@ impl Execute for ast::ForClauseCommand {
             let expanded_values = unexpanded_values
                 .iter()
                 .map(|v| expand_word(shell, v))
-                .into_iter()
                 .collect::<Result<Vec<_>>>()?;
 
             for value in expanded_values {
@@ -436,7 +433,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         let mut args: Vec<String> = args
             .iter()
             .map(|a| expand_word(context.shell, a))
-            .into_iter()
             .collect::<Result<Vec<_>>>()?;
 
         //
@@ -444,7 +440,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         //
 
         let mut open_files = OpenFiles::new();
-        if redirects.len() > 0 {
+        if !redirects.is_empty() {
             for redirect in redirects.into_iter() {
                 match redirect {
                     ast::IoRedirect::File(fd_num, kind, target) => {
@@ -531,7 +527,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 let expanded_value = expand_word(context.shell, v)?;
                 Ok((n.clone(), expanded_value))
             })
-            .into_iter()
             .collect::<Result<Vec<_>>>()?;
 
         if let Some(cmd_name) = &self.word_or_name {
@@ -602,7 +597,7 @@ fn execute_external_command(
     open_files: &mut OpenFiles,
     cmd_name: &str,
     args: &[String],
-    env_vars: &Vec<(String, String)>,
+    env_vars: &[(String, String)],
 ) -> Result<SpawnResult> {
     let mut cmd = std::process::Command::new(cmd_name);
 
@@ -726,11 +721,11 @@ fn execute_builtin_command(
     builtin: &builtin::BuiltinCommandExecuteFunc,
     context: &mut PipelineExecutionContext,
     args: &[String],
-    _env_vars: &Vec<(String, String)>,
+    _env_vars: &[(String, String)],
 ) -> Result<SpawnResult> {
     let args: Vec<_> = args.iter().map(AsRef::as_ref).collect();
     let mut builtin_context = builtin::BuiltinExecutionContext {
-        shell: &mut context.shell,
+        shell: context.shell,
         builtin_name: args[0],
     };
     let builtin_result = builtin(&mut builtin_context, args.as_slice())?;
@@ -752,7 +747,7 @@ fn execute_builtin_command(
 fn invoke_shell_function(
     _function_definition: &ast::FunctionDefinition,
     _args: &[String],
-    _env_vars: &Vec<(String, String)>,
+    _env_vars: &[(String, String)],
 ) -> Result<SpawnResult> {
     log::error!("UNIMPLEMENTED: invoke shell function");
     Ok(SpawnResult::ImmediateExit(99))

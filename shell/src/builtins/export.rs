@@ -24,7 +24,7 @@ impl BuiltinCommand for ExportCommand {
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext,
     ) -> Result<crate::builtin::BuiltinExitCode> {
-        if self.names.len() > 0 {
+        if !self.names.is_empty() {
             for name in &self.names {
                 // See if we have a name=value pair; if so, then update the variable
                 // with the provided value and then mark it exported.

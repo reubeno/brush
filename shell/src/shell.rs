@@ -38,7 +38,7 @@ pub struct ShellVariable {
     pub readonly: bool,
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct ShellRuntimeOptions {
     //
     // Single-character options.
@@ -259,40 +259,6 @@ impl ShellRuntimeOptions {
     }
 }
 
-impl Default for ShellRuntimeOptions {
-    fn default() -> Self {
-        Self {
-            export_variables_on_modification: false,
-            notify_job_termination_immediately: false,
-            exit_on_nonzero_command_exit: false,
-            disable_filename_globbing: false,
-            remember_command_locations: false,
-            place_all_assignment_args_in_command_env: false,
-            enable_job_control: false,
-            do_not_execute_commands: false,
-            real_effective_uid_mismatch: false,
-            exit_after_one_command: false,
-            treat_unset_variables_as_error: false,
-            print_shell_input_lines: false,
-            print_commands_and_arguments: false,
-            perform_brace_expansion: false,
-            disallow_overwriting_regular_files_via_output_redirection: false,
-            shell_functions_inherit_err_trap: false,
-            enable_bang_style_history_substitution: false,
-            do_not_resolve_symlinks_when_changing_dir: false,
-            shell_functions_inherit_debug_and_return_traps: false,
-            emacs_mode: false,
-            enable_command_history: false,
-            ignore_eof: false,
-            allow_comments_in_interactive_commands: false,
-            return_first_failure_from_pipeline: false,
-            posix_mode: false,
-            vi_mode: false,
-            interactive: false,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct ShellCreateOptions {
     pub login: bool,
@@ -472,7 +438,7 @@ impl Shell {
         self.positional_parameters = vec![];
 
         // TODO: handle args
-        if args.len() > 0 {
+        if !args.is_empty() {
             log::error!(
                 "UNIMPLEMENTED: source built-in invoked with args: {:?}",
                 path
@@ -516,7 +482,7 @@ impl Shell {
         }
 
         let result = match parse_result {
-            parser::ParseResult::Program(prog) => self.run_program(&prog)?,
+            parser::ParseResult::Program(prog) => self.run_program(prog)?,
             parser::ParseResult::ParseError(token_near_error) => {
                 if let Some(token_near_error) = &token_near_error {
                     let error_loc = &token_near_error.location().start;
@@ -571,7 +537,7 @@ impl Shell {
     }
 
     pub fn compose_prompt(&self) -> Result<String> {
-        const DEFAULT_PROMPT: &'static str = "$ ";
+        const DEFAULT_PROMPT: &str = "$ ";
 
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
         let prompt_pieces = parser::prompt::parse_prompt(&ps1)?;
@@ -579,7 +545,6 @@ impl Shell {
         let formatted_prompt = prompt_pieces
             .iter()
             .map(|p| format_prompt_piece(self, p))
-            .into_iter()
             .collect::<Result<Vec<_>>>()?
             .join("");
 

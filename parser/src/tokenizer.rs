@@ -137,7 +137,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     fn peek_char(&mut self) -> Result<Option<char>> {
         match self.char_reader.peek() {
             Some(result) => match result {
-                Ok(c) => Ok(Some(c.clone())),
+                Ok(c) => Ok(Some(*c)),
                 Err(_) => Err(anyhow::anyhow!("failed to decode UTF-8 characters")),
             },
             None => Ok(None),
@@ -196,13 +196,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 // For now, just include the character in the current token. We also check
                 // if there are leading tabs to be removed.
                 //
-                if self.current_here_tags.len() > 0
+                if !self.current_here_tags.is_empty()
                     && self.current_here_tags[0].remove_tabs
                     && (token_so_far.is_empty() || token_so_far.ends_with('\n'))
+                    && c == '\t'
                 {
-                    if c == '\t' {
-                        include_char = false;
-                    }
+                    include_char = false;
                 }
             } else if token_is_operator {
                 let mut hypothetical_token = token_so_far.to_owned();
@@ -211,7 +210,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 if quote_state.unquoted() && is_operator(hypothetical_token.as_ref()) {
                     // Nothing to do.
                 } else {
-                    assert!(token_so_far.len() > 0);
+                    assert!(!token_so_far.is_empty());
                     delimit_token_reason = Some(TokenEndReason::Other);
 
                     //
@@ -251,20 +250,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 }
             }
             //
-            // Handle end of single-quote.
+            // Handle end of single-quote or double-quote.
             //
-            else if quote_state.quote_mode == QuoteMode::Single
-                && !quote_state.in_escape
-                && c == '\''
-            {
-                next_quote_state.quote_mode = QuoteMode::None;
-            }
-            //
-            // Handle end of double-quote.
-            //
-            else if quote_state.quote_mode == QuoteMode::Double
-                && !quote_state.in_escape
-                && c == '\"'
+            else if !quote_state.in_escape
+                && ((quote_state.quote_mode == QuoteMode::Single && c == '\'')
+                    || (quote_state.quote_mode == QuoteMode::Double && c == '\"'))
             {
                 next_quote_state.quote_mode = QuoteMode::None;
             } else if (quote_state.unquoted()
@@ -296,7 +286,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     }
 
                                     if cur_token.reason == TokenEndReason::NonNewLineBlank {
-                                        token_so_far.push_str(" ");
+                                        token_so_far.push(' ');
                                     }
 
                                     if cur_token.reason == TokenEndReason::SpecifiedTerminatingChar
@@ -320,7 +310,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                         }
 
                                         if cur_token.reason == TokenEndReason::NonNewLineBlank {
-                                            token_so_far.push_str(" ");
+                                            token_so_far.push(' ');
                                         }
 
                                         if cur_token.reason
@@ -380,16 +370,16 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     }
                 }
             } else if quote_state.unquoted() && can_start_operator(c) {
-                if token_so_far.len() > 0 {
+                if !token_so_far.is_empty() {
                     delimit_token_reason = Some(TokenEndReason::Other);
                 }
                 next_token_is_operator = true;
             } else if quote_state.unquoted() && is_blank(c) {
-                if token_so_far.len() > 0 {
+                if !token_so_far.is_empty() {
                     delimit_token_reason = Some(TokenEndReason::NonNewLineBlank);
                 }
                 include_char = false;
-            } else if !token_is_operator && token_so_far.len() > 0 {
+            } else if !token_is_operator && !token_so_far.is_empty() {
                 // Nothing to do.
             } else if c == '#' {
                 let mut done = false;
@@ -407,10 +397,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                 // Re-start loop as if the comment never happened.
                 continue;
-            } else {
-                if token_so_far.len() > 0 {
-                    delimit_token_reason = Some(TokenEndReason::Other);
-                }
+            } else if !token_so_far.is_empty() {
+                delimit_token_reason = Some(TokenEndReason::Other);
             }
 
             //
@@ -418,7 +406,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
 
             if let Some(reason) = delimit_token_reason {
-                let token = if token_so_far.len() > 0 {
+                let token = if !token_so_far.is_empty() {
                     let token_location = TokenLocation {
                         start: start_position,
                         end: self.cursor.clone(),
@@ -492,7 +480,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             quote_state = next_quote_state;
 
             // Check for the end of a here-document.
-            if self.here_state == HereState::InHereDocs && self.current_here_tags.len() > 0 {
+            if self.here_state == HereState::InHereDocs && !self.current_here_tags.is_empty() {
                 if let Some(without_suffix) =
                     token_so_far.strip_suffix(self.current_here_tags[0].tag.as_str())
                 {
@@ -515,6 +503,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'a, R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_token() {
+            #[allow(clippy::manual_map)]
             Ok(result) => match result.token {
                 Some(_) => Some(Ok(result)),
                 None => None,
