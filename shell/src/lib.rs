@@ -1,3 +1,8 @@
+#![deny(clippy::all)]
+// #![deny(clippy::pedantic)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_else_if)]
+
 mod builtin;
 mod builtins;
 mod context;

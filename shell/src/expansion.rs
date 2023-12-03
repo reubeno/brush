@@ -16,7 +16,6 @@ impl<'a> WordExpander<'a> {
         let expanded_pieces = pieces
             .iter()
             .map(|p| p.expand(self.shell))
-            .into_iter()
             .collect::<Result<Vec<_>>>()?;
 
         // TODO: Split fields
@@ -42,7 +41,6 @@ impl Expandable for parser::word::WordPiece {
                 let expanded_pieces = pieces
                     .iter()
                     .map(|p| p.expand(shell))
-                    .into_iter()
                     .collect::<Result<Vec<_>>>()?;
                 expanded_pieces.concat()
             }
@@ -55,7 +53,7 @@ impl Expandable for parser::word::WordPiece {
 }
 
 fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
-    if prefix != "" {
+    if !prefix.is_empty() {
         log::error!("UNIMPLEMENTED: complex tilde expression: {}", prefix);
         todo!("expansion: complex tilde expression");
     }

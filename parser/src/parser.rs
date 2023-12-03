@@ -72,12 +72,11 @@ impl<R: std::io::BufRead> Parser<R> {
 
                 let approx_token_index = parse_error.location;
 
-                let token_near_error;
-                if approx_token_index < tokens.tokens.len() {
-                    token_near_error = Some(tokens.tokens[approx_token_index].clone());
+                let token_near_error = if approx_token_index < tokens.tokens.len() {
+                    Some(tokens.tokens[approx_token_index].clone())
                 } else {
-                    token_near_error = None;
-                }
+                    None
+                };
 
                 ParseResult::ParseError(token_near_error)
             }
@@ -96,15 +95,15 @@ impl<R: std::io::BufRead> Parser<R> {
 impl peg::Parse for Tokens {
     type PositionRepr = usize;
 
-    fn start<'input>(&'input self) -> usize {
+    fn start(&self) -> usize {
         0
     }
 
-    fn is_eof<'input>(&'input self, p: usize) -> bool {
+    fn is_eof(&self, p: usize) -> bool {
         p >= self.tokens.len()
     }
 
-    fn position_repr<'input>(&'input self, p: usize) -> Self::PositionRepr {
+    fn position_repr(&self, p: usize) -> Self::PositionRepr {
         p
     }
 }
@@ -260,7 +259,7 @@ peg::parser! {
             [Token::Word(w, _)] { w }
 
         rule _in() -> () =
-            specific_word("in") { () }
+            specific_word("in") { }
 
         rule wordlist() -> Vec<String> =
             (w:word() { w.to_owned() })+
@@ -435,13 +434,13 @@ peg::parser! {
             word()
 
         rule newline_list() -> () =
-            newline()* { () }
+            newline()* {}
 
         // N.B. We don't need to add a '?' to the invocation of the newline_list()
         // rule because it already allows 0 newlines.
         rule linebreak() -> () =
             quiet! {
-                newline_list() { () }
+                newline_list() {}
             }
 
         rule separator_op() -> ast::SeparatorOperator =
@@ -491,7 +490,7 @@ peg::parser! {
             specific_word("select")
 
         rule newline() -> () = quiet! {
-            specific_operator("\n") { () }
+            specific_operator("\n") {}
         }
 
         rule assignment_word() -> (String, String) =

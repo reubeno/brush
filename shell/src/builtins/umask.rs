@@ -27,7 +27,7 @@ impl BuiltinCommand for UmaskCommand {
     ) -> Result<crate::builtin::BuiltinExitCode> {
         // TODO: handle output redirects
         if let Some(mode) = &self.mode {
-            if mode.starts_with("0") {
+            if mode.starts_with('0') {
                 let parsed = u32::from_str_radix(mode.as_str(), 8)?;
                 context.shell.umask = parsed;
             } else {

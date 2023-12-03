@@ -236,23 +236,23 @@ peg::parser! {
             }
 
         rule command() -> () =
-            command_token()* { () }
+            command_token()* {}
 
         rule command_token() -> () =
-            command_piece()+ { () } /
-            [' ' | '\t']+ { () }
+            command_piece()+ {} /
+            [' ' | '\t']+ {}
 
         rule command_piece() -> WordPiece =
             ![')'] p:word_piece() { p }
 
         rule backquoted_command() -> () =
-            "<BACKQUOTES UNIMPLEMENTED>" { () }
+            "<BACKQUOTES UNIMPLEMENTED>" {}
 
         rule arithmetic_expansion() -> WordPiece =
             "$((" arithmetic_expression() "))" { todo!("arithmetic expression") }
 
         rule arithmetic_expression() -> () =
-            "<ARITHMETIC EXPRESSIONS UNIMPLEMENTED>" { () }
+            "<ARITHMETIC EXPRESSIONS UNIMPLEMENTED>" {}
 
         rule parameter_expression_word() -> String =
             "<PARAMETER EXPRESSION UNIMPLEMENTED>" { "".to_owned() }

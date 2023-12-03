@@ -74,7 +74,6 @@ pub fn transform_program<T: AstTransformer>(
             .complete_commands
             .iter()
             .map(|cc| transform_complete_command(cc, transformer))
-            .into_iter()
             .collect::<Result<Vec<_>>>()?,
     };
     transformer.on_program(&inner)
@@ -87,7 +86,6 @@ fn transform_complete_command<T: AstTransformer>(
     let inner = complete_command
         .iter()
         .map(|item| transform_complete_command_item(item, transformer))
-        .into_iter()
         .collect::<Result<Vec<_>>>()?;
     transformer.on_complete_command(&inner)
 }
@@ -111,7 +109,6 @@ fn transform_and_or_list<T: AstTransformer>(
             .additional
             .iter()
             .map(|ao| transform_and_or(ao, transformer))
-            .into_iter()
             .collect::<Result<Vec<_>>>()?,
     };
     transformer.on_and_or_list(&inner)
@@ -135,7 +132,6 @@ fn transform_pipeline<T: AstTransformer>(
             .seq
             .iter()
             .map(|s| transform_command(s, transformer))
-            .into_iter()
             .collect::<Result<Vec<_>>>()?,
     };
     transformer.on_pipeline(&inner)
@@ -150,7 +146,6 @@ fn transform_command<T: AstTransformer>(command: &Command, transformer: &mut T) 
                 Some(rs) => Some(
                     rs.iter()
                         .map(|r| transform_io_redirect(r, transformer))
-                        .into_iter()
                         .collect::<Result<Vec<_>>>()?,
                 ),
                 None => None,
@@ -187,13 +182,12 @@ fn transform_simple_command<T: AstTransformer>(
 }
 
 fn transform_command_prefix_or_suffix<T: AstTransformer>(
-    command_prefix_or_suffix: &Vec<CommandPrefixOrSuffixItem>,
+    command_prefix_or_suffix: &[CommandPrefixOrSuffixItem],
     transformer: &mut T,
 ) -> Result<CommandPrefix> {
     command_prefix_or_suffix
         .iter()
         .map(|i| transform_command_prefix_or_suffix_item(i, transformer))
-        .into_iter()
         .collect()
 }
 
@@ -240,7 +234,6 @@ fn transform_function_body<T: AstTransformer>(
             Some(rs) => Some(
                 rs.iter()
                     .map(|r| transform_io_redirect(r, transformer))
-                    .into_iter()
                     .collect::<Result<Vec<_>>>()?,
             ),
             None => None,
@@ -304,7 +297,6 @@ fn transform_for_clause<T: AstTransformer>(
             Some(e) => Some(
                 e.iter()
                     .map(|e| transform_for_enumeree(e, transformer))
-                    .into_iter()
                     .collect::<Result<Vec<_>>>()?,
             ),
             None => None,
@@ -357,7 +349,6 @@ fn transform_if_clause<T: AstTransformer>(
             Some(es) => Some(
                 es.iter()
                     .map(|e| transform_else_clause(e, transformer))
-                    .into_iter()
                     .collect::<Result<Vec<_>>>()?,
             ),
             None => None,
@@ -424,7 +415,6 @@ fn transform_compound_list<T: AstTransformer>(
     compound_list
         .iter()
         .map(|i| transform_compound_list_item(i, transformer))
-        .into_iter()
         .collect()
 }
 

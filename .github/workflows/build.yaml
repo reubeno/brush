@@ -18,5 +18,7 @@ jobs:
           runCmd: |
             set -euo pipefail
             cargo build
+            cargo check
+            cargo clippy
             cargo test
             cargo deny check

@@ -42,11 +42,9 @@ impl BuiltinCommand for ShoptCommand {
             match option.as_str() {
                 "checkwinsize" => {
                     // TODO: implement updating LINES/COLUMNS
-                    ()
                 }
                 "histappend" => {
                     // TODO: implement history policy
-                    ()
                 }
                 _ => {
                     log::error!("UNIMPLEMENTED: shopt: option '{}'", option);
