@@ -9,6 +9,7 @@ env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
   CLICOLOR: 1
+  CLICOLOR_FORCE: 1
 
 jobs:
   build:
@@ -33,7 +34,7 @@ jobs:
           runCmd: |
             set -euo pipefail
             cargo build
-            cargo test
+            cargo test -- --show-output
 
   check:
     name: "Source code checks"
@@ -57,6 +58,6 @@ jobs:
           runCmd: |
             set -euo pipefail
             cargo fmt --check --all
-            cargo check
-            cargo deny check
-            cargo clippy
+            cargo check --all-targets
+            cargo deny --exclude integration-tests check
+            cargo clippy --all-targets

@@ -15,16 +15,10 @@ ignore = []
 
 [licenses]
 unlicensed = "deny"
-
-allow = [
-    "MIT",
-    "Apache-2.0",
-    "Unicode-DFS-2016",
-    "BSL-1.0"
-]
-
+allow = ["MIT", "Apache-2.0", "Unicode-DFS-2016", "BSL-1.0", "BSD-3-Clause"]
+unused-allowed-license = "allow"
 deny = []
-copyleft = "warn"
+copyleft = "deny"
 
 # Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
 # * both - The license will be approved if it is both OSI-approved *AND* FSF
@@ -58,8 +52,8 @@ exceptions = []
 # and the crate will be checked normally, which may produce warnings or errors
 # depending on the rest of your configuration
 #license-files = [
-    # Each entry is a crate relative path, and the (opaque) hash of its contents
-    #{ path = "LICENSE", hash = 0xbd0eed23 }
+# Each entry is a crate relative path, and the (opaque) hash of its contents
+#{ path = "LICENSE", hash = 0xbd0eed23 }
 #]
 
 [licenses.private]
