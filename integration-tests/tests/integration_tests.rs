@@ -15,7 +15,7 @@ fn cli_tests() -> Result<()> {
 
         let yaml_file = std::fs::File::open(entry.as_path())?;
         let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
-            .context(format!("parsing {}", entry.to_string_lossy().to_string()))?;
+            .context(format!("parsing {}", entry.to_string_lossy()))?;
 
         let results = test_case_set.run()?;
 
@@ -153,7 +153,7 @@ impl TestCase {
             return Ok(true);
         }
 
-        println!("");
+        println!();
 
         match comparison.exit_status {
             ExitStatusComparison::Ignored => println!("    status {}", "ignored".cyan()),

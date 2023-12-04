@@ -521,12 +521,12 @@ mod tests {
 
     #[test]
     fn parse_case() -> Result<()> {
-        let input = r#"\
+        let input = r"\
 case x in
 x)
     echo y;;
 esac\
-"#;
+";
 
         let tokens = tokenize(input)?;
         let command = super::token_parser::case_clause(&tokens)?;
@@ -540,12 +540,12 @@ esac\
 
     #[test]
     fn parse_case_ns() -> Result<()> {
-        let input = r#"\
+        let input = r"\
 case x in
 x)
     echo y
 esac\
-"#;
+";
 
         let tokens = tokenize(input)?;
         let command = super::token_parser::case_clause(&tokens)?;
@@ -562,12 +562,8 @@ esac\
         let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader);
 
         let mut tokens = vec![];
-        loop {
-            if let Some(token) = tokenizer.next_token()?.token {
-                tokens.push(token);
-            } else {
-                break;
-            }
+        while let Some(token) = tokenizer.next_token()?.token {
+            tokens.push(token);
         }
 
         Ok(Tokens { tokens })
