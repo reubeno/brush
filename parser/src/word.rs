@@ -7,6 +7,8 @@ pub enum WordPiece {
     DoubleQuotedSequence(Vec<WordPiece>),
     TildePrefix(String),
     ParameterExpansion(ParameterExpression),
+    CommandSubstitution(String),
+    EscapeSequence(String),
 }
 
 #[derive(Debug)]
@@ -92,8 +94,10 @@ pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
 
 peg::parser! {
     grammar expansion_parser() for str {
-        pub(crate) rule unexpanded_word() -> Vec<WordPiece> =
-            tilde:tilde_prefix()? pieces:word_piece()* {
+        pub(crate) rule unexpanded_word() -> Vec<WordPiece> = word(<&[_]>)
+
+        rule word<T>(stop_condition: rule<T>) -> Vec<WordPiece> =
+            tilde:tilde_prefix()? pieces:word_piece(<stop_condition()>)* {
                 let mut all_pieces = Vec::new();
                 if let Some(tilde) = tilde {
                     all_pieces.push(tilde);
@@ -103,22 +107,24 @@ peg::parser! {
             }
 
         // TODO: Handle quoting.
-        rule word_piece() -> WordPiece =
-            parameter_expansion() /
+        rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
             command_substitution() /
             arithmetic_expansion() /
-            unquoted_text()
+            parameter_expansion() /
+            unquoted_text(<stop_condition()>)
 
         rule double_quoted_word_piece() -> WordPiece =
-            parameter_expansion() /
             command_substitution() /
             arithmetic_expansion() /
+            parameter_expansion() /
+            double_quoted_escape_sequence() /
             double_quoted_text()
 
-        rule unquoted_text() -> WordPiece =
+        rule unquoted_text<T>(stop_condition: rule<T>) -> WordPiece =
             s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
             s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
-            s:unquoted_literal_text() { WordPiece::Text(s.to_owned()) }
+            normal_escape_sequence() /
+            unquoted_literal_text(<stop_condition()>)
 
         rule double_quoted_sequence() -> Vec<WordPiece> =
             "\"" i:double_quoted_sequence_inner()* "\"" { i }
@@ -129,20 +135,20 @@ peg::parser! {
         rule single_quoted_literal_text() -> &'input str =
             "\'" inner:$([^'\'']*) "\'" { inner }
 
-        rule unquoted_literal_text() -> &'input str =
-            $((normal_escape_sequence() / [^'$' | '\'' | '\"'])+)
+        rule unquoted_literal_text<T>(stop_condition: rule<T>) -> WordPiece =
+            s:$((stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"'])+) { WordPiece::Text(s.to_owned()) }
 
         rule double_quoted_text() -> WordPiece =
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((double_quoted_escape_sequence() / [^'$' | '\"'])+)
+            $((!double_quoted_escape_sequence() [^'$' | '\"'])+)
 
-        rule normal_escape_sequence() -> &'input str =
-            $("\\" [c])
+        rule normal_escape_sequence() -> WordPiece =
+            s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
 
-        rule double_quoted_escape_sequence() -> &'input str =
-            $("\\" ['$' | '`' | '\"' | '\'' | '\\'])
+        rule double_quoted_escape_sequence() -> WordPiece =
+            s:$("\\" ['$' | '`' | '\"' | '\'' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
 
         // TODO: Handle colon syntax mentioned above
         rule tilde_prefix() -> WordPiece =
@@ -150,12 +156,16 @@ peg::parser! {
 
         // TODO: Constrain syntax of parameter in brace-less form
         // TODO: Deal with fact that there may be a quoted word or escaped closing brace chars.
+        // TODO: Improve on ow we handle a '$' not followed by a valid variable name or parameter.
         rule parameter_expansion() -> WordPiece =
             "${" e:parameter_expression() "}" {
                 WordPiece::ParameterExpansion(e)
             } /
             "$" parameter:unbraced_parameter() {
                 WordPiece::ParameterExpansion(ParameterExpression::Parameter { parameter })
+            } /
+            "$" {
+                WordPiece::Text("$".to_owned())
             }
 
         rule parameter_expression() -> ParameterExpression =
@@ -228,22 +238,14 @@ peg::parser! {
             $(!['0'..='9'] ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z']+)
 
         rule command_substitution() -> WordPiece =
-            "$(" command() ")" {
-                todo!("command substitution")
-            } /
-            "`" backquoted_command() "`" {
-                todo!("backquoted command substitution")
-            }
+            "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
+            "`" backquoted_command() "`" { todo!("backquoted command substitution") }
 
-        rule command() -> () =
-            command_token()* {}
-
-        rule command_token() -> () =
-            command_piece()+ {} /
-            [' ' | '\t']+ {}
+        rule command() -> &'input str =
+            $(command_piece() ** [' ' | '\t'])
 
         rule command_piece() -> WordPiece =
-            ![')'] p:word_piece() { p }
+            word_piece(<![')']>)
 
         rule backquoted_command() -> () =
             "<BACKQUOTES UNIMPLEMENTED>" {}
@@ -255,6 +257,6 @@ peg::parser! {
             "<ARITHMETIC EXPRESSIONS UNIMPLEMENTED>" {}
 
         rule parameter_expression_word() -> String =
-            "<PARAMETER EXPRESSION UNIMPLEMENTED>" { "".to_owned() }
+            s:$(word(<!['}']>)) { s.to_owned() }
     }
 }

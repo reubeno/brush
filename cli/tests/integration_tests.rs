@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, process::ExitStatus};
 
 #[test]
-fn cli_tests() -> Result<()> {
+fn cli_integration_tests() -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
     let mut success_count = 0;

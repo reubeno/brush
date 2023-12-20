@@ -9,8 +9,10 @@ version.workspace = true
 anyhow = "1.0.75"
 clap = { version = "4.4.10", features = ["derive"] }
 glob = "0.3.1"
+hostname = "0.3.1"
 itertools = "0.12.0"
 lazy_static = "1.4.0"
 log = "0.4.20"
 parser = { path = "../parser" }
+regex = "1.10.2"
 uzers = "0.11.3"

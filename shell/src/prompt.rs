@@ -7,9 +7,11 @@ pub(crate) fn format_prompt_piece(
 ) -> Result<String> {
     let formatted = match piece {
         parser::prompt::ShellPromptPiece::Literal(l) => l.to_owned(),
-        parser::prompt::ShellPromptPiece::AsciiCharacter(_) => todo!("prompt: ascii char"),
+        parser::prompt::ShellPromptPiece::AsciiCharacter(c) => {
+            char::from_u32(*c).map_or_else(|| "".to_owned(), |c| c.to_string())
+        }
         parser::prompt::ShellPromptPiece::Backslash => "\\".to_owned(),
-        parser::prompt::ShellPromptPiece::BellCharacter => todo!("bell character"),
+        parser::prompt::ShellPromptPiece::BellCharacter => "\x07".to_owned(),
         parser::prompt::ShellPromptPiece::CarriageReturn => "\r".to_owned(),
         parser::prompt::ShellPromptPiece::CurrentCommandNumber => {
             todo!("prompt: current command number")
@@ -33,8 +35,19 @@ pub(crate) fn format_prompt_piece(
         parser::prompt::ShellPromptPiece::EndNonPrintingSequence => "".to_owned(),
         parser::prompt::ShellPromptPiece::EscapeCharacter => "\x1b".to_owned(),
         parser::prompt::ShellPromptPiece::Hostname {
-            only_up_to_first_dot: _,
-        } => todo!("prompt: hostname"),
+            only_up_to_first_dot,
+        } => {
+            let mut hn = hostname::get()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            if *only_up_to_first_dot {
+                if let Some((first, _)) = hn.split_once('.') {
+                    hn = first.to_owned();
+                }
+            }
+            hn
+        }
         parser::prompt::ShellPromptPiece::Newline => "\n".to_owned(),
         parser::prompt::ShellPromptPiece::NumberOfManagedJobs => {
             todo!("prompt: number of managed jobs")

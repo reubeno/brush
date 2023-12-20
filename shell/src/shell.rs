@@ -3,7 +3,8 @@ use log::debug;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::interp::{Execute, ExecutionResult};
+use crate::expansion::WordExpander;
+use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::prompt::format_prompt_piece;
 
 #[derive(Debug)]
@@ -445,7 +446,8 @@ impl Shell {
             );
         }
 
-        let result = self.run_parsed_result(&parse_result, &ProgramOrigin::File(path.to_owned()));
+        let result =
+            self.run_parsed_result(&parse_result, &ProgramOrigin::File(path.to_owned()), false);
 
         // Restore.
         self.shell_name = orig_shell_name;
@@ -454,12 +456,12 @@ impl Shell {
         result
     }
 
-    pub fn run_string(&mut self, command: &str) -> Result<ExecutionResult> {
+    pub fn run_string(&mut self, command: &str, capture_output: bool) -> Result<ExecutionResult> {
         let mut reader = std::io::BufReader::new(command.as_bytes());
         let mut parser = parser::Parser::new(&mut reader);
         let parse_result = parser.parse(true)?;
 
-        self.run_parsed_result(&parse_result, &ProgramOrigin::String)
+        self.run_parsed_result(&parse_result, &ProgramOrigin::String, capture_output)
     }
 
     pub fn run_script<S: AsRef<str>>(
@@ -474,6 +476,7 @@ impl Shell {
         &mut self,
         parse_result: &parser::ParseResult,
         origin: &ProgramOrigin,
+        capture_output: bool,
     ) -> Result<ExecutionResult> {
         let mut error_prefix = "".to_owned();
 
@@ -482,7 +485,7 @@ impl Shell {
         }
 
         let result = match parse_result {
-            parser::ParseResult::Program(prog) => self.run_program(prog)?,
+            parser::ParseResult::Program(prog) => self.run_program(prog, capture_output)?,
             parser::ParseResult::ParseError(token_near_error) => {
                 if let Some(token_near_error) = &token_near_error {
                     let error_loc = &token_near_error.location().start;
@@ -501,8 +504,18 @@ impl Shell {
                 self.last_exit_status = 2;
                 ExecutionResult::new(2)
             }
-            parser::ParseResult::TokenizerError(message) => {
-                log::error!("{}{}", error_prefix, message);
+            parser::ParseResult::TokenizerError { message, position } => {
+                let mut error_message = error_prefix.clone();
+                error_message.push_str(message);
+
+                if let Some(position) = position {
+                    error_message.push_str(&format!(
+                        " (detected near line {} column {})",
+                        position.line, position.column
+                    ));
+                }
+
+                log::error!("{}", error_message);
 
                 self.last_exit_status = 2;
                 ExecutionResult::new(2)
@@ -512,31 +525,15 @@ impl Shell {
         Ok(result)
     }
 
-    pub fn run_program(&mut self, program: &parser::ast::Program) -> Result<ExecutionResult> {
-        let result = program.execute(self)?;
-
-        //
-        // Perform any necessary redirections and remove the redirection
-        // operators and their operands from the argument list.
-        //
-        // TODO
-
-        //
-        // Execute the command, either as a function, built-in, executable
-        // file, or script.
-        //
-        // TODO
-
-        //
-        // Optionally wait for the command to complete and collect its exit
-        // status.
-        //
-        // TODO
-
-        Ok(result)
+    pub fn run_program(
+        &mut self,
+        program: &parser::ast::Program,
+        capture_output: bool,
+    ) -> Result<ExecutionResult> {
+        program.execute(self, &ExecutionParameters { capture_output })
     }
 
-    pub fn compose_prompt(&self) -> Result<String> {
+    pub fn compose_prompt(&mut self) -> Result<String> {
         const DEFAULT_PROMPT: &str = "$ ";
 
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
@@ -547,6 +544,15 @@ impl Shell {
             .map(|p| format_prompt_piece(self, p))
             .collect::<Result<Vec<_>>>()?
             .join("");
+
+        // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
+        // so we strip them here.
+        let re = regex::Regex::new("\x1b][0-2];[^\x07]*\x07")?;
+        let formatted_prompt = re.replace_all(formatted_prompt.as_str(), "").to_string();
+
+        // Now expand.
+        let mut expander = WordExpander::new(self);
+        let formatted_prompt = expander.expand(formatted_prompt.as_str())?;
 
         Ok(formatted_prompt)
     }

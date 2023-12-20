@@ -1,0 +1,11 @@
+name: "Builtins: cd"
+cases:
+  - name: "Basic cd usage"
+    ignore_stderr: true
+    stdin: |
+      cd /
+      echo $?
+      echo "pwd: $PWD"
+      cd
+      echo $?
+      echo "pwd: $PWD"

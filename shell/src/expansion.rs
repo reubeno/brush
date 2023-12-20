@@ -2,15 +2,15 @@ use anyhow::Result;
 
 use crate::shell::Shell;
 pub struct WordExpander<'a> {
-    shell: &'a Shell,
+    shell: &'a mut Shell,
 }
 
 impl<'a> WordExpander<'a> {
-    pub fn new(shell: &'a Shell) -> Self {
+    pub fn new(shell: &'a mut Shell) -> Self {
         Self { shell }
     }
 
-    pub fn expand(&self, word: &str) -> Result<String> {
+    pub fn expand(&mut self, word: &str) -> Result<String> {
         // Expand: tildes, parameters, command substitutions, arithmetic.
         let pieces = parser::parse_word_for_expansion(word)?;
         let expanded_pieces = pieces
@@ -28,13 +28,12 @@ impl<'a> WordExpander<'a> {
 }
 
 pub trait Expandable {
-    fn expand(&self, shell: &Shell) -> Result<String>;
+    fn expand(&self, shell: &mut Shell) -> Result<String>;
 }
 
 impl Expandable for parser::word::WordPiece {
-    fn expand(&self, shell: &Shell) -> Result<String> {
+    fn expand(&self, shell: &mut Shell) -> Result<String> {
         let expansion = match self {
-            // TODO: Handle escape sequences inside text or double-quoted text! Probably need to parse them differently.
             parser::word::WordPiece::Text(t) => t.to_owned(),
             parser::word::WordPiece::SingleQuotedText(t) => t.to_owned(),
             parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
@@ -46,6 +45,18 @@ impl Expandable for parser::word::WordPiece {
             }
             parser::word::WordPiece::TildePrefix(prefix) => expand_tilde_expression(shell, prefix)?,
             parser::word::WordPiece::ParameterExpansion(p) => p.expand(shell)?,
+            parser::word::WordPiece::CommandSubstitution(s) => {
+                let exec_result = shell.run_string(s.as_str(), true)?;
+                let exec_output = exec_result
+                    .output
+                    .ok_or_else(|| anyhow::anyhow!("No output captured"))?;
+
+                // We trim trailing newlines, per spec.
+                let exec_output = exec_output.trim_end_matches('\n');
+
+                exec_output.to_owned()
+            }
+            parser::word::WordPiece::EscapeSequence(s) => s.strip_prefix('\\').unwrap().to_owned(),
         };
 
         Ok(expansion)
@@ -68,7 +79,8 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
 }
 
 impl Expandable for parser::word::ParameterExpression {
-    fn expand(&self, shell: &Shell) -> Result<String> {
+    fn expand(&self, shell: &mut Shell) -> Result<String> {
+        // TODO: observe test_type
         match self {
             parser::word::ParameterExpression::Parameter { parameter } => parameter.expand(shell),
             parser::word::ParameterExpression::UseDefaultValues {
@@ -96,10 +108,18 @@ impl Expandable for parser::word::ParameterExpression {
                 error_message: _,
             } => todo!("expansion: indicate error if null or unset expressions"),
             parser::word::ParameterExpression::UseAlternativeValue {
-                parameter: _,
+                parameter,
                 test_type: _,
-                alternative_value: _,
-            } => todo!("expansion: use alternative value expressions"),
+                alternative_value,
+            } => {
+                let expanded_parameter = parameter.expand(shell)?;
+                if !expanded_parameter.is_empty() {
+                    Ok(WordExpander::new(shell)
+                        .expand(alternative_value.as_ref().map_or("", |av| av.as_str()))?)
+                } else {
+                    Ok("".to_owned())
+                }
+            }
             parser::word::ParameterExpression::StringLength { parameter: _ } => {
                 todo!("expansion: string length expression")
             }
@@ -124,7 +144,7 @@ impl Expandable for parser::word::ParameterExpression {
 }
 
 impl Expandable for parser::word::Parameter {
-    fn expand(&self, shell: &Shell) -> Result<String> {
+    fn expand(&self, shell: &mut Shell) -> Result<String> {
         match self {
             parser::word::Parameter::Positional(p) => {
                 if *p == 0 {
@@ -150,7 +170,7 @@ impl Expandable for parser::word::Parameter {
 }
 
 impl Expandable for parser::word::SpecialParameter {
-    fn expand(&self, shell: &Shell) -> Result<String> {
+    fn expand(&self, shell: &mut Shell) -> Result<String> {
         match self {
             parser::word::SpecialParameter::AllPositionalParameters { concatenate: _ } => {
                 todo!("expansion: all positional parameters")

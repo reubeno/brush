@@ -38,14 +38,14 @@ pub struct TokenLocation {
 #[derive(Clone, Debug)]
 pub enum Token {
     Operator(String, TokenLocation),
-    Word(String, TokenLocation),
+    Word((String, ParsedWord), TokenLocation),
 }
 
 impl Token {
     pub fn to_str(&self) -> &str {
         match self {
             Token::Operator(s, _) => s,
-            Token::Word(s, _) => s,
+            Token::Word((s, _), _) => s,
         }
     }
 
@@ -57,6 +57,29 @@ impl Token {
     }
 }
 
+pub type ParsedWord = Vec<WordSubtoken>;
+
+#[derive(Clone, Debug)]
+pub enum WordSubtoken {
+    Text(String),
+    SingleQuotedText(String),
+    DoubleQuotedSequence(String, Vec<WordSubtoken>),
+    CommandSubstitution(String, Vec<Token>),
+    EscapeSequence(String),
+}
+
+impl WordSubtoken {
+    pub fn to_str(&self) -> &str {
+        match self {
+            WordSubtoken::Text(s) => s,
+            WordSubtoken::CommandSubstitution(s, _) => s,
+            WordSubtoken::SingleQuotedText(s) => s,
+            WordSubtoken::DoubleQuotedSequence(s, _) => s,
+            WordSubtoken::EscapeSequence(s) => s,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct TokenizeResult {
     pub reason: TokenEndReason,
@@ -64,27 +87,15 @@ pub(crate) struct TokenizeResult {
 }
 
 #[derive(Debug)]
-pub(crate) struct Tokens {
-    pub tokens: Vec<Token>,
+pub(crate) struct Tokens<'a> {
+    pub tokens: &'a [Token],
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 enum QuoteMode {
     None,
-    Single,
-    Double,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct QuoteState {
-    in_escape: bool,
-    quote_mode: QuoteMode,
-}
-
-impl QuoteState {
-    pub fn unquoted(&self) -> bool {
-        !self.in_escape && self.quote_mode == QuoteMode::None
-    }
+    Single(SourcePosition),
+    Double(SourcePosition),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -102,21 +113,248 @@ struct HereTag {
     remove_tabs: bool,
 }
 
-pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
-    char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
+#[derive(Clone, Debug)]
+struct CrossTokenParseState {
     cursor: SourcePosition,
     here_state: HereState,
     current_here_tags: Vec<HereTag>,
+}
+
+pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
+    char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
+    cross_state: CrossTokenParseState,
+}
+
+#[derive(Clone, Debug)]
+struct TokenParseState {
+    pub start_position: SourcePosition,
+    pub completed_subtokens: Vec<WordSubtoken>,
+    pub subtoken_stack: Vec<WordSubtoken>,
+    pub token_so_far: String,
+    pub token_is_operator: bool,
+    pub in_escape: bool,
+    pub quote_mode: QuoteMode,
+}
+
+impl TokenParseState {
+    pub fn new(start_position: &SourcePosition) -> Self {
+        TokenParseState {
+            start_position: start_position.clone(),
+            completed_subtokens: vec![],
+            subtoken_stack: vec![],
+            token_so_far: String::new(),
+            token_is_operator: false,
+            in_escape: false,
+            quote_mode: QuoteMode::None,
+        }
+    }
+
+    pub fn pop(&mut self, end_position: &SourcePosition) -> Result<Token> {
+        while !self.subtoken_stack.is_empty() {
+            self.delimit_current_subtoken();
+        }
+
+        let token_location = TokenLocation {
+            start: self.start_position.clone(),
+            end: end_position.clone(),
+        };
+
+        let token = if self.token_is_operator {
+            Token::Operator(std::mem::take(&mut self.token_so_far), token_location)
+        } else {
+            Token::Word(
+                (
+                    std::mem::take(&mut self.token_so_far),
+                    std::mem::take(&mut self.completed_subtokens),
+                ),
+                token_location,
+            )
+        };
+
+        Ok(token)
+    }
+
+    pub fn started_token(&self) -> bool {
+        !self.token_so_far.is_empty()
+    }
+
+    pub fn should_start_text_subtoken(&self) -> bool {
+        matches!(
+            self.subtoken_stack.last(),
+            Some(WordSubtoken::DoubleQuotedSequence(_, _)) | None
+        )
+    }
+
+    pub fn append_char(&mut self, c: char) {
+        self.token_so_far.push(c);
+
+        if self.subtoken_stack.is_empty() {
+            panic!("appending char '{c}' without current subtoken")
+        }
+
+        for subtoken in self.subtoken_stack.iter_mut() {
+            match subtoken {
+                WordSubtoken::Text(text) => text.push(c),
+                WordSubtoken::SingleQuotedText(text) => text.push(c),
+                WordSubtoken::DoubleQuotedSequence(text, _) => text.push(c),
+                WordSubtoken::EscapeSequence(text) => text.push(c),
+                WordSubtoken::CommandSubstitution(text, _) => text.push(c),
+            }
+        }
+    }
+
+    pub fn append_str(&mut self, s: &str) {
+        self.token_so_far.push_str(s);
+
+        if self.subtoken_stack.is_empty() {
+            panic!("appending string '{s}' without current subtoken")
+        }
+
+        for subtoken in self.subtoken_stack.iter_mut() {
+            match subtoken {
+                WordSubtoken::Text(text) => text.push_str(s),
+                WordSubtoken::SingleQuotedText(text) => text.push_str(s),
+                WordSubtoken::DoubleQuotedSequence(text, _) => text.push_str(s),
+                WordSubtoken::EscapeSequence(text) => text.push_str(s),
+                WordSubtoken::CommandSubstitution(text, _) => text.push_str(s),
+            }
+        }
+    }
+
+    pub fn unquoted(&self) -> bool {
+        !self.in_escape && matches!(self.quote_mode, QuoteMode::None)
+    }
+
+    pub fn delimit_current_subtoken(&mut self) {
+        if let Some(current_subtoken) = self.subtoken_stack.pop() {
+            if let Some(WordSubtoken::DoubleQuotedSequence(_, subtokens)) =
+                self.subtoken_stack.last_mut()
+            {
+                subtokens.push(current_subtoken);
+            } else {
+                self.completed_subtokens.push(current_subtoken)
+            }
+        }
+    }
+
+    pub fn start_subtoken<F>(&mut self, f: F)
+    where
+        F: Fn() -> WordSubtoken,
+    {
+        // First check to see what subtoken is on top of the stack (if any).
+        match self.subtoken_stack.last() {
+            Some(WordSubtoken::DoubleQuotedSequence(_, _))
+            | Some(WordSubtoken::CommandSubstitution(_, _)) => (),
+            Some(_) => self.delimit_current_subtoken(),
+            _ => (),
+        }
+
+        self.subtoken_stack.push(f());
+    }
+
+    pub fn current_token(&self) -> &str {
+        &self.token_so_far
+    }
+
+    pub fn is_specific_operator(&self, operator: &str) -> bool {
+        self.token_is_operator && self.current_token() == operator
+    }
+
+    pub fn is_operator(&self) -> bool {
+        self.token_is_operator
+    }
+
+    fn is_newline(&self) -> bool {
+        self.token_so_far == "\n"
+    }
+
+    fn replace_with_here_doc(&mut self, s: String) {
+        if let Some(WordSubtoken::Text(text)) = self.subtoken_stack.last_mut() {
+            text.clear();
+            text.push_str(s.as_str());
+        }
+        self.token_so_far = s;
+    }
+
+    pub fn delimit_current_token(
+        &mut self,
+        reason: TokenEndReason,
+        cross_token_state: &mut CrossTokenParseState,
+    ) -> Result<TokenizeResult> {
+        if !self.started_token() {
+            return Ok(TokenizeResult {
+                reason,
+                token: None,
+            });
+        }
+
+        // TODO: Make sure the here-tag meets criteria (and isn't a newline).
+        match cross_token_state.here_state {
+            HereState::NextTokenIsHereTag { remove_tabs } => {
+                cross_token_state.here_state = HereState::CurrentTokenIsHereTag { remove_tabs };
+            }
+            HereState::CurrentTokenIsHereTag { remove_tabs } => {
+                if self.is_newline() {
+                    return Err(anyhow::anyhow!(
+                        "Missing here tag '{}'",
+                        self.current_token()
+                    ));
+                }
+
+                cross_token_state.here_state = HereState::NextLineIsHereDoc;
+
+                if self.current_token().contains('\"')
+                    || self.current_token().contains('\'')
+                    || self.current_token().contains('\\')
+                {
+                    todo!("UNIMPLEMENTED: quoted or escaped here tag");
+                }
+
+                // Include the \n in the here tag so it's easier to check against.
+                cross_token_state.current_here_tags.push(HereTag {
+                    tag: std::format!("\n{}\n", self.current_token()),
+                    remove_tabs,
+                });
+            }
+            HereState::NextLineIsHereDoc => {
+                if self.is_newline() {
+                    cross_token_state.here_state = HereState::InHereDocs;
+                }
+            }
+            _ => (),
+        }
+
+        let token = Some(self.pop(&cross_token_state.cursor)?);
+        Ok(TokenizeResult { reason, token })
+    }
+}
+
+pub fn tokenize_str(input: &str) -> Result<Vec<Token>> {
+    let mut reader = std::io::BufReader::new(input.as_bytes());
+    let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader);
+
+    let mut tokens = vec![];
+    while let Some(token) = tokenizer.next_token()?.token {
+        tokens.push(token);
+    }
+
+    Ok(tokens)
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     pub fn new(reader: &'a mut R) -> Tokenizer<'a, R> {
         Tokenizer {
             char_reader: reader.chars().peekable(),
-            cursor: SourcePosition { line: 1, column: 1 },
-            here_state: HereState::None,
-            current_here_tags: vec![],
+            cross_state: CrossTokenParseState {
+                cursor: SourcePosition { line: 1, column: 1 },
+                here_state: HereState::None,
+                current_here_tags: vec![],
+            },
         }
+    }
+
+    pub fn current_location(&self) -> Option<SourcePosition> {
+        Some(self.cross_state.cursor.clone())
     }
 
     fn next_char(&mut self) -> Result<Option<char>> {
@@ -124,14 +362,19 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
         if let Some(ch) = c {
             if ch == '\n' {
-                self.cursor.line += 1;
-                self.cursor.column = 1;
+                self.cross_state.cursor.line += 1;
+                self.cross_state.cursor.column = 1;
             } else {
-                self.cursor.column += 1;
+                self.cross_state.cursor.column += 1;
             }
         }
 
         Ok(c)
+    }
+
+    fn consume_char(&mut self) -> Result<()> {
+        let _ = self.next_char()?;
+        Ok(())
     }
 
     fn peek_char(&mut self) -> Result<Option<char>> {
@@ -149,197 +392,260 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     }
 
     fn next_token_until(&mut self, terminating_char: Option<char>) -> Result<TokenizeResult> {
-        let start_position = self.cursor.clone();
-        let mut token_so_far = String::new();
-        let mut token_is_operator = false;
-        let mut quote_state = QuoteState {
-            in_escape: false,
-            quote_mode: QuoteMode::None,
-        };
+        let mut state = TokenParseState::new(&self.cross_state.cursor);
 
         loop {
-            let mut next_token_is_operator = token_is_operator;
-            let mut next_quote_state = quote_state.clone();
-
             let next = self.peek_char()?;
             let c = next.unwrap_or('\0');
 
-            let mut delimit_token_reason = None;
-            let mut include_char = true;
-            let mut consume_char = true;
-
             if next.is_none() {
                 // Verify we're out of all quotes.
-                if !quote_state.unquoted() {
-                    return Err(anyhow::anyhow!("unterminated quote or escape sequence"));
+                if state.in_escape {
+                    return Err(anyhow::anyhow!("unterminated escape sequence"));
+                }
+                match state.quote_mode {
+                    QuoteMode::None => (),
+                    QuoteMode::Single(pos) => {
+                        return Err(anyhow::anyhow!("unterminated single quote at {}", pos))
+                    }
+                    QuoteMode::Double(pos) => {
+                        return Err(anyhow::anyhow!("unterminated double quote at {}", pos))
+                    }
                 }
 
                 // Verify we're not in a here document.
-                if self.here_state != HereState::None {
+                if self.cross_state.here_state != HereState::None {
                     return Err(anyhow::anyhow!("unterminated here document sequence"));
                 }
 
-                delimit_token_reason = Some(TokenEndReason::EndOfInput);
-                include_char = false;
+                return state
+                    .delimit_current_token(TokenEndReason::EndOfInput, &mut self.cross_state);
             //
             // Look for the specially specified terminating char.
             //
-            } else if quote_state.unquoted() && terminating_char == Some(c) {
-                delimit_token_reason = Some(TokenEndReason::SpecifiedTerminatingChar);
-                include_char = false;
-                consume_char = false;
+            } else if state.unquoted() && terminating_char == Some(c) {
+                return state.delimit_current_token(
+                    TokenEndReason::SpecifiedTerminatingChar,
+                    &mut self.cross_state,
+                );
             //
             // Handle being in a here document.
             //
-            } else if self.here_state == HereState::InHereDocs {
+            } else if self.cross_state.here_state == HereState::InHereDocs {
                 //
                 // For now, just include the character in the current token. We also check
                 // if there are leading tabs to be removed.
                 //
-                if !self.current_here_tags.is_empty()
-                    && self.current_here_tags[0].remove_tabs
-                    && (token_so_far.is_empty() || token_so_far.ends_with('\n'))
+                self.consume_char()?;
+                if !self.cross_state.current_here_tags.is_empty()
+                    && self.cross_state.current_here_tags[0].remove_tabs
+                    && (!state.started_token() || state.current_token().ends_with('\n'))
                     && c == '\t'
                 {
-                    include_char = false;
-                }
-            } else if token_is_operator {
-                let mut hypothetical_token = token_so_far.to_owned();
-                hypothetical_token.push(c);
-
-                if quote_state.unquoted() && is_operator(hypothetical_token.as_ref()) {
                     // Nothing to do.
                 } else {
-                    assert!(!token_so_far.is_empty());
-                    delimit_token_reason = Some(TokenEndReason::Other);
+                    if state.should_start_text_subtoken() {
+                        state.start_subtoken(|| WordSubtoken::Text(String::new()));
+                    }
+                    state.append_char(c);
+                }
+            } else if state.is_operator() {
+                let mut hypothetical_token = state.current_token().to_owned();
+                hypothetical_token.push(c);
+
+                if state.unquoted() && is_operator(hypothetical_token.as_ref()) {
+                    self.consume_char()?;
+                    state.append_char(c);
+                } else {
+                    assert!(state.started_token());
 
                     //
                     // N.B. If the completed operator indicates a here-document, then keep
                     // track that the *next* token should be the here-tag.
                     //
-                    if token_so_far == "<<" {
-                        self.here_state = HereState::NextTokenIsHereTag { remove_tabs: false };
-                    } else if token_so_far == "<<-" {
-                        self.here_state = HereState::NextTokenIsHereTag { remove_tabs: true };
+                    if state.is_specific_operator("<<") {
+                        self.cross_state.here_state =
+                            HereState::NextTokenIsHereTag { remove_tabs: false };
+                    } else if state.is_specific_operator("<<-") {
+                        self.cross_state.here_state =
+                            HereState::NextTokenIsHereTag { remove_tabs: true };
                     }
+
+                    return state
+                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
                 }
-            } else if does_char_newly_affect_quoting(&quote_state, c) {
+            } else if does_char_newly_affect_quoting(&state, c) {
                 if c == '\\' {
                     // Consume the backslash ourselves so we can peek past it.
-                    let _ = self.next_char()?;
-                    consume_char = false;
+                    self.consume_char()?;
 
                     if self.peek_char()? == Some('\n') {
                         // Make sure the newline char gets consumed too.
-                        consume_char = true;
+                        self.consume_char()?;
 
                         // Make sure to include neither the backslash nor the newline character.
-                        include_char = false;
                     } else {
-                        next_quote_state.in_escape = true;
+                        state.start_subtoken(|| WordSubtoken::EscapeSequence(String::new()));
+                        state.in_escape = true;
+                        state.append_char(c);
                     }
                 } else if c == '\'' {
-                    //
-                    // Enclosing characters in single-quotes ( '' ) shall preserve the literal
-                    // value of each character within the single-quotes. A single-quote cannot
-                    // occur within single-quotes.
-                    //
-                    next_quote_state.quote_mode = QuoteMode::Single;
+                    state.start_subtoken(|| WordSubtoken::SingleQuotedText(String::new()));
+                    state.quote_mode = QuoteMode::Single(self.cross_state.cursor.clone());
+                    self.consume_char()?;
+                    state.append_char(c);
                 } else if c == '\"' {
-                    next_quote_state.quote_mode = QuoteMode::Double;
+                    state.start_subtoken(|| {
+                        WordSubtoken::DoubleQuotedSequence(String::new(), vec![])
+                    });
+                    state.quote_mode = QuoteMode::Double(self.cross_state.cursor.clone());
+                    self.consume_char()?;
+                    state.append_char(c);
                 }
             }
             //
             // Handle end of single-quote or double-quote.
             //
-            else if !quote_state.in_escape
-                && ((quote_state.quote_mode == QuoteMode::Single && c == '\'')
-                    || (quote_state.quote_mode == QuoteMode::Double && c == '\"'))
+            else if !state.in_escape
+                && matches!(state.quote_mode, QuoteMode::Single(_))
+                && c == '\''
             {
-                next_quote_state.quote_mode = QuoteMode::None;
-            } else if (quote_state.unquoted()
-                || (quote_state.quote_mode == QuoteMode::Double && !quote_state.in_escape))
+                state.quote_mode = QuoteMode::None;
+                self.consume_char()?;
+                state.append_char(c);
+                state.delimit_current_subtoken();
+            } else if !state.in_escape
+                && matches!(state.quote_mode, QuoteMode::Double(_))
+                && c == '\"'
+            {
+                if !matches!(
+                    state.subtoken_stack.last(),
+                    Some(WordSubtoken::DoubleQuotedSequence(_, _))
+                ) {
+                    state.delimit_current_subtoken();
+                }
+
+                state.quote_mode = QuoteMode::None;
+                self.consume_char()?;
+                state.append_char(c);
+                state.delimit_current_subtoken();
+            }
+            //
+            // Handle end of escape sequence.
+            // TODO: Handle double-quote specific escape sequences.
+            //
+            else if state.in_escape {
+                state.in_escape = false;
+                self.consume_char()?;
+                state.append_char(c);
+                state.delimit_current_subtoken();
+            } else if (state.unquoted()
+                || (matches!(state.quote_mode, QuoteMode::Double(_)) && !state.in_escape))
                 && (c == '$' || c == '`')
             {
                 // TODO: handle quoted $ or ` in a double quote
                 if c == '$' {
-                    // First disable normal consumption and consume the '$' char.
-                    consume_char = false;
-                    include_char = false;
-                    let _ = self.next_char()?;
-
-                    // Add the opening '$' to the token.
-                    token_so_far.push(c);
+                    // Consume the '$' so we can peek beyond.
+                    self.consume_char()?;
 
                     // Now peek beyond to see what we have.
                     let char_after_dollar_sign = self.peek_char()?;
                     if let Some(cads) = char_after_dollar_sign {
                         match cads {
                             '(' => {
+                                state.start_subtoken(|| {
+                                    WordSubtoken::CommandSubstitution(String::new(), vec![])
+                                });
+
+                                // Add the '$' we already consumed to the token.
+                                state.append_char('$');
+
                                 // Consume the '(' and add it to the token.
-                                token_so_far.push(self.next_char()?.unwrap());
+                                state.append_char(self.next_char()?.unwrap());
+
+                                let mut tokens = vec![];
 
                                 loop {
                                     let cur_token = self.next_token_until(Some(')'))?;
                                     if let Some(cur_token_value) = cur_token.token {
-                                        token_so_far.push_str(cur_token_value.to_str())
-                                    }
+                                        if !tokens.is_empty() {
+                                            state.append_char(' ');
+                                        }
 
-                                    if cur_token.reason == TokenEndReason::NonNewLineBlank {
-                                        token_so_far.push(' ');
+                                        state.append_str(cur_token_value.to_str());
+                                        tokens.push(cur_token_value);
                                     }
 
                                     if cur_token.reason == TokenEndReason::SpecifiedTerminatingChar
                                     {
-                                        // We hit the ')' we were looking for but did not
+                                        // We hit the ')' we were looking for.
+                                        break;
+                                    }
+                                }
+
+                                state.append_char(self.next_char()?.unwrap());
+
+                                if let Some(WordSubtoken::CommandSubstitution(_, existing_tokens)) =
+                                    state.subtoken_stack.last_mut()
+                                {
+                                    existing_tokens.append(&mut tokens);
+                                } else {
+                                    panic!("expected command substitution subtoken");
+                                }
+
+                                state.delimit_current_subtoken();
+                            }
+
+                            '{' => {
+                                // Add the '$' we already consumed to the token.
+                                if state.should_start_text_subtoken() {
+                                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
+                                }
+                                state.append_char('$');
+
+                                // Consume the '{' and add it to the token.
+                                state.append_char(self.next_char()?.unwrap());
+
+                                loop {
+                                    let cur_token = self.next_token_until(Some('}'))?;
+                                    if let Some(cur_token_value) = cur_token.token {
+                                        state.append_str(cur_token_value.to_str())
+                                    }
+
+                                    if cur_token.reason == TokenEndReason::NonNewLineBlank {
+                                        state.append_char(' ');
+                                    }
+
+                                    if cur_token.reason == TokenEndReason::SpecifiedTerminatingChar
+                                    {
+                                        // We hit the end brace we were looking for but did not
                                         // yet consume it. Do so now.
-                                        token_so_far.push(self.next_char()?.unwrap());
+                                        state.append_char(self.next_char()?.unwrap());
                                         break;
                                     }
                                 }
                             }
                             _ => {
-                                if cads == '{' {
-                                    // Consume the '{' and add it to the token.
-                                    token_so_far.push(self.next_char()?.unwrap());
-
-                                    loop {
-                                        let cur_token = self.next_token_until(Some('}'))?;
-                                        if let Some(cur_token_value) = cur_token.token {
-                                            token_so_far.push_str(cur_token_value.to_str())
-                                        }
-
-                                        if cur_token.reason == TokenEndReason::NonNewLineBlank {
-                                            token_so_far.push(' ');
-                                        }
-
-                                        if cur_token.reason
-                                            == TokenEndReason::SpecifiedTerminatingChar
-                                        {
-                                            // We hit the end brace we were looking for but did not
-                                            // yet consume it. Do so now.
-                                            token_so_far.push(self.next_char()?.unwrap());
-                                            break;
-                                        }
-                                    }
-                                } else {
-                                    //
-                                    // Nothing to do.
-                                    //
+                                // Add the '$' we already consumed to the token.
+                                if state.should_start_text_subtoken() {
+                                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
                                 }
+                                state.append_char('$');
                             }
                         }
                     }
                 } else {
                     // We look for the terminating backquote. First disable normal consumption and consume
                     // the starting backquote.
-                    consume_char = false;
-                    include_char = false;
-                    let backquote_loc = self.cursor.clone();
-                    let _ = self.next_char()?;
+                    let backquote_loc = self.cross_state.cursor.clone();
+                    self.consume_char()?;
+
+                    state.start_subtoken(|| {
+                        WordSubtoken::CommandSubstitution(String::new(), vec![])
+                    });
 
                     // Add the opening backquote to the token.
-                    token_so_far.push(c);
+                    state.append_char(c);
 
                     // Now continue until we see an unescaped backquote.
                     let mut escaping_enabled = false;
@@ -349,7 +655,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         let next_char_in_backquote = self.next_char()?;
                         if let Some(cib) = next_char_in_backquote {
                             // Include it in the token no matter what.
-                            token_so_far.push(cib);
+                            state.append_char(cib);
 
                             // Watch out for escaping.
                             if !escaping_enabled && cib == '\\' {
@@ -368,20 +674,48 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             ));
                         }
                     }
+
+                    state.delimit_current_subtoken();
                 }
-            } else if quote_state.unquoted() && can_start_operator(c) {
-                if !token_so_far.is_empty() {
-                    delimit_token_reason = Some(TokenEndReason::Other);
+            } else if state.unquoted() && can_start_operator(c) {
+                if state.started_token() {
+                    return state
+                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
+                } else {
+                    if state.should_start_text_subtoken() {
+                        state.start_subtoken(|| WordSubtoken::Text(String::new()));
+                    }
+                    state.token_is_operator = true;
+                    self.consume_char()?;
+                    state.append_char(c);
                 }
-                next_token_is_operator = true;
-            } else if quote_state.unquoted() && is_blank(c) {
-                if !token_so_far.is_empty() {
-                    delimit_token_reason = Some(TokenEndReason::NonNewLineBlank);
+            } else if state.unquoted() && is_blank(c) {
+                self.consume_char()?;
+
+                if state.started_token() {
+                    return state.delimit_current_token(
+                        TokenEndReason::NonNewLineBlank,
+                        &mut self.cross_state,
+                    );
                 }
-                include_char = false;
-            } else if !token_is_operator && !token_so_far.is_empty() {
-                // Nothing to do.
+            }
+            //
+            // N.B. We need to remember if we were recursively called, say in a command
+            // substitution; in that case we won't think a token was started but... we'd
+            // be wrong.
+            //
+            else if !state.token_is_operator
+                && (state.started_token() || terminating_char.is_some())
+            {
+                if state.should_start_text_subtoken() {
+                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
+                }
+                self.consume_char()?;
+                state.append_char(c);
             } else if c == '#' {
+                // Consume the '#'.
+                self.consume_char()?;
+
                 let mut done = false;
                 while !done {
                     done = match self.peek_char()? {
@@ -389,7 +723,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         None => true,
                         _ => {
                             // Consume the peeked char; it's part of the comment.
-                            let _ = self.next_char()?;
+                            self.consume_char()?;
                             false
                         }
                     };
@@ -397,101 +731,38 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                 // Re-start loop as if the comment never happened.
                 continue;
-            } else if !token_so_far.is_empty() {
-                delimit_token_reason = Some(TokenEndReason::Other);
+            } else if state.started_token() {
+                return state.delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
+            } else {
+                if state.should_start_text_subtoken() {
+                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
+                }
+                self.consume_char()?;
+                state.append_char(c);
             }
 
             //
-            // Now process what we decided.
+            // Now update state.
             //
-
-            if let Some(reason) = delimit_token_reason {
-                let token = if !token_so_far.is_empty() {
-                    let token_location = TokenLocation {
-                        start: start_position,
-                        end: self.cursor.clone(),
-                    };
-
-                    // TODO: Make sure the here-tag meets criteria (and isn't a newline).
-                    match self.here_state {
-                        HereState::NextTokenIsHereTag { remove_tabs } => {
-                            self.here_state = HereState::CurrentTokenIsHereTag { remove_tabs };
-                        }
-                        HereState::CurrentTokenIsHereTag { remove_tabs } => {
-                            if token_so_far == "\n" {
-                                return Err(anyhow::anyhow!(
-                                    "Missing here tag '{}'",
-                                    token_so_far.as_str()
-                                ));
-                            }
-
-                            self.here_state = HereState::NextLineIsHereDoc;
-
-                            if token_so_far.contains('\"')
-                                || token_so_far.contains('\'')
-                                || token_so_far.contains('\\')
-                            {
-                                todo!("UNIMPLEMENTED: quoted or escaped here tag");
-                            }
-
-                            // Include the \n in the here tag so it's easier to check against.
-                            self.current_here_tags.push(HereTag {
-                                tag: std::format!("\n{}\n", token_so_far.as_str()),
-                                remove_tabs,
-                            });
-                        }
-                        HereState::NextLineIsHereDoc => {
-                            if token_so_far == "\n" {
-                                self.here_state = HereState::InHereDocs;
-                            }
-                        }
-                        _ => (),
-                    }
-
-                    if token_is_operator {
-                        Some(Token::Operator(token_so_far, token_location))
-                    } else {
-                        Some(Token::Word(token_so_far, token_location))
-                    }
-                } else {
-                    None
-                };
-
-                return Ok(TokenizeResult { reason, token });
-            }
-
-            // Consume the char.
-            if consume_char {
-                let _ = self.next_char()?;
-            }
-
-            if include_char {
-                // ...and append it to our in-progress token if so requested.
-                token_so_far.push(c);
-            }
-
-            // Update our tracking of whether the current token is an operator.
-            token_is_operator = next_token_is_operator;
-
-            // Update quote state. Escaping only lasts one character.
-            if quote_state.in_escape {
-                next_quote_state.in_escape = false;
-            }
-            quote_state = next_quote_state;
 
             // Check for the end of a here-document.
-            if self.here_state == HereState::InHereDocs && !self.current_here_tags.is_empty() {
-                if let Some(without_suffix) =
-                    token_so_far.strip_suffix(self.current_here_tags[0].tag.as_str())
-                {
+            if self.cross_state.here_state == HereState::InHereDocs
+                && !self.cross_state.current_here_tags.is_empty()
+            {
+                let without_suffix = state
+                    .current_token()
+                    .strip_suffix(self.cross_state.current_here_tags[0].tag.as_str())
+                    .map(|s| s.to_owned());
+
+                if let Some(without_suffix) = without_suffix {
                     // We hit the end of the here document.
-                    self.current_here_tags.remove(0);
-                    if self.current_here_tags.is_empty() {
-                        self.here_state = HereState::None;
+                    self.cross_state.current_here_tags.remove(0);
+                    if self.cross_state.current_here_tags.is_empty() {
+                        self.cross_state.here_state = HereState::None;
                     }
 
-                    token_so_far = without_suffix.to_owned();
-                    token_so_far.push('\n');
+                    state.replace_with_here_doc(without_suffix);
+                    state.append_char('\n');
                 }
             }
         }
@@ -521,15 +792,15 @@ fn can_start_operator(c: char) -> bool {
     matches!(c, '&' | '(' | ')' | ';' | '\n' | '|' | '<' | '>')
 }
 
-fn does_char_newly_affect_quoting(quote_state: &QuoteState, c: char) -> bool {
+fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> bool {
     // If we're currently escaped, then nothing affects quoting.
-    if quote_state.in_escape {
+    if state.in_escape {
         return false;
     }
 
-    match quote_state.quote_mode {
+    match state.quote_mode {
         // When we're in a double quote, only a subset of escape sequences are recognized.
-        QuoteMode::Double => {
+        QuoteMode::Double(_) => {
             if c == '\\' {
                 // TODO: handle backslash in double quote
                 true
@@ -538,7 +809,7 @@ fn does_char_newly_affect_quoting(quote_state: &QuoteState, c: char) -> bool {
             }
         }
         // When we're in a single quote, nothing affects quoting.
-        QuoteMode::Single => false,
+        QuoteMode::Single(_) => false,
         // When we're not already in a quote, then we can straightforwardly look for a
         // quote mark or backslash.
         QuoteMode::None => is_quoting_char(c),
@@ -570,4 +841,247 @@ fn is_operator(s: &str) -> bool {
             | "<<-"
             | "<>"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use super::*;
+
+    #[test]
+    fn tokenize_empty() -> Result<()> {
+        let tokens = tokenize_str("")?;
+        assert_eq!(tokens.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_line_continuation() -> Result<()> {
+        let tokens = tokenize_str(
+            r"a\
+bc",
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "abc"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_operators() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("a>>b")?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Operator(_, _), t3 @ Token::Word(_, _)] if
+                t1.to_str() == "a" &&
+                t2.to_str() == ">>" &&
+                t3.to_str() == "b"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_comment() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"a #comment
+"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Operator(_, _)] if
+                t1.to_str() == "a" &&
+                t2.to_str() == "\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_comment_at_eof() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r#"a #comment"#)?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "a"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_here_doc() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"cat <<HERE
+SOMETHING
+HERE
+"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(_, _),
+             t2 @ Token::Operator(_, _),
+             t3 @ Token::Word(_, _),
+             t4 @ Token::Operator(_, _),
+             t5 @ Token::Word(_, _)] if
+                t1.to_str() == "cat" &&
+                t2.to_str() == "<<" &&
+                t3.to_str() == "HERE" &&
+                t4.to_str() == "\n" &&
+                t5.to_str() == "SOMETHING\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_here_doc_with_tab_removal() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"cat <<-HERE
+	SOMETHING
+	HERE
+"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(_, _),
+             t2 @ Token::Operator(_, _),
+             t3 @ Token::Word(_, _),
+             t4 @ Token::Operator(_, _),
+             t5 @ Token::Word(_, _)] if
+                t1.to_str() == "cat" &&
+                t2.to_str() == "<<-" &&
+                t3.to_str() == "HERE" &&
+                t4.to_str() == "\n" &&
+                t5.to_str() == "SOMETHING\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_unterminated_here_doc() -> Result<()> {
+        let result = tokenize_str(
+            r#"cat <<HERE
+SOMETHING
+"#,
+        );
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_missing_here_tag() -> Result<()> {
+        let result = tokenize_str(
+            r"cat <<
+",
+        );
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_simple_backquote() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r#"echo `echo hi`"#)?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+                t1.to_str() == "echo" &&
+                t2.to_str() == "`echo hi`"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_backquote_with_escape() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r"echo `echo\`hi`")?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+                t1.to_str() == "echo" &&
+                t2.to_str() == r"`echo\`hi`"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_command_substitution() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("a$(echo hi)b c")?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+                t1.to_str() == "a$(echo hi)b" &&
+                t2.to_str() == "c"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_unbraced_parameter_expansion() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("$x")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "$x"
+        );
+        assert_matches!(
+            &tokenize_str("a$x")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "a$x"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_braced_parameter_expansion() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("${x}")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "${x}"
+        );
+        assert_matches!(
+            &tokenize_str("a${x}b")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "a${x}b"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_braced_parameter_expansion_with_escaping() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r"a${x\}}b")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == r"a${x\}}b"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_whitespace() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("1 2 3")?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _), t3 @ Token::Word(_, _)] if
+                t1.to_str() == "1" &&
+                t2.to_str() == "2" &&
+                t3.to_str() == "3"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_escaped_whitespace() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r"1\ 2 3")?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+                t1.to_str() == r"1\ 2" &&
+                t2.to_str() == "3"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_single_quote() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r"x'a b'y")?[..],
+            [t1 @ Token::Word(_, _)] if
+                t1.to_str() == r"x'a b'y"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_double_quote() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r#"x"a b"y"#)?[..],
+            [t1 @ Token::Word(_, _)] if
+                t1.to_str() == r#"x"a b"y"#
+        );
+        Ok(())
+    }
 }

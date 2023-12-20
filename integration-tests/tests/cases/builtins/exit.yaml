@@ -1,5 +1,0 @@
-name: 'Sample test set'
-cases:
-- name: 'Exit with code'
-  stdin: |
-    exit 10

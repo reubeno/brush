@@ -1,0 +1,12 @@
+name: "Builtins: alias"
+cases:
+  - name: "Basic alias usage"
+    args:
+      - "-i"
+    env:
+      PS1: "$ "
+    ignore_stderr: true
+    stdin: |
+      alias myalias=echo
+      alias
+      myalias 'hello'
