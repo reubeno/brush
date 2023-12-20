@@ -7,7 +7,7 @@ version.workspace = true
 
 [dependencies]
 anyhow = "1.0.75"
-clap = { version = "4.4.10", features = ["derive"] }
+clap = { version = "4.4.11", features = ["derive"] }
 env_logger = "0.10.1"
 interactive-shell = { path = "../interactive-shell" }
 log = "0.4.20"
@@ -18,7 +18,7 @@ shell = { path = "../shell" }
 anyhow = "1.0.75"
 assert_cmd = "2.0.12"
 assert_fs = "1.0.13"
-colored = "2.0.4"
+colored = "2.1.0"
 dir-diff = "0.3.2"
 glob = "0.3.1"
 indent = "0.1.1"
