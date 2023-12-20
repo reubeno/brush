@@ -28,9 +28,13 @@ impl BuiltinCommand for ShoptCommand {
         &self,
         _context: &mut crate::builtin::BuiltinExecutionContext,
     ) -> Result<crate::builtin::BuiltinExitCode> {
-        if !self.set || self.set_o_names_only || self.print || self.quiet || self.unset {
-            log::error!("UNIMPLEMENTED: shopt options");
+        if self.print {
+            log::error!("UNIMPLEMENTED: shopt option: print; options: {:?}", self);
             return Ok(BuiltinExitCode::Unimplemented);
+        }
+
+        if self.quiet {
+            log::debug!("UNIMPLEMENTED: shopt option: quiet; options: {:?}", self);
         }
 
         if self.options.is_empty() {
@@ -38,17 +42,31 @@ impl BuiltinCommand for ShoptCommand {
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
-        for option in &self.options {
-            match option.as_str() {
-                "checkwinsize" => {
-                    // TODO: implement updating LINES/COLUMNS
+        if self.set_o_names_only {
+            for option in &self.options {
+                match option.as_str() {
+                    "posix" => {
+                        // TODO: implement posix flag
+                    }
+                    _ => {
+                        log::error!("UNIMPLEMENTED: shopt: option '{}'", option);
+                        return Ok(BuiltinExitCode::Unimplemented);
+                    }
                 }
-                "histappend" => {
-                    // TODO: implement history policy
-                }
-                _ => {
-                    log::error!("UNIMPLEMENTED: shopt: option '{}'", option);
-                    return Ok(BuiltinExitCode::Unimplemented);
+            }
+        } else {
+            for option in &self.options {
+                match option.as_str() {
+                    "checkwinsize" => {
+                        // TODO: implement updating LINES/COLUMNS
+                    }
+                    "histappend" => {
+                        // TODO: implement history policy
+                    }
+                    _ => {
+                        log::error!("UNIMPLEMENTED: shopt: option '{}'", option);
+                        return Ok(BuiltinExitCode::Unimplemented);
+                    }
                 }
             }
         }

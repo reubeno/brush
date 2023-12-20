@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["cli", "parser", "shell", "interactive-shell", "integration-tests"]
+members = ["cli", "parser", "shell", "interactive-shell"]
 
 [workspace.package]
 edition = "2021"

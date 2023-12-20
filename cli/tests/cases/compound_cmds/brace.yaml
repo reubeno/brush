@@ -1,0 +1,5 @@
+name: "Compound commands: brace"
+cases:
+  - name: "Brace command"
+    stdin: |
+      { echo 'hi'; }

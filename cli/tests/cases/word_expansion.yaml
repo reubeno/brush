@@ -1,11 +1,11 @@
-name: 'Word expansion'
+name: "Word expansion"
 cases:
-  - name: 'Undefined variables'
+  - name: "Undefined variables"
     stdin: |
       echo "Undefined: ${undefined}"
       echo "Undefined: $undefined"
 
-  - name: 'Defined variables'
+  - name: "Defined variables"
     stdin: |
       var=xyz
       echo "Defined: ${var}"
@@ -13,12 +13,12 @@ cases:
       echo "Defined: prefix${var}suffix"
       echo "Defined: prefix$var"
 
-  - name: 'Undefined positional params'
+  - name: "Undefined positional params"
     stdin: |
       echo "Param: $9"
       echo "Param: ${9}"
 
-  - name: 'High-numbered positional params'
+  - name: "High-numbered positional params"
     stdin: |
       echo "Param: $99"
       echo "Param: ${99}"

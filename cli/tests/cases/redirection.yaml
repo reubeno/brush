@@ -1,0 +1,11 @@
+name: "Redirection"
+cases:
+  - name: "Redirection to null"
+    stdin: |
+      echo hi >/dev/null
+
+  - name: "Redirection to file"
+    stdin: |
+      echo hi >out.txt
+      ls out.txt
+      cat out.txt

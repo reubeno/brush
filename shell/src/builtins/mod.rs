@@ -8,6 +8,7 @@ mod alias;
 mod cd;
 mod colon;
 mod dot;
+mod eval;
 mod exit;
 mod export;
 mod fals;
@@ -39,7 +40,7 @@ lazy_static! {
             (":", exec_builtin::<colon::ColonCommand>),
             ("continue", exec_builtin::<unimp::UnimplementedCommand>),
             (".", exec_builtin::<dot::DotCommand>),
-            ("eval", exec_builtin::<unimp::UnimplementedCommand>),
+            ("eval", exec_builtin::<eval::EvalCommand>),
             ("exec", exec_builtin::<unimp::UnimplementedCommand>),
             ("exit", exec_builtin::<exit::ExitCommand>),
             ("export", exec_builtin::<export::ExportCommand>),

@@ -1,3 +1,5 @@
+use crate::tokenizer;
+
 #[derive(Clone, Debug)]
 pub struct Program {
     pub complete_commands: Vec<CompleteCommand>,
@@ -54,13 +56,13 @@ pub type SubshellCommand = CompoundList;
 #[derive(Clone, Debug)]
 pub struct ForClauseCommand {
     pub variable_name: String,
-    pub values: Option<Vec<String>>,
+    pub values: Option<Vec<Word>>,
     pub body: DoGroupCommand,
 }
 
 #[derive(Clone, Debug)]
 pub struct CaseClauseCommand {
-    pub value: String,
+    pub value: Word,
     pub cases: Vec<CaseItem>,
 }
 
@@ -82,7 +84,7 @@ pub struct ElseClause {
 
 #[derive(Clone, Debug)]
 pub struct CaseItem {
-    pub patterns: Vec<String>,
+    pub patterns: Vec<Word>,
     pub cmd: Option<CompoundList>,
 }
 
@@ -102,7 +104,7 @@ pub type DoGroupCommand = CompoundList;
 #[derive(Clone, Debug)]
 pub struct SimpleCommand {
     pub prefix: Option<CommandPrefix>,
-    pub word_or_name: Option<String>,
+    pub word_or_name: Option<Word>,
     pub suffix: Option<CommandSuffix>,
 }
 
@@ -112,8 +114,8 @@ pub type CommandSuffix = Vec<CommandPrefixOrSuffixItem>;
 #[derive(Clone, Debug)]
 pub enum CommandPrefixOrSuffixItem {
     IoRedirect(IoRedirect),
-    Word(String),
-    AssignmentWord((String, String)),
+    Word(Word),
+    AssignmentWord((String, Word)),
 }
 
 pub type RedirectList = Vec<IoRedirect>;
@@ -137,54 +139,90 @@ pub enum IoFileRedirectKind {
 
 #[derive(Clone, Debug)]
 pub enum IoFileRedirectTarget {
-    Filename(String),
+    Filename(Word),
     Fd(u32),
 }
 
 #[derive(Clone, Debug)]
 pub struct IoHere {
     pub remove_tabs: bool,
-    pub here_end: String,
-    pub doc: String,
+    pub here_end: Word,
+    pub doc: Word,
 }
 
 #[derive(Clone, Debug)]
 pub enum ExtendedTestExpression {
-    FileExists(String),
-    FileExistsAndIsBlockSpecialFile(String),
-    FileExistsAndIsCharSpecialFile(String),
-    FileExistsAndIsDir(String),
-    FileExistsAndIsRegularFile(String),
-    FileExistsAndIsSetgid(String),
-    FileExistsAndIsSymlink(String),
-    FileExistsAndHasStickyBit(String),
-    FileExistsAndIsFifo(String),
-    FileExistsAndIsReadable(String),
-    FileExistsAndIsNotZeroLength(String),
-    FdIsOpenTerminal(String),
-    FileExistsAndIsSetuid(String),
-    FileExistsAndIsWritable(String),
-    FileExistsAndIsExecutable(String),
-    FileExistsAndOwnedByEffectiveGroupId(String),
-    FileExistsAndModifiedSinceLastRead(String),
-    FileExistsAndOwnedByEffectiveUserId(String),
-    FileExistsAndIsSocket(String),
-    FilesReferToSameDeviceAndInodeNumbers(String, String),
-    LeftFileIsNewerOrExistsWhenRightDoesNot(String, String),
-    LeftFileIsOlderOrDoesNotExistWhenRightDoes(String, String),
-    ShellOptionEnabled(String),
-    ShellVariableIsSetAndAssigned(String),
-    ShellVariableIsSetAndNameRef(String),
-    StringHasZeroLength(String),
-    StringHasNonZeroLength(String),
-    StringsAreEqual(String, String),
-    StringsNotEqual(String, String),
-    LeftSortsBeforeRight(String, String),
-    LeftSortsAfterRight(String, String),
-    ArithmeticEqualTo(String, String),
-    ArithmeticNotEqualTo(String, String),
-    ArithmeticLessThan(String, String),
-    ArithmeticLessThanOrEqualTo(String, String),
-    ArithmeticGreaterThan(String, String),
-    ArithmeticGreaterThanOrEqualTo(String, String),
+    FileExists(Word),
+    FileExistsAndIsBlockSpecialFile(Word),
+    FileExistsAndIsCharSpecialFile(Word),
+    FileExistsAndIsDir(Word),
+    FileExistsAndIsRegularFile(Word),
+    FileExistsAndIsSetgid(Word),
+    FileExistsAndIsSymlink(Word),
+    FileExistsAndHasStickyBit(Word),
+    FileExistsAndIsFifo(Word),
+    FileExistsAndIsReadable(Word),
+    FileExistsAndIsNotZeroLength(Word),
+    FdIsOpenTerminal(Word),
+    FileExistsAndIsSetuid(Word),
+    FileExistsAndIsWritable(Word),
+    FileExistsAndIsExecutable(Word),
+    FileExistsAndOwnedByEffectiveGroupId(Word),
+    FileExistsAndModifiedSinceLastRead(Word),
+    FileExistsAndOwnedByEffectiveUserId(Word),
+    FileExistsAndIsSocket(Word),
+    FilesReferToSameDeviceAndInodeNumbers(Word, Word),
+    LeftFileIsNewerOrExistsWhenRightDoesNot(Word, Word),
+    LeftFileIsOlderOrDoesNotExistWhenRightDoes(Word, Word),
+    ShellOptionEnabled(Word),
+    ShellVariableIsSetAndAssigned(Word),
+    ShellVariableIsSetAndNameRef(Word),
+    StringHasZeroLength(Word),
+    StringHasNonZeroLength(Word),
+    StringsAreEqual(Word, Word),
+    StringsNotEqual(Word, Word),
+    LeftSortsBeforeRight(Word, Word),
+    LeftSortsAfterRight(Word, Word),
+    ArithmeticEqualTo(Word, Word),
+    ArithmeticNotEqualTo(Word, Word),
+    ArithmeticLessThan(Word, Word),
+    ArithmeticLessThanOrEqualTo(Word, Word),
+    ArithmeticGreaterThan(Word, Word),
+    ArithmeticGreaterThanOrEqualTo(Word, Word),
+}
+
+#[derive(Clone, Debug)]
+pub struct Word {
+    pub subtokens: Vec<tokenizer::WordSubtoken>,
+}
+
+impl Word {
+    pub fn from(t: &tokenizer::Token) -> Word {
+        match t {
+            tokenizer::Token::Word((_, subtokens), _) => Word {
+                subtokens: subtokens.clone(),
+            },
+            tokenizer::Token::Operator(w, _) => Word {
+                subtokens: vec![tokenizer::WordSubtoken::Text(w.clone())],
+            },
+        }
+    }
+
+    pub fn flatten(&self) -> String {
+        flatten_subtokens(self.subtokens.as_ref())
+    }
+}
+
+fn flatten_subtokens(subtokens: &Vec<tokenizer::WordSubtoken>) -> String {
+    let mut s = String::new();
+    for subtoken in subtokens {
+        match subtoken {
+            tokenizer::WordSubtoken::Text(t) => s.push_str(t),
+            tokenizer::WordSubtoken::CommandSubstitution(cs, _) => s.push_str(cs),
+            tokenizer::WordSubtoken::SingleQuotedText(t) => s.push_str(t),
+            tokenizer::WordSubtoken::DoubleQuotedSequence(dq, _) => s.push_str(dq),
+            tokenizer::WordSubtoken::EscapeSequence(t) => s.push_str(t),
+        }
+    }
+    s
 }

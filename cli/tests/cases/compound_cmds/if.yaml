@@ -1,0 +1,6 @@
+name: "Compound commands: if"
+cases:
+  - name: "Basic if"
+    stdin: |
+      if false; then echo 1; fi
+      if true; then echo 2; fi

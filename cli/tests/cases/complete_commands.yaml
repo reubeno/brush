@@ -1,0 +1,9 @@
+name: "Complete commands"
+cases:
+  - name: "Multi-command sequence"
+    stdin: |
+      echo 1; echo 2; echo 3
+
+  - name: "Semicolon-terminated sequence"
+    stdin: |
+      echo 1; echo 2;

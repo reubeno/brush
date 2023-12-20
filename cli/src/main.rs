@@ -109,7 +109,7 @@ fn run(cli_args: Vec<String>) -> Result<u8> {
 
     if let Some(command) = args.command {
         // TODO: Use script_path as $0 and remaining args as positional parameters.
-        shell.shell.run_string(&command)?;
+        shell.shell.run_string(&command, false)?;
     } else if let Some(script_path) = args.script_path {
         shell
             .shell

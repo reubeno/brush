@@ -57,11 +57,12 @@ pub trait AstTransformer {
     fn on_simple_command(&mut self, simple_command: &SimpleCommand) -> Result<SimpleCommand>;
     // fn on_assignment_word(&mut self, assignment_word: &AssignmentWord) -> Result<AssignmentWord>;
     // fn on_name(&mut self, name: &Name) -> Result<Name>;
-    fn on_command_word(&mut self, word: &str) -> Result<String>;
-    fn on_for_enumeree(&mut self, word: &str) -> Result<String>;
-    fn on_case_value(&mut self, word: &str) -> Result<String>;
+    fn on_command_word(&mut self, word: &Word) -> Result<Word>;
+    fn on_for_enumeree(&mut self, word: &Word) -> Result<Word>;
+    fn on_case_value(&mut self, word: &Word) -> Result<Word>;
     fn on_for_variable_name(&mut self, word: &str) -> Result<String>;
-    fn on_command_name(&mut self, word_or_name: &str) -> Result<String>;
+    fn on_assignment_variable_name(&mut self, word: &str) -> Result<String>;
+    fn on_command_name(&mut self, word_or_name: &Word) -> Result<Word>;
     fn on_function_name(&mut self, function_name: &str) -> Result<String>;
 }
 
@@ -204,7 +205,7 @@ fn transform_command_prefix_or_suffix_item<T: AstTransformer>(
         )),
         CommandPrefixOrSuffixItem::AssignmentWord((name, value)) => {
             Ok(CommandPrefixOrSuffixItem::AssignmentWord((
-                transform_command_word(name, transformer)?,
+                transform_assignment_variable_name(name, transformer)?,
                 transform_command_word(value, transformer)?,
             )))
         }
@@ -312,7 +313,7 @@ fn transform_case_clause<T: AstTransformer>(
     transformer: &mut T,
 ) -> Result<CaseClauseCommand> {
     let inner = CaseClauseCommand {
-        value: transform_case_value(command.value.as_ref(), transformer)?,
+        value: transform_case_value(&command.value, transformer)?,
         cases: command
             .cases
             .iter()
@@ -441,22 +442,29 @@ fn transform_for_variable_name<T: AstTransformer>(
     transformer.on_for_variable_name(name)
 }
 
-fn transform_case_value<T: AstTransformer>(value: &str, transformer: &mut T) -> Result<String> {
+fn transform_case_value<T: AstTransformer>(value: &Word, transformer: &mut T) -> Result<Word> {
     transformer.on_case_value(value)
 }
 
-fn transform_for_enumeree<T: AstTransformer>(value: &str, transformer: &mut T) -> Result<String> {
+fn transform_for_enumeree<T: AstTransformer>(value: &Word, transformer: &mut T) -> Result<Word> {
     transformer.on_for_enumeree(value)
 }
 
-fn transform_command_word<T: AstTransformer>(word: &str, transformer: &mut T) -> Result<String> {
+fn transform_assignment_variable_name<T: AstTransformer>(
+    name: &str,
+    transformer: &mut T,
+) -> Result<String> {
+    transformer.on_assignment_variable_name(name)
+}
+
+fn transform_command_word<T: AstTransformer>(word: &Word, transformer: &mut T) -> Result<Word> {
     transformer.on_command_word(word)
 }
 
 fn transform_command_name<T: AstTransformer>(
-    word_or_name: &str,
+    word_or_name: &Word,
     transformer: &mut T,
-) -> Result<String> {
+) -> Result<Word> {
     transformer.on_command_name(word_or_name)
 }
 

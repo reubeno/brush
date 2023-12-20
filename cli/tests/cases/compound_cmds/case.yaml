@@ -1,0 +1,15 @@
+name: "Compound commands: case"
+cases:
+  - name: "Basic case statement with double semi"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          case x in
+          x) echo hi;;
+          esac
+    args:
+      - "./script.sh"
+
+  - name: "One-line case statement with double semi"
+    stdin: |
+      case x in x) echo "hi";; esac

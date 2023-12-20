@@ -12,18 +12,19 @@ use crate::patterns;
 use crate::shell::Shell;
 use crate::{builtin, builtins};
 
+#[derive(Default)]
 pub struct ExecutionResult {
     pub exit_code: u8,
     pub exit_shell: bool,
     pub return_from_function_or_script: bool,
+    pub output: Option<String>,
 }
 
 impl ExecutionResult {
     pub fn new(exit_code: u8) -> ExecutionResult {
         ExecutionResult {
             exit_code,
-            exit_shell: false,
-            return_from_function_or_script: false,
+            ..ExecutionResult::default()
         }
     }
 
@@ -50,6 +51,8 @@ struct PipelineExecutionContext<'a> {
     pipeline_len: usize,
 
     spawn_results: Vec<SpawnResult>,
+
+    params: ExecutionParameters,
 }
 
 enum OpenFile {
@@ -89,8 +92,13 @@ impl OpenFiles {
     }
 }
 
+#[derive(Clone, Default, Debug)]
+pub struct ExecutionParameters {
+    pub capture_output: bool,
+}
+
 pub trait Execute {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult>;
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult>;
 }
 
 trait ExecuteInPipeline {
@@ -98,11 +106,11 @@ trait ExecuteInPipeline {
 }
 
 impl Execute for ast::Program {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
         let mut result = ExecutionResult::success();
 
         for command in &self.complete_commands {
-            result = command.execute(shell)?;
+            result = command.execute(shell, params)?;
             if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
@@ -114,7 +122,7 @@ impl Execute for ast::Program {
 }
 
 impl Execute for ast::CompleteCommand {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
         let mut result = ExecutionResult::success();
 
         for (ao_list, sep) in self {
@@ -124,7 +132,7 @@ impl Execute for ast::CompleteCommand {
                 todo!("asynchronous execution")
             }
 
-            result = ao_list.first.execute(shell)?;
+            result = ao_list.first.execute(shell, params)?;
 
             for next_ao in &ao_list.additional {
                 if result.exit_shell || result.return_from_function_or_script {
@@ -144,7 +152,7 @@ impl Execute for ast::CompleteCommand {
                     break;
                 }
 
-                result = pipeline.execute(shell)?;
+                result = pipeline.execute(shell, params)?;
             }
         }
 
@@ -154,7 +162,7 @@ impl Execute for ast::CompleteCommand {
 }
 
 impl Execute for ast::Pipeline {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
         //
         // TODO: handle bang
         // TODO: implement logic deciding when to abort
@@ -166,6 +174,7 @@ impl Execute for ast::Pipeline {
             current_pipeline_index: 0,
             pipeline_len: self.seq.len(),
             spawn_results: vec![],
+            params: params.clone(),
         };
 
         for command in self.seq.iter() {
@@ -177,7 +186,9 @@ impl Execute for ast::Pipeline {
 
         let mut result = ExecutionResult::success();
 
-        for child in pipeline_context.spawn_results.into_iter() {
+        let capture_output = pipeline_context.params.capture_output;
+        let child_count = pipeline_context.spawn_results.len();
+        for (child_index, child) in pipeline_context.spawn_results.into_iter().enumerate() {
             match child {
                 SpawnResult::SpawnedChild(child) => {
                     let output = child.wait_with_output()?;
@@ -185,6 +196,11 @@ impl Execute for ast::Pipeline {
 
                     // TODO: Confirm what to return if it was signaled.
                     result = ExecutionResult::new(exit_code);
+
+                    if capture_output && child_index + 1 == child_count {
+                        let output_str = std::str::from_utf8(output.stdout.as_slice())?;
+                        result.output = Some(output_str.to_owned());
+                    }
                 }
                 SpawnResult::ImmediateExit(exit_code) => {
                     result = ExecutionResult::new(exit_code);
@@ -193,14 +209,14 @@ impl Execute for ast::Pipeline {
                     result = ExecutionResult {
                         exit_code,
                         exit_shell: true,
-                        return_from_function_or_script: false,
+                        ..ExecutionResult::default()
                     };
                 }
                 SpawnResult::ReturnFromFunctionOrScript(exit_code) => {
                     result = ExecutionResult {
                         exit_code,
-                        exit_shell: false,
                         return_from_function_or_script: true,
+                        ..ExecutionResult::default()
                     }
                 }
             }
@@ -226,12 +242,12 @@ impl ExecuteInPipeline for ast::Command {
                 // TODO: Need to execute in the pipeline.
                 //
 
-                let result = compound.execute(pipeline_context.shell)?;
+                let result = compound.execute(pipeline_context.shell, &pipeline_context.params)?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             // TODO: Need to execute in pipeline.
             ast::Command::Function(func) => {
-                let result = func.execute(pipeline_context.shell)?;
+                let result = func.execute(pipeline_context.shell, &pipeline_context.params)?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::ExtendedTest(e) => Ok(SpawnResult::ImmediateExit(eval_expression(
@@ -242,7 +258,7 @@ impl ExecuteInPipeline for ast::Command {
     }
 }
 
-fn eval_expression(expr: &ast::ExtendedTestExpression, shell: &Shell) -> Result<u8> {
+fn eval_expression(expr: &ast::ExtendedTestExpression, shell: &mut Shell) -> Result<u8> {
     let result = match expr {
         ast::ExtendedTestExpression::StringsAreEqual(left, right) => {
             let expanded_str = expand_word(shell, left)?;
@@ -271,21 +287,21 @@ enum WhileOrUtil {
 }
 
 impl Execute for ast::CompoundCommand {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
         match self {
-            ast::CompoundCommand::BraceGroup(g) => g.execute(shell),
+            ast::CompoundCommand::BraceGroup(g) => g.execute(shell, params),
             ast::CompoundCommand::Subshell(_) => todo!("subshell command"),
-            ast::CompoundCommand::ForClause(f) => f.execute(shell),
-            ast::CompoundCommand::CaseClause(c) => c.execute(shell),
-            ast::CompoundCommand::IfClause(i) => i.execute(shell),
-            ast::CompoundCommand::WhileClause(w) => (WhileOrUtil::While, w).execute(shell),
-            ast::CompoundCommand::UntilClause(u) => (WhileOrUtil::Util, u).execute(shell),
+            ast::CompoundCommand::ForClause(f) => f.execute(shell, params),
+            ast::CompoundCommand::CaseClause(c) => c.execute(shell, params),
+            ast::CompoundCommand::IfClause(i) => i.execute(shell, params),
+            ast::CompoundCommand::WhileClause(w) => (WhileOrUtil::While, w).execute(shell, params),
+            ast::CompoundCommand::UntilClause(u) => (WhileOrUtil::Util, u).execute(shell, params),
         }
     }
 }
 
 impl Execute for ast::ForClauseCommand {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
         let mut result = ExecutionResult::success();
 
         if let Some(unexpanded_values) = &self.values {
@@ -298,7 +314,7 @@ impl Execute for ast::ForClauseCommand {
                 // Update the variable.
                 shell.set_var(&self.variable_name, value, false, false)?;
 
-                result = self.body.execute(shell)?;
+                result = self.body.execute(shell, params)?;
             }
         }
 
@@ -308,8 +324,8 @@ impl Execute for ast::ForClauseCommand {
 }
 
 impl Execute for ast::CaseClauseCommand {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
-        let expanded_value = expand_word(shell, self.value.as_str())?;
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
+        let expanded_value = expand_word(shell, &self.value)?;
         for case in self.cases.iter() {
             let mut matches = false;
 
@@ -323,7 +339,7 @@ impl Execute for ast::CaseClauseCommand {
 
             if matches {
                 if let Some(case_cmd) = &case.cmd {
-                    return case_cmd.execute(shell);
+                    return case_cmd.execute(shell, params);
                 }
             }
         }
@@ -336,24 +352,24 @@ impl Execute for ast::CaseClauseCommand {
 }
 
 impl Execute for ast::IfClauseCommand {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
-        let condition = self.condition.execute(shell)?;
+    fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
+        let condition = self.condition.execute(shell, params)?;
 
         if condition.is_success() {
-            return self.then.execute(shell);
+            return self.then.execute(shell, params);
         }
 
         if let Some(elses) = &self.elses {
             for else_clause in elses {
                 match &else_clause.condition {
                     Some(else_condition) => {
-                        let else_condition_result = else_condition.execute(shell)?;
+                        let else_condition_result = else_condition.execute(shell, params)?;
                         if else_condition_result.is_success() {
-                            return else_clause.body.execute(shell);
+                            return else_clause.body.execute(shell, params);
                         }
                     }
                     None => {
-                        return else_clause.body.execute(shell);
+                        return else_clause.body.execute(shell, params);
                     }
                 }
             }
@@ -367,13 +383,17 @@ impl Execute for ast::IfClauseCommand {
 }
 
 impl Execute for (WhileOrUtil, &ast::WhileClauseCommand) {
-    fn execute(&self, _shell: &mut Shell) -> Result<ExecutionResult> {
+    fn execute(
+        &self,
+        _shell: &mut Shell,
+        _params: &ExecutionParameters,
+    ) -> Result<ExecutionResult> {
         todo!("execute while clause command")
     }
 }
 
 impl Execute for ast::FunctionDefinition {
-    fn execute(&self, shell: &mut Shell) -> Result<ExecutionResult> {
+    fn execute(&self, shell: &mut Shell, _params: &ExecutionParameters) -> Result<ExecutionResult> {
         //
         // TODO: confirm whether defining a function resets the last execution.
         //
@@ -486,9 +506,13 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                                     }
                                 }
 
-                                let opened_file = options
-                                    .open(f)
-                                    .context(format!("opening {} for I/O redirection", f))?;
+                                let expanded_file_path = expand_word(context.shell, f)?;
+
+                                let opened_file =
+                                    options.open(expanded_file_path.as_str()).context(format!(
+                                        "opening {} for I/O redirection",
+                                        expanded_file_path.as_str()
+                                    ))?;
                                 target_file = OpenFile::File(opened_file);
                             }
                             IoFileRedirectTarget::Fd(fd) => {
@@ -507,9 +531,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                         // If not specified, default to stdin (fd 0).
                         let fd_num = fd_num.unwrap_or(0);
 
+                        // TODO: figure out if we need to expand?
+                        let io_here_doc = io_here.doc.flatten();
+
                         open_files
                             .files
-                            .insert(fd_num, OpenFile::HereDocument(io_here.doc.clone()));
+                            .insert(fd_num, OpenFile::HereDocument(io_here_doc));
                     }
                 }
             }
@@ -530,7 +557,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             .collect::<Result<Vec<_>>>()?;
 
         if let Some(cmd_name) = &self.word_or_name {
-            let mut cmd_name = cmd_name.to_owned();
+            let mut cmd_name = expand_word(context.shell, cmd_name)?;
 
             //
             // TODO: Reevaluate if this is an appropriate place to handle aliases.
@@ -636,13 +663,28 @@ fn execute_external_command(
     }
 
     // Redirect stdout, if applicable.
-    let redirected_stdout;
+    let mut redirected_stdout;
     if let Some(stdout_file) = open_files.files.remove(&1) {
         let as_stdio: Stdio = stdout_file.into();
         cmd.stdout(as_stdio);
         redirected_stdout = true;
     } else {
         redirected_stdout = false;
+    }
+
+    // If we were asked to capture the output of this command (and if it's the last command
+    // in the pipeline), then we need to arrange to redirect output to a pipe that we can
+    // read later.
+    if context.params.capture_output && context.pipeline_len == context.current_pipeline_index + 1 {
+        if redirected_stdout {
+            log::warn!(
+                "UNIMPLEMENTED: {}: output redirection used in command substitution",
+                context.shell.shell_name.as_ref().map_or("", |sn| sn),
+            );
+        } else {
+            cmd.stdout(std::process::Stdio::piped());
+            redirected_stdout = true;
+        }
     }
 
     // Redirect stderr, if applicable.
@@ -753,7 +795,7 @@ fn invoke_shell_function(
     Ok(SpawnResult::ImmediateExit(99))
 }
 
-fn expand_word(shell: &Shell, word: &str) -> Result<String> {
-    let expander = WordExpander::new(shell);
-    expander.expand(word)
+fn expand_word(shell: &mut Shell, word: &ast::Word) -> Result<String> {
+    let mut expander = WordExpander::new(shell);
+    expander.expand(word.flatten().as_str())
 }

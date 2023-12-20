@@ -1,0 +1,5 @@
+name: "Compound commands: for"
+cases:
+  - name: "Single-line for loop"
+    stdin: |
+      for f in 1 2 3; do echo $f; done

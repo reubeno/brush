@@ -42,9 +42,9 @@ impl InteractiveShell {
             let result = self.run_interactively_once()?;
             match result {
                 InteractiveExecutionResult::Executed(shell::ExecutionResult {
-                    exit_code: _,
                     exit_shell,
                     return_from_function_or_script,
+                    ..
                 }) => {
                     if exit_shell {
                         break;
@@ -72,7 +72,7 @@ impl InteractiveShell {
 
         match self.editor.readline(&prompt) {
             Ok(read_result) => {
-                let result = self.shell.run_string(&read_result)?;
+                let result = self.shell.run_string(&read_result, false)?;
                 Ok(InteractiveExecutionResult::Executed(result))
             }
             Err(rustyline::error::ReadlineError::Eof) => Ok(InteractiveExecutionResult::Eof),
