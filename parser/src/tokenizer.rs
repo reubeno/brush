@@ -38,14 +38,14 @@ pub struct TokenLocation {
 #[derive(Clone, Debug)]
 pub enum Token {
     Operator(String, TokenLocation),
-    Word((String, ParsedWord), TokenLocation),
+    Word(String, TokenLocation),
 }
 
 impl Token {
     pub fn to_str(&self) -> &str {
         match self {
             Token::Operator(s, _) => s,
-            Token::Word((s, _), _) => s,
+            Token::Word(s, _) => s,
         }
     }
 
@@ -53,29 +53,6 @@ impl Token {
         match self {
             Token::Operator(_, l) => l,
             Token::Word(_, l) => l,
-        }
-    }
-}
-
-pub type ParsedWord = Vec<WordSubtoken>;
-
-#[derive(Clone, Debug)]
-pub enum WordSubtoken {
-    Text(String),
-    SingleQuotedText(String),
-    DoubleQuotedSequence(String, Vec<WordSubtoken>),
-    CommandSubstitution(String, Vec<Token>),
-    EscapeSequence(String),
-}
-
-impl WordSubtoken {
-    pub fn to_str(&self) -> &str {
-        match self {
-            WordSubtoken::Text(s) => s,
-            WordSubtoken::CommandSubstitution(s, _) => s,
-            WordSubtoken::SingleQuotedText(s) => s,
-            WordSubtoken::DoubleQuotedSequence(s, _) => s,
-            WordSubtoken::EscapeSequence(s) => s,
         }
     }
 }
@@ -136,8 +113,6 @@ pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
 #[derive(Clone, Debug)]
 struct TokenParseState {
     pub start_position: SourcePosition,
-    pub completed_subtokens: Vec<WordSubtoken>,
-    pub subtoken_stack: Vec<WordSubtoken>,
     pub token_so_far: String,
     pub token_is_operator: bool,
     pub in_escape: bool,
@@ -148,8 +123,6 @@ impl TokenParseState {
     pub fn new(start_position: &SourcePosition) -> Self {
         TokenParseState {
             start_position: start_position.clone(),
-            completed_subtokens: vec![],
-            subtoken_stack: vec![],
             token_so_far: String::new(),
             token_is_operator: false,
             in_escape: false,
@@ -158,10 +131,6 @@ impl TokenParseState {
     }
 
     pub fn pop(&mut self, end_position: &SourcePosition) -> Result<Token> {
-        while !self.subtoken_stack.is_empty() {
-            self.delimit_current_subtoken();
-        }
-
         let token_location = TokenLocation {
             start: self.start_position.clone(),
             end: end_position.clone(),
@@ -170,13 +139,7 @@ impl TokenParseState {
         let token = if self.token_is_operator {
             Token::Operator(std::mem::take(&mut self.token_so_far), token_location)
         } else {
-            Token::Word(
-                (
-                    std::mem::take(&mut self.token_so_far),
-                    std::mem::take(&mut self.completed_subtokens),
-                ),
-                token_location,
-            )
+            Token::Word(std::mem::take(&mut self.token_so_far), token_location)
         };
 
         Ok(token)
@@ -186,78 +149,16 @@ impl TokenParseState {
         !self.token_so_far.is_empty()
     }
 
-    pub fn should_start_text_subtoken(&self) -> bool {
-        matches!(
-            self.subtoken_stack.last(),
-            Some(WordSubtoken::DoubleQuotedSequence(_, _)) | None
-        )
-    }
-
     pub fn append_char(&mut self, c: char) {
         self.token_so_far.push(c);
-
-        if self.subtoken_stack.is_empty() {
-            panic!("appending char '{c}' without current subtoken")
-        }
-
-        for subtoken in self.subtoken_stack.iter_mut() {
-            match subtoken {
-                WordSubtoken::Text(text) => text.push(c),
-                WordSubtoken::SingleQuotedText(text) => text.push(c),
-                WordSubtoken::DoubleQuotedSequence(text, _) => text.push(c),
-                WordSubtoken::EscapeSequence(text) => text.push(c),
-                WordSubtoken::CommandSubstitution(text, _) => text.push(c),
-            }
-        }
     }
 
     pub fn append_str(&mut self, s: &str) {
         self.token_so_far.push_str(s);
-
-        if self.subtoken_stack.is_empty() {
-            panic!("appending string '{s}' without current subtoken")
-        }
-
-        for subtoken in self.subtoken_stack.iter_mut() {
-            match subtoken {
-                WordSubtoken::Text(text) => text.push_str(s),
-                WordSubtoken::SingleQuotedText(text) => text.push_str(s),
-                WordSubtoken::DoubleQuotedSequence(text, _) => text.push_str(s),
-                WordSubtoken::EscapeSequence(text) => text.push_str(s),
-                WordSubtoken::CommandSubstitution(text, _) => text.push_str(s),
-            }
-        }
     }
 
     pub fn unquoted(&self) -> bool {
         !self.in_escape && matches!(self.quote_mode, QuoteMode::None)
-    }
-
-    pub fn delimit_current_subtoken(&mut self) {
-        if let Some(current_subtoken) = self.subtoken_stack.pop() {
-            if let Some(WordSubtoken::DoubleQuotedSequence(_, subtokens)) =
-                self.subtoken_stack.last_mut()
-            {
-                subtokens.push(current_subtoken);
-            } else {
-                self.completed_subtokens.push(current_subtoken)
-            }
-        }
-    }
-
-    pub fn start_subtoken<F>(&mut self, f: F)
-    where
-        F: Fn() -> WordSubtoken,
-    {
-        // First check to see what subtoken is on top of the stack (if any).
-        match self.subtoken_stack.last() {
-            Some(WordSubtoken::DoubleQuotedSequence(_, _))
-            | Some(WordSubtoken::CommandSubstitution(_, _)) => (),
-            Some(_) => self.delimit_current_subtoken(),
-            _ => (),
-        }
-
-        self.subtoken_stack.push(f());
     }
 
     pub fn current_token(&self) -> &str {
@@ -277,10 +178,6 @@ impl TokenParseState {
     }
 
     fn replace_with_here_doc(&mut self, s: String) {
-        if let Some(WordSubtoken::Text(text)) = self.subtoken_stack.last_mut() {
-            text.clear();
-            text.push_str(s.as_str());
-        }
         self.token_so_far = s;
     }
 
@@ -464,9 +361,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 {
                     // Nothing to do.
                 } else {
-                    if state.should_start_text_subtoken() {
-                        state.start_subtoken(|| WordSubtoken::Text(String::new()));
-                    }
                     state.append_char(c);
                 }
             } else if state.in_operator() {
@@ -505,19 +399,14 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                         // Make sure to include neither the backslash nor the newline character.
                     } else {
-                        state.start_subtoken(|| WordSubtoken::EscapeSequence(String::new()));
                         state.in_escape = true;
                         state.append_char(c);
                     }
                 } else if c == '\'' {
-                    state.start_subtoken(|| WordSubtoken::SingleQuotedText(String::new()));
                     state.quote_mode = QuoteMode::Single(self.cross_state.cursor.clone());
                     self.consume_char()?;
                     state.append_char(c);
                 } else if c == '\"' {
-                    state.start_subtoken(|| {
-                        WordSubtoken::DoubleQuotedSequence(String::new(), vec![])
-                    });
                     state.quote_mode = QuoteMode::Double(self.cross_state.cursor.clone());
                     self.consume_char()?;
                     state.append_char(c);
@@ -533,22 +422,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 state.quote_mode = QuoteMode::None;
                 self.consume_char()?;
                 state.append_char(c);
-                state.delimit_current_subtoken();
             } else if !state.in_escape
                 && matches!(state.quote_mode, QuoteMode::Double(_))
                 && c == '\"'
             {
-                if !matches!(
-                    state.subtoken_stack.last(),
-                    Some(WordSubtoken::DoubleQuotedSequence(_, _))
-                ) {
-                    state.delimit_current_subtoken();
-                }
-
                 state.quote_mode = QuoteMode::None;
                 self.consume_char()?;
                 state.append_char(c);
-                state.delimit_current_subtoken();
             }
             //
             // Handle end of escape sequence.
@@ -558,7 +438,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 state.in_escape = false;
                 self.consume_char()?;
                 state.append_char(c);
-                state.delimit_current_subtoken();
             } else if (state.unquoted()
                 || (matches!(state.quote_mode, QuoteMode::Double(_)) && !state.in_escape))
                 && (c == '$' || c == '`')
@@ -573,10 +452,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     if let Some(cads) = char_after_dollar_sign {
                         match cads {
                             '(' => {
-                                state.start_subtoken(|| {
-                                    WordSubtoken::CommandSubstitution(String::new(), vec![])
-                                });
-
                                 // Add the '$' we already consumed to the token.
                                 state.append_char('$');
 
@@ -604,23 +479,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 }
 
                                 state.append_char(self.next_char()?.unwrap());
-
-                                if let Some(WordSubtoken::CommandSubstitution(_, existing_tokens)) =
-                                    state.subtoken_stack.last_mut()
-                                {
-                                    existing_tokens.append(&mut tokens);
-                                } else {
-                                    panic!("expected command substitution subtoken");
-                                }
-
-                                state.delimit_current_subtoken();
                             }
 
                             '{' => {
                                 // Add the '$' we already consumed to the token.
-                                if state.should_start_text_subtoken() {
-                                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
-                                }
                                 state.append_char('$');
 
                                 // Consume the '{' and add it to the token.
@@ -647,9 +509,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             }
                             _ => {
                                 // Add the '$' we already consumed to the token.
-                                if state.should_start_text_subtoken() {
-                                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
-                                }
                                 state.append_char('$');
                             }
                         }
@@ -659,10 +518,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // the starting backquote.
                     let backquote_loc = self.cross_state.cursor.clone();
                     self.consume_char()?;
-
-                    state.start_subtoken(|| {
-                        WordSubtoken::CommandSubstitution(String::new(), vec![])
-                    });
 
                     // Add the opening backquote to the token.
                     state.append_char(c);
@@ -694,17 +549,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             ));
                         }
                     }
-
-                    state.delimit_current_subtoken();
                 }
             } else if state.unquoted() && self.can_start_operator(c) {
                 if state.started_token() {
                     return state
                         .delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
                 } else {
-                    if state.should_start_text_subtoken() {
-                        state.start_subtoken(|| WordSubtoken::Text(String::new()));
-                    }
                     state.token_is_operator = true;
                     self.consume_char()?;
                     state.append_char(c);
@@ -727,9 +577,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             else if !state.token_is_operator
                 && (state.started_token() || terminating_char.is_some())
             {
-                if state.should_start_text_subtoken() {
-                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
-                }
                 self.consume_char()?;
                 state.append_char(c);
             } else if c == '#' {
@@ -754,9 +601,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             } else if state.started_token() {
                 return state.delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
             } else {
-                if state.should_start_text_subtoken() {
-                    state.start_subtoken(|| WordSubtoken::Text(String::new()));
-                }
                 self.consume_char()?;
                 state.append_char(c);
             }

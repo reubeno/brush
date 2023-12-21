@@ -3,7 +3,7 @@ use log::debug;
 
 use crate::ast::{self, SeparatorOperator};
 use crate::tokenizer::{
-    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens, WordSubtoken,
+    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens,
 };
 
 pub enum ParseResult {
@@ -539,7 +539,7 @@ peg::parser! {
         rule assignment_word() -> (String, ast::Word) =
             // TODO: implement assignment_word more accurately, i.e., check to make sure
             // the variable being assigned is a legitimate variable name.
-            [Token::Word((_, subtokens), _)] {? parse_assignment_word(subtokens) }
+            [Token::Word(w, _)] {? parse_assignment_word(w.as_str()) }
 
         rule io_number() -> u32 =
             // TODO: implement io_number more accurately.
@@ -552,41 +552,21 @@ peg::parser! {
             [Token::Operator(w, _) if w.as_str() == expected]
 
         rule specific_word(expected: &str) -> &'input Token =
-            [Token::Word((w, _), _) if w.as_str() == expected]
+            [Token::Word(w, _) if w.as_str() == expected]
     }
 }
 
-fn parse_assignment_word(
-    subtokens: &Vec<WordSubtoken>,
-) -> Result<(String, ast::Word), &'static str> {
-    if subtokens.is_empty() {
-        return Err("empty subtokens in possible assignment word");
-    }
-
-    let variable_name_text = match &subtokens[0] {
-        WordSubtoken::Text(s) => s,
-        _ => return Err("possible assignment word doesn't start with valid variable name"),
-    };
-
-    let mut variable_name = String::new();
-    let mut value_subtokens = vec![];
-    if let Some((first, second)) = variable_name_text.split_once('=') {
-        variable_name.push_str(first);
-        value_subtokens.push(WordSubtoken::Text(second.to_owned()));
+fn parse_assignment_word(word: &str) -> Result<(String, ast::Word), &'static str> {
+    let variable_name;
+    let value;
+    if let Some((first, second)) = word.split_once('=') {
+        variable_name = first.to_owned();
+        value = second.to_owned();
     } else {
         return Err("not assignment word");
     }
 
-    for subtoken in subtokens.iter().skip(1) {
-        value_subtokens.push(subtoken.clone());
-    }
-
-    Ok((
-        variable_name,
-        ast::Word {
-            subtokens: value_subtokens,
-        },
-    ))
+    Ok((variable_name, ast::Word { value }))
 }
 
 #[cfg(test)]
