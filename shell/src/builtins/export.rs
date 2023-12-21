@@ -42,7 +42,7 @@ impl BuiltinCommand for ExportCommand {
             // Enumerate variables, sorted by key.
             for (name, variable) in context.shell.variables.iter().sorted_by_key(|v| v.0) {
                 if variable.exported {
-                    println!("declare -x {}=\"{}\"", name, variable.value.as_str());
+                    println!("declare -x {}=\"{}\"", name, String::from(&variable.value));
                 }
             }
         }

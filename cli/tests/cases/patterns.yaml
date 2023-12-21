@@ -1,0 +1,16 @@
+name: "Patterns"
+cases:
+  - name: "Brace patterns"
+    expected_failure: true
+    stdin: |
+      echo ab{c,racadabra}
+  - name: "Star patterns"
+    expected_failure: true
+    stdin: |
+      touch ./test
+      echo t*
+  - name: "Question-mark patterns"
+    expected_failure: true
+    stdin: |
+      touch ./test
+      echo tes?

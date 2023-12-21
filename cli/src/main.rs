@@ -31,6 +31,9 @@ struct CommandLineArgs {
     )]
     login: bool,
 
+    #[clap(long = "noediting", help = "Don't use readline for input.")]
+    no_editing: bool,
+
     #[clap(
         long = "noprofile",
         help = "Don't process any profile/login files (/etc/profile, ~/.bash_profile, ~/.bash_login, ~/.profile)."
@@ -42,6 +45,16 @@ struct CommandLineArgs {
         help = "Don't process ~/.bashrc if the shell is interactive."
     )]
     no_rc: bool,
+
+    #[clap(long = "posix", help = "Disable non-POSIX extensions.")]
+    posix: bool,
+
+    #[clap(
+        short = 'v',
+        long = "verbose",
+        help = "Print input when it's processed."
+    )]
+    verbose: bool,
 
     #[clap(help = "Path to script to execute")]
     script_path: Option<String>,
@@ -100,9 +113,12 @@ fn run(cli_args: Vec<String>) -> Result<u8> {
     let options = shell::ShellCreateOptions {
         login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
         interactive: args.is_interactive(),
+        no_editing: args.no_editing,
         no_profile: args.no_profile,
         no_rc: args.no_rc,
+        posix: args.posix,
         shell_name: argv0.clone(),
+        verbose: args.verbose,
     };
 
     let mut shell = interactive_shell::InteractiveShell::new(&options)?;

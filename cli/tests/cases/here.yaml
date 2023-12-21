@@ -1,4 +1,4 @@
-name: "Here docs"
+name: "Here docs/strings"
 cases:
   - name: "Basic here doc"
     test_files:
@@ -10,3 +10,9 @@ cases:
           END-MARKER
     args:
       - "./script.sh"
+
+  - name: "Basic here string"
+    expected_failure: true
+    stdin: |
+      shopt -u posix
+      cat <<< "Something here."

@@ -642,7 +642,7 @@ fn execute_external_command(
     // Add in exported variables.
     for (name, var) in &context.shell.variables {
         if var.exported {
-            cmd.env(name, &var.value);
+            cmd.env(name, &String::from(&var.value));
         }
     }
 

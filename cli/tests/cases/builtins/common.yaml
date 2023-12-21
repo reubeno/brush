@@ -1,0 +1,6 @@
+name: "Builtin Common Tests"
+cases:
+  - name: "Piping builtin output"
+    expected_failure: true
+    stdin: |
+      shopt | wc -l | wc -l

@@ -12,6 +12,7 @@ mod eval;
 mod exit;
 mod export;
 mod fals;
+mod help;
 mod pwd;
 mod retur;
 mod shopt;
@@ -65,6 +66,7 @@ lazy_static! {
         ("fg", exec_builtin::<unimp::UnimplementedCommand>),
         ("getopts", exec_builtin::<unimp::UnimplementedCommand>),
         ("hash", exec_builtin::<unimp::UnimplementedCommand>),
+        ("help", exec_builtin::<help::HelpCommand>),
         ("jobs", exec_builtin::<unimp::UnimplementedCommand>),
         ("kill", exec_builtin::<unimp::UnimplementedCommand>),
         ("newgrp", exec_builtin::<unimp::UnimplementedCommand>),
