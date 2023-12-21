@@ -193,36 +193,22 @@ pub enum ExtendedTestExpression {
 
 #[derive(Clone, Debug)]
 pub struct Word {
-    pub subtokens: Vec<tokenizer::WordSubtoken>,
+    pub value: String,
 }
 
 impl Word {
     pub fn from(t: &tokenizer::Token) -> Word {
         match t {
-            tokenizer::Token::Word((_, subtokens), _) => Word {
-                subtokens: subtokens.clone(),
+            tokenizer::Token::Word(value, _) => Word {
+                value: value.clone(),
             },
-            tokenizer::Token::Operator(w, _) => Word {
-                subtokens: vec![tokenizer::WordSubtoken::Text(w.clone())],
+            tokenizer::Token::Operator(value, _) => Word {
+                value: value.clone(),
             },
         }
     }
 
     pub fn flatten(&self) -> String {
-        flatten_subtokens(self.subtokens.as_ref())
+        self.value.clone()
     }
-}
-
-fn flatten_subtokens(subtokens: &Vec<tokenizer::WordSubtoken>) -> String {
-    let mut s = String::new();
-    for subtoken in subtokens {
-        match subtoken {
-            tokenizer::WordSubtoken::Text(t) => s.push_str(t),
-            tokenizer::WordSubtoken::CommandSubstitution(cs, _) => s.push_str(cs),
-            tokenizer::WordSubtoken::SingleQuotedText(t) => s.push_str(t),
-            tokenizer::WordSubtoken::DoubleQuotedSequence(dq, _) => s.push_str(dq),
-            tokenizer::WordSubtoken::EscapeSequence(t) => s.push_str(t),
-        }
-    }
-    s
 }
