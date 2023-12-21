@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use itertools::Itertools;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -26,51 +27,89 @@ pub(crate) struct ShoptCommand {
 impl BuiltinCommand for ShoptCommand {
     fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext,
     ) -> Result<crate::builtin::BuiltinExitCode> {
-        if self.print {
-            log::error!("UNIMPLEMENTED: shopt option: print; options: {:?}", self);
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-
-        if self.quiet {
-            log::debug!("UNIMPLEMENTED: shopt option: quiet; options: {:?}", self);
+        if self.set && self.unset {
+            log::error!("cannot set and unset shell options simultaneously");
+            return Ok(BuiltinExitCode::InvalidUsage);
         }
 
         if self.options.is_empty() {
-            log::error!("UNIMPLEMENTED: shopt: no options provided");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
+            if self.quiet {
+                return Ok(BuiltinExitCode::Success);
+            }
 
-        if self.set_o_names_only {
-            for option in &self.options {
-                match option.as_str() {
-                    "posix" => {
-                        // TODO: implement posix flag
-                    }
-                    _ => {
-                        log::error!("UNIMPLEMENTED: shopt: option '{}'", option);
-                        return Ok(BuiltinExitCode::Unimplemented);
-                    }
+            // Enumerate all options of the selected type.
+            let options = if self.set_o_names_only {
+                crate::namedoptions::SET_O_OPTIONS
+                    .iter()
+                    .sorted_by_key(|(k, _)| *k)
+            } else {
+                crate::namedoptions::SHOPT_OPTIONS
+                    .iter()
+                    .sorted_by_key(|(k, _)| *k)
+            };
+
+            for (option_name, option_definition) in options {
+                let option_value = (option_definition.getter)(context.shell);
+                if self.set && !option_value {
+                    continue;
+                } else if self.unset && option_value {
+                    continue;
+                }
+
+                if self.print {
+                    let option_value_str = if option_value { "-s" } else { "-u" };
+                    println!("shopt {} {}", option_value_str, option_name);
+                } else {
+                    let option_value_str = if option_value { "on" } else { "off" };
+                    println!("{:15} {}", option_name, option_value_str);
                 }
             }
+
+            Ok(BuiltinExitCode::Success)
         } else {
-            for option in &self.options {
-                match option.as_str() {
-                    "checkwinsize" => {
-                        // TODO: implement updating LINES/COLUMNS
+            let mut return_value = BuiltinExitCode::Success;
+
+            // Enumerate only the specified options.
+            for option_name in &self.options {
+                let option_definition = if self.set_o_names_only {
+                    crate::namedoptions::SET_O_OPTIONS.get(option_name.as_str())
+                } else {
+                    crate::namedoptions::SHOPT_OPTIONS.get(option_name.as_str())
+                };
+
+                if let Some(option_definition) = option_definition {
+                    if self.set {
+                        (option_definition.setter)(context.shell, true);
+                    } else if self.unset {
+                        (option_definition.setter)(context.shell, false);
+                    } else {
+                        let option_value = (option_definition.getter)(context.shell);
+                        if !option_value {
+                            return_value = BuiltinExitCode::Custom(1);
+                        }
+
+                        if !self.quiet {
+                            if self.print {
+                                let option_value_str = if option_value { "-s" } else { "-u" };
+                                println!("shopt {} {}", option_value_str, option_name);
+                            } else {
+                                let option_value_str = if option_value { "on" } else { "off" };
+                                println!("{:15} {}", option_name, option_value_str);
+                            }
+                        }
                     }
-                    "histappend" => {
-                        // TODO: implement history policy
-                    }
-                    _ => {
-                        log::error!("UNIMPLEMENTED: shopt: option '{}'", option);
-                        return Ok(BuiltinExitCode::Unimplemented);
-                    }
+                } else {
+                    eprintln!(
+                        "{}: {}: invalid shell option name",
+                        context.builtin_name, option_name
+                    );
+                    return_value = BuiltinExitCode::Custom(1);
                 }
             }
-        }
 
-        Ok(BuiltinExitCode::Success)
+            Ok(return_value)
+        }
     }
 }

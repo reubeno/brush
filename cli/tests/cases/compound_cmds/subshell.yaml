@@ -1,0 +1,10 @@
+name: "Compound commands: subshell"
+cases:
+  - name: "Basic subshell usage"
+    expected_failure: true # TODO: fix this test
+    stdin: |
+      (echo hi)
+  - name: "Piped subshell usage"
+    expected_failure: true # TODO: fix this test
+    stdin: |
+      (echo hi) | wc -l

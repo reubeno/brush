@@ -2,7 +2,9 @@ use anyhow::Result;
 use log::debug;
 
 use crate::ast::{self, SeparatorOperator};
-use crate::tokenizer::{SourcePosition, Token, TokenEndReason, Tokenizer, Tokens, WordSubtoken};
+use crate::tokenizer::{
+    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens, WordSubtoken,
+};
 
 pub enum ParseResult {
     Program(ast::Program),
@@ -13,13 +15,23 @@ pub enum ParseResult {
     },
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ParserOptions {
+    pub enable_extended_globbing: bool,
+    pub posix_mode: bool,
+}
+
 pub struct Parser<R> {
     reader: R,
+    options: ParserOptions,
 }
 
 impl<R: std::io::BufRead> Parser<R> {
-    pub fn new(reader: R) -> Self {
-        Parser { reader }
+    pub fn new(reader: R, options: &ParserOptions) -> Self {
+        Parser {
+            reader,
+            options: options.clone(),
+        }
     }
 
     pub fn parse(&mut self, stop_on_unescaped_newline: bool) -> Result<ParseResult> {
@@ -31,7 +43,13 @@ impl<R: std::io::BufRead> Parser<R> {
         //   * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
         //
 
-        let mut tokenizer = Tokenizer::new(&mut self.reader);
+        let mut tokenizer = Tokenizer::new(
+            &mut self.reader,
+            &TokenizerOptions {
+                enable_extended_globbing: self.options.enable_extended_globbing,
+                posix_mode: self.options.posix_mode,
+            },
+        );
 
         let mut tokens = vec![];
         loop {
@@ -185,6 +203,7 @@ peg::parser! {
             c:simple_command() { ast::Command::Simple(c) } /
             c:compound_command() r:redirect_list()? { ast::Command::Compound(c, r) } /
             // N.B. Extended test commands are bash extensions.
+            // TODO: Don't allow ExtendedTest in POSIX compliance mode.
             c:extended_test_command() { ast::Command::ExtendedTest(c) } /
             expected!("command")
 
@@ -507,6 +526,7 @@ peg::parser! {
             specific_word("while") /
 
             // N.B. bash also treats the following as reserved.
+            // TODO: Disable these in POSIX compliance mode.
             specific_word("[[") /
             specific_word("]]") /
             specific_word("function") /
@@ -519,31 +539,7 @@ peg::parser! {
         rule assignment_word() -> (String, ast::Word) =
             // TODO: implement assignment_word more accurately, i.e., check to make sure
             // the variable being assigned is a legitimate variable name.
-            [Token::Word((_, subtokens), _)] {?
-                if subtokens.is_empty() {
-                    return Err("empty subtokens in possible assignment word");
-                }
-
-                let variable_name_text = match &subtokens[0] {
-                    WordSubtoken::Text(s) => s,
-                    _ => return Err("possible assignment word doesn't start with valid variable name")
-                };
-
-                let mut variable_name = String::new();
-                let mut value_subtokens = vec![];
-                if let Some((first, second)) = variable_name_text.split_once('=') {
-                    variable_name.push_str(first);
-                    value_subtokens.push(WordSubtoken::Text(second.to_owned()));
-                } else {
-                    return Err("not assignment word");
-                }
-
-                for subtoken in subtokens.iter().skip(1) {
-                    value_subtokens.push(subtoken.clone());
-                }
-
-                Ok((variable_name, ast::Word { subtokens: value_subtokens }))
-            }
+            [Token::Word((_, subtokens), _)] {? parse_assignment_word(subtokens) }
 
         rule io_number() -> u32 =
             // TODO: implement io_number more accurately.
@@ -558,6 +554,39 @@ peg::parser! {
         rule specific_word(expected: &str) -> &'input Token =
             [Token::Word((w, _), _) if w.as_str() == expected]
     }
+}
+
+fn parse_assignment_word(
+    subtokens: &Vec<WordSubtoken>,
+) -> Result<(String, ast::Word), &'static str> {
+    if subtokens.is_empty() {
+        return Err("empty subtokens in possible assignment word");
+    }
+
+    let variable_name_text = match &subtokens[0] {
+        WordSubtoken::Text(s) => s,
+        _ => return Err("possible assignment word doesn't start with valid variable name"),
+    };
+
+    let mut variable_name = String::new();
+    let mut value_subtokens = vec![];
+    if let Some((first, second)) = variable_name_text.split_once('=') {
+        variable_name.push_str(first);
+        value_subtokens.push(WordSubtoken::Text(second.to_owned()));
+    } else {
+        return Err("not assignment word");
+    }
+
+    for subtoken in subtokens.iter().skip(1) {
+        value_subtokens.push(subtoken.clone());
+    }
+
+    Ok((
+        variable_name,
+        ast::Word {
+            subtokens: value_subtokens,
+        },
+    ))
 }
 
 #[cfg(test)]

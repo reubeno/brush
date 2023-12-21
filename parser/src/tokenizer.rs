@@ -111,6 +111,7 @@ enum HereState {
 struct HereTag {
     tag: String,
     remove_tabs: bool,
+    position: SourcePosition,
 }
 
 #[derive(Clone, Debug)]
@@ -120,9 +121,16 @@ struct CrossTokenParseState {
     current_here_tags: Vec<HereTag>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct TokenizerOptions {
+    pub enable_extended_globbing: bool,
+    pub posix_mode: bool,
+}
+
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
     char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
     cross_state: CrossTokenParseState,
+    options: TokenizerOptions,
 }
 
 #[derive(Clone, Debug)]
@@ -260,7 +268,7 @@ impl TokenParseState {
         self.token_is_operator && self.current_token() == operator
     }
 
-    pub fn is_operator(&self) -> bool {
+    pub fn in_operator(&self) -> bool {
         self.token_is_operator
     }
 
@@ -314,6 +322,7 @@ impl TokenParseState {
                 cross_token_state.current_here_tags.push(HereTag {
                     tag: std::format!("\n{}\n", self.current_token()),
                     remove_tabs,
+                    position: cross_token_state.cursor.clone(),
                 });
             }
             HereState::NextLineIsHereDoc => {
@@ -331,7 +340,7 @@ impl TokenParseState {
 
 pub fn tokenize_str(input: &str) -> Result<Vec<Token>> {
     let mut reader = std::io::BufReader::new(input.as_bytes());
-    let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader);
+    let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &TokenizerOptions::default());
 
     let mut tokens = vec![];
     while let Some(token) = tokenizer.next_token()?.token {
@@ -342,8 +351,9 @@ pub fn tokenize_str(input: &str) -> Result<Vec<Token>> {
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
-    pub fn new(reader: &'a mut R) -> Tokenizer<'a, R> {
+    pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Tokenizer<'a, R> {
         Tokenizer {
+            options: options.clone(),
             char_reader: reader.chars().peekable(),
             cross_state: CrossTokenParseState {
                 cursor: SourcePosition { line: 1, column: 1 },
@@ -415,7 +425,17 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                 // Verify we're not in a here document.
                 if self.cross_state.here_state != HereState::None {
-                    return Err(anyhow::anyhow!("unterminated here document sequence"));
+                    let tag_positions = self
+                        .cross_state
+                        .current_here_tags
+                        .iter()
+                        .map(|tag| std::format!("{}", tag.position))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(anyhow::anyhow!(
+                        "unterminated here document sequence; tag(s) found at: [{}]",
+                        tag_positions
+                    ));
                 }
 
                 return state
@@ -449,11 +469,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     }
                     state.append_char(c);
                 }
-            } else if state.is_operator() {
+            } else if state.in_operator() {
                 let mut hypothetical_token = state.current_token().to_owned();
                 hypothetical_token.push(c);
 
-                if state.unquoted() && is_operator(hypothetical_token.as_ref()) {
+                if state.unquoted() && self.is_operator(hypothetical_token.as_ref()) {
                     self.consume_char()?;
                     state.append_char(c);
                 } else {
@@ -677,7 +697,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                     state.delimit_current_subtoken();
                 }
-            } else if state.unquoted() && can_start_operator(c) {
+            } else if state.unquoted() && self.can_start_operator(c) {
                 if state.started_token() {
                     return state
                         .delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
@@ -767,6 +787,38 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             }
         }
     }
+
+    fn can_start_operator(&self, c: char) -> bool {
+        matches!(c, '&' | '(' | ')' | ';' | '\n' | '|' | '<' | '>')
+    }
+
+    fn is_operator(&self, s: &str) -> bool {
+        // Handle non-POSIX operators.
+        if !self.options.posix_mode && matches!(s, "<<<") {
+            return true;
+        }
+
+        matches!(
+            s,
+            "&" | "&&"
+                | "("
+                | ")"
+                | ";"
+                | ";;"
+                | "\n"
+                | "|"
+                | "||"
+                | "<"
+                | ">"
+                | ">|"
+                | "<<"
+                | ">>"
+                | "<&"
+                | ">&"
+                | "<<-"
+                | "<>"
+        )
+    }
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'a, R> {
@@ -786,10 +838,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'a, R> {
 
 fn is_blank(c: char) -> bool {
     c == ' ' || c == '\t'
-}
-
-fn can_start_operator(c: char) -> bool {
-    matches!(c, '&' | '(' | ')' | ';' | '\n' | '|' | '<' | '>')
 }
 
 fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> bool {
@@ -818,29 +866,6 @@ fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> bool {
 
 fn is_quoting_char(c: char) -> bool {
     matches!(c, '\\' | '\'' | '\"')
-}
-
-fn is_operator(s: &str) -> bool {
-    matches!(
-        s,
-        "&" | "&&"
-            | "("
-            | ")"
-            | ";"
-            | ";;"
-            | "\n"
-            | "|"
-            | "||"
-            | "<"
-            | ">"
-            | ">|"
-            | "<<"
-            | ">>"
-            | "<&"
-            | ">&"
-            | "<<-"
-            | "<>"
-    )
 }
 
 #[cfg(test)]

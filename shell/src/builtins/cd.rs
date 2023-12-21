@@ -39,7 +39,7 @@ impl BuiltinCommand for CdCommand {
         let target_path = if let Some(inner) = &self.target_dir {
             inner.clone()
         } else if let Some(home_var) = context.shell.variables.get("HOME") {
-            PathBuf::from(&home_var.value)
+            PathBuf::from(String::from(&home_var.value))
         } else {
             log::error!("HOME not set");
             return Ok(BuiltinExitCode::Custom(1));

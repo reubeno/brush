@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
+use crate::options::ShellRuntimeOptions;
 use crate::prompt::format_prompt_piece;
 
 #[derive(Debug)]
@@ -34,229 +35,27 @@ pub struct Shell {
 
 #[derive(Debug)]
 pub struct ShellVariable {
-    pub value: String,
+    pub value: ShellValue,
     pub exported: bool,
     pub readonly: bool,
 }
 
-#[derive(Default, Debug)]
-pub struct ShellRuntimeOptions {
-    //
-    // Single-character options.
-    //
-    /// -a
-    pub export_variables_on_modification: bool,
-    /// -b
-    pub notify_job_termination_immediately: bool,
-    /// -e
-    pub exit_on_nonzero_command_exit: bool,
-    /// -f
-    pub disable_filename_globbing: bool,
-    /// -h
-    pub remember_command_locations: bool,
-    /// -k
-    pub place_all_assignment_args_in_command_env: bool,
-    /// -m
-    pub enable_job_control: bool,
-    /// -n
-    pub do_not_execute_commands: bool,
-    /// -p
-    pub real_effective_uid_mismatch: bool,
-    /// -t
-    pub exit_after_one_command: bool,
-    /// -u
-    pub treat_unset_variables_as_error: bool,
-    /// -v
-    pub print_shell_input_lines: bool,
-    /// -x
-    pub print_commands_and_arguments: bool,
-    /// -B
-    pub perform_brace_expansion: bool,
-    /// -C
-    pub disallow_overwriting_regular_files_via_output_redirection: bool,
-    /// -E
-    pub shell_functions_inherit_err_trap: bool,
-    /// -H
-    pub enable_bang_style_history_substitution: bool,
-    /// -P
-    pub do_not_resolve_symlinks_when_changing_dir: bool,
-    /// -T
-    pub shell_functions_inherit_debug_and_return_traps: bool,
-
-    //
-    // Options set through -o.
-    //
-    /// 'emacs'
-    pub emacs_mode: bool,
-    /// 'history'
-    pub enable_command_history: bool,
-    /// 'ignoreeof'
-    pub ignore_eof: bool,
-    /// 'interactive-comments'
-    pub allow_comments_in_interactive_commands: bool,
-    /// 'pipefail'
-    pub return_first_failure_from_pipeline: bool,
-    /// 'posix'
-    pub posix_mode: bool,
-    /// 'vi'
-    pub vi_mode: bool,
-
-    //
-    // Options set by the shell.
-    //
-    pub interactive: bool,
+#[derive(Debug)]
+pub enum ShellValue {
+    String(String),
+    Integer(u64),
+    AssociativeArray(HashMap<String, ShellValue>),
+    IndexedArray(Vec<String>),
 }
 
-impl ShellRuntimeOptions {
-    pub fn get_chars(&self) -> Vec<char> {
-        let mut cs = vec![];
-        if self.export_variables_on_modification {
-            cs.push('a');
+impl From<&ShellValue> for String {
+    fn from(value: &ShellValue) -> Self {
+        match value {
+            ShellValue::String(s) => s.clone(),
+            ShellValue::Integer(i) => i.to_string(),
+            ShellValue::AssociativeArray(_) => todo!("converting associative array to string"),
+            ShellValue::IndexedArray(_) => todo!("converting indexed array to string"),
         }
-        if self.notify_job_termination_immediately {
-            cs.push('b');
-        }
-        if self.exit_on_nonzero_command_exit {
-            cs.push('e');
-        }
-        if self.disable_filename_globbing {
-            cs.push('f');
-        }
-        if self.remember_command_locations {
-            cs.push('h');
-        }
-        if self.place_all_assignment_args_in_command_env {
-            cs.push('k');
-        }
-        if self.enable_job_control {
-            cs.push('m');
-        }
-        if self.do_not_execute_commands {
-            cs.push('n');
-        }
-        if self.real_effective_uid_mismatch {
-            cs.push('p');
-        }
-        if self.exit_after_one_command {
-            cs.push('t');
-        }
-        if self.treat_unset_variables_as_error {
-            cs.push('u');
-        }
-        if self.print_shell_input_lines {
-            cs.push('v');
-        }
-        if self.print_commands_and_arguments {
-            cs.push('x');
-        }
-        if self.perform_brace_expansion {
-            cs.push('B');
-        }
-        if self.disallow_overwriting_regular_files_via_output_redirection {
-            cs.push('C');
-        }
-        if self.shell_functions_inherit_err_trap {
-            cs.push('E');
-        }
-        if self.enable_bang_style_history_substitution {
-            cs.push('H');
-        }
-        if self.do_not_resolve_symlinks_when_changing_dir {
-            cs.push('P');
-        }
-        if self.shell_functions_inherit_debug_and_return_traps {
-            cs.push('T');
-        }
-
-        if self.interactive {
-            cs.push('i');
-        }
-
-        cs
-    }
-
-    pub fn get_enabled_options(&self) -> Vec<&'static str> {
-        let mut cs = vec![];
-        if self.export_variables_on_modification {
-            cs.push("allexport");
-        }
-        if self.perform_brace_expansion {
-            cs.push("braceexpand");
-        }
-        if self.emacs_mode {
-            cs.push("emacs");
-        }
-        if self.exit_on_nonzero_command_exit {
-            cs.push("errexit");
-        }
-        if self.shell_functions_inherit_err_trap {
-            cs.push("errtrace");
-        }
-        if self.shell_functions_inherit_debug_and_return_traps {
-            cs.push("functrace");
-        }
-        if self.remember_command_locations {
-            cs.push("hashall");
-        }
-        if self.enable_bang_style_history_substitution {
-            cs.push("histexpand");
-        }
-        if self.enable_command_history {
-            cs.push("history");
-        }
-        if self.ignore_eof {
-            cs.push("ignoreeof");
-        }
-        if self.allow_comments_in_interactive_commands {
-            cs.push("interactive_comments");
-        }
-        if self.place_all_assignment_args_in_command_env {
-            cs.push("keyword");
-        }
-        if self.enable_job_control {
-            cs.push("monitor");
-        }
-        if self.disallow_overwriting_regular_files_via_output_redirection {
-            cs.push("noclobber");
-        }
-        if self.do_not_execute_commands {
-            cs.push("noexec");
-        }
-        if self.disable_filename_globbing {
-            cs.push("noglob");
-        }
-        if self.notify_job_termination_immediately {
-            cs.push("notify");
-        }
-        if self.treat_unset_variables_as_error {
-            cs.push("nounset");
-        }
-        if self.exit_after_one_command {
-            cs.push("onecmd");
-        }
-        if self.do_not_resolve_symlinks_when_changing_dir {
-            cs.push("physical");
-        }
-        if self.return_first_failure_from_pipeline {
-            cs.push("pipefail");
-        }
-        if self.posix_mode {
-            cs.push("posix");
-        }
-        if self.real_effective_uid_mismatch {
-            cs.push("privileged");
-        }
-        if self.print_shell_input_lines {
-            cs.push("verbose");
-        }
-        if self.vi_mode {
-            cs.push("vi");
-        }
-        if self.print_commands_and_arguments {
-            cs.push("xtrace");
-        }
-
-        cs
     }
 }
 
@@ -264,9 +63,12 @@ impl ShellRuntimeOptions {
 pub struct ShellCreateOptions {
     pub login: bool,
     pub interactive: bool,
+    pub no_editing: bool,
     pub no_profile: bool,
     pub no_rc: bool,
+    pub posix: bool,
     pub shell_name: Option<String>,
+    pub verbose: bool,
 }
 
 type ShellFunction = parser::ast::FunctionDefinition;
@@ -285,10 +87,7 @@ impl Shell {
             file_size_limit: Default::default(), // TODO: populate file size limit
             variables: Self::initialize_vars()?,
             funcs: Default::default(),
-            options: ShellRuntimeOptions {
-                interactive: options.interactive,
-                ..Default::default()
-            },
+            options: ShellRuntimeOptions::defaults_from(options),
             aliases: Default::default(),
             last_exit_status: 0,
             positional_parameters: vec![],
@@ -322,7 +121,7 @@ impl Shell {
         vars.insert(
             name.as_ref().to_owned(),
             ShellVariable {
-                value: value.as_ref().to_owned(),
+                value: ShellValue::String(value.as_ref().to_owned()),
                 exported,
                 readonly,
             },
@@ -429,7 +228,7 @@ impl Shell {
         }
 
         let mut reader = std::io::BufReader::new(opened_file);
-        let mut parser = parser::Parser::new(&mut reader);
+        let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
         let parse_result = parser.parse(false)?;
 
         // TODO: Find a cleaner way to change args.
@@ -458,7 +257,7 @@ impl Shell {
 
     pub fn run_string(&mut self, command: &str, capture_output: bool) -> Result<ExecutionResult> {
         let mut reader = std::io::BufReader::new(command.as_bytes());
-        let mut parser = parser::Parser::new(&mut reader);
+        let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
         let parse_result = parser.parse(true)?;
 
         self.run_parsed_result(&parse_result, &ProgramOrigin::String, capture_output)
@@ -564,10 +363,25 @@ impl Shell {
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
         self.variables
             .get(name)
-            .map_or_else(|| default.to_owned(), |s| s.value.to_owned())
+            .map_or_else(|| default.to_owned(), |s| String::from(&s.value))
     }
 
     pub fn current_option_flags(&self) -> String {
-        self.options.get_chars().into_iter().collect()
+        let mut cs = vec![];
+
+        for (x, y) in crate::namedoptions::SET_OPTIONS.iter() {
+            if (y.getter)(self) {
+                cs.push(*x);
+            }
+        }
+
+        cs.into_iter().collect()
+    }
+
+    fn parser_options(&self) -> parser::ParserOptions {
+        parser::ParserOptions {
+            enable_extended_globbing: self.options.extended_globbing,
+            posix_mode: self.options.posix_mode,
+        }
     }
 }

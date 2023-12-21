@@ -9,6 +9,7 @@ fn cli_integration_tests() -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
     let mut success_count = 0;
+    let mut expected_fail_count = 0;
     let mut fail_count = 0;
     for entry in glob::glob(format!("{}/tests/cases/**/*.yaml", dir).as_ref()).unwrap() {
         let entry = entry.unwrap();
@@ -20,6 +21,7 @@ fn cli_integration_tests() -> Result<()> {
         let results = test_case_set.run()?;
 
         success_count += results.success_count;
+        expected_fail_count += results.expected_fail_count;
         fail_count += results.fail_count;
     }
 
@@ -29,12 +31,19 @@ fn cli_integration_tests() -> Result<()> {
         fail_count.to_string().green()
     };
 
+    let formatted_expected_fail_count = if expected_fail_count > 0 {
+        expected_fail_count.to_string().magenta()
+    } else {
+        expected_fail_count.to_string().green()
+    };
+
     println!("==============================================================");
     println!(
-        "{} test case(s) ran: {} succeeded, {} failed.",
+        "{} test case(s) ran: {} succeeded, {} failed, {} expected to fail.",
         success_count + fail_count,
         success_count.to_string().green(),
         formatted_fail_count,
+        formatted_expected_fail_count
     );
     println!("==============================================================");
 
@@ -53,6 +62,7 @@ struct TestCaseSet {
 
 struct TestCaseSetResults {
     pub success_count: u32,
+    pub expected_fail_count: u32,
     pub fail_count: u32,
 }
 
@@ -68,10 +78,13 @@ impl TestCaseSet {
         );
 
         let mut success_count = 0;
+        let mut expected_fail_count = 0;
         let mut fail_count = 0;
         for test_case in self.cases.iter() {
             if test_case.run()? {
                 success_count += 1;
+            } else if test_case.expected_failure {
+                expected_fail_count += 1;
             } else {
                 fail_count += 1;
             }
@@ -79,6 +92,7 @@ impl TestCaseSet {
 
         Ok(TestCaseSetResults {
             success_count,
+            expected_fail_count,
             fail_count,
         })
     }
@@ -107,6 +121,8 @@ struct TestCase {
     pub ignore_stdout: bool,
     #[serde(default)]
     pub test_files: Vec<TestFile>,
+    #[serde(default)]
+    pub expected_failure: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -151,6 +167,11 @@ impl TestCase {
         if success {
             println!("{}", "ok.".bright_green());
             return Ok(true);
+        }
+
+        if self.expected_failure {
+            println!("{}", "expected failure.".bright_magenta());
+            return Ok(false);
         }
 
         println!();

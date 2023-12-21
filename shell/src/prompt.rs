@@ -85,7 +85,7 @@ fn format_current_working_directory(
     if tilde_replaced {
         let home_dir_opt = shell.variables.get("HOME");
         if let Some(home_dir) = home_dir_opt {
-            if let Some(stripped) = working_dir_str.strip_prefix(home_dir.value.as_str()) {
+            if let Some(stripped) = working_dir_str.strip_prefix(&String::from(&home_dir.value)) {
                 working_dir_str = format!("~{}", stripped);
             }
         }

@@ -1,0 +1,15 @@
+name: "Functions"
+cases:
+  - name: "Basic function invocation"
+    expected_failure: true
+    test_files:
+      - path: "script.sh"
+        contents: |
+          myfunc() {
+              echo "In myfunc()."
+          }
+          echo "Calling myfunc()..."
+          myfunc
+          echo "Returned."
+    args:
+      - "./script.sh"
