@@ -7,6 +7,7 @@ use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::options::ShellRuntimeOptions;
 use crate::prompt::format_prompt_piece;
+use crate::variables::{ShellValue, ShellVariable};
 
 #[derive(Debug)]
 pub struct Shell {
@@ -31,32 +32,6 @@ pub struct Shell {
 
     // Shell name
     pub shell_name: Option<String>,
-}
-
-#[derive(Debug)]
-pub struct ShellVariable {
-    pub value: ShellValue,
-    pub exported: bool,
-    pub readonly: bool,
-}
-
-#[derive(Debug)]
-pub enum ShellValue {
-    String(String),
-    Integer(u64),
-    AssociativeArray(HashMap<String, ShellValue>),
-    IndexedArray(Vec<String>),
-}
-
-impl From<&ShellValue> for String {
-    fn from(value: &ShellValue) -> Self {
-        match value {
-            ShellValue::String(s) => s.clone(),
-            ShellValue::Integer(i) => i.to_string(),
-            ShellValue::AssociativeArray(_) => todo!("converting associative array to string"),
-            ShellValue::IndexedArray(_) => todo!("converting indexed array to string"),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -100,10 +75,10 @@ impl Shell {
         Ok(shell)
     }
 
-    pub fn set_var<S: AsRef<str>, T: AsRef<str>>(
+    pub fn set_var<N: AsRef<str>, V: Into<ShellValue>>(
         &mut self,
-        name: S,
-        value: T,
+        name: N,
+        value: V,
         exported: bool,
         readonly: bool,
     ) -> Result<()> {
@@ -111,17 +86,28 @@ impl Shell {
         Ok(())
     }
 
-    fn set_var_in<S: AsRef<str>, T: AsRef<str>>(
+    // pub fn set_var<S: AsRef<str>, T: AsRef<str>>(
+    //     &mut self,
+    //     name: S,
+    //     value: T,
+    //     exported: bool,
+    //     readonly: bool,
+    // ) -> Result<()> {
+    //     Self::set_var_in(&mut self.variables, name, value, exported, readonly)?;
+    //     Ok(())
+    // }
+
+    fn set_var_in<N: AsRef<str>, V: Into<ShellValue>>(
         vars: &mut HashMap<String, ShellVariable>,
-        name: S,
-        value: T,
+        name: N,
+        value: V,
         exported: bool,
         readonly: bool,
     ) -> Result<()> {
         vars.insert(
             name.as_ref().to_owned(),
             ShellVariable {
-                value: ShellValue::String(value.as_ref().to_owned()),
+                value: value.into(),
                 exported,
                 readonly,
             },
@@ -135,14 +121,14 @@ impl Shell {
 
         // Seed parameters from environment.
         for (k, v) in std::env::vars() {
-            Self::set_var_in(&mut vars, k, v, true, false)?;
+            Self::set_var_in(&mut vars, k, v.as_str(), true, false)?;
         }
 
         // Set some additional ones.
         Self::set_var_in(
             &mut vars,
             "EUID",
-            format!("{}", uzers::get_effective_uid()),
+            format!("{}", uzers::get_effective_uid()).as_str(),
             false,
             true,
         )?;

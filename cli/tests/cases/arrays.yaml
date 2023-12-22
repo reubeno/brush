@@ -1,7 +1,6 @@
 name: "Arrays"
 cases:
-  - name: "Basic array usage"
-    expected_failure: true # TODO: fix this test
+  - name: "Basic array definition and access"
     stdin: |
       var=(a b c)
       echo "var: $var"
@@ -11,4 +10,21 @@ cases:
       echo "var[2]: ${var[2]}"
       echo "var[3]: ${var[3]}"
       echo "var[4]: ${var[4]}"
+      echo "var[*]: ${var[*]}"
+  - name: "Array updating via index"
+    expected_failure: true
+    stdin: |
+      var=(a b c)
+      var[1]="d"
+      echo "var[*]: ${var[*]}"
+  - name: "Array updating without index"
+    expected_failure: true
+    stdin: |
+      var=(a b c)
+      var="x"
+      echo "var[*]: ${var[*]}"
+  - name: "Array replacing"
+    stdin: |
+      var=(a b c)
+      var=(d e f)
       echo "var[*]: ${var[*]}"

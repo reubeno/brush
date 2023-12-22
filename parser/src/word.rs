@@ -22,6 +22,8 @@ pub enum Parameter {
     Positional(u32),
     Special(SpecialParameter),
     Named(String),
+    NamedWithIndex { name: String, index: u32 },
+    NamedWithAllIndices { name: String, concatenate: bool },
 }
 
 #[derive(Debug)]
@@ -214,9 +216,17 @@ peg::parser! {
             p:special_parameter() { Parameter::Special(p) } /
             p:variable_name() { Parameter::Named(p.to_owned()) }
 
+        // N.B. The indexing syntax is not a standard sh-ism.
+        // TODO: Disable supporting array indexing in sh mode.
         rule parameter() -> Parameter =
             p:positional_parameter() { Parameter::Positional(p) } /
             p:special_parameter() { Parameter::Special(p) } /
+            p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
+            p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: true } } /
+            p:variable_name() "[" n:$(['0'..='9']+) "]" {?
+                let index = n.parse().or(Err("u32"))?;
+                Ok(Parameter::NamedWithIndex { name: p.to_owned(), index })
+            } /
             p:variable_name() { Parameter::Named(p.to_owned()) }
 
         rule positional_parameter() -> u32 =

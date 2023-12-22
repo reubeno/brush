@@ -7,6 +7,7 @@ use crate::builtin::{self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinRes
 mod alias;
 mod cd;
 mod colon;
+mod declare;
 mod dot;
 mod eval;
 mod exit;
@@ -72,12 +73,17 @@ lazy_static! {
         ("newgrp", exec_builtin::<unimp::UnimplementedCommand>),
         ("pwd", exec_builtin::<pwd::PwdCommand>),
         ("read", exec_builtin::<unimp::UnimplementedCommand>),
-        ("shopt", exec_builtin::<shopt::ShoptCommand>),
         ("true", exec_builtin::<tru::TrueCommand>),
         ("type", exec_builtin::<unimp::UnimplementedCommand>),
         ("ulimit", exec_builtin::<unimp::UnimplementedCommand>),
         ("umask", exec_builtin::<umask::UmaskCommand>),
         ("unalias", exec_builtin::<unimp::UnimplementedCommand>),
         ("wait", exec_builtin::<unimp::UnimplementedCommand>),
+
+        // N.B These builtins are extensions.
+        // TODO: make them unavailable in sh mode.
+        ("declare", exec_builtin::<declare::DeclareCommand>),
+        ("local", exec_builtin::<declare::DeclareCommand>),
+        ("shopt", exec_builtin::<shopt::ShoptCommand>),
     ]);
 }

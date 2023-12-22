@@ -438,17 +438,24 @@ peg::parser! {
             io_redirect()+ /
             expected!("redirect list")
 
+        // N.B. here strings are extensions to the POSIX standard.
+        // TODO: don't support here strings in sh mode
         rule io_redirect() -> ast::IoRedirect =
             n:io_number()? f:io_file() {
                 let (kind, target) = f;
                 ast::IoRedirect::File(n, kind, target)
             } /
-            n:io_number()? h:io_here() { ast::IoRedirect::Here(n, h) } /
+            n:io_number()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
+            n:io_number()? h:io_here() { ast::IoRedirect::HereDocument(n, h) } /
             expected!("I/O redirect")
 
+        // N.B. Process substitution forms are extensions to the POSIX standard.
+        // TODO: don't support process substitution in sh mode
         rule io_file() -> (ast::IoFileRedirectKind, ast::IoFileRedirectTarget) =
+            specific_operator("<") s:subshell() { (ast::IoFileRedirectKind::Read, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
             specific_operator("<")  f:io_filename() { (ast::IoFileRedirectKind::Read, f) } /
             specific_operator("<&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
+            specific_operator(">") s:subshell() { (ast::IoFileRedirectKind::Write, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
             specific_operator(">")  f:io_filename() { (ast::IoFileRedirectKind::Write, f) } /
             specific_operator(">&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
             specific_operator(">>") f:io_filename() { (ast::IoFileRedirectKind::Append, f) } /
@@ -468,9 +475,9 @@ peg::parser! {
         rule filename() -> &'input Token =
             word()
 
-        rule io_here() -> ast::IoHere =
-            specific_operator("<<") here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: false, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } } /
-            specific_operator("<<-") here_end:here_end() newline() doc:[_] { ast::IoHere { remove_tabs: true, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } }
+        rule io_here() -> ast::IoHereDocument =
+            specific_operator("<<") here_end:here_end() newline() doc:[_] { ast::IoHereDocument { remove_tabs: false, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } } /
+            specific_operator("<<-") here_end:here_end() newline() doc:[_] { ast::IoHereDocument { remove_tabs: true, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } }
 
         rule here_end() -> &'input Token =
             word()
@@ -536,10 +543,16 @@ peg::parser! {
             specific_operator("\n") {}
         }
 
-        rule assignment_word() -> (String, ast::Word) =
+        rule assignment_word() -> ast::Assignment =
             // TODO: implement assignment_word more accurately, i.e., check to make sure
             // the variable being assigned is a legitimate variable name.
-            [Token::Word(w, _)] {? parse_assignment_word(w.as_str()) }
+            // TODO: make sure array syntax isn't present in sh mode
+            [Token::Word(w, _)] specific_operator("(") elements:([Token::Word(e, _)] { e })* specific_operator(")") {?
+                parse_array_assignment(w.as_str(), &elements)
+            } /
+            [Token::Word(w, _)] {?
+                parse_assignment_word(w.as_str())
+            }
 
         rule io_number() -> u32 =
             // TODO: implement io_number more accurately.
@@ -556,8 +569,8 @@ peg::parser! {
     }
 }
 
-fn parse_assignment_word(word: &str) -> Result<(String, ast::Word), &'static str> {
-    let variable_name;
+fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
+    let variable_name: String;
     let value;
     if let Some((first, second)) = word.split_once('=') {
         variable_name = first.to_owned();
@@ -566,7 +579,33 @@ fn parse_assignment_word(word: &str) -> Result<(String, ast::Word), &'static str
         return Err("not assignment word");
     }
 
-    Ok((variable_name, ast::Word { value }))
+    Ok(ast::Assignment::Scalar {
+        name: variable_name,
+        value: ast::Word { value },
+    })
+}
+
+fn parse_array_assignment(
+    word: &str,
+    elements: &[&String],
+) -> Result<ast::Assignment, &'static str> {
+    if let Some(variable_name) = word.strip_suffix('=') {
+        if variable_name.contains('=') {
+            Err("not assignment word")
+        } else {
+            Ok(ast::Assignment::Array {
+                name: variable_name.to_owned(),
+                values: elements
+                    .iter()
+                    .map(|e| ast::Word {
+                        value: (*e).to_owned(),
+                    })
+                    .collect(),
+            })
+        }
+    } else {
+        Err("not assignment word")
+    }
 }
 
 #[cfg(test)]

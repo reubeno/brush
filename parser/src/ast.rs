@@ -115,7 +115,13 @@ pub type CommandSuffix = Vec<CommandPrefixOrSuffixItem>;
 pub enum CommandPrefixOrSuffixItem {
     IoRedirect(IoRedirect),
     Word(Word),
-    AssignmentWord((String, Word)),
+    AssignmentWord(Assignment),
+}
+
+#[derive(Clone, Debug)]
+pub enum Assignment {
+    Scalar { name: String, value: Word },
+    Array { name: String, values: Vec<Word> },
 }
 
 pub type RedirectList = Vec<IoRedirect>;
@@ -123,7 +129,8 @@ pub type RedirectList = Vec<IoRedirect>;
 #[derive(Clone, Debug)]
 pub enum IoRedirect {
     File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
-    Here(Option<u32>, IoHere),
+    HereDocument(Option<u32>, IoHereDocument),
+    HereString(Option<u32>, Word),
 }
 
 #[derive(Clone, Debug)]
@@ -141,10 +148,11 @@ pub enum IoFileRedirectKind {
 pub enum IoFileRedirectTarget {
     Filename(Word),
     Fd(u32),
+    ProcessSubstitution(SubshellCommand),
 }
 
 #[derive(Clone, Debug)]
-pub struct IoHere {
+pub struct IoHereDocument {
     pub remove_tabs: bool,
     pub here_end: Word,
     pub doc: Word,

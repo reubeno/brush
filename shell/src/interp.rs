@@ -10,6 +10,7 @@ use parser::ast::{self, CommandPrefixOrSuffixItem, IoFileRedirectTarget};
 use crate::expansion::WordExpander;
 use crate::patterns;
 use crate::shell::Shell;
+use crate::variables::ShellValue;
 use crate::{builtin, builtins};
 
 #[derive(Default)]
@@ -290,7 +291,11 @@ impl Execute for ast::CompoundCommand {
     fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
         match self {
             ast::CompoundCommand::BraceGroup(g) => g.execute(shell, params),
-            ast::CompoundCommand::Subshell(_) => todo!("subshell command"),
+            ast::CompoundCommand::Subshell(s) => {
+                // TODO: actually implement subshell semantics
+                // TODO: for that matter, look at shell properties in builtin invocation
+                s.execute(shell, params)
+            }
             ast::CompoundCommand::ForClause(f) => f.execute(shell, params),
             ast::CompoundCommand::CaseClause(c) => c.execute(shell, params),
             ast::CompoundCommand::IfClause(i) => i.execute(shell, params),
@@ -312,7 +317,7 @@ impl Execute for ast::ForClauseCommand {
 
             for value in expanded_values {
                 // Update the variable.
-                shell.set_var(&self.variable_name, value, false, false)?;
+                shell.set_var(&self.variable_name, value.as_str(), false, false)?;
 
                 result = self.body.execute(shell, params)?;
             }
@@ -523,11 +528,18 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                                     return Ok(SpawnResult::ImmediateExit(1));
                                 }
                             }
+                            IoFileRedirectTarget::ProcessSubstitution(subshell_cmd) => {
+                                log::error!(
+                                    "UNIMPLEMENTED: process substitution with command: {:?}",
+                                    subshell_cmd
+                                );
+                                todo!("process substitution")
+                            }
                         }
 
                         open_files.files.insert(fd_num, target_file);
                     }
-                    ast::IoRedirect::Here(fd_num, io_here) => {
+                    ast::IoRedirect::HereDocument(fd_num, io_here) => {
                         // If not specified, default to stdin (fd 0).
                         let fd_num = fd_num.unwrap_or(0);
 
@@ -537,6 +549,10 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                         open_files
                             .files
                             .insert(fd_num, OpenFile::HereDocument(io_here_doc));
+                    }
+                    ast::IoRedirect::HereString(_fd_num, word) => {
+                        log::error!("UNIMPLEMENTED: here string with word: {:?}", word);
+                        todo!("here string");
                     }
                 }
             }
@@ -548,11 +564,20 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         // prior to assigning the value.
         //
 
-        let env_vars: Vec<_> = env_vars
+        let env_vars: Vec<(String, ShellValue)> = env_vars
             .iter()
-            .map(|(n, v)| {
-                let expanded_value = expand_word(context.shell, v)?;
-                Ok((n.clone(), expanded_value))
+            .map(|assignment| match assignment {
+                ast::Assignment::Scalar { name, value } => {
+                    let expanded_value = expand_word(context.shell, value)?;
+                    Ok((name.clone(), ShellValue::String(expanded_value)))
+                }
+                ast::Assignment::Array { name, values } => {
+                    let expanded_values = values
+                        .iter()
+                        .map(|v| expand_word(context.shell, v))
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok((name.clone(), ShellValue::IndexedArray(expanded_values)))
+                }
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -579,9 +604,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             if !cmd_name.contains('/') {
                 if let Some(builtin) = builtins::SPECIAL_BUILTINS.get(cmd_name.as_str()) {
                     execute_builtin_command(builtin, context, &args, &env_vars)
-                } else if let Some(function_definition) = context.shell.funcs.get(&cmd_name) {
+                } else if context.shell.funcs.contains_key(&cmd_name) {
                     // Strip the function name off args.
-                    invoke_shell_function(function_definition, &args[1..], &env_vars)
+                    invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars)
                 } else if let Some(builtin) = builtins::BUILTINS.get(cmd_name.as_str()) {
                     execute_builtin_command(builtin, context, &args, &env_vars)
                 } else {
@@ -624,7 +649,7 @@ fn execute_external_command(
     open_files: &mut OpenFiles,
     cmd_name: &str,
     args: &[String],
-    env_vars: &[(String, String)],
+    env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult> {
     let mut cmd = std::process::Command::new(cmd_name);
 
@@ -648,7 +673,8 @@ fn execute_external_command(
 
     // Overlay any variables explicitly provided as part of command execution.
     for (name, value) in env_vars {
-        cmd.env(name, value);
+        let value_as_str: String = value.into();
+        cmd.env(name, value_as_str);
     }
 
     // Redirect stdin, if applicable.
@@ -763,7 +789,7 @@ fn execute_builtin_command(
     builtin: &builtin::BuiltinCommandExecuteFunc,
     context: &mut PipelineExecutionContext,
     args: &[String],
-    _env_vars: &[(String, String)],
+    _env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult> {
     let args: Vec<_> = args.iter().map(AsRef::as_ref).collect();
     let mut builtin_context = builtin::BuiltinExecutionContext {
@@ -787,12 +813,34 @@ fn execute_builtin_command(
 }
 
 fn invoke_shell_function(
-    _function_definition: &ast::FunctionDefinition,
-    _args: &[String],
-    _env_vars: &[(String, String)],
+    context: &mut PipelineExecutionContext,
+    cmd_name: &str,
+    args: &[String],
+    env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult> {
-    log::error!("UNIMPLEMENTED: invoke shell function");
-    Ok(SpawnResult::ImmediateExit(99))
+    // TODO: We should figure out how to avoid cloning.
+    let function_definition = context.shell.funcs.get(cmd_name).unwrap().clone();
+
+    if !env_vars.is_empty() {
+        log::error!("UNIMPLEMENTED: invoke function with environment variables");
+    }
+
+    let (body, redirects) = &function_definition.body;
+    if redirects.is_some() {
+        log::error!("UNIMPLEMENTED: invoke function with redirects");
+    }
+
+    // Temporarily replace positional parameters.
+    let prior_positional_params = std::mem::take(&mut context.shell.positional_parameters);
+    context.shell.positional_parameters = args.to_owned();
+
+    // Invoke the function.
+    let result = body.execute(context.shell, &ExecutionParameters::default());
+
+    // Restore positional parameters.
+    context.shell.positional_parameters = prior_positional_params;
+
+    Ok(SpawnResult::ImmediateExit(result?.exit_code))
 }
 
 fn expand_word(shell: &mut Shell, word: &ast::Word) -> Result<String> {
