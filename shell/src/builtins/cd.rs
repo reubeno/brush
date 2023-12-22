@@ -62,7 +62,7 @@ impl BuiltinCommand for CdCommand {
 
         // TODO: handle updating PWD
         context.shell.working_dir = target_path;
-        context.shell.set_var("PWD", pwd, true, false)?;
+        context.shell.set_var("PWD", pwd.as_str(), true, false)?;
 
         Ok(BuiltinExitCode::Success)
     }

@@ -14,6 +14,7 @@ mod options;
 mod patterns;
 mod prompt;
 mod shell;
+mod variables;
 
 pub use interp::ExecutionResult;
 pub use shell::{Shell, ShellCreateOptions};

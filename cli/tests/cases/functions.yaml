@@ -1,7 +1,6 @@
 name: "Functions"
 cases:
   - name: "Basic function invocation"
-    expected_failure: true
     test_files:
       - path: "script.sh"
         contents: |
@@ -10,6 +9,20 @@ cases:
           }
           echo "Calling myfunc()..."
           myfunc
+          echo "Returned."
+    args:
+      - "./script.sh"
+  - name: "Function invocation with args"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          myfunc() {
+              echo "In myfunc()"
+              echo "1: $1"
+              echo "*: $*"
+          }
+          echo "Calling myfunc()..."
+          myfunc a b c
           echo "Returned."
     args:
       - "./script.sh"

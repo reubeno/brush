@@ -1,6 +1,8 @@
 use anyhow::Result;
 
 use crate::shell::Shell;
+use crate::variables::ShellVariable;
+
 pub struct WordExpander<'a> {
     shell: &'a mut Shell,
 }
@@ -165,6 +167,20 @@ impl Expandable for parser::word::Parameter {
                 .variables
                 .get(n)
                 .map_or_else(|| "".to_owned(), |v| String::from(&v.value))),
+            parser::word::Parameter::NamedWithIndex { name, index } => {
+                match shell.variables.get(name) {
+                    Some(ShellVariable { value, .. }) => Ok(value
+                        .get_at(*index)
+                        .map_or_else(|| "".to_owned(), |s| s.to_owned())),
+                    None => Ok("".to_owned()),
+                }
+            }
+            parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
+                match shell.variables.get(name) {
+                    Some(ShellVariable { value, .. }) => Ok(value.get_all(*concatenate)),
+                    None => Ok("".to_owned()),
+                }
+            }
         }
     }
 }
@@ -173,7 +189,8 @@ impl Expandable for parser::word::SpecialParameter {
     fn expand(&self, shell: &mut Shell) -> Result<String> {
         match self {
             parser::word::SpecialParameter::AllPositionalParameters { concatenate: _ } => {
-                todo!("expansion: all positional parameters")
+                // TODO: implement concatenate policy
+                Ok(shell.positional_parameters.join(" "))
             }
             parser::word::SpecialParameter::PositionalParameterCount => {
                 Ok(shell.positional_parameters.len().to_string())
