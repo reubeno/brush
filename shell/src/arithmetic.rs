@@ -42,6 +42,7 @@ impl Evaluatable for ast::ArithmeticExpr {
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64> {
     match lvalue {
         ast::ArithmeticTarget::Variable(name) => {

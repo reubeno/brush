@@ -54,16 +54,17 @@ impl BuiltinCommand for ShoptCommand {
                 let option_value = (option_definition.getter)(context.shell);
                 if self.set && !option_value {
                     continue;
-                } else if self.unset && option_value {
+                }
+                if self.unset && option_value {
                     continue;
                 }
 
                 if self.print {
                     let option_value_str = if option_value { "-s" } else { "-u" };
-                    println!("shopt {} {}", option_value_str, option_name);
+                    println!("shopt {option_value_str} {option_name}");
                 } else {
                     let option_value_str = if option_value { "on" } else { "off" };
-                    println!("{:15} {}", option_name, option_value_str);
+                    println!("{option_name:15} {option_value_str}");
                 }
             }
 
@@ -93,10 +94,10 @@ impl BuiltinCommand for ShoptCommand {
                         if !self.quiet {
                             if self.print {
                                 let option_value_str = if option_value { "-s" } else { "-u" };
-                                println!("shopt {} {}", option_value_str, option_name);
+                                println!("shopt {option_value_str} {option_name}");
                             } else {
                                 let option_value_str = if option_value { "on" } else { "off" };
-                                println!("{:15} {}", option_name, option_value_str);
+                                println!("{option_name:15} {option_value_str}");
                             }
                         }
                     }

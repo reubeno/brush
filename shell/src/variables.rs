@@ -105,7 +105,7 @@ impl From<&String> for ShellValue {
 
 impl From<&[&str]> for ShellValue {
     fn from(values: &[&str]) -> Self {
-        let owned_values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+        let owned_values: Vec<String> = values.iter().map(|v| (*v).to_string()).collect();
         ShellValue::IndexedArray(owned_values)
     }
 }

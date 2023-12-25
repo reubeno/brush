@@ -1,8 +1,3 @@
-#![deny(clippy::all)]
-// #![deny(clippy::pedantic)]
-#![allow(clippy::collapsible_if)]
-#![allow(clippy::collapsible_else_if)]
-
 use std::{io::IsTerminal, path::Path};
 
 use anyhow::Result;
@@ -90,7 +85,9 @@ fn main() {
         .format_target(false)
         .init();
 
-    let exit_code: u8 = match run(std::env::args().collect()) {
+    let args: Vec<_> = std::env::args().collect();
+
+    let exit_code: u8 = match run(&args) {
         Ok(code) => code,
         Err(e) => {
             error!("error: {:#}", e);
@@ -98,17 +95,18 @@ fn main() {
         }
     };
 
+    #[allow(clippy::cast_lossless)]
     std::process::exit(exit_code as i32);
 }
 
-fn run(cli_args: Vec<String>) -> Result<u8> {
+fn run(cli_args: &[String]) -> Result<u8> {
     let argv0 = if !cli_args.is_empty() {
-        Some(cli_args[0].to_owned())
+        Some(cli_args[0].clone())
     } else {
         None
     };
 
-    let args = CommandLineArgs::parse_from(cli_args.clone());
+    let args = CommandLineArgs::parse_from(cli_args);
 
     let options = shell::CreateOptions {
         login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),

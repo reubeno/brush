@@ -34,7 +34,7 @@ impl BuiltinCommand for PwdCommand {
         let cwd = context.shell.working_dir.to_string_lossy().into_owned();
 
         // TODO: Need to print to whatever the stdout is for the shell.
-        println!("{}", cwd);
+        println!("{cwd}");
 
         Ok(BuiltinExitCode::Success)
     }

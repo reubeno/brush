@@ -89,7 +89,7 @@ pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
     log::debug!("Parsing word '{}'", word);
 
     let pieces =
-        expansion_parser::unexpanded_word(word).context(format!("parsing word '{}'", word))?;
+        expansion_parser::unexpanded_word(word).context(format!("parsing word '{word}'"))?;
 
     log::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
 

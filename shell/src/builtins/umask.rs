@@ -43,9 +43,9 @@ impl BuiltinCommand for UmaskCommand {
             };
 
             if self.print_roundtrippable {
-                println!("umask {}", umask)
+                println!("umask {umask}");
             } else {
-                println!("{}", umask)
+                println!("{umask}");
             }
         }
 
