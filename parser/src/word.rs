@@ -1,3 +1,4 @@
+use crate::ast;
 use anyhow::{Context, Result};
 
 #[derive(Debug)]
@@ -9,6 +10,7 @@ pub enum WordPiece {
     ParameterExpansion(ParameterExpression),
     CommandSubstitution(String),
     EscapeSequence(String),
+    ArithmeticExpression(ast::ArithmeticExpr),
 }
 
 #[derive(Debug)]
@@ -261,10 +263,12 @@ peg::parser! {
             "<BACKQUOTES UNIMPLEMENTED>" {}
 
         rule arithmetic_expansion() -> WordPiece =
-            "$((" arithmetic_expression() "))" { todo!("arithmetic expression") }
+            "$((" e:arithmetic_expression() "))" { WordPiece::ArithmeticExpression(e) }
 
-        rule arithmetic_expression() -> () =
-            "<ARITHMETIC EXPRESSIONS UNIMPLEMENTED>" {}
+        rule arithmetic_expression() -> ast::ArithmeticExpr =
+            raw_expr:$((!"))" [_])*) {?
+                crate::arithmetic::parse_arithmetic_expression(raw_expr).or(Err("arithmetic expr"))
+            }
 
         rule parameter_expression_word() -> String =
             s:$(word(<!['}']>)) { s.to_owned() }

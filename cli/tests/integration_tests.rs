@@ -82,7 +82,11 @@ impl TestCaseSet {
         let mut fail_count = 0;
         for test_case in self.cases.iter() {
             if test_case.run()? {
-                success_count += 1;
+                if test_case.expected_failure {
+                    fail_count += 1;
+                } else {
+                    success_count += 1;
+                }
             } else if test_case.expected_failure {
                 expected_fail_count += 1;
             } else {
@@ -165,11 +169,13 @@ impl TestCase {
 
         let success = !comparison.is_failure();
         if success {
-            println!("{}", "ok.".bright_green());
-            return Ok(true);
-        }
-
-        if self.expected_failure {
+            if self.expected_failure {
+                println!("{}", "unexpected success.".bright_red());
+            } else {
+                println!("{}", "ok.".bright_green());
+                return Ok(true);
+            }
+        } else if self.expected_failure {
             println!("{}", "expected failure.".bright_magenta());
             return Ok(false);
         }
@@ -181,7 +187,7 @@ impl TestCase {
             ExitStatusComparison::Same(status) => {
                 println!(
                     "    status matches ({}) {}",
-                    format!("{}", status).green(),
+                    format!("{status}").green(),
                     "✔️".green()
                 )
             }
@@ -261,9 +267,11 @@ impl TestCase {
             DirComparison::TestDiffers => println!("    temp dir {}", "DIFFERS".bright_red()),
         }
 
-        println!("    {}", "FAILED.".bright_red());
+        if !success {
+            println!("    {}", "FAILED.".bright_red());
+        }
 
-        Ok(false)
+        Ok(success)
     }
 
     fn create_test_files_in(&self, temp_dir: &assert_fs::TempDir) -> Result<()> {

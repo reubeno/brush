@@ -3,11 +3,11 @@ use log::debug;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::env::ShellEnvironment;
 use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
-use crate::options::ShellRuntimeOptions;
+use crate::options::RuntimeOptions;
 use crate::prompt::format_prompt_piece;
-use crate::variables::{ShellValue, ShellVariable};
 
 #[derive(Debug)]
 pub struct Shell {
@@ -16,9 +16,9 @@ pub struct Shell {
     pub umask: u32,
     pub file_size_limit: u64,
     // TODO: traps
-    pub variables: HashMap<String, ShellVariable>,
+    pub env: ShellEnvironment,
     pub funcs: HashMap<String, ShellFunction>,
-    pub options: ShellRuntimeOptions,
+    pub options: RuntimeOptions,
     // TODO: async lists
     pub aliases: HashMap<String, String>,
 
@@ -32,10 +32,13 @@ pub struct Shell {
 
     // Shell name
     pub shell_name: Option<String>,
+
+    // Function call stack.
+    pub function_call_depth: u32,
 }
 
 #[derive(Debug)]
-pub struct ShellCreateOptions {
+pub struct CreateOptions {
     pub login: bool,
     pub interactive: bool,
     pub no_editing: bool,
@@ -48,25 +51,29 @@ pub struct ShellCreateOptions {
 
 type ShellFunction = parser::ast::FunctionDefinition;
 
+#[derive(Debug)]
+pub struct ShellFunctionCall {}
+
 enum ProgramOrigin {
     File(PathBuf),
     String,
 }
 
 impl Shell {
-    pub fn new(options: &ShellCreateOptions) -> Result<Shell> {
+    pub fn new(options: &CreateOptions) -> Result<Shell> {
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
             working_dir: std::env::current_dir()?,
             umask: Default::default(),           // TODO: populate umask
             file_size_limit: Default::default(), // TODO: populate file size limit
-            variables: Self::initialize_vars()?,
+            env: Self::initialize_vars(options)?,
             funcs: Default::default(),
-            options: ShellRuntimeOptions::defaults_from(options),
+            options: RuntimeOptions::defaults_from(options),
             aliases: Default::default(),
             last_exit_status: 0,
             positional_parameters: vec![],
             shell_name: options.shell_name.clone(),
+            function_call_depth: 0,
         };
 
         // Load profiles/configuration.
@@ -75,68 +82,31 @@ impl Shell {
         Ok(shell)
     }
 
-    pub fn set_var<N: AsRef<str>, V: Into<ShellValue>>(
-        &mut self,
-        name: N,
-        value: V,
-        exported: bool,
-        readonly: bool,
-    ) -> Result<()> {
-        Self::set_var_in(&mut self.variables, name, value, exported, readonly)?;
-        Ok(())
-    }
-
-    // pub fn set_var<S: AsRef<str>, T: AsRef<str>>(
-    //     &mut self,
-    //     name: S,
-    //     value: T,
-    //     exported: bool,
-    //     readonly: bool,
-    // ) -> Result<()> {
-    //     Self::set_var_in(&mut self.variables, name, value, exported, readonly)?;
-    //     Ok(())
-    // }
-
-    fn set_var_in<N: AsRef<str>, V: Into<ShellValue>>(
-        vars: &mut HashMap<String, ShellVariable>,
-        name: N,
-        value: V,
-        exported: bool,
-        readonly: bool,
-    ) -> Result<()> {
-        vars.insert(
-            name.as_ref().to_owned(),
-            ShellVariable {
-                value: value.into(),
-                exported,
-                readonly,
-            },
-        );
-
-        Ok(())
-    }
-
-    fn initialize_vars() -> Result<HashMap<String, ShellVariable>> {
-        let mut vars = HashMap::new();
+    fn initialize_vars(options: &CreateOptions) -> Result<ShellEnvironment> {
+        let mut env = ShellEnvironment::new();
 
         // Seed parameters from environment.
         for (k, v) in std::env::vars() {
-            Self::set_var_in(&mut vars, k, v.as_str(), true, false)?;
+            env.set_global(k, v.as_str())?.export();
         }
 
         // Set some additional ones.
-        Self::set_var_in(
-            &mut vars,
-            "EUID",
-            format!("{}", uzers::get_effective_uid()).as_str(),
-            false,
-            true,
+        env.set_global("EUID", format!("{}", uzers::get_effective_uid()).as_str())?
+            .readonly = true;
+
+        // TODO: don't set these in sh mode
+        if let Some(shell_name) = &options.shell_name {
+            env.set_global("BASH", shell_name)?;
+        }
+        env.set_global(
+            "BASH_VERSINFO",
+            ["5", "1", "1", "1", "release", "unknown"].as_slice(),
         )?;
 
-        Ok(vars)
+        Ok(env)
     }
 
-    fn load_config(&mut self, options: &ShellCreateOptions) -> Result<()> {
+    fn load_config(&mut self, options: &CreateOptions) -> Result<()> {
         if options.login {
             // --noprofile means skip this.
             if options.no_profile {
@@ -179,7 +149,7 @@ impl Shell {
                     self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())?;
                 }
             } else {
-                if self.variables.contains_key("BASH_ENV") {
+                if self.env.is_set("BASH_ENV") {
                     //
                     // TODO: look at $BASH_ENV; source its expansion if that file exists
                     //
@@ -206,7 +176,7 @@ impl Shell {
         debug!("sourcing: {}", path.display());
 
         let opened_file = std::fs::File::open(path).context(path.to_string_lossy().to_string())?;
-        if !opened_file.metadata()?.is_file() {
+        if opened_file.metadata()?.is_dir() {
             return Err(anyhow::anyhow!(
                 "{}: path is a directory",
                 path.to_string_lossy().to_string()
@@ -263,7 +233,7 @@ impl Shell {
         origin: &ProgramOrigin,
         capture_output: bool,
     ) -> Result<ExecutionResult> {
-        let mut error_prefix = "".to_owned();
+        let mut error_prefix = String::new();
 
         if let ProgramOrigin::File(file_path) = origin {
             error_prefix = format!("{}: ", file_path.display());
@@ -347,7 +317,7 @@ impl Shell {
     }
 
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
-        self.variables
+        self.env
             .get(name)
             .map_or_else(|| default.to_owned(), |s| String::from(&s.value))
     }
@@ -369,5 +339,19 @@ impl Shell {
             enable_extended_globbing: self.options.extended_globbing,
             posix_mode: self.options.posix_mode,
         }
+    }
+
+    pub fn in_function(&self) -> bool {
+        self.function_call_depth > 0
+    }
+
+    pub fn enter_function(&mut self) {
+        self.function_call_depth += 1;
+        self.env.push_locals();
+    }
+
+    pub fn leave_function(&mut self) {
+        self.env.pop_locals();
+        self.function_call_depth -= 1;
     }
 }

@@ -14,7 +14,7 @@ enum InteractiveExecutionResult {
 }
 
 impl InteractiveShell {
-    pub fn new(options: &shell::ShellCreateOptions) -> Result<InteractiveShell> {
+    pub fn new(options: &shell::CreateOptions) -> Result<InteractiveShell> {
         Ok(InteractiveShell {
             editor: Self::new_editor()?,
             shell: shell::Shell::new(options)?,

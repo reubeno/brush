@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use itertools::Itertools;
 use parser::ast::{self, CommandPrefixOrSuffixItem, IoFileRedirectTarget};
 
+use crate::arithmetic::Evaluatable;
+use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::expansion::WordExpander;
 use crate::patterns;
 use crate::shell::Shell;
@@ -301,6 +303,7 @@ impl Execute for ast::CompoundCommand {
             ast::CompoundCommand::IfClause(i) => i.execute(shell, params),
             ast::CompoundCommand::WhileClause(w) => (WhileOrUtil::While, w).execute(shell, params),
             ast::CompoundCommand::UntilClause(u) => (WhileOrUtil::Util, u).execute(shell, params),
+            ast::CompoundCommand::Arithmetic(a) => a.execute(shell, params),
         }
     }
 }
@@ -317,7 +320,13 @@ impl Execute for ast::ForClauseCommand {
 
             for value in expanded_values {
                 // Update the variable.
-                shell.set_var(&self.variable_name, value.as_str(), false, false)?;
+                shell.env.update_or_add(
+                    &self.variable_name,
+                    value.as_str(),
+                    |_| Ok(()),
+                    EnvironmentLookup::Anywhere,
+                    EnvironmentScope::Global,
+                )?;
 
                 result = self.body.execute(shell, params)?;
             }
@@ -394,6 +403,21 @@ impl Execute for (WhileOrUtil, &ast::WhileClauseCommand) {
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult> {
         todo!("execute while clause command")
+    }
+}
+
+impl Execute for ast::ArithmeticCommand {
+    fn execute(&self, shell: &mut Shell, _params: &ExecutionParameters) -> Result<ExecutionResult> {
+        let value = self.expr.eval(shell)?;
+        let result = if value == 0 {
+            ExecutionResult::success()
+        } else {
+            ExecutionResult::new(1)
+        };
+
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
     }
 }
 
@@ -550,9 +574,16 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             .files
                             .insert(fd_num, OpenFile::HereDocument(io_here_doc));
                     }
-                    ast::IoRedirect::HereString(_fd_num, word) => {
-                        log::error!("UNIMPLEMENTED: here string with word: {:?}", word);
-                        todo!("here string");
+                    ast::IoRedirect::HereString(fd_num, word) => {
+                        // If not specified, default to stdin (fd 0).
+                        let fd_num = fd_num.unwrap_or(0);
+
+                        let mut expanded_word = expand_word(context.shell, word)?;
+                        expanded_word.push('\n');
+
+                        open_files
+                            .files
+                            .insert(fd_num, OpenFile::HereDocument(expanded_word));
                     }
                 }
             }
@@ -636,7 +667,13 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             for (name, value) in env_vars {
                 // TODO: Handle readonly variables.
-                context.shell.set_var(name, value, false, false)?;
+                context.shell.env.update_or_add(
+                    name,
+                    value,
+                    |_| Ok(()),
+                    EnvironmentLookup::Anywhere,
+                    EnvironmentScope::Global,
+                )?;
             }
 
             Ok(SpawnResult::ImmediateExit(0))
@@ -665,7 +702,7 @@ fn execute_external_command(
     cmd.env_clear();
 
     // Add in exported variables.
-    for (name, var) in &context.shell.variables {
+    for (name, var) in context.shell.env.iter() {
         if var.exported {
             cmd.env(name, &String::from(&var.value));
         }
@@ -834,8 +871,14 @@ fn invoke_shell_function(
     let prior_positional_params = std::mem::take(&mut context.shell.positional_parameters);
     context.shell.positional_parameters = args.to_owned();
 
+    // Note that we're going deeper.
+    context.shell.enter_function();
+
     // Invoke the function.
     let result = body.execute(context.shell, &ExecutionParameters::default());
+
+    // We've come back out, reflect it.
+    context.shell.leave_function();
 
     // Restore positional parameters.
     context.shell.positional_parameters = prior_positional_params;

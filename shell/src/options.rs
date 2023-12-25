@@ -1,7 +1,7 @@
-use crate::ShellCreateOptions;
+use crate::CreateOptions;
 
 #[derive(Default, Debug)]
-pub struct ShellRuntimeOptions {
+pub struct RuntimeOptions {
     //
     // Single-character options.
     //
@@ -125,8 +125,8 @@ pub struct ShellRuntimeOptions {
     pub interactive: bool,
 }
 
-impl ShellRuntimeOptions {
-    pub fn defaults_from(create_options: &ShellCreateOptions) -> ShellRuntimeOptions {
+impl RuntimeOptions {
+    pub fn defaults_from(create_options: &CreateOptions) -> RuntimeOptions {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {
             interactive: create_options.interactive,

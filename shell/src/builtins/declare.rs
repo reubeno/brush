@@ -1,7 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
+use itertools::Itertools;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{
+    builtin::{BuiltinCommand, BuiltinExitCode},
+    env::{EnvironmentLookup, EnvironmentScope},
+};
 
 #[derive(Parser, Debug)]
 pub(crate) struct DeclareCommand {
@@ -61,17 +65,103 @@ impl BuiltinCommand for DeclareCommand {
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext,
     ) -> Result<crate::builtin::BuiltinExitCode> {
-        let _as_local = context.builtin_name == "local";
+        let called_as_local = context.builtin_name == "local";
+        let create_var_local =
+            called_as_local || (context.shell.in_function() && !self.create_global);
 
-        log::error!(
-            "UNIMPLEMENTED: {}: built-in unimplemented: {:?}",
-            context
-                .shell
-                .shell_name
-                .as_ref()
-                .map_or("(unknown shell)", |sn| sn),
-            self.names,
-        );
-        Ok(BuiltinExitCode::Unimplemented)
+        // Note that we don't implement much.
+        if self.function_names_or_defs_only {
+            log::error!("UNIMPLEMENTED: declare -f: function names or definitions only");
+        }
+        if self.function_names_only {
+            log::error!("UNIMPLEMENTED: declare -F: function names only");
+        }
+        if self.locals_inherit_from_prev_scope {
+            log::error!("UNIMPLEMENTED: declare -I: locals inherit from previous scope");
+        }
+        if self.print {
+            log::error!("UNIMPLEMENTED: declare -p: print");
+        }
+
+        if self.make_indexed_array {
+            log::error!("UNIMPLEMENTED: declare -a: make indexed array");
+        }
+        if self.make_associative_array {
+            log::error!("UNIMPLEMENTED: declare -A: make associative array");
+        }
+        if self.make_integer {
+            log::error!("UNIMPLEMENTED: declare -i: make integer");
+        }
+        if self.lowercase_value_on_assignment {
+            log::error!("UNIMPLEMENTED: declare -l: lowercase value on assignment");
+        }
+        if self.make_nameref {
+            log::error!("UNIMPLEMENTED: declare -n: make nameref");
+        }
+        if self.make_readonly {
+            log::error!("UNIMPLEMENTED: declare -r: make readonly");
+        }
+        if self.make_traced {
+            log::error!("UNIMPLEMENTED: declare -t: make traced");
+        }
+        if self.uppercase_value_on_assignment {
+            log::error!("UNIMPLEMENTED: declare -u: uppercase value on assignment");
+        }
+        if self.make_exported {
+            log::error!("UNIMPLEMENTED: declare -x: make exported");
+        }
+
+        let (names, plus_args): (Vec<_>, Vec<_>) =
+            self.names.iter().partition(|name| !name.starts_with('+'));
+
+        if !plus_args.is_empty() {
+            log::error!("UNIMPLEMENTED: declare +: plus args used");
+        }
+
+        if !names.is_empty() {
+            for entry in names {
+                let (name, value) = entry.split_once('=').map_or_else(
+                    || (entry.as_str(), None),
+                    |(name, value)| (name, Some(value)),
+                );
+
+                // TODO: handle declaring without value for variable.
+                if value.is_none() {
+                    todo!("UNIMPLEMENTED: declaring variable without value");
+                }
+
+                if create_var_local {
+                    context.shell.env.update_or_add(
+                        name,
+                        value.unwrap(),
+                        |_| Ok(()),
+                        EnvironmentLookup::OnlyInCurrentLocal,
+                        EnvironmentScope::Local,
+                    )?;
+                } else {
+                    context.shell.env.update_or_add(
+                        name,
+                        value.unwrap(),
+                        |_| Ok(()),
+                        EnvironmentLookup::OnlyInGlobal,
+                        EnvironmentScope::Global,
+                    )?;
+                }
+
+                // TODO: set name=value
+                // TODO: update name with attributes
+            }
+
+            return Ok(BuiltinExitCode::Unimplemented);
+        } else {
+            // Dump variables.
+            for (name, variable) in context.shell.env.iter().sorted_by_key(|v| v.0) {
+                println!("{}={}", name, variable.value.format()?);
+            }
+
+            // TODO: dump functions
+        }
+
+        Ok(BuiltinExitCode::Success)
     }
 }

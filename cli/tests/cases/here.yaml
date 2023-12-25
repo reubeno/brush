@@ -12,7 +12,7 @@ cases:
       - "./script.sh"
 
   - name: "Basic here string"
-    expected_failure: true
     stdin: |
-      shopt -u posix
-      cat <<< "Something here."
+      shopt -ou posix
+      cat <<<"Something here."
+      wc -l <<<"Something"
