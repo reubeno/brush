@@ -3,11 +3,13 @@ use clap::Parser;
 
 use crate::shell::Shell;
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct BuiltinResult {
     pub exit_code: BuiltinExitCode,
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub enum BuiltinExitCode {
     Success,
@@ -18,14 +20,17 @@ pub enum BuiltinExitCode {
     ReturnFromFunctionOrScript(u8),
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct BuiltinExecutionContext<'a> {
     pub shell: &'a mut Shell,
     pub builtin_name: &'a str,
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub type BuiltinCommandExecuteFunc =
     fn(context: &mut BuiltinExecutionContext, args: &[&str]) -> Result<BuiltinResult>;
 
+#[allow(clippy::module_name_repetitions)]
 pub trait BuiltinCommand: Parser {
     fn execute_args(context: &mut BuiltinExecutionContext, args: &[&str]) -> Result<BuiltinResult> {
         let parse_result = Self::try_parse_from(args);

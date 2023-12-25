@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::variables::{ShellValue, ShellVariable};
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum EnvironmentLookup {
     Anywhere,
     OnlyInGlobal,
@@ -11,7 +11,7 @@ pub enum EnvironmentLookup {
     OnlyInLocal,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum EnvironmentScope {
     Local,
     Global,
@@ -162,7 +162,7 @@ impl ShellEnvironment {
             match scope_if_creating {
                 EnvironmentScope::Local => {
                     if let Some(map) = self.locals_stack.last_mut() {
-                        let var = map.set(name.as_ref(), value)?;
+                        let var = map.set(name.as_ref(), value);
                         updater(var)?;
                     } else {
                         return Err(anyhow::anyhow!(
@@ -171,7 +171,7 @@ impl ShellEnvironment {
                     }
                 }
                 EnvironmentScope::Global => {
-                    let var = self.set_global(name.as_ref(), value)?;
+                    let var = self.set_global(name.as_ref(), value);
                     updater(var)?;
                 }
             };
@@ -184,7 +184,7 @@ impl ShellEnvironment {
         &mut self,
         name: N,
         value: V,
-    ) -> Result<&mut ShellVariable> {
+    ) -> &mut ShellVariable {
         self.globals.set(name, value)
     }
 }
@@ -229,7 +229,7 @@ impl ShellVariableMap {
         &mut self,
         name: N,
         value: V,
-    ) -> Result<&mut ShellVariable> {
+    ) -> &mut ShellVariable {
         self.variables.insert(
             name.as_ref().to_owned(),
             ShellVariable {
@@ -239,8 +239,6 @@ impl ShellVariableMap {
             },
         );
 
-        let var = self.variables.get_mut(name.as_ref()).unwrap();
-
-        Ok(var)
+        self.variables.get_mut(name.as_ref()).unwrap()
     }
 }

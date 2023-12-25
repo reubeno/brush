@@ -11,7 +11,7 @@ fn cli_integration_tests() -> Result<()> {
     let mut success_count = 0;
     let mut expected_fail_count = 0;
     let mut fail_count = 0;
-    for entry in glob::glob(format!("{}/tests/cases/**/*.yaml", dir).as_ref()).unwrap() {
+    for entry in glob::glob(format!("{dir}/tests/cases/**/*.yaml").as_ref()).unwrap() {
         let entry = entry.unwrap();
 
         let yaml_file = std::fs::File::open(entry.as_path())?;
@@ -80,7 +80,7 @@ impl TestCaseSet {
         let mut success_count = 0;
         let mut expected_fail_count = 0;
         let mut fail_count = 0;
-        for test_case in self.cases.iter() {
+        for test_case in &self.cases {
             if test_case.run()? {
                 if test_case.expected_failure {
                     fail_count += 1;
@@ -155,6 +155,7 @@ enum WhichShell {
 }
 
 impl TestCase {
+    #[allow(clippy::too_many_lines)]
     pub fn run(&self) -> Result<bool> {
         print!(
             "* {}: [{}]... ",
@@ -189,7 +190,7 @@ impl TestCase {
                     "    status matches ({}) {}",
                     format!("{status}").green(),
                     "✔️".green()
-                )
+                );
             }
             ExitStatusComparison::TestDiffers {
                 test_exit_status,
@@ -197,8 +198,8 @@ impl TestCase {
             } => {
                 println!(
                     "    status mismatch: {} from oracle vs. {} from test",
-                    format!("{}", oracle_exit_status).cyan(),
-                    format!("{}", test_exit_status).bright_red()
+                    format!("{oracle_exit_status}").cyan(),
+                    format!("{test_exit_status}").bright_red()
                 );
             }
         }

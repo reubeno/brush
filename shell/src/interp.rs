@@ -180,7 +180,7 @@ impl Execute for ast::Pipeline {
             params: params.clone(),
         };
 
-        for command in self.seq.iter() {
+        for command in &self.seq {
             let spawn_result = command.execute_in_pipeline(&mut pipeline_context)?;
             pipeline_context.spawn_results.push(spawn_result);
 
@@ -195,6 +195,7 @@ impl Execute for ast::Pipeline {
             match child {
                 SpawnResult::SpawnedChild(child) => {
                     let output = child.wait_with_output()?;
+                    #[allow(clippy::cast_sign_loss)]
                     let exit_code: u8 = (output.status.code().unwrap_or(127) & 0xFF) as u8;
 
                     // TODO: Confirm what to return if it was signaled.
@@ -262,6 +263,7 @@ impl ExecuteInPipeline for ast::Command {
 }
 
 fn eval_expression(expr: &ast::ExtendedTestExpression, shell: &mut Shell) -> Result<u8> {
+    #[allow(clippy::single_match_else)]
     let result = match expr {
         ast::ExtendedTestExpression::StringsAreEqual(left, right) => {
             let expanded_str = expand_word(shell, left)?;
@@ -340,10 +342,10 @@ impl Execute for ast::ForClauseCommand {
 impl Execute for ast::CaseClauseCommand {
     fn execute(&self, shell: &mut Shell, params: &ExecutionParameters) -> Result<ExecutionResult> {
         let expanded_value = expand_word(shell, &self.value)?;
-        for case in self.cases.iter() {
+        for case in &self.cases {
             let mut matches = false;
 
-            for pattern in case.patterns.iter() {
+            for pattern in &case.patterns {
                 let expanded_pattern = expand_word(shell, pattern)?;
                 if patterns::pattern_matches(expanded_pattern.as_str(), expanded_value.as_str())? {
                     matches = true;
@@ -437,6 +439,7 @@ impl Execute for ast::FunctionDefinition {
 }
 
 impl ExecuteInPipeline for ast::SimpleCommand {
+    #[allow(clippy::too_many_lines)] // TODO: refactor this function
     fn execute_in_pipeline(&self, context: &mut PipelineExecutionContext) -> Result<SpawnResult> {
         let mut redirects = vec![];
         let mut env_vars = vec![];
@@ -490,7 +493,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         let mut open_files = OpenFiles::new();
         if !redirects.is_empty() {
-            for redirect in redirects.into_iter() {
+            for redirect in redirects {
                 match redirect {
                     ast::IoRedirect::File(fd_num, kind, target) => {
                         // If not specified, we default fd to stdout.
@@ -634,12 +637,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             if !cmd_name.contains('/') {
                 if let Some(builtin) = builtins::SPECIAL_BUILTINS.get(cmd_name.as_str()) {
-                    execute_builtin_command(builtin, context, &args, &env_vars)
+                    execute_builtin_command(*builtin, context, &args, &env_vars)
                 } else if context.shell.funcs.contains_key(&cmd_name) {
                     // Strip the function name off args.
                     invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars)
                 } else if let Some(builtin) = builtins::BUILTINS.get(cmd_name.as_str()) {
-                    execute_builtin_command(builtin, context, &args, &env_vars)
+                    execute_builtin_command(*builtin, context, &args, &env_vars)
                 } else {
                     // Strip the command name off args.
                     execute_external_command(
@@ -823,7 +826,7 @@ fn execute_external_command(
 }
 
 fn execute_builtin_command(
-    builtin: &builtin::BuiltinCommandExecuteFunc,
+    builtin: builtin::BuiltinCommandExecuteFunc,
     context: &mut PipelineExecutionContext,
     args: &[String],
     _env_vars: &[(String, ShellValue)],

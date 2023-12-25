@@ -37,8 +37,8 @@ pub trait Expandable {
 impl Expandable for parser::word::WordPiece {
     fn expand(&self, shell: &mut Shell) -> Result<String> {
         let expansion = match self {
-            parser::word::WordPiece::Text(t) => t.to_owned(),
-            parser::word::WordPiece::SingleQuotedText(t) => t.to_owned(),
+            parser::word::WordPiece::Text(t) => t.clone(),
+            parser::word::WordPiece::SingleQuotedText(t) => t.clone(),
             parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
                 let expanded_pieces = pieces
                     .iter()
@@ -206,7 +206,7 @@ impl Expandable for parser::word::SpecialParameter {
             parser::word::SpecialParameter::ShellName => Ok(shell
                 .shell_name
                 .as_ref()
-                .map_or_else(String::new, |name| name.to_owned())),
+                .map_or_else(String::new, |name| name.clone())),
         }
     }
 }

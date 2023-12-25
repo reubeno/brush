@@ -7,6 +7,22 @@ edition = "2021"
 license = "MIT"
 version = "0.1.0"
 
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+bool_to_int_with_if = "allow"
+collapsible_else_if = "allow"
+collapsible_if = "allow"
+if_not_else = "allow"
+if_same_then_else = "allow"
+match_same_arms = "allow"
+missing_errors_doc = "allow"
+must_use_candidate = "allow"
+redundant_closure_for_method_calls = "allow"
+redundant_else = "allow"
+similar_names = "allow"
+struct_excessive_bools = "allow"
+
 [profile.release]
 opt-level = "z"
 lto = true

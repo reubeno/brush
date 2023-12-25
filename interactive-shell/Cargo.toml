@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = "1.0.75"
 log = "0.4.20"

@@ -23,7 +23,7 @@ pub(crate) fn format_prompt_piece(
         parser::prompt::PromptPiece::CurrentWorkingDirectory {
             tilde_replaced,
             basename,
-        } => format_current_working_directory(shell, *tilde_replaced, *basename)?,
+        } => format_current_working_directory(shell, *tilde_replaced, *basename),
         parser::prompt::PromptPiece::Date(_) => todo!("prompt: date"),
         parser::prompt::PromptPiece::DollarOrPound => {
             if uzers::get_current_uid() == 0 {
@@ -71,11 +71,7 @@ fn get_current_username() -> Result<String> {
     Ok(username.to_string_lossy().to_string())
 }
 
-fn format_current_working_directory(
-    shell: &Shell,
-    tilde_replaced: bool,
-    basename: bool,
-) -> Result<String> {
+fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basename: bool) -> String {
     let mut working_dir_str = shell.working_dir.to_string_lossy().to_string();
 
     if basename {
@@ -86,10 +82,10 @@ fn format_current_working_directory(
         let home_dir_opt = shell.env.get("HOME");
         if let Some(home_dir) = home_dir_opt {
             if let Some(stripped) = working_dir_str.strip_prefix(&String::from(&home_dir.value)) {
-                working_dir_str = format!("~{}", stripped);
+                working_dir_str = format!("~{stripped}");
             }
         }
     }
 
-    Ok(working_dir_str)
+    working_dir_str
 }

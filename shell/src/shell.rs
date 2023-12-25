@@ -52,7 +52,7 @@ pub struct CreateOptions {
 type ShellFunction = parser::ast::FunctionDefinition;
 
 #[derive(Debug)]
-pub struct ShellFunctionCall {}
+pub struct FunctionCall {}
 
 enum ProgramOrigin {
     File(PathBuf),
@@ -66,10 +66,10 @@ impl Shell {
             working_dir: std::env::current_dir()?,
             umask: Default::default(),           // TODO: populate umask
             file_size_limit: Default::default(), // TODO: populate file size limit
-            env: Self::initialize_vars(options)?,
-            funcs: Default::default(),
+            env: Self::initialize_vars(options),
+            funcs: HashMap::default(),
             options: RuntimeOptions::defaults_from(options),
-            aliases: Default::default(),
+            aliases: HashMap::default(),
             last_exit_status: 0,
             positional_parameters: vec![],
             shell_name: options.shell_name.clone(),
@@ -82,28 +82,28 @@ impl Shell {
         Ok(shell)
     }
 
-    fn initialize_vars(options: &CreateOptions) -> Result<ShellEnvironment> {
+    fn initialize_vars(options: &CreateOptions) -> ShellEnvironment {
         let mut env = ShellEnvironment::new();
 
         // Seed parameters from environment.
         for (k, v) in std::env::vars() {
-            env.set_global(k, v.as_str())?.export();
+            env.set_global(k, v.as_str()).export();
         }
 
         // Set some additional ones.
-        env.set_global("EUID", format!("{}", uzers::get_effective_uid()).as_str())?
+        env.set_global("EUID", format!("{}", uzers::get_effective_uid()).as_str())
             .readonly = true;
 
         // TODO: don't set these in sh mode
         if let Some(shell_name) = &options.shell_name {
-            env.set_global("BASH", shell_name)?;
+            env.set_global("BASH", shell_name);
         }
         env.set_global(
             "BASH_VERSINFO",
             ["5", "1", "1", "1", "release", "unknown"].as_slice(),
-        )?;
+        );
 
-        Ok(env)
+        env
     }
 
     fn load_config(&mut self, options: &CreateOptions) -> Result<()> {
