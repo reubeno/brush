@@ -459,8 +459,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 // Consume the '(' and add it to the token.
                                 state.append_char(self.next_char()?.unwrap());
 
+                                // Check to see if this is possibly an arithmetic expression
+                                // (i.e., one that starts with `$((`).
+                                let mut required_end_parens = 1;
                                 if matches!(self.peek_char()?, Some('(')) {
-                                    todo!("tokenizing saw possible arithmetic expression");
+                                    // Consume the second '(' and add it to the token.
+                                    state.append_char(self.next_char()?.unwrap());
+                                    required_end_parens = 2;
                                 }
 
                                 let mut tokens = vec![];
@@ -468,18 +473,26 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 loop {
                                     let cur_token = self.next_token_until(Some(')'))?;
                                     if let Some(cur_token_value) = cur_token.token {
-                                        if !tokens.is_empty() {
-                                            state.append_char(' ');
-                                        }
-
                                         state.append_str(cur_token_value.to_str());
                                         tokens.push(cur_token_value);
                                     }
 
-                                    if cur_token.reason == TokenEndReason::SpecifiedTerminatingChar
-                                    {
-                                        // We hit the ')' we were looking for.
-                                        break;
+                                    match cur_token.reason {
+                                        TokenEndReason::UnescapedNewLine
+                                        | TokenEndReason::NonNewLineBlank => {
+                                            state.append_char(' ');
+                                        }
+                                        TokenEndReason::SpecifiedTerminatingChar => {
+                                            // We hit the ')' we were looking for; consume and append it.
+                                            if required_end_parens == 2 {
+                                                state.append_char(self.next_char()?.unwrap());
+                                            }
+                                            required_end_parens -= 1;
+                                            if required_end_parens == 0 {
+                                                break;
+                                            }
+                                        }
+                                        _ => (),
                                     }
                                 }
 
@@ -882,6 +895,17 @@ SOMETHING
     }
 
     #[test]
+    fn tokenize_arithmetic_expression() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("a$((1+2))b c")?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+                t1.to_str() == "a$((1+2))b" &&
+                t2.to_str() == "c"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn tokenize_unbraced_parameter_expansion() -> Result<()> {
         assert_matches!(
             &tokenize_str("$x")?[..],
@@ -955,6 +979,26 @@ SOMETHING
             &tokenize_str(r#"x"a b"y"#)?[..],
             [t1 @ Token::Word(_, _)] if
                 t1.to_str() == r#"x"a b"y"#
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_double_quoted_command_substitution() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r#"x"$(echo hi)"y"#)?[..],
+            [t1 @ Token::Word(_, _)] if
+                t1.to_str() == r#"x"$(echo hi)"y"#
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_double_quoted_arithmetic_expression() -> Result<()> {
+        assert_matches!(
+            &tokenize_str(r#"x"$((1+2))"y"#)?[..],
+            [t1 @ Token::Word(_, _)] if
+                t1.to_str() == r#"x"$((1+2))"y"#
         );
         Ok(())
     }

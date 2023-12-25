@@ -112,14 +112,14 @@ peg::parser! {
 
         // TODO: Handle quoting.
         rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
-            command_substitution() /
             arithmetic_expansion() /
+            command_substitution() /
             parameter_expansion() /
             unquoted_text(<stop_condition()>)
 
         rule double_quoted_word_piece() -> WordPiece =
-            command_substitution() /
             arithmetic_expansion() /
+            command_substitution() /
             parameter_expansion() /
             double_quoted_escape_sequence() /
             double_quoted_text()

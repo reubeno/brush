@@ -556,10 +556,24 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                                 }
                             }
                             IoFileRedirectTarget::ProcessSubstitution(subshell_cmd) => {
-                                log::error!(
-                                    "UNIMPLEMENTED: process substitution with command: {:?}",
-                                    subshell_cmd
-                                );
+                                match kind {
+                                    ast::IoFileRedirectKind::Read => {
+                                        log::error!(
+                                            "UNIMPLEMENTED: process substitution to read from stdout of command: {:?}",
+                                            subshell_cmd
+                                        );
+                                    }
+                                    ast::IoFileRedirectKind::Write => {
+                                        log::error!(
+                                            "UNIMPLEMENTED: process substitution to write to stdin of command: {:?}",
+                                            subshell_cmd
+                                        );
+                                    }
+                                    _ => {
+                                        return Err(anyhow::anyhow!("invalid process substitution"))
+                                    }
+                                }
+
                                 todo!("process substitution")
                             }
                         }
