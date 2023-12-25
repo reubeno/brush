@@ -148,12 +148,20 @@ impl<'a> peg::ParseElem<'a> for Tokens<'a> {
     }
 }
 
+impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
+    type Slice = String;
+
+    fn parse_slice(&'a self, start: usize, end: usize) -> Self::Slice {
+        self.tokens[start..end]
+            .iter()
+            .map(|t| t.to_str())
+            .collect::<Vec<_>>()
+            .join("")
+    }
+}
+
 peg::parser! {
     grammar token_parser<'a>() for Tokens<'a> {
-        //
-        // program          : linebreak complete_commands linebreak
-        //                  | linebreak
-        //
         pub(crate) rule program() -> ast::Program =
             linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
             linebreak() { ast::Program { complete_commands: vec![] } }
@@ -207,7 +215,10 @@ peg::parser! {
             c:extended_test_command() { ast::Command::ExtendedTest(c) } /
             expected!("command")
 
+        // N.B. The arithmetic command is a non-sh extension.
+        // TODO: Don't allow the arithmetic command in sh mode.
         rule compound_command() -> ast::CompoundCommand =
+            a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
             b:brace_group() { ast::CompoundCommand::BraceGroup(b) } /
             s:subshell() { ast::CompoundCommand::Subshell(s) } /
             f:for_clause() { ast::CompoundCommand::ForClause(f) } /
@@ -216,6 +227,20 @@ peg::parser! {
             w:while_clause() { ast::CompoundCommand::WhileClause(w) } /
             u:until_clause() { ast::CompoundCommand::UntilClause(u) } /
             expected!("compound command")
+
+        // N.B. This is not supported in sh.
+        rule arithmetic_command() -> ast::ArithmeticCommand =
+            specific_operator("(") specific_operator("(") expr:arithmetic_expression() arithmetic_end() {
+                ast::ArithmeticCommand { expr }
+            }
+
+        rule arithmetic_expression() -> ast::ArithmeticExpr =
+            raw_expr:$((!arithmetic_end() [_])*) {?
+                crate::arithmetic::parse_arithmetic_expression(raw_expr.as_str()).or(Err("arithmetic expr"))
+            }
+
+        rule arithmetic_end() -> () =
+            specific_operator(")") specific_operator(")") {}
 
         rule subshell() -> ast::SubshellCommand =
             specific_operator("(") c:compound_list() specific_operator(")") { c }

@@ -306,6 +306,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             let c = next.unwrap_or('\0');
 
             if next.is_none() {
+                // TODO: Verify we're not waiting on some terminating character?
                 // Verify we're out of all quotes.
                 if state.in_escape {
                     return Err(anyhow::anyhow!("unterminated escape sequence"));
@@ -457,6 +458,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                                 // Consume the '(' and add it to the token.
                                 state.append_char(self.next_char()?.unwrap());
+
+                                if matches!(self.peek_char()?, Some('(')) {
+                                    todo!("tokenizing saw possible arithmetic expression");
+                                }
 
                                 let mut tokens = vec![];
 

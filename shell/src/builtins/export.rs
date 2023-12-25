@@ -2,7 +2,10 @@ use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{
+    builtin::{BuiltinCommand, BuiltinExitCode},
+    env::{EnvironmentLookup, EnvironmentScope},
+};
 
 #[derive(Parser, Debug)]
 pub(crate) struct ExportCommand {
@@ -29,18 +32,27 @@ impl BuiltinCommand for ExportCommand {
                 // See if we have a name=value pair; if so, then update the variable
                 // with the provided value and then mark it exported.
                 if let Some((name, value)) = name.split_once('=') {
-                    context.shell.set_var(name, value, true, false)?;
+                    context.shell.env.update_or_add(
+                        name,
+                        value,
+                        |var| {
+                            var.export();
+                            Ok(())
+                        },
+                        EnvironmentLookup::Anywhere,
+                        EnvironmentScope::Global,
+                    )?;
                 } else {
                     // Try to find the variable already present; if we find it, then mark it
                     // exported.
-                    if let Some(variable) = context.shell.variables.get_mut(name) {
+                    if let Some(variable) = context.shell.env.get_mut(name) {
                         variable.exported = true;
                     }
                 }
             }
         } else {
             // Enumerate variables, sorted by key.
-            for (name, variable) in context.shell.variables.iter().sorted_by_key(|v| v.0) {
+            for (name, variable) in context.shell.env.iter().sorted_by_key(|v| v.0) {
                 if variable.exported {
                     println!("declare -x {}=\"{}\"", name, String::from(&variable.value));
                 }

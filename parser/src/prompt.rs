@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 #[derive(Debug)]
-pub enum ShellPromptPiece {
+pub enum PromptPiece {
     AsciiCharacter(u32),
     Backslash,
     BellCharacter,
@@ -13,7 +13,7 @@ pub enum ShellPromptPiece {
         tilde_replaced: bool,
         basename: bool,
     },
-    Date(ShellPromptDateFormat),
+    Date(PromptDateFormat),
     DollarOrPound,
     EndNonPrintingSequence,
     EscapeCharacter,
@@ -28,17 +28,17 @@ pub enum ShellPromptPiece {
     ShellVersion,
     StartNonPrintingSequence,
     TerminalDeviceBaseName,
-    Time(ShellPromptTimeFormat),
+    Time(PromptTimeFormat),
 }
 
 #[derive(Debug)]
-pub enum ShellPromptDateFormat {
+pub enum PromptDateFormat {
     WeekdayMonthDate,
     Custom(String),
 }
 
 #[derive(Debug)]
-pub enum ShellPromptTimeFormat {
+pub enum PromptTimeFormat {
     TwelveHourAM,
     TwelveHourHHMMSS,
     TwentyFourHourHHMMSS,
@@ -46,46 +46,46 @@ pub enum ShellPromptTimeFormat {
 
 peg::parser! {
     grammar prompt_parser() for str {
-        pub(crate) rule prompt() -> Vec<ShellPromptPiece> =
+        pub(crate) rule prompt() -> Vec<PromptPiece> =
             pieces:prompt_piece()*
 
-        rule prompt_piece() -> ShellPromptPiece =
+        rule prompt_piece() -> PromptPiece =
             special_sequence() /
             literal_sequence()
 
         //
         // Reference: https://www.gnu.org/software/bash/manual/bash.html#Controlling-the-Prompt
         //
-        rule special_sequence() -> ShellPromptPiece =
-            "\\a" { ShellPromptPiece::BellCharacter } /
-            "\\d" { ShellPromptPiece::Date(ShellPromptDateFormat::WeekdayMonthDate) } /
-            "\\D{" f:date_format() "}" { ShellPromptPiece::Date(ShellPromptDateFormat::Custom(f)) } /
-            "\\e" { ShellPromptPiece::EscapeCharacter } /
-            "\\h" { ShellPromptPiece::Hostname { only_up_to_first_dot: true } } /
-            "\\H" { ShellPromptPiece::Hostname { only_up_to_first_dot: false } } /
-            "\\j" { ShellPromptPiece::NumberOfManagedJobs } /
-            "\\l" { ShellPromptPiece::TerminalDeviceBaseName } /
-            "\\n" { ShellPromptPiece::Newline } /
-            "\\r" { ShellPromptPiece::CarriageReturn } /
-            "\\s" { ShellPromptPiece::ShellBaseName } /
-            "\\t" { ShellPromptPiece::Time(ShellPromptTimeFormat::TwentyFourHourHHMMSS ) } /
-            "\\T" { ShellPromptPiece::Time(ShellPromptTimeFormat::TwelveHourHHMMSS ) } /
-            "\\@" { ShellPromptPiece::Time(ShellPromptTimeFormat::TwelveHourAM ) } /
-            "\\u" { ShellPromptPiece::CurrentUser } /
-            "\\v" { ShellPromptPiece::ShellVersion } /
-            "\\V" { ShellPromptPiece::ShellRelease } /
-            "\\w" { ShellPromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: false, } } /
-            "\\W" { ShellPromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: true, } } /
-            "\\!" { ShellPromptPiece::CurrentHistoryNumber } /
-            "\\#" { ShellPromptPiece::CurrentCommandNumber } /
-            "\\$" { ShellPromptPiece::DollarOrPound } /
-            "\\" n:octal_number() { ShellPromptPiece::AsciiCharacter(n) } /
-            "\\\\" { ShellPromptPiece::Backslash } /
-            "\\[" { ShellPromptPiece::StartNonPrintingSequence } /
-            "\\]" { ShellPromptPiece::EndNonPrintingSequence }
+        rule special_sequence() -> PromptPiece =
+            "\\a" { PromptPiece::BellCharacter } /
+            "\\d" { PromptPiece::Date(PromptDateFormat::WeekdayMonthDate) } /
+            "\\D{" f:date_format() "}" { PromptPiece::Date(PromptDateFormat::Custom(f)) } /
+            "\\e" { PromptPiece::EscapeCharacter } /
+            "\\h" { PromptPiece::Hostname { only_up_to_first_dot: true } } /
+            "\\H" { PromptPiece::Hostname { only_up_to_first_dot: false } } /
+            "\\j" { PromptPiece::NumberOfManagedJobs } /
+            "\\l" { PromptPiece::TerminalDeviceBaseName } /
+            "\\n" { PromptPiece::Newline } /
+            "\\r" { PromptPiece::CarriageReturn } /
+            "\\s" { PromptPiece::ShellBaseName } /
+            "\\t" { PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMMSS ) } /
+            "\\T" { PromptPiece::Time(PromptTimeFormat::TwelveHourHHMMSS ) } /
+            "\\@" { PromptPiece::Time(PromptTimeFormat::TwelveHourAM ) } /
+            "\\u" { PromptPiece::CurrentUser } /
+            "\\v" { PromptPiece::ShellVersion } /
+            "\\V" { PromptPiece::ShellRelease } /
+            "\\w" { PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: false, } } /
+            "\\W" { PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: true, } } /
+            "\\!" { PromptPiece::CurrentHistoryNumber } /
+            "\\#" { PromptPiece::CurrentCommandNumber } /
+            "\\$" { PromptPiece::DollarOrPound } /
+            "\\" n:octal_number() { PromptPiece::AsciiCharacter(n) } /
+            "\\\\" { PromptPiece::Backslash } /
+            "\\[" { PromptPiece::StartNonPrintingSequence } /
+            "\\]" { PromptPiece::EndNonPrintingSequence }
 
-        rule literal_sequence() -> ShellPromptPiece =
-            s:$((!special_sequence() [c])+) { ShellPromptPiece::Literal(s.to_owned()) }
+        rule literal_sequence() -> PromptPiece =
+            s:$((!special_sequence() [c])+) { PromptPiece::Literal(s.to_owned()) }
 
         rule date_format() -> String =
             s:$(!"}" [c]+) { s.to_owned() }
@@ -95,6 +95,6 @@ peg::parser! {
     }
 }
 
-pub fn parse_prompt(s: &str) -> Result<Vec<ShellPromptPiece>> {
+pub fn parse_prompt(s: &str) -> Result<Vec<PromptPiece>> {
     Ok(prompt_parser::prompt(s)?)
 }

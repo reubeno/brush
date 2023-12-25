@@ -1,10 +1,30 @@
+use anyhow::Result;
 use std::collections::HashMap;
+use std::fmt::Write;
 
 #[derive(Debug)]
 pub struct ShellVariable {
     pub value: ShellValue,
     pub exported: bool,
     pub readonly: bool,
+}
+
+impl ShellVariable {
+    pub fn export(&mut self) {
+        self.exported = true;
+    }
+
+    pub fn unexport(&mut self) {
+        self.exported = false;
+    }
+
+    pub fn set_readonly(&mut self) {
+        self.readonly = true;
+    }
+
+    pub fn unset_readonly(&mut self) {
+        self.readonly = false;
+    }
 }
 
 #[derive(Debug)]
@@ -16,6 +36,35 @@ pub enum ShellValue {
 }
 
 impl ShellValue {
+    pub fn format(&self) -> Result<String> {
+        match self {
+            ShellValue::String(s) => {
+                // TODO: Handle embedded newlines and other special chars.
+                if s.contains(' ') {
+                    Ok(format!("'{s}'"))
+                } else {
+                    Ok(s.clone())
+                }
+            }
+            ShellValue::Integer(_) => todo!("formatting integers"),
+            ShellValue::AssociativeArray(_) => todo!("formatting associative arrays"),
+            ShellValue::IndexedArray(values) => {
+                let mut result = String::new();
+                result.push('(');
+
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        result.push(' ');
+                    }
+                    write!(result, "[{i}]=\"{value}\"")?;
+                }
+
+                result.push(')');
+                Ok(result)
+            }
+        }
+    }
+
     pub fn get_at(&self, index: u32) -> Option<&str> {
         match self {
             ShellValue::String(s) => {
@@ -37,7 +86,7 @@ impl ShellValue {
             ShellValue::String(s) => s.to_owned(),
             ShellValue::Integer(i) => i.to_string(),
             ShellValue::AssociativeArray(_) => todo!("converting associative array to string"),
-            ShellValue::IndexedArray(arr) => arr.join(" "),
+            ShellValue::IndexedArray(values) => values.join(" "),
         }
     }
 }
@@ -48,9 +97,16 @@ impl From<&str> for ShellValue {
     }
 }
 
-impl From<Vec<String>> for ShellValue {
-    fn from(value: Vec<String>) -> Self {
-        ShellValue::IndexedArray(value)
+impl From<&String> for ShellValue {
+    fn from(value: &String) -> Self {
+        ShellValue::String(value.clone())
+    }
+}
+
+impl From<&[&str]> for ShellValue {
+    fn from(values: &[&str]) -> Self {
+        let owned_values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+        ShellValue::IndexedArray(owned_values)
     }
 }
 
@@ -60,8 +116,8 @@ impl From<&ShellValue> for String {
             ShellValue::String(s) => s.clone(),
             ShellValue::Integer(i) => i.to_string(),
             ShellValue::AssociativeArray(_) => todo!("converting associative array to string"),
-            ShellValue::IndexedArray(arr) => {
-                arr.first().map_or_else(|| "".to_owned(), |s| s.clone())
+            ShellValue::IndexedArray(values) => {
+                values.first().map_or_else(String::new, |s| s.clone())
             }
         }
     }

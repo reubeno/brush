@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{
+    builtin::{BuiltinCommand, BuiltinExitCode},
+    env::{EnvironmentLookup, EnvironmentScope},
+};
 
 #[derive(Parser, Debug)]
 pub(crate) struct CdCommand {
@@ -38,8 +41,8 @@ impl BuiltinCommand for CdCommand {
 
         let target_path = if let Some(inner) = &self.target_dir {
             inner.clone()
-        } else if let Some(home_var) = context.shell.variables.get("HOME") {
-            PathBuf::from(String::from(&home_var.value))
+        } else if let Some(home_var) = context.shell.env.get_str("HOME") {
+            PathBuf::from(home_var)
         } else {
             log::error!("HOME not set");
             return Ok(BuiltinExitCode::Custom(1));
@@ -62,7 +65,16 @@ impl BuiltinCommand for CdCommand {
 
         // TODO: handle updating PWD
         context.shell.working_dir = target_path;
-        context.shell.set_var("PWD", pwd.as_str(), true, false)?;
+        context.shell.env.update_or_add(
+            "PWD",
+            pwd.as_str(),
+            |var| {
+                var.export();
+                Ok(())
+            },
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
 
         Ok(BuiltinExitCode::Success)
     }

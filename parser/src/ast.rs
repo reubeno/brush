@@ -42,6 +42,7 @@ pub enum Command {
 
 #[derive(Clone, Debug)]
 pub enum CompoundCommand {
+    Arithmetic(ArithmeticCommand),
     BraceGroup(BraceGroupCommand),
     Subshell(SubshellCommand),
     ForClause(ForClauseCommand),
@@ -49,6 +50,11 @@ pub enum CompoundCommand {
     IfClause(IfClauseCommand),
     WhileClause(WhileClauseCommand),
     UntilClause(UntilClauseCommand),
+}
+
+#[derive(Clone, Debug)]
+pub struct ArithmeticCommand {
+    pub expr: ArithmeticExpr,
 }
 
 pub type SubshellCommand = CompoundList;
@@ -219,4 +225,61 @@ impl Word {
     pub fn flatten(&self) -> String {
         self.value.clone()
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum ArithmeticExpr {
+    Literal(i64),
+    Reference(ArithmeticTarget),
+    UnaryOp(UnaryOperator, Box<ArithmeticExpr>),
+    BinaryOp(BinaryOperator, Box<ArithmeticExpr>, Box<ArithmeticExpr>),
+    Conditional(
+        Box<ArithmeticExpr>,
+        Box<ArithmeticExpr>,
+        Box<ArithmeticExpr>,
+    ),
+    Assignment(ArithmeticTarget, Box<ArithmeticExpr>),
+    BinaryAssignment(BinaryOperator, ArithmeticTarget, Box<ArithmeticExpr>),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum BinaryOperator {
+    Power,
+    Multiply,
+    Divide,
+    Modulo,
+    Comma,
+    Add,
+    Subtract,
+    ShiftLeft,
+    ShiftRight,
+    LessThan,
+    LessThanOrEqualTo,
+    GreaterThan,
+    GreaterThanOrEqualTo,
+    Equals,
+    NotEquals,
+    BitwiseAnd,
+    BitwiseXor,
+    BitwiseOr,
+    LogicalAnd,
+    LogicalOr,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum UnaryOperator {
+    PostfixIncrement,
+    PostfixDecrement,
+    UnaryPlus,
+    UnaryMinus,
+    PrefixIncrement,
+    PrefixDecrement,
+    BitwiseNot,
+    LogicalNot,
+}
+
+#[derive(Clone, Debug)]
+pub enum ArithmeticTarget {
+    Variable(String),
+    ArrayElement(String, Box<ArithmeticExpr>),
 }

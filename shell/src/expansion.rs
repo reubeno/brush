@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use crate::arithmetic::Evaluatable;
 use crate::shell::Shell;
 use crate::variables::ShellVariable;
 
@@ -59,6 +60,7 @@ impl Expandable for parser::word::WordPiece {
                 exec_output.to_owned()
             }
             parser::word::WordPiece::EscapeSequence(s) => s.strip_prefix('\\').unwrap().to_owned(),
+            parser::word::WordPiece::ArithmeticExpression(e) => e.expand(shell)?,
         };
 
         Ok(expansion)
@@ -71,7 +73,7 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
         todo!("expansion: complex tilde expression");
     }
 
-    if let Some(home) = shell.variables.get("HOME") {
+    if let Some(home) = shell.env.get("HOME") {
         Ok(String::from(&home.value))
     } else {
         Err(anyhow::anyhow!(
@@ -96,7 +98,7 @@ impl Expandable for parser::word::ParameterExpression {
                 } else if let Some(default_value) = default_value {
                     Ok(WordExpander::new(shell).expand(default_value.as_str())?)
                 } else {
-                    Ok("".to_owned())
+                    Ok(String::new())
                 }
             }
             parser::word::ParameterExpression::AssignDefaultValues {
@@ -119,7 +121,7 @@ impl Expandable for parser::word::ParameterExpression {
                     Ok(WordExpander::new(shell)
                         .expand(alternative_value.as_ref().map_or("", |av| av.as_str()))?)
                 } else {
-                    Ok("".to_owned())
+                    Ok(String::new())
                 }
             }
             parser::word::ParameterExpression::StringLength { parameter: _ } => {
@@ -164,21 +166,19 @@ impl Expandable for parser::word::Parameter {
             }
             parser::word::Parameter::Special(s) => s.expand(shell),
             parser::word::Parameter::Named(n) => Ok(shell
-                .variables
+                .env
                 .get(n)
-                .map_or_else(|| "".to_owned(), |v| String::from(&v.value))),
-            parser::word::Parameter::NamedWithIndex { name, index } => {
-                match shell.variables.get(name) {
-                    Some(ShellVariable { value, .. }) => Ok(value
-                        .get_at(*index)
-                        .map_or_else(|| "".to_owned(), |s| s.to_owned())),
-                    None => Ok("".to_owned()),
-                }
-            }
+                .map_or_else(String::new, |v| String::from(&v.value))),
+            parser::word::Parameter::NamedWithIndex { name, index } => match shell.env.get(name) {
+                Some(ShellVariable { value, .. }) => Ok(value
+                    .get_at(*index)
+                    .map_or_else(String::new, |s| s.to_owned())),
+                None => Ok(String::new()),
+            },
             parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
-                match shell.variables.get(name) {
+                match shell.env.get(name) {
                     Some(ShellVariable { value, .. }) => Ok(value.get_all(*concatenate)),
-                    None => Ok("".to_owned()),
+                    None => Ok(String::new()),
                 }
             }
         }
@@ -206,7 +206,14 @@ impl Expandable for parser::word::SpecialParameter {
             parser::word::SpecialParameter::ShellName => Ok(shell
                 .shell_name
                 .as_ref()
-                .map_or_else(|| "".to_owned(), |name| name.to_owned())),
+                .map_or_else(String::new, |name| name.to_owned())),
         }
+    }
+}
+
+impl Expandable for parser::ast::ArithmeticExpr {
+    fn expand(&self, shell: &mut Shell) -> Result<String> {
+        let value = self.eval(shell)?;
+        Ok(value.to_string())
     }
 }

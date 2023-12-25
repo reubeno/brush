@@ -110,7 +110,7 @@ fn run(cli_args: Vec<String>) -> Result<u8> {
 
     let args = CommandLineArgs::parse_from(cli_args.clone());
 
-    let options = shell::ShellCreateOptions {
+    let options = shell::CreateOptions {
         login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
         interactive: args.is_interactive(),
         no_editing: args.no_editing,
