@@ -419,7 +419,7 @@ peg::parser! {
         // N.B. bash allows use of the 'function' word to indicate a function definition.
         // TODO: Validate usage of this keyword.
         rule function_definition() -> ast::FunctionDefinition =
-            fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
+            specific_word("function")? fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
