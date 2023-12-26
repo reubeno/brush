@@ -9,7 +9,7 @@ version.workspace = true
 workspace = true
 
 [dependencies]
-anyhow = "1.0.75"
+anyhow = "1.0.76"
 log = "0.4.20"
 rustyline = "13.0.0"
 shell = { path = "../shell" }
