@@ -83,6 +83,11 @@ pub enum ParameterExpression {
         parameter: Parameter,
         pattern: Option<String>,
     },
+    Substring {
+        parameter: Parameter,
+        offset: ast::ArithmeticExpr,
+        length: Option<ast::ArithmeticExpr>,
+    },
 }
 
 pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
@@ -173,6 +178,8 @@ peg::parser! {
             }
 
         rule parameter_expression() -> ParameterExpression =
+            // TODO: don't allow non posix expressions in sh mode
+            e:non_posix_parameter_expression() { e } /
             parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
                 ParameterExpression::UseDefaultValues { parameter, test_type, default_value }
             } /
@@ -211,6 +218,27 @@ peg::parser! {
                 } else {
                     ParameterTestType::Unset
                 }
+            }
+
+        rule non_posix_parameter_expression() -> ParameterExpression =
+            // TODO: Handle bash extensions:
+            //   ${parameter:offset}
+            //   ${parameter:offset:length}
+            //   ${!prefix*}
+            //   ${!prefix@}
+            //   ${!name[@]}
+            //   ${!name[*]}
+            //   ${parameter/pattern/string}
+            //   ${parameter//pattern/string}
+            //   ${parameter/#pattern/string}
+            //   ${parameter/%pattern/string}
+            //   ${parameter^pattern}
+            //   ${parameter^^pattern}
+            //   ${parameter,pattern}
+            //   ${parameter,,pattern}
+            //   ${parameter@operator} where operator is in [UuLQEPAKak] -- where @ and * can be used as parameter
+            parameter:parameter() ":" offset:arithmetic_expression(<[':' | '}']>) length:(":" l:arithmetic_expression(<['}']>) { l })? {
+                ParameterExpression::Substring { parameter, offset, length }
             }
 
         rule unbraced_parameter() -> Parameter =
@@ -263,10 +291,11 @@ peg::parser! {
             "<BACKQUOTES UNIMPLEMENTED>" {}
 
         rule arithmetic_expansion() -> WordPiece =
-            "$((" e:arithmetic_expression() "))" { WordPiece::ArithmeticExpression(e) }
+            "$((" e:arithmetic_expression(<"))">) "))" { WordPiece::ArithmeticExpression(e) }
 
-        rule arithmetic_expression() -> ast::ArithmeticExpr =
-            raw_expr:$((!"))" [_])*) {?
+        // TODO: don't always assume an arithmetic expr stops on "))"; not true for substrings.
+        rule arithmetic_expression<T>(stop_condition: rule<T>) -> ast::ArithmeticExpr =
+            raw_expr:$((!stop_condition() [_])*) {?
                 crate::arithmetic::parse_arithmetic_expression(raw_expr).or(Err("arithmetic expr"))
             }
 

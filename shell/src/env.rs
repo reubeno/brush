@@ -236,6 +236,7 @@ impl ShellVariableMap {
                 value: value.into(),
                 exported: false,
                 readonly: false,
+                enumerable: true,
             },
         );
 

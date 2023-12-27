@@ -8,6 +8,7 @@ use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::prompt::format_prompt_piece;
+use crate::variables;
 
 #[derive(Debug)]
 pub struct Shell {
@@ -54,9 +55,24 @@ type ShellFunction = parser::ast::FunctionDefinition;
 #[derive(Debug)]
 pub struct FunctionCall {}
 
-enum ProgramOrigin {
+pub enum ProgramOrigin {
     File(PathBuf),
     String,
+}
+
+impl ProgramOrigin {
+    fn get_name(&self) -> String {
+        match self {
+            ProgramOrigin::File(path) => path.to_string_lossy().to_string(),
+            ProgramOrigin::String => "<string>".to_owned(),
+        }
+    }
+}
+
+impl std::fmt::Display for ProgramOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_name())
+    }
 }
 
 impl Shell {
@@ -93,6 +109,8 @@ impl Shell {
         // Set some additional ones.
         env.set_global("EUID", format!("{}", uzers::get_effective_uid()).as_str())
             .readonly = true;
+        env.set_global("RANDOM", variables::ShellValue::Random)
+            .enumerable = false;
 
         // TODO: don't set these in sh mode
         if let Some(shell_name) = &options.shell_name {
@@ -183,26 +201,33 @@ impl Shell {
             ));
         }
 
-        let mut reader = std::io::BufReader::new(opened_file);
+        let origin = ProgramOrigin::File(path.to_owned());
+
+        self.source_file(&opened_file, &origin, args)
+    }
+
+    pub fn source_file<S: AsRef<str>>(
+        &mut self,
+        file: &std::fs::File,
+        origin: &ProgramOrigin,
+        args: &[S],
+    ) -> Result<ExecutionResult> {
+        let mut reader = std::io::BufReader::new(file);
         let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
         let parse_result = parser.parse(false)?;
 
         // TODO: Find a cleaner way to change args.
         let orig_shell_name = self.shell_name.take();
         let orig_params = self.positional_parameters.clone();
-        self.shell_name = Some(path.to_string_lossy().to_string());
+        self.shell_name = Some(origin.get_name());
         self.positional_parameters = vec![];
 
         // TODO: handle args
         if !args.is_empty() {
-            log::error!(
-                "UNIMPLEMENTED: source built-in invoked with args: {:?}",
-                path
-            );
+            log::error!("UNIMPLEMENTED: source built-in invoked with args: {origin}",);
         }
 
-        let result =
-            self.run_parsed_result(&parse_result, &ProgramOrigin::File(path.to_owned()), false);
+        let result = self.run_parsed_result(&parse_result, origin, false);
 
         // Restore.
         self.shell_name = orig_shell_name;

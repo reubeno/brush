@@ -17,6 +17,7 @@ mod help;
 mod pwd;
 mod retur;
 mod shopt;
+mod trap;
 mod tru;
 mod umask;
 mod unimp;
@@ -51,7 +52,7 @@ lazy_static! {
             ("set", exec_builtin::<unimp::UnimplementedCommand>),
             ("shift", exec_builtin::<unimp::UnimplementedCommand>),
             ("times", exec_builtin::<unimp::UnimplementedCommand>),
-            ("trap", exec_builtin::<unimp::UnimplementedCommand>),
+            ("trap", exec_builtin::<trap::TrapCommand>),
             ("unset", exec_builtin::<unset::UnsetCommand>),
             // Bash extension builtins
             ("source", exec_builtin::<dot::DotCommand>),
