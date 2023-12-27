@@ -1,8 +1,14 @@
 use anyhow::Result;
+use parser::ast;
 
 use crate::arithmetic::Evaluatable;
 use crate::shell::Shell;
 use crate::variables::ShellVariable;
+
+pub(crate) fn expand_word(shell: &mut Shell, word: &ast::Word) -> Result<String> {
+    let mut expander = WordExpander::new(shell);
+    expander.expand(word.flatten().as_str())
+}
 
 pub struct WordExpander<'a> {
     shell: &'a mut Shell,
@@ -85,6 +91,7 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
 impl Expandable for parser::word::ParameterExpression {
     fn expand(&self, shell: &mut Shell) -> Result<String> {
         // TODO: observe test_type
+        #[allow(clippy::cast_possible_truncation)]
         match self {
             parser::word::ParameterExpression::Parameter { parameter } => parameter.expand(shell),
             parser::word::ParameterExpression::UseDefaultValues {
@@ -143,6 +150,40 @@ impl Expandable for parser::word::ParameterExpression {
                 parameter: _,
                 pattern: _,
             } => todo!("expansion: remove largest prefix pattern expressions"),
+            parser::word::ParameterExpression::Substring {
+                parameter,
+                offset,
+                length,
+            } => {
+                let expanded_parameter = parameter.expand(shell)?;
+
+                // TODO: handle negative offset
+                let expanded_offset = offset.eval(shell)?;
+                let expanded_offset = usize::try_from(expanded_offset)?;
+
+                if expanded_offset >= expanded_parameter.len() {
+                    return Ok(String::new());
+                }
+
+                let result = if let Some(length) = length {
+                    let expanded_length = length.eval(shell)?;
+                    if expanded_length < 0 {
+                        log::error!("UNIMPLEMENTED: substring with negative length");
+                        todo!("substring with negative length");
+                    }
+
+                    let expanded_length = std::cmp::min(
+                        usize::try_from(expanded_length)?,
+                        expanded_parameter.len() - expanded_offset,
+                    );
+
+                    &expanded_parameter[expanded_offset..(expanded_offset + expanded_length)]
+                } else {
+                    &expanded_parameter[expanded_offset..]
+                };
+
+                Ok(result.to_owned())
+            }
         }
     }
 }

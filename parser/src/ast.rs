@@ -37,7 +37,7 @@ pub enum Command {
     Simple(SimpleCommand),
     Compound(CompoundCommand, Option<RedirectList>),
     Function(FunctionDefinition),
-    ExtendedTest(ExtendedTestExpression),
+    ExtendedTest(ExtendedTestExpr),
 }
 
 #[derive(Clone, Debug)]
@@ -165,44 +165,58 @@ pub struct IoHereDocument {
 }
 
 #[derive(Clone, Debug)]
-pub enum ExtendedTestExpression {
-    FileExists(Word),
-    FileExistsAndIsBlockSpecialFile(Word),
-    FileExistsAndIsCharSpecialFile(Word),
-    FileExistsAndIsDir(Word),
-    FileExistsAndIsRegularFile(Word),
-    FileExistsAndIsSetgid(Word),
-    FileExistsAndIsSymlink(Word),
-    FileExistsAndHasStickyBit(Word),
-    FileExistsAndIsFifo(Word),
-    FileExistsAndIsReadable(Word),
-    FileExistsAndIsNotZeroLength(Word),
-    FdIsOpenTerminal(Word),
-    FileExistsAndIsSetuid(Word),
-    FileExistsAndIsWritable(Word),
-    FileExistsAndIsExecutable(Word),
-    FileExistsAndOwnedByEffectiveGroupId(Word),
-    FileExistsAndModifiedSinceLastRead(Word),
-    FileExistsAndOwnedByEffectiveUserId(Word),
-    FileExistsAndIsSocket(Word),
-    FilesReferToSameDeviceAndInodeNumbers(Word, Word),
-    LeftFileIsNewerOrExistsWhenRightDoesNot(Word, Word),
-    LeftFileIsOlderOrDoesNotExistWhenRightDoes(Word, Word),
-    ShellOptionEnabled(Word),
-    ShellVariableIsSetAndAssigned(Word),
-    ShellVariableIsSetAndNameRef(Word),
-    StringHasZeroLength(Word),
-    StringHasNonZeroLength(Word),
-    StringsAreEqual(Word, Word),
-    StringsNotEqual(Word, Word),
-    LeftSortsBeforeRight(Word, Word),
-    LeftSortsAfterRight(Word, Word),
-    ArithmeticEqualTo(Word, Word),
-    ArithmeticNotEqualTo(Word, Word),
-    ArithmeticLessThan(Word, Word),
-    ArithmeticLessThanOrEqualTo(Word, Word),
-    ArithmeticGreaterThan(Word, Word),
-    ArithmeticGreaterThanOrEqualTo(Word, Word),
+pub enum ExtendedTestExpr {
+    And(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
+    Or(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
+    Not(Box<ExtendedTestExpr>),
+    Parenthesized(Box<ExtendedTestExpr>),
+    UnaryTest(UnaryPredicate, Word),
+    BinaryTest(BinaryPredicate, Word, Word),
+}
+
+#[derive(Clone, Debug)]
+pub enum UnaryPredicate {
+    FileExists,
+    FileExistsAndIsBlockSpecialFile,
+    FileExistsAndIsCharSpecialFile,
+    FileExistsAndIsDir,
+    FileExistsAndIsRegularFile,
+    FileExistsAndIsSetgid,
+    FileExistsAndIsSymlink,
+    FileExistsAndHasStickyBit,
+    FileExistsAndIsFifo,
+    FileExistsAndIsReadable,
+    FileExistsAndIsNotZeroLength,
+    FdIsOpenTerminal,
+    FileExistsAndIsSetuid,
+    FileExistsAndIsWritable,
+    FileExistsAndIsExecutable,
+    FileExistsAndOwnedByEffectiveGroupId,
+    FileExistsAndModifiedSinceLastRead,
+    FileExistsAndOwnedByEffectiveUserId,
+    FileExistsAndIsSocket,
+    ShellOptionEnabled,
+    ShellVariableIsSetAndAssigned,
+    ShellVariableIsSetAndNameRef,
+    StringHasZeroLength,
+    StringHasNonZeroLength,
+}
+
+#[derive(Clone, Debug)]
+pub enum BinaryPredicate {
+    FilesReferToSameDeviceAndInodeNumbers,
+    LeftFileIsNewerOrExistsWhenRightDoesNot,
+    LeftFileIsOlderOrDoesNotExistWhenRightDoes,
+    StringsAreEqual,
+    StringsNotEqual,
+    LeftSortsBeforeRight,
+    LeftSortsAfterRight,
+    ArithmeticEqualTo,
+    ArithmeticNotEqualTo,
+    ArithmeticLessThan,
+    ArithmeticLessThanOrEqualTo,
+    ArithmeticGreaterThan,
+    ArithmeticGreaterThanOrEqualTo,
 }
 
 #[derive(Clone, Debug)]

@@ -275,52 +275,62 @@ peg::parser! {
                 ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d }
             }
 
-        rule extended_test_command() -> ast::ExtendedTestExpression =
+        rule extended_test_command() -> ast::ExtendedTestExpr =
             specific_word("[[") e:extended_test_expression() specific_word("]]") { e }
 
-        // TODO: implement test expressions
-        rule extended_test_expression() -> ast::ExtendedTestExpression =
-            specific_word("-a") f:word() { ast::ExtendedTestExpression::FileExists(ast::Word::from(f)) } /
-            specific_word("-b") f:word() { ast::ExtendedTestExpression::FileExistsAndIsBlockSpecialFile(ast::Word::from(f)) } /
-            specific_word("-c") f:word() { ast::ExtendedTestExpression::FileExistsAndIsCharSpecialFile(ast::Word::from(f)) } /
-            specific_word("-d") f:word() { ast::ExtendedTestExpression::FileExistsAndIsDir(ast::Word::from(f)) } /
-            specific_word("-e") f:word() { ast::ExtendedTestExpression::FileExists(ast::Word::from(f)) } /
-            specific_word("-f") f:word() { ast::ExtendedTestExpression::FileExistsAndIsRegularFile(ast::Word::from(f)) } /
-            specific_word("-g") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSetgid(ast::Word::from(f)) } /
-            specific_word("-h") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSymlink(ast::Word::from(f)) } /
-            specific_word("-k") f:word() { ast::ExtendedTestExpression::FileExistsAndHasStickyBit(ast::Word::from(f)) } /
-            specific_word("-n") f:word() { ast::ExtendedTestExpression::StringHasNonZeroLength(ast::Word::from(f)) } /
-            specific_word("-o") f:word() { ast::ExtendedTestExpression::ShellOptionEnabled(ast::Word::from(f)) } /
-            specific_word("-p") f:word() { ast::ExtendedTestExpression::FileExistsAndIsFifo(ast::Word::from(f)) } /
-            specific_word("-r") f:word() { ast::ExtendedTestExpression::FileExistsAndIsReadable(ast::Word::from(f)) } /
-            specific_word("-s") f:word() { ast::ExtendedTestExpression::FileExistsAndIsNotZeroLength(ast::Word::from(f)) } /
-            specific_word("-t") f:word() { ast::ExtendedTestExpression::FdIsOpenTerminal(ast::Word::from(f)) } /
-            specific_word("-u") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSetuid(ast::Word::from(f)) } /
-            specific_word("-v") f:word() { ast::ExtendedTestExpression::ShellVariableIsSetAndAssigned(ast::Word::from(f)) } /
-            specific_word("-w") f:word() { ast::ExtendedTestExpression::FileExistsAndIsWritable(ast::Word::from(f)) } /
-            specific_word("-x") f:word() { ast::ExtendedTestExpression::FileExistsAndIsExecutable(ast::Word::from(f)) } /
-            specific_word("-z") f:word() { ast::ExtendedTestExpression::StringHasZeroLength(ast::Word::from(f)) } /
-            specific_word("-G") f:word() { ast::ExtendedTestExpression::FileExistsAndOwnedByEffectiveGroupId(ast::Word::from(f)) } /
-            specific_word("-L") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSymlink(ast::Word::from(f)) } /
-            specific_word("-N") f:word() { ast::ExtendedTestExpression::FileExistsAndModifiedSinceLastRead(ast::Word::from(f)) } /
-            specific_word("-O") f:word() { ast::ExtendedTestExpression::FileExistsAndOwnedByEffectiveUserId(ast::Word::from(f)) } /
-            specific_word("-R") f:word() { ast::ExtendedTestExpression::ShellVariableIsSetAndNameRef(ast::Word::from(f)) } /
-            specific_word("-S") f:word() { ast::ExtendedTestExpression::FileExistsAndIsSocket(ast::Word::from(f)) } /
-            left:word() specific_word("-ef") right:word() { ast::ExtendedTestExpression::FilesReferToSameDeviceAndInodeNumbers(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-eq") right:word() { ast::ExtendedTestExpression::ArithmeticEqualTo(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-ge") right:word() { ast::ExtendedTestExpression::ArithmeticGreaterThanOrEqualTo(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-gt") right:word() { ast::ExtendedTestExpression::ArithmeticGreaterThan(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-le") right:word() { ast::ExtendedTestExpression::ArithmeticLessThanOrEqualTo(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-lt") right:word() { ast::ExtendedTestExpression::ArithmeticLessThan(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-ne") right:word() { ast::ExtendedTestExpression::ArithmeticNotEqualTo(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-nt") right:word() { ast::ExtendedTestExpression::LeftFileIsNewerOrExistsWhenRightDoesNot(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("-ot") right:word() { ast::ExtendedTestExpression::LeftFileIsOlderOrDoesNotExistWhenRightDoes(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("==") right:word() { ast::ExtendedTestExpression::StringsAreEqual(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("=") right:word() { ast::ExtendedTestExpression::StringsAreEqual(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("!=") right:word() { ast::ExtendedTestExpression::StringsNotEqual(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word("<") right:word() { ast::ExtendedTestExpression::LeftSortsBeforeRight(ast::Word::from(left), ast::Word::from(right)) } /
-            left:word() specific_word(">") right:word() { ast::ExtendedTestExpression::LeftSortsAfterRight(ast::Word::from(left), ast::Word::from(right)) } /
-            w:word() { ast::ExtendedTestExpression::StringHasNonZeroLength(ast::Word::from(w)) }
+        rule extended_test_expression() -> ast::ExtendedTestExpr = precedence! {
+            left:(@) specific_operator("||") right:@ { ast::ExtendedTestExpr::Or(Box::from(left), Box::from(right)) }
+            --
+            left:(@) specific_operator("&&") right:@ { ast::ExtendedTestExpr::And(Box::from(left), Box::from(right)) }
+            --
+            specific_word("!") e:@ { ast::ExtendedTestExpr::Not(Box::from(e)) }
+            --
+            specific_operator("(") e:extended_test_expression() specific_operator(")") { ast::ExtendedTestExpr::Parenthesized(Box::from(e)) }
+            --
+            left:word() specific_word("-ef") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-eq") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticEqualTo, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-ge") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-gt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticGreaterThan, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-le") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticLessThanOrEqualTo, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-lt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticLessThan, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-ne") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticNotEqualTo, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-nt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-ot") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("==") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsAreEqual, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("=") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsAreEqual, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsNotEqual, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("<") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsBeforeRight, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word(">") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsAfterRight, ast::Word::from(left), ast::Word::from(right)) }
+            --
+            specific_word("-a") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExists, ast::Word::from(f)) }
+            specific_word("-b") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile, ast::Word::from(f)) }
+            specific_word("-c") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsCharSpecialFile, ast::Word::from(f)) }
+            specific_word("-d") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsDir, ast::Word::from(f)) }
+            specific_word("-e") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExists, ast::Word::from(f)) }
+            specific_word("-f") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsRegularFile, ast::Word::from(f)) }
+            specific_word("-g") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSetgid, ast::Word::from(f)) }
+            specific_word("-h") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSymlink, ast::Word::from(f)) }
+            specific_word("-k") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndHasStickyBit, ast::Word::from(f)) }
+            specific_word("-n") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(f)) }
+            specific_word("-o") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::ShellOptionEnabled, ast::Word::from(f)) }
+            specific_word("-p") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsFifo, ast::Word::from(f)) }
+            specific_word("-r") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsReadable, ast::Word::from(f)) }
+            specific_word("-s") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsNotZeroLength, ast::Word::from(f)) }
+            specific_word("-t") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FdIsOpenTerminal, ast::Word::from(f)) }
+            specific_word("-u") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSetuid, ast::Word::from(f)) }
+            specific_word("-v") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::ShellVariableIsSetAndAssigned, ast::Word::from(f)) }
+            specific_word("-w") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsWritable, ast::Word::from(f)) }
+            specific_word("-x") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsExecutable, ast::Word::from(f)) }
+            specific_word("-z") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasZeroLength, ast::Word::from(f)) }
+            specific_word("-G") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId, ast::Word::from(f)) }
+            specific_word("-L") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSymlink, ast::Word::from(f)) }
+            specific_word("-N") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndModifiedSinceLastRead, ast::Word::from(f)) }
+            specific_word("-O") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId, ast::Word::from(f)) }
+            specific_word("-R") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::ShellVariableIsSetAndNameRef, ast::Word::from(f)) }
+            specific_word("-S") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSocket, ast::Word::from(f)) }
+            --
+            w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
+        }
 
         rule name() -> &'input str =
             w:[Token::Word(_, _)] { w.to_str() }

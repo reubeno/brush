@@ -1,19 +1,20 @@
-use std::collections::HashMap;
 use std::io::Write;
+use std::os::fd::AsRawFd;
 use std::process::Stdio;
 
 use anyhow::{Context, Result};
-
+use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
-use parser::ast::{self, CommandPrefixOrSuffixItem, IoFileRedirectTarget};
+use parser::ast::{self, CommandPrefixOrSuffixItem};
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope};
-use crate::expansion::WordExpander;
-use crate::patterns;
+use crate::expansion::expand_word;
+use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
 use crate::variables::ShellValue;
 use crate::{builtin, builtins};
+use crate::{extendedtests, patterns};
 
 #[derive(Default)]
 pub struct ExecutionResult {
@@ -56,43 +57,6 @@ struct PipelineExecutionContext<'a> {
     spawn_results: Vec<SpawnResult>,
 
     params: ExecutionParameters,
-}
-
-enum OpenFile {
-    File(std::fs::File),
-    HereDocument(String),
-}
-
-impl OpenFile {
-    pub fn try_dup(&self) -> Result<OpenFile> {
-        let result = match self {
-            OpenFile::File(f) => OpenFile::File(f.try_clone()?),
-            OpenFile::HereDocument(doc) => OpenFile::HereDocument(doc.clone()),
-        };
-
-        Ok(result)
-    }
-}
-
-impl From<OpenFile> for Stdio {
-    fn from(open_file: OpenFile) -> Self {
-        match open_file {
-            OpenFile::File(f) => f.into(),
-            OpenFile::HereDocument(_) => Stdio::piped(),
-        }
-    }
-}
-
-struct OpenFiles {
-    pub files: HashMap<u32, OpenFile>,
-}
-
-impl OpenFiles {
-    pub fn new() -> OpenFiles {
-        OpenFiles {
-            files: HashMap::new(),
-        }
-    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -254,36 +218,16 @@ impl ExecuteInPipeline for ast::Command {
                 let result = func.execute(pipeline_context.shell, &pipeline_context.params)?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
-            ast::Command::ExtendedTest(e) => Ok(SpawnResult::ImmediateExit(eval_expression(
-                e,
-                pipeline_context.shell,
-            )?)),
-        }
-    }
-}
-
-fn eval_expression(expr: &ast::ExtendedTestExpression, shell: &mut Shell) -> Result<u8> {
-    #[allow(clippy::single_match_else)]
-    let result = match expr {
-        ast::ExtendedTestExpression::StringsAreEqual(left, right) => {
-            let expanded_str = expand_word(shell, left)?;
-            let expanded_pattern = expand_word(shell, right)?;
-            let matches =
-                patterns::pattern_matches(expanded_pattern.as_str(), expanded_str.as_str())?;
-            if matches {
-                0
-            } else {
-                1
+            ast::Command::ExtendedTest(e) => {
+                let result = if extendedtests::eval_expression(e, pipeline_context.shell)? {
+                    0
+                } else {
+                    1
+                };
+                Ok(SpawnResult::ImmediateExit(result))
             }
         }
-        _ => {
-            // TODO: implement eval_expression
-            log::error!("UNIMPLEMENTED: eval test expression: {:?}", expr);
-            0
-        }
-    };
-
-    Ok(result)
+    }
 }
 
 enum WhileOrUtil {
@@ -441,176 +385,44 @@ impl Execute for ast::FunctionDefinition {
 impl ExecuteInPipeline for ast::SimpleCommand {
     #[allow(clippy::too_many_lines)] // TODO: refactor this function
     fn execute_in_pipeline(&self, context: &mut PipelineExecutionContext) -> Result<SpawnResult> {
-        let mut redirects = vec![];
-        let mut env_vars = vec![];
-
-        if let Some(prefix_items) = &self.prefix {
-            for item in prefix_items {
-                match item {
-                    CommandPrefixOrSuffixItem::IoRedirect(r) => redirects.push(r),
-                    CommandPrefixOrSuffixItem::AssignmentWord(pair) => env_vars.push(pair),
-                    CommandPrefixOrSuffixItem::Word(_w) => {
-                        // This should not happen.
-                    }
-                }
-            }
-        }
-
-        //
-        // 2. The words that are not variable assignments or redirections shall be expanded.
-        // If any fields remain following their expansion, the first field shall be considered
-        // the command name and remaining fields are the arguments for the command.
-        //
-
-        let mut args = vec![];
-
+        let empty = vec![];
+        let prefix_items = self.prefix.as_ref().unwrap_or(&empty);
+        let suffix_items = self.suffix.as_ref().unwrap_or(&empty);
+        let mut cmd_name_items = vec![];
         if let Some(cmd_name) = &self.word_or_name {
-            args.push(cmd_name);
+            cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
         }
-
-        if let Some(suffix_items) = &self.suffix {
-            for item in suffix_items {
-                match item {
-                    CommandPrefixOrSuffixItem::IoRedirect(r) => redirects.push(r),
-                    CommandPrefixOrSuffixItem::Word(arg) => args.push(arg),
-                    CommandPrefixOrSuffixItem::AssignmentWord(_) => {
-                        // This should not happen.
-                    }
-                }
-            }
-        }
-
-        // Expand the command words.
-        // TODO: Deal with the fact that an expansion might introduce multiple fields.
-        let mut args: Vec<String> = args
-            .iter()
-            .map(|a| expand_word(context.shell, a))
-            .collect::<Result<Vec<_>>>()?;
-
-        //
-        // 3. Redirections shall be performed.
-        //
 
         let mut open_files = OpenFiles::new();
-        if !redirects.is_empty() {
-            for redirect in redirects {
-                match redirect {
-                    ast::IoRedirect::File(fd_num, kind, target) => {
-                        // If not specified, we default fd to stdout.
-                        // TODO: Validate this is correct.
-                        let fd_num = fd_num.unwrap_or(1);
+        let mut env_vars = vec![];
+        let mut args = vec![];
 
-                        let target_file;
-                        match target {
-                            IoFileRedirectTarget::Filename(f) => {
-                                let mut options = std::fs::File::options();
-
-                                match kind {
-                                    ast::IoFileRedirectKind::Read => {
-                                        options.read(true);
-                                    }
-                                    ast::IoFileRedirectKind::Write => {
-                                        // TODO: observe noclobber options
-                                        options.create(true);
-                                        options.write(true);
-                                        options.truncate(true);
-                                    }
-                                    ast::IoFileRedirectKind::Append => {
-                                        options.create(true);
-                                        options.append(true);
-                                    }
-                                    ast::IoFileRedirectKind::ReadAndWrite => {
-                                        options.create(true);
-                                        options.read(true);
-                                        options.write(true);
-                                    }
-                                    ast::IoFileRedirectKind::Clobber => {
-                                        options.create(true);
-                                        options.write(true);
-                                        options.truncate(true);
-                                    }
-                                    ast::IoFileRedirectKind::DuplicateInput => {
-                                        options.read(true);
-                                    }
-                                    ast::IoFileRedirectKind::DuplicateOutput => {
-                                        options.create(true);
-                                        options.write(true);
-                                    }
-                                }
-
-                                let expanded_file_path = expand_word(context.shell, f)?;
-
-                                let opened_file =
-                                    options.open(expanded_file_path.as_str()).context(format!(
-                                        "opening {} for I/O redirection",
-                                        expanded_file_path.as_str()
-                                    ))?;
-                                target_file = OpenFile::File(opened_file);
-                            }
-                            IoFileRedirectTarget::Fd(fd) => {
-                                if let Some(f) = open_files.files.get(fd) {
-                                    target_file = f.try_dup()?;
-                                } else {
-                                    log::error!("{}: Bad file descriptor", fd);
-                                    return Ok(SpawnResult::ImmediateExit(1));
-                                }
-                            }
-                            IoFileRedirectTarget::ProcessSubstitution(subshell_cmd) => {
-                                match kind {
-                                    ast::IoFileRedirectKind::Read => {
-                                        log::error!(
-                                            "UNIMPLEMENTED: process substitution to read from stdout of command: {:?}",
-                                            subshell_cmd
-                                        );
-                                    }
-                                    ast::IoFileRedirectKind::Write => {
-                                        log::error!(
-                                            "UNIMPLEMENTED: process substitution to write to stdin of command: {:?}",
-                                            subshell_cmd
-                                        );
-                                    }
-                                    _ => {
-                                        return Err(anyhow::anyhow!("invalid process substitution"))
-                                    }
-                                }
-
-                                todo!("process substitution")
-                            }
+        for item in prefix_items
+            .iter()
+            .chain(cmd_name_items.iter())
+            .chain(suffix_items.iter())
+        {
+            match item {
+                CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
+                    if let Some(open_file) =
+                        setup_redirect(&mut open_files, context.shell, redirect)?
+                    {
+                        // TODO: Don't just count on the fd being valid.
+                        if let OpenFile::ProcessSubstitutionFile(f) = open_file {
+                            args.push(std::format!("/dev/fd/{}", f.as_raw_fd()));
                         }
-
-                        open_files.files.insert(fd_num, target_file);
+                    } else {
+                        return Ok(SpawnResult::ImmediateExit(1));
                     }
-                    ast::IoRedirect::HereDocument(fd_num, io_here) => {
-                        // If not specified, default to stdin (fd 0).
-                        let fd_num = fd_num.unwrap_or(0);
-
-                        // TODO: figure out if we need to expand?
-                        let io_here_doc = io_here.doc.flatten();
-
-                        open_files
-                            .files
-                            .insert(fd_num, OpenFile::HereDocument(io_here_doc));
-                    }
-                    ast::IoRedirect::HereString(fd_num, word) => {
-                        // If not specified, default to stdin (fd 0).
-                        let fd_num = fd_num.unwrap_or(0);
-
-                        let mut expanded_word = expand_word(context.shell, word)?;
-                        expanded_word.push('\n');
-
-                        open_files
-                            .files
-                            .insert(fd_num, OpenFile::HereDocument(expanded_word));
-                    }
+                }
+                CommandPrefixOrSuffixItem::AssignmentWord(pair) => env_vars.push(pair),
+                CommandPrefixOrSuffixItem::Word(arg) => {
+                    // TODO: Deal with the fact that an expansion might introduce multiple fields.
+                    let expanded_arg = expand_word(context.shell, arg)?;
+                    args.push(expanded_arg);
                 }
             }
         }
-
-        //
-        // 4. Each variable assignment shall be expanded for tilde expansion, parameter
-        // expansion, command substitution, arithmetic expansion, and quote removal
-        // prior to assigning the value.
-        //
 
         let env_vars: Vec<(String, ShellValue)> = env_vars
             .iter()
@@ -651,12 +463,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             if !cmd_name.contains('/') {
                 if let Some(builtin) = builtins::SPECIAL_BUILTINS.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, &args, &env_vars)
+                    execute_builtin_command(*builtin, context, &mut open_files, &args, &env_vars)
                 } else if context.shell.funcs.contains_key(&cmd_name) {
                     // Strip the function name off args.
                     invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars)
                 } else if let Some(builtin) = builtins::BUILTINS.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, &args, &env_vars)
+                    execute_builtin_command(*builtin, context, &mut open_files, &args, &env_vars)
                 } else {
                     // Strip the command name off args.
                     execute_external_command(
@@ -698,6 +510,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     }
 }
 
+#[allow(clippy::too_many_lines)] // TODO: refactor this function
 fn execute_external_command(
     context: &mut PipelineExecutionContext,
     open_files: &mut OpenFiles,
@@ -773,6 +586,18 @@ fn execute_external_command(
         cmd.stderr(as_stdio);
     }
 
+    // Inject any appropriate fds.
+    let open_files_keys = open_files.files.keys().copied().collect::<Vec<_>>();
+    for key in open_files_keys {
+        if let Some(OpenFile::ProcessSubstitutionFile(temp_file)) = open_files.files.remove(&key) {
+            #[allow(clippy::cast_possible_wrap)]
+            cmd.fd_mappings(vec![FdMapping {
+                child_fd: key as i32,
+                parent_fd: temp_file.into(),
+            }])?;
+        }
+    }
+
     // See if we need to set up piping.
     if context.pipeline_len > 1 {
         // TODO: Handle stderr/other redirects/etc.
@@ -842,6 +667,7 @@ fn execute_external_command(
 fn execute_builtin_command(
     builtin: builtin::BuiltinCommandExecuteFunc,
     context: &mut PipelineExecutionContext,
+    _open_files: &mut OpenFiles,
     args: &[String],
     _env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult> {
@@ -903,7 +729,134 @@ fn invoke_shell_function(
     Ok(SpawnResult::ImmediateExit(result?.exit_code))
 }
 
-fn expand_word(shell: &mut Shell, word: &ast::Word) -> Result<String> {
-    let mut expander = WordExpander::new(shell);
-    expander.expand(word.flatten().as_str())
+#[allow(clippy::too_many_lines)] // TODO: refactor this function
+fn setup_redirect<'a>(
+    open_files: &'a mut OpenFiles,
+    shell: &mut Shell,
+    redirect: &ast::IoRedirect,
+) -> Result<Option<&'a OpenFile>> {
+    match redirect {
+        ast::IoRedirect::File(fd_num, kind, target) => {
+            // If not specified, we default fd to stdout.
+            // TODO: Validate this is correct.
+            let mut fd_num = fd_num.unwrap_or(1);
+
+            let target_file;
+            match target {
+                ast::IoFileRedirectTarget::Filename(f) => {
+                    let mut options = std::fs::File::options();
+
+                    match kind {
+                        ast::IoFileRedirectKind::Read => {
+                            options.read(true);
+                        }
+                        ast::IoFileRedirectKind::Write => {
+                            // TODO: observe noclobber options
+                            options.create(true);
+                            options.write(true);
+                            options.truncate(true);
+                        }
+                        ast::IoFileRedirectKind::Append => {
+                            options.create(true);
+                            options.append(true);
+                        }
+                        ast::IoFileRedirectKind::ReadAndWrite => {
+                            options.create(true);
+                            options.read(true);
+                            options.write(true);
+                        }
+                        ast::IoFileRedirectKind::Clobber => {
+                            options.create(true);
+                            options.write(true);
+                            options.truncate(true);
+                        }
+                        ast::IoFileRedirectKind::DuplicateInput => {
+                            options.read(true);
+                        }
+                        ast::IoFileRedirectKind::DuplicateOutput => {
+                            options.create(true);
+                            options.write(true);
+                        }
+                    }
+
+                    let expanded_file_path = expand_word(shell, f)?;
+
+                    let opened_file =
+                        options.open(expanded_file_path.as_str()).context(format!(
+                            "opening {} for I/O redirection",
+                            expanded_file_path.as_str()
+                        ))?;
+                    target_file = OpenFile::File(opened_file);
+                }
+                ast::IoFileRedirectTarget::Fd(fd) => {
+                    if let Some(f) = open_files.files.get(fd) {
+                        target_file = f.try_dup()?;
+                    } else {
+                        log::error!("{}: Bad file descriptor", fd);
+                        return Ok(None);
+                    }
+                }
+                ast::IoFileRedirectTarget::ProcessSubstitution(subshell_cmd) => {
+                    match kind {
+                        #[allow(clippy::cast_sign_loss)]
+                        ast::IoFileRedirectKind::Read => {
+                            // TODO: Don't execute synchronously!
+                            let text_results = subshell_cmd
+                                .execute(
+                                    shell,
+                                    &ExecutionParameters {
+                                        capture_output: true,
+                                    },
+                                )?
+                                .output
+                                .unwrap();
+
+                            let mut temp_file = tempfile::tempfile()?;
+                            temp_file.write_all(text_results.as_bytes())?;
+
+                            // TODO: Don't just count on the fd being valid.
+                            fd_num = temp_file.as_raw_fd() as u32;
+
+                            target_file = OpenFile::ProcessSubstitutionFile(temp_file);
+                        }
+                        ast::IoFileRedirectKind::Write => {
+                            log::error!(
+                                "UNIMPLEMENTED: process substitution to write to stdin of command: {:?}",
+                                subshell_cmd
+                            );
+                            todo!("process substitution to write to command")
+                        }
+                        _ => return Err(anyhow::anyhow!("invalid process substitution")),
+                    }
+                }
+            }
+
+            open_files.files.insert(fd_num, target_file);
+            return Ok(Some(open_files.files.get(&fd_num).unwrap()));
+        }
+        ast::IoRedirect::HereDocument(fd_num, io_here) => {
+            // If not specified, default to stdin (fd 0).
+            let fd_num = fd_num.unwrap_or(0);
+
+            // TODO: figure out if we need to expand?
+            let io_here_doc = io_here.doc.flatten();
+
+            open_files
+                .files
+                .insert(fd_num, OpenFile::HereDocument(io_here_doc));
+            return Ok(Some(open_files.files.get(&fd_num).unwrap()));
+        }
+        ast::IoRedirect::HereString(fd_num, word) => {
+            // If not specified, default to stdin (fd 0).
+            let fd_num = fd_num.unwrap_or(0);
+
+            let mut expanded_word = expand_word(shell, word)?;
+            expanded_word.push('\n');
+
+            open_files
+                .files
+                .insert(fd_num, OpenFile::HereDocument(expanded_word));
+            return Ok(Some(open_files.files.get(&fd_num).unwrap()));
+        }
+    }
 }

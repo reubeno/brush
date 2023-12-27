@@ -11,11 +11,14 @@ workspace = true
 [dependencies]
 anyhow = "1.0.76"
 clap = { version = "4.4.11", features = ["derive"] }
+command-fds = "0.3.0"
 glob = "0.3.1"
 hostname = "0.3.1"
 itertools = "0.12.0"
 lazy_static = "1.4.0"
 log = "0.4.20"
 parser = { path = "../parser" }
+rand = "0.8.5"
 regex = "1.10.2"
+tempfile = "3.8.1"
 uzers = "0.11.3"

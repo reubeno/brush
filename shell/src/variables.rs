@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rand::Rng;
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -7,6 +8,7 @@ pub struct ShellVariable {
     pub value: ShellValue,
     pub exported: bool,
     pub readonly: bool,
+    pub enumerable: bool,
 }
 
 impl ShellVariable {
@@ -33,6 +35,7 @@ pub enum ShellValue {
     Integer(u64),
     AssociativeArray(HashMap<String, ShellValue>),
     IndexedArray(Vec<String>),
+    Random,
 }
 
 impl ShellValue {
@@ -62,6 +65,7 @@ impl ShellValue {
                 result.push(')');
                 Ok(result)
             }
+            ShellValue::Random => todo!("formatting RANDOM"),
         }
     }
 
@@ -77,6 +81,7 @@ impl ShellValue {
             ShellValue::Integer(_) => todo!("indexing into integer"),
             ShellValue::AssociativeArray(_) => todo!("indexing into associative array"),
             ShellValue::IndexedArray(values) => values.get(index as usize).map(|s| s.as_str()),
+            ShellValue::Random => todo!("indexing into RANDOM"),
         }
     }
 
@@ -87,6 +92,7 @@ impl ShellValue {
             ShellValue::Integer(i) => i.to_string(),
             ShellValue::AssociativeArray(_) => todo!("converting associative array to string"),
             ShellValue::IndexedArray(values) => values.join(" "),
+            ShellValue::Random => get_random_str(),
         }
     }
 }
@@ -119,6 +125,13 @@ impl From<&ShellValue> for String {
             ShellValue::IndexedArray(values) => {
                 values.first().map_or_else(String::new, |s| s.clone())
             }
+            ShellValue::Random => get_random_str(),
         }
     }
+}
+
+fn get_random_str() -> String {
+    let mut rng = rand::thread_rng();
+    let value = rng.gen_range(0..32768);
+    value.to_string()
 }
