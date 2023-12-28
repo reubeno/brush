@@ -88,13 +88,13 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
     }
 }
 
-impl Expandable for parser::word::ParameterExpression {
+impl Expandable for parser::word::ParameterExpr {
     fn expand(&self, shell: &mut Shell) -> Result<String> {
         // TODO: observe test_type
         #[allow(clippy::cast_possible_truncation)]
         match self {
-            parser::word::ParameterExpression::Parameter { parameter } => parameter.expand(shell),
-            parser::word::ParameterExpression::UseDefaultValues {
+            parser::word::ParameterExpr::Parameter { parameter } => parameter.expand(shell),
+            parser::word::ParameterExpr::UseDefaultValues {
                 parameter,
                 test_type: _,
                 default_value,
@@ -108,17 +108,17 @@ impl Expandable for parser::word::ParameterExpression {
                     Ok(String::new())
                 }
             }
-            parser::word::ParameterExpression::AssignDefaultValues {
+            parser::word::ParameterExpr::AssignDefaultValues {
                 parameter: _,
                 test_type: _,
                 default_value: _,
             } => todo!("expansion: assign default values expressions"),
-            parser::word::ParameterExpression::IndicateErrorIfNullOrUnset {
+            parser::word::ParameterExpr::IndicateErrorIfNullOrUnset {
                 parameter: _,
                 test_type: _,
                 error_message: _,
             } => todo!("expansion: indicate error if null or unset expressions"),
-            parser::word::ParameterExpression::UseAlternativeValue {
+            parser::word::ParameterExpr::UseAlternativeValue {
                 parameter,
                 test_type: _,
                 alternative_value,
@@ -131,26 +131,27 @@ impl Expandable for parser::word::ParameterExpression {
                     Ok(String::new())
                 }
             }
-            parser::word::ParameterExpression::StringLength { parameter: _ } => {
-                todo!("expansion: string length expression")
+            parser::word::ParameterExpr::StringLength { parameter } => {
+                let expanded_parameter = parameter.expand(shell)?;
+                Ok(expanded_parameter.len().to_string())
             }
-            parser::word::ParameterExpression::RemoveSmallestSuffixPattern {
+            parser::word::ParameterExpr::RemoveSmallestSuffixPattern {
                 parameter: _,
                 pattern: _,
             } => todo!("expansion: remove smallest suffix pattern expressions"),
-            parser::word::ParameterExpression::RemoveLargestSuffixPattern {
+            parser::word::ParameterExpr::RemoveLargestSuffixPattern {
                 parameter: _,
                 pattern: _,
             } => todo!("expansion: remove largest suffix pattern expressions"),
-            parser::word::ParameterExpression::RemoveSmallestPrefixPattern {
+            parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
                 parameter: _,
                 pattern: _,
             } => todo!("expansion: remove smallest prefix pattern expressions"),
-            parser::word::ParameterExpression::RemoveLargestPrefixPattern {
+            parser::word::ParameterExpr::RemoveLargestPrefixPattern {
                 parameter: _,
                 pattern: _,
             } => todo!("expansion: remove largest prefix pattern expressions"),
-            parser::word::ParameterExpression::Substring {
+            parser::word::ParameterExpr::Substring {
                 parameter,
                 offset,
                 length,

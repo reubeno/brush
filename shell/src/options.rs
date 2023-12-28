@@ -132,6 +132,7 @@ impl RuntimeOptions {
         let mut options = Self {
             interactive: create_options.interactive,
             posix_mode: create_options.posix,
+            print_commands_and_arguments: create_options.print_commands_and_arguments,
             print_shell_input_lines: create_options.verbose,
             remember_command_locations: true,
             check_window_size_after_external_commands: true,

@@ -7,7 +7,7 @@ pub enum WordPiece {
     SingleQuotedText(String),
     DoubleQuotedSequence(Vec<WordPiece>),
     TildePrefix(String),
-    ParameterExpansion(ParameterExpression),
+    ParameterExpansion(ParameterExpr),
     CommandSubstitution(String),
     EscapeSequence(String),
     ArithmeticExpression(ast::ArithmeticExpr),
@@ -40,7 +40,7 @@ pub enum SpecialParameter {
 }
 
 #[derive(Debug)]
-pub enum ParameterExpression {
+pub enum ParameterExpr {
     Parameter {
         parameter: Parameter,
     },
@@ -171,44 +171,44 @@ peg::parser! {
                 WordPiece::ParameterExpansion(e)
             } /
             "$" parameter:unbraced_parameter() {
-                WordPiece::ParameterExpansion(ParameterExpression::Parameter { parameter })
+                WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter })
             } /
             "$" {
                 WordPiece::Text("$".to_owned())
             }
 
-        rule parameter_expression() -> ParameterExpression =
+        rule parameter_expression() -> ParameterExpr =
             // TODO: don't allow non posix expressions in sh mode
             e:non_posix_parameter_expression() { e } /
             parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
-                ParameterExpression::UseDefaultValues { parameter, test_type, default_value }
+                ParameterExpr::UseDefaultValues { parameter, test_type, default_value }
             } /
             parameter:parameter() test_type:parameter_test_type() "=" default_value:parameter_expression_word()? {
-                ParameterExpression::AssignDefaultValues { parameter, test_type, default_value }
+                ParameterExpr::AssignDefaultValues { parameter, test_type, default_value }
             } /
             parameter:parameter() test_type:parameter_test_type() "?" error_message:parameter_expression_word()? {
-                ParameterExpression::IndicateErrorIfNullOrUnset { parameter, test_type, error_message }
+                ParameterExpr::IndicateErrorIfNullOrUnset { parameter, test_type, error_message }
             } /
             parameter:parameter() test_type:parameter_test_type() "+" alternative_value:parameter_expression_word()? {
-                ParameterExpression::UseAlternativeValue { parameter, test_type, alternative_value }
+                ParameterExpr::UseAlternativeValue { parameter, test_type, alternative_value }
             } /
             "#" parameter:parameter() {
-                ParameterExpression::StringLength { parameter }
+                ParameterExpr::StringLength { parameter }
             } /
             parameter:parameter() "%" pattern:parameter_expression_word()? {
-                ParameterExpression::RemoveSmallestSuffixPattern { parameter, pattern }
+                ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern }
             } /
             parameter:parameter() "%%" pattern:parameter_expression_word()? {
-                ParameterExpression::RemoveLargestSuffixPattern { parameter, pattern }
+                ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern }
             } /
             parameter:parameter() "#" pattern:parameter_expression_word()? {
-                ParameterExpression::RemoveSmallestPrefixPattern { parameter, pattern }
+                ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern }
             } /
             parameter:parameter() "##" pattern:parameter_expression_word()? {
-                ParameterExpression::RemoveLargestPrefixPattern { parameter, pattern }
+                ParameterExpr::RemoveLargestPrefixPattern { parameter, pattern }
             } /
             parameter:parameter() {
-                ParameterExpression::Parameter { parameter }
+                ParameterExpr::Parameter { parameter }
             }
 
         rule parameter_test_type() -> ParameterTestType =
@@ -220,7 +220,7 @@ peg::parser! {
                 }
             }
 
-        rule non_posix_parameter_expression() -> ParameterExpression =
+        rule non_posix_parameter_expression() -> ParameterExpr =
             // TODO: Handle bash extensions:
             //   ${parameter:offset}
             //   ${parameter:offset:length}
@@ -238,7 +238,7 @@ peg::parser! {
             //   ${parameter,,pattern}
             //   ${parameter@operator} where operator is in [UuLQEPAKak] -- where @ and * can be used as parameter
             parameter:parameter() ":" offset:arithmetic_expression(<[':' | '}']>) length:(":" l:arithmetic_expression(<['}']>) { l })? {
-                ParameterExpression::Substring { parameter, offset, length }
+                ParameterExpr::Substring { parameter, offset, length }
             }
 
         rule unbraced_parameter() -> Parameter =
