@@ -58,6 +58,16 @@ fn apply_binary_predicate(op: &ast::BinaryPredicate, left: &str, right: &str) ->
             let eq = patterns::pattern_matches(pattern, s)?;
             Ok(!eq)
         }
+        ast::BinaryPredicate::ArithmeticGreaterThan => {
+            let left: Result<i64, _> = left.parse();
+            let right: Result<i64, _> = right.parse();
+
+            if let (Ok(left), Ok(right)) = (left, right) {
+                Ok(left > right)
+            } else {
+                Ok(false)
+            }
+        }
         _ => {
             log::error!(
                 "UNIMPLEMENTED: extended test binary predicate: {op:?}(\"{left}\",\"{right}\")"
