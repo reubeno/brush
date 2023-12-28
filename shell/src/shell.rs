@@ -317,9 +317,13 @@ impl Shell {
     pub fn compose_prompt(&mut self) -> Result<String> {
         const DEFAULT_PROMPT: &str = "$ ";
 
+        // Retrieve the spec.
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
-        let prompt_pieces = parser::prompt::parse_prompt(&ps1)?;
 
+        // Now parse.
+        let prompt_pieces = parser::prompt::parse_prompt(ps1.as_str())?;
+
+        // Now render.
         let formatted_prompt = prompt_pieces
             .iter()
             .map(|p| format_prompt_piece(self, p))

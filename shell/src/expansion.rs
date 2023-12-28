@@ -22,6 +22,7 @@ impl<'a> WordExpander<'a> {
     pub fn expand(&mut self, word: &str) -> Result<String> {
         // Expand: tildes, parameters, command substitutions, arithmetic.
         let pieces = parser::parse_word_for_expansion(word)?;
+
         let expanded_pieces = pieces
             .iter()
             .map(|p| p.expand(self.shell))
@@ -31,8 +32,7 @@ impl<'a> WordExpander<'a> {
         // TODO: Expand pathnames
         // TODO: Remove quotes
 
-        let expansion = expanded_pieces.concat();
-        Ok(expansion)
+        Ok(expanded_pieces.concat())
     }
 }
 
@@ -56,9 +56,13 @@ impl Expandable for parser::word::WordPiece {
             parser::word::WordPiece::ParameterExpansion(p) => p.expand(shell)?,
             parser::word::WordPiece::CommandSubstitution(s) => {
                 let exec_result = shell.run_string(s.as_str(), true)?;
-                let exec_output = exec_result
-                    .output
-                    .ok_or_else(|| anyhow::anyhow!("No output captured"))?;
+                let exec_output = exec_result.output;
+
+                if exec_output.is_none() {
+                    log::error!("No output captured");
+                }
+
+                let exec_output = exec_output.unwrap_or_else(String::new);
 
                 // We trim trailing newlines, per spec.
                 let exec_output = exec_output.trim_end_matches('\n');
