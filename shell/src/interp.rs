@@ -96,6 +96,7 @@ impl Execute for ast::CompleteCommand {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
+                log::error!("UNIMPLEMENTED: async exec: {ao_list:?}");
                 todo!("asynchronous execution")
             }
 
@@ -443,6 +444,10 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         if let Some(cmd_name) = &self.word_or_name {
             let mut cmd_name = expand_word(context.shell, cmd_name)?;
+
+            if context.shell.options.print_commands_and_arguments {
+                println!("+ {}", args.join(" "));
+            }
 
             //
             // TODO: Reevaluate if this is an appropriate place to handle aliases.

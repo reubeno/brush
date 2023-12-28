@@ -51,6 +51,9 @@ struct CommandLineArgs {
     )]
     verbose: bool,
 
+    #[clap(short = 'x', help = "Print commands as they execute.")]
+    print_commands_and_arguments: bool,
+
     #[clap(help = "Path to script to execute")]
     script_path: Option<String>,
 
@@ -115,6 +118,7 @@ fn run(cli_args: &[String]) -> Result<u8> {
         no_profile: args.no_profile,
         no_rc: args.no_rc,
         posix: args.posix,
+        print_commands_and_arguments: args.print_commands_and_arguments,
         shell_name: argv0.clone(),
         verbose: args.verbose,
     };
