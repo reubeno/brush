@@ -277,15 +277,16 @@ peg::parser! {
         rule variable_name() -> &'input str =
             $(!['0'..='9'] ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z']+)
 
-        rule command_substitution() -> WordPiece =
+        pub(crate) rule command_substitution() -> WordPiece =
             "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
             "`" backquoted_command() "`" { todo!("backquoted command substitution") }
 
-        rule command() -> &'input str =
-            $(command_piece() ** [' ' | '\t'])
+        pub(crate) rule command() -> &'input str =
+            $(command_piece()*)
 
-        rule command_piece() -> WordPiece =
-            word_piece(<![')']>)
+        pub(crate) rule command_piece() -> () =
+            word_piece(<![')']>) {} /
+            ([' ' | '\t'])+ {}
 
         rule backquoted_command() -> () =
             "<BACKQUOTES UNIMPLEMENTED>" {}
@@ -301,5 +302,43 @@ peg::parser! {
 
         rule parameter_expression_word() -> String =
             s:$(word(<!['}']>)) { s.to_owned() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn parse_command_substitution() -> Result<()> {
+        super::expansion_parser::command_piece("echo")?;
+        super::expansion_parser::command_piece("hi")?;
+        super::expansion_parser::command("echo hi")?;
+        super::expansion_parser::command_substitution("$(echo hi)")?;
+
+        let parsed = super::parse_word_for_expansion("$(echo hi)")?;
+        assert_matches!(
+            &parsed[..],
+            [WordPiece::CommandSubstitution(s)] if s.as_str() == "echo hi"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_substitution_with_embedded_quotes() -> Result<()> {
+        super::expansion_parser::command_piece("echo")?;
+        super::expansion_parser::command_piece(r#""hi""#)?;
+        super::expansion_parser::command(r#"echo "hi""#)?;
+        super::expansion_parser::command_substitution(r#"$(echo "hi")"#)?;
+
+        let parsed = super::parse_word_for_expansion(r#"$(echo "hi")"#)?;
+        assert_matches!(
+            &parsed[..],
+            [WordPiece::CommandSubstitution(s)] if s.as_str() == r#"echo "hi""#
+        );
+
+        Ok(())
     }
 }

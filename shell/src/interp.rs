@@ -97,7 +97,6 @@ impl Execute for ast::CompleteCommand {
 
             if run_async {
                 log::error!("UNIMPLEMENTED: async exec: {ao_list:?}");
-                todo!("asynchronous execution")
             }
 
             result = ao_list.first.execute(shell, params)?;
@@ -500,6 +499,10 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             //
 
             for (name, value) in env_vars {
+                if context.shell.options.print_commands_and_arguments {
+                    println!("+ {name}={}", value.format()?);
+                }
+
                 // TODO: Handle readonly variables.
                 context.shell.env.update_or_add(
                     name,
@@ -625,7 +628,8 @@ fn execute_external_command(
                     SpawnResult::ImmediateExit(_code)
                     | SpawnResult::ExitShell(_code)
                     | SpawnResult::ReturnFromFunctionOrScript(_code) => {
-                        return Err(anyhow::anyhow!("unable to retrieve piped command output"));
+                        log::error!("UNIMPLEMENTED: unable to retrieve piped command output");
+                        cmd.stdin(std::process::Stdio::null());
                     }
                 }
 

@@ -22,3 +22,19 @@ cases:
     stdin: |
       echo "Param: $99"
       echo "Param: ${99}"
+
+  - name: "Single quotes"
+    stdin: |
+      var=xyz
+      echo 'Quoted string'
+      echo 'abc ${var} def'
+
+  - name: "Double quotes"
+    stdin: |
+      echo "\""
+
+  - name: "Command substitution"
+    stdin: |
+      echo $(echo hi)
+      echo "$(echo hi)"
+      echo "$(echo "hi")"

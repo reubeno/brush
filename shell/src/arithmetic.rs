@@ -58,7 +58,7 @@ fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64
     }
 }
 
-fn apply_unary_op(_shell: &mut Shell, op: ast::UnaryOperator, _operand: i64) -> i64 {
+fn apply_unary_op(_shell: &mut Shell, op: ast::UnaryOperator, operand: i64) -> i64 {
     match op {
         ast::UnaryOperator::PostfixIncrement => todo!("post-increment"),
         ast::UnaryOperator::PostfixDecrement => todo!("post-decrement"),
@@ -66,14 +66,16 @@ fn apply_unary_op(_shell: &mut Shell, op: ast::UnaryOperator, _operand: i64) -> 
         ast::UnaryOperator::UnaryMinus => todo!("unary minus"),
         ast::UnaryOperator::PrefixIncrement => todo!("pre-increment"),
         ast::UnaryOperator::PrefixDecrement => todo!("pre-decrement"),
-        ast::UnaryOperator::BitwiseNot => todo!("bitwise not"),
+        ast::UnaryOperator::BitwiseNot => !operand,
         ast::UnaryOperator::LogicalNot => todo!("logical not"),
     }
 }
 
 fn apply_binary_op(op: ast::BinaryOperator, left: i64, right: i64) -> i64 {
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     match op {
-        ast::BinaryOperator::Power => todo!("power"),
+        ast::BinaryOperator::Power => left.pow(right as u32),
         ast::BinaryOperator::Multiply => left * right,
         ast::BinaryOperator::Divide => todo!("divide"),
         ast::BinaryOperator::Modulo => todo!("modulo"),

@@ -155,7 +155,13 @@ impl BuiltinCommand for DeclareCommand {
             return Ok(BuiltinExitCode::Unimplemented);
         } else {
             // Dump variables.
-            for (name, variable) in context.shell.env.iter().sorted_by_key(|v| v.0) {
+            for (name, variable) in context
+                .shell
+                .env
+                .iter()
+                .filter(|(_, v)| v.enumerable)
+                .sorted_by_key(|v| v.0)
+            {
                 println!("{}={}", name, variable.value.format()?);
             }
 

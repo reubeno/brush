@@ -16,6 +16,7 @@ mod fals;
 mod help;
 mod pwd;
 mod retur;
+mod set;
 mod shopt;
 mod trap;
 mod tru;
@@ -49,7 +50,7 @@ lazy_static! {
             ("export", exec_builtin::<export::ExportCommand>),
             ("readonly", exec_builtin::<unimp::UnimplementedCommand>),
             ("return", exec_builtin::<retur::ReturnCommand>),
-            ("set", exec_builtin::<unimp::UnimplementedCommand>),
+            ("set", exec_builtin::<set::SetCommand>),
             ("shift", exec_builtin::<unimp::UnimplementedCommand>),
             ("times", exec_builtin::<unimp::UnimplementedCommand>),
             ("trap", exec_builtin::<trap::TrapCommand>),
