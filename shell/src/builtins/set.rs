@@ -12,8 +12,9 @@ pub(crate) struct SetCommand {
     pub unhandled_args: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for SetCommand {
-    fn execute(&self, context: &mut BuiltinExecutionContext) -> Result<BuiltinExitCode> {
+    async fn execute(&self, context: &mut BuiltinExecutionContext<'_>) -> Result<BuiltinExitCode> {
         if self.print_commands_and_arguments {
             context.shell.options.print_commands_and_arguments = true;
         } else {

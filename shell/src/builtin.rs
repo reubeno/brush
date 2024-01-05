@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use futures::future::BoxFuture;
 
 use crate::shell::Shell;
 
@@ -23,16 +24,20 @@ pub enum BuiltinExitCode {
 #[allow(clippy::module_name_repetitions)]
 pub struct BuiltinExecutionContext<'a> {
     pub shell: &'a mut Shell,
-    pub builtin_name: &'a str,
+    pub builtin_name: String,
 }
 
 #[allow(clippy::module_name_repetitions)]
 pub type BuiltinCommandExecuteFunc =
-    fn(context: &mut BuiltinExecutionContext, args: &[&str]) -> Result<BuiltinResult>;
+    fn(BuiltinExecutionContext<'_>, Vec<String>) -> BoxFuture<'_, Result<BuiltinResult>>;
 
 #[allow(clippy::module_name_repetitions)]
+#[async_trait::async_trait]
 pub trait BuiltinCommand: Parser {
-    fn execute_args(context: &mut BuiltinExecutionContext, args: &[&str]) -> Result<BuiltinResult> {
+    async fn execute_args(
+        mut context: BuiltinExecutionContext<'_>,
+        args: Vec<String>,
+    ) -> Result<BuiltinResult> {
         let parse_result = Self::try_parse_from(args);
         let parsed_args = match parse_result {
             Ok(parsed_args) => parsed_args,
@@ -45,9 +50,9 @@ pub trait BuiltinCommand: Parser {
         };
 
         Ok(BuiltinResult {
-            exit_code: parsed_args.execute(context)?,
+            exit_code: parsed_args.execute(&mut context).await?,
         })
     }
 
-    fn execute(&self, context: &mut BuiltinExecutionContext) -> Result<BuiltinExitCode>;
+    async fn execute(&self, context: &mut BuiltinExecutionContext<'_>) -> Result<BuiltinExitCode>;
 }

@@ -6,10 +6,11 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 #[derive(Parser, Debug)]
 pub(crate) struct FalseCommand {}
 
+#[async_trait::async_trait]
 impl BuiltinCommand for FalseCommand {
-    fn execute(
+    async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext,
+        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         Ok(BuiltinExitCode::Custom(1))
     }

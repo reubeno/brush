@@ -3,24 +3,30 @@ use parser::ast;
 
 use crate::{expansion::expand_word, patterns, Shell};
 
-pub(crate) fn eval_expression(expr: &ast::ExtendedTestExpr, shell: &mut Shell) -> Result<bool> {
+#[async_recursion::async_recursion]
+pub(crate) async fn eval_expression(
+    expr: &ast::ExtendedTestExpr,
+    shell: &mut Shell,
+) -> Result<bool> {
     #[allow(clippy::single_match_else)]
     match expr {
         ast::ExtendedTestExpr::UnaryTest(op, operand) => {
-            let expanded_operand = expand_word(shell, operand)?;
+            let expanded_operand = expand_word(shell, operand).await?;
             apply_unary_predicate(op, expanded_operand.as_str())
         }
         ast::ExtendedTestExpr::BinaryTest(op, left, right) => {
-            let expanded_left = expand_word(shell, left)?;
-            let expanded_right = expand_word(shell, right)?;
+            let expanded_left = expand_word(shell, left).await?;
+            let expanded_right = expand_word(shell, right).await?;
             apply_binary_predicate(op, expanded_left.as_str(), expanded_right.as_str())
         }
         ast::ExtendedTestExpr::And(left, right) => {
-            let result = eval_expression(left, shell)? && eval_expression(right, shell)?;
+            let result =
+                eval_expression(left, shell).await? && eval_expression(right, shell).await?;
             Ok(result)
         }
         ast::ExtendedTestExpr::Or(left, right) => {
-            let result = eval_expression(left, shell)? || eval_expression(right, shell)?;
+            let result =
+                eval_expression(left, shell).await? || eval_expression(right, shell).await?;
             Ok(result)
         }
         _ => {

@@ -11,10 +11,11 @@ pub(crate) struct DotCommand {
     pub script_args: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for DotCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         if !self.script_args.is_empty() {
             log::error!(
@@ -33,7 +34,8 @@ impl BuiltinCommand for DotCommand {
 
         context
             .shell
-            .source(Path::new(&self.script_path), script_args.as_slice())?;
+            .source(Path::new(&self.script_path), script_args.as_slice())
+            .await?;
 
         // TODO: Get exit status from source() above.
         Ok(BuiltinExitCode::Success)

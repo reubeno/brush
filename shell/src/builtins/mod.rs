@@ -1,5 +1,5 @@
 use anyhow::Result;
-use lazy_static::lazy_static;
+use futures::future::BoxFuture;
 use std::collections::HashMap;
 
 use crate::builtin::{self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinResult};
@@ -24,68 +24,79 @@ mod umask;
 mod unimp;
 mod unset;
 
-fn exec_builtin<T: BuiltinCommand>(
-    context: &mut builtin::BuiltinExecutionContext,
-    args: &[&str],
-) -> Result<BuiltinResult> {
-    T::execute_args(context, args)
+fn exec_builtin<T: BuiltinCommand + Send>(
+    context: builtin::BuiltinExecutionContext<'_>,
+    args: Vec<String>,
+) -> BoxFuture<'_, Result<BuiltinResult>> {
+    Box::pin(async move { T::execute_args(context, args).await })
 }
 
-lazy_static! {
-    pub static ref SPECIAL_BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> =
-        HashMap::from([
-            //
-            // POSIX special builtins
-            //
-            // N.B. There seems to be some inconsistency as to whether 'times'
-            // should be a special built-in.
-            //
-            ("break", exec_builtin::<unimp::UnimplementedCommand> as BuiltinCommandExecuteFunc),
-            (":", exec_builtin::<colon::ColonCommand>),
-            ("continue", exec_builtin::<unimp::UnimplementedCommand>),
-            (".", exec_builtin::<dot::DotCommand>),
-            ("eval", exec_builtin::<eval::EvalCommand>),
-            ("exec", exec_builtin::<unimp::UnimplementedCommand>),
-            ("exit", exec_builtin::<exit::ExitCommand>),
-            ("export", exec_builtin::<export::ExportCommand>),
-            ("readonly", exec_builtin::<unimp::UnimplementedCommand>),
-            ("return", exec_builtin::<retur::ReturnCommand>),
-            ("set", exec_builtin::<set::SetCommand>),
-            ("shift", exec_builtin::<unimp::UnimplementedCommand>),
-            ("times", exec_builtin::<unimp::UnimplementedCommand>),
-            ("trap", exec_builtin::<trap::TrapCommand>),
-            ("unset", exec_builtin::<unset::UnsetCommand>),
-            // Bash extension builtins
-            ("source", exec_builtin::<dot::DotCommand>),
-        ]);
+lazy_static::lazy_static! {
+    pub static ref SPECIAL_BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_special_builtins();
+    pub static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_builtins();
+}
 
-    pub static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = HashMap::from([
-        ("alias", exec_builtin::<alias::AliasCommand> as BuiltinCommandExecuteFunc),
-        ("bg", exec_builtin::<unimp::UnimplementedCommand>),
-        ("cd", exec_builtin::<cd::CdCommand>),
-        ("command", exec_builtin::<unimp::UnimplementedCommand>),
-        ("false", exec_builtin::<fals::FalseCommand>),
-        ("fc", exec_builtin::<unimp::UnimplementedCommand>),
-        ("fg", exec_builtin::<unimp::UnimplementedCommand>),
-        ("getopts", exec_builtin::<unimp::UnimplementedCommand>),
-        ("hash", exec_builtin::<unimp::UnimplementedCommand>),
-        ("help", exec_builtin::<help::HelpCommand>),
-        ("jobs", exec_builtin::<unimp::UnimplementedCommand>),
-        ("kill", exec_builtin::<unimp::UnimplementedCommand>),
-        ("newgrp", exec_builtin::<unimp::UnimplementedCommand>),
-        ("pwd", exec_builtin::<pwd::PwdCommand>),
-        ("read", exec_builtin::<unimp::UnimplementedCommand>),
-        ("true", exec_builtin::<tru::TrueCommand>),
-        ("type", exec_builtin::<unimp::UnimplementedCommand>),
-        ("ulimit", exec_builtin::<unimp::UnimplementedCommand>),
-        ("umask", exec_builtin::<umask::UmaskCommand>),
-        ("unalias", exec_builtin::<unimp::UnimplementedCommand>),
-        ("wait", exec_builtin::<unimp::UnimplementedCommand>),
+pub(crate) fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
+    //
+    // POSIX special builtins
+    //
+    // N.B. There seems to be some inconsistency as to whether 'times'
+    // should be a special built-in.
+    //
 
-        // N.B These builtins are extensions.
-        // TODO: make them unavailable in sh mode.
-        ("declare", exec_builtin::<declare::DeclareCommand>),
-        ("local", exec_builtin::<declare::DeclareCommand>),
-        ("shopt", exec_builtin::<shopt::ShoptCommand>),
-    ]);
+    let mut m = HashMap::<&'static str, BuiltinCommandExecuteFunc>::new();
+
+    m.insert("break", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert(":", exec_builtin::<colon::ColonCommand>);
+    m.insert("continue", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert(".", exec_builtin::<dot::DotCommand>);
+    m.insert("eval", exec_builtin::<eval::EvalCommand>);
+    m.insert("exec", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("exit", exec_builtin::<exit::ExitCommand>);
+    m.insert("export", exec_builtin::<export::ExportCommand>);
+    m.insert("readonly", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("return", exec_builtin::<retur::ReturnCommand>);
+    m.insert("set", exec_builtin::<set::SetCommand>);
+    m.insert("shift", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("times", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("trap", exec_builtin::<trap::TrapCommand>);
+    m.insert("unset", exec_builtin::<unset::UnsetCommand>);
+    // Bash extension builtins
+    m.insert("source", exec_builtin::<dot::DotCommand>);
+
+    m
+}
+
+pub(crate) fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
+    let mut m = HashMap::<&'static str, BuiltinCommandExecuteFunc>::new();
+
+    m.insert("alias", exec_builtin::<alias::AliasCommand>);
+    m.insert("bg", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("cd", exec_builtin::<cd::CdCommand>);
+    m.insert("command", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("false", exec_builtin::<fals::FalseCommand>);
+    m.insert("fc", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("fg", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("getopts", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("hash", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("help", exec_builtin::<help::HelpCommand>);
+    m.insert("jobs", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("kill", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("newgrp", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("pwd", exec_builtin::<pwd::PwdCommand>);
+    m.insert("read", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("true", exec_builtin::<tru::TrueCommand>);
+    m.insert("type", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("ulimit", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("umask", exec_builtin::<umask::UmaskCommand>);
+    m.insert("unalias", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("wait", exec_builtin::<unimp::UnimplementedCommand>);
+
+    // N.B These builtins are extensions.
+    // TODO: make them unavailable in sh mode.
+    m.insert("declare", exec_builtin::<declare::DeclareCommand>);
+    m.insert("local", exec_builtin::<declare::DeclareCommand>);
+    m.insert("shopt", exec_builtin::<shopt::ShoptCommand>);
+
+    m
 }
