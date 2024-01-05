@@ -77,7 +77,7 @@ impl std::fmt::Display for ProgramOrigin {
 }
 
 impl Shell {
-    pub fn new(options: &CreateOptions) -> Result<Shell> {
+    pub async fn new(options: &CreateOptions) -> Result<Shell> {
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
             working_dir: std::env::current_dir()?,
@@ -94,7 +94,7 @@ impl Shell {
         };
 
         // Load profiles/configuration.
-        shell.load_config(options)?;
+        shell.load_config(options).await?;
 
         Ok(shell)
     }
@@ -125,7 +125,7 @@ impl Shell {
         env
     }
 
-    fn load_config(&mut self, options: &CreateOptions) -> Result<()> {
+    async fn load_config(&mut self, options: &CreateOptions) -> Result<()> {
         if options.login {
             // --noprofile means skip this.
             if options.no_profile {
@@ -140,13 +140,18 @@ impl Shell {
             //     * ~/.bash_login
             //     * ~/.profile
             //
-            self.source_if_exists(Path::new("/etc/profile"))?;
+            self.source_if_exists(Path::new("/etc/profile")).await?;
             if let Ok(home_path) = std::env::var("HOME") {
-                if !self.source_if_exists(Path::new(&home_path).join(".bash_profile").as_path())? {
+                if !self
+                    .source_if_exists(Path::new(&home_path).join(".bash_profile").as_path())
+                    .await?
+                {
                     if !self
-                        .source_if_exists(Path::new(&home_path).join(".bash_login").as_path())?
+                        .source_if_exists(Path::new(&home_path).join(".bash_login").as_path())
+                        .await?
                     {
-                        self.source_if_exists(Path::new(&home_path).join(".profile").as_path())?;
+                        self.source_if_exists(Path::new(&home_path).join(".profile").as_path())
+                            .await?;
                     }
                 }
             }
@@ -163,9 +168,10 @@ impl Shell {
                 //     /etc/bash.bashrc
                 //     ~/.bashrc
                 //
-                self.source_if_exists(Path::new("/etc/bash.bashrc"))?;
+                self.source_if_exists(Path::new("/etc/bash.bashrc")).await?;
                 if let Ok(home_path) = std::env::var("HOME") {
-                    self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())?;
+                    self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())
+                        .await?;
                 }
             } else {
                 if self.env.is_set("BASH_ENV") {
@@ -180,10 +186,10 @@ impl Shell {
         Ok(())
     }
 
-    fn source_if_exists(&mut self, path: &Path) -> Result<bool> {
+    async fn source_if_exists(&mut self, path: &Path) -> Result<bool> {
         if path.exists() {
             let args: Vec<String> = vec![];
-            self.source(path, &args)?;
+            self.source(path, &args).await?;
             Ok(true)
         } else {
             debug!("skipping non-existent file: {}", path.display());
@@ -191,7 +197,11 @@ impl Shell {
         }
     }
 
-    pub fn source<S: AsRef<str>>(&mut self, path: &Path, args: &[S]) -> Result<ExecutionResult> {
+    pub async fn source<S: AsRef<str>>(
+        &mut self,
+        path: &Path,
+        args: &[S],
+    ) -> Result<ExecutionResult> {
         debug!("sourcing: {}", path.display());
 
         let opened_file = std::fs::File::open(path).context(path.to_string_lossy().to_string())?;
@@ -204,10 +214,10 @@ impl Shell {
 
         let origin = ProgramOrigin::File(path.to_owned());
 
-        self.source_file(&opened_file, &origin, args)
+        self.source_file(&opened_file, &origin, args).await
     }
 
-    pub fn source_file<S: AsRef<str>>(
+    pub async fn source_file<S: AsRef<str>>(
         &mut self,
         file: &std::fs::File,
         origin: &ProgramOrigin,
@@ -228,7 +238,7 @@ impl Shell {
             log::error!("UNIMPLEMENTED: source built-in invoked with args: {origin}",);
         }
 
-        let result = self.run_parsed_result(&parse_result, origin, false);
+        let result = self.run_parsed_result(&parse_result, origin, false).await;
 
         // Restore.
         self.shell_name = orig_shell_name;
@@ -237,23 +247,28 @@ impl Shell {
         result
     }
 
-    pub fn run_string(&mut self, command: &str, capture_output: bool) -> Result<ExecutionResult> {
+    pub async fn run_string(
+        &mut self,
+        command: &str,
+        capture_output: bool,
+    ) -> Result<ExecutionResult> {
         let mut reader = std::io::BufReader::new(command.as_bytes());
         let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
         let parse_result = parser.parse(true)?;
 
         self.run_parsed_result(&parse_result, &ProgramOrigin::String, capture_output)
+            .await
     }
 
-    pub fn run_script<S: AsRef<str>>(
+    pub async fn run_script<S: AsRef<str>>(
         &mut self,
         script_path: &Path,
         args: &[S],
     ) -> Result<ExecutionResult> {
-        self.source(script_path, args)
+        self.source(script_path, args).await
     }
 
-    fn run_parsed_result(
+    async fn run_parsed_result(
         &mut self,
         parse_result: &parser::ParseResult,
         origin: &ProgramOrigin,
@@ -266,7 +281,7 @@ impl Shell {
         }
 
         let result = match parse_result {
-            parser::ParseResult::Program(prog) => self.run_program(prog, capture_output)?,
+            parser::ParseResult::Program(prog) => self.run_program(prog, capture_output).await?,
             parser::ParseResult::ParseError(token_near_error) => {
                 if let Some(token_near_error) = &token_near_error {
                     let error_loc = &token_near_error.location().start;
@@ -306,15 +321,17 @@ impl Shell {
         Ok(result)
     }
 
-    pub fn run_program(
+    pub async fn run_program(
         &mut self,
         program: &parser::ast::Program,
         capture_output: bool,
     ) -> Result<ExecutionResult> {
-        program.execute(self, &ExecutionParameters { capture_output })
+        program
+            .execute(self, &ExecutionParameters { capture_output })
+            .await
     }
 
-    pub fn compose_prompt(&mut self) -> Result<String> {
+    pub async fn compose_prompt(&mut self) -> Result<String> {
         const DEFAULT_PROMPT: &str = "$ ";
 
         // Retrieve the spec.
@@ -337,7 +354,7 @@ impl Shell {
 
         // Now expand.
         let mut expander = WordExpander::new(self);
-        let formatted_prompt = expander.expand(formatted_prompt.as_str())?;
+        let formatted_prompt = expander.expand(formatted_prompt.as_str()).await?;
 
         Ok(formatted_prompt)
     }

@@ -60,10 +60,11 @@ pub(crate) struct DeclareCommand {
     names: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for DeclareCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         let called_as_local = context.builtin_name == "local";
         let create_var_local =

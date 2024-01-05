@@ -24,10 +24,11 @@ pub(crate) struct ShoptCommand {
     options: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for ShoptCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         if self.set && self.unset {
             log::error!("cannot set and unset shell options simultaneously");

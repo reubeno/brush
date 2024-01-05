@@ -8,10 +8,11 @@ pub(crate) struct ExitCommand {
     code: Option<i32>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for ExitCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         let code_8bit: u8;
 

@@ -11,14 +11,15 @@ pub(crate) struct TrapCommand {
     #[arg(short = 'p')]
     print_trap_commands: bool,
 
-    trap_command: Option<String>,
+    command: Option<String>,
     signals: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for TrapCommand {
-    fn execute(
+    async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext,
+        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         if self.list_signals {
             log::error!("UNIMPLEMENTED: trap -l");
@@ -31,7 +32,7 @@ impl BuiltinCommand for TrapCommand {
         }
 
         // TODO: handle case where trap_command is a signal itself
-        if let Some(trap_command) = &self.trap_command {
+        if let Some(trap_command) = &self.command {
             if self.signals.is_empty() {
                 log::error!("UNIMPLEMENTED: trap builtin called with command but no signals");
                 return Ok(BuiltinExitCode::Unimplemented);

@@ -9,10 +9,11 @@ pub(crate) struct UnimplementedCommand {
     pub args: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for UnimplementedCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         log::error!(
             "UNIMPLEMENTED: {}: built-in unimplemented: {} {}",

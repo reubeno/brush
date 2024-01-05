@@ -8,10 +8,11 @@ pub(crate) struct EvalCommand {
     pub args: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for EvalCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         if !self.args.is_empty() {
             let args_concatenated = self.args.join(" ");
@@ -20,7 +21,8 @@ impl BuiltinCommand for EvalCommand {
 
             let exec_result = context
                 .shell
-                .run_string(args_concatenated.as_str(), false)?;
+                .run_string(args_concatenated.as_str(), false)
+                .await?;
 
             Ok(BuiltinExitCode::Custom(exec_result.exit_code))
         } else {

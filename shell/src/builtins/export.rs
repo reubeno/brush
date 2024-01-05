@@ -22,10 +22,11 @@ pub(crate) struct ExportCommand {
     names: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for ExportCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         if !self.names.is_empty() {
             for name in &self.names {

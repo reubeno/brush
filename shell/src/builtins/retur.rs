@@ -8,10 +8,11 @@ pub(crate) struct ReturnCommand {
     code: Option<i32>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for ReturnCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         let code_8bit: u8;
         #[allow(clippy::cast_sign_loss)]

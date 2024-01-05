@@ -7,10 +7,11 @@ pub(crate) struct HelpCommand {}
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[async_trait::async_trait]
 impl BuiltinCommand for HelpCommand {
-    fn execute(
+    async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext,
+        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         println!("brush version {VERSION}");
         Ok(BuiltinExitCode::Success)

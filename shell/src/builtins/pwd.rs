@@ -16,10 +16,11 @@ pub(crate) struct PwdCommand {
     allow_symlinks: bool,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for PwdCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         //
         // TODO: implement flags

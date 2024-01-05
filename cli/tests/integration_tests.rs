@@ -60,6 +60,7 @@ struct TestCaseSet {
     pub cases: Vec<TestCase>,
 }
 
+#[allow(clippy::struct_field_names)]
 struct TestCaseSetResults {
     pub success_count: u32,
     pub expected_fail_count: u32,

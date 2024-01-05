@@ -13,6 +13,7 @@ pub(crate) struct UnsetCommand {
 
 #[derive(Parser, Debug)]
 #[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct UnsetNameInterpretation {
     #[arg(
         short = 'f',
@@ -44,10 +45,11 @@ impl UnsetNameInterpretation {
     }
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for UnsetCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         //
         // TODO: implement nameref

@@ -25,10 +25,11 @@ pub(crate) struct CdCommand {
     target_dir: Option<PathBuf>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for CdCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         // TODO: implement options
         if self.force_follow_symlinks

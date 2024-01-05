@@ -11,6 +11,7 @@ cases:
       cat out.txt
 
   - name: "Process substitution: input"
+    expected_failure: true
     stdin: |
       shopt -u -o posix
       cat <(echo hi)

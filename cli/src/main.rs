@@ -90,7 +90,13 @@ fn main() {
 
     let args: Vec<_> = std::env::args().collect();
 
-    let exit_code: u8 = match run(&args) {
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(run(&args));
+
+    let exit_code = match result {
         Ok(code) => code,
         Err(e) => {
             error!("error: {:#}", e);
@@ -102,7 +108,7 @@ fn main() {
     std::process::exit(exit_code as i32);
 }
 
-fn run(cli_args: &[String]) -> Result<u8> {
+async fn run(cli_args: &[String]) -> Result<u8> {
     let argv0 = if !cli_args.is_empty() {
         Some(cli_args[0].clone())
     } else {
@@ -123,17 +129,18 @@ fn run(cli_args: &[String]) -> Result<u8> {
         verbose: args.verbose,
     };
 
-    let mut shell = interactive_shell::InteractiveShell::new(&options)?;
+    let mut shell = interactive_shell::InteractiveShell::new(&options).await?;
 
     if let Some(command) = args.command {
         // TODO: Use script_path as $0 and remaining args as positional parameters.
-        shell.shell.run_string(&command, false)?;
+        shell.shell.run_string(&command, false).await?;
     } else if let Some(script_path) = args.script_path {
         shell
             .shell
-            .run_script(Path::new(&script_path), args.script_args.as_slice())?;
+            .run_script(Path::new(&script_path), args.script_args.as_slice())
+            .await?;
     } else {
-        shell.run_interactively()?;
+        shell.run_interactively().await?;
     }
 
     Ok(shell.shell.last_result())

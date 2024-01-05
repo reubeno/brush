@@ -12,10 +12,11 @@ pub(crate) struct AliasCommand {
     aliases: Vec<String>,
 }
 
+#[async_trait::async_trait]
 impl BuiltinCommand for AliasCommand {
-    fn execute(
+    async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode> {
         //
         // TODO: implement flags
