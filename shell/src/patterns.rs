@@ -8,7 +8,7 @@ pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool> {
             pattern,
             value
         );
-        todo!("pattern matching with '**' pattern");
+        todo!("UNIMPLEMENTED: pattern matching with '**' pattern");
     }
 
     // TODO: Double-check use of current working dir

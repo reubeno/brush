@@ -82,7 +82,7 @@ impl Expandable for parser::word::WordPiece {
 fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
     if !prefix.is_empty() {
         log::error!("UNIMPLEMENTED: complex tilde expression: {}", prefix);
-        todo!("expansion: complex tilde expression");
+        todo!("UNIMPLEMENTED: expansion: complex tilde expression");
     }
 
     if let Some(home) = shell.env.get("HOME") {
@@ -121,12 +121,12 @@ impl Expandable for parser::word::ParameterExpr {
                 parameter: _,
                 test_type: _,
                 default_value: _,
-            } => todo!("expansion: assign default values expressions"),
+            } => todo!("UNIMPLEMENTED: expansion: assign default values expressions"),
             parser::word::ParameterExpr::IndicateErrorIfNullOrUnset {
                 parameter: _,
                 test_type: _,
                 error_message: _,
-            } => todo!("expansion: indicate error if null or unset expressions"),
+            } => todo!("UNIMPLEMENTED: expansion: indicate error if null or unset expressions"),
             parser::word::ParameterExpr::UseAlternativeValue {
                 parameter,
                 test_type: _,
@@ -148,19 +148,19 @@ impl Expandable for parser::word::ParameterExpr {
             parser::word::ParameterExpr::RemoveSmallestSuffixPattern {
                 parameter: _,
                 pattern: _,
-            } => todo!("expansion: remove smallest suffix pattern expressions"),
+            } => todo!("UNIMPLEMENTED: expansion: remove smallest suffix pattern expressions"),
             parser::word::ParameterExpr::RemoveLargestSuffixPattern {
                 parameter: _,
                 pattern: _,
-            } => todo!("expansion: remove largest suffix pattern expressions"),
+            } => todo!("UNIMPLEMENTED: expansion: remove largest suffix pattern expressions"),
             parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
                 parameter: _,
                 pattern: _,
-            } => todo!("expansion: remove smallest prefix pattern expressions"),
+            } => todo!("UNIMPLEMENTED: expansion: remove smallest prefix pattern expressions"),
             parser::word::ParameterExpr::RemoveLargestPrefixPattern {
                 parameter: _,
                 pattern: _,
-            } => todo!("expansion: remove largest prefix pattern expressions"),
+            } => todo!("UNIMPLEMENTED: expansion: remove largest prefix pattern expressions"),
             parser::word::ParameterExpr::Substring {
                 parameter,
                 offset,
@@ -180,7 +180,7 @@ impl Expandable for parser::word::ParameterExpr {
                     let expanded_length = length.eval(shell)?;
                     if expanded_length < 0 {
                         log::error!("UNIMPLEMENTED: substring with negative length");
-                        todo!("substring with negative length");
+                        todo!("UNIMPLEMENTED: substring with negative length");
                     }
 
                     let expanded_length = std::cmp::min(
@@ -255,7 +255,7 @@ impl Expandable for parser::word::SpecialParameter {
             parser::word::SpecialParameter::CurrentOptionFlags => Ok(shell.current_option_flags()),
             parser::word::SpecialParameter::ProcessId => Ok(std::process::id().to_string()),
             parser::word::SpecialParameter::LastBackgroundProcessId => {
-                todo!("expansion: last background process id")
+                todo!("UNIMPLEMENTED: expansion: last background process id")
             }
             parser::word::SpecialParameter::ShellName => Ok(shell
                 .shell_name

@@ -49,8 +49,10 @@ impl ShellValue {
                     Ok(s.clone())
                 }
             }
-            ShellValue::Integer(_) => todo!("formatting integers"),
-            ShellValue::AssociativeArray(_) => todo!("formatting associative arrays"),
+            ShellValue::Integer(_) => todo!("UNIMPLEMENTED: formatting integers"),
+            ShellValue::AssociativeArray(_) => {
+                todo!("UNIMPLEMENTED: formatting associative arrays")
+            }
             ShellValue::IndexedArray(values) => {
                 let mut result = String::new();
                 result.push('(');
@@ -65,7 +67,7 @@ impl ShellValue {
                 result.push(')');
                 Ok(result)
             }
-            ShellValue::Random => todo!("formatting RANDOM"),
+            ShellValue::Random => todo!("UNIMPLEMENTED: formatting RANDOM"),
         }
     }
 
@@ -78,10 +80,12 @@ impl ShellValue {
                     None
                 }
             }
-            ShellValue::Integer(_) => todo!("indexing into integer"),
-            ShellValue::AssociativeArray(_) => todo!("indexing into associative array"),
+            ShellValue::Integer(_) => todo!("UNIMPLEMENTED: indexing into integer"),
+            ShellValue::AssociativeArray(_) => {
+                todo!("UNIMPLEMENTED: indexing into associative array")
+            }
             ShellValue::IndexedArray(values) => values.get(index as usize).map(|s| s.as_str()),
-            ShellValue::Random => todo!("indexing into RANDOM"),
+            ShellValue::Random => todo!("UNIMPLEMENTED: indexing into RANDOM"),
         }
     }
 
@@ -90,7 +94,9 @@ impl ShellValue {
         match self {
             ShellValue::String(s) => s.to_owned(),
             ShellValue::Integer(i) => i.to_string(),
-            ShellValue::AssociativeArray(_) => todo!("converting associative array to string"),
+            ShellValue::AssociativeArray(_) => {
+                todo!("UNIMPLEMENTED: converting associative array to string")
+            }
             ShellValue::IndexedArray(values) => values.join(" "),
             ShellValue::Random => get_random_str(),
         }
@@ -121,7 +127,9 @@ impl From<&ShellValue> for String {
         match value {
             ShellValue::String(s) => s.clone(),
             ShellValue::Integer(i) => i.to_string(),
-            ShellValue::AssociativeArray(_) => todo!("converting associative array to string"),
+            ShellValue::AssociativeArray(_) => {
+                todo!("UNIMPLEMENTED: converting associative array to string")
+            }
             ShellValue::IndexedArray(values) => {
                 values.first().map_or_else(String::new, |s| s.clone())
             }

@@ -55,7 +55,7 @@ impl BuiltinCommand for UnsetCommand {
         // TODO: implement nameref
         //
         if self.name_interpretation.names_are_name_references {
-            todo!("unset: name references are not yet implemented")
+            todo!("UNIMPLEMENTED: unset: name references are not yet implemented")
         }
 
         let unspecified = self.name_interpretation.unspecified();

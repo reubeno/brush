@@ -14,17 +14,17 @@ pub(crate) fn format_prompt_piece(
         parser::prompt::PromptPiece::BellCharacter => "\x07".to_owned(),
         parser::prompt::PromptPiece::CarriageReturn => "\r".to_owned(),
         parser::prompt::PromptPiece::CurrentCommandNumber => {
-            todo!("prompt: current command number")
+            todo!("UNIMPLEMENTED: prompt: current command number")
         }
         parser::prompt::PromptPiece::CurrentHistoryNumber => {
-            todo!("prompt: current history number")
+            todo!("UNIMPLEMENTED: prompt: current history number")
         }
         parser::prompt::PromptPiece::CurrentUser => get_current_username()?,
         parser::prompt::PromptPiece::CurrentWorkingDirectory {
             tilde_replaced,
             basename,
         } => format_current_working_directory(shell, *tilde_replaced, *basename),
-        parser::prompt::PromptPiece::Date(_) => todo!("prompt: date"),
+        parser::prompt::PromptPiece::Date(_) => todo!("UNIMPLEMENTED: prompt: date"),
         parser::prompt::PromptPiece::DollarOrPound => {
             if uzers::get_current_uid() == 0 {
                 "#".to_owned()
@@ -50,16 +50,18 @@ pub(crate) fn format_prompt_piece(
         }
         parser::prompt::PromptPiece::Newline => "\n".to_owned(),
         parser::prompt::PromptPiece::NumberOfManagedJobs => {
-            todo!("prompt: number of managed jobs")
+            todo!("UNIMPLEMENTED: prompt: number of managed jobs")
         }
-        parser::prompt::PromptPiece::ShellBaseName => todo!("prompt: shell base name"),
-        parser::prompt::PromptPiece::ShellRelease => todo!("prompt: shell release"),
-        parser::prompt::PromptPiece::ShellVersion => todo!("prompt: shell version"),
+        parser::prompt::PromptPiece::ShellBaseName => {
+            todo!("UNIMPLEMENTED: prompt: shell base name")
+        }
+        parser::prompt::PromptPiece::ShellRelease => todo!("UNIMPLEMENTED: prompt: shell release"),
+        parser::prompt::PromptPiece::ShellVersion => todo!("UNIMPLEMENTED: prompt: shell version"),
         parser::prompt::PromptPiece::StartNonPrintingSequence => String::new(),
         parser::prompt::PromptPiece::TerminalDeviceBaseName => {
-            todo!("prompt: terminal device base name")
+            todo!("UNIMPLEMENTED: prompt: terminal device base name")
         }
-        parser::prompt::PromptPiece::Time(_) => todo!("prompt: time"),
+        parser::prompt::PromptPiece::Time(_) => todo!("UNIMPLEMENTED: prompt: time"),
     };
 
     Ok(formatted)
@@ -75,7 +77,7 @@ fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basenam
     let mut working_dir_str = shell.working_dir.to_string_lossy().to_string();
 
     if basename {
-        todo!("prompt: basename of working dir");
+        todo!("UNIMPLEMENTED: prompt: basename of working dir");
     }
 
     if tilde_replaced {

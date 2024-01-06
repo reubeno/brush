@@ -38,6 +38,19 @@ pub trait BuiltinCommand: Parser {
         mut context: BuiltinExecutionContext<'_>,
         args: Vec<String>,
     ) -> Result<BuiltinResult> {
+        // N.B. clap doesn't support named options like '+x'. To work around this, we
+        // establish a pattern of renaming them.
+        let args: Vec<_> = args
+            .into_iter()
+            .map(|arg| {
+                if arg.starts_with('+') {
+                    format!("--{arg}")
+                } else {
+                    arg
+                }
+            })
+            .collect();
+
         let parse_result = Self::try_parse_from(args);
         let parsed_args = match parse_result {
             Ok(parsed_args) => parsed_args,

@@ -279,7 +279,7 @@ peg::parser! {
 
         pub(crate) rule command_substitution() -> WordPiece =
             "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
-            "`" backquoted_command() "`" { todo!("backquoted command substitution") }
+            "`" backquoted_command() "`" { todo!("UNIMPLEMENTED: backquoted command substitution") }
 
         pub(crate) rule command() -> &'input str =
             $(command_piece()*)

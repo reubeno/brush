@@ -198,7 +198,7 @@ impl Shell {
                     //
                     // TODO: look at $BASH_ENV; source its expansion if that file exists
                     //
-                    todo!("load config from $BASH_ENV for non-interactive, non-login shell")
+                    todo!("UNIMPLEMENTED: load config from $BASH_ENV for non-interactive, non-login shell")
                 }
             }
         }
