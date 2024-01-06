@@ -17,7 +17,7 @@ pub enum EnvironmentScope {
     Global,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ShellEnvironment {
     globals: ShellVariableMap,
     locals_stack: Vec<ShellVariableMap>,
@@ -189,7 +189,7 @@ impl ShellEnvironment {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ShellVariableMap {
     variables: HashMap<String, ShellVariable>,
 }

@@ -14,6 +14,7 @@ mod exit;
 mod export;
 mod fals;
 mod help;
+mod jobs;
 mod pwd;
 mod retur;
 mod set;
@@ -80,7 +81,7 @@ pub(crate) fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc>
     m.insert("getopts", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("hash", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("help", exec_builtin::<help::HelpCommand>);
-    m.insert("jobs", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("jobs", exec_builtin::<jobs::JobsCommand>);
     m.insert("kill", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("newgrp", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("pwd", exec_builtin::<pwd::PwdCommand>);

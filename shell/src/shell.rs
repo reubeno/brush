@@ -10,7 +10,6 @@ use crate::options::RuntimeOptions;
 use crate::prompt::format_prompt_piece;
 use crate::variables;
 
-#[derive(Debug)]
 pub struct Shell {
     // TODO: open files
     pub working_dir: PathBuf,
@@ -20,6 +19,7 @@ pub struct Shell {
     pub env: ShellEnvironment,
     pub funcs: HashMap<String, ShellFunction>,
     pub options: RuntimeOptions,
+    pub background_jobs: Vec<tokio::task::JoinHandle<Result<ExecutionResult>>>,
     // TODO: async lists
     pub aliases: HashMap<String, String>,
 
@@ -36,6 +36,25 @@ pub struct Shell {
 
     // Function call stack.
     pub function_call_depth: u32,
+}
+
+impl Clone for Shell {
+    fn clone(&self) -> Self {
+        Self {
+            working_dir: self.working_dir.clone(),
+            umask: self.umask,
+            file_size_limit: self.file_size_limit,
+            env: self.env.clone(),
+            funcs: self.funcs.clone(),
+            options: self.options.clone(),
+            background_jobs: vec![],
+            aliases: self.aliases.clone(),
+            last_exit_status: self.last_exit_status,
+            positional_parameters: self.positional_parameters.clone(),
+            shell_name: self.shell_name.clone(),
+            function_call_depth: self.function_call_depth,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -86,6 +105,7 @@ impl Shell {
             env: Self::initialize_vars(options),
             funcs: HashMap::default(),
             options: RuntimeOptions::defaults_from(options),
+            background_jobs: vec![],
             aliases: HashMap::default(),
             last_exit_status: 0,
             positional_parameters: vec![],
