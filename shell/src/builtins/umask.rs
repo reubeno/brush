@@ -32,12 +32,12 @@ impl BuiltinCommand for UmaskCommand {
                 let parsed = u32::from_str_radix(mode.as_str(), 8)?;
                 context.shell.umask = parsed;
             } else {
-                todo!("umask setting mode from symbolic value");
+                todo!("UNIMPLEMENTED: umask setting mode from symbolic value");
             }
         } else {
             let umask = if self.symbolic_output {
                 // TODO: handle symbolic output
-                todo!("umask displaying symbolic output")
+                todo!("UNIMPLEMENTED: umask displaying symbolic output")
             } else {
                 let umask_value = context.shell.umask;
                 std::format!("0{umask_value:o}")

@@ -364,7 +364,7 @@ impl TestCase {
                 WhichShell::ShellUnderTest(name) => assert_cmd::Command::cargo_bin(name)?,
                 WhichShell::NamedShell(name) => assert_cmd::Command::new(name),
             },
-            ShellInvocation::ExecScript(_) => todo!("exec script test"),
+            ShellInvocation::ExecScript(_) => todo!("UNIMPLEMENTED: exec script test"),
         };
 
         // TODO: Find a better place for these.

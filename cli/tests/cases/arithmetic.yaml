@@ -1,7 +1,6 @@
 name: "Arithmetic"
 cases:
   - name: "Basic arithmetic"
-    expected_failure: true
     stdin: |
       echo $((1+1))
       echo "$((1+1))"

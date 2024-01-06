@@ -23,6 +23,7 @@ parser = { path = "../parser" }
 rand = "0.8.5"
 regex = "1.10.2"
 tempfile = "3.9.0"
+thiserror = "1.0.56"
 tokio = { version = "1.35.1", features = [
     "io-util",
     "macros",

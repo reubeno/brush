@@ -6,6 +6,9 @@ cases:
       cd /
       echo $?
       echo "pwd: $PWD"
+      cd tmp
+      echo $?
+      echo "pwd: $PWD"
       cd
       echo $?
       echo "pwd: $PWD"

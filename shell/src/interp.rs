@@ -118,7 +118,7 @@ impl Execute for ast::CompleteCommand {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                log::warn!("UNIMPLEMENTED: async exec: {ao_list:?}");
+                log::warn!("UNIMPLEMENTED: async exec");
 
                 let background_job = tokio::spawn(execute_ao_list_async(
                     shell.clone(),
@@ -237,7 +237,7 @@ impl Execute for ast::Pipeline {
                     } else if let Some(signal) = output.status.signal() {
                         exit_code = (signal & 0xFF) as u8 + 128;
                     } else {
-                        todo!("unhandled process exit");
+                        todo!("UNIMPLEMENTED: unhandled process exit");
                     }
 
                     // TODO: Confirm what to return if it was signaled.
@@ -456,7 +456,7 @@ impl Execute for (WhileOrUtil, &ast::WhileClauseCommand) {
         _shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult> {
-        todo!("execute while clause command")
+        todo!("UNIMPLEMENTED: execute while clause command")
     }
 }
 
@@ -970,7 +970,7 @@ async fn setup_redirect<'a>(
                                 "UNIMPLEMENTED: process substitution to write to stdin of command: {:?}",
                                 subshell_cmd
                             );
-                            todo!("process substitution to write to command")
+                            todo!("UNIMPLEMENTED: process substitution to write to command")
                         }
                         _ => return Err(anyhow::anyhow!("invalid process substitution")),
                     }

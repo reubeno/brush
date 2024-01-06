@@ -37,11 +37,15 @@ impl BuiltinCommand for CdCommand {
             || self.exit_on_failed_cwd_resolution
             || self.file_with_xattr_as_dir
         {
-            todo!("options to cd");
+            todo!("UNIMPLEMENTED: options to cd");
         }
 
         let target_path = if let Some(inner) = &self.target_dir {
-            inner.clone()
+            if inner.is_absolute() {
+                inner.clone()
+            } else {
+                context.shell.working_dir.join(inner)
+            }
         } else if let Some(home_var) = context.shell.env.get_str("HOME") {
             PathBuf::from(home_var)
         } else {
