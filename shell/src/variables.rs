@@ -3,7 +3,7 @@ use rand::Rng;
 use std::collections::HashMap;
 use std::fmt::Write;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ShellVariable {
     pub value: ShellValue,
     pub exported: bool,
@@ -29,7 +29,7 @@ impl ShellVariable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ShellValue {
     String(String),
     Integer(u64),

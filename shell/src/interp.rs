@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::os::fd::AsRawFd;
+use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process;
@@ -117,34 +118,64 @@ impl Execute for ast::CompleteCommand {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                log::error!("UNIMPLEMENTED: async exec: {ao_list:?}");
-            }
+                log::warn!("UNIMPLEMENTED: async exec: {ao_list:?}");
 
-            result = ao_list.first.execute(shell, params).await?;
+                let background_job = tokio::spawn(execute_ao_list_async(
+                    shell.clone(),
+                    params.clone(),
+                    ao_list.clone(),
+                ));
 
-            for next_ao in &ao_list.additional {
-                if result.exit_shell || result.return_from_function_or_script {
-                    break;
-                }
-
-                let (is_and, pipeline) = match next_ao {
-                    ast::AndOr::And(p) => (true, p),
-                    ast::AndOr::Or(p) => (false, p),
-                };
-
-                if is_and {
-                    if !result.is_success() {
-                        break;
-                    }
-                } else if result.is_success() {
-                    break;
-                }
-
-                result = pipeline.execute(shell, params).await?;
+                shell.background_jobs.push(background_job);
+            } else {
+                result = ao_list.execute(shell, params).await?;
             }
         }
 
         shell.last_exit_status = result.exit_code;
+        Ok(result)
+    }
+}
+
+async fn execute_ao_list_async(
+    mut shell: Shell,
+    params: ExecutionParameters,
+    ao_list: ast::AndOrList,
+) -> Result<ExecutionResult> {
+    let background_job = ao_list.execute(&mut shell, &params).await?;
+    Ok(background_job)
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::AndOrList {
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult> {
+        let mut result = self.first.execute(shell, params).await?;
+
+        for next_ao in &self.additional {
+            if result.exit_shell || result.return_from_function_or_script {
+                break;
+            }
+
+            let (is_and, pipeline) = match next_ao {
+                ast::AndOr::And(p) => (true, p),
+                ast::AndOr::Or(p) => (false, p),
+            };
+
+            if is_and {
+                if !result.is_success() {
+                    break;
+                }
+            } else if result.is_success() {
+                break;
+            }
+
+            result = pipeline.execute(shell, params).await?;
+        }
+
         Ok(result)
     }
 }
@@ -184,9 +215,30 @@ impl Execute for ast::Pipeline {
         for (child_index, child) in pipeline_context.spawn_results.into_iter().enumerate() {
             match child {
                 SpawnResult::SpawnedChild(child) => {
-                    let output = child.wait_with_output().await?;
+                    let child_future = child.wait_with_output();
+                    tokio::pin!(child_future);
+
+                    // Wait for the process to exit or for interruption, whichever happens first.
+                    let output = loop {
+                        tokio::select! {
+                            output = &mut child_future => {
+                                break output?
+                            },
+                            _ = tokio::signal::ctrl_c() => {
+                            },
+                        }
+                    };
+
+                    let exit_code;
+
                     #[allow(clippy::cast_sign_loss)]
-                    let exit_code: u8 = (output.status.code().unwrap_or(127) & 0xFF) as u8;
+                    if let Some(code) = output.status.code() {
+                        exit_code = (code & 0xFF) as u8;
+                    } else if let Some(signal) = output.status.signal() {
+                        exit_code = (signal & 0xFF) as u8 + 128;
+                    } else {
+                        todo!("unhandled process exit");
+                    }
 
                     // TODO: Confirm what to return if it was signaled.
                     result = ExecutionResult::new(exit_code);
