@@ -1,0 +1,13 @@
+name: "Builtins: colon"
+cases:
+  - name: "Basic colon usage"
+    ignore_stderr: true
+    stdin: |
+      :
+      echo "Result 1: $?"
+      : something
+      echo "Result 2: $?"
+      : --anything=here or here
+      echo "Result 3: $?"
+      : --help
+      echo "Result 4: $?"

@@ -4,7 +4,11 @@ use clap::Parser;
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
 #[derive(Parser, Debug)]
-pub(crate) struct ColonCommand {}
+#[clap(disable_help_flag = true, disable_version_flag = true)]
+pub(crate) struct ColonCommand {
+    #[clap(allow_hyphen_values = true)]
+    args: Vec<String>,
+}
 
 #[async_trait::async_trait]
 impl BuiltinCommand for ColonCommand {

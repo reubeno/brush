@@ -1,7 +1,7 @@
 use anyhow::Result;
 use parser::ast;
 
-use crate::Shell;
+use crate::{env, Shell};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvalError {
@@ -37,6 +37,9 @@ impl Evaluatable for ast::ArithmeticExpr {
                 let expr_eval = expr.eval(shell)?;
                 assign(shell, lvalue, expr_eval)?
             }
+            ast::ArithmeticExpr::UnaryAssignment(op, lvalue) => {
+                apply_unary_assignment_op(shell, lvalue, *op)?
+            }
             ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
                 let value =
                     apply_binary_op(*op, deref_lvalue(shell, lvalue)?, operand.eval(shell)?)?;
@@ -71,14 +74,10 @@ fn apply_unary_op(
     operand: i64,
 ) -> Result<i64, EvalError> {
     match op {
-        ast::UnaryOperator::PostfixIncrement => todo!("UNIMPLEMENTED: post-increment"),
-        ast::UnaryOperator::PostfixDecrement => todo!("UNIMPLEMENTED: post-decrement"),
-        ast::UnaryOperator::UnaryPlus => todo!("UNIMPLEMENTED: unary plus"),
-        ast::UnaryOperator::UnaryMinus => todo!("UNIMPLEMENTED: unary minus"),
-        ast::UnaryOperator::PrefixIncrement => todo!("UNIMPLEMENTED: pre-increment"),
-        ast::UnaryOperator::PrefixDecrement => todo!("UNIMPLEMENTED: pre-decrement"),
+        ast::UnaryOperator::UnaryPlus => Ok(operand),
+        ast::UnaryOperator::UnaryMinus => Ok(-operand),
         ast::UnaryOperator::BitwiseNot => Ok(!operand),
-        ast::UnaryOperator::LogicalNot => todo!("UNIMPLEMENTED: logical not"),
+        ast::UnaryOperator::LogicalNot => Ok(bool_to_i64(operand != 0)),
     }
 }
 
@@ -122,13 +121,53 @@ fn apply_binary_op(op: ast::BinaryOperator, left: i64, right: i64) -> Result<i64
     }
 }
 
-fn assign(
-    _shell: &mut Shell,
+fn apply_unary_assignment_op(
+    shell: &mut Shell,
     lvalue: &ast::ArithmeticTarget,
-    _value: i64,
+    op: ast::UnaryAssignmentOperator,
 ) -> Result<i64, EvalError> {
+    let value = deref_lvalue(shell, lvalue)?;
+
+    match op {
+        ast::UnaryAssignmentOperator::PrefixIncrement => {
+            let new_value = value + 1;
+            assign(shell, lvalue, new_value)?;
+            Ok(new_value)
+        }
+        ast::UnaryAssignmentOperator::PrefixDecrement => {
+            let new_value = value - 1;
+            assign(shell, lvalue, new_value)?;
+            Ok(new_value)
+        }
+        ast::UnaryAssignmentOperator::PostfixIncrement => {
+            let new_value = value + 1;
+            assign(shell, lvalue, new_value)?;
+            Ok(value)
+        }
+        ast::UnaryAssignmentOperator::PostfixDecrement => {
+            let new_value = value - 1;
+            assign(shell, lvalue, new_value)?;
+            Ok(value)
+        }
+    }
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Result<i64, EvalError> {
     match lvalue {
-        ast::ArithmeticTarget::Variable(_) => todo!("UNIMPLEMENTED: assign variable"),
+        ast::ArithmeticTarget::Variable(name) => {
+            shell
+                .env
+                .update_or_add(
+                    name.as_str(),
+                    value.to_string().as_str(),
+                    |_| Ok(()),
+                    env::EnvironmentLookup::Anywhere,
+                    env::EnvironmentScope::Global,
+                )
+                .unwrap();
+            Ok(value)
+        }
         ast::ArithmeticTarget::ArrayElement(_, _) => todo!("UNIMPLEMENTED: assign array element"),
     }
 }

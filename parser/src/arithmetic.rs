@@ -61,11 +61,11 @@ peg::parser! {
             "!" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::LogicalNot, Box::new(x)) }
             "~" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::BitwiseNot, Box::new(x)) }
             --
-            "++" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::PrefixIncrement, Box::new(x)) }
-            "--" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::PrefixDecrement, Box::new(x)) }
+            "++" x:lvalue() { ast::ArithmeticExpr::UnaryAssignment(ast::UnaryAssignmentOperator::PrefixIncrement, x) }
+            "--" x:lvalue() { ast::ArithmeticExpr::UnaryAssignment(ast::UnaryAssignmentOperator::PrefixDecrement, x) }
             --
-            x:(@) "++" { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::PostfixIncrement, Box::new(x)) }
-            x:(@) "--" { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::PostfixDecrement, Box::new(x)) }
+            x:lvalue() "++" { ast::ArithmeticExpr::UnaryAssignment(ast::UnaryAssignmentOperator::PostfixIncrement, x) }
+            x:lvalue() "--" { ast::ArithmeticExpr::UnaryAssignment(ast::UnaryAssignmentOperator::PostfixDecrement, x) }
             --
             // TODO: What about parentheses?
             // TODO: Is this where literals and such should go?
@@ -82,6 +82,8 @@ peg::parser! {
 
         rule literal_number() -> i64 =
             // TODO: handle hex, octal, and binary
-            n:$(['0'..='9']+) {? n.parse().or(Err("i64")) }
+            "0" ['x' | 'X'] s:$(['0'..='9']*) {? i64::from_str_radix(s, 16).or(Err("i64")) } /
+            s:$("0" ['0'..='9']*) {? i64::from_str_radix(s, 8).or(Err("i64")) } /
+            s:$(['1'..='9'] ['0'..='9']*) {? s.parse().or(Err("i64")) }
     }
 }

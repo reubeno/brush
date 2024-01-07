@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::variables::{ShellValue, ShellVariable};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum EnvironmentLookup {
     Anywhere,
     OnlyInGlobal,
@@ -11,13 +11,13 @@ pub enum EnvironmentLookup {
     OnlyInLocal,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum EnvironmentScope {
     Local,
     Global,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ShellEnvironment {
     globals: ShellVariableMap,
     locals_stack: Vec<ShellVariableMap>,
@@ -189,7 +189,7 @@ impl ShellEnvironment {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ShellVariableMap {
     variables: HashMap<String, ShellVariable>,
 }
