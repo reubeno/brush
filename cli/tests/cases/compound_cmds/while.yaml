@@ -1,0 +1,10 @@
+name: "Compound commands: while"
+cases:
+  - name: "Single-line while loop"
+    stdin: |
+      while false; do echo 'In loop'; done
+
+  - name: "Arithmetic in while loop"
+    stdin: |
+      i=5
+      while ((i > 0)); do echo $i; i=$((i - 1)); done

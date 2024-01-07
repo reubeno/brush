@@ -19,7 +19,7 @@ use crate::variables::ShellValue;
 use crate::{builtin, builtins};
 use crate::{extendedtests, patterns};
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ExecutionResult {
     pub exit_code: u8,
     pub exit_shell: bool,
@@ -313,9 +313,9 @@ impl ExecuteInPipeline for ast::Command {
     }
 }
 
-enum WhileOrUtil {
+enum WhileOrUntil {
     While,
-    Util,
+    Until,
 }
 
 #[async_trait::async_trait]
@@ -336,10 +336,10 @@ impl Execute for ast::CompoundCommand {
             ast::CompoundCommand::CaseClause(c) => c.execute(shell, params).await,
             ast::CompoundCommand::IfClause(i) => i.execute(shell, params).await,
             ast::CompoundCommand::WhileClause(w) => {
-                (WhileOrUtil::While, w).execute(shell, params).await
+                (WhileOrUntil::While, w).execute(shell, params).await
             }
             ast::CompoundCommand::UntilClause(u) => {
-                (WhileOrUtil::Util, u).execute(shell, params).await
+                (WhileOrUntil::Until, u).execute(shell, params).await
             }
             ast::CompoundCommand::Arithmetic(a) => a.execute(shell, params).await,
         }
@@ -450,13 +450,32 @@ impl Execute for ast::IfClauseCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for (WhileOrUtil, &ast::WhileClauseCommand) {
+impl Execute for (WhileOrUntil, &ast::WhileClauseCommand) {
     async fn execute(
         &self,
-        _shell: &mut Shell,
-        _params: &ExecutionParameters,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult> {
-        todo!("UNIMPLEMENTED: execute while clause command")
+        let is_while = match self.0 {
+            WhileOrUntil::While => true,
+            WhileOrUntil::Until => false,
+        };
+        let test_condition = &self.1 .0;
+        let body = &self.1 .1;
+
+        let mut result = ExecutionResult::success();
+
+        loop {
+            let condition_result = test_condition.execute(shell, params).await?;
+
+            if condition_result.is_success() != is_while {
+                break;
+            }
+
+            result = body.execute(shell, params).await?;
+        }
+
+        Ok(result)
     }
 }
 
@@ -468,7 +487,7 @@ impl Execute for ast::ArithmeticCommand {
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult> {
         let value = self.expr.eval(shell)?;
-        let result = if value == 0 {
+        let result = if value != 0 {
             ExecutionResult::success()
         } else {
             ExecutionResult::new(1)
@@ -695,12 +714,15 @@ async fn execute_external_command(
 
     // Redirect stdout, if applicable.
     let mut redirected_stdout;
-    if let Some(stdout_file) = open_files.files.remove(&1) {
-        let as_stdio: Stdio = stdout_file.into();
-        cmd.stdout(as_stdio);
-        redirected_stdout = true;
-    } else {
-        redirected_stdout = false;
+    match open_files.files.remove(&1) {
+        Some(OpenFile::Stdout) | None => {
+            redirected_stdout = false;
+        }
+        Some(stdout_file) => {
+            let as_stdio: Stdio = stdout_file.into();
+            cmd.stdout(as_stdio);
+            redirected_stdout = true;
+        }
     }
 
     // If we were asked to capture the output of this command (and if it's the last command
@@ -709,8 +731,10 @@ async fn execute_external_command(
     if context.params.capture_output && context.pipeline_len == context.current_pipeline_index + 1 {
         if redirected_stdout {
             log::warn!(
-                "UNIMPLEMENTED: {}: output redirection used in command substitution",
+                "UNIMPLEMENTED: {}: output redirection used in command substitution; command=[{} {}]",
                 context.shell.shell_name.as_ref().map_or("", |sn| sn),
+                cmd.as_std().get_program().to_string_lossy(),
+                cmd.as_std().get_args().map(|a| a.to_string_lossy().to_string()).join(" "),
             );
         } else {
             cmd.stdout(Stdio::piped());
@@ -719,9 +743,12 @@ async fn execute_external_command(
     }
 
     // Redirect stderr, if applicable.
-    if let Some(stderr_file) = open_files.files.remove(&2) {
-        let as_stdio: Stdio = stderr_file.into();
-        cmd.stderr(as_stdio);
+    match open_files.files.remove(&2) {
+        Some(OpenFile::Stderr) | None => {}
+        Some(stderr_file) => {
+            let as_stdio: Stdio = stderr_file.into();
+            cmd.stderr(as_stdio);
+        }
     }
 
     // Inject any appropriate fds.

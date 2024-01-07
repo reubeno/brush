@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::process::Stdio;
 
 pub(crate) enum OpenFile {
+    Stdout,
+    Stderr,
     File(std::fs::File),
     ProcessSubstitutionFile(std::fs::File),
     HereDocument(String),
@@ -11,6 +13,8 @@ pub(crate) enum OpenFile {
 impl OpenFile {
     pub fn try_dup(&self) -> Result<OpenFile> {
         let result = match self {
+            OpenFile::Stdout => OpenFile::Stdout,
+            OpenFile::Stderr => OpenFile::Stderr,
             OpenFile::File(f) => OpenFile::File(f.try_clone()?),
             OpenFile::ProcessSubstitutionFile(f) => {
                 OpenFile::ProcessSubstitutionFile(f.try_clone()?)
@@ -25,6 +29,8 @@ impl OpenFile {
 impl From<OpenFile> for Stdio {
     fn from(open_file: OpenFile) -> Self {
         match open_file {
+            OpenFile::Stdout => std::io::stdout().into(),
+            OpenFile::Stderr => std::io::stderr().into(),
             OpenFile::File(f) => f.into(),
             OpenFile::ProcessSubstitutionFile(f) => f.into(),
             OpenFile::HereDocument(_) => Stdio::piped(),
@@ -39,7 +45,8 @@ pub(crate) struct OpenFiles {
 impl OpenFiles {
     pub fn new() -> OpenFiles {
         OpenFiles {
-            files: HashMap::new(),
+            // TODO: Figure out if we need to populate stdin here.
+            files: HashMap::from([(1, OpenFile::Stdout), (2, OpenFile::Stderr)]),
         }
     }
 }

@@ -1,0 +1,6 @@
+name: "Compound commands: arithmetic"
+cases:
+  - name: "Basic arithmetic statements"
+    stdin: |
+      ((0 == 0)) && echo "0 == 0"
+      ((0 != 0)) && echo "0 != 0"
