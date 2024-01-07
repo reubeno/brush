@@ -1,0 +1,7 @@
+name: "Builtins: help"
+cases:
+  - name: "Help"
+    ignore_stdout: true
+    ignore_stderr: true
+    stdin: |
+      help
