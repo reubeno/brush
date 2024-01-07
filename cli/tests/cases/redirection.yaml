@@ -17,6 +17,15 @@ cases:
       ls out.txt
       cat out.txt
 
+  - name: "Input redirection from file"
+    expected_failure: true
+    test_files:
+      - path: "in.txt"
+        contents: |
+          Something here.
+    stdin: |
+      cat <in.txt
+
   - name: "Redirection to fd"
     stdin: |
       echo hi >&2
