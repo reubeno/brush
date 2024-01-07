@@ -4,9 +4,16 @@ cases:
     stdin: |
       echo hi >/dev/null
 
-  - name: "Redirection to file"
+  - name: "Output redirection to file"
     stdin: |
       echo hi >out.txt
+      ls out.txt
+      cat out.txt
+
+  - name: "Output redirection to file (append)"
+    stdin: |
+      echo hi >>out.txt
+      echo there >>out.txt
       ls out.txt
       cat out.txt
 

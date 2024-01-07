@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use log::error;
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[clap(version, about, disable_help_flag = true, disable_version_flag = true)]
 struct CommandLineArgs {
     #[clap(long = "help", action = clap::ArgAction::HelpLong, help = "Display usage information")]

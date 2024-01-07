@@ -1,0 +1,11 @@
+name: "Builtins: pwd"
+cases:
+  - name: "Basic pwd usage"
+    stdin: |
+      cd /
+      pwd
+      echo "Result: $?"
+      #
+      cd tmp
+      pwd
+      echo "Result: $?"

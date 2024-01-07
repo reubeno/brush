@@ -254,6 +254,7 @@ pub enum ArithmeticExpr {
     ),
     Assignment(ArithmeticTarget, Box<ArithmeticExpr>),
     BinaryAssignment(BinaryOperator, ArithmeticTarget, Box<ArithmeticExpr>),
+    UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -282,14 +283,18 @@ pub enum BinaryOperator {
 
 #[derive(Clone, Copy, Debug)]
 pub enum UnaryOperator {
-    PostfixIncrement,
-    PostfixDecrement,
     UnaryPlus,
     UnaryMinus,
-    PrefixIncrement,
-    PrefixDecrement,
     BitwiseNot,
     LogicalNot,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum UnaryAssignmentOperator {
+    PrefixIncrement,
+    PrefixDecrement,
+    PostfixIncrement,
+    PostfixDecrement,
 }
 
 #[derive(Clone, Debug)]

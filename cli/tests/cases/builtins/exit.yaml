@@ -1,5 +1,9 @@
-name: "Sample test set"
+name: "Builtins: exit"
 cases:
+  - name: "Exit without code"
+    stdin: |
+      exit
+
   - name: "Exit with code"
     stdin: |
       exit 10

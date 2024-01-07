@@ -10,3 +10,14 @@ cases:
       alias myalias=echo
       alias
       myalias 'hello'
+
+  - name: "Alias referencing to alias"
+    expected_failure: true
+    args:
+      - "-i"
+    env:
+      PS1: "$ "
+    stdin: |
+      alias myalias=echo
+      alias outeralias=myalias
+      outeralias 'hello'

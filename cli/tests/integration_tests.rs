@@ -2,7 +2,11 @@ use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
 use colored::*;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, process::ExitStatus};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    process::ExitStatus,
+};
 
 #[test]
 fn cli_integration_tests() -> Result<()> {
@@ -266,7 +270,34 @@ impl TestCase {
         match comparison.temp_dir {
             DirComparison::Ignored => println!("    temp dir {}", "ignored".cyan()),
             DirComparison::Same => println!("    temp dir matches {}", "✔️".green()),
-            DirComparison::TestDiffers => println!("    temp dir {}", "DIFFERS".bright_red()),
+            DirComparison::TestDiffers(entries) => {
+                println!("    temp dir {}", "DIFFERS".bright_red());
+
+                for entry in entries {
+                    const INDENT: &str = "        ";
+                    match entry {
+                        DirComparisonEntry::Different(left, right) => {
+                            println!(
+                                "{INDENT}oracle file {} differs from test file {}",
+                                left.to_string_lossy(),
+                                right.to_string_lossy()
+                            );
+                        }
+                        DirComparisonEntry::LeftOnly(p) => {
+                            println!(
+                                "{INDENT}file missing from test dir: {}",
+                                p.to_string_lossy()
+                            );
+                        }
+                        DirComparisonEntry::RightOnly(p) => {
+                            println!(
+                                "{INDENT}unexpected file in test dir: {}",
+                                p.to_string_lossy()
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         if !success {
@@ -343,13 +374,7 @@ impl TestCase {
         }
 
         // Compare temporary directory contents
-        let temp_dir_diff =
-            dir_diff::is_different(oracle_temp_dir.path(), test_temp_dir.path()).unwrap();
-        if !temp_dir_diff {
-            comparison.temp_dir = DirComparison::Same;
-        } else {
-            comparison.temp_dir = DirComparison::TestDiffers;
-        }
+        comparison.temp_dir = diff_dirs(oracle_temp_dir.path(), test_temp_dir.path())?;
 
         Ok(comparison)
     }
@@ -359,19 +384,33 @@ impl TestCase {
         which: &WhichShell,
         working_dir: &assert_fs::TempDir,
     ) -> Result<RunResult> {
-        let mut test_cmd = match self.invocation {
+        let (mut test_cmd, coverage_target_dir) = match self.invocation {
             ShellInvocation::ExecShellBinary => match which {
-                WhichShell::ShellUnderTest(name) => assert_cmd::Command::cargo_bin(name)?,
-                WhichShell::NamedShell(name) => assert_cmd::Command::new(name),
+                WhichShell::ShellUnderTest(name) => {
+                    let cli_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                    let target_dir = cli_dir.parent().unwrap().join("target");
+                    (assert_cmd::Command::cargo_bin(name)?, Some(target_dir))
+                }
+                WhichShell::NamedShell(name) => (assert_cmd::Command::new(name), None),
             },
             ShellInvocation::ExecScript(_) => todo!("UNIMPLEMENTED: exec script test"),
         };
 
-        // TODO: Find a better place for these.
+        // Skip rc file and profile for deterministic behavior across systems/distros.
         test_cmd.arg("--norc");
         test_cmd.arg("--noprofile");
 
+        // Clear all environment vars for consistency.
         test_cmd.args(&self.args).env_clear();
+
+        // Set up any env vars needed for collecting coverage data.
+        if let Some(coverage_target_dir) = &coverage_target_dir {
+            test_cmd.env("CARGO_LLVM_COV_TARGET_DIR", coverage_target_dir);
+            test_cmd.env(
+                "LLVM_PROFILE_FILE",
+                coverage_target_dir.join("brush-%p-%40m.profraw"),
+            );
+        }
 
         for (k, v) in &self.env {
             test_cmd.env(k, v);
@@ -457,14 +496,55 @@ impl StringComparison {
     }
 }
 
+enum DirComparisonEntry {
+    LeftOnly(PathBuf),
+    RightOnly(PathBuf),
+    Different(PathBuf, PathBuf),
+}
+
 enum DirComparison {
     Ignored,
     Same,
-    TestDiffers,
+    TestDiffers(Vec<DirComparisonEntry>),
 }
 
 impl DirComparison {
     pub fn is_failure(&self) -> bool {
-        matches!(self, DirComparison::TestDiffers)
+        matches!(self, DirComparison::TestDiffers(_))
+    }
+}
+
+fn diff_dirs(oracle_path: &Path, test_path: &Path) -> Result<DirComparison> {
+    let profraw_regex = regex::Regex::new(r"\.profraw$")?;
+    let filter = dir_cmp::Filter::Exclude(vec![profraw_regex]);
+
+    let options = dir_cmp::Options {
+        ignore_equal: true,
+        ignore_left_only: false,
+        ignore_right_only: false,
+        filter: Some(filter),
+        recursive: true,
+    };
+
+    let result: Vec<_> = dir_cmp::full::compare_dirs(oracle_path, test_path, options)?
+        .iter()
+        .map(|entry| match entry {
+            dir_cmp::full::DirCmpEntry::Left(p) => {
+                DirComparisonEntry::LeftOnly(pathdiff::diff_paths(p, oracle_path).unwrap())
+            }
+            dir_cmp::full::DirCmpEntry::Right(p) => {
+                DirComparisonEntry::RightOnly(pathdiff::diff_paths(p, test_path).unwrap())
+            }
+            dir_cmp::full::DirCmpEntry::Both(l, r, _) => DirComparisonEntry::Different(
+                pathdiff::diff_paths(l, oracle_path).unwrap(),
+                pathdiff::diff_paths(r, test_path).unwrap(),
+            ),
+        })
+        .collect();
+
+    if result.is_empty() {
+        Ok(DirComparison::Same)
+    } else {
+        Ok(DirComparison::TestDiffers(result))
     }
 }

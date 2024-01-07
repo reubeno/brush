@@ -370,12 +370,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6184e33543162437515c2e2b48714794e37845ec9851711914eec9d308f6ebe8"
 
 [[package]]
-name = "dir-diff"
-version = "0.3.3"
+name = "dir-cmp"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7ad16bf5f84253b50d6557681c58c3ab67c47c77d39fed9aeb56e947290bd10"
+checksum = "76924c3bfb58021d733dc17d96d9c461a768555bbd68c82702f08cef5fdbae2d"
 dependencies = [
- "walkdir",
+ "clap 4.4.13",
+ "env_logger",
+ "log",
+ "regex",
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]
@@ -886,6 +891,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathdiff"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8835116a5c179084a830efb3adc117ab007512b535bc1a21c991d3b32a6b44dd"
+
+[[package]]
 name = "peg"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1124,14 +1135,16 @@ dependencies = [
  "assert_fs",
  "clap 4.4.13",
  "colored",
- "dir-diff",
+ "dir-cmp",
  "env_logger",
  "glob",
  "indent",
  "interactive-shell",
  "log",
  "parser",
+ "pathdiff",
  "prettydiff",
+ "regex",
  "serde",
  "serde_yaml",
  "shell",
