@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::env::ShellEnvironment;
 use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
+use crate::jobs;
 use crate::options::RuntimeOptions;
 use crate::prompt::expand_prompt;
 use crate::variables;
@@ -19,8 +20,7 @@ pub struct Shell {
     pub env: ShellEnvironment,
     pub funcs: HashMap<String, ShellFunction>,
     pub options: RuntimeOptions,
-    pub background_jobs: Vec<tokio::task::JoinHandle<Result<ExecutionResult>>>,
-    // TODO: async lists
+    pub jobs: jobs::JobManager,
     pub aliases: HashMap<String, String>,
 
     //
@@ -47,7 +47,7 @@ impl Clone for Shell {
             env: self.env.clone(),
             funcs: self.funcs.clone(),
             options: self.options.clone(),
-            background_jobs: vec![],
+            jobs: jobs::JobManager::new(),
             aliases: self.aliases.clone(),
             last_exit_status: self.last_exit_status,
             positional_parameters: self.positional_parameters.clone(),
@@ -105,7 +105,7 @@ impl Shell {
             env: Self::initialize_vars(options),
             funcs: HashMap::default(),
             options: RuntimeOptions::defaults_from(options),
-            background_jobs: vec![],
+            jobs: jobs::JobManager::new(),
             aliases: HashMap::default(),
             last_exit_status: 0,
             positional_parameters: vec![],
@@ -132,6 +132,16 @@ impl Shell {
             .readonly = true;
         env.set_global("RANDOM", variables::ShellValue::Random)
             .enumerable = false;
+
+        // Set some defaults (if they're not already initialized).
+        if !env.is_set("HISTFILE") {
+            if let Some(home_dir) = env.get("HOME") {
+                let home_dir: String = (&home_dir.value).into();
+                let home_dir = PathBuf::from(home_dir);
+                let histfile = home_dir.join(".rush_history");
+                env.set_global("HISTFILE", histfile.to_string_lossy().to_string().as_str());
+            }
+        }
 
         // TODO: don't set these in sh mode
         if let Some(shell_name) = &options.shell_name {
@@ -413,5 +423,12 @@ impl Shell {
     pub fn leave_function(&mut self) {
         self.env.pop_locals();
         self.function_call_depth -= 1;
+    }
+
+    pub fn get_history_file_path(&self) -> Option<PathBuf> {
+        self.env.get("HISTFILE").map(|var| {
+            let histfile_str: String = (&var.value).into();
+            PathBuf::from(histfile_str)
+        })
     }
 }

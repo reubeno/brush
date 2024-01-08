@@ -118,15 +118,16 @@ impl Execute for ast::CompleteCommand {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                log::warn!("UNIMPLEMENTED: async exec");
-
                 let background_job = tokio::spawn(execute_ao_list_async(
                     shell.clone(),
                     params.clone(),
                     ao_list.clone(),
                 ));
 
-                shell.background_jobs.push(background_job);
+                let job_number = shell.jobs.add(background_job);
+
+                // TODO: don't always log to stdout! Shouldn't if we're in a script or non-interactive?
+                println!("[{job_number}] <pid unknown>");
             } else {
                 result = ao_list.execute(shell, params).await?;
             }

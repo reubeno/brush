@@ -1,11 +1,16 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 
-type Editor = rustyline::Editor<(), rustyline::history::MemHistory>;
+use crate::editor_helper::EditorHelper;
+
+type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
 pub struct InteractiveShell {
     pub shell: shell::Shell,
 
     editor: Editor,
+    history_file_path: Option<PathBuf>,
 }
 
 enum InteractiveExecutionResult {
@@ -15,24 +20,39 @@ enum InteractiveExecutionResult {
 
 impl InteractiveShell {
     pub async fn new(options: &shell::CreateOptions) -> Result<InteractiveShell> {
+        // Set up shell first. Its initialization may influence how the
+        // editor needs to operate.
+        let shell = shell::Shell::new(options).await?;
+        let mut editor = Self::new_editor(&shell)?;
+
+        let history_file_path = shell.get_history_file_path();
+        if let Some(history_file_path) = &history_file_path {
+            if !history_file_path.exists() {
+                std::fs::File::create(history_file_path)?;
+            }
+
+            editor.load_history(history_file_path)?;
+        }
+
         Ok(InteractiveShell {
-            editor: Self::new_editor()?,
-            shell: shell::Shell::new(options).await?,
+            shell,
+            editor,
+            history_file_path,
         })
     }
 
-    fn new_editor() -> Result<Editor> {
+    fn new_editor(shell: &shell::Shell) -> Result<Editor> {
         let config = rustyline::config::Builder::new()
             .max_history_size(1000)?
             .history_ignore_dups(true)?
             .auto_add_history(true)
             .build();
 
+        let helper = EditorHelper::new(shell);
+
         // TODO: Create an editor with a helper object so we can do completion.
-        let editor = rustyline::Editor::<(), _>::with_history(
-            config,
-            rustyline::history::MemHistory::with_config(config),
-        )?;
+        let mut editor = rustyline::Editor::with_config(config)?;
+        editor.set_helper(Some(helper));
 
         Ok(editor)
     }
@@ -62,6 +82,11 @@ impl InteractiveShell {
 
         if self.shell.options.interactive {
             eprintln!("exit");
+        }
+
+        if let Some(history_file_path) = &self.history_file_path {
+            // TODO: Decide append or not based on configuration.
+            self.editor.append_history(history_file_path)?;
         }
 
         Ok(())
