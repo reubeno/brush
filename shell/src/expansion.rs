@@ -2,6 +2,7 @@ use anyhow::Result;
 use parser::ast;
 
 use crate::arithmetic::Evaluatable;
+use crate::prompt;
 use crate::shell::Shell;
 use crate::variables::ShellVariable;
 
@@ -96,6 +97,7 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
 
 #[async_trait::async_trait]
 impl Expandable for parser::word::ParameterExpr {
+    #[allow(clippy::too_many_lines)]
     async fn expand(&self, shell: &mut Shell) -> Result<String> {
         // TODO: observe test_type
         #[allow(clippy::cast_possible_truncation)]
@@ -194,6 +196,41 @@ impl Expandable for parser::word::ParameterExpr {
                 };
 
                 Ok(result.to_owned())
+            }
+            parser::word::ParameterExpr::Transform { parameter, op } => {
+                let expanded_parameter = parameter.expand(shell).await?;
+                match op {
+                    parser::word::ParameterTransformOp::PromptExpand => {
+                        let result = prompt::expand_prompt(shell, expanded_parameter.as_str())?;
+                        Ok(result)
+                    }
+                    parser::word::ParameterTransformOp::CapitalizeInitial => {
+                        todo!("parameter transformation: CapitalizeInitial");
+                    }
+                    parser::word::ParameterTransformOp::ExpandEscapeSequences => {
+                        todo!("parameter transformation: ExpandEscapeSequences");
+                    }
+                    parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
+                        separate_words: _,
+                    } => {
+                        todo!("parameter transformation: PossiblyQuoteWithArraysExpanded");
+                    }
+                    parser::word::ParameterTransformOp::Quoted => {
+                        todo!("parameter transformation: Quoted");
+                    }
+                    parser::word::ParameterTransformOp::ToAssignmentLogic => {
+                        todo!("parameter transformation: ToAssignmentLogic");
+                    }
+                    parser::word::ParameterTransformOp::ToAttributeFlags => {
+                        todo!("parameter transformation: ToAttributeFlags");
+                    }
+                    parser::word::ParameterTransformOp::ToLowerCase => {
+                        todo!("parameter transformation: ToLowerCase");
+                    }
+                    parser::word::ParameterTransformOp::ToUpperCase => {
+                        todo!("parameter transformation: ToUpperCase");
+                    }
+                }
             }
         }
     }

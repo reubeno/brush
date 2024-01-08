@@ -88,6 +88,23 @@ pub enum ParameterExpr {
         offset: ast::ArithmeticExpr,
         length: Option<ast::ArithmeticExpr>,
     },
+    Transform {
+        parameter: Parameter,
+        op: ParameterTransformOp,
+    },
+}
+
+#[derive(Debug)]
+pub enum ParameterTransformOp {
+    CapitalizeInitial,
+    ExpandEscapeSequences,
+    PossiblyQuoteWithArraysExpanded { separate_words: bool },
+    PromptExpand,
+    Quoted,
+    ToAssignmentLogic,
+    ToAttributeFlags,
+    ToLowerCase,
+    ToUpperCase,
 }
 
 pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
@@ -236,10 +253,25 @@ peg::parser! {
             //   ${parameter^^pattern}
             //   ${parameter,pattern}
             //   ${parameter,,pattern}
-            //   ${parameter@operator} where operator is in [UuLQEPAKak] -- where @ and * can be used as parameter
             parameter:parameter() ":" offset:arithmetic_expression(<[':' | '}']>) length:(":" l:arithmetic_expression(<['}']>) { l })? {
                 ParameterExpr::Substring { parameter, offset, length }
+            } /
+            parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
+                ParameterExpr::Transform { parameter, op }
             }
+
+        rule non_posix_parameter_transformation_op() -> ParameterTransformOp =
+            // TODO: handle others: ${parameter@operator} where operator is in [Kak] -- where @ and * can be used as parameter
+            "u" { ParameterTransformOp::CapitalizeInitial } /
+            "L" { ParameterTransformOp::ToLowerCase } /
+            "Q" { ParameterTransformOp::Quoted } /
+            "E" { ParameterTransformOp::ExpandEscapeSequences } /
+            "P" { ParameterTransformOp::PromptExpand } /
+            "A" { ParameterTransformOp::ToAssignmentLogic } /
+            "K" { ParameterTransformOp::PossiblyQuoteWithArraysExpanded { separate_words: false } } /
+            "a" { ParameterTransformOp::ToAttributeFlags } /
+            "k" { ParameterTransformOp::PossiblyQuoteWithArraysExpanded { separate_words: true } }
+
 
         rule unbraced_parameter() -> Parameter =
             p:unbraced_positional_parameter() { Parameter::Positional(p) } /

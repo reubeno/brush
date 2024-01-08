@@ -15,7 +15,7 @@ pub enum ParseResult {
     },
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct ParserOptions {
     pub enable_extended_globbing: bool,
     pub posix_mode: bool,
@@ -299,8 +299,8 @@ peg::parser! {
             left:word() specific_word("==") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsAreEqual, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_word("=") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsAreEqual, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsNotEqual, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("<") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsBeforeRight, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word(">") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsAfterRight, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_operator("<") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsBeforeRight, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_operator(">") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsAfterRight, ast::Word::from(left), ast::Word::from(right)) }
             --
             specific_word("-a") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExists, ast::Word::from(f)) }
             specific_word("-b") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile, ast::Word::from(f)) }

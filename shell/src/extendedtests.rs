@@ -1,3 +1,8 @@
+use std::{
+    os::unix::fs::{FileTypeExt, MetadataExt},
+    path::Path,
+};
+
 use anyhow::Result;
 use parser::ast;
 
@@ -43,11 +48,100 @@ fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool
     match op {
         ast::UnaryPredicate::StringHasNonZeroLength => Ok(!operand.is_empty()),
         ast::UnaryPredicate::StringHasZeroLength => Ok(operand.is_empty()),
-        _ => {
-            log::error!("UNIMPLEMENTED: extended test unary predicate: {op:?}(\"{operand}\")");
-            Ok(true)
+        ast::UnaryPredicate::FileExists => {
+            let path = Path::new(operand);
+            Ok(path.exists())
+        }
+        ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile => {
+            let path = Path::new(operand);
+            Ok(try_get_file_type(path).map_or(false, |ft| ft.is_block_device()))
+        }
+        ast::UnaryPredicate::FileExistsAndIsCharSpecialFile => {
+            let path = Path::new(operand);
+            Ok(try_get_file_type(path).map_or(false, |ft| ft.is_char_device()))
+        }
+        ast::UnaryPredicate::FileExistsAndIsDir => {
+            let path = Path::new(operand);
+            Ok(path.is_dir())
+        }
+        ast::UnaryPredicate::FileExistsAndIsRegularFile => {
+            let path = Path::new(operand);
+            Ok(path.is_file())
+        }
+        ast::UnaryPredicate::FileExistsAndIsSetgid => {
+            const S_ISGID: u32 = 0o2000;
+            let path = Path::new(operand);
+            let file_mode = try_get_file_mode(path);
+            Ok(file_mode.map_or(false, |mode| mode & S_ISGID != 0))
+        }
+        ast::UnaryPredicate::FileExistsAndIsSymlink => {
+            let path = Path::new(operand);
+            Ok(path.is_symlink())
+        }
+        ast::UnaryPredicate::FileExistsAndHasStickyBit => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndHasStickyBit")
+        }
+        ast::UnaryPredicate::FileExistsAndIsFifo => {
+            let path = Path::new(operand);
+            Ok(try_get_file_type(path).map_or(false, |ft: std::fs::FileType| ft.is_fifo()))
+        }
+        ast::UnaryPredicate::FileExistsAndIsReadable => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndIsReadable")
+        }
+        ast::UnaryPredicate::FileExistsAndIsNotZeroLength => {
+            let path = Path::new(operand);
+            if let Ok(metadata) = path.metadata() {
+                Ok(metadata.len() > 0)
+            } else {
+                Ok(false)
+            }
+        }
+        ast::UnaryPredicate::FdIsOpenTerminal => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: FdIsOpenTerminal")
+        }
+        ast::UnaryPredicate::FileExistsAndIsSetuid => {
+            const S_ISUID: u32 = 0o4000;
+            let path = Path::new(operand);
+            let file_mode = try_get_file_mode(path);
+            Ok(file_mode.map_or(false, |mode| mode & S_ISUID != 0))
+        }
+        ast::UnaryPredicate::FileExistsAndIsWritable => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndIsWritable")
+        }
+        ast::UnaryPredicate::FileExistsAndIsExecutable => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndIsExecutable")
+        }
+        ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => todo!(
+            "UNIMPLEMENTED: unary extended test predicate: FileExistsAndOwnedByEffectiveGroupId"
+        ),
+        ast::UnaryPredicate::FileExistsAndModifiedSinceLastRead => todo!(
+            "UNIMPLEMENTED: unary extended test predicate: FileExistsAndModifiedSinceLastRead"
+        ),
+        ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId => todo!(
+            "UNIMPLEMENTED: unary extended test predicate: FileExistsAndOwnedByEffectiveUserId"
+        ),
+        ast::UnaryPredicate::FileExistsAndIsSocket => {
+            let path = Path::new(operand);
+            Ok(try_get_file_type(path).map_or(false, |ft| ft.is_socket()))
+        }
+        ast::UnaryPredicate::ShellOptionEnabled => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: ShellOptionEnabled")
+        }
+        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: ShellVariableIsSetAndAssigned")
+        }
+        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
+            todo!("UNIMPLEMENTED: unary extended test predicate: ShellVariableIsSetAndNameRef")
         }
     }
+}
+
+fn try_get_file_type(path: &Path) -> Option<std::fs::FileType> {
+    path.metadata().map(|metadata| metadata.file_type()).ok()
+}
+
+fn try_get_file_mode(path: &Path) -> Option<u32> {
+    path.metadata().map(|metadata| metadata.mode()).ok()
 }
 
 fn apply_binary_predicate(op: &ast::BinaryPredicate, left: &str, right: &str) -> Result<bool> {
@@ -64,21 +158,39 @@ fn apply_binary_predicate(op: &ast::BinaryPredicate, left: &str, right: &str) ->
             let eq = patterns::pattern_matches(pattern, s)?;
             Ok(!eq)
         }
-        ast::BinaryPredicate::ArithmeticGreaterThan => {
-            let left: Result<i64, _> = left.parse();
-            let right: Result<i64, _> = right.parse();
+        ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => todo!("UNIMPLEMENTED: extended test binary predicate FilesReferToSameDeviceAndInodeNumbers"),
+        ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => todo!("UNIMPLEMENTED: extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot"),
+        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => todo!("UNIMPLEMENTED: extended test binary predicate LeftFileIsOlderOrDoesNotExistWhenRightDoes"),
+        ast::BinaryPredicate::LeftSortsBeforeRight => {
+            // TODO: According to docs, should be lexicographical order of the current locale.
+            Ok(left < right)
+        },
+        ast::BinaryPredicate::LeftSortsAfterRight => {
+            // TODO: According to docs, should be lexicographical order of the current locale.
+            Ok(left > right)
+        },
+        ast::BinaryPredicate::ArithmeticEqualTo =>
+            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left == right)),
+        ast::BinaryPredicate::ArithmeticNotEqualTo =>
+            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left != right)),
+        ast::BinaryPredicate::ArithmeticLessThan =>
+            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left < right)),
+        ast::BinaryPredicate::ArithmeticLessThanOrEqualTo =>
+            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left <= right)),
+        ast::BinaryPredicate::ArithmeticGreaterThan =>
+            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left > right)),
+        ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo =>
+            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left >= right)),
+    }
+}
 
-            if let (Ok(left), Ok(right)) = (left, right) {
-                Ok(left > right)
-            } else {
-                Ok(false)
-            }
-        }
-        _ => {
-            log::error!(
-                "UNIMPLEMENTED: extended test binary predicate: {op:?}(\"{left}\",\"{right}\")"
-            );
-            Ok(true)
-        }
+fn apply_binary_arithmetic_predicate(left: &str, right: &str, op: fn(i64, i64) -> bool) -> bool {
+    let left: Result<i64, _> = left.parse();
+    let right: Result<i64, _> = right.parse();
+
+    if let (Ok(left), Ok(right)) = (left, right) {
+        op(left, right)
+    } else {
+        false
     }
 }

@@ -1,0 +1,15 @@
+name: "Builtins: export"
+cases:
+  - name: "Basic export usage"
+    stdin: |
+      MY_TEST_VAR="value"
+      echo "Looking for unexported variable..."
+      env | grep MY_TEST_VAR
+
+      echo "Exporting and looking for it again..."
+      export MY_TEST_VAR
+      env | grep MY_TEST_VAR
+
+      echo "Exporting with new value..."
+      export MY_TEST_VAR="changed value"
+      env | grep MY_TEST_VAR
