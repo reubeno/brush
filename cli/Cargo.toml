@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.79"
-clap = { version = "4.4.13", features = ["derive"] }
+clap = { version = "4.4.14", features = ["derive"] }
 env_logger = "0.10.1"
 interactive-shell = { path = "../interactive-shell" }
 log = "0.4.20"
@@ -29,5 +29,5 @@ indent = "0.1.1"
 pathdiff = "0.2.1"
 prettydiff = "0.6.4"
 regex = "1.10.2"
-serde = { version = "1.0.193", features = ["derive"] }
-serde_yaml = "0.9.29"
+serde = { version = "1.0.195", features = ["derive"] }
+serde_yaml = "0.9.30"
