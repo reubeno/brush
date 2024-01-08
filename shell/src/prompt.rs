@@ -1,6 +1,27 @@
+use std::path::Path;
+
 use anyhow::Result;
 
 use crate::shell::Shell;
+
+const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
+const VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
+const VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
+
+pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String> {
+    // Now parse.
+    let prompt_pieces = parser::prompt::parse_prompt(spec)?;
+
+    // Now render.
+    let formatted_prompt = prompt_pieces
+        .iter()
+        .map(|p| format_prompt_piece(shell, p))
+        .collect::<Result<Vec<_>>>()?
+        .join("");
+
+    Ok(formatted_prompt)
+}
+
 pub(crate) fn format_prompt_piece(
     shell: &Shell,
     piece: &parser::prompt::PromptPiece,
@@ -53,10 +74,21 @@ pub(crate) fn format_prompt_piece(
             todo!("UNIMPLEMENTED: prompt: number of managed jobs")
         }
         parser::prompt::PromptPiece::ShellBaseName => {
-            todo!("UNIMPLEMENTED: prompt: shell base name")
+            if let Some(shell_name) = &shell.shell_name {
+                Path::new(shell_name)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
         }
-        parser::prompt::PromptPiece::ShellRelease => todo!("UNIMPLEMENTED: prompt: shell release"),
-        parser::prompt::PromptPiece::ShellVersion => todo!("UNIMPLEMENTED: prompt: shell version"),
+        parser::prompt::PromptPiece::ShellRelease => {
+            std::format!("{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}")
+        }
+        parser::prompt::PromptPiece::ShellVersion => {
+            std::format!("{VERSION_MAJOR}.{VERSION_MINOR}")
+        }
         parser::prompt::PromptPiece::StartNonPrintingSequence => String::new(),
         parser::prompt::PromptPiece::TerminalDeviceBaseName => {
             todo!("UNIMPLEMENTED: prompt: terminal device base name")
@@ -76,16 +108,18 @@ fn get_current_username() -> Result<String> {
 fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basename: bool) -> String {
     let mut working_dir_str = shell.working_dir.to_string_lossy().to_string();
 
-    if basename {
-        todo!("UNIMPLEMENTED: prompt: basename of working dir");
-    }
-
     if tilde_replaced {
         let home_dir_opt = shell.env.get("HOME");
         if let Some(home_dir) = home_dir_opt {
             if let Some(stripped) = working_dir_str.strip_prefix(&String::from(&home_dir.value)) {
                 working_dir_str = format!("~{stripped}");
             }
+        }
+    }
+
+    if basename {
+        if let Some(filename) = Path::new(&working_dir_str).file_name() {
+            working_dir_str = filename.to_string_lossy().to_string();
         }
     }
 

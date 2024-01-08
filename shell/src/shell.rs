@@ -7,7 +7,7 @@ use crate::env::ShellEnvironment;
 use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
-use crate::prompt::format_prompt_piece;
+use crate::prompt::expand_prompt;
 use crate::variables;
 
 pub struct Shell {
@@ -357,15 +357,8 @@ impl Shell {
         // Retrieve the spec.
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
 
-        // Now parse.
-        let prompt_pieces = parser::prompt::parse_prompt(ps1.as_str())?;
-
-        // Now render.
-        let formatted_prompt = prompt_pieces
-            .iter()
-            .map(|p| format_prompt_piece(self, p))
-            .collect::<Result<Vec<_>>>()?
-            .join("");
+        // Expand it.
+        let formatted_prompt = expand_prompt(self, ps1.as_str())?;
 
         // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
         // so we strip them here.

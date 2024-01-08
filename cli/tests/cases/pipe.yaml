@@ -3,3 +3,7 @@ cases:
   - name: "Basic pipe"
     stdin: |
       echo hi | grep -l h
+
+  - name: "Longer pipe"
+    stdin: |
+      echo hi | grep h | wc -l

@@ -8,8 +8,8 @@ use std::{
     process::ExitStatus,
 };
 
-#[test]
-fn cli_integration_tests() -> Result<()> {
+#[tokio::test(flavor = "multi_thread", worker_threads = 20)]
+async fn cli_integration_tests() -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
     let mut success_count = 0;
@@ -22,11 +22,13 @@ fn cli_integration_tests() -> Result<()> {
         let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
             .context(format!("parsing {}", entry.to_string_lossy()))?;
 
-        let results = test_case_set.run()?;
+        let results = test_case_set.run().await?;
 
         success_count += results.success_count;
         expected_fail_count += results.expected_fail_count;
         fail_count += results.fail_count;
+
+        results.report();
     }
 
     let formatted_fail_count = if fail_count > 0 {
@@ -66,13 +68,15 @@ struct TestCaseSet {
 
 #[allow(clippy::struct_field_names)]
 struct TestCaseSetResults {
+    pub name: Option<String>,
     pub success_count: u32,
     pub expected_fail_count: u32,
     pub fail_count: u32,
+    pub test_case_results: Vec<TestCaseResult>,
 }
 
-impl TestCaseSet {
-    pub fn run(&self) -> Result<TestCaseSetResults> {
+impl TestCaseSetResults {
+    pub fn report(&self) {
         println!(
             "=================== {}: [{}] ===================",
             "Running test case set".blue(),
@@ -82,11 +86,22 @@ impl TestCaseSet {
                 .italic()
         );
 
+        for test_case_result in &self.test_case_results {
+            test_case_result.report();
+        }
+    }
+}
+
+impl TestCaseSet {
+    pub async fn run(&self) -> Result<TestCaseSetResults> {
         let mut success_count = 0;
         let mut expected_fail_count = 0;
         let mut fail_count = 0;
+        let mut test_case_results = vec![];
         for test_case in &self.cases {
-            if test_case.run()? {
+            let test_case_result = test_case.run().await?;
+
+            if test_case_result.success {
                 if test_case.expected_failure {
                     fail_count += 1;
                 } else {
@@ -97,9 +112,13 @@ impl TestCaseSet {
             } else {
                 fail_count += 1;
             }
+
+            test_case_results.push(test_case_result);
         }
 
         Ok(TestCaseSetResults {
+            name: self.name.clone(),
+            test_case_results,
             success_count,
             expected_fail_count,
             fail_count,
@@ -159,36 +178,40 @@ enum WhichShell {
     NamedShell(String),
 }
 
-impl TestCase {
+struct TestCaseResult {
+    pub name: Option<String>,
+    pub success: bool,
+    pub expected_failure: bool,
+    pub comparison: RunComparison,
+}
+
+impl TestCaseResult {
     #[allow(clippy::too_many_lines)]
-    pub fn run(&self) -> Result<bool> {
+    pub fn report(&self) {
         print!(
             "* {}: [{}]... ",
-            "Running test case".bright_yellow(),
+            "Test case".bright_yellow(),
             self.name
                 .as_ref()
                 .unwrap_or(&("(unnamed)".to_owned()))
                 .italic()
         );
 
-        let comparison = self.run_with_oracle_and_test()?;
-
-        let success = !comparison.is_failure();
-        if success {
+        if !self.comparison.is_failure() {
             if self.expected_failure {
                 println!("{}", "unexpected success.".bright_red());
             } else {
                 println!("{}", "ok.".bright_green());
-                return Ok(true);
+                return;
             }
         } else if self.expected_failure {
             println!("{}", "expected failure.".bright_magenta());
-            return Ok(false);
+            return;
         }
 
         println!();
 
-        match comparison.exit_status {
+        match self.comparison.exit_status {
             ExitStatusComparison::Ignored => println!("    status {}", "ignored".cyan()),
             ExitStatusComparison::Same(status) => {
                 println!(
@@ -209,7 +232,7 @@ impl TestCase {
             }
         }
 
-        match comparison.stdout {
+        match &self.comparison.stdout {
             StringComparison::Ignored => println!("    stdout {}", "ignored".cyan()),
             StringComparison::Same(_) => println!("    stdout matches {}", "✔️".green()),
             StringComparison::TestDiffers {
@@ -238,7 +261,7 @@ impl TestCase {
             }
         }
 
-        match comparison.stderr {
+        match &self.comparison.stderr {
             StringComparison::Ignored => println!("    stderr {}", "ignored".cyan()),
             StringComparison::Same(_) => println!("    stderr matches {}", "✔️".green()),
             StringComparison::TestDiffers {
@@ -267,7 +290,7 @@ impl TestCase {
             }
         }
 
-        match comparison.temp_dir {
+        match &self.comparison.temp_dir {
             DirComparison::Ignored => println!("    temp dir {}", "ignored".cyan()),
             DirComparison::Same => println!("    temp dir matches {}", "✔️".green()),
             DirComparison::TestDiffers(entries) => {
@@ -300,11 +323,22 @@ impl TestCase {
             }
         }
 
-        if !success {
+        if !self.success {
             println!("    {}", "FAILED.".bright_red());
         }
+    }
+}
 
-        Ok(success)
+impl TestCase {
+    pub async fn run(&self) -> Result<TestCaseResult> {
+        let comparison = self.run_with_oracle_and_test().await?;
+        let success = !comparison.is_failure() && !self.expected_failure;
+        Ok(TestCaseResult {
+            success,
+            comparison,
+            name: self.name.clone(),
+            expected_failure: self.expected_failure,
+        })
     }
 
     fn create_test_files_in(&self, temp_dir: &assert_fs::TempDir) -> Result<()> {
@@ -317,18 +351,21 @@ impl TestCase {
         Ok(())
     }
 
-    fn run_with_oracle_and_test(&self) -> Result<RunComparison> {
+    async fn run_with_oracle_and_test(&self) -> Result<RunComparison> {
         let oracle_temp_dir = assert_fs::TempDir::new()?;
         self.create_test_files_in(&oracle_temp_dir)?;
-        let oracle_result =
-            self.run_with_shell(&WhichShell::NamedShell("bash".to_owned()), &oracle_temp_dir)?;
+        let oracle_result = self
+            .run_with_shell(&WhichShell::NamedShell("bash".to_owned()), &oracle_temp_dir)
+            .await?;
 
         let test_temp_dir = assert_fs::TempDir::new()?;
         self.create_test_files_in(&test_temp_dir)?;
-        let test_result = self.run_with_shell(
-            &WhichShell::ShellUnderTest("rush".to_owned()),
-            &test_temp_dir,
-        )?;
+        let test_result = self
+            .run_with_shell(
+                &WhichShell::ShellUnderTest("rush".to_owned()),
+                &test_temp_dir,
+            )
+            .await?;
 
         let mut comparison = RunComparison {
             exit_status: ExitStatusComparison::Ignored,
@@ -379,7 +416,8 @@ impl TestCase {
         Ok(comparison)
     }
 
-    fn run_with_shell(
+    #[allow(clippy::unused_async)]
+    async fn run_with_shell(
         &self,
         which: &WhichShell,
         working_dir: &assert_fs::TempDir,

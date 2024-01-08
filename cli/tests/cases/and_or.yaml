@@ -9,3 +9,8 @@ cases:
     stdin: |
       false || echo 1
       true || echo 2
+
+  - name: "Longer chains"
+    stdin: |
+      false || false || false || echo "Got to the end"
+      echo "1" && echo "2" && echo "3" && echo "4"

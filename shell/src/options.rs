@@ -1,6 +1,6 @@
 use crate::CreateOptions;
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct RuntimeOptions {
     //

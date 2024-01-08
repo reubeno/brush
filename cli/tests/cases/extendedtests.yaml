@@ -1,0 +1,60 @@
+name: "Extended tests"
+cases:
+  - name: "File extended tests"
+    stdin: |
+      [[ -a /tmp ]] && echo "-a correctly checked /tmp"
+      [[ -a /some/non/existent/path ]] || echo "-a correctly checked non-existent path"
+
+      [[ -c /dev/null ]] && echo "-c correctly checked /dev/null"
+      [[ -c /tmp ]] || echo "-c correctly checked /tmp"
+
+      [[ -d /tmp ]] && echo "-d correctly checked /tmp"
+      [[ -d /dev/null ]] || echo "-d correctly checked /dev/null"
+
+  - name: "Unary string extended tests"
+    stdin: |
+      [[ -z "" ]] && echo "-z: Pass"
+      [[ -z "something" ]] && echo "-z: Fail"
+
+      [[ -n "something" ]] && echo "-n: Pass"
+      [[ -n "" ]] && echo "-n: Fail"
+
+  - name: "Binary string extended tests"
+    stdin: |
+      [[ "" == "" ]] && echo "1. Pass"
+      [[ "" = "" ]] && echo "2. Pass"
+      [[ "" != "" ]] && echo "3. Fail"
+
+      [[ "a" != "b" ]] && echo "4. Pass"
+      [[ "a" = "b" ]] && echo "5. Fail"
+      [[ "a" == "b" ]] && echo "6. Fail"
+
+      [[ "a" < "b" ]] && echo "7. Pass"
+      [[ "a" < "a" ]] && echo "8. Fail"
+      [[ "b" < "a" ]] && echo "9. Fail"
+      [[ "a" > "b" ]] && echo "10. Fail"
+      [[ "a" > "a" ]] && echo "11. Fail"
+      [[ "b" > "a" ]] && echo "12. Pass"
+
+  - name: "Arithmetic extended tests"
+    stdin: |
+      [[ 0 -eq 0 ]] && echo "1. Pass"
+      [[ 0 -ne 0 ]] && echo "2. Fail"
+      [[ 0 -lt 0 ]] && echo "3. Fail"
+      [[ 0 -le 0 ]] && echo "4. Pass"
+      [[ 0 -gt 0 ]] && echo "5. Fail"
+      [[ 0 -ge 0 ]] && echo "6. Pass"
+
+      [[ 0 -eq 1 ]] && echo "7. Fail"
+      [[ 0 -ne 1 ]] && echo "8. Pass"
+      [[ 0 -lt 1 ]] && echo "9. Pass"
+      [[ 0 -le 1 ]] && echo "10. Pass"
+      [[ 0 -gt 1 ]] && echo "11. Fail"
+      [[ 0 -ge 1 ]] && echo "12. Fail"
+
+      [[ 1 -eq 0 ]] && echo "13. Fail"
+      [[ 1 -ne 0 ]] && echo "14. Pass"
+      [[ 1 -lt 0 ]] && echo "15. Fail"
+      [[ 1 -le 0 ]] && echo "16. Fail"
+      [[ 1 -gt 0 ]] && echo "17. Pass"
+      [[ 1 -ge 0 ]] && echo "18. Pass"

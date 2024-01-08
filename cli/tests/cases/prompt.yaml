@@ -1,0 +1,52 @@
+name: "Prompt"
+cases:
+  - name: "Simple prompts"
+    stdin: |
+      prompt='$ '
+      echo "Prompt: '${prompt@P}'"
+
+      prompt='a\r\n> '
+      echo "Prompt: '${prompt@P}'"
+
+      prompt='\\'
+      echo "Prompt: '${prompt@P}'"
+
+      prompt='\81'
+      echo "Prompt: '${prompt@P}'"
+
+  - name: "Working dir based prompts"
+    stdin: |
+      cd /tmp
+
+      prompt='\w '
+      echo "Prompt: '${prompt@P}'"
+
+      prompt='\W '
+      echo "Prompt: '${prompt@P}'"
+
+  - name: "Non-printing chars"
+    stdin: |
+      prompt='\[\]Prompt>\[\]'
+      echo "Prompt: '${prompt@P}'"
+
+  - name: "Hostname in prompts"
+    stdin: |
+      prompt='\h '
+      echo "Prompt: '${prompt@P}'"
+
+      prompt='\H '
+      echo "Prompt: '${prompt@P}'"
+
+  - name: "Shell name"
+    stdin: |
+      prompt='\s'
+      [[ "${prompt@P}" == "$(basename $0)" ]]
+
+  - name: "Shell version info"
+    expected_failure: true
+    stdin: |
+      prompt='\v'
+      [[ "${prompt@P}" == "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" ]] && echo "Version is correct"
+
+      prompt='\V'
+      [[ "${prompt@P}" == "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}.${BASH_VERSINFO[2]}" ]] && echo "Release is correct"
