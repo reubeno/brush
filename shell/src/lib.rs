@@ -6,6 +6,7 @@ mod env;
 mod expansion;
 mod extendedtests;
 mod interp;
+mod jobs;
 mod namedoptions;
 mod openfiles;
 mod options;

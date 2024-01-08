@@ -11,5 +11,5 @@ workspace = true
 [dependencies]
 anyhow = "1.0.79"
 log = "0.4.20"
-rustyline = "13.0.0"
+rustyline = { version = "13.0.0", features = [ "derive" ] }
 shell = { path = "../shell" }
