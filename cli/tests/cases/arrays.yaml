@@ -12,13 +12,13 @@ cases:
       echo "var[4]: ${var[4]}"
       echo "var[*]: ${var[*]}"
   - name: "Array updating via index"
-    expected_failure: true
+    known_failure: true
     stdin: |
       var=(a b c)
       var[1]="d"
       echo "var[*]: ${var[*]}"
   - name: "Array updating without index"
-    expected_failure: true
+    known_failure: true
     stdin: |
       var=(a b c)
       var="x"

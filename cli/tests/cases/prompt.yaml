@@ -43,7 +43,7 @@ cases:
       [[ "${prompt@P}" == "$(basename $0)" ]]
 
   - name: "Shell version info"
-    expected_failure: true
+    known_failure: true
     stdin: |
       prompt='\v'
       [[ "${prompt@P}" == "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" ]] && echo "Version is correct"

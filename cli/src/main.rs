@@ -133,15 +133,15 @@ async fn run(cli_args: &[String]) -> Result<u8> {
 
     if let Some(command) = args.command {
         // TODO: Use script_path as $0 and remaining args as positional parameters.
-        shell.shell.run_string(&command, false).await?;
+        shell.shell_mut().run_string(&command, false).await?;
     } else if let Some(script_path) = args.script_path {
         shell
-            .shell
+            .shell_mut()
             .run_script(Path::new(&script_path), args.script_args.as_slice())
             .await?;
     } else {
         shell.run_interactively().await?;
     }
 
-    Ok(shell.shell.last_result())
+    Ok(shell.shell().last_result())
 }

@@ -1,0 +1,9 @@
+name: "Simple commands"
+cases:
+  - name: "Simple command"
+    stdin: |
+      echo 1
+
+  - name: "Simple command with reserved word args"
+    stdin: |
+      echo then

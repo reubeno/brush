@@ -189,7 +189,6 @@ impl Execute for ast::Pipeline {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult> {
         //
-        // TODO: handle bang
         // TODO: implement logic deciding when to abort
         // TODO: confirm whether exit code comes from first or last in pipeline
         //
@@ -271,6 +270,10 @@ impl Execute for ast::Pipeline {
             shell.last_exit_status = result.exit_code;
         }
 
+        if self.bang {
+            result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
+        }
+
         shell.last_exit_status = result.exit_code;
         Ok(result)
     }
@@ -343,6 +346,7 @@ impl Execute for ast::CompoundCommand {
                 (WhileOrUntil::Until, u).execute(shell, params).await
             }
             ast::CompoundCommand::Arithmetic(a) => a.execute(shell, params).await,
+            ast::CompoundCommand::ArithmeticForClause(a) => a.execute(shell, params).await,
         }
     }
 }
@@ -487,7 +491,7 @@ impl Execute for ast::ArithmeticCommand {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult> {
-        let value = self.expr.eval(shell)?;
+        let value = self.expr.eval(shell).await?;
         let result = if value != 0 {
             ExecutionResult::success()
         } else {
@@ -496,6 +500,37 @@ impl Execute for ast::ArithmeticCommand {
 
         shell.last_exit_status = result.exit_code;
 
+        Ok(result)
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::ArithmeticForClauseCommand {
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult> {
+        let mut result = ExecutionResult::success();
+        if let Some(initializer) = &self.initializer {
+            initializer.eval(shell).await?;
+        }
+
+        loop {
+            if let Some(condition) = &self.condition {
+                if condition.eval(shell).await? == 0 {
+                    break;
+                }
+            }
+
+            result = self.body.execute(shell, params).await?;
+
+            if let Some(updater) = &self.updater {
+                updater.eval(shell).await?;
+            }
+        }
+
+        shell.last_exit_status = result.exit_code;
         Ok(result)
     }
 }

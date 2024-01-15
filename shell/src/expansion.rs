@@ -143,7 +143,7 @@ impl Expandable for parser::word::ParameterExpr {
                     Ok(String::new())
                 }
             }
-            parser::word::ParameterExpr::StringLength { parameter } => {
+            parser::word::ParameterExpr::ParameterLength { parameter } => {
                 let expanded_parameter = parameter.expand(shell).await?;
                 Ok(expanded_parameter.len().to_string())
             }
@@ -155,10 +155,11 @@ impl Expandable for parser::word::ParameterExpr {
                 parameter: _,
                 pattern: _,
             } => todo!("UNIMPLEMENTED: expansion: remove largest suffix pattern expressions"),
-            parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
-                parameter: _,
-                pattern: _,
-            } => todo!("UNIMPLEMENTED: expansion: remove smallest prefix pattern expressions"),
+            parser::word::ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern } => {
+                let expanded_parameter = parameter.expand(shell).await?;
+                log::error!("UNIMPLEMENTED; remove smallest prefix pattern: param={expanded_parameter}, pattern={pattern:?}");
+                Ok(expanded_parameter)
+            }
             parser::word::ParameterExpr::RemoveLargestPrefixPattern {
                 parameter: _,
                 pattern: _,
@@ -171,7 +172,7 @@ impl Expandable for parser::word::ParameterExpr {
                 let expanded_parameter = parameter.expand(shell).await?;
 
                 // TODO: handle negative offset
-                let expanded_offset = offset.eval(shell)?;
+                let expanded_offset = offset.eval(shell).await?;
                 let expanded_offset = usize::try_from(expanded_offset)?;
 
                 if expanded_offset >= expanded_parameter.len() {
@@ -179,7 +180,7 @@ impl Expandable for parser::word::ParameterExpr {
                 }
 
                 let result = if let Some(length) = length {
-                    let expanded_length = length.eval(shell)?;
+                    let expanded_length = length.eval(shell).await?;
                     if expanded_length < 0 {
                         log::error!("UNIMPLEMENTED: substring with negative length");
                         todo!("UNIMPLEMENTED: substring with negative length");
@@ -305,7 +306,7 @@ impl Expandable for parser::word::SpecialParameter {
 #[async_trait::async_trait]
 impl Expandable for parser::ast::ArithmeticExpr {
     async fn expand(&self, shell: &mut Shell) -> Result<String> {
-        let value = self.eval(shell)?;
+        let value = self.eval(shell).await?;
         Ok(value.to_string())
     }
 }

@@ -1,48 +1,82 @@
 use anyhow::Result;
 use parser::ast;
 
-use crate::{env, Shell};
+use crate::{env, expansion, Shell};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvalError {
     #[error("division by zero")]
     DivideByZero,
+
+    #[error("syntax error in expression")]
+    SyntaxError,
 }
 
+#[async_trait::async_trait]
 pub trait Evaluatable {
-    fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
+    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
 }
 
+#[async_trait::async_trait]
+impl Evaluatable for ast::UnexpandedArithmeticExpr {
+    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
+        // Per documentation, first shell-expand it.
+        let tokenized_self =
+            parser::tokenize_str(self.value.as_str()).map_err(|_e| EvalError::SyntaxError)?;
+        let mut expanded_self = String::new();
+
+        for token in tokenized_self {
+            match token {
+                parser::Token::Word(value, _) => {
+                    let expansion = expansion::expand_word(shell, &ast::Word { value })
+                        .await
+                        .map_err(|_e| EvalError::SyntaxError)?;
+                    expanded_self.push_str(expansion.as_str());
+                }
+                parser::Token::Operator(value, _) => expanded_self.push_str(value.as_str()),
+            }
+        }
+
+        let expr = parser::parse_arithmetic_expression(&expanded_self)
+            .map_err(|_e| EvalError::SyntaxError)?;
+        expr.eval(shell).await
+    }
+}
+
+#[async_trait::async_trait]
 impl Evaluatable for ast::ArithmeticExpr {
-    fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
+    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
         let value = match self {
             ast::ArithmeticExpr::Literal(l) => *l,
             ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue)?,
             ast::ArithmeticExpr::UnaryOp(op, operand) => {
-                let operand_eval = operand.eval(shell)?;
+                let operand_eval = operand.eval(shell).await?;
                 apply_unary_op(shell, *op, operand_eval)?
             }
             ast::ArithmeticExpr::BinaryOp(op, left, right) => {
-                apply_binary_op(*op, left.eval(shell)?, right.eval(shell)?)?
+                apply_binary_op(*op, left.eval(shell).await?, right.eval(shell).await?)?
             }
             ast::ArithmeticExpr::Conditional(condition, then_expr, else_expr) => {
-                let conditional_eval = condition.eval(shell)?;
+                let conditional_eval = condition.eval(shell).await?;
                 if conditional_eval != 0 {
-                    then_expr.eval(shell)?
+                    then_expr.eval(shell).await?
                 } else {
-                    else_expr.eval(shell)?
+                    else_expr.eval(shell).await?
                 }
             }
             ast::ArithmeticExpr::Assignment(lvalue, expr) => {
-                let expr_eval = expr.eval(shell)?;
+                let expr_eval = expr.eval(shell).await?;
                 assign(shell, lvalue, expr_eval)?
             }
             ast::ArithmeticExpr::UnaryAssignment(op, lvalue) => {
                 apply_unary_assignment_op(shell, lvalue, *op)?
             }
             ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
-                let value =
-                    apply_binary_op(*op, deref_lvalue(shell, lvalue)?, operand.eval(shell)?)?;
+                let value = apply_binary_op(
+                    *op,
+                    deref_lvalue(shell, lvalue)?,
+                    operand.eval(shell).await?,
+                )?;
                 assign(shell, lvalue, value)?
             }
         };

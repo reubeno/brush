@@ -216,6 +216,7 @@ peg::parser! {
             expected!("command")
 
         // N.B. The arithmetic command is a non-sh extension.
+        // N.B. The arithmetic for clause command is a non-sh extension.
         // TODO: Don't allow the arithmetic command in sh mode.
         rule compound_command() -> ast::CompoundCommand =
             a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
@@ -226,6 +227,9 @@ peg::parser! {
             i:if_clause() { ast::CompoundCommand::IfClause(i) } /
             w:while_clause() { ast::CompoundCommand::WhileClause(w) } /
             u:until_clause() { ast::CompoundCommand::UntilClause(u) } /
+            // N.B. Arithmetic for clause commands are bash extensions
+            // TODO: Don't allow ArithmeticForClause in POSIX compliance mode.
+            c:arithmetic_for_clause() { ast::CompoundCommand::ArithmeticForClause(c) } /
             expected!("compound command")
 
         // N.B. This is not supported in sh.
@@ -234,13 +238,13 @@ peg::parser! {
                 ast::ArithmeticCommand { expr }
             }
 
-        rule arithmetic_expression() -> ast::ArithmeticExpr =
-            raw_expr:$((!arithmetic_end() [_])*) {?
-                crate::arithmetic::parse_arithmetic_expression(raw_expr.as_str()).or(Err("arithmetic expr"))
-            }
+        rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
+            raw_expr:$((!arithmetic_end() [_])*) { ast::UnexpandedArithmeticExpr { value: raw_expr.to_owned() } }
 
+        // TODO: evaluate arithmetic end; the semicolon is used in arithmetic for loops.
         rule arithmetic_end() -> () =
-            specific_operator(")") specific_operator(")") {}
+            specific_operator(")") specific_operator(")") {} /
+            specific_operator(";") {}
 
         rule subshell() -> ast::SubshellCommand =
             specific_operator("(") c:compound_list() specific_operator(")") { c }
@@ -275,6 +279,22 @@ peg::parser! {
                 ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d }
             }
 
+        //
+        // N.B. The arithmetic for loop is a non-sh extension.
+        // TODO: Only support this kind of for loop when running in non-sh mode.
+        //
+        rule arithmetic_for_clause() -> ast::ArithmeticForClauseCommand =
+            specific_word("for")
+            specific_operator("(") specific_operator("(")
+                initializer:arithmetic_expression()? specific_operator(";")
+                condition:arithmetic_expression()? specific_operator(";")
+                updater:arithmetic_expression()?
+            specific_operator(")") specific_operator(")")
+            sequential_sep()
+            body:do_group() {
+                ast::ArithmeticForClauseCommand { initializer, condition, updater, body }
+            }
+
         rule extended_test_command() -> ast::ExtendedTestExpr =
             specific_word("[[") e:extended_test_expression() specific_word("]]") { e }
 
@@ -296,9 +316,9 @@ peg::parser! {
             left:word() specific_word("-ne") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticNotEqualTo, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_word("-nt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_word("-ot") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("==") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsAreEqual, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("=") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsAreEqual, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringsNotEqual, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() (specific_word("==") / specific_word("=")) right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringMatchesPattern, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringDoesNotMatchPattern, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("=~") right:regex_word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringMatchesRegex, ast::Word::from(left), right) }
             left:word() specific_operator("<") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsBeforeRight, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_operator(">") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsAfterRight, ast::Word::from(left), ast::Word::from(right)) }
             --
@@ -332,23 +352,37 @@ peg::parser! {
             w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
         }
 
+        // N.B. For some reason we seem to need to allow a select subset
+        // of unescaped operators in regex words.
+        rule regex_word() -> ast::Word =
+            value:$((!specific_word("]]") regex_word_piece())+) {
+                ast::Word { value }
+            }
+
+        rule regex_word_piece() =
+            word() {} /
+            specific_operator("|") {} /
+            specific_operator("(") inner:regex_word() specific_operator(")") {}
+
         rule name() -> &'input str =
             w:[Token::Word(_, _)] { w.to_str() }
 
         rule _in() -> () =
             specific_word("in") { }
 
+        // TODO: validate if this should call non_reserved_word() or word()
         rule wordlist() -> Vec<ast::Word> =
-            (w:word() { ast::Word::from(w) })+
+            (w:non_reserved_word() { ast::Word::from(w) })+
 
+        // TODO: validate if this should call non_reserved_word() or word()
         pub(crate) rule case_clause() -> ast::CaseClauseCommand =
-            specific_word("case") w:word() linebreak() _in() linebreak() c:case_list() specific_word("esac") {
+            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() c:case_list() specific_word("esac") {
                 ast::CaseClauseCommand { value: ast::Word::from(w), cases: c }
             } /
-            specific_word("case") w:word() linebreak() _in() linebreak() c:case_list_ns() specific_word("esac") {
+            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() c:case_list_ns() specific_word("esac") {
                 ast::CaseClauseCommand { value: ast::Word::from(w), cases: c }
             } /
-            specific_word("case") w:word() linebreak() _in() linebreak() specific_word("esac") {
+            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() specific_word("esac") {
                 ast::CaseClauseCommand{ value: ast::Word::from(w), cases: vec![] }
             }
 
@@ -383,8 +417,9 @@ peg::parser! {
                 ast::CaseItem { patterns: p, cmd: Some(c) }
             }
 
+        // TODO: validate if this should call non_reserved_word() or word()
         rule pattern() -> Vec<ast::Word> =
-            (w:word() { ast::Word::from(w) }) ++ specific_operator("|")
+            (w:non_reserved_word() { ast::Word::from(w) }) ++ specific_operator("|")
 
         rule if_clause() -> ast::IfClauseCommand =
             specific_word("if") condition:compound_list() specific_word("then") then:compound_list() elses:else_part()? specific_word("fi") {
@@ -456,18 +491,25 @@ peg::parser! {
             expected!("simple command")
 
         rule cmd_name() -> &'input Token =
-            word()
+            non_reserved_word()
 
         rule cmd_word() -> &'input Token =
-            !assignment_word() w:word() { w }
+            !assignment_word() w:non_reserved_word() { w }
 
         rule cmd_prefix() -> ast::CommandPrefix =
-            (i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
-                w:assignment_word() { ast::CommandPrefixOrSuffixItem::AssignmentWord(w) })+
+            (
+                i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
+                w:assignment_word() { ast::CommandPrefixOrSuffixItem::AssignmentWord(w) }
+            )+
 
         rule cmd_suffix() -> ast::CommandSuffix =
-            (i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
-                w:word() { ast::CommandPrefixOrSuffixItem::Word(ast::Word::from(w)) })+
+            (
+                i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
+                // TODO: this is a hack; we don't yet understand how other shells manage to parse command invocations
+                // like `local var=()`
+                value:$(assignment_word()) { ast::CommandPrefixOrSuffixItem::Word(ast::Word { value }) } /
+                w:word() { ast::CommandPrefixOrSuffixItem::Word(ast::Word::from(w)) }
+            )+
 
         rule redirect_list() -> ast::RedirectList =
             io_redirect()+ /
@@ -511,8 +553,8 @@ peg::parser! {
             word()
 
         rule io_here() -> ast::IoHereDocument =
-            specific_operator("<<") here_end:here_end() newline() doc:[_] { ast::IoHereDocument { remove_tabs: false, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } } /
-            specific_operator("<<-") here_end:here_end() newline() doc:[_] { ast::IoHereDocument { remove_tabs: true, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } }
+            specific_operator("<<") here_end:here_end() doc:[_] { ast::IoHereDocument { remove_tabs: false, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } } /
+            specific_operator("<<-") here_end:here_end() doc:[_] { ast::IoHereDocument { remove_tabs: true, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } }
 
         rule here_end() -> &'input Token =
             word()
@@ -543,8 +585,11 @@ peg::parser! {
         // Token interpretation
         //
 
+        rule non_reserved_word() -> &'input Token =
+            !reserved_word() w:word() { w }
+
         rule word() -> &'input Token =
-            !reserved_word() w:[Token::Word(_, _)] { w }
+            [Token::Word(_, _)]
 
         rule reserved_word() -> &'input str =
             t:reserved_word_token() { t.to_str() }

@@ -16,3 +16,12 @@ pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool> {
 
     Ok(matches)
 }
+
+pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool> {
+    let re = regex::Regex::new(regex_pattern)?;
+
+    // TODO: Evaluate how compatible the `regex` crate is with POSIX EREs.
+    let matches = re.is_match(value);
+
+    Ok(matches)
+}

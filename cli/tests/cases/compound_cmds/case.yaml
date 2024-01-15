@@ -7,8 +7,7 @@ cases:
           case x in
           x) echo hi;;
           esac
-    args:
-      - "./script.sh"
+    args: ["./script.sh"]
 
   - name: "One-line case statement with double semi"
     stdin: |

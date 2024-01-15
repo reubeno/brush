@@ -121,14 +121,15 @@ impl BuiltinCommand for DeclareCommand {
 
         if !names.is_empty() {
             for entry in names {
-                let (name, value) = entry.split_once('=').map_or_else(
+                let (name, mut value) = entry.split_once('=').map_or_else(
                     || (entry.as_str(), None),
                     |(name, value)| (name, Some(value)),
                 );
 
                 // TODO: handle declaring without value for variable.
                 if value.is_none() {
-                    todo!("UNIMPLEMENTED: declaring variable without value");
+                    log::error!("UNIMPLEMENTED: declaring variable without value");
+                    value = Some("");
                 }
 
                 if create_var_local {
