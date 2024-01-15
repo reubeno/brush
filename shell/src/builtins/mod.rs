@@ -7,6 +7,7 @@ use crate::builtin::{self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinRes
 mod alias;
 mod cd;
 mod colon;
+mod complete;
 mod declare;
 mod dot;
 mod eval;
@@ -18,6 +19,7 @@ mod jobs;
 mod pwd;
 mod retur;
 mod set;
+mod shift;
 mod shopt;
 mod trap;
 mod tru;
@@ -58,7 +60,7 @@ pub(crate) fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExec
     m.insert("readonly", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("return", exec_builtin::<retur::ReturnCommand>);
     m.insert("set", exec_builtin::<set::SetCommand>);
-    m.insert("shift", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("shift", exec_builtin::<shift::ShiftCommand>);
     m.insert("times", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("trap", exec_builtin::<trap::TrapCommand>);
     m.insert("unset", exec_builtin::<unset::UnsetCommand>);
@@ -98,6 +100,9 @@ pub(crate) fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc>
     m.insert("declare", exec_builtin::<declare::DeclareCommand>);
     m.insert("local", exec_builtin::<declare::DeclareCommand>);
     m.insert("shopt", exec_builtin::<shopt::ShoptCommand>);
+    m.insert("complete", exec_builtin::<complete::CompleteCommand>);
+    m.insert("compgen", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("compopt", exec_builtin::<unimp::UnimplementedCommand>);
 
     m
 }

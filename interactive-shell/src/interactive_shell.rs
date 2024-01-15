@@ -2,13 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::editor_helper::EditorHelper;
-
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
 pub struct InteractiveShell {
-    pub shell: shell::Shell,
-
     editor: Editor,
     history_file_path: Option<PathBuf>,
 }
@@ -23,9 +19,9 @@ impl InteractiveShell {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
         let shell = shell::Shell::new(options).await?;
-        let mut editor = Self::new_editor(&shell)?;
-
         let history_file_path = shell.get_history_file_path();
+
+        let mut editor = Self::new_editor(shell)?;
         if let Some(history_file_path) = &history_file_path {
             if !history_file_path.exists() {
                 std::fs::File::create(history_file_path)?;
@@ -35,13 +31,20 @@ impl InteractiveShell {
         }
 
         Ok(InteractiveShell {
-            shell,
             editor,
             history_file_path,
         })
     }
 
-    fn new_editor(shell: &shell::Shell) -> Result<Editor> {
+    pub fn shell(&self) -> &shell::Shell {
+        &self.editor.helper().unwrap().shell
+    }
+
+    pub fn shell_mut(&mut self) -> &mut shell::Shell {
+        &mut self.editor.helper_mut().unwrap().shell
+    }
+
+    fn new_editor(shell: shell::Shell) -> Result<Editor> {
         let config = rustyline::config::Builder::new()
             .max_history_size(1000)?
             .history_ignore_dups(true)?
@@ -80,7 +83,7 @@ impl InteractiveShell {
             }
         }
 
-        if self.shell.options.interactive {
+        if self.shell().options.interactive {
             eprintln!("exit");
         }
 
@@ -94,27 +97,64 @@ impl InteractiveShell {
 
     async fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult> {
         // If there's a variable called PROMPT_COMMAND, then run it first.
-        if let Some(prompt_cmd) = self.shell.env.get("PROMPT_COMMAND") {
+        if let Some(prompt_cmd) = self.shell().env.get("PROMPT_COMMAND") {
             let prompt_cmd: String = (&prompt_cmd.value).into();
-            self.shell.run_string(prompt_cmd.as_str(), false).await?;
+            self.shell_mut()
+                .run_string(prompt_cmd.as_str(), false)
+                .await?;
         }
 
         // Now that we've done that, compose the prompt.
-        let prompt = self.shell.compose_prompt().await?;
+        let prompt = self.shell_mut().compose_prompt().await?;
 
         match self.editor.readline(&prompt) {
             Ok(read_result) => {
-                let result = self.shell.run_string(&read_result, false).await?;
+                let result = self.shell_mut().run_string(&read_result, false).await?;
                 Ok(InteractiveExecutionResult::Executed(result))
             }
             Err(rustyline::error::ReadlineError::Eof) => Ok(InteractiveExecutionResult::Eof),
             Err(rustyline::error::ReadlineError::Interrupted) => {
-                self.shell.last_exit_status = 130;
+                self.shell_mut().last_exit_status = 130;
                 Ok(InteractiveExecutionResult::Executed(
                     shell::ExecutionResult::new(130),
                 ))
             }
             Err(e) => Err(e.into()),
         }
+    }
+}
+
+#[derive(rustyline::Helper, rustyline::Highlighter, rustyline::Hinter, rustyline::Validator)]
+pub(crate) struct EditorHelper {
+    pub shell: shell::Shell,
+
+    #[rustyline(Hinter)]
+    hinter: rustyline::hint::HistoryHinter,
+}
+
+impl EditorHelper {
+    pub(crate) fn new(shell: shell::Shell) -> Self {
+        // let completer = InteractiveShellCompleter::new(shell);
+        let hinter = rustyline::hint::HistoryHinter::new();
+        Self {
+            shell,
+            /*completer,*/ hinter,
+        }
+    }
+}
+
+impl rustyline::completion::Completer for EditorHelper {
+    // type Candidate = rustyline::completion::Pair;
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        // Intentionally ignore any errors that arise.
+        let completions = self.shell.get_completions(line, pos).unwrap_or_default();
+        Ok((completions.start, completions.candidates))
     }
 }

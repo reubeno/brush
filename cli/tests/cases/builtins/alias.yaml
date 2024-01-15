@@ -12,7 +12,7 @@ cases:
       myalias 'hello'
 
   - name: "Alias referencing to alias"
-    expected_failure: true
+    known_failure: true
     args:
       - "-i"
     env:

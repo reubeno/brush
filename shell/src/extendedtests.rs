@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
+use faccess::PathExt;
 use parser::ast;
 
 use crate::{expansion::expand_word, patterns, Shell};
@@ -86,7 +87,8 @@ fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool
             Ok(try_get_file_type(path).map_or(false, |ft: std::fs::FileType| ft.is_fifo()))
         }
         ast::UnaryPredicate::FileExistsAndIsReadable => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndIsReadable")
+            let path = Path::new(operand);
+            Ok(path.readable())
         }
         ast::UnaryPredicate::FileExistsAndIsNotZeroLength => {
             let path = Path::new(operand);
@@ -106,10 +108,12 @@ fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool
             Ok(file_mode.map_or(false, |mode| mode & S_ISUID != 0))
         }
         ast::UnaryPredicate::FileExistsAndIsWritable => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndIsWritable")
+            let path = Path::new(operand);
+            Ok(path.writable())
         }
         ast::UnaryPredicate::FileExistsAndIsExecutable => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndIsExecutable")
+            let path = Path::new(operand);
+            Ok(path.executable())
         }
         ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => todo!(
             "UNIMPLEMENTED: unary extended test predicate: FileExistsAndOwnedByEffectiveGroupId"
@@ -147,16 +151,25 @@ fn try_get_file_mode(path: &Path) -> Option<u32> {
 fn apply_binary_predicate(op: &ast::BinaryPredicate, left: &str, right: &str) -> Result<bool> {
     #[allow(clippy::single_match_else)]
     match op {
-        ast::BinaryPredicate::StringsAreEqual => {
+        // N.B. The "=", "==", and "!=" operators don't compare 2 strings; they check
+        // for whether the lefthand operand (a string) is matched by the righthand
+        // operand (treated as a shell pattern).
+        // TODO: implement case-insensitive matching if relevant via shopt options (nocasematch).
+        ast::BinaryPredicate::StringMatchesPattern => {
             let s = left;
             let pattern = right;
             patterns::pattern_matches(pattern, s)
         }
-        ast::BinaryPredicate::StringsNotEqual => {
+        ast::BinaryPredicate::StringDoesNotMatchPattern => {
             let s = left;
             let pattern = right;
             let eq = patterns::pattern_matches(pattern, s)?;
             Ok(!eq)
+        }
+        ast::BinaryPredicate::StringMatchesRegex => {
+            let s = left;
+            let regex_pattern = right;
+            patterns::regex_matches(regex_pattern, s)
         }
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => todo!("UNIMPLEMENTED: extended test binary predicate FilesReferToSameDeviceAndInodeNumbers"),
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => todo!("UNIMPLEMENTED: extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot"),

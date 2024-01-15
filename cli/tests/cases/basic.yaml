@@ -28,5 +28,4 @@ cases:
         contents: |
           echo 'hi'
           exit 22
-    args:
-      - "./script.sh"
+    args: ["./script.sh"]

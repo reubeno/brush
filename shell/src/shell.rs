@@ -95,6 +95,12 @@ impl std::fmt::Display for ProgramOrigin {
     }
 }
 
+#[derive(Default)]
+pub struct Completions {
+    pub start: usize,
+    pub candidates: Vec<String>,
+}
+
 impl Shell {
     pub async fn new(options: &CreateOptions) -> Result<Shell> {
         // Instantiate the shell with some defaults.
@@ -112,6 +118,9 @@ impl Shell {
             shell_name: options.shell_name.clone(),
             function_call_depth: 0,
         };
+
+        // DBG:RRO
+        shell.options.extended_globbing = true;
 
         // Load profiles/configuration.
         shell.load_config(options).await?;
@@ -232,7 +241,7 @@ impl Shell {
         path: &Path,
         args: &[S],
     ) -> Result<ExecutionResult> {
-        debug!("sourcing: {}", path.display());
+        log::debug!("sourcing: {}", path.display());
 
         let opened_file = std::fs::File::open(path).context(path.to_string_lossy().to_string())?;
         if opened_file.metadata()?.is_dir() {
@@ -429,6 +438,15 @@ impl Shell {
         self.env.get("HISTFILE").map(|var| {
             let histfile_str: String = (&var.value).into();
             PathBuf::from(histfile_str)
+        })
+    }
+
+    pub fn get_completions(&self, _input: &str, position: usize) -> Result<Completions> {
+        // Make a best-effort attempt to tokenize.
+        // TODO: implement completions
+        Ok(Completions {
+            start: position,
+            candidates: vec![],
         })
     }
 }

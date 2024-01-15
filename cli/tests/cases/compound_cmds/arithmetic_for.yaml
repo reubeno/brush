@@ -1,0 +1,6 @@
+name: "Compound commands: arithmetic for"
+cases:
+  - name: "Single-line arithmetic for loop"
+    stdin: |
+      for ((i = 0; i < 5; i++)); do echo $i; done
+      echo "Result: $?"

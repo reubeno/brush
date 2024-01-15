@@ -43,6 +43,7 @@ pub enum Command {
 #[derive(Clone, Debug)]
 pub enum CompoundCommand {
     Arithmetic(ArithmeticCommand),
+    ArithmeticForClause(ArithmeticForClauseCommand),
     BraceGroup(BraceGroupCommand),
     Subshell(SubshellCommand),
     ForClause(ForClauseCommand),
@@ -54,7 +55,7 @@ pub enum CompoundCommand {
 
 #[derive(Clone, Debug)]
 pub struct ArithmeticCommand {
-    pub expr: ArithmeticExpr,
+    pub expr: UnexpandedArithmeticExpr,
 }
 
 pub type SubshellCommand = CompoundList;
@@ -63,6 +64,14 @@ pub type SubshellCommand = CompoundList;
 pub struct ForClauseCommand {
     pub variable_name: String,
     pub values: Option<Vec<Word>>,
+    pub body: DoGroupCommand,
+}
+
+#[derive(Clone, Debug)]
+pub struct ArithmeticForClauseCommand {
+    pub initializer: Option<UnexpandedArithmeticExpr>,
+    pub condition: Option<UnexpandedArithmeticExpr>,
+    pub updater: Option<UnexpandedArithmeticExpr>,
     pub body: DoGroupCommand,
 }
 
@@ -207,8 +216,9 @@ pub enum BinaryPredicate {
     FilesReferToSameDeviceAndInodeNumbers,
     LeftFileIsNewerOrExistsWhenRightDoesNot,
     LeftFileIsOlderOrDoesNotExistWhenRightDoes,
-    StringsAreEqual,
-    StringsNotEqual,
+    StringMatchesPattern,
+    StringDoesNotMatchPattern,
+    StringMatchesRegex,
     LeftSortsBeforeRight,
     LeftSortsAfterRight,
     ArithmeticEqualTo,
@@ -239,6 +249,11 @@ impl Word {
     pub fn flatten(&self) -> String {
         self.value.clone()
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct UnexpandedArithmeticExpr {
+    pub value: String,
 }
 
 #[derive(Clone, Debug)]

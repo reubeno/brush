@@ -10,8 +10,7 @@ cases:
           echo "Calling myfunc()..."
           myfunc
           echo "Returned."
-    args:
-      - "./script.sh"
+    args: ["./script.sh"]
 
   - name: "Function invocation with args"
     test_files:
@@ -25,11 +24,10 @@ cases:
           echo "Calling myfunc()..."
           myfunc a b c
           echo "Returned."
-    args:
-      - "./script.sh"
+    args: ["./script.sh"]
 
   - name: "Return in function"
-    expected_failure: true
+    known_failure: true
     test_files:
       - path: "script.sh"
         contents: |
@@ -41,5 +39,4 @@ cases:
           echo "Calling myfunc()..."
           myfunc
           echo "Returned: $?"
-    args:
-      - "./script.sh"
+    args: ["./script.sh"]

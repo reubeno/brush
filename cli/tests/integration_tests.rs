@@ -45,7 +45,7 @@ async fn cli_integration_tests() -> Result<()> {
 
     println!("==============================================================");
     println!(
-        "{} test case(s) ran: {} succeeded, {} failed, {} expected to fail.",
+        "{} test case(s) ran: {} succeeded, {} failed, {} known to fail.",
         success_count + fail_count,
         success_count.to_string().green(),
         formatted_fail_count,
@@ -102,12 +102,12 @@ impl TestCaseSet {
             let test_case_result = test_case.run().await?;
 
             if test_case_result.success {
-                if test_case.expected_failure {
+                if test_case.known_failure {
                     fail_count += 1;
                 } else {
                     success_count += 1;
                 }
-            } else if test_case.expected_failure {
+            } else if test_case.known_failure {
                 expected_fail_count += 1;
             } else {
                 fail_count += 1;
@@ -150,7 +150,7 @@ struct TestCase {
     #[serde(default)]
     pub test_files: Vec<TestFile>,
     #[serde(default)]
-    pub expected_failure: bool,
+    pub known_failure: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -181,7 +181,7 @@ enum WhichShell {
 struct TestCaseResult {
     pub name: Option<String>,
     pub success: bool,
-    pub expected_failure: bool,
+    pub known_failure: bool,
     pub comparison: RunComparison,
 }
 
@@ -198,14 +198,14 @@ impl TestCaseResult {
         );
 
         if !self.comparison.is_failure() {
-            if self.expected_failure {
+            if self.known_failure {
                 println!("{}", "unexpected success.".bright_red());
             } else {
                 println!("{}", "ok.".bright_green());
                 return;
             }
-        } else if self.expected_failure {
-            println!("{}", "expected failure.".bright_magenta());
+        } else if self.known_failure {
+            println!("{}", "known failure.".bright_magenta());
             return;
         }
 
@@ -332,12 +332,12 @@ impl TestCaseResult {
 impl TestCase {
     pub async fn run(&self) -> Result<TestCaseResult> {
         let comparison = self.run_with_oracle_and_test().await?;
-        let success = !comparison.is_failure() && !self.expected_failure;
+        let success = !comparison.is_failure() && !self.known_failure;
         Ok(TestCaseResult {
             success,
             comparison,
             name: self.name.clone(),
-            expected_failure: self.expected_failure,
+            known_failure: self.known_failure,
         })
     }
 

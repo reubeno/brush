@@ -29,7 +29,7 @@ cases:
       echo " 1  , 2 == $((1,2))"
 
   - name: "Shift arithmetic"
-    expected_failure: true
+    known_failure: true
     stdin: |
       echo "32 >> 2 == $((32>>2))"
       echo " 1 << 4 == $((1<<4))"

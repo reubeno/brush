@@ -3,7 +3,7 @@ use std::fmt::Display;
 use anyhow::Result;
 use utf8_chars::BufReadCharsExt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum TokenEndReason {
     /// End of input was reached.
     EndOfInput,
@@ -17,7 +17,7 @@ pub(crate) enum TokenEndReason {
     Other,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct SourcePosition {
     pub line: i32,
     pub column: i32,
@@ -57,7 +57,7 @@ impl Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct TokenizeResult {
     pub reason: TokenEndReason,
     pub token: Option<Token>,
@@ -77,10 +77,17 @@ enum QuoteMode {
 
 #[derive(Clone, Debug, PartialEq)]
 enum HereState {
+    /// In this state, we are not currently tracking any here-documents.
     None,
+    /// In this state, we expect that the next token will be a here tag.
     NextTokenIsHereTag { remove_tabs: bool },
+    /// In this state, the *current* token is a here tag.
     CurrentTokenIsHereTag { remove_tabs: bool },
+    /// In this state, we expect that the *next line* will be the body of
+    /// a here-document.
     NextLineIsHereDoc,
+    /// In this tate, we are in the set of lines that comprise 1 or more
+    /// consecutive here-document bodies.
     InHereDocs,
 }
 
@@ -89,13 +96,19 @@ struct HereTag {
     tag: String,
     remove_tabs: bool,
     position: SourcePosition,
+    pending_tokens_after: Vec<TokenizeResult>,
 }
 
 #[derive(Clone, Debug)]
 struct CrossTokenParseState {
+    /// Cursor within the overall token stream; used for error reporting.
     cursor: SourcePosition,
+    /// Current state of parsing here-documents.
     here_state: HereState,
+    /// Ordered queue of here tags for which we're still looking for matching here-document bodies.
     current_here_tags: Vec<HereTag>,
+    /// Tokens already tokenized that should be used first to serve requests for tokens.
+    queued_tokens: Vec<TokenizeResult>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -132,15 +145,19 @@ impl TokenParseState {
 
     pub fn pop(&mut self, end_position: &SourcePosition) -> Result<Token> {
         let token_location = TokenLocation {
-            start: self.start_position.clone(),
+            start: std::mem::take(&mut self.start_position),
             end: end_position.clone(),
         };
 
-        let token = if self.token_is_operator {
+        let token = if std::mem::take(&mut self.token_is_operator) {
             Token::Operator(std::mem::take(&mut self.token_so_far), token_location)
         } else {
             Token::Word(std::mem::take(&mut self.token_so_far), token_location)
         };
+
+        self.start_position = end_position.clone();
+        self.in_escape = false;
+        self.quote_mode = QuoteMode::None;
 
         Ok(token)
     }
@@ -185,12 +202,12 @@ impl TokenParseState {
         &mut self,
         reason: TokenEndReason,
         cross_token_state: &mut CrossTokenParseState,
-    ) -> Result<TokenizeResult> {
+    ) -> Result<Option<TokenizeResult>> {
         if !self.started_token() {
-            return Ok(TokenizeResult {
+            return Ok(Some(TokenizeResult {
                 reason,
                 token: None,
-            });
+            }));
         }
 
         // TODO: Make sure the here-tag meets criteria (and isn't a newline).
@@ -220,18 +237,54 @@ impl TokenParseState {
                     tag: std::format!("\n{}\n", self.current_token()),
                     remove_tabs,
                     position: cross_token_state.cursor.clone(),
+                    pending_tokens_after: vec![],
                 });
             }
             HereState::NextLineIsHereDoc => {
                 if self.is_newline() {
                     cross_token_state.here_state = HereState::InHereDocs;
                 }
+
+                // We need to queue it up for later so we can get the here-document
+                // body to show up in the token stream right after the here tag.
+                if let Some(last_here_tag) = cross_token_state.current_here_tags.last_mut() {
+                    let token = self.pop(&cross_token_state.cursor)?;
+                    let result = TokenizeResult {
+                        reason,
+                        token: Some(token),
+                    };
+
+                    last_here_tag.pending_tokens_after.push(result);
+                } else {
+                    return Err(anyhow::anyhow!("Missing here tag for here document body"));
+                }
+
+                return Ok(None);
             }
-            _ => (),
+            HereState::InHereDocs => {
+                // We hit the end of the current here-document.
+                let completed_here_tag = cross_token_state.current_here_tags.remove(0);
+
+                // Now we're ready to start serving up any tokens that came between the completed
+                // here tag and the next here tag (or newline after it if it was the last).
+                for pending_token in completed_here_tag.pending_tokens_after {
+                    cross_token_state.queued_tokens.push(pending_token);
+                }
+
+                if cross_token_state.current_here_tags.is_empty() {
+                    cross_token_state.here_state = HereState::None;
+                }
+            }
+            HereState::None => (),
         }
 
-        let token = Some(self.pop(&cross_token_state.cursor)?);
-        Ok(TokenizeResult { reason, token })
+        let token = self.pop(&cross_token_state.cursor)?;
+        let result = TokenizeResult {
+            reason,
+            token: Some(token),
+        };
+
+        Ok(Some(result))
     }
 }
 
@@ -256,6 +309,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 cursor: SourcePosition { line: 1, column: 1 },
                 here_state: HereState::None,
                 current_here_tags: vec![],
+                queued_tokens: vec![],
             },
         }
     }
@@ -299,9 +353,16 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     }
 
     fn next_token_until(&mut self, terminating_char: Option<char>) -> Result<TokenizeResult> {
-        let mut state = TokenParseState::new(&self.cross_state.cursor);
+        // First satisfy token results from our queue. Once we exhaust the queue then
+        // we'll look at the input stream.
+        if !self.cross_state.queued_tokens.is_empty() {
+            return Ok(self.cross_state.queued_tokens.remove(0));
+        }
 
-        loop {
+        let mut state = TokenParseState::new(&self.cross_state.cursor);
+        let mut result: Option<TokenizeResult> = None;
+
+        while result.is_none() {
             let next = self.peek_char()?;
             let c = next.unwrap_or('\0');
 
@@ -336,16 +397,16 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     ));
                 }
 
-                return state
-                    .delimit_current_token(TokenEndReason::EndOfInput, &mut self.cross_state);
+                result = state
+                    .delimit_current_token(TokenEndReason::EndOfInput, &mut self.cross_state)?;
             //
             // Look for the specially specified terminating char.
             //
             } else if state.unquoted() && terminating_char == Some(c) {
-                return state.delimit_current_token(
+                result = state.delimit_current_token(
                     TokenEndReason::SpecifiedTerminatingChar,
                     &mut self.cross_state,
-                );
+                )?;
             //
             // Handle being in a here document.
             //
@@ -354,15 +415,30 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 // For now, just include the character in the current token. We also check
                 // if there are leading tabs to be removed.
                 //
-                self.consume_char()?;
                 if !self.cross_state.current_here_tags.is_empty()
                     && self.cross_state.current_here_tags[0].remove_tabs
                     && (!state.started_token() || state.current_token().ends_with('\n'))
                     && c == '\t'
                 {
-                    // Nothing to do.
+                    // Consume it but don't include it.
+                    self.consume_char()?;
                 } else {
+                    self.consume_char()?;
                     state.append_char(c);
+
+                    let without_suffix = state
+                        .current_token()
+                        .strip_suffix(self.cross_state.current_here_tags[0].tag.as_str())
+                        .map(|s| s.to_owned());
+
+                    if let Some(mut without_suffix) = without_suffix {
+                        without_suffix.push('\n');
+
+                        state.replace_with_here_doc(without_suffix);
+
+                        result = state
+                            .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
+                    }
                 }
             } else if state.in_operator() {
                 let mut hypothetical_token = state.current_token().to_owned();
@@ -386,8 +462,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             HereState::NextTokenIsHereTag { remove_tabs: true };
                     }
 
-                    return state
-                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
+                    result = state
+                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
                 }
             } else if does_char_newly_affect_quoting(&state, c) {
                 if c == '\\' {
@@ -568,10 +644,47 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         }
                     }
                 }
+            }
+            //
+            // [Extension]
+            // If extended globbing is enabled, the last consumed character is an
+            // unquoted start of an extglob pattern, *and* if the current character
+            // is an open parenthesis, then this begins an extglob pattern.
+            //
+            else if c == '('
+                && self.options.enable_extended_globbing
+                && state.unquoted()
+                && !state.in_operator()
+                && state
+                    .current_token()
+                    .ends_with(|x| self.can_start_extglob(x))
+            {
+                // Consume the '(' and append it.
+                self.consume_char()?;
+                state.append_char(c);
+
+                // Keep consuming until we see the end ')'.
+                loop {
+                    if let Some(extglob_char) = self.next_char()? {
+                        // Include it in the token.
+                        state.append_char(extglob_char);
+
+                        // Look for ')' to terminate.
+                        // TODO: handle escaping?
+                        if extglob_char == ')' {
+                            break;
+                        }
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "unterminated extglob near {}",
+                            self.cross_state.cursor
+                        ));
+                    }
+                }
             } else if state.unquoted() && self.can_start_operator(c) {
                 if state.started_token() {
-                    return state
-                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
+                    result = state
+                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
                 } else {
                     state.token_is_operator = true;
                     self.consume_char()?;
@@ -581,10 +694,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 self.consume_char()?;
 
                 if state.started_token() {
-                    return state.delimit_current_token(
+                    result = state.delimit_current_token(
                         TokenEndReason::NonNewLineBlank,
                         &mut self.cross_state,
-                    );
+                    )?;
                 }
             }
             //
@@ -617,37 +730,21 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 // Re-start loop as if the comment never happened.
                 continue;
             } else if state.started_token() {
-                return state.delimit_current_token(TokenEndReason::Other, &mut self.cross_state);
+                result =
+                    state.delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
             } else {
                 self.consume_char()?;
                 state.append_char(c);
             }
-
-            //
-            // Now update state.
-            //
-
-            // Check for the end of a here-document.
-            if self.cross_state.here_state == HereState::InHereDocs
-                && !self.cross_state.current_here_tags.is_empty()
-            {
-                let without_suffix = state
-                    .current_token()
-                    .strip_suffix(self.cross_state.current_here_tags[0].tag.as_str())
-                    .map(|s| s.to_owned());
-
-                if let Some(without_suffix) = without_suffix {
-                    // We hit the end of the here document.
-                    self.cross_state.current_here_tags.remove(0);
-                    if self.cross_state.current_here_tags.is_empty() {
-                        self.cross_state.here_state = HereState::None;
-                    }
-
-                    state.replace_with_here_doc(without_suffix);
-                    state.append_char('\n');
-                }
-            }
         }
+
+        let result = result.unwrap();
+
+        Ok(result)
+    }
+
+    fn can_start_extglob(&self, c: char) -> bool {
+        matches!(c, '@' | '!' | '?' | '+' | '*')
     }
 
     fn can_start_operator(&self, c: char) -> bool {
@@ -798,6 +895,7 @@ bc",
             r#"cat <<HERE
 SOMETHING
 HERE
+echo after
 "#,
         )?;
         assert_matches!(
@@ -805,13 +903,19 @@ HERE
             [t1 @ Token::Word(_, _),
              t2 @ Token::Operator(_, _),
              t3 @ Token::Word(_, _),
-             t4 @ Token::Operator(_, _),
-             t5 @ Token::Word(_, _)] if
+             t4 @ Token::Word(_, _),
+             t5 @ Token::Operator(_, _),
+             t6 @ Token::Word(_, _),
+             t7 @ Token::Word(_, _),
+             t8 @ Token::Operator(_, _)] if
                 t1.to_str() == "cat" &&
                 t2.to_str() == "<<" &&
                 t3.to_str() == "HERE" &&
-                t4.to_str() == "\n" &&
-                t5.to_str() == "SOMETHING\n"
+                t4.to_str() == "SOMETHING\n" &&
+                t5.to_str() == "\n" &&
+                t6.to_str() == "echo" &&
+                t7.to_str() == "after" &&
+                t8.to_str() == "\n"
         );
         Ok(())
     }
@@ -829,13 +933,13 @@ HERE
             [t1 @ Token::Word(_, _),
              t2 @ Token::Operator(_, _),
              t3 @ Token::Word(_, _),
-             t4 @ Token::Operator(_, _),
-             t5 @ Token::Word(_, _)] if
+             t4 @ Token::Word(_, _),
+             t5 @ Token::Operator(_, _)] if
                 t1.to_str() == "cat" &&
                 t2.to_str() == "<<-" &&
                 t3.to_str() == "HERE" &&
-                t4.to_str() == "\n" &&
-                t5.to_str() == "SOMETHING\n"
+                t4.to_str() == "SOMETHING\n" &&
+                t5.to_str() == "\n"
         );
         Ok(())
     }

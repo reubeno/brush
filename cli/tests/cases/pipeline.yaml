@@ -1,4 +1,4 @@
-name: "Pipe"
+name: "Pipeline"
 cases:
   - name: "Basic pipe"
     stdin: |
@@ -7,3 +7,10 @@ cases:
   - name: "Longer pipe"
     stdin: |
       echo hi | grep h | wc -l
+
+  - name: "Invert result"
+    stdin: |
+      ! false
+      echo "! false: $?"
+      ! true
+      echo "! true: $?"

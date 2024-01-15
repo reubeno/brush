@@ -8,8 +8,8 @@ cases:
           Something here...
           ...and here.
           END-MARKER
-    args:
-      - "./script.sh"
+          echo "This is after"
+    args: ["./script.sh"]
 
   - name: "Basic here string"
     stdin: |

@@ -64,7 +64,7 @@ pub enum ParameterExpr {
         test_type: ParameterTestType,
         alternative_value: Option<String>,
     },
-    StringLength {
+    ParameterLength {
         parameter: Parameter,
     },
     RemoveSmallestSuffixPattern {
@@ -210,7 +210,7 @@ peg::parser! {
                 ParameterExpr::UseAlternativeValue { parameter, test_type, alternative_value }
             } /
             "#" parameter:parameter() {
-                ParameterExpr::StringLength { parameter }
+                ParameterExpr::ParameterLength { parameter }
             } /
             parameter:parameter() "%" pattern:parameter_expression_word()? {
                 ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern }

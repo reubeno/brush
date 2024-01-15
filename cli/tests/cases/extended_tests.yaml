@@ -11,6 +11,40 @@ cases:
       [[ -d /tmp ]] && echo "-d correctly checked /tmp"
       [[ -d /dev/null ]] || echo "-d correctly checked /dev/null"
 
+  - name: "File executable tests"
+    stdin: |
+      [[ -x non-existent ]] || echo "-x correctly identified non-existent path"
+
+      touch test-file
+      ln -sfr link test-file
+      [[ -x test-file ]] || echo "-x correctly identified non-executable file"
+      [[ -x link ]] || echo "-x correctly identified link to non-executable file"
+
+      chmod o+x test-file
+      [[ -x test-file ]] || echo "-x correctly identified other-only-executable file"
+      [[ -x link ]] || echo "-x correctly identified link to other-only-executable file"
+
+      chmod a+x test-file
+      [[ -x test-file ]] && echo "-x correctly identified executable file"
+      [[ -x link ]] && echo "-x correctly identified link to executable file"
+
+  - name: "File writable tests"
+    stdin: |
+      [[ -w non-existent ]] || echo "-w correctly identified non-existent path"
+
+      touch test-file
+      ln -sfr link test-file
+      [[ -w test-file ]] || echo "-w correctly identified non-writable file"
+      [[ -w link ]] || echo "-w correctly identified link to non-writable file"
+
+      chmod o+x test-file
+      [[ -w test-file ]] || echo "-w correctly identified other-only-writable file"
+      [[ -w link ]] || echo "-w correctly identified link to other-only-writable file"
+
+      chmod a+x test-file
+      [[ -w test-file ]] && echo "-w correctly identified writable file"
+      [[ -w link ]] && echo "-w correctly identified link to writable file"
+
   - name: "Unary string extended tests"
     stdin: |
       [[ -z "" ]] && echo "-z: Pass"
@@ -36,6 +70,17 @@ cases:
       [[ "a" > "a" ]] && echo "11. Fail"
       [[ "b" > "a" ]] && echo "12. Pass"
 
+  - name: "Binary string matching"
+    stdin: |
+      [[ "abc" == a* ]] && echo "1. Pass"
+      [[ "abc" != a* ]] && echo "2. Fail"
+      [[ a* != "abc" ]] && echo "3. Pass"
+
+  - name: "Quoted pattern binary string matching"
+    known_failure: true
+    stdin: |
+      [[ "abc" != "a*" ]] && echo "1. Fail"
+
   - name: "Arithmetic extended tests"
     stdin: |
       [[ 0 -eq 0 ]] && echo "1. Pass"
@@ -58,3 +103,10 @@ cases:
       [[ 1 -le 0 ]] && echo "16. Fail"
       [[ 1 -gt 0 ]] && echo "17. Pass"
       [[ 1 -ge 0 ]] && echo "18. Pass"
+
+  - name: "Regex"
+    stdin: |
+      [[ "a" =~ ^a$ ]] && echo "1. Pass"
+      [[ "abc" =~ a* ]] && echo "1. Pass"
+      [[ a =~ ^(a)$ ]] && echo "1. Pass"
+      [[ a =~ ^(a|b)$ ]] && echo "1. Pass"

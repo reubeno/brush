@@ -38,3 +38,16 @@ cases:
       echo $(echo hi)
       echo "$(echo hi)"
       echo "$(echo "hi")"
+
+  - name: "String length"
+    stdin: |
+      x="abc"
+      echo "len = ${#x}"
+
+  - name: "Array length"
+    known_failure: true
+    stdin: |
+      y=(a b c)
+      echo "len(y)    = ${#y}"
+      echo "len(y[*]) = ${#y[*]}"
+      echo "len(y[@]) = ${#y[@]}"
