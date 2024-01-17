@@ -2,6 +2,7 @@ use anyhow::Result;
 use parser::ast;
 
 use crate::arithmetic::Evaluatable;
+use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
 use crate::variables::ShellVariable;
@@ -9,6 +10,15 @@ use crate::variables::ShellVariable;
 pub(crate) async fn expand_word(shell: &mut Shell, word: &ast::Word) -> Result<String> {
     let mut expander = WordExpander::new(shell);
     expander.expand(word.flatten().as_str()).await
+}
+
+async fn expand_pattern(shell: &mut Shell, pattern: &Option<String>) -> Result<String> {
+    if let Some(pattern) = pattern {
+        let mut expander = WordExpander::new(shell);
+        expander.expand(pattern.as_str()).await
+    } else {
+        Ok(String::new())
+    }
 }
 
 pub struct WordExpander<'a> {
@@ -147,23 +157,42 @@ impl Expandable for parser::word::ParameterExpr {
                 let expanded_parameter = parameter.expand(shell).await?;
                 Ok(expanded_parameter.len().to_string())
             }
-            parser::word::ParameterExpr::RemoveSmallestSuffixPattern {
-                parameter: _,
-                pattern: _,
-            } => todo!("UNIMPLEMENTED: expansion: remove smallest suffix pattern expressions"),
-            parser::word::ParameterExpr::RemoveLargestSuffixPattern {
-                parameter: _,
-                pattern: _,
-            } => todo!("UNIMPLEMENTED: expansion: remove largest suffix pattern expressions"),
+            parser::word::ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern } => {
+                let expanded_parameter = parameter.expand(shell).await?;
+                let expanded_pattern = expand_pattern(shell, pattern).await?;
+                let result = patterns::remove_smallest_matching_suffix(
+                    expanded_parameter.as_str(),
+                    expanded_pattern.as_str(),
+                )?;
+                Ok(result.to_owned())
+            }
+            parser::word::ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern } => {
+                let expanded_parameter = parameter.expand(shell).await?;
+                let expanded_pattern = expand_pattern(shell, pattern).await?;
+                let result = patterns::remove_largest_matching_suffix(
+                    expanded_parameter.as_str(),
+                    expanded_pattern.as_str(),
+                )?;
+                Ok(result.to_owned())
+            }
             parser::word::ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern } => {
                 let expanded_parameter = parameter.expand(shell).await?;
-                log::error!("UNIMPLEMENTED; remove smallest prefix pattern: param={expanded_parameter}, pattern={pattern:?}");
-                Ok(expanded_parameter)
+                let expanded_pattern = expand_pattern(shell, pattern).await?;
+                let result = patterns::remove_smallest_matching_prefix(
+                    expanded_parameter.as_str(),
+                    expanded_pattern.as_str(),
+                )?;
+                Ok(result.to_owned())
             }
-            parser::word::ParameterExpr::RemoveLargestPrefixPattern {
-                parameter: _,
-                pattern: _,
-            } => todo!("UNIMPLEMENTED: expansion: remove largest prefix pattern expressions"),
+            parser::word::ParameterExpr::RemoveLargestPrefixPattern { parameter, pattern } => {
+                let expanded_parameter = parameter.expand(shell).await?;
+                let expanded_pattern = expand_pattern(shell, pattern).await?;
+                let result = patterns::remove_largest_matching_prefix(
+                    expanded_parameter.as_str(),
+                    expanded_pattern.as_str(),
+                )?;
+                Ok(result.to_owned())
+            }
             parser::word::ParameterExpr::Substring {
                 parameter,
                 offset,

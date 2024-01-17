@@ -212,17 +212,17 @@ peg::parser! {
             "#" parameter:parameter() {
                 ParameterExpr::ParameterLength { parameter }
             } /
-            parameter:parameter() "%" pattern:parameter_expression_word()? {
-                ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern }
-            } /
             parameter:parameter() "%%" pattern:parameter_expression_word()? {
                 ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern }
             } /
-            parameter:parameter() "#" pattern:parameter_expression_word()? {
-                ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern }
+            parameter:parameter() "%" pattern:parameter_expression_word()? {
+                ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern }
             } /
             parameter:parameter() "##" pattern:parameter_expression_word()? {
                 ParameterExpr::RemoveLargestPrefixPattern { parameter, pattern }
+            } /
+            parameter:parameter() "#" pattern:parameter_expression_word()? {
+                ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern }
             } /
             parameter:parameter() {
                 ParameterExpr::Parameter { parameter }
