@@ -12,7 +12,7 @@ workspace = true
 anyhow = "1.0.79"
 async-recursion = "1.0.5"
 async-trait = "0.1.77"
-clap = { version = "4.4.14", features = ["derive"] }
+clap = { version = "4.4.17", features = ["derive"] }
 faccess = "0.2.4"
 futures = "0.3.30"
 glob = "0.3.1"
