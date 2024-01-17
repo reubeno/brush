@@ -60,6 +60,7 @@ pub(crate) struct DeclareCommand {
     names: Vec<String>,
 }
 
+#[allow(clippy::too_many_lines)]
 #[async_trait::async_trait]
 impl BuiltinCommand for DeclareCommand {
     async fn execute(
@@ -73,43 +74,56 @@ impl BuiltinCommand for DeclareCommand {
         // Note that we don't implement much.
         if self.function_names_or_defs_only {
             log::error!("UNIMPLEMENTED: declare -f: function names or definitions only");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.function_names_only {
             log::error!("UNIMPLEMENTED: declare -F: function names only");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.locals_inherit_from_prev_scope {
             log::error!("UNIMPLEMENTED: declare -I: locals inherit from previous scope");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.print {
             log::error!("UNIMPLEMENTED: declare -p: print");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
 
         if self.make_indexed_array {
             log::error!("UNIMPLEMENTED: declare -a: make indexed array");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.make_associative_array {
             log::error!("UNIMPLEMENTED: declare -A: make associative array");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.make_integer {
             log::error!("UNIMPLEMENTED: declare -i: make integer");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.lowercase_value_on_assignment {
             log::error!("UNIMPLEMENTED: declare -l: lowercase value on assignment");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.make_nameref {
             log::error!("UNIMPLEMENTED: declare -n: make nameref");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.make_readonly {
             log::error!("UNIMPLEMENTED: declare -r: make readonly");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.make_traced {
             log::error!("UNIMPLEMENTED: declare -t: make traced");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.uppercase_value_on_assignment {
             log::error!("UNIMPLEMENTED: declare -u: uppercase value on assignment");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
         if self.make_exported {
             log::error!("UNIMPLEMENTED: declare -x: make exported");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
 
         let (names, plus_args): (Vec<_>, Vec<_>) =
@@ -117,6 +131,7 @@ impl BuiltinCommand for DeclareCommand {
 
         if !plus_args.is_empty() {
             log::error!("UNIMPLEMENTED: declare +: plus args used");
+            return Ok(BuiltinExitCode::Unimplemented);
         }
 
         if !names.is_empty() {
@@ -126,9 +141,8 @@ impl BuiltinCommand for DeclareCommand {
                     |(name, value)| (name, Some(value)),
                 );
 
-                // TODO: handle declaring without value for variable.
+                // TODO: handle declaring without value for variable of different type.
                 if value.is_none() {
-                    log::error!("UNIMPLEMENTED: declaring variable without value");
                     value = Some("");
                 }
 
@@ -150,13 +164,13 @@ impl BuiltinCommand for DeclareCommand {
                     )?;
                 }
 
-                // TODO: set name=value
                 // TODO: update name with attributes
             }
 
             return Ok(BuiltinExitCode::Unimplemented);
         } else {
             // Dump variables.
+            // TODO: Add annotations for variable type.
             for (name, variable) in context
                 .shell
                 .env
