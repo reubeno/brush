@@ -1,11 +1,24 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
 
 use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
+    builtin::{self, BuiltinCommand, BuiltinExitCode},
     env::{EnvironmentLookup, EnvironmentScope},
+    variables::{ShellValue, ShellVariable, ShellVariableUpdateTransform},
 };
+
+builtin::minus_or_plus_flag_arg!(MakeIndexedArrayFlag, 'a', "");
+builtin::minus_or_plus_flag_arg!(MakeAssociativeArrayFlag, 'A', "");
+builtin::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "");
+builtin::minus_or_plus_flag_arg!(LowercaseValueOnAssignmentFlag, 'l', "");
+builtin::minus_or_plus_flag_arg!(MakeNameRefFlag, 'n', "");
+builtin::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "");
+builtin::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "");
+builtin::minus_or_plus_flag_arg!(UppercaseValueOnAssignmentFlag, 'u', "");
+builtin::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "");
 
 #[derive(Parser, Debug)]
 pub(crate) struct DeclareCommand {
@@ -27,35 +40,28 @@ pub(crate) struct DeclareCommand {
     //
     // Attribute options
     //
-    // TODO: allow + to be used to disable option
+    #[clap(flatten)] // -a
+    make_indexed_array: MakeIndexedArrayFlag,
+    #[clap(flatten)] // -A
+    make_associative_array: MakeAssociativeArrayFlag,
+    #[clap(flatten)] // -i
+    make_integer: MakeIntegerFlag,
+    #[clap(flatten)] // -l
+    lowercase_value_on_assignment: LowercaseValueOnAssignmentFlag,
+    #[clap(flatten)] // -n
+    make_nameref: MakeNameRefFlag,
+    #[clap(flatten)] // -r
+    make_readonly: MakeReadonlyFlag,
+    #[clap(flatten)] // -t
+    make_traced: MakeTracedFlag,
+    #[clap(flatten)] // -u
+    uppercase_value_on_assignment: UppercaseValueOnAssignmentFlag,
+    #[clap(flatten)] // -x
+    make_exported: MakeExportedFlag,
+
     //
-    #[arg(short = 'a')]
-    make_indexed_array: bool,
-
-    #[arg(short = 'A')]
-    make_associative_array: bool,
-
-    #[arg(short = 'i')]
-    make_integer: bool,
-
-    #[arg(short = 'l')]
-    lowercase_value_on_assignment: bool,
-
-    #[arg(short = 'n')]
-    make_nameref: bool,
-
-    #[arg(short = 'r')]
-    make_readonly: bool,
-
-    #[arg(short = 't')]
-    make_traced: bool,
-
-    #[arg(short = 'u')]
-    uppercase_value_on_assignment: bool,
-
-    #[arg(short = 'x')]
-    make_exported: bool,
-
+    // Names
+    //
     #[arg(name = "name[=value]")]
     names: Vec<String>,
 }
@@ -72,118 +78,255 @@ impl BuiltinCommand for DeclareCommand {
             called_as_local || (context.shell.in_function() && !self.create_global);
 
         // Note that we don't implement much.
-        if self.function_names_or_defs_only {
-            log::error!("UNIMPLEMENTED: declare -f: function names or definitions only");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.function_names_only {
-            log::error!("UNIMPLEMENTED: declare -F: function names only");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
         if self.locals_inherit_from_prev_scope {
             log::error!("UNIMPLEMENTED: declare -I: locals inherit from previous scope");
             return Ok(BuiltinExitCode::Unimplemented);
         }
-        if self.print {
-            log::error!("UNIMPLEMENTED: declare -p: print");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
 
-        if self.make_indexed_array {
-            log::error!("UNIMPLEMENTED: declare -a: make indexed array");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.make_associative_array {
-            log::error!("UNIMPLEMENTED: declare -A: make associative array");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.make_integer {
-            log::error!("UNIMPLEMENTED: declare -i: make integer");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.lowercase_value_on_assignment {
-            log::error!("UNIMPLEMENTED: declare -l: lowercase value on assignment");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.make_nameref {
-            log::error!("UNIMPLEMENTED: declare -n: make nameref");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.make_readonly {
-            log::error!("UNIMPLEMENTED: declare -r: make readonly");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.make_traced {
-            log::error!("UNIMPLEMENTED: declare -t: make traced");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.uppercase_value_on_assignment {
-            log::error!("UNIMPLEMENTED: declare -u: uppercase value on assignment");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-        if self.make_exported {
-            log::error!("UNIMPLEMENTED: declare -x: make exported");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
+        let mut result = BuiltinExitCode::Success;
+        if !self.names.is_empty() {
+            for entry in &self.names {
+                if self.print {
+                    if self.function_names_only || self.function_names_or_defs_only {
+                        log::error!(
+                            "UNIMPLEMENTED: declare -p: function names or definitions only"
+                        );
+                        return Ok(BuiltinExitCode::Unimplemented);
+                    } else if let Some(variable) = context.shell.env.get(entry) {
+                        let cs = get_declare_flag_str(variable);
+                        println!("declare -{cs} {entry}={}", variable.value.format()?);
+                    } else {
+                        eprintln!("declare: {entry}: not found");
+                        result = BuiltinExitCode::Custom(1);
+                    }
 
-        let (names, plus_args): (Vec<_>, Vec<_>) =
-            self.names.iter().partition(|name| !name.starts_with('+'));
+                    continue;
+                }
 
-        if !plus_args.is_empty() {
-            log::error!("UNIMPLEMENTED: declare +: plus args used");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
+                if self.function_names_or_defs_only {
+                    log::error!("UNIMPLEMENTED: declare -f: function names or definitions only");
+                    return Ok(BuiltinExitCode::Unimplemented);
+                }
+                if self.function_names_only {
+                    log::error!("UNIMPLEMENTED: declare -F: function names only");
+                    return Ok(BuiltinExitCode::Unimplemented);
+                }
 
-        if !names.is_empty() {
-            for entry in names {
-                let (name, mut value) = entry.split_once('=').map_or_else(
+                let (name, value) = entry.split_once('=').map_or_else(
                     || (entry.as_str(), None),
                     |(name, value)| (name, Some(value)),
                 );
 
-                // TODO: handle declaring without value for variable of different type.
-                if value.is_none() {
-                    value = Some("");
-                }
-
-                if create_var_local {
-                    context.shell.env.update_or_add(
-                        name,
-                        value.unwrap(),
-                        |_| Ok(()),
-                        EnvironmentLookup::OnlyInCurrentLocal,
-                        EnvironmentScope::Local,
-                    )?;
+                let lookup = if create_var_local {
+                    EnvironmentLookup::OnlyInCurrentLocal
                 } else {
+                    EnvironmentLookup::OnlyInGlobal
+                };
+
+                let scope = if create_var_local {
+                    EnvironmentScope::Local
+                } else {
+                    EnvironmentScope::Global
+                };
+
+                // TODO
+                result = BuiltinExitCode::Unimplemented;
+
+                if let Some(var) = context.shell.env.get_mut_using_policy(name, lookup) {
+                    if self.make_indexed_array.is_some() {
+                        log::error!("UNIMPLEMENTED: declare -a: converting to indexed array");
+                        return Ok(BuiltinExitCode::Unimplemented);
+                    }
+                    if self.make_associative_array.is_some() {
+                        log::error!("UNIMPLEMENTED: declare -A: converting to associative array");
+                        return Ok(BuiltinExitCode::Unimplemented);
+                    }
+
+                    // TODO: handle setting the attributes *before* the new assignment.
+                    if let Some(value) = value {
+                        var.set_by_str(value)?;
+                    }
+
+                    self.apply_attributes(var)?;
+                } else {
+                    let initial_value = if self.make_indexed_array.is_some() {
+                        if let Some(value) = value {
+                            ShellValue::new_indexed_array(value)
+                        } else {
+                            ShellValue::IndexedArray(vec![])
+                        }
+                    } else if self.make_associative_array.is_some() {
+                        if let Some(value) = value {
+                            ShellValue::new_associative_array(value)
+                        } else {
+                            ShellValue::AssociativeArray(HashMap::new())
+                        }
+                    } else {
+                        value.unwrap_or("").into()
+                    };
+
+                    // TODO: handle declaring without value for variable of different type.
+                    // TODO: handle setting the attributes *before* the first assignment.
                     context.shell.env.update_or_add(
                         name,
-                        value.unwrap(),
-                        |_| Ok(()),
-                        EnvironmentLookup::OnlyInGlobal,
-                        EnvironmentScope::Global,
+                        initial_value,
+                        |v| self.apply_attributes(v),
+                        lookup,
+                        scope,
                     )?;
                 }
+            }
+        } else {
+            //
+            // Dump variables. Use attribute flags to filter which variables are dumped.
+            //
+            // TODO: Figure out scoping?
+            //
 
-                // TODO: update name with attributes
+            // We start by excluding all variables that are not enumerable.
+            let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool>> =
+                vec![Box::new(|(_, v)| v.enumerable)];
+
+            // Add filters depending on attribute flags.
+            if let Some(value) = self.make_indexed_array.to_bool() {
+                filters.push(Box::new(move |(_, v)| {
+                    matches!(v.value, ShellValue::IndexedArray(_)) == value
+                }));
+            }
+            if let Some(value) = self.make_associative_array.to_bool() {
+                filters.push(Box::new(move |(_, v)| {
+                    matches!(v.value, ShellValue::AssociativeArray(_)) == value
+                }));
+            }
+            if let Some(value) = self.make_integer.to_bool() {
+                filters.push(Box::new(move |(_, v)| v.treat_as_integer == value));
+            }
+            if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
+                filters.push(Box::new(move |(_, v)| {
+                    matches!(
+                        v.transform_on_update,
+                        ShellVariableUpdateTransform::Lowercase
+                    ) == value
+                }));
+            }
+            // TODO: nameref
+            if let Some(value) = self.make_readonly.to_bool() {
+                filters.push(Box::new(move |(_, v)| v.readonly == value));
+            }
+            if let Some(value) = self.make_readonly.to_bool() {
+                filters.push(Box::new(move |(_, v)| v.trace == value));
+            }
+            if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
+                filters.push(Box::new(move |(_, v)| {
+                    matches!(
+                        v.transform_on_update,
+                        ShellVariableUpdateTransform::Uppercase
+                    ) == value
+                }));
+            }
+            if let Some(value) = self.make_exported.to_bool() {
+                filters.push(Box::new(move |(_, v)| v.exported == value));
             }
 
-            return Ok(BuiltinExitCode::Unimplemented);
-        } else {
-            // Dump variables.
-            // TODO: Add annotations for variable type.
             for (name, variable) in context
                 .shell
                 .env
                 .iter()
-                .filter(|(_, v)| v.enumerable)
+                .filter(|pair| filters.iter().all(|f| f(*pair)))
                 .sorted_by_key(|v| v.0)
             {
-                println!("{}={}", name, variable.value.format()?);
+                if self.print {
+                    let cs = get_declare_flag_str(variable);
+                    println!("declare -{cs} {name}={}", variable.value.format()?);
+                } else {
+                    println!("{name}={}", variable.value.format()?);
+                }
             }
 
             // TODO: dump functions
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(result)
     }
+}
+
+impl DeclareCommand {
+    fn apply_attributes(&self, var: &mut ShellVariable) -> Result<()> {
+        if let Some(value) = self.make_integer.to_bool() {
+            var.treat_as_integer = value;
+        }
+        if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
+            if value {
+                var.transform_on_update = ShellVariableUpdateTransform::Lowercase;
+            } else if matches!(
+                var.transform_on_update,
+                ShellVariableUpdateTransform::Lowercase
+            ) {
+                var.transform_on_update = ShellVariableUpdateTransform::None;
+            }
+        }
+        if let Some(value) = self.make_nameref.to_bool() {
+            if value {
+                log::error!("UNIMPLEMENTED: declare -n: make nameref");
+                return Err(anyhow::anyhow!("UNIMPLEMENTED: declare with nameref"));
+            }
+        }
+        if let Some(value) = self.make_readonly.to_bool() {
+            var.readonly = value;
+        }
+        if let Some(value) = self.make_traced.to_bool() {
+            var.trace = value;
+        }
+        if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
+            if value {
+                var.transform_on_update = ShellVariableUpdateTransform::Uppercase;
+            } else if matches!(
+                var.transform_on_update,
+                ShellVariableUpdateTransform::Uppercase
+            ) {
+                var.transform_on_update = ShellVariableUpdateTransform::None;
+            }
+        }
+        if let Some(value) = self.make_exported.to_bool() {
+            var.exported = value;
+        }
+
+        Ok(())
+    }
+}
+
+fn get_declare_flag_str(variable: &ShellVariable) -> String {
+    let mut result = String::new();
+
+    if matches!(variable.value, ShellValue::IndexedArray(_)) {
+        result.push('a');
+    }
+    if matches!(variable.value, ShellValue::AssociativeArray(_)) {
+        result.push('A');
+    }
+    if variable.treat_as_integer {
+        result.push('i');
+    }
+    if let ShellVariableUpdateTransform::Lowercase = variable.transform_on_update {
+        result.push('l');
+    }
+    // TODO: nameref
+    if variable.readonly {
+        result.push('r');
+    }
+    if variable.trace {
+        result.push('t');
+    }
+    if let ShellVariableUpdateTransform::Uppercase = variable.transform_on_update {
+        result.push('u');
+    }
+    if variable.exported {
+        result.push('x');
+    }
+
+    if result.is_empty() {
+        result.push('-');
+    }
+
+    result
 }

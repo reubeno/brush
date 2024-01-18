@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 
-use crate::variables::{ShellValue, ShellVariable};
+use crate::variables::{ShellValue, ShellVariable, ShellVariableUpdateTransform};
 
 #[derive(Clone, Copy)]
 pub enum EnvironmentLookup {
@@ -151,7 +151,7 @@ impl ShellEnvironment {
         &mut self,
         name: N,
         value: V,
-        updater: fn(&mut ShellVariable) -> Result<()>,
+        updater: impl Fn(&mut ShellVariable) -> Result<()>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<()> {
@@ -237,6 +237,9 @@ impl ShellVariableMap {
                 exported: false,
                 readonly: false,
                 enumerable: true,
+                transform_on_update: ShellVariableUpdateTransform::None,
+                trace: false,
+                treat_as_integer: false,
             },
         );
 
