@@ -4,6 +4,43 @@ use futures::future::BoxFuture;
 
 use crate::shell::Shell;
 
+#[macro_export]
+macro_rules! minus_or_plus_flag_arg {
+    ($struct_name:ident, $flag_char:literal, $desc:literal) => {
+        #[derive(clap::Parser, Debug)]
+        pub(crate) struct $struct_name {
+            /// $desc
+            #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue)]
+            _enable: bool,
+            #[arg(long = concat!("+", $flag_char), name = concat!(stringify!($struct_name), "_disable"), action = clap::ArgAction::SetTrue, hide = true)]
+            _disable: bool,
+        }
+
+        impl From<$struct_name> for Option<bool> {
+            fn from(value: $struct_name) -> Self {
+                value.to_bool()
+            }
+        }
+
+        impl $struct_name {
+            #[allow(dead_code)]
+            pub fn is_some(&self) -> bool {
+                self._enable || self._disable
+            }
+
+            pub fn to_bool(&self) -> Option<bool> {
+                match (self._enable, self._disable) {
+                    (true, false) => Some(true),
+                    (false, true) => Some(false),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+pub(crate) use minus_or_plus_flag_arg;
+
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct BuiltinResult {

@@ -9,6 +9,16 @@ pub struct ShellVariable {
     pub exported: bool,
     pub readonly: bool,
     pub enumerable: bool,
+    pub transform_on_update: ShellVariableUpdateTransform,
+    pub trace: bool,
+    pub treat_as_integer: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum ShellVariableUpdateTransform {
+    None,
+    Lowercase,
+    Uppercase,
 }
 
 impl ShellVariable {
@@ -27,6 +37,10 @@ impl ShellVariable {
     pub fn unset_readonly(&mut self) {
         self.readonly = false;
     }
+
+    pub fn set_by_str(&mut self, _value_str: &str) -> Result<()> {
+        todo!("set_by_str not implemented yet");
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -39,6 +53,14 @@ pub enum ShellValue {
 }
 
 impl ShellValue {
+    pub fn new_indexed_array<S: AsRef<str>>(s: S) -> Self {
+        ShellValue::IndexedArray(vec![s.as_ref().to_owned()])
+    }
+
+    pub fn new_associative_array<S: AsRef<str>>(_s: S) -> Self {
+        todo!("UNIMPLEMENTED: new associative array from string");
+    }
+
     pub fn format(&self) -> Result<String> {
         match self {
             ShellValue::String(s) => {
