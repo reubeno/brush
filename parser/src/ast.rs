@@ -135,8 +135,16 @@ pub enum CommandPrefixOrSuffixItem {
 
 #[derive(Clone, Debug)]
 pub enum Assignment {
-    Scalar { name: String, value: Word },
-    Array { name: String, values: Vec<Word> },
+    Scalar {
+        name: String,
+        value: Word,
+        append: bool,
+    },
+    Array {
+        name: String,
+        values: Vec<Word>,
+        append: bool,
+    },
 }
 
 pub type RedirectList = Vec<IoRedirect>;

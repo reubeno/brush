@@ -6,3 +6,36 @@ cases:
       if false; then echo 3; elif false; then echo 4; else echo 5; fi
       if true; then echo 6; else echo 7; fi
       if false; then echo 8; elif true; then echo 10; else echo 11; fi
+
+  - name: "Multi-line if"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          if false; then
+            echo 1
+          else
+            echo 2
+          fi
+
+          if false; then
+            echo 3
+          elif false; then
+            echo 4
+          else
+            echo 5
+          fi
+
+          if true; then
+            echo 6
+          else
+            echo 7
+          fi
+
+          if false; then
+            echo 8
+          elif true; then
+            echo 10
+          else
+            echo 11
+          fi
+    args: ["./script.sh"]

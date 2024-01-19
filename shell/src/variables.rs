@@ -52,6 +52,12 @@ pub enum ShellValue {
     Random,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum FormatStyle {
+    Basic,
+    DeclarePrint,
+}
+
 impl ShellValue {
     pub fn new_indexed_array<S: AsRef<str>>(s: S) -> Self {
         ShellValue::IndexedArray(vec![s.as_ref().to_owned()])
@@ -61,14 +67,19 @@ impl ShellValue {
         todo!("UNIMPLEMENTED: new associative array from string");
     }
 
-    pub fn format(&self) -> Result<String> {
+    pub fn format(&self, style: FormatStyle) -> Result<String> {
         match self {
             ShellValue::String(s) => {
                 // TODO: Handle embedded newlines and other special chars.
-                if s.contains(' ') {
-                    Ok(format!("'{s}'"))
-                } else {
-                    Ok(s.clone())
+                match style {
+                    FormatStyle::Basic => {
+                        if s.contains(' ') {
+                            Ok(format!("'{s}'"))
+                        } else {
+                            Ok(s.clone())
+                        }
+                    }
+                    FormatStyle::DeclarePrint => Ok(format!("\"{s}\"")),
                 }
             }
             ShellValue::Integer(_) => todo!("UNIMPLEMENTED: formatting integers"),

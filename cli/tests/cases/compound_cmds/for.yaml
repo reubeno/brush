@@ -3,4 +3,16 @@ cases:
   - name: "Single-line for loop"
     stdin: |
       for f in 1 2 3; do echo $f; done
-      echo "Result: $?"
+
+  - name: "Empty for loop"
+    stdin: |
+      for f in; do echo $f; done
+
+  - name: "Multi-line for loop"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          for f in 1 2 3; do
+            echo $f
+          done
+    args: ["./script.sh"]

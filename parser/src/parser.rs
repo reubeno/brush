@@ -652,7 +652,12 @@ peg::parser! {
 fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
     let variable_name: String;
     let value;
-    if let Some((first, second)) = word.split_once('=') {
+    let append;
+    if let Some((mut first, second)) = word.split_once('=') {
+        append = first.ends_with('+');
+        if append && first.len() > 1 {
+            first = &first[..first.len() - 1];
+        }
         variable_name = first.to_owned();
         value = second.to_owned();
     } else {
@@ -662,6 +667,7 @@ fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
     Ok(ast::Assignment::Scalar {
         name: variable_name,
         value: ast::Word { value },
+        append,
     })
 }
 
@@ -673,6 +679,7 @@ fn parse_array_assignment(
         if variable_name.contains('=') {
             Err("not assignment word")
         } else {
+            // TODO: handle appending to an array
             Ok(ast::Assignment::Array {
                 name: variable_name.to_owned(),
                 values: elements
@@ -681,6 +688,7 @@ fn parse_array_assignment(
                         value: (*e).to_owned(),
                     })
                     .collect(),
+                append: false,
             })
         }
     } else {

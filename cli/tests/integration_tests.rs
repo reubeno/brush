@@ -15,6 +15,9 @@ async fn cli_integration_tests() -> Result<()> {
     let mut success_count = 0;
     let mut expected_fail_count = 0;
     let mut fail_count = 0;
+    let mut join_handles = vec![];
+
+    // Spawn each test case set separately.
     for entry in glob::glob(format!("{dir}/tests/cases/**/*.yaml").as_ref()).unwrap() {
         let entry = entry.unwrap();
 
@@ -22,7 +25,12 @@ async fn cli_integration_tests() -> Result<()> {
         let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
             .context(format!("parsing {}", entry.to_string_lossy()))?;
 
-        let results = test_case_set.run().await?;
+        join_handles.push(tokio::spawn(async move { test_case_set.run().await }));
+    }
+
+    // Now go through and await everything.
+    for join_handle in join_handles {
+        let results = join_handle.await??;
 
         success_count += results.success_count;
         expected_fail_count += results.expected_fail_count;
