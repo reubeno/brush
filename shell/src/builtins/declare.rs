@@ -7,7 +7,7 @@ use itertools::Itertools;
 use crate::{
     builtin::{self, BuiltinCommand, BuiltinExitCode},
     env::{EnvironmentLookup, EnvironmentScope},
-    variables::{ShellValue, ShellVariable, ShellVariableUpdateTransform},
+    variables::{self, ShellValue, ShellVariable, ShellVariableUpdateTransform},
 };
 
 builtin::minus_or_plus_flag_arg!(MakeIndexedArrayFlag, 'a', "");
@@ -94,7 +94,12 @@ impl BuiltinCommand for DeclareCommand {
                         return Ok(BuiltinExitCode::Unimplemented);
                     } else if let Some(variable) = context.shell.env.get(entry) {
                         let cs = get_declare_flag_str(variable);
-                        println!("declare -{cs} {entry}={}", variable.value.format()?);
+                        println!(
+                            "declare -{cs} {entry}={}",
+                            variable
+                                .value
+                                .format(variables::FormatStyle::DeclarePrint)?
+                        );
                     } else {
                         eprintln!("declare: {entry}: not found");
                         result = BuiltinExitCode::Custom(1);
@@ -237,9 +242,17 @@ impl BuiltinCommand for DeclareCommand {
             {
                 if self.print {
                     let cs = get_declare_flag_str(variable);
-                    println!("declare -{cs} {name}={}", variable.value.format()?);
+                    println!(
+                        "declare -{cs} {name}={}",
+                        variable
+                            .value
+                            .format(variables::FormatStyle::DeclarePrint)?
+                    );
                 } else {
-                    println!("{name}={}", variable.value.format()?);
+                    println!(
+                        "{name}={}",
+                        variable.value.format(variables::FormatStyle::Basic)?
+                    );
                 }
             }
 

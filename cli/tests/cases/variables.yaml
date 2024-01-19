@@ -1,0 +1,7 @@
+name: "Variable tests"
+cases:
+  - name: "Appending to a variable"
+    stdin: |
+      x=something
+      x+=here
+      echo "x: ${x}"

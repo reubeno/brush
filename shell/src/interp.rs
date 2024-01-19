@@ -15,7 +15,7 @@ use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::expansion::expand_word;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
-use crate::variables::ShellValue;
+use crate::variables::{self, ShellValue};
 use crate::{builtin, builtins};
 use crate::{extendedtests, patterns};
 
@@ -605,11 +605,36 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         for assignment in &assignments {
             match assignment {
-                ast::Assignment::Scalar { name, value } => {
-                    let expanded_value = expand_word(context.shell, value).await?;
+                ast::Assignment::Scalar {
+                    name,
+                    value,
+                    append,
+                } => {
+                    let mut value = value.clone();
+
+                    if *append {
+                        if let Some(prev_value) =
+                            context.shell.env.get(name).map(|v| v.value.clone())
+                        {
+                            // TODO: Find a cleaner way to do this.
+                            let mut prev_str: String = (&prev_value).into();
+                            prev_str.push_str(value.value.as_str());
+                            value = ast::Word { value: prev_str }
+                        }
+                    }
+
+                    let expanded_value = expand_word(context.shell, &value).await?;
                     env_vars.push((name.clone(), ShellValue::String(expanded_value)));
                 }
-                ast::Assignment::Array { name, values } => {
+                ast::Assignment::Array {
+                    name,
+                    values,
+                    append,
+                } => {
+                    if *append {
+                        log::error!("UNIMPLEMENTED: append assignment");
+                    }
+
                     let mut expanded_values = vec![];
                     for value in values {
                         expanded_values.push(expand_word(context.shell, value).await?);
@@ -685,7 +710,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             for (name, value) in env_vars {
                 if context.shell.options.print_commands_and_arguments {
-                    println!("+ {name}={}", value.format()?);
+                    println!("+ {name}={}", value.format(variables::FormatStyle::Basic)?);
                 }
 
                 // TODO: Handle readonly variables.
