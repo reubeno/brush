@@ -12,6 +12,7 @@ use tokio_command_fds::{CommandFdExt, FdMapping};
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope};
+use crate::error;
 use crate::expansion::expand_word;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
@@ -73,7 +74,7 @@ pub trait Execute {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult>;
+    ) -> Result<ExecutionResult, error::Error>;
 }
 
 #[async_trait::async_trait]
@@ -81,7 +82,7 @@ trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext,
-    ) -> Result<SpawnResult>;
+    ) -> Result<SpawnResult, error::Error>;
 }
 
 #[async_trait::async_trait]
@@ -90,7 +91,7 @@ impl Execute for ast::Program {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
 
         for command in &self.complete_commands {
@@ -111,7 +112,7 @@ impl Execute for ast::CompleteCommand {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
 
         for (ao_list, sep) in self {
@@ -142,7 +143,7 @@ async fn execute_ao_list_async(
     mut shell: Shell,
     params: ExecutionParameters,
     ao_list: ast::AndOrList,
-) -> Result<ExecutionResult> {
+) -> Result<ExecutionResult, error::Error> {
     let background_job = ao_list.execute(&mut shell, &params).await?;
     Ok(background_job)
 }
@@ -153,7 +154,7 @@ impl Execute for ast::AndOrList {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let mut result = self.first.execute(shell, params).await?;
 
         for next_ao in &self.additional {
@@ -187,7 +188,7 @@ impl Execute for ast::Pipeline {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         //
         // TODO: implement logic deciding when to abort
         // TODO: confirm whether exit code comes from first or last in pipeline
@@ -244,7 +245,8 @@ impl Execute for ast::Pipeline {
                     result = ExecutionResult::new(exit_code);
 
                     if capture_output && child_index + 1 == child_count {
-                        let output_str = std::str::from_utf8(output.stdout.as_slice())?;
+                        let output_str = std::str::from_utf8(output.stdout.as_slice())
+                            .map_err(|e| error::Error::Unknown(e.into()))?;
                         result.output = Some(output_str.to_owned());
                     }
                 }
@@ -284,7 +286,7 @@ impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
         pipeline_context: &mut PipelineExecutionContext,
-    ) -> Result<SpawnResult> {
+    ) -> Result<SpawnResult, error::Error> {
         match self {
             ast::Command::Simple(simple) => simple.execute_in_pipeline(pipeline_context).await,
             ast::Command::Compound(compound, _redirects) => {
@@ -328,7 +330,7 @@ impl Execute for ast::CompoundCommand {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         match self {
             ast::CompoundCommand::BraceGroup(g) => g.execute(shell, params).await,
             ast::CompoundCommand::Subshell(s) => {
@@ -357,7 +359,7 @@ impl Execute for ast::ForClauseCommand {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
 
         if let Some(unexpanded_values) = &self.values {
@@ -391,7 +393,7 @@ impl Execute for ast::CaseClauseCommand {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let expanded_value = expand_word(shell, &self.value).await?;
         for case in &self.cases {
             let mut matches = false;
@@ -424,7 +426,7 @@ impl Execute for ast::IfClauseCommand {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let condition = self.condition.execute(shell, params).await?;
 
         if condition.is_success() {
@@ -460,7 +462,7 @@ impl Execute for (WhileOrUntil, &ast::WhileClauseCommand) {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let is_while = match self.0 {
             WhileOrUntil::While => true,
             WhileOrUntil::Until => false,
@@ -490,7 +492,7 @@ impl Execute for ast::ArithmeticCommand {
         &self,
         shell: &mut Shell,
         _params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let value = self.expr.eval(shell).await?;
         let result = if value != 0 {
             ExecutionResult::success()
@@ -510,7 +512,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
         &self,
         shell: &mut Shell,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
         if let Some(initializer) = &self.initializer {
             initializer.eval(shell).await?;
@@ -541,7 +543,7 @@ impl Execute for ast::FunctionDefinition {
         &self,
         shell: &mut Shell,
         _params: &ExecutionParameters,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         //
         // TODO: confirm whether defining a function resets the last execution.
         //
@@ -561,7 +563,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext,
-    ) -> Result<SpawnResult> {
+    ) -> Result<SpawnResult, error::Error> {
         let empty = vec![];
         let prefix_items = self.prefix.as_ref().unwrap_or(&empty);
         let suffix_items = self.suffix.as_ref().unwrap_or(&empty);
@@ -735,7 +737,7 @@ async fn execute_external_command(
     cmd_name: &str,
     args: &[String],
     env_vars: &[(String, ShellValue)],
-) -> Result<SpawnResult> {
+) -> Result<SpawnResult, error::Error> {
     let mut cmd = process::Command::new(cmd_name);
 
     // Pass through args.
@@ -820,7 +822,8 @@ async fn execute_external_command(
             cmd.fd_mappings(vec![FdMapping {
                 child_fd: key as i32,
                 parent_fd: temp_file.as_raw_fd(),
-            }])?;
+            }])
+            .map_err(|e| error::Error::Unknown(e.into()))?;
         }
     }
 
@@ -899,7 +902,7 @@ async fn execute_builtin_command<'a>(
     _open_files: OpenFiles,
     args: Vec<String>,
     _env_vars: Vec<(String, ShellValue)>,
-) -> Result<SpawnResult> {
+) -> Result<SpawnResult, error::Error> {
     let builtin_context = builtin::BuiltinExecutionContext {
         shell: context.shell,
         builtin_name: args[0].clone(),
@@ -927,7 +930,7 @@ async fn invoke_shell_function(
     cmd_name: &str,
     args: &[String],
     env_vars: &[(String, ShellValue)],
-) -> Result<SpawnResult> {
+) -> Result<SpawnResult, error::Error> {
     // TODO: We should figure out how to avoid cloning.
     let function_definition = context.shell.funcs.get(cmd_name).unwrap().clone();
 

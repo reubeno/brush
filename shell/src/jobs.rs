@@ -1,8 +1,9 @@
 use anyhow::Result;
 
+use crate::error;
 use crate::ExecutionResult;
 
-type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult>>;
+type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>;
 
 #[derive(Default)]
 pub struct JobManager {

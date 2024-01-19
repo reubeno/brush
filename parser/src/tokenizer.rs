@@ -63,6 +63,53 @@ pub(crate) struct TokenizeResult {
     pub token: Option<Token>,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum TokenizerError {
+    #[error("unterminated escape sequence")]
+    UnterminatedEscapeSequence,
+
+    #[error("unterminated single quote at {0}")]
+    UnterminatedSingleQuote(SourcePosition),
+
+    #[error("unterminated double quote at {0}")]
+    UnterminatedDoubleQuote(SourcePosition),
+
+    #[error("unterminated backquote near {0}")]
+    UnterminatedBackquote(SourcePosition),
+
+    #[error("unterminated extglob near {0}")]
+    UnterminatedExtendedGlob(SourcePosition),
+
+    #[error("failed to decode UTF-8 characters")]
+    FailedDecoding,
+
+    #[error("missing here tag for here document body")]
+    MissingHereTagForDocumentBody,
+
+    #[error("missing here tag '{0}'")]
+    MissingHereTag(String),
+
+    #[error("unterminated here document sequence; tag(s) found at: [{0}]")]
+    UnterminatedHereDocuments(String),
+
+    #[error("failed to read input")]
+    ReadError(#[from] std::io::Error),
+}
+
+impl TokenizerError {
+    pub fn is_incomplete(&self) -> bool {
+        matches!(
+            self,
+            Self::UnterminatedEscapeSequence
+                | Self::UnterminatedSingleQuote(_)
+                | Self::UnterminatedDoubleQuote(_)
+                | Self::UnterminatedBackquote(_)
+                | Self::UnterminatedExtendedGlob(_)
+                | Self::UnterminatedHereDocuments(_)
+        )
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Tokens<'a> {
     pub tokens: &'a [Token],
@@ -143,7 +190,7 @@ impl TokenParseState {
         }
     }
 
-    pub fn pop(&mut self, end_position: &SourcePosition) -> Result<Token> {
+    pub fn pop(&mut self, end_position: &SourcePosition) -> Token {
         let token_location = TokenLocation {
             start: std::mem::take(&mut self.start_position),
             end: end_position.clone(),
@@ -159,7 +206,7 @@ impl TokenParseState {
         self.in_escape = false;
         self.quote_mode = QuoteMode::None;
 
-        Ok(token)
+        token
     }
 
     pub fn started_token(&self) -> bool {
@@ -202,7 +249,7 @@ impl TokenParseState {
         &mut self,
         reason: TokenEndReason,
         cross_token_state: &mut CrossTokenParseState,
-    ) -> Result<Option<TokenizeResult>> {
+    ) -> Result<Option<TokenizeResult>, TokenizerError> {
         if !self.started_token() {
             return Ok(Some(TokenizeResult {
                 reason,
@@ -217,9 +264,8 @@ impl TokenParseState {
             }
             HereState::CurrentTokenIsHereTag { remove_tabs } => {
                 if self.is_newline() {
-                    return Err(anyhow::anyhow!(
-                        "Missing here tag '{}'",
-                        self.current_token()
+                    return Err(TokenizerError::MissingHereTag(
+                        self.current_token().to_owned(),
                     ));
                 }
 
@@ -248,7 +294,7 @@ impl TokenParseState {
                 // We need to queue it up for later so we can get the here-document
                 // body to show up in the token stream right after the here tag.
                 if let Some(last_here_tag) = cross_token_state.current_here_tags.last_mut() {
-                    let token = self.pop(&cross_token_state.cursor)?;
+                    let token = self.pop(&cross_token_state.cursor);
                     let result = TokenizeResult {
                         reason,
                         token: Some(token),
@@ -256,7 +302,7 @@ impl TokenParseState {
 
                     last_here_tag.pending_tokens_after.push(result);
                 } else {
-                    return Err(anyhow::anyhow!("Missing here tag for here document body"));
+                    return Err(TokenizerError::MissingHereTagForDocumentBody);
                 }
 
                 return Ok(None);
@@ -278,7 +324,7 @@ impl TokenParseState {
             HereState::None => (),
         }
 
-        let token = self.pop(&cross_token_state.cursor)?;
+        let token = self.pop(&cross_token_state.cursor);
         let result = TokenizeResult {
             reason,
             token: Some(token),
@@ -288,7 +334,7 @@ impl TokenParseState {
     }
 }
 
-pub fn tokenize_str(input: &str) -> Result<Vec<Token>> {
+pub fn tokenize_str(input: &str) -> Result<Vec<Token>, TokenizerError> {
     let mut reader = std::io::BufReader::new(input.as_bytes());
     let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &TokenizerOptions::default());
 
@@ -318,8 +364,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Some(self.cross_state.cursor.clone())
     }
 
-    fn next_char(&mut self) -> Result<Option<char>> {
-        let c = self.char_reader.next().transpose()?;
+    fn next_char(&mut self) -> Result<Option<char>, TokenizerError> {
+        let c = self
+            .char_reader
+            .next()
+            .transpose()
+            .map_err(TokenizerError::ReadError)?;
 
         if let Some(ch) = c {
             if ch == '\n' {
@@ -333,26 +383,29 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Ok(c)
     }
 
-    fn consume_char(&mut self) -> Result<()> {
+    fn consume_char(&mut self) -> Result<(), TokenizerError> {
         let _ = self.next_char()?;
         Ok(())
     }
 
-    fn peek_char(&mut self) -> Result<Option<char>> {
+    fn peek_char(&mut self) -> Result<Option<char>, TokenizerError> {
         match self.char_reader.peek() {
             Some(result) => match result {
                 Ok(c) => Ok(Some(*c)),
-                Err(_) => Err(anyhow::anyhow!("failed to decode UTF-8 characters")),
+                Err(_) => Err(TokenizerError::FailedDecoding),
             },
             None => Ok(None),
         }
     }
 
-    pub fn next_token(&mut self) -> Result<TokenizeResult> {
+    pub fn next_token(&mut self) -> Result<TokenizeResult, TokenizerError> {
         self.next_token_until(None)
     }
 
-    fn next_token_until(&mut self, terminating_char: Option<char>) -> Result<TokenizeResult> {
+    fn next_token_until(
+        &mut self,
+        terminating_char: Option<char>,
+    ) -> Result<TokenizeResult, TokenizerError> {
         // First satisfy token results from our queue. Once we exhaust the queue then
         // we'll look at the input stream.
         if !self.cross_state.queued_tokens.is_empty() {
@@ -370,15 +423,15 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 // TODO: Verify we're not waiting on some terminating character?
                 // Verify we're out of all quotes.
                 if state.in_escape {
-                    return Err(anyhow::anyhow!("unterminated escape sequence"));
+                    return Err(TokenizerError::UnterminatedEscapeSequence);
                 }
                 match state.quote_mode {
                     QuoteMode::None => (),
                     QuoteMode::Single(pos) => {
-                        return Err(anyhow::anyhow!("unterminated single quote at {}", pos))
+                        return Err(TokenizerError::UnterminatedSingleQuote(pos));
                     }
                     QuoteMode::Double(pos) => {
-                        return Err(anyhow::anyhow!("unterminated double quote at {}", pos))
+                        return Err(TokenizerError::UnterminatedDoubleQuote(pos));
                     }
                 }
 
@@ -391,10 +444,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         .map(|tag| std::format!("{}", tag.position))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    return Err(anyhow::anyhow!(
-                        "unterminated here document sequence; tag(s) found at: [{}]",
-                        tag_positions
-                    ));
+                    return Err(TokenizerError::UnterminatedHereDocuments(tag_positions));
                 }
 
                 result = state
@@ -610,7 +660,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 } else {
                     // We look for the terminating backquote. First disable normal consumption and consume
                     // the starting backquote.
-                    let backquote_loc = self.cross_state.cursor.clone();
+                    let backquote_pos = self.cross_state.cursor.clone();
                     self.consume_char()?;
 
                     // Add the opening backquote to the token.
@@ -637,10 +687,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 escaping_enabled = false;
                             }
                         } else {
-                            return Err(anyhow::anyhow!(
-                                "Unterminated backquote near {}",
-                                backquote_loc
-                            ));
+                            return Err(TokenizerError::UnterminatedBackquote(backquote_pos));
                         }
                     }
                 }
@@ -675,9 +722,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             break;
                         }
                     } else {
-                        return Err(anyhow::anyhow!(
-                            "unterminated extglob near {}",
-                            self.cross_state.cursor
+                        return Err(TokenizerError::UnterminatedExtendedGlob(
+                            self.cross_state.cursor.clone(),
                         ));
                     }
                 }
@@ -781,7 +827,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'a, R> {
-    type Item = Result<TokenizeResult>;
+    type Item = Result<TokenizeResult, TokenizerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_token() {

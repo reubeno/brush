@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
+use rustyline::validate::ValidationResult;
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
@@ -11,6 +12,7 @@ pub struct InteractiveShell {
 
 enum InteractiveExecutionResult {
     Executed(shell::ExecutionResult),
+    Failed(shell::Error),
     Eof,
 }
 
@@ -77,6 +79,10 @@ impl InteractiveShell {
                         log::error!("return from non-function/script");
                     }
                 }
+                InteractiveExecutionResult::Failed(e) => {
+                    // Report the error, but continue to execute.
+                    log::error!("error: {:#}", e);
+                }
                 InteractiveExecutionResult::Eof => {
                     break;
                 }
@@ -108,10 +114,10 @@ impl InteractiveShell {
         let prompt = self.shell_mut().compose_prompt().await?;
 
         match self.editor.readline(&prompt) {
-            Ok(read_result) => {
-                let result = self.shell_mut().run_string(&read_result, false).await?;
-                Ok(InteractiveExecutionResult::Executed(result))
-            }
+            Ok(read_result) => match self.shell_mut().run_string(&read_result, false).await {
+                Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
+                Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
+            },
             Err(rustyline::error::ReadlineError::Eof) => Ok(InteractiveExecutionResult::Eof),
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 self.shell_mut().last_exit_status = 130;
@@ -124,7 +130,7 @@ impl InteractiveShell {
     }
 }
 
-#[derive(rustyline::Helper, rustyline::Highlighter, rustyline::Hinter, rustyline::Validator)]
+#[derive(rustyline::Helper, rustyline::Highlighter, rustyline::Hinter)]
 pub(crate) struct EditorHelper {
     pub shell: shell::Shell,
 
@@ -156,5 +162,26 @@ impl rustyline::completion::Completer for EditorHelper {
         // Intentionally ignore any errors that arise.
         let completions = self.shell.get_completions(line, pos).unwrap_or_default();
         Ok((completions.start, completions.candidates))
+    }
+}
+
+impl rustyline::validate::Validator for EditorHelper {
+    fn validate(
+        &self,
+        ctx: &mut rustyline::validate::ValidationContext,
+    ) -> rustyline::Result<rustyline::validate::ValidationResult> {
+        let line = ctx.input();
+
+        let parse_result = self.shell.parse_string(line);
+
+        let validation_result = match parse_result {
+            Err(parser::ParseError::Tokenizing { inner, position: _ }) if inner.is_incomplete() => {
+                ValidationResult::Incomplete
+            }
+            Err(parser::ParseError::ParsingAtEndOfInput) => ValidationResult::Incomplete,
+            _ => ValidationResult::Valid(None),
+        };
+
+        Ok(validation_result)
     }
 }

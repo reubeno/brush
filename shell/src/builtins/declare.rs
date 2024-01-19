@@ -7,6 +7,7 @@ use itertools::Itertools;
 use crate::{
     builtin::{self, BuiltinCommand, BuiltinExitCode},
     env::{EnvironmentLookup, EnvironmentScope},
+    error,
     variables::{self, ShellValue, ShellVariable, ShellVariableUpdateTransform},
 };
 
@@ -264,7 +265,7 @@ impl BuiltinCommand for DeclareCommand {
 }
 
 impl DeclareCommand {
-    fn apply_attributes(&self, var: &mut ShellVariable) -> Result<()> {
+    fn apply_attributes(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
         if let Some(value) = self.make_integer.to_bool() {
             var.treat_as_integer = value;
         }
@@ -281,7 +282,7 @@ impl DeclareCommand {
         if let Some(value) = self.make_nameref.to_bool() {
             if value {
                 log::error!("UNIMPLEMENTED: declare -n: make nameref");
-                return Err(anyhow::anyhow!("UNIMPLEMENTED: declare with nameref"));
+                return Err(error::Error::Unimplemented("declare with nameref"));
             }
         }
         if let Some(value) = self.make_readonly.to_bool() {

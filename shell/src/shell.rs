@@ -1,9 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::env::ShellEnvironment;
+use crate::error;
 use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::jobs;
@@ -240,14 +241,23 @@ impl Shell {
         &mut self,
         path: &Path,
         args: &[S],
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         log::debug!("sourcing: {}", path.display());
 
-        let opened_file = std::fs::File::open(path).context(path.to_string_lossy().to_string())?;
-        if opened_file.metadata()?.is_dir() {
-            return Err(anyhow::anyhow!(
-                "{}: path is a directory",
-                path.to_string_lossy().to_string()
+        let opened_file = std::fs::File::open(path)
+            .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e))?;
+
+        let file_metadata = opened_file
+            .metadata()
+            .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e))?;
+
+        if file_metadata.is_dir() {
+            return Err(error::Error::FailedSourcingFile(
+                path.to_owned(),
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    anyhow::anyhow!("path is a directory"),
+                ),
             ));
         }
 
@@ -261,10 +271,10 @@ impl Shell {
         file: &std::fs::File,
         origin: &ProgramOrigin,
         args: &[S],
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
         let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
-        let parse_result = parser.parse(false)?;
+        let parse_result = parser.parse(false);
 
         // TODO: Find a cleaner way to change args.
         let orig_shell_name = self.shell_name.take();
@@ -277,7 +287,7 @@ impl Shell {
             log::error!("UNIMPLEMENTED: source built-in invoked with args: {origin}",);
         }
 
-        let result = self.run_parsed_result(&parse_result, origin, false).await;
+        let result = self.run_parsed_result(parse_result, origin, false).await;
 
         // Restore.
         self.shell_name = orig_shell_name;
@@ -290,29 +300,35 @@ impl Shell {
         &mut self,
         command: &str,
         capture_output: bool,
-    ) -> Result<ExecutionResult> {
-        let mut reader = std::io::BufReader::new(command.as_bytes());
-        let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
-        let parse_result = parser.parse(true)?;
-
-        self.run_parsed_result(&parse_result, &ProgramOrigin::String, capture_output)
+    ) -> Result<ExecutionResult, error::Error> {
+        let parse_result = self.parse_string(command);
+        self.run_parsed_result(parse_result, &ProgramOrigin::String, capture_output)
             .await
+    }
+
+    pub fn parse_string<S: AsRef<str>>(
+        &self,
+        s: S,
+    ) -> Result<parser::ast::Program, parser::ParseError> {
+        let mut reader = std::io::BufReader::new(s.as_ref().as_bytes());
+        let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
+        parser.parse(true)
     }
 
     pub async fn run_script<S: AsRef<str>>(
         &mut self,
         script_path: &Path,
         args: &[S],
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         self.source(script_path, args).await
     }
 
     async fn run_parsed_result(
         &mut self,
-        parse_result: &parser::ParseResult,
+        parse_result: Result<parser::ast::Program, parser::ParseError>,
         origin: &ProgramOrigin,
         capture_output: bool,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         let mut error_prefix = String::new();
 
         if let ProgramOrigin::File(file_path) = origin {
@@ -320,28 +336,28 @@ impl Shell {
         }
 
         let result = match parse_result {
-            parser::ParseResult::Program(prog) => self.run_program(prog, capture_output).await?,
-            parser::ParseResult::ParseError(token_near_error) => {
-                if let Some(token_near_error) = &token_near_error {
-                    let error_loc = &token_near_error.location().start;
+            Ok(prog) => self.run_program(prog, capture_output).await?,
+            Err(parser::ParseError::ParsingNearToken(token_near_error)) => {
+                let error_loc = &token_near_error.location().start;
 
-                    log::error!(
-                        "{}syntax error near token `{}' (line {} col {})",
-                        error_prefix,
-                        token_near_error.to_str(),
-                        error_loc.line,
-                        error_loc.column,
-                    );
-                } else {
-                    log::error!("{}syntax error at end of input", error_prefix);
-                }
-
+                log::error!(
+                    "{}syntax error near token `{}' (line {} col {})",
+                    error_prefix,
+                    token_near_error.to_str(),
+                    error_loc.line,
+                    error_loc.column,
+                );
                 self.last_exit_status = 2;
                 ExecutionResult::new(2)
             }
-            parser::ParseResult::TokenizerError { message, position } => {
+            Err(parser::ParseError::ParsingAtEndOfInput) => {
+                log::error!("{}syntax error at end of input", error_prefix);
+                self.last_exit_status = 2;
+                ExecutionResult::new(2)
+            }
+            Err(parser::ParseError::Tokenizing { inner, position }) => {
                 let mut error_message = error_prefix.clone();
-                error_message.push_str(message);
+                error_message.push_str(inner.to_string().as_str());
 
                 if let Some(position) = position {
                     error_message.push_str(&format!(
@@ -362,9 +378,9 @@ impl Shell {
 
     pub async fn run_program(
         &mut self,
-        program: &parser::ast::Program,
+        program: parser::ast::Program,
         capture_output: bool,
-    ) -> Result<ExecutionResult> {
+    ) -> Result<ExecutionResult, error::Error> {
         program
             .execute(self, &ExecutionParameters { capture_output })
             .await

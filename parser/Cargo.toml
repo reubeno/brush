@@ -16,6 +16,7 @@ if_same_then_else = "allow"
 anyhow = "1.0.79"
 log = "0.4.20"
 peg = "0.8.2"
+thiserror = "1.0.56"
 utf8-chars = "3.0.1"
 
 [dev-dependencies]

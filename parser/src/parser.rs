@@ -3,14 +3,14 @@ use log::debug;
 
 use crate::ast::{self, SeparatorOperator};
 use crate::tokenizer::{
-    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens,
+    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerError, TokenizerOptions, Tokens,
 };
 
-pub enum ParseResult {
-    Program(ast::Program),
-    ParseError(Option<Token>),
-    TokenizerError {
-        message: String,
+pub enum ParseError {
+    ParsingNearToken(Token),
+    ParsingAtEndOfInput,
+    Tokenizing {
+        inner: TokenizerError,
         position: Option<SourcePosition>,
     },
 }
@@ -34,7 +34,7 @@ impl<R: std::io::BufRead> Parser<R> {
         }
     }
 
-    pub fn parse(&mut self, stop_on_unescaped_newline: bool) -> Result<ParseResult> {
+    pub fn parse(&mut self, stop_on_unescaped_newline: bool) -> Result<ast::Program, ParseError> {
         //
         // References:
         //   * https://www.gnu.org/software/bash/manual/bash.html#Shell-Syntax
@@ -56,8 +56,8 @@ impl<R: std::io::BufRead> Parser<R> {
             let result = match tokenizer.next_token() {
                 Ok(result) => result,
                 Err(e) => {
-                    return Ok(ParseResult::TokenizerError {
-                        message: e.to_string(),
+                    return Err(ParseError::Tokenizing {
+                        inner: e,
                         position: tokenizer.current_location(),
                     });
                 }
@@ -84,41 +84,33 @@ impl<R: std::io::BufRead> Parser<R> {
     }
 }
 
-pub fn parse_tokens(tokens: &Vec<Token>) -> Result<ast::Program> {
-    match parse_tokens_impl(tokens)? {
-        ParseResult::Program(prog) => Ok(prog),
-        ParseResult::ParseError(_) => Err(anyhow::anyhow!("parse error")),
-        ParseResult::TokenizerError { .. } => Err(anyhow::anyhow!("tokenizer error")),
-    }
-}
-
-fn parse_tokens_impl(tokens: &Vec<Token>) -> Result<ParseResult> {
+fn parse_tokens_impl(tokens: &Vec<Token>) -> Result<ast::Program, ParseError> {
     let parse_result = token_parser::program(&Tokens { tokens });
 
     let result = match parse_result {
-        Ok(program) => ParseResult::Program(program),
+        Ok(program) => Ok(program),
         Err(parse_error) => {
             debug!("Parse error: {:?}", parse_error);
 
             let approx_token_index = parse_error.location;
 
-            let token_near_error = if approx_token_index < tokens.len() {
-                Some(tokens[approx_token_index].clone())
+            if approx_token_index < tokens.len() {
+                Err(ParseError::ParsingNearToken(
+                    tokens[approx_token_index].clone(),
+                ))
             } else {
-                None
-            };
-
-            ParseResult::ParseError(token_near_error)
+                Err(ParseError::ParsingAtEndOfInput)
+            }
         }
     };
 
     if log::log_enabled!(log::Level::Debug) {
-        if let ParseResult::Program(program) = &result {
+        if let Ok(program) = &result {
             debug!("PROG: {:?}", program);
         }
     }
 
-    Ok(result)
+    result
 }
 
 impl<'a> peg::Parse for Tokens<'a> {
