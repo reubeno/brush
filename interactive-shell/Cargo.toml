@@ -11,5 +11,6 @@ workspace = true
 [dependencies]
 anyhow = "1.0.79"
 log = "0.4.20"
-rustyline = { version = "13.0.0", features = [ "derive" ] }
+rustyline = { version = "13.0.0", features = ["derive"] }
+parser = { path = "../parser" }
 shell = { path = "../shell" }

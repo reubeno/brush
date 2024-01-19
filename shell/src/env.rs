@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 
+use crate::error;
 use crate::variables::{ShellValue, ShellVariable, ShellVariableUpdateTransform};
 
 #[derive(Clone, Copy)]
@@ -151,10 +152,10 @@ impl ShellEnvironment {
         &mut self,
         name: N,
         value: V,
-        updater: impl Fn(&mut ShellVariable) -> Result<()>,
+        updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
-    ) -> Result<()> {
+    ) -> Result<(), error::Error> {
         if let Some(var) = self.get_mut_using_policy(name.as_ref(), lookup_policy) {
             var.value = value.into();
             updater(var)?;
@@ -165,9 +166,7 @@ impl ShellEnvironment {
                         let var = map.set(name.as_ref(), value);
                         updater(var)?;
                     } else {
-                        return Err(anyhow::anyhow!(
-                            "can't set local variable outside of function"
-                        ));
+                        return Err(error::Error::SetLocalVarOutsideFunction);
                     }
                 }
                 EnvironmentScope::Global => {

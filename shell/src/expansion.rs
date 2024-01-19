@@ -2,17 +2,24 @@ use anyhow::Result;
 use parser::ast;
 
 use crate::arithmetic::Evaluatable;
+use crate::error;
 use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
 use crate::variables::ShellVariable;
 
-pub(crate) async fn expand_word(shell: &mut Shell, word: &ast::Word) -> Result<String> {
+pub(crate) async fn expand_word(
+    shell: &mut Shell,
+    word: &ast::Word,
+) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell);
     expander.expand(word.flatten().as_str()).await
 }
 
-async fn expand_pattern(shell: &mut Shell, pattern: &Option<String>) -> Result<String> {
+async fn expand_pattern(
+    shell: &mut Shell,
+    pattern: &Option<String>,
+) -> Result<String, error::Error> {
     if let Some(pattern) = pattern {
         let mut expander = WordExpander::new(shell);
         expander.expand(pattern.as_str()).await
@@ -30,9 +37,9 @@ impl<'a> WordExpander<'a> {
         Self { shell }
     }
 
-    pub async fn expand(&mut self, word: &str) -> Result<String> {
+    pub async fn expand(&mut self, word: &str) -> Result<String, error::Error> {
         // Expand: tildes, parameters, command substitutions, arithmetic.
-        let pieces = parser::parse_word_for_expansion(word)?;
+        let pieces = parser::parse_word_for_expansion(word).map_err(error::Error::Unknown)?;
 
         let mut expanded_pieces = String::new();
         for piece in pieces {
@@ -49,12 +56,12 @@ impl<'a> WordExpander<'a> {
 
 #[async_trait::async_trait]
 pub trait Expandable {
-    async fn expand(&self, shell: &mut Shell) -> Result<String>;
+    async fn expand(&self, shell: &mut Shell) -> Result<String, error::Error>;
 }
 
 #[async_trait::async_trait]
 impl Expandable for parser::word::WordPiece {
-    async fn expand(&self, shell: &mut Shell) -> Result<String> {
+    async fn expand(&self, shell: &mut Shell) -> Result<String, error::Error> {
         let expansion = match self {
             parser::word::WordPiece::Text(t) => t.clone(),
             parser::word::WordPiece::SingleQuotedText(t) => t.clone(),
@@ -108,7 +115,7 @@ fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
 #[async_trait::async_trait]
 impl Expandable for parser::word::ParameterExpr {
     #[allow(clippy::too_many_lines)]
-    async fn expand(&self, shell: &mut Shell) -> Result<String> {
+    async fn expand(&self, shell: &mut Shell) -> Result<String, error::Error> {
         // TODO: observe test_type
         #[allow(clippy::cast_possible_truncation)]
         match self {
@@ -163,7 +170,8 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_smallest_matching_suffix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )?;
+                )
+                .map_err(error::Error::Unknown)?;
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern } => {
@@ -172,7 +180,9 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_largest_matching_suffix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )?;
+                )
+                .map_err(error::Error::Unknown)?;
+
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern } => {
@@ -181,7 +191,9 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_smallest_matching_prefix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )?;
+                )
+                .map_err(error::Error::Unknown)?;
+
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::RemoveLargestPrefixPattern { parameter, pattern } => {
@@ -190,7 +202,9 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_largest_matching_prefix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )?;
+                )
+                .map_err(error::Error::Unknown)?;
+
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::Substring {
@@ -202,7 +216,8 @@ impl Expandable for parser::word::ParameterExpr {
 
                 // TODO: handle negative offset
                 let expanded_offset = offset.eval(shell).await?;
-                let expanded_offset = usize::try_from(expanded_offset)?;
+                let expanded_offset = usize::try_from(expanded_offset)
+                    .map_err(|e| error::Error::Unknown(e.into()))?;
 
                 if expanded_offset >= expanded_parameter.len() {
                     return Ok(String::new());
@@ -216,7 +231,8 @@ impl Expandable for parser::word::ParameterExpr {
                     }
 
                     let expanded_length = std::cmp::min(
-                        usize::try_from(expanded_length)?,
+                        usize::try_from(expanded_length)
+                            .map_err(|e| error::Error::Unknown(e.into()))?,
                         expanded_parameter.len() - expanded_offset,
                     );
 
@@ -268,11 +284,11 @@ impl Expandable for parser::word::ParameterExpr {
 
 #[async_trait::async_trait]
 impl Expandable for parser::word::Parameter {
-    async fn expand(&self, shell: &mut Shell) -> Result<String> {
+    async fn expand(&self, shell: &mut Shell) -> Result<String, error::Error> {
         match self {
             parser::word::Parameter::Positional(p) => {
                 if *p == 0 {
-                    return Err(anyhow::anyhow!("unexpected positional parameter"));
+                    return Err(anyhow::anyhow!("unexpected positional parameter").into());
                 }
 
                 let parameter: &str =
@@ -307,7 +323,7 @@ impl Expandable for parser::word::Parameter {
 
 #[async_trait::async_trait]
 impl Expandable for parser::word::SpecialParameter {
-    async fn expand(&self, shell: &mut Shell) -> Result<String> {
+    async fn expand(&self, shell: &mut Shell) -> Result<String, error::Error> {
         match self {
             parser::word::SpecialParameter::AllPositionalParameters { concatenate: _ } => {
                 // TODO: implement concatenate policy
@@ -334,7 +350,7 @@ impl Expandable for parser::word::SpecialParameter {
 
 #[async_trait::async_trait]
 impl Expandable for parser::ast::ArithmeticExpr {
-    async fn expand(&self, shell: &mut Shell) -> Result<String> {
+    async fn expand(&self, shell: &mut Shell) -> Result<String, error::Error> {
         let value = self.eval(shell).await?;
         Ok(value.to_string())
     }

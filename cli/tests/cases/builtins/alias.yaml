@@ -1,8 +1,7 @@
 name: "Builtins: alias"
 cases:
   - name: "Basic alias usage"
-    args:
-      - "-i"
+    args: ["-i"]
     env:
       PS1: "$ "
     ignore_stderr: true
@@ -13,8 +12,7 @@ cases:
 
   - name: "Alias referencing to alias"
     known_failure: true
-    args:
-      - "-i"
+    args: ["-i"]
     env:
       PS1: "$ "
     stdin: |

@@ -727,6 +727,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
+ "parser",
  "rustyline",
  "shell",
 ]
@@ -898,6 +899,7 @@ dependencies = [
  "assert_matches",
  "log",
  "peg",
+ "thiserror",
  "utf8-chars",
 ]
 

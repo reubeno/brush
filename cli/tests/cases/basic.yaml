@@ -11,8 +11,7 @@ cases:
     stdin: |
       echo 'hi'
     ignore_stderr: true
-    args:
-      - "-i"
+    args: ["-i"]
 
   - name: "Basic stdin usage"
     stdin: |

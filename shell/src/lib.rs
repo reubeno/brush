@@ -3,6 +3,7 @@ mod builtin;
 mod builtins;
 mod context;
 mod env;
+mod error;
 mod expansion;
 mod extendedtests;
 mod interp;
@@ -15,5 +16,6 @@ mod prompt;
 mod shell;
 mod variables;
 
+pub use error::Error;
 pub use interp::ExecutionResult;
 pub use shell::{CreateOptions, Shell};
