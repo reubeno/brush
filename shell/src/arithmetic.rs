@@ -10,6 +10,9 @@ pub enum EvalError {
 
     #[error("syntax error in expression")]
     SyntaxError,
+
+    #[error("UNIMPLEMENTED: {0}")]
+    Unimplemented(&'static str),
 }
 
 #[async_trait::async_trait]
@@ -97,7 +100,9 @@ fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64
             let value: i64 = value_str.parse().unwrap_or(0);
             Ok(value)
         }
-        ast::ArithmeticTarget::ArrayElement(_, _) => todo!("UNIMPLEMENTED: deref array element"),
+        ast::ArithmeticTarget::ArrayElement(_, _) => {
+            Err(EvalError::Unimplemented("deref array element"))
+        }
     }
 }
 
@@ -202,7 +207,9 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
                 .unwrap();
             Ok(value)
         }
-        ast::ArithmeticTarget::ArrayElement(_, _) => todo!("UNIMPLEMENTED: assign array element"),
+        ast::ArithmeticTarget::ArrayElement(_, _) => {
+            Err(EvalError::Unimplemented("assign array element"))
+        }
     }
 }
 

@@ -11,6 +11,45 @@ cases:
       [[ -d /tmp ]] && echo "-d correctly checked /tmp"
       [[ -d /dev/null ]] || echo "-d correctly checked /dev/null"
 
+  - name: "File regular tests"
+    stdin: |
+      [[ -f non-existent ]] || echo "-f correctly identified non-existent path"
+
+      touch test-file
+      [[ -f test-file ]] && echo "-f correctly identified regular file"
+
+      mkdir test-dir
+      [[ -f test-dir ]] || echo "-f correctly identified directory as non-regular file"
+
+  - name: "File symbolic link tests"
+    stdin: |
+      [[ -L non-existent ]] || echo "-L correctly identified non-existent path"
+
+      touch test-file
+      [[ -L test-file ]] || echo "-L correctly identified non-link file"
+
+      ln -s test-file valid-link
+      [[ -L valid-link ]] && echo "-L correctly identified valid symbolic link"
+
+      ln -s non-existent-target dangling-link
+      [[ -L dangling-link ]] && echo "-L correctly identified dangling symbolic link"
+
+  - name: "File sticky bit tests"
+    stdin: |
+      touch test-file
+      [[ -k test-file ]] || echo "-k correctly identified file without sticky bit"
+
+      chmod 1600 test-file
+      [[ -k test-file ]] && echo "-k correctly identified file with sticky bit"
+
+  - name: "Fifo test"
+    stdin: |
+      touch test-file
+      [[ -p test-file ]] || echo "-p correctly identified non-fifo file"
+
+      mkfifo fifo-file
+      [[ -p test-file ]] && echo "-p correctly identified fifo file"
+
   - name: "File executable tests"
     stdin: |
       [[ -x non-existent ]] || echo "-x correctly identified non-existent path"

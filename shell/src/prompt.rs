@@ -2,13 +2,13 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::shell::Shell;
+use crate::{error, shell::Shell};
 
 const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 const VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
 const VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
-pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String> {
+pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String, error::Error> {
     // Now parse.
     let prompt_pieces = parser::prompt::parse_prompt(spec)?;
 
@@ -16,7 +16,7 @@ pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String> {
     let formatted_prompt = prompt_pieces
         .iter()
         .map(|p| format_prompt_piece(shell, p))
-        .collect::<Result<Vec<_>>>()?
+        .collect::<Result<Vec<_>, error::Error>>()?
         .join("");
 
     Ok(formatted_prompt)
@@ -25,7 +25,7 @@ pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String> {
 pub(crate) fn format_prompt_piece(
     shell: &Shell,
     piece: &parser::prompt::PromptPiece,
-) -> Result<String> {
+) -> Result<String, error::Error> {
     let formatted = match piece {
         parser::prompt::PromptPiece::Literal(l) => l.to_owned(),
         parser::prompt::PromptPiece::AsciiCharacter(c) => {
@@ -35,17 +35,17 @@ pub(crate) fn format_prompt_piece(
         parser::prompt::PromptPiece::BellCharacter => "\x07".to_owned(),
         parser::prompt::PromptPiece::CarriageReturn => "\r".to_owned(),
         parser::prompt::PromptPiece::CurrentCommandNumber => {
-            todo!("UNIMPLEMENTED: prompt: current command number")
+            return error::unimp("prompt: current command number")
         }
         parser::prompt::PromptPiece::CurrentHistoryNumber => {
-            todo!("UNIMPLEMENTED: prompt: current history number")
+            return error::unimp("prompt: current history number")
         }
         parser::prompt::PromptPiece::CurrentUser => get_current_username()?,
         parser::prompt::PromptPiece::CurrentWorkingDirectory {
             tilde_replaced,
             basename,
         } => format_current_working_directory(shell, *tilde_replaced, *basename),
-        parser::prompt::PromptPiece::Date(_) => todo!("UNIMPLEMENTED: prompt: date"),
+        parser::prompt::PromptPiece::Date(_) => return error::unimp("prompt: date"),
         parser::prompt::PromptPiece::DollarOrPound => {
             if uzers::get_current_uid() == 0 {
                 "#".to_owned()
@@ -71,7 +71,7 @@ pub(crate) fn format_prompt_piece(
         }
         parser::prompt::PromptPiece::Newline => "\n".to_owned(),
         parser::prompt::PromptPiece::NumberOfManagedJobs => {
-            todo!("UNIMPLEMENTED: prompt: number of managed jobs")
+            return error::unimp("prompt: number of managed jobs")
         }
         parser::prompt::PromptPiece::ShellBaseName => {
             if let Some(shell_name) = &shell.shell_name {
@@ -91,9 +91,9 @@ pub(crate) fn format_prompt_piece(
         }
         parser::prompt::PromptPiece::StartNonPrintingSequence => String::new(),
         parser::prompt::PromptPiece::TerminalDeviceBaseName => {
-            todo!("UNIMPLEMENTED: prompt: terminal device base name")
+            return error::unimp("prompt: terminal device base name")
         }
-        parser::prompt::PromptPiece::Time(_) => todo!("UNIMPLEMENTED: prompt: time"),
+        parser::prompt::PromptPiece::Time(_) => return error::unimp("prompt: time"),
     };
 
     Ok(formatted)

@@ -91,7 +91,7 @@ impl BuiltinCommand for CompleteCommand {
     async fn execute(
         &self,
         _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.print {
             log::debug!("UNIMPLEMENTED: complete -p");
         }

@@ -12,7 +12,7 @@ impl BuiltinCommand for HelpCommand {
     async fn execute(
         &self,
         _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         println!("brush version {VERSION}");
         Ok(BuiltinExitCode::Success)
     }

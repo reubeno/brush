@@ -73,7 +73,7 @@ impl BuiltinCommand for DeclareCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         let called_as_local = context.builtin_name == "local";
         let create_var_local =
             called_as_local || (context.shell.in_function() && !self.create_global);
@@ -157,13 +157,13 @@ impl BuiltinCommand for DeclareCommand {
                 } else {
                     let initial_value = if self.make_indexed_array.is_some() {
                         if let Some(value) = value {
-                            ShellValue::new_indexed_array(value)
+                            ShellValue::new_indexed_array(value)?
                         } else {
                             ShellValue::IndexedArray(vec![])
                         }
                     } else if self.make_associative_array.is_some() {
                         if let Some(value) = value {
-                            ShellValue::new_associative_array(value)
+                            ShellValue::new_associative_array(value)?
                         } else {
                             ShellValue::AssociativeArray(HashMap::new())
                         }

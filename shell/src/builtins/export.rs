@@ -27,7 +27,7 @@ impl BuiltinCommand for ExportCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if !self.names.is_empty() {
             for name in &self.names {
                 // See if we have a name=value pair; if so, then update the variable

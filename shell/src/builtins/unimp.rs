@@ -14,7 +14,7 @@ impl BuiltinCommand for UnimplementedCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         log::error!(
             "UNIMPLEMENTED: {}: built-in unimplemented: {} {}",
             context
