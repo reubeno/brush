@@ -1,6 +1,8 @@
 use anyhow::Result;
 
-pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool> {
+use crate::error;
+
+pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool, error::Error> {
     // TODO: pattern matching with **
     if pattern.contains("**") {
         log::error!(
@@ -8,17 +10,19 @@ pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool> {
             pattern,
             value
         );
-        todo!("UNIMPLEMENTED: pattern matching with '**' pattern");
+        return error::unimp("pattern matching with '**' pattern");
     }
 
     // TODO: Double-check use of current working dir
-    let matches = glob::Pattern::new(pattern)?.matches(value);
+    let matches = glob::Pattern::new(pattern)
+        .map_err(|e| error::Error::Unknown(e.into()))?
+        .matches(value);
 
     Ok(matches)
 }
 
-pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool> {
-    let re = regex::Regex::new(regex_pattern)?;
+pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool, error::Error> {
+    let re = regex::Regex::new(regex_pattern).map_err(|e| error::Error::Unknown(e.into()))?;
 
     // TODO: Evaluate how compatible the `regex` crate is with POSIX EREs.
     let matches = re.is_match(value);
@@ -26,7 +30,10 @@ pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool> {
     Ok(matches)
 }
 
-pub(crate) fn remove_largest_matching_prefix<'a>(s: &'a str, pattern: &str) -> Result<&'a str> {
+pub(crate) fn remove_largest_matching_prefix<'a>(
+    s: &'a str,
+    pattern: &str,
+) -> Result<&'a str, error::Error> {
     for i in (0..s.len()).rev() {
         let prefix = &s[0..=i];
         if pattern_matches(pattern, prefix)? {
@@ -36,7 +43,10 @@ pub(crate) fn remove_largest_matching_prefix<'a>(s: &'a str, pattern: &str) -> R
     Ok(s)
 }
 
-pub(crate) fn remove_smallest_matching_prefix<'a>(s: &'a str, pattern: &str) -> Result<&'a str> {
+pub(crate) fn remove_smallest_matching_prefix<'a>(
+    s: &'a str,
+    pattern: &str,
+) -> Result<&'a str, error::Error> {
     for i in 0..s.len() {
         let prefix = &s[0..=i];
         if pattern_matches(pattern, prefix)? {
@@ -46,7 +56,10 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(s: &'a str, pattern: &str) -> 
     Ok(s)
 }
 
-pub(crate) fn remove_largest_matching_suffix<'a>(s: &'a str, pattern: &str) -> Result<&'a str> {
+pub(crate) fn remove_largest_matching_suffix<'a>(
+    s: &'a str,
+    pattern: &str,
+) -> Result<&'a str, error::Error> {
     for i in 0..s.len() {
         let suffix = &s[i..];
         if pattern_matches(pattern, suffix)? {
@@ -56,7 +69,10 @@ pub(crate) fn remove_largest_matching_suffix<'a>(s: &'a str, pattern: &str) -> R
     Ok(s)
 }
 
-pub(crate) fn remove_smallest_matching_suffix<'a>(s: &'a str, pattern: &str) -> Result<&'a str> {
+pub(crate) fn remove_smallest_matching_suffix<'a>(
+    s: &'a str,
+    pattern: &str,
+) -> Result<&'a str, error::Error> {
     for i in (0..s.len()).rev() {
         let suffix = &s[i..];
         if pattern_matches(pattern, suffix)? {

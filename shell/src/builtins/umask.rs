@@ -25,19 +25,19 @@ impl BuiltinCommand for UmaskCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         // TODO: handle output redirects
         if let Some(mode) = &self.mode {
             if mode.starts_with('0') {
                 let parsed = u32::from_str_radix(mode.as_str(), 8)?;
                 context.shell.umask = parsed;
             } else {
-                todo!("UNIMPLEMENTED: umask setting mode from symbolic value");
+                return crate::error::unimp("umask setting mode from symbolic value");
             }
         } else {
             let umask = if self.symbolic_output {
                 // TODO: handle symbolic output
-                todo!("UNIMPLEMENTED: umask displaying symbolic output")
+                return crate::error::unimp("displaying symbolic output");
             } else {
                 let umask_value = context.shell.umask;
                 std::format!("0{umask_value:o}")

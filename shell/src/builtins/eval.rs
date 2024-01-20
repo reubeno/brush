@@ -13,7 +13,7 @@ impl BuiltinCommand for EvalCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if !self.args.is_empty() {
             let args_concatenated = self.args.join(" ");
 

@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use futures::future::BoxFuture;
 
-use crate::shell::Shell;
+use crate::{error, shell::Shell};
 
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
@@ -65,8 +65,10 @@ pub struct BuiltinExecutionContext<'a> {
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub type BuiltinCommandExecuteFunc =
-    fn(BuiltinExecutionContext<'_>, Vec<String>) -> BoxFuture<'_, Result<BuiltinResult>>;
+pub type BuiltinCommandExecuteFunc = fn(
+    BuiltinExecutionContext<'_>,
+    Vec<String>,
+) -> BoxFuture<'_, Result<BuiltinResult, error::Error>>;
 
 #[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
@@ -74,7 +76,7 @@ pub trait BuiltinCommand: Parser {
     async fn execute_args(
         mut context: BuiltinExecutionContext<'_>,
         args: Vec<String>,
-    ) -> Result<BuiltinResult> {
+    ) -> Result<BuiltinResult, error::Error> {
         // N.B. clap doesn't support named options like '+x'. To work around this, we
         // establish a pattern of renaming them.
         let args: Vec<_> = args
@@ -104,5 +106,8 @@ pub trait BuiltinCommand: Parser {
         })
     }
 
-    async fn execute(&self, context: &mut BuiltinExecutionContext<'_>) -> Result<BuiltinExitCode>;
+    async fn execute(
+        &self,
+        context: &mut BuiltinExecutionContext<'_>,
+    ) -> Result<BuiltinExitCode, error::Error>;
 }

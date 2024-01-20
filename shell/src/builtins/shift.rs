@@ -13,7 +13,7 @@ impl BuiltinCommand for ShiftCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         let n = self.n.unwrap_or(1);
 
         if n < 0 {

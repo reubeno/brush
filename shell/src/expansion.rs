@@ -97,18 +97,15 @@ impl Expandable for parser::word::WordPiece {
     }
 }
 
-fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String> {
+fn expand_tilde_expression(shell: &Shell, prefix: &str) -> Result<String, error::Error> {
     if !prefix.is_empty() {
-        log::error!("UNIMPLEMENTED: complex tilde expression: {}", prefix);
-        todo!("UNIMPLEMENTED: expansion: complex tilde expression");
+        return error::unimp("expansion: complex tilde expression");
     }
 
     if let Some(home) = shell.env.get("HOME") {
         Ok(String::from(&home.value))
     } else {
-        Err(anyhow::anyhow!(
-            "cannot expand tilde expression with HOME not set"
-        ))
+        Err(error::Error::TildeWithoutValidHome)
     }
 }
 
@@ -140,12 +137,12 @@ impl Expandable for parser::word::ParameterExpr {
                 parameter: _,
                 test_type: _,
                 default_value: _,
-            } => todo!("UNIMPLEMENTED: expansion: assign default values expressions"),
+            } => error::unimp("expansion: assign default values expressions"),
             parser::word::ParameterExpr::IndicateErrorIfNullOrUnset {
                 parameter: _,
                 test_type: _,
                 error_message: _,
-            } => todo!("UNIMPLEMENTED: expansion: indicate error if null or unset expressions"),
+            } => error::unimp("expansion: indicate error if null or unset expressions"),
             parser::word::ParameterExpr::UseAlternativeValue {
                 parameter,
                 test_type: _,
@@ -170,8 +167,7 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_smallest_matching_suffix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )
-                .map_err(error::Error::Unknown)?;
+                )?;
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern } => {
@@ -180,8 +176,7 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_largest_matching_suffix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )
-                .map_err(error::Error::Unknown)?;
+                )?;
 
                 Ok(result.to_owned())
             }
@@ -191,8 +186,7 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_smallest_matching_prefix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )
-                .map_err(error::Error::Unknown)?;
+                )?;
 
                 Ok(result.to_owned())
             }
@@ -202,8 +196,7 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = patterns::remove_largest_matching_prefix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
-                )
-                .map_err(error::Error::Unknown)?;
+                )?;
 
                 Ok(result.to_owned())
             }
@@ -226,8 +219,7 @@ impl Expandable for parser::word::ParameterExpr {
                 let result = if let Some(length) = length {
                     let expanded_length = length.eval(shell).await?;
                     if expanded_length < 0 {
-                        log::error!("UNIMPLEMENTED: substring with negative length");
-                        todo!("UNIMPLEMENTED: substring with negative length");
+                        return error::unimp("substring with negative length");
                     }
 
                     let expanded_length = std::cmp::min(
@@ -251,30 +243,28 @@ impl Expandable for parser::word::ParameterExpr {
                         Ok(result)
                     }
                     parser::word::ParameterTransformOp::CapitalizeInitial => {
-                        todo!("parameter transformation: CapitalizeInitial");
+                        error::unimp("parameter transformation: CapitalizeInitial")
                     }
                     parser::word::ParameterTransformOp::ExpandEscapeSequences => {
-                        todo!("parameter transformation: ExpandEscapeSequences");
+                        error::unimp("parameter transformation: ExpandEscapeSequences")
                     }
                     parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
                         separate_words: _,
-                    } => {
-                        todo!("parameter transformation: PossiblyQuoteWithArraysExpanded");
-                    }
+                    } => error::unimp("parameter transformation: PossiblyQuoteWithArraysExpanded"),
                     parser::word::ParameterTransformOp::Quoted => {
-                        todo!("parameter transformation: Quoted");
+                        error::unimp("parameter transformation: Quoted")
                     }
                     parser::word::ParameterTransformOp::ToAssignmentLogic => {
-                        todo!("parameter transformation: ToAssignmentLogic");
+                        error::unimp("parameter transformation: ToAssignmentLogic")
                     }
                     parser::word::ParameterTransformOp::ToAttributeFlags => {
-                        todo!("parameter transformation: ToAttributeFlags");
+                        error::unimp("parameter transformation: ToAttributeFlags")
                     }
                     parser::word::ParameterTransformOp::ToLowerCase => {
-                        todo!("parameter transformation: ToLowerCase");
+                        error::unimp("parameter transformation: ToLowerCase")
                     }
                     parser::word::ParameterTransformOp::ToUpperCase => {
-                        todo!("parameter transformation: ToUpperCase");
+                        error::unimp("parameter transformation: ToUpperCase")
                     }
                 }
             }
@@ -307,13 +297,13 @@ impl Expandable for parser::word::Parameter {
                 .map_or_else(String::new, |v| String::from(&v.value))),
             parser::word::Parameter::NamedWithIndex { name, index } => match shell.env.get(name) {
                 Some(ShellVariable { value, .. }) => Ok(value
-                    .get_at(*index)
+                    .get_at(*index)?
                     .map_or_else(String::new, |s| s.to_owned())),
                 None => Ok(String::new()),
             },
             parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 match shell.env.get(name) {
-                    Some(ShellVariable { value, .. }) => Ok(value.get_all(*concatenate)),
+                    Some(ShellVariable { value, .. }) => value.get_all(*concatenate),
                     None => Ok(String::new()),
                 }
             }
@@ -338,7 +328,7 @@ impl Expandable for parser::word::SpecialParameter {
             parser::word::SpecialParameter::CurrentOptionFlags => Ok(shell.current_option_flags()),
             parser::word::SpecialParameter::ProcessId => Ok(std::process::id().to_string()),
             parser::word::SpecialParameter::LastBackgroundProcessId => {
-                todo!("UNIMPLEMENTED: expansion: last background process id")
+                error::unimp("expansion: last background process id")
             }
             parser::word::SpecialParameter::ShellName => Ok(shell
                 .shell_name

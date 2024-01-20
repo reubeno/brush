@@ -16,7 +16,7 @@ impl BuiltinCommand for DotCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if !self.script_args.is_empty() {
             log::error!(
                 "UNIMPLEMENTED: dot builtin with args: {:?}",

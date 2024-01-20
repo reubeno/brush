@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use crate::builtin::{self, BuiltinCommand, BuiltinExecutionContext, BuiltinExitCode};
+use crate::error;
 
 builtin::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
@@ -122,7 +123,10 @@ pub(crate) struct SetCommand {
 
 #[async_trait::async_trait]
 impl BuiltinCommand for SetCommand {
-    async fn execute(&self, context: &mut BuiltinExecutionContext<'_>) -> Result<BuiltinExitCode> {
+    async fn execute(
+        &self,
+        context: &mut BuiltinExecutionContext<'_>,
+    ) -> Result<BuiltinExitCode, error::Error> {
         if let Some(value) = self.print_commands_and_arguments.to_bool() {
             context.shell.options.print_commands_and_arguments = value;
         }

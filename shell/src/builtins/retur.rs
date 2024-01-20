@@ -13,7 +13,7 @@ impl BuiltinCommand for ReturnCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         let code_8bit: u8;
         #[allow(clippy::cast_sign_loss)]
         if let Some(code_32bit) = &self.code {

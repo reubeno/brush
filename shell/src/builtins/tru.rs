@@ -11,7 +11,7 @@ impl BuiltinCommand for TrueCommand {
     async fn execute(
         &self,
         _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         Ok(BuiltinExitCode::Success)
     }
 }

@@ -21,7 +21,7 @@ impl BuiltinCommand for PwdCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         //
         // TODO: implement flags
         // TODO: look for 'physical' option in execution context

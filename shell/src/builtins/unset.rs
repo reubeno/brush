@@ -50,12 +50,12 @@ impl BuiltinCommand for UnsetCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         //
         // TODO: implement nameref
         //
         if self.name_interpretation.names_are_name_references {
-            todo!("UNIMPLEMENTED: unset: name references are not yet implemented")
+            return crate::error::unimp("unset: name references are not yet implemented");
         }
 
         let unspecified = self.name_interpretation.unspecified();

@@ -3,6 +3,7 @@ use futures::future::BoxFuture;
 use std::collections::HashMap;
 
 use crate::builtin::{self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinResult};
+use crate::error;
 
 mod alias;
 mod cd;
@@ -30,7 +31,7 @@ mod unset;
 fn exec_builtin<T: BuiltinCommand + Send>(
     context: builtin::BuiltinExecutionContext<'_>,
     args: Vec<String>,
-) -> BoxFuture<'_, Result<BuiltinResult>> {
+) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
     Box::pin(async move { T::execute_args(context, args).await })
 }
 

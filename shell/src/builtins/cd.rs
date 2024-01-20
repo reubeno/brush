@@ -30,14 +30,14 @@ impl BuiltinCommand for CdCommand {
     async fn execute(
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode> {
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         // TODO: implement options
         if self.force_follow_symlinks
             || self.use_physical_dir
             || self.exit_on_failed_cwd_resolution
             || self.file_with_xattr_as_dir
         {
-            todo!("UNIMPLEMENTED: options to cd");
+            return crate::error::unimp("options to cd");
         }
 
         let target_path = if let Some(inner) = &self.target_dir {

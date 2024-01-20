@@ -7,13 +7,13 @@ use anyhow::Result;
 use faccess::PathExt;
 use parser::ast;
 
-use crate::{expansion::expand_word, patterns, Shell};
+use crate::{error, expansion::expand_word, patterns, Shell};
 
 #[async_recursion::async_recursion]
 pub(crate) async fn eval_expression(
     expr: &ast::ExtendedTestExpr,
     shell: &mut Shell,
-) -> Result<bool> {
+) -> Result<bool, error::Error> {
     #[allow(clippy::single_match_else)]
     match expr {
         ast::ExtendedTestExpr::UnaryTest(op, operand) => {
@@ -35,16 +35,16 @@ pub(crate) async fn eval_expression(
                 eval_expression(left, shell).await? || eval_expression(right, shell).await?;
             Ok(result)
         }
-        _ => {
-            // TODO: implement eval_expression
-            log::error!("UNIMPLEMENTED: eval test expression: {:?}", expr);
-            Ok(true)
+        ast::ExtendedTestExpr::Not(expr) => {
+            let result = !eval_expression(expr, shell).await?;
+            Ok(result)
         }
+        ast::ExtendedTestExpr::Parenthesized(expr) => eval_expression(expr, shell).await,
     }
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool> {
+fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool, error::Error> {
     #[allow(clippy::match_single_binding)]
     match op {
         ast::UnaryPredicate::StringHasNonZeroLength => Ok(!operand.is_empty()),
@@ -80,7 +80,10 @@ fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool
             Ok(path.is_symlink())
         }
         ast::UnaryPredicate::FileExistsAndHasStickyBit => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: FileExistsAndHasStickyBit")
+            const S_ISVTX: u32 = 0o1000;
+            let path = Path::new(operand);
+            let file_mode = try_get_file_mode(path);
+            Ok(file_mode.map_or(false, |mode| mode & S_ISVTX != 0))
         }
         ast::UnaryPredicate::FileExistsAndIsFifo => {
             let path = Path::new(operand);
@@ -99,7 +102,7 @@ fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool
             }
         }
         ast::UnaryPredicate::FdIsOpenTerminal => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: FdIsOpenTerminal")
+            error::unimp("unary extended test predicate: FdIsOpenTerminal")
         }
         ast::UnaryPredicate::FileExistsAndIsSetuid => {
             const S_ISUID: u32 = 0o4000;
@@ -115,27 +118,27 @@ fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool
             let path = Path::new(operand);
             Ok(path.executable())
         }
-        ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => todo!(
-            "UNIMPLEMENTED: unary extended test predicate: FileExistsAndOwnedByEffectiveGroupId"
-        ),
-        ast::UnaryPredicate::FileExistsAndModifiedSinceLastRead => todo!(
-            "UNIMPLEMENTED: unary extended test predicate: FileExistsAndModifiedSinceLastRead"
-        ),
-        ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId => todo!(
-            "UNIMPLEMENTED: unary extended test predicate: FileExistsAndOwnedByEffectiveUserId"
-        ),
+        ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => {
+            error::unimp("unary extended test predicate: FileExistsAndOwnedByEffectiveGroupId")
+        }
+        ast::UnaryPredicate::FileExistsAndModifiedSinceLastRead => {
+            error::unimp("unary extended test predicate: FileExistsAndModifiedSinceLastRead")
+        }
+        ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId => {
+            error::unimp("unary extended test predicate: FileExistsAndOwnedByEffectiveUserId")
+        }
         ast::UnaryPredicate::FileExistsAndIsSocket => {
             let path = Path::new(operand);
             Ok(try_get_file_type(path).map_or(false, |ft| ft.is_socket()))
         }
         ast::UnaryPredicate::ShellOptionEnabled => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: ShellOptionEnabled")
+            error::unimp("unary extended test predicate: ShellOptionEnabled")
         }
         ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: ShellVariableIsSetAndAssigned")
+            error::unimp("unary extended test predicate: ShellVariableIsSetAndAssigned")
         }
         ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
-            todo!("UNIMPLEMENTED: unary extended test predicate: ShellVariableIsSetAndNameRef")
+            error::unimp("unary extended test predicate: ShellVariableIsSetAndNameRef")
         }
     }
 }
@@ -148,7 +151,11 @@ fn try_get_file_mode(path: &Path) -> Option<u32> {
     path.metadata().map(|metadata| metadata.mode()).ok()
 }
 
-fn apply_binary_predicate(op: &ast::BinaryPredicate, left: &str, right: &str) -> Result<bool> {
+fn apply_binary_predicate(
+    op: &ast::BinaryPredicate,
+    left: &str,
+    right: &str,
+) -> Result<bool, error::Error> {
     #[allow(clippy::single_match_else)]
     match op {
         // N.B. The "=", "==", and "!=" operators don't compare 2 strings; they check
@@ -171,29 +178,51 @@ fn apply_binary_predicate(op: &ast::BinaryPredicate, left: &str, right: &str) ->
             let regex_pattern = right;
             patterns::regex_matches(regex_pattern, s)
         }
-        ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => todo!("UNIMPLEMENTED: extended test binary predicate FilesReferToSameDeviceAndInodeNumbers"),
-        ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => todo!("UNIMPLEMENTED: extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot"),
-        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => todo!("UNIMPLEMENTED: extended test binary predicate LeftFileIsOlderOrDoesNotExistWhenRightDoes"),
+        ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
+            error::unimp("extended test binary predicate FilesReferToSameDeviceAndInodeNumbers")
+        }
+        ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
+            error::unimp("extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot")
+        }
+        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => error::unimp(
+            "extended test binary predicate LeftFileIsOlderOrDoesNotExistWhenRightDoes",
+        ),
         ast::BinaryPredicate::LeftSortsBeforeRight => {
             // TODO: According to docs, should be lexicographical order of the current locale.
             Ok(left < right)
-        },
+        }
         ast::BinaryPredicate::LeftSortsAfterRight => {
             // TODO: According to docs, should be lexicographical order of the current locale.
             Ok(left > right)
-        },
-        ast::BinaryPredicate::ArithmeticEqualTo =>
-            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left == right)),
-        ast::BinaryPredicate::ArithmeticNotEqualTo =>
-            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left != right)),
-        ast::BinaryPredicate::ArithmeticLessThan =>
-            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left < right)),
-        ast::BinaryPredicate::ArithmeticLessThanOrEqualTo =>
-            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left <= right)),
-        ast::BinaryPredicate::ArithmeticGreaterThan =>
-            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left > right)),
-        ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo =>
-            Ok(apply_binary_arithmetic_predicate(left, right, |left, right| left >= right)),
+        }
+        ast::BinaryPredicate::ArithmeticEqualTo => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left == right,
+        )),
+        ast::BinaryPredicate::ArithmeticNotEqualTo => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left != right,
+        )),
+        ast::BinaryPredicate::ArithmeticLessThan => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left < right,
+        )),
+        ast::BinaryPredicate::ArithmeticLessThanOrEqualTo => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left <= right,
+        )),
+        ast::BinaryPredicate::ArithmeticGreaterThan => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left > right,
+        )),
+        ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo => Ok(
+            apply_binary_arithmetic_predicate(left, right, |left, right| left >= right),
+        ),
     }
 }
 
