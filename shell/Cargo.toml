@@ -12,7 +12,7 @@ workspace = true
 anyhow = "1.0.79"
 async-recursion = "1.0.5"
 async-trait = "0.1.77"
-clap = { version = "4.4.17", features = ["derive"] }
+clap = { version = "4.4.18", features = ["derive"] }
 faccess = "0.2.4"
 futures = "0.3.30"
 glob = "0.3.1"
@@ -23,7 +23,7 @@ log = "0.4.20"
 nix = { version = "0.27.1", features = ["fs"] }
 parser = { path = "../parser" }
 rand = "0.8.5"
-regex = "1.10.2"
+regex = "1.10.3"
 tempfile = "3.9.0"
 thiserror = "1.0.56"
 tokio = { version = "1.35.1", features = [
