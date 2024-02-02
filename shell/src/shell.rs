@@ -9,6 +9,7 @@ use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::jobs;
 use crate::options::RuntimeOptions;
+use crate::patterns;
 use crate::prompt::expand_prompt;
 use crate::variables;
 
@@ -96,7 +97,7 @@ impl std::fmt::Display for ProgramOrigin {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Completions {
     pub start: usize,
     pub candidates: Vec<String>,
@@ -211,6 +212,8 @@ impl Shell {
                 self.source_if_exists(Path::new("/etc/bash.bashrc")).await?;
                 if let Ok(home_path) = std::env::var("HOME") {
                     self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())
+                        .await?;
+                    self.source_if_exists(Path::new(&home_path).join(".rushrc").as_path())
                         .await?;
                 }
             } else {
@@ -457,12 +460,62 @@ impl Shell {
         })
     }
 
-    pub fn get_completions(&self, _input: &str, position: usize) -> Result<Completions> {
+    #[allow(clippy::cast_sign_loss)]
+    pub fn get_completions(&self, input: &str, position: usize) -> Result<Completions> {
         // Make a best-effort attempt to tokenize.
-        // TODO: implement completions
-        Ok(Completions {
-            start: position,
-            candidates: vec![],
-        })
+        if let Ok(result) = parser::tokenize_str(input) {
+            let cursor: i32 = i32::try_from(position)?;
+            let mut completion_prefix = "";
+            let mut insertion_point = cursor;
+
+            // Try to find which token we are in.
+            for token in &result {
+                // If the cursor is before the start of the token, then it's between
+                // this token and the one that preceded it (or it's before the first
+                // token if this is the first token).
+                if cursor < token.location().start.index {
+                    break;
+                }
+                // If the cursor is anywhere from the first char of the token up to
+                // (and including) the first char after the token, then this we need
+                // to generate completions to replace/update this token. We'll pay
+                // attention to the position to figure out the prefix that we should
+                // be completing.
+                else if cursor >= token.location().start.index
+                    && cursor <= token.location().end.index
+                {
+                    // Update insertion point.
+                    insertion_point = token.location().start.index;
+
+                    // Update prefix.
+                    let offset_into_token = (cursor - insertion_point) as usize;
+                    let token_str = token.to_str();
+                    completion_prefix = &token_str[..offset_into_token];
+                }
+
+                // Otherwise, we need to keep looking.
+            }
+
+            Ok(Completions {
+                start: insertion_point as usize,
+                candidates: self.get_completions_with_prefix(completion_prefix),
+            })
+        } else {
+            Ok(Completions {
+                start: position,
+                candidates: vec![],
+            })
+        }
+    }
+
+    fn get_completions_with_prefix(&self, prefix: &str) -> Vec<String> {
+        // TODO: Contextually generate different completions.
+        let glob = std::format!("{prefix}*");
+        if let Ok(candidates) = patterns::pattern_expand(glob.as_str(), self.working_dir.as_path())
+        {
+            candidates
+        } else {
+            vec![]
+        }
     }
 }

@@ -19,6 +19,7 @@ pub(crate) enum TokenEndReason {
 
 #[derive(Clone, Default, Debug)]
 pub struct SourcePosition {
+    pub index: i32,
     pub line: i32,
     pub column: i32,
 }
@@ -352,7 +353,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             options: options.clone(),
             char_reader: reader.chars().peekable(),
             cross_state: CrossTokenParseState {
-                cursor: SourcePosition { line: 1, column: 1 },
+                cursor: SourcePosition {
+                    index: 0,
+                    line: 1,
+                    column: 1,
+                },
                 here_state: HereState::None,
                 current_here_tags: vec![],
                 queued_tokens: vec![],
@@ -378,6 +383,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             } else {
                 self.cross_state.cursor.column += 1;
             }
+            self.cross_state.cursor.index += 1;
         }
 
         Ok(c)
@@ -737,14 +743,18 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     state.append_char(c);
                 }
             } else if state.unquoted() && is_blank(c) {
-                self.consume_char()?;
-
                 if state.started_token() {
                     result = state.delimit_current_token(
                         TokenEndReason::NonNewLineBlank,
                         &mut self.cross_state,
                     )?;
+                } else {
+                    // Make sure we don't include this char in the token range.
+                    state.start_position.column += 1;
+                    state.start_position.index += 1;
                 }
+
+                self.consume_char()?;
             }
             //
             // N.B. We need to remember if we were recursively called, say in a command

@@ -51,6 +51,7 @@ impl InteractiveShell {
             .max_history_size(1000)?
             .history_ignore_dups(true)?
             .auto_add_history(true)
+            .completion_type(rustyline::config::CompletionType::List)
             .build();
 
         let helper = EditorHelper::new(shell);
