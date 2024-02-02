@@ -29,5 +29,5 @@ indent = "0.1.1"
 pathdiff = "0.2.1"
 prettydiff = "0.6.4"
 regex = "1.10.3"
-serde = { version = "1.0.195", features = ["derive"] }
+serde = { version = "1.0.196", features = ["derive"] }
 serde_yaml = "0.9.31"
