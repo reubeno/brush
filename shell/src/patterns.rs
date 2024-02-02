@@ -1,6 +1,58 @@
+use std::path::Path;
+
 use anyhow::Result;
 
 use crate::error;
+
+pub(crate) fn pattern_expand(
+    pattern: &str,
+    working_dir: &Path,
+) -> Result<Vec<String>, error::Error> {
+    // Workaround to deal with effective working directory being different from
+    // the actual process's working directory.
+    let prefix_to_remove;
+    let glob_pattern = if pattern.starts_with('/') {
+        prefix_to_remove = None;
+        pattern.to_string()
+    } else {
+        let mut working_dir_str = working_dir.to_string_lossy().to_string();
+        if !working_dir_str.ends_with('/') {
+            working_dir_str.push('/');
+        }
+        prefix_to_remove = Some(working_dir_str);
+        working_dir.join(pattern).to_string_lossy().to_string()
+    };
+
+    let options = glob::MatchOptions {
+        case_sensitive: true,
+        require_literal_separator: true,
+        require_literal_leading_dot: false,
+    };
+
+    let paths = glob::glob_with(glob_pattern.as_str(), options)
+        .map_err(|e| error::Error::Unknown(e.into()))?;
+    let paths_results: Result<Vec<_>, glob::GlobError> = paths.collect();
+    let paths = paths_results.map_err(|e| error::Error::Unknown(e.into()))?;
+    let paths: Vec<String> = paths
+        .into_iter()
+        .map(|p| {
+            let s = p.to_string_lossy();
+
+            let mut s = if let Some(prefix) = &prefix_to_remove {
+                s.strip_prefix(prefix).unwrap().to_string()
+            } else {
+                s.to_string()
+            };
+
+            if p.is_dir() {
+                s.push('/');
+            }
+            s
+        })
+        .collect();
+
+    Ok(paths)
+}
 
 pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool, error::Error> {
     // TODO: pattern matching with **

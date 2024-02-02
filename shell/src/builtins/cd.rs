@@ -66,6 +66,9 @@ impl BuiltinCommand for CdCommand {
             }
         }
 
+        // TODO: Don't canonicalize, just normalize.
+        let target_path = target_path.canonicalize()?;
+
         let pwd = target_path.to_string_lossy().to_string();
 
         // TODO: handle updating PWD
