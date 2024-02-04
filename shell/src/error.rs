@@ -23,7 +23,7 @@ pub enum Error {
     #[error("unknown error")]
     Unknown(#[from] anyhow::Error),
 
-    #[error("I/O error")]
+    #[error("{0}")]
     IoError(#[from] std::io::Error),
 }
 

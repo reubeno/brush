@@ -1,4 +1,5 @@
 use anyhow::Result;
+use faccess::PathExt;
 use log::debug;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -467,13 +468,15 @@ impl Shell {
             let cursor: i32 = i32::try_from(position)?;
             let mut completion_prefix = "";
             let mut insertion_point = cursor;
+            let mut completion_token_index = result.len();
 
             // Try to find which token we are in.
-            for token in &result {
+            for (i, token) in result.iter().enumerate() {
                 // If the cursor is before the start of the token, then it's between
                 // this token and the one that preceded it (or it's before the first
                 // token if this is the first token).
                 if cursor < token.location().start.index {
+                    completion_token_index = i;
                     break;
                 }
                 // If the cursor is anywhere from the first char of the token up to
@@ -491,6 +494,11 @@ impl Shell {
                     let offset_into_token = (cursor - insertion_point) as usize;
                     let token_str = token.to_str();
                     completion_prefix = &token_str[..offset_into_token];
+
+                    // Update token index.
+                    completion_token_index = i;
+
+                    break;
                 }
 
                 // Otherwise, we need to keep looking.
@@ -498,7 +506,11 @@ impl Shell {
 
             Ok(Completions {
                 start: insertion_point as usize,
-                candidates: self.get_completions_with_prefix(completion_prefix),
+                candidates: self.get_completions_with_prefix(
+                    completion_prefix,
+                    completion_token_index,
+                    result.len(),
+                ),
             })
         } else {
             Ok(Completions {
@@ -508,14 +520,55 @@ impl Shell {
         }
     }
 
-    fn get_completions_with_prefix(&self, prefix: &str) -> Vec<String> {
+    fn get_completions_with_prefix(
+        &self,
+        prefix: &str,
+        token_index: usize,
+        token_count: usize,
+    ) -> Vec<String> {
         // TODO: Contextually generate different completions.
         let glob = std::format!("{prefix}*");
-        if let Ok(candidates) = patterns::pattern_expand(glob.as_str(), self.working_dir.as_path())
+        let mut candidates = if let Ok(candidates) =
+            patterns::pattern_expand(glob.as_str(), self.working_dir.as_path())
         {
             candidates
         } else {
             vec![]
+        };
+
+        // TODO: Do a better job than just checking if index == 0.
+        if token_index == 0 && !prefix.is_empty() {
+            let executables = self.get_executables_with_prefix(prefix);
+            candidates.extend(executables);
         }
+
+        if token_index + 1 >= token_count {
+            for candidate in &mut candidates {
+                candidate.push(' ');
+            }
+        }
+
+        candidates
+    }
+
+    #[allow(clippy::manual_flatten)]
+    fn get_executables_with_prefix(&self, prefix: &str) -> Vec<String> {
+        let mut executables = vec![];
+
+        for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
+            if let Ok(entries) = glob::glob(std::format!("{dir_str}/{prefix}*").as_str()) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        if entry.executable() {
+                            if let Some(file_name) = entry.file_name() {
+                                executables.push(file_name.to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        executables
     }
 }

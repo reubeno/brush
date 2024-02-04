@@ -1,4 +1,4 @@
-use std::{io::IsTerminal, path::Path};
+use std::{io::IsTerminal, io::Write, path::Path};
 
 use anyhow::Result;
 use clap::Parser;
@@ -84,8 +84,7 @@ fn main() {
     // Keep verbosity on rustyline no more than WARNING, since it otherwise gets quite noisy.
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .filter_module("rustyline", log::LevelFilter::Warn)
-        .format_timestamp(None)
-        .format_target(false)
+        .format(|buf, record| writeln!(buf, "{}", record.args()))
         .init();
 
     let args: Vec<_> = std::env::args().collect();

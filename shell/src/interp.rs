@@ -892,7 +892,10 @@ async fn execute_external_command(
             log::error!("command not found: {}", cmd_name);
             Ok(SpawnResult::ImmediateExit(127))
         }
-        Err(e) => Err(e.into()),
+        Err(e) => {
+            log::error!("error: {}", e);
+            Ok(SpawnResult::ImmediateExit(126))
+        }
     }
 }
 

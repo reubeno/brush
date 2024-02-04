@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{borrow::Cow, path::PathBuf};
 
 use anyhow::Result;
 use rustyline::validate::ValidationResult;
@@ -131,7 +131,7 @@ impl InteractiveShell {
     }
 }
 
-#[derive(rustyline::Helper, rustyline::Highlighter, rustyline::Hinter)]
+#[derive(rustyline::Helper, rustyline::Hinter)]
 pub(crate) struct EditorHelper {
     pub shell: shell::Shell,
 
@@ -143,16 +143,45 @@ impl EditorHelper {
     pub(crate) fn new(shell: shell::Shell) -> Self {
         // let completer = InteractiveShellCompleter::new(shell);
         let hinter = rustyline::hint::HistoryHinter::new();
-        Self {
-            shell,
-            /*completer,*/ hinter,
+        Self { shell, hinter }
+    }
+
+    fn get_completion_candidate_display_str(s: &str) -> String {
+        let s_without_trailing_space = s.trim_end();
+        let s_without_final_slash = s_without_trailing_space.strip_suffix('/').unwrap_or(s);
+
+        let s = if let Some(slash_index) = s_without_final_slash.rfind('/') {
+            &s[slash_index + 1..]
+        } else {
+            s
+        };
+
+        s.to_owned()
+    }
+}
+
+impl rustyline::highlight::Highlighter for EditorHelper {
+    // Display hints with low intensity
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        Cow::Owned("\x1b[2m".to_owned() + hint + "\x1b[m")
+    }
+
+    // Color names that seem to be dirs.
+    fn highlight_candidate<'c>(
+        &self,
+        candidate: &'c str, // FIXME should be Completer::Candidate
+        _completion: rustyline::CompletionType,
+    ) -> Cow<'c, str> {
+        if let Some(candidate_without_suffix) = candidate.strip_suffix('/') {
+            Cow::Owned("\x1b[1;34m".to_owned() + candidate_without_suffix + "\x1b[0m/")
+        } else {
+            Cow::Borrowed(candidate)
         }
     }
 }
 
 impl rustyline::completion::Completer for EditorHelper {
-    // type Candidate = rustyline::completion::Pair;
-    type Candidate = String;
+    type Candidate = rustyline::completion::Pair;
 
     fn complete(
         &self,
@@ -162,7 +191,16 @@ impl rustyline::completion::Completer for EditorHelper {
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         // Intentionally ignore any errors that arise.
         let completions = self.shell.get_completions(line, pos).unwrap_or_default();
-        Ok((completions.start, completions.candidates))
+        let candidates = completions
+            .candidates
+            .into_iter()
+            .map(|c| rustyline::completion::Pair {
+                display: Self::get_completion_candidate_display_str(c.as_str()),
+                replacement: c,
+            })
+            .collect();
+
+        Ok((completions.start, candidates))
     }
 }
 
