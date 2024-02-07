@@ -544,7 +544,9 @@ impl Shell {
 
         if token_index + 1 >= token_count {
             for candidate in &mut candidates {
-                candidate.push(' ');
+                if !candidate.ends_with('/') {
+                    candidate.push(' ');
+                }
             }
         }
 

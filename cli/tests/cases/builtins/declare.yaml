@@ -30,3 +30,18 @@ cases:
     stdin: |
       declare -x myexportedvar="exported variable"
       env | grep myexportedvar
+
+  - name: "Re-declaring variable"
+    stdin: |
+      var="value"
+      declare var
+      echo "var: ${var}"
+
+  - name: "Declaring without value"
+    known_failure: true
+    stdin: |
+      [[ -v var ]] && echo "1: Variable is set"
+      declare var
+      [[ -v var ]] && echo "2: Variable is set"
+      declare var2=""
+      [[ -v var2 ]] && echo "3: Variable is set"
