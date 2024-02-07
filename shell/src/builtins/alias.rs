@@ -3,9 +3,11 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Manage aliases within the shell.
 #[derive(Parser, Debug)]
 pub(crate) struct AliasCommand {
-    #[arg(short = 'p', help = "print all defined aliases in a reusable format")]
+    /// Print all defined aliases in a reusable format.
+    #[arg(short = 'p')]
     print: bool,
 
     #[arg(name = "name[=value]")]

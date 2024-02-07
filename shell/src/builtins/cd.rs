@@ -8,17 +8,23 @@ use crate::{
     env::{EnvironmentLookup, EnvironmentScope},
 };
 
+/// Change the current working directory.
 #[derive(Parser, Debug)]
 pub(crate) struct CdCommand {
+    /// Force following symlinks.
     #[arg(short = 'L')]
     force_follow_symlinks: bool,
 
+    /// Use physical dir structure without following symlinks.
     #[arg(short = 'P')]
     use_physical_dir: bool,
 
+    /// Exit if current working dir resolution fails.
     #[arg(short = 'e')]
     exit_on_failed_cwd_resolution: bool,
 
+    /// Show file with extended attributes as a dir with extended
+    /// attributes.
     #[arg(short = '@')]
     file_with_xattr_as_dir: bool,
 

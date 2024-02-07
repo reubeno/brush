@@ -18,7 +18,7 @@ pub(crate) async fn eval_expression(
     match expr {
         ast::ExtendedTestExpr::UnaryTest(op, operand) => {
             let expanded_operand = expand_word(shell, operand).await?;
-            apply_unary_predicate(op, expanded_operand.as_str())
+            apply_unary_predicate(op, expanded_operand.as_str(), shell)
         }
         ast::ExtendedTestExpr::BinaryTest(op, left, right) => {
             let expanded_left = expand_word(shell, left).await?;
@@ -44,7 +44,11 @@ pub(crate) async fn eval_expression(
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool, error::Error> {
+fn apply_unary_predicate(
+    op: &ast::UnaryPredicate,
+    operand: &str,
+    shell: &mut Shell,
+) -> Result<bool, error::Error> {
     #[allow(clippy::match_single_binding)]
     match op {
         ast::UnaryPredicate::StringHasNonZeroLength => Ok(!operand.is_empty()),
@@ -134,9 +138,7 @@ fn apply_unary_predicate(op: &ast::UnaryPredicate, operand: &str) -> Result<bool
         ast::UnaryPredicate::ShellOptionEnabled => {
             error::unimp("unary extended test predicate: ShellOptionEnabled")
         }
-        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
-            error::unimp("unary extended test predicate: ShellVariableIsSetAndAssigned")
-        }
+        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env.is_set(operand)),
         ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
             error::unimp("unary extended test predicate: ShellVariableIsSetAndNameRef")
         }

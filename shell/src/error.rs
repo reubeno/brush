@@ -20,7 +20,7 @@ pub enum Error {
     #[error("failed to parse integer")]
     IntParseError(#[from] std::num::ParseIntError),
 
-    #[error("unknown error")]
+    #[error("{0}")]
     Unknown(#[from] anyhow::Error),
 
     #[error("{0}")]

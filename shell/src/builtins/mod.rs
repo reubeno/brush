@@ -12,6 +12,7 @@ mod complete;
 mod declare;
 mod dot;
 mod eval;
+mod exec;
 mod exit;
 mod export;
 mod fals;
@@ -55,7 +56,7 @@ pub(crate) fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExec
     m.insert("continue", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert(".", exec_builtin::<dot::DotCommand>);
     m.insert("eval", exec_builtin::<eval::EvalCommand>);
-    m.insert("exec", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("exec", exec_builtin::<exec::ExecCommand>);
     m.insert("exit", exec_builtin::<exit::ExitCommand>);
     m.insert("export", exec_builtin::<export::ExportCommand>);
     m.insert("readonly", exec_builtin::<unimp::UnimplementedCommand>);
