@@ -17,7 +17,7 @@ faccess = "0.2.4"
 futures = "0.3.30"
 glob = "0.3.1"
 hostname = "0.3.1"
-itertools = "0.12.0"
+itertools = "0.12.1"
 lazy_static = "1.4.0"
 log = "0.4.20"
 nix = { version = "0.27.1", features = ["fs"] }
@@ -26,7 +26,7 @@ rand = "0.8.5"
 regex = "1.10.3"
 tempfile = "3.9.0"
 thiserror = "1.0.56"
-tokio = { version = "1.35.1", features = [
+tokio = { version = "1.36.0", features = [
     "io-util",
     "macros",
     "process",
