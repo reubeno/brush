@@ -1,16 +1,19 @@
 [package]
-name = "interactive-shell"
+name = "brush-interactive-shell"
 description = "Shell"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+
+[lib]
+name = "interactive_shell"
 
 [lints]
 workspace = true
 
 [dependencies]
 anyhow = "1.0.79"
+brush-parser = { path = "../parser" }
+brush-shell = { path = "../shell" }
 log = "0.4.20"
 rustyline = { version = "13.0.0", features = ["derive"] }
-parser = { path = "../parser" }
-shell = { path = "../shell" }

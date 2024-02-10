@@ -79,7 +79,7 @@ impl Expandable for parser::word::WordPiece {
                 let exec_output = exec_result.output;
 
                 if exec_output.is_none() {
-                    log::error!("No output captured");
+                    log::error!("error: no output captured from command substitution");
                 }
 
                 let exec_output = exec_output.unwrap_or_else(String::new);

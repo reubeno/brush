@@ -122,7 +122,7 @@ impl Shell {
             function_call_depth: 0,
         };
 
-        // DBG:RRO
+        // TODO: Figure out how this got hard-coded.
         shell.options.extended_globbing = true;
 
         // Load profiles/configuration.
@@ -150,7 +150,7 @@ impl Shell {
             if let Some(home_dir) = env.get("HOME") {
                 let home_dir: String = (&home_dir.value).into();
                 let home_dir = PathBuf::from(home_dir);
-                let histfile = home_dir.join(".rush_history");
+                let histfile = home_dir.join(".brush_history");
                 env.set_global("HISTFILE", histfile.to_string_lossy().to_string().as_str());
             }
         }
@@ -214,7 +214,7 @@ impl Shell {
                 if let Ok(home_path) = std::env::var("HOME") {
                     self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())
                         .await?;
-                    self.source_if_exists(Path::new(&home_path).join(".rushrc").as_path())
+                    self.source_if_exists(Path::new(&home_path).join(".brushrc").as_path())
                         .await?;
                 }
             } else {

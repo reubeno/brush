@@ -1,9 +1,12 @@
 [package]
-name = "parser"
+name = "brush-parser"
 description = "Parser"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+
+[lib]
+name = "parser"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
