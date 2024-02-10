@@ -370,7 +370,7 @@ impl TestCase {
         self.create_test_files_in(&test_temp_dir)?;
         let test_result = self
             .run_with_shell(
-                &WhichShell::ShellUnderTest("rush".to_owned()),
+                &WhichShell::ShellUnderTest("brush".to_owned()),
                 &test_temp_dir,
             )
             .await?;

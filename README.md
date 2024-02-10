@@ -5,7 +5,7 @@
 
 ## About
 
-`brush` is an `sh` implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as well as with [bash](https://www.gnu.org/software/bash/).
+`brush` (Born RUsty SHell) is an `sh` implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as well as with [bash](https://www.gnu.org/software/bash/).
 
 It's not there right now, but very much a work in progress. 
 
