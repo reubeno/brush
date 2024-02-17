@@ -677,12 +677,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                 // TODO: cache the builtins
                 if let Some(builtin) = special_builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, open_files, args, env_vars).await
+                    execute_builtin_command(*builtin, context, args, env_vars).await
                 } else if context.shell.funcs.contains_key(&cmd_name) {
                     // Strip the function name off args.
                     invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars).await
                 } else if let Some(builtin) = builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, open_files, args, env_vars).await
+                    execute_builtin_command(*builtin, context, args, env_vars).await
                 } else {
                     // Strip the command name off args.
                     execute_external_command(
@@ -902,7 +902,6 @@ async fn execute_external_command(
 async fn execute_builtin_command<'a>(
     builtin: builtin::BuiltinCommandExecuteFunc,
     context: &'a mut PipelineExecutionContext<'_>,
-    _open_files: OpenFiles,
     args: Vec<String>,
     _env_vars: Vec<(String, ShellValue)>,
 ) -> Result<SpawnResult, error::Error> {
