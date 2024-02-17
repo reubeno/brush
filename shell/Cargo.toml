@@ -28,7 +28,7 @@ log = "0.4.20"
 nix = { version = "0.27.1", features = ["fs"] }
 rand = "0.8.5"
 regex = "1.10.3"
-tempfile = "3.9.0"
+tempfile = "3.10.0"
 thiserror = "1.0.57"
 tokio = { version = "1.36.0", features = [
     "io-util",
