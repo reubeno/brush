@@ -13,7 +13,7 @@ async fn cli_integration_tests() -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
     let mut success_count = 0;
-    let mut expected_fail_count = 0;
+    let mut known_failure_count = 0;
     let mut fail_count = 0;
     let mut join_handles = vec![];
 
@@ -33,7 +33,7 @@ async fn cli_integration_tests() -> Result<()> {
         let results = join_handle.await??;
 
         success_count += results.success_count;
-        expected_fail_count += results.expected_fail_count;
+        known_failure_count += results.known_failure_count;
         fail_count += results.fail_count;
 
         results.report();
@@ -45,19 +45,19 @@ async fn cli_integration_tests() -> Result<()> {
         fail_count.to_string().green()
     };
 
-    let formatted_expected_fail_count = if expected_fail_count > 0 {
-        expected_fail_count.to_string().magenta()
+    let formatted_known_failure_count = if known_failure_count > 0 {
+        known_failure_count.to_string().magenta()
     } else {
-        expected_fail_count.to_string().green()
+        known_failure_count.to_string().green()
     };
 
     println!("==============================================================");
     println!(
         "{} test case(s) ran: {} succeeded, {} failed, {} known to fail.",
-        success_count + fail_count,
+        success_count + fail_count + known_failure_count,
         success_count.to_string().green(),
         formatted_fail_count,
-        formatted_expected_fail_count
+        formatted_known_failure_count
     );
     println!("==============================================================");
 
@@ -78,7 +78,7 @@ struct TestCaseSet {
 struct TestCaseSetResults {
     pub name: Option<String>,
     pub success_count: u32,
-    pub expected_fail_count: u32,
+    pub known_failure_count: u32,
     pub fail_count: u32,
     pub test_case_results: Vec<TestCaseResult>,
 }
@@ -103,7 +103,7 @@ impl TestCaseSetResults {
 impl TestCaseSet {
     pub async fn run(&self) -> Result<TestCaseSetResults> {
         let mut success_count = 0;
-        let mut expected_fail_count = 0;
+        let mut known_failure_count = 0;
         let mut fail_count = 0;
         let mut test_case_results = vec![];
         for test_case in &self.cases {
@@ -116,7 +116,7 @@ impl TestCaseSet {
                     success_count += 1;
                 }
             } else if test_case.known_failure {
-                expected_fail_count += 1;
+                known_failure_count += 1;
             } else {
                 fail_count += 1;
             }
@@ -128,7 +128,7 @@ impl TestCaseSet {
             name: self.name.clone(),
             test_case_results,
             success_count,
-            expected_fail_count,
+            known_failure_count,
             fail_count,
         })
     }

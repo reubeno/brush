@@ -10,6 +10,7 @@ mod cd;
 mod colon;
 mod complete;
 mod declare;
+mod dirs;
 mod dot;
 mod eval;
 mod exec;
@@ -18,6 +19,8 @@ mod export;
 mod fals;
 mod help;
 mod jobs;
+mod popd;
+mod pushd;
 mod pwd;
 mod retur;
 mod set;
@@ -67,8 +70,6 @@ pub(crate) fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExec
     m.insert("times", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("trap", exec_builtin::<trap::TrapCommand>);
     m.insert("unset", exec_builtin::<unset::UnsetCommand>);
-    // Bash extension builtins
-    m.insert("source", exec_builtin::<dot::DotCommand>);
 
     m
 }
@@ -98,14 +99,38 @@ pub(crate) fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc>
     m.insert("unalias", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("wait", exec_builtin::<unimp::UnimplementedCommand>);
 
+    //
     // N.B These builtins are extensions.
     // TODO: make them unavailable in sh mode.
+    //
+
+    m.insert("bind", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("builtin", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("caller", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("declare", exec_builtin::<declare::DeclareCommand>);
+    // m.insert("echo", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("enable", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("let", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("local", exec_builtin::<declare::DeclareCommand>);
+    m.insert("logout", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("mapfile", exec_builtin::<unimp::UnimplementedCommand>);
+    // m.insert("printf", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("readarray", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("shopt", exec_builtin::<shopt::ShoptCommand>);
+    m.insert("source", exec_builtin::<dot::DotCommand>);
+    // m.insert("test", exec_builtin::<unimp::UnimplementedCommand>);
+    // m.insert("[", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("typeset", exec_builtin::<unimp::UnimplementedCommand>);
+
+    // Completion builtins
     m.insert("complete", exec_builtin::<complete::CompleteCommand>);
     m.insert("compgen", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("compopt", exec_builtin::<unimp::UnimplementedCommand>);
+
+    // Dir stack builtins
+    m.insert("dirs", exec_builtin::<dirs::DirsCommand>);
+    m.insert("popd", exec_builtin::<popd::PopdCommand>);
+    m.insert("pushd", exec_builtin::<pushd::PushdCommand>);
 
     m
 }

@@ -3,10 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    env::{EnvironmentLookup, EnvironmentScope},
-};
+use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
 /// Change the current working directory.
 #[derive(Parser, Debug)]
@@ -46,49 +43,24 @@ impl BuiltinCommand for CdCommand {
             return crate::error::unimp("options to cd");
         }
 
-        let target_path = if let Some(inner) = &self.target_dir {
-            if inner.is_absolute() {
-                inner.clone()
-            } else {
-                context.shell.working_dir.join(inner)
-            }
-        } else if let Some(home_var) = context.shell.env.get_str("HOME") {
-            PathBuf::from(home_var)
+        let target_dir = if let Some(target_dir) = &self.target_dir {
+            target_dir.clone()
         } else {
-            log::error!("HOME not set");
-            return Ok(BuiltinExitCode::Custom(1));
+            if let Some(home_var) = context.shell.env.get_str("HOME") {
+                PathBuf::from(home_var)
+            } else {
+                log::error!("HOME not set");
+                return Ok(BuiltinExitCode::Custom(1));
+            }
         };
 
-        match std::fs::metadata(&target_path) {
-            Ok(m) => {
-                if !m.is_dir() {
-                    log::error!("Not a directory");
-                    return Ok(BuiltinExitCode::Custom(1));
-                }
-            }
+        match context.shell.set_working_dir(&target_dir) {
+            Ok(()) => {}
             Err(e) => {
-                log::error!("{}", e);
+                log::error!("cd: {}", e);
                 return Ok(BuiltinExitCode::Custom(1));
             }
         }
-
-        // TODO: Don't canonicalize, just normalize.
-        let target_path = target_path.canonicalize()?;
-
-        let pwd = target_path.to_string_lossy().to_string();
-
-        // TODO: handle updating PWD
-        context.shell.working_dir = target_path;
-        context.shell.env.update_or_add(
-            "PWD",
-            pwd.as_str(),
-            |var| {
-                var.export();
-                Ok(())
-            },
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
 
         Ok(BuiltinExitCode::Success)
     }

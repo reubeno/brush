@@ -27,7 +27,6 @@ cases:
     args: ["./script.sh"]
 
   - name: "Return in function"
-    known_failure: true
     test_files:
       - path: "script.sh"
         contents: |

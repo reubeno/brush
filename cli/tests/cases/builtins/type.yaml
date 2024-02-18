@@ -30,11 +30,9 @@ cases:
     stdin: type -p ls
 
   - name: Test type with -P option and a builtin command
-    known_failure: true
     stdin: type -P cd
 
   - name: Test type with -P option and an external command
-    known_failure: true
     stdin: type -P ls
 
   - name: Test type with -f option and a function

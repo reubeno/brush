@@ -109,12 +109,7 @@ fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basenam
     let mut working_dir_str = shell.working_dir.to_string_lossy().to_string();
 
     if tilde_replaced {
-        let home_dir_opt = shell.env.get("HOME");
-        if let Some(home_dir) = home_dir_opt {
-            if let Some(stripped) = working_dir_str.strip_prefix(&String::from(&home_dir.value)) {
-                working_dir_str = format!("~{stripped}");
-            }
-        }
+        working_dir_str = shell.tilde_shorten(working_dir_str);
     }
 
     if basename {

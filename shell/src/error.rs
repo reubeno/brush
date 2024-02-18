@@ -14,6 +14,9 @@ pub enum Error {
     #[error("UNIMPLEMENTED: {0}")]
     Unimplemented(&'static str),
 
+    #[error("not a directory: {0}")]
+    NotADirectory(PathBuf),
+
     #[error("arithmetic evaluation error")]
     EvalError(#[from] crate::arithmetic::EvalError),
 
