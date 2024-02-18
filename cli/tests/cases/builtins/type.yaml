@@ -1,0 +1,53 @@
+name: "Builtins: type"
+cases:
+  - name: "Test type with no arguments"
+    stdin: type
+
+  - name: "Test type with a valid command"
+    stdin: type ls
+
+  - name: "Test type with an invalid command"
+    ignore_stderr: true
+    stdin: type invalid_command
+
+  - name: "Test type with -t option and a builtin command"
+    stdin: type -t cd
+
+  - name: "Test type with -t option and an external command"
+    stdin: type -t ls
+
+  - name: "Test type with -t option and an undefined command"
+    ignore_stderr: true
+    stdin: type -t undefined_command
+
+  - name: "Test type with -a option and a command with multiple definitions"
+    stdin: type -a true
+
+  - name: Test type with -p option and a builtin command
+    stdin: type -p cd
+
+  - name: Test type with -p option and an external command
+    stdin: type -p ls
+
+  - name: Test type with -P option and a builtin command
+    known_failure: true
+    stdin: type -P cd
+
+  - name: Test type with -P option and an external command
+    known_failure: true
+    stdin: type -P ls
+
+  - name: Test type with -f option and a function
+    ignore_stderr: true
+    stdin: |
+      function myfunc() { echo "Hello, world!"; }
+      type -f myfunc
+
+  - name: Test type with -f option and a command
+    stdin: type -f ls
+
+  - name: Test type with -a option and a function
+    known_failure: true
+    stdin: |
+      function myfunc() { echo "Hello, world!"; }
+      type -a myfunc
