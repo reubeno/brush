@@ -25,6 +25,7 @@ mod shift;
 mod shopt;
 mod trap;
 mod tru;
+mod typ;
 mod umask;
 mod unimp;
 mod unset;
@@ -91,7 +92,7 @@ pub(crate) fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc>
     m.insert("pwd", exec_builtin::<pwd::PwdCommand>);
     m.insert("read", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("true", exec_builtin::<tru::TrueCommand>);
-    m.insert("type", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("type", exec_builtin::<typ::TypeCommand>);
     m.insert("ulimit", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("umask", exec_builtin::<umask::UmaskCommand>);
     m.insert("unalias", exec_builtin::<unimp::UnimplementedCommand>);

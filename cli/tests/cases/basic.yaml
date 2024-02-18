@@ -28,3 +28,13 @@ cases:
           echo 'hi'
           exit 22
     args: ["./script.sh"]
+
+  - name: "Basic defaulted environment"
+    stdin: |
+      if [[ -z "$PATH" ]]; then
+        echo "PATH is not set or is empty"
+        exit 1
+      else
+        echo "PATH is set and non-empty"
+        exit 0
+      fi

@@ -154,6 +154,12 @@ impl Shell {
                 env.set_global("HISTFILE", histfile.to_string_lossy().to_string().as_str());
             }
         }
+        if !env.is_set("PATH") {
+            env.set_global(
+                "PATH",
+                "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            );
+        }
 
         // TODO: don't set these in sh mode
         if let Some(shell_name) = &options.shell_name {
@@ -538,8 +544,13 @@ impl Shell {
 
         // TODO: Do a better job than just checking if index == 0.
         if token_index == 0 && !prefix.is_empty() {
-            let executables = self.get_executables_with_prefix(prefix);
-            candidates.extend(executables);
+            let glob_pattern = std::format!("{prefix}*");
+
+            for path in self.find_executables_in_path(&glob_pattern) {
+                if let Some(file_name) = path.file_name() {
+                    candidates.push(file_name.to_string_lossy().to_string());
+                }
+            }
         }
 
         if token_index + 1 >= token_count {
@@ -554,17 +565,16 @@ impl Shell {
     }
 
     #[allow(clippy::manual_flatten)]
-    fn get_executables_with_prefix(&self, prefix: &str) -> Vec<String> {
+    pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
         let mut executables = vec![];
-
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
-            if let Ok(entries) = glob::glob(std::format!("{dir_str}/{prefix}*").as_str()) {
+            if let Ok(entries) =
+                glob::glob(std::format!("{dir_str}/{required_glob_pattern}").as_str())
+            {
                 for entry in entries {
                     if let Ok(entry) = entry {
                         if entry.executable() {
-                            if let Some(file_name) = entry.file_name() {
-                                executables.push(file_name.to_string_lossy().to_string());
-                            }
+                            executables.push(entry);
                         }
                     }
                 }
