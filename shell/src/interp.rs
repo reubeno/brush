@@ -132,6 +132,11 @@ impl Execute for ast::CompleteCommand {
             } else {
                 result = ao_list.execute(shell, params).await?;
             }
+
+            // Check for early return.
+            if result.return_from_function_or_script {
+                break;
+            }
         }
 
         shell.last_exit_status = result.exit_code;
@@ -910,16 +915,20 @@ async fn execute_builtin_command<'a>(
         builtin_name: args[0].clone(),
     };
 
-    let builtin_result = builtin(builtin_context, args).await?;
-
-    let exit_code = match builtin_result.exit_code {
-        builtin::BuiltinExitCode::Success => 0,
-        builtin::BuiltinExitCode::InvalidUsage => 2,
-        builtin::BuiltinExitCode::Unimplemented => 99,
-        builtin::BuiltinExitCode::Custom(code) => code,
-        builtin::BuiltinExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
-        builtin::BuiltinExitCode::ReturnFromFunctionOrScript(code) => {
-            return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
+    let exit_code = match builtin(builtin_context, args).await {
+        Ok(builtin_result) => match builtin_result.exit_code {
+            builtin::BuiltinExitCode::Success => 0,
+            builtin::BuiltinExitCode::InvalidUsage => 2,
+            builtin::BuiltinExitCode::Unimplemented => 99,
+            builtin::BuiltinExitCode::Custom(code) => code,
+            builtin::BuiltinExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
+            builtin::BuiltinExitCode::ReturnFromFunctionOrScript(code) => {
+                return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
+            }
+        },
+        Err(e) => {
+            log::error!("error: {}", e);
+            1
         }
     };
 

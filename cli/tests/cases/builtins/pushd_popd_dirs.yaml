@@ -1,0 +1,46 @@
+name: "Builtins: pushd/popd/dirs"
+cases:
+  - name: "Basic pushd usage"
+    stdin: |
+      cd /
+      pushd /
+      echo $?
+      echo $PWD
+      pushd /usr
+      dirs
+      echo $?
+      echo $PWD
+      popd
+      echo $?
+      echo $PWD
+      popd
+      echo $?
+
+  - name: "popd with empty stack"
+    ignore_stderr: true
+    stdin: popd
+
+  - name: "pushd to non-existent dir"
+    ignore_stderr: true
+    stdin: pushd /non-existent-dir
+
+  - name: "basic dirs usage"
+    stdin: |
+      cd /
+      dirs
+
+  - name: "dirs with tilde replacement"
+    stdin: |
+      HOME=/tmp
+      cd ~
+      echo "PWD: $PWD"
+      dirs
+      dirs -l
+
+  - name: "dirs to clear"
+    stdin: |
+      cd /tmp
+      pushd /tmp
+      pushd /
+      dirs -c
+      dirs

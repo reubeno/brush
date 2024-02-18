@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
+use parser::ast;
 
 use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},
@@ -31,7 +32,7 @@ pub(crate) struct TypeCommand {
 enum ResolvedType {
     Alias(String),
     Keyword,
-    Function,
+    Function(ast::FunctionDefinition),
     Builtin,
     File(PathBuf),
 }
@@ -42,18 +43,13 @@ impl BuiltinCommand for TypeCommand {
         &self,
         context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        if self.force_path_search {
-            log::error!("UNIMPLEMENTED: type -P");
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-
         let mut result = BuiltinExitCode::Success;
 
         for name in &self.names {
             let resolved_types = self.resolve_types(context.shell, name);
 
             if resolved_types.is_empty() {
-                if !self.type_only {
+                if !self.type_only && !self.force_path_search {
                     log::error!("type: {name} not found");
                 }
 
@@ -68,10 +64,10 @@ impl BuiltinCommand for TypeCommand {
                     match resolved_type {
                         ResolvedType::Alias(_) => println!("alias"),
                         ResolvedType::Keyword => println!("keyword"),
-                        ResolvedType::Function => println!("function"),
+                        ResolvedType::Function(_) => println!("function"),
                         ResolvedType::Builtin => println!("builtin"),
                         ResolvedType::File(path) => {
-                            if self.show_path_only {
+                            if self.show_path_only || self.force_path_search {
                                 println!("{}", path.to_string_lossy());
                             } else {
                                 println!("file");
@@ -82,12 +78,12 @@ impl BuiltinCommand for TypeCommand {
                     match resolved_type {
                         ResolvedType::Alias(target) => println!("{name} is aliased to '{target}'"),
                         ResolvedType::Keyword => println!("{name} is a shell keyword"),
-                        ResolvedType::Function => {
+                        ResolvedType::Function(_def) => {
                             println!("{name} is a function");
                         }
                         ResolvedType::Builtin => println!("{name} is a shell builtin"),
                         ResolvedType::File(path) => {
-                            if self.show_path_only {
+                            if self.show_path_only || self.force_path_search {
                                 println!("{}", path.to_string_lossy());
                             } else {
                                 println!(
@@ -115,28 +111,30 @@ impl TypeCommand {
     fn resolve_types(&self, shell: &Shell, name: &str) -> Vec<ResolvedType> {
         let mut types = vec![];
 
-        // Check for aliases.
-        if let Some(a) = shell.aliases.get(name) {
-            types.push(ResolvedType::Alias(a.clone()));
-        }
-
-        // Check for keywords.
-        if is_keyword(name) {
-            types.push(ResolvedType::Keyword);
-        }
-
-        // Check for functions.
-        if !self.suppress_func_lookup {
-            if shell.funcs.contains_key(name) {
-                types.push(ResolvedType::Function);
+        if !self.force_path_search {
+            // Check for aliases.
+            if let Some(a) = shell.aliases.get(name) {
+                types.push(ResolvedType::Alias(a.clone()));
             }
-        }
 
-        // Check for builtins.
-        if crate::builtins::SPECIAL_BUILTINS.contains_key(name)
-            || crate::builtins::BUILTINS.contains_key(name)
-        {
-            types.push(ResolvedType::Builtin);
+            // Check for keywords.
+            if is_keyword(name) {
+                types.push(ResolvedType::Keyword);
+            }
+
+            // Check for functions.
+            if !self.suppress_func_lookup {
+                if let Some(def) = shell.funcs.get(name) {
+                    types.push(ResolvedType::Function(def.clone()));
+                }
+            }
+
+            // Check for builtins.
+            if crate::builtins::SPECIAL_BUILTINS.contains_key(name)
+                || crate::builtins::BUILTINS.contains_key(name)
+            {
+                types.push(ResolvedType::Builtin);
+            }
         }
 
         // Look in path.

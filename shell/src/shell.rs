@@ -4,7 +4,7 @@ use log::debug;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::env::ShellEnvironment;
+use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::error;
 use crate::expansion::WordExpander;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
@@ -39,6 +39,9 @@ pub struct Shell {
 
     // Function call stack.
     pub function_call_depth: u32,
+
+    // Directory stack used by pushd et al.
+    pub directory_stack: Vec<PathBuf>,
 }
 
 impl Clone for Shell {
@@ -56,6 +59,7 @@ impl Clone for Shell {
             positional_parameters: self.positional_parameters.clone(),
             shell_name: self.shell_name.clone(),
             function_call_depth: self.function_call_depth,
+            directory_stack: self.directory_stack.clone(),
         }
     }
 }
@@ -120,6 +124,7 @@ impl Shell {
             positional_parameters: vec![],
             shell_name: options.shell_name.clone(),
             function_call_depth: 0,
+            directory_stack: vec![],
         };
 
         // TODO: Figure out how this got hard-coded.
@@ -582,5 +587,54 @@ impl Shell {
         }
 
         executables
+    }
+
+    pub fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
+        let abs_path = if target_dir.is_absolute() {
+            PathBuf::from(target_dir)
+        } else {
+            self.working_dir.join(target_dir)
+        };
+
+        match std::fs::metadata(&abs_path) {
+            Ok(m) => {
+                if !m.is_dir() {
+                    return Err(error::Error::NotADirectory(abs_path));
+                }
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        }
+
+        // TODO: Don't canonicalize, just normalize.
+        let cleaned_path = abs_path.canonicalize()?;
+
+        let pwd = cleaned_path.to_string_lossy().to_string();
+
+        // TODO: handle updating PWD
+        self.working_dir = cleaned_path;
+        self.env.update_or_add(
+            "PWD",
+            pwd.as_str(),
+            |var| {
+                var.export();
+                Ok(())
+            },
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+
+        Ok(())
+    }
+
+    pub fn tilde_shorten(&self, s: String) -> String {
+        let home_dir_opt = self.env.get("HOME");
+        if let Some(home_dir) = home_dir_opt {
+            if let Some(stripped) = s.strip_prefix(&String::from(&home_dir.value)) {
+                return format!("~{stripped}");
+            }
+        }
+        s
     }
 }
