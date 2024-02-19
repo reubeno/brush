@@ -4,6 +4,6 @@ cases:
     stdin: |
       (echo hi)
   - name: "Piped subshell usage"
-    known_failure: true # TODO: fix this test
+    known_failure: true
     stdin: |
       (echo hi) | wc -l

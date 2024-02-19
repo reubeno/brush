@@ -1,4 +1,5 @@
 use anyhow::Result;
+use itertools::Itertools;
 use rand::Rng;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -87,7 +88,14 @@ impl ShellValue {
                 }
             }
             ShellValue::Integer(_) => error::unimp("formatting integers"),
-            ShellValue::AssociativeArray(_) => error::unimp("formatting associative arrays"),
+            ShellValue::AssociativeArray(values) => {
+                let arr_str = values
+                    .iter()
+                    .map(|(k, v)| format!("[{}]={}", k, String::from(v)))
+                    .join(" ");
+
+                Ok(arr_str)
+            }
             ShellValue::IndexedArray(values) => {
                 let mut result = String::new();
                 result.push('(');

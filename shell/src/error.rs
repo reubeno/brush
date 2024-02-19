@@ -23,6 +23,9 @@ pub enum Error {
     #[error("failed to parse integer")]
     IntParseError(#[from] std::num::ParseIntError),
 
+    #[error("invalid pattern: '{0}'")]
+    InvalidPattern(String),
+
     #[error("{0}")]
     Unknown(#[from] anyhow::Error),
 

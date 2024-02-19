@@ -23,18 +23,22 @@ builtin::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "");
 
 #[derive(Parser, Debug)]
 pub(crate) struct DeclareCommand {
+    /// Constrain to function names or definitions.
     #[arg(short = 'f')]
     function_names_or_defs_only: bool,
 
+    /// Constrain to function names only.
     #[arg(short = 'F')]
     function_names_only: bool,
 
+    /// Create global variable, if applicable.
     #[arg(short = 'g')]
     create_global: bool,
 
     #[arg(short = 'I')]
     locals_inherit_from_prev_scope: bool,
 
+    /// Display each item's attributes and values.
     #[arg(short = 'p')]
     print: bool,
 

@@ -176,10 +176,10 @@ peg::parser! {
 
                 let mut items = vec![];
                 for (i, ao) in and_ors.into_iter().enumerate() {
-                    items.push((ao, seps[i].clone()));
+                    items.push(ast::CompoundListItem(ao, seps[i].clone()));
                 }
 
-                items
+                ast::CompoundList(items)
             }
 
         rule and_or() -> ast::AndOrList =
@@ -239,7 +239,7 @@ peg::parser! {
             specific_operator(";") {}
 
         rule subshell() -> ast::SubshellCommand =
-            specific_operator("(") c:compound_list() specific_operator(")") { c }
+            specific_operator("(") c:compound_list() specific_operator(")") { ast::SubshellCommand(c) }
 
         rule compound_list() -> ast::CompoundList =
             linebreak() first:and_or() remainder:(s:separator() l:and_or() { (s, l) })* last_sep:separator()? {
@@ -257,10 +257,10 @@ peg::parser! {
 
                 let mut items = vec![];
                 for (i, ao) in and_ors.into_iter().enumerate() {
-                    items.push((ao, seps[i].clone()));
+                    items.push(ast::CompoundListItem(ao, seps[i].clone()));
                 }
 
-                items
+                ast::CompoundList(items)
             }
 
         rule for_clause() -> ast::ForClauseCommand =
@@ -447,11 +447,11 @@ peg::parser! {
                 ast::ElseClause { condition: None, body }
              }
 
-        rule while_clause() -> ast::WhileClauseCommand =
-            specific_word("while") c:compound_list() d:do_group() { (c, d) }
+        rule while_clause() -> ast::WhileOrUntilClauseCommand =
+            specific_word("while") c:compound_list() d:do_group() { ast::WhileOrUntilClauseCommand(c, d) }
 
-        rule until_clause() -> ast::UntilClauseCommand =
-            specific_word("until") c:compound_list() d:do_group() { (c, d) }
+        rule until_clause() -> ast::WhileOrUntilClauseCommand =
+            specific_word("until") c:compound_list() d:do_group() { ast::WhileOrUntilClauseCommand(c, d) }
 
         // N.B. bash allows use of the 'function' word to indicate a function definition.
         // TODO: Validate usage of this keyword.
@@ -465,16 +465,16 @@ peg::parser! {
             expected!("function definition")
 
         rule function_body() -> ast::FunctionBody =
-            c:compound_command() r:redirect_list()? { (c, r) }
+            c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
 
         rule fname() -> &'input str =
             name()
 
         rule brace_group() -> ast::BraceGroupCommand =
-            specific_word("{") c:compound_list() specific_word("}") { c }
+            specific_word("{") c:compound_list() specific_word("}") { ast::BraceGroupCommand(c) }
 
         rule do_group() -> ast::DoGroupCommand =
-            specific_word("do") c:compound_list() specific_word("done") { c }
+            specific_word("do") c:compound_list() specific_word("done") { ast::DoGroupCommand(c) }
 
         rule simple_command() -> ast::SimpleCommand =
             prefix:cmd_prefix() word_or_name:cmd_word() suffix:cmd_suffix()? { ast::SimpleCommand { prefix: Some(prefix), word_or_name: Some(ast::Word::from(word_or_name)), suffix } } /
@@ -489,22 +489,22 @@ peg::parser! {
             !assignment_word() w:non_reserved_word() { w }
 
         rule cmd_prefix() -> ast::CommandPrefix =
-            (
+            p:(
                 i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
                 w:assignment_word() { ast::CommandPrefixOrSuffixItem::AssignmentWord(w) }
-            )+
+            )+ { ast::CommandPrefix(p) }
 
         rule cmd_suffix() -> ast::CommandSuffix =
-            (
+            s:(
                 i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
                 // TODO: this is a hack; we don't yet understand how other shells manage to parse command invocations
                 // like `local var=()`
                 value:$(assignment_word()) { ast::CommandPrefixOrSuffixItem::Word(ast::Word { value }) } /
                 w:word() { ast::CommandPrefixOrSuffixItem::Word(ast::Word::from(w)) }
-            )+
+            )+ { ast::CommandSuffix(s) }
 
         rule redirect_list() -> ast::RedirectList =
-            io_redirect()+ /
+            r:io_redirect()+ { ast::RedirectList(r) } /
             expected!("redirect list")
 
         // N.B. here strings are extensions to the POSIX standard.

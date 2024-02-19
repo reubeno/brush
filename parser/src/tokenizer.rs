@@ -95,6 +95,9 @@ pub enum TokenizerError {
 
     #[error("failed to read input")]
     ReadError(#[from] std::io::Error),
+
+    #[error("unimplemented tokenization: {0}")]
+    Unimplemented(&'static str),
 }
 
 impl TokenizerError {
@@ -276,7 +279,7 @@ impl TokenParseState {
                     || self.current_token().contains('\'')
                     || self.current_token().contains('\\')
                 {
-                    todo!("UNIMPLEMENTED: quoted or escaped here tag");
+                    return Err(TokenizerError::Unimplemented("quoted or escaped here tag"));
                 }
 
                 // Include the \n in the here tag so it's easier to check against.

@@ -78,8 +78,9 @@ impl BuiltinCommand for TypeCommand {
                     match resolved_type {
                         ResolvedType::Alias(target) => println!("{name} is aliased to '{target}'"),
                         ResolvedType::Keyword => println!("{name} is a shell keyword"),
-                        ResolvedType::Function(_def) => {
+                        ResolvedType::Function(def) => {
                             println!("{name} is a function");
+                            println!("{def}");
                         }
                         ResolvedType::Builtin => println!("{name} is a shell builtin"),
                         ResolvedType::File(path) => {

@@ -1,17 +1,39 @@
+use std::fmt::{Display, Write};
+
 use crate::tokenizer;
+
+const DISPLAY_INDENT: &str = "    ";
 
 #[derive(Clone, Debug)]
 pub struct Program {
     pub complete_commands: Vec<CompleteCommand>,
 }
 
-pub type CompleteCommand = Vec<CompleteCommandItem>;
-pub type CompleteCommandItem = (AndOrList, SeparatorOperator);
+impl Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for complete_command in &self.complete_commands {
+            write!(f, "{}", complete_command)?;
+        }
+        Ok(())
+    }
+}
+
+pub type CompleteCommand = CompoundList;
+pub type CompleteCommandItem = CompoundListItem;
 
 #[derive(Clone, Debug)]
 pub enum SeparatorOperator {
     Async,
     Sequence,
+}
+
+impl Display for SeparatorOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SeparatorOperator::Async => write!(f, "&"),
+            SeparatorOperator::Sequence => write!(f, ";"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -20,10 +42,30 @@ pub struct AndOrList {
     pub additional: Vec<AndOr>,
 }
 
+impl Display for AndOrList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.first)?;
+        for item in &self.additional {
+            write!(f, "{}", item)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum AndOr {
     And(Pipeline),
     Or(Pipeline),
+}
+
+impl Display for AndOr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AndOr::And(pipeline) => write!(f, " && {}", pipeline),
+            AndOr::Or(pipeline) => write!(f, " || {}", pipeline),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -32,12 +74,44 @@ pub struct Pipeline {
     pub seq: Vec<Command>,
 }
 
+impl Display for Pipeline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.bang {
+            write!(f, "!")?;
+        }
+        for command in &self.seq {
+            write!(f, "{}", command)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Command {
     Simple(SimpleCommand),
     Compound(CompoundCommand, Option<RedirectList>),
     Function(FunctionDefinition),
     ExtendedTest(ExtendedTestExpr),
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Command::Simple(simple_command) => write!(f, "{}", simple_command),
+            Command::Compound(compound_command, redirect_list) => {
+                write!(f, "{}", compound_command)?;
+                if let Some(redirect_list) = redirect_list {
+                    write!(f, "{}", redirect_list)?;
+                }
+                Ok(())
+            }
+            Command::Function(function_definition) => write!(f, "{}", function_definition),
+            Command::ExtendedTest(extended_test_expr) => {
+                write!(f, "[[ {} ]]", extended_test_expr)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -49,8 +123,34 @@ pub enum CompoundCommand {
     ForClause(ForClauseCommand),
     CaseClause(CaseClauseCommand),
     IfClause(IfClauseCommand),
-    WhileClause(WhileClauseCommand),
-    UntilClause(UntilClauseCommand),
+    WhileClause(WhileOrUntilClauseCommand),
+    UntilClause(WhileOrUntilClauseCommand),
+}
+
+impl Display for CompoundCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompoundCommand::Arithmetic(arithmetic_command) => write!(f, "{}", arithmetic_command),
+            CompoundCommand::ArithmeticForClause(arithmetic_for_clause_command) => {
+                write!(f, "{}", arithmetic_for_clause_command)
+            }
+            CompoundCommand::BraceGroup(brace_group_command) => {
+                write!(f, "{}", brace_group_command)
+            }
+            CompoundCommand::Subshell(subshell_command) => write!(f, "{}", subshell_command),
+            CompoundCommand::ForClause(for_clause_command) => write!(f, "{}", for_clause_command),
+            CompoundCommand::CaseClause(case_clause_command) => {
+                write!(f, "{}", case_clause_command)
+            }
+            CompoundCommand::IfClause(if_clause_command) => write!(f, "{}", if_clause_command),
+            CompoundCommand::WhileClause(while_or_until_clause_command) => {
+                write!(f, "{}", while_or_until_clause_command)
+            }
+            CompoundCommand::UntilClause(while_or_until_clause_command) => {
+                write!(f, "{}", while_or_until_clause_command)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -58,13 +158,34 @@ pub struct ArithmeticCommand {
     pub expr: UnexpandedArithmeticExpr,
 }
 
-pub type SubshellCommand = CompoundList;
+impl Display for ArithmeticCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(({}))", self.expr)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SubshellCommand(pub CompoundList);
+
+impl Display for SubshellCommand {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting SubshellCommand");
+        Err(std::fmt::Error)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ForClauseCommand {
     pub variable_name: String,
     pub values: Option<Vec<Word>>,
     pub body: DoGroupCommand,
+}
+
+impl Display for ForClauseCommand {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting ForClauseCommand");
+        Err(std::fmt::Error)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -75,14 +196,53 @@ pub struct ArithmeticForClauseCommand {
     pub body: DoGroupCommand,
 }
 
+impl Display for ArithmeticForClauseCommand {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting ArithmeticForClauseCommand");
+        Err(std::fmt::Error)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CaseClauseCommand {
     pub value: Word,
     pub cases: Vec<CaseItem>,
 }
 
-pub type CompoundList = Vec<CompoundListItem>;
-pub type CompoundListItem = (AndOrList, SeparatorOperator);
+impl Display for CaseClauseCommand {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting CaseClauseCommand");
+        Err(std::fmt::Error)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CompoundList(pub Vec<CompoundListItem>);
+
+impl Display for CompoundList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, item) in self.0.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+
+            write!(f, "{}", item)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
+
+impl Display for CompoundListItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)?;
+        write!(f, "{}", self.1)?;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct IfClauseCommand {
@@ -91,10 +251,38 @@ pub struct IfClauseCommand {
     pub elses: Option<Vec<ElseClause>>,
 }
 
+impl Display for IfClauseCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "if {} then", self.condition)?;
+        write!(
+            indenter::indented(f).with_str(DISPLAY_INDENT),
+            "{}",
+            self.then
+        )?;
+        if let Some(elses) = &self.elses {
+            for else_clause in elses {
+                write!(f, "{}", else_clause)?;
+            }
+        }
+
+        writeln!(f)?;
+        write!(f, "fi")?;
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ElseClause {
     pub condition: Option<CompoundList>,
     pub body: CompoundList,
+}
+
+impl Display for ElseClause {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting ElseClause");
+        Err(std::fmt::Error)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -103,8 +291,22 @@ pub struct CaseItem {
     pub cmd: Option<CompoundList>,
 }
 
-pub type WhileClauseCommand = (CompoundList, DoGroupCommand);
-pub type UntilClauseCommand = (CompoundList, DoGroupCommand);
+impl Display for CaseItem {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting CaseItem");
+        Err(std::fmt::Error)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand);
+
+impl Display for WhileOrUntilClauseCommand {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting WhileOrUntilClauseCommand");
+        Err(std::fmt::Error)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct FunctionDefinition {
@@ -112,9 +314,51 @@ pub struct FunctionDefinition {
     pub body: FunctionBody,
 }
 
-pub type FunctionBody = (CompoundCommand, Option<RedirectList>);
-pub type BraceGroupCommand = CompoundList;
-pub type DoGroupCommand = CompoundList;
+impl Display for FunctionDefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} ()", self.fname)?;
+        write!(f, "{}", self.body)?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
+
+impl Display for FunctionBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)?;
+        if let Some(redirect_list) = &self.1 {
+            write!(f, "{}", redirect_list)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BraceGroupCommand(pub CompoundList);
+
+impl Display for BraceGroupCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{{")?;
+        write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", self.0)?;
+        writeln!(f)?;
+        write!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DoGroupCommand(pub CompoundList);
+
+impl Display for DoGroupCommand {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting DoGroupCommand");
+        Err(std::fmt::Error)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SimpleCommand {
@@ -123,14 +367,87 @@ pub struct SimpleCommand {
     pub suffix: Option<CommandSuffix>,
 }
 
-pub type CommandPrefix = Vec<CommandPrefixOrSuffixItem>;
-pub type CommandSuffix = Vec<CommandPrefixOrSuffixItem>;
+impl Display for SimpleCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut wrote_something = false;
+
+        if let Some(prefix) = &self.prefix {
+            if wrote_something {
+                write!(f, " ")?;
+            }
+
+            write!(f, "{}", prefix)?;
+            wrote_something = true;
+        }
+
+        if let Some(word_or_name) = &self.word_or_name {
+            if wrote_something {
+                write!(f, " ")?;
+            }
+
+            write!(f, "{}", word_or_name)?;
+            wrote_something = true;
+        }
+
+        if let Some(suffix) = &self.suffix {
+            if wrote_something {
+                write!(f, " ")?;
+            }
+
+            write!(f, "{}", suffix)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
+
+impl Display for CommandPrefix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, item) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, " ")?;
+            }
+
+            write!(f, "{}", item)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
+
+impl Display for CommandSuffix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, item) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, " ")?;
+            }
+
+            write!(f, "{}", item)?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum CommandPrefixOrSuffixItem {
     IoRedirect(IoRedirect),
     Word(Word),
     AssignmentWord(Assignment),
+}
+
+impl Display for CommandPrefixOrSuffixItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{}", io_redirect),
+            CommandPrefixOrSuffixItem::Word(word) => write!(f, "{}", word),
+            CommandPrefixOrSuffixItem::AssignmentWord(assignment) => write!(f, "{}", assignment),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -147,13 +464,85 @@ pub enum Assignment {
     },
 }
 
-pub type RedirectList = Vec<IoRedirect>;
+impl Display for Assignment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Assignment::Scalar {
+                name,
+                value,
+                append,
+            } => {
+                write!(f, "{name}")?;
+                if *append {
+                    write!(f, "+")?;
+                }
+                write!(f, "={value}")?;
+            }
+            Assignment::Array {
+                name,
+                values,
+                append,
+            } => {
+                write!(f, "{name}")?;
+                if *append {
+                    write!(f, "+")?;
+                }
+                write!(f, "=(")?;
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{}", value)?;
+                }
+                write!(f, ")")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RedirectList(pub Vec<IoRedirect>);
+
+impl Display for RedirectList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for item in &self.0 {
+            write!(f, "{}", item)?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum IoRedirect {
     File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
     HereDocument(Option<u32>, IoHereDocument),
     HereString(Option<u32>, Word),
+}
+
+impl Display for IoRedirect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IoRedirect::File(fd_num, kind, target) => {
+                if let Some(fd_num) = fd_num {
+                    write!(f, "{}", fd_num)?;
+                }
+
+                write!(f, "{} {}", kind, target)?;
+            }
+            IoRedirect::HereDocument(_, _) => {
+                log::error!("UNIMPLEMENTED: formatting HereDocument");
+                return Err(std::fmt::Error);
+            }
+            IoRedirect::HereString(_, _) => {
+                log::error!("UNIMPLEMENTED: formatting HereString");
+                return Err(std::fmt::Error);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -167,11 +556,37 @@ pub enum IoFileRedirectKind {
     DuplicateOutput,
 }
 
+impl Display for IoFileRedirectKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IoFileRedirectKind::Read => write!(f, "<"),
+            IoFileRedirectKind::Write => write!(f, ">"),
+            IoFileRedirectKind::Append => write!(f, ">>"),
+            IoFileRedirectKind::ReadAndWrite => write!(f, "<>"),
+            IoFileRedirectKind::Clobber => write!(f, ">|"),
+            IoFileRedirectKind::DuplicateInput => write!(f, "<&"),
+            IoFileRedirectKind::DuplicateOutput => write!(f, ">&"),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum IoFileRedirectTarget {
     Filename(Word),
     Fd(u32),
     ProcessSubstitution(SubshellCommand),
+}
+
+impl Display for IoFileRedirectTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IoFileRedirectTarget::Filename(word) => write!(f, "{}", word),
+            IoFileRedirectTarget::Fd(fd) => write!(f, "{}", fd),
+            IoFileRedirectTarget::ProcessSubstitution(subshell_command) => {
+                write!(f, "{}", subshell_command)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -189,6 +604,33 @@ pub enum ExtendedTestExpr {
     Parenthesized(Box<ExtendedTestExpr>),
     UnaryTest(UnaryPredicate, Word),
     BinaryTest(BinaryPredicate, Word, Word),
+}
+
+impl Display for ExtendedTestExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExtendedTestExpr::And(left, right) => {
+                write!(f, "{} && {}", left, right)?;
+            }
+            ExtendedTestExpr::Or(left, right) => {
+                write!(f, "{} || {}", left, right)?;
+            }
+            ExtendedTestExpr::Not(expr) => {
+                write!(f, "! {}", expr)?;
+            }
+            ExtendedTestExpr::Parenthesized(expr) => {
+                write!(f, "( {} )", expr)?;
+            }
+            ExtendedTestExpr::UnaryTest(pred, word) => {
+                write!(f, "{} {}", pred, word)?;
+            }
+            ExtendedTestExpr::BinaryTest(pred, left, right) => {
+                write!(f, "{} {} {}", left, pred, right)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -219,6 +661,13 @@ pub enum UnaryPredicate {
     StringHasNonZeroLength,
 }
 
+impl Display for UnaryPredicate {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        log::error!("UNIMPLEMENTED: formatting UnaryPredicate");
+        Err(std::fmt::Error)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum BinaryPredicate {
     FilesReferToSameDeviceAndInodeNumbers,
@@ -237,9 +686,36 @@ pub enum BinaryPredicate {
     ArithmeticGreaterThanOrEqualTo,
 }
 
+impl Display for BinaryPredicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => write!(f, "-ef"),
+            BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => write!(f, "-nt"),
+            BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => write!(f, "-ot"),
+            BinaryPredicate::StringMatchesPattern => write!(f, "="),
+            BinaryPredicate::StringDoesNotMatchPattern => write!(f, "!="),
+            BinaryPredicate::StringMatchesRegex => write!(f, "=~"),
+            BinaryPredicate::LeftSortsBeforeRight => write!(f, "<"),
+            BinaryPredicate::LeftSortsAfterRight => write!(f, ">"),
+            BinaryPredicate::ArithmeticEqualTo => write!(f, "-eq"),
+            BinaryPredicate::ArithmeticNotEqualTo => write!(f, "-ne"),
+            BinaryPredicate::ArithmeticLessThan => write!(f, "-lt"),
+            BinaryPredicate::ArithmeticLessThanOrEqualTo => write!(f, "-le"),
+            BinaryPredicate::ArithmeticGreaterThan => write!(f, "-gt"),
+            BinaryPredicate::ArithmeticGreaterThanOrEqualTo => write!(f, "-ge"),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Word {
     pub value: String,
+}
+
+impl Display for Word {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
 }
 
 impl Word {
@@ -262,6 +738,12 @@ impl Word {
 #[derive(Clone, Debug)]
 pub struct UnexpandedArithmeticExpr {
     pub value: String,
+}
+
+impl Display for UnexpandedArithmeticExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
 }
 
 #[derive(Clone, Debug)]

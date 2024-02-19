@@ -8,7 +8,7 @@ use std::{
     process::ExitStatus,
 };
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 20)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 32)]
 async fn cli_integration_tests() -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
