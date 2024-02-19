@@ -46,11 +46,38 @@ impl<'a> WordExpander<'a> {
             expanded_pieces.push_str(piece.expand(self.shell).await?.as_str());
         }
 
-        // TODO: Split fields
-        // TODO: Expand pathnames
-        // TODO: Remove quotes
+        // // TODO: Split fields; observe IFS
+        // let fields = expanded_pieces.split(' ');
+
+        // // TODO: Expand pathnames
+        // // TODO: skip this if set -f is in effect
+        // let expanded_fields = fields
+        //     .map(|field| self.expand_pathnames(field))
+        //     .into_iter()
+        //     .collect::<Result<Vec<_>, error::Error>>()?;
+
+        // let flattened: Vec<String> = expanded_fields.into_iter().flatten().collect();
+
+        // // TODO: Remove quotes here (not above)
+
+        // // TODO: Fix re-joining.
+        // let result = flattened.join(" ");
+
+        // Ok(result)
 
         Ok(expanded_pieces)
+    }
+
+    #[allow(dead_code)]
+    fn expand_pathnames(&self, s: &str) -> Result<Vec<String>, error::Error> {
+        // TODO: handle [] patterns
+        let needs_expansion = s.chars().any(|c| c == '*' || c == '?');
+
+        if needs_expansion {
+            patterns::pattern_expand(s, &self.shell.working_dir)
+        } else {
+            Ok(vec![s.to_owned()])
+        }
     }
 }
 

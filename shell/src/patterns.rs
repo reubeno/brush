@@ -30,7 +30,7 @@ pub(crate) fn pattern_expand(
     };
 
     let paths = glob::glob_with(glob_pattern.as_str(), options)
-        .map_err(|e| error::Error::Unknown(e.into()))?;
+        .map_err(|_e| error::Error::InvalidPattern(pattern.to_owned()))?;
     let paths_results: Result<Vec<_>, glob::GlobError> = paths.collect();
     let paths = paths_results.map_err(|e| error::Error::Unknown(e.into()))?;
     let paths: Vec<String> = paths
@@ -39,7 +39,11 @@ pub(crate) fn pattern_expand(
             let s = p.to_string_lossy();
 
             let mut s = if let Some(prefix) = &prefix_to_remove {
-                s.strip_prefix(prefix).unwrap().to_string()
+                if let Some(stripped) = s.strip_prefix(prefix) {
+                    stripped.to_string()
+                } else {
+                    s.to_string()
+                }
             } else {
                 s.to_string()
             };

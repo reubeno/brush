@@ -107,7 +107,7 @@ impl Execute for ast::Program {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::CompleteCommand {
+impl Execute for ast::CompoundList {
     async fn execute(
         &self,
         shell: &mut Shell,
@@ -115,7 +115,7 @@ impl Execute for ast::CompleteCommand {
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
 
-        for (ao_list, sep) in self {
+        for ast::CompoundListItem(ao_list, sep) in &self.0 {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
@@ -243,7 +243,7 @@ impl Execute for ast::Pipeline {
                     } else if let Some(signal) = output.status.signal() {
                         exit_code = (signal & 0xFF) as u8 + 128;
                     } else {
-                        todo!("UNIMPLEMENTED: unhandled process exit");
+                        return error::unimp("unhandled process exit");
                     }
 
                     // TODO: Confirm what to return if it was signaled.
@@ -337,8 +337,10 @@ impl Execute for ast::CompoundCommand {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         match self {
-            ast::CompoundCommand::BraceGroup(g) => g.execute(shell, params).await,
-            ast::CompoundCommand::Subshell(s) => {
+            ast::CompoundCommand::BraceGroup(ast::BraceGroupCommand(g)) => {
+                g.execute(shell, params).await
+            }
+            ast::CompoundCommand::Subshell(ast::SubshellCommand(s)) => {
                 // TODO: actually implement subshell semantics
                 // TODO: for that matter, look at shell properties in builtin invocation
                 s.execute(shell, params).await
@@ -383,7 +385,7 @@ impl Execute for ast::ForClauseCommand {
                     EnvironmentScope::Global,
                 )?;
 
-                result = self.body.execute(shell, params).await?;
+                result = self.body.0.execute(shell, params).await?;
             }
         }
 
@@ -462,7 +464,7 @@ impl Execute for ast::IfClauseCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for (WhileOrUntil, &ast::WhileClauseCommand) {
+impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
     async fn execute(
         &self,
         shell: &mut Shell,
@@ -484,7 +486,7 @@ impl Execute for (WhileOrUntil, &ast::WhileClauseCommand) {
                 break;
             }
 
-            result = body.execute(shell, params).await?;
+            result = body.0.execute(shell, params).await?;
         }
 
         Ok(result)
@@ -530,7 +532,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
                 }
             }
 
-            result = self.body.execute(shell, params).await?;
+            result = self.body.0.execute(shell, params).await?;
 
             if let Some(updater) = &self.updater {
                 updater.eval(shell).await?;
@@ -569,9 +571,11 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         &self,
         context: &mut PipelineExecutionContext,
     ) -> Result<SpawnResult, error::Error> {
-        let empty = vec![];
-        let prefix_items = self.prefix.as_ref().unwrap_or(&empty);
-        let suffix_items = self.suffix.as_ref().unwrap_or(&empty);
+        let empty_prefix = ast::CommandPrefix(vec![]);
+        let prefix_items = self.prefix.as_ref().unwrap_or(&empty_prefix);
+
+        let empty_suffix = ast::CommandSuffix(vec![]);
+        let suffix_items = self.suffix.as_ref().unwrap_or(&empty_suffix);
         let mut cmd_name_items = vec![];
         if let Some(cmd_name) = &self.word_or_name {
             cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
@@ -582,9 +586,10 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         let mut args = vec![];
 
         for item in prefix_items
+            .0
             .iter()
             .chain(cmd_name_items.iter())
-            .chain(suffix_items.iter())
+            .chain(suffix_items.0.iter())
         {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
@@ -949,7 +954,7 @@ async fn invoke_shell_function(
         log::error!("UNIMPLEMENTED: invoke function with environment variables");
     }
 
-    let (body, redirects) = &function_definition.body;
+    let ast::FunctionBody(body, redirects) = &function_definition.body;
     if redirects.is_some() {
         log::error!("UNIMPLEMENTED: invoke function with redirects");
     }
@@ -1043,7 +1048,9 @@ async fn setup_redirect<'a>(
                         return Ok(None);
                     }
                 }
-                ast::IoFileRedirectTarget::ProcessSubstitution(subshell_cmd) => {
+                ast::IoFileRedirectTarget::ProcessSubstitution(ast::SubshellCommand(
+                    subshell_cmd,
+                )) => {
                     match kind {
                         #[allow(clippy::cast_sign_loss)]
                         ast::IoFileRedirectKind::Read => {
@@ -1072,7 +1079,9 @@ async fn setup_redirect<'a>(
                                 "UNIMPLEMENTED: process substitution to write to stdin of command: {:?}",
                                 subshell_cmd
                             );
-                            todo!("UNIMPLEMENTED: process substitution to write to command")
+                            return Err(anyhow::anyhow!(
+                                "UNIMPLEMENTED: process substitution to write to command"
+                            ));
                         }
                         _ => return Err(anyhow::anyhow!("invalid process substitution")),
                     }
