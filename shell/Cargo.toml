@@ -12,11 +12,11 @@ name = "shell"
 workspace = true
 
 [dependencies]
-anyhow = "1.0.79"
+anyhow = "1.0.80"
 async-recursion = "1.0.5"
 async-trait = "0.1.77"
 brush-parser = { path = "../parser" }
-clap = { version = "4.5.0", features = ["derive"] }
+clap = { version = "4.5.1", features = ["derive"] }
 exec = "0.3.1"
 faccess = "0.2.4"
 futures = "0.3.30"
