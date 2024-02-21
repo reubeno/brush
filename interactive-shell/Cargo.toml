@@ -12,7 +12,7 @@ name = "interactive_shell"
 workspace = true
 
 [dependencies]
-anyhow = "1.0.79"
+anyhow = "1.0.80"
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
 log = "0.4.20"
