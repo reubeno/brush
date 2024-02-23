@@ -31,7 +31,7 @@ impl Evaluatable for ast::UnexpandedArithmeticExpr {
         for token in tokenized_self {
             match token {
                 parser::Token::Word(value, _) => {
-                    let expansion = expansion::expand_word(shell, &ast::Word { value })
+                    let expansion = expansion::basic_expand_word(shell, &ast::Word { value })
                         .await
                         .map_err(|_e| EvalError::SyntaxError)?;
                     expanded_self.push_str(expansion.as_str());
