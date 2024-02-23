@@ -13,7 +13,7 @@ use tokio_command_fds::{CommandFdExt, FdMapping};
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::error;
-use crate::expansion::expand_word;
+use crate::expansion;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
 use crate::variables::{self, ShellValue};
@@ -370,9 +370,11 @@ impl Execute for ast::ForClauseCommand {
         let mut result = ExecutionResult::success();
 
         if let Some(unexpanded_values) = &self.values {
+            // Expand all values, with splitting enabled.
             let mut expanded_values = vec![];
             for value in unexpanded_values {
-                expanded_values.push(expand_word(shell, value).await?);
+                let mut expanded = expansion::full_expand_and_split_word(shell, value).await?;
+                expanded_values.append(&mut expanded);
             }
 
             for value in expanded_values {
@@ -401,12 +403,13 @@ impl Execute for ast::CaseClauseCommand {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let expanded_value = expand_word(shell, &self.value).await?;
+        let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
         for case in &self.cases {
             let mut matches = false;
 
             for pattern in &case.patterns {
-                let expanded_pattern = expand_word(shell, pattern).await?;
+                // TODO: Handle quoting's impact on pattern matching.
+                let expanded_pattern = expansion::basic_expand_word(shell, pattern).await?;
                 if patterns::pattern_matches(expanded_pattern.as_str(), expanded_value.as_str())? {
                     matches = true;
                     break;
@@ -606,9 +609,33 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 }
                 CommandPrefixOrSuffixItem::AssignmentWord(pair) => assignments.push(pair),
                 CommandPrefixOrSuffixItem::Word(arg) => {
-                    // TODO: Deal with the fact that an expansion might introduce multiple fields.
-                    let expanded_arg = expand_word(context.shell, arg).await?;
-                    args.push(expanded_arg);
+                    //
+                    // TODO: Reevaluate if this is an appropriate place to handle aliases.
+                    //
+                    let mut next_args =
+                        expansion::full_expand_and_split_word(context.shell, arg).await?;
+
+                    if args.is_empty() {
+                        if let Some(cmd_name) = next_args.first() {
+                            if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
+                            {
+                                //
+                                // TODO: This is a total hack.
+                                //
+                                let mut alias_pieces: Vec<_> = alias_value
+                                    .split_ascii_whitespace()
+                                    .map(|i| i.to_owned())
+                                    .collect();
+
+                                next_args.remove(0);
+                                alias_pieces.append(&mut next_args);
+
+                                next_args = alias_pieces;
+                            }
+                        }
+                    }
+
+                    args.append(&mut next_args);
                 }
             }
         }
@@ -635,7 +662,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                         }
                     }
 
-                    let expanded_value = expand_word(context.shell, &value).await?;
+                    let expanded_value =
+                        expansion::basic_expand_word(context.shell, &value).await?;
                     env_vars.push((name.clone(), ShellValue::String(expanded_value)));
                 }
                 ast::Assignment::Array {
@@ -649,35 +677,17 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                     let mut expanded_values = vec![];
                     for value in values {
-                        expanded_values.push(expand_word(context.shell, value).await?);
+                        expanded_values
+                            .push(expansion::basic_expand_word(context.shell, value).await?);
                     }
                     env_vars.push((name.clone(), ShellValue::IndexedArray(expanded_values)));
                 }
             }
         }
 
-        if let Some(cmd_name) = &self.word_or_name {
-            let mut cmd_name = expand_word(context.shell, cmd_name).await?;
-
+        if let Some(cmd_name) = args.first() {
             if context.shell.options.print_commands_and_arguments {
                 println!("+ {}", args.join(" "));
-            }
-
-            //
-            // TODO: Reevaluate if this is an appropriate place to handle aliases.
-            //
-            if let Some(alias_value) = context.shell.aliases.get(&cmd_name) {
-                //
-                // TODO: This is a total hack.
-                //
-                for (i, alias_piece) in alias_value.split_ascii_whitespace().enumerate() {
-                    if i == 0 {
-                        cmd_name = alias_piece.to_owned();
-                        args[0] = alias_piece.to_owned();
-                    } else {
-                        args.insert(i, alias_piece.to_owned());
-                    }
-                }
             }
 
             if !cmd_name.contains('/') {
@@ -688,7 +698,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 // TODO: cache the builtins
                 if let Some(builtin) = special_builtins.get(cmd_name.as_str()) {
                     execute_builtin_command(*builtin, context, args, env_vars).await
-                } else if context.shell.funcs.contains_key(&cmd_name) {
+                } else if context.shell.funcs.contains_key(cmd_name.as_str()) {
                     // Strip the function name off args.
                     invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars).await
                 } else if let Some(builtin) = builtins.get(cmd_name.as_str()) {
@@ -1031,7 +1041,14 @@ async fn setup_redirect<'a>(
                         }
                     }
 
-                    let expanded_file_path = expand_word(shell, f).await?;
+                    let mut expanded_file_path =
+                        expansion::full_expand_and_split_word(shell, f).await?;
+
+                    if expanded_file_path.len() != 1 {
+                        return Err(anyhow::anyhow!("invalid redirect"));
+                    }
+
+                    let expanded_file_path = expanded_file_path.remove(0);
 
                     let opened_file =
                         options.open(expanded_file_path.as_str()).context(format!(
@@ -1107,7 +1124,7 @@ async fn setup_redirect<'a>(
             // If not specified, default to stdin (fd 0).
             let fd_num = fd_num.unwrap_or(0);
 
-            let mut expanded_word = expand_word(shell, word).await?;
+            let mut expanded_word = expansion::basic_expand_word(shell, word).await?;
             expanded_word.push('\n');
 
             open_files

@@ -5,12 +5,14 @@ cases:
     stdin: |
       echo ab{c,racadabra}
   - name: "Star patterns"
-    known_failure: true
     stdin: |
       touch ./test
       echo t*
   - name: "Question-mark patterns"
-    known_failure: true
     stdin: |
       touch ./test
       echo tes?
+  - name: "Bracket patterns"
+    stdin: |
+      touch ./a0 ./a1 ./b2
+      echo a[0-9]

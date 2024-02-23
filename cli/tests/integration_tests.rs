@@ -340,7 +340,7 @@ impl TestCaseResult {
 impl TestCase {
     pub async fn run(&self) -> Result<TestCaseResult> {
         let comparison = self.run_with_oracle_and_test().await?;
-        let success = !comparison.is_failure() && !self.known_failure;
+        let success = !comparison.is_failure();
         Ok(TestCaseResult {
             success,
             comparison,

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::error;
-use crate::expansion::WordExpander;
+use crate::expansion;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::jobs;
 use crate::options::RuntimeOptions;
@@ -416,8 +416,7 @@ impl Shell {
         let formatted_prompt = re.replace_all(formatted_prompt.as_str(), "").to_string();
 
         // Now expand.
-        let mut expander = WordExpander::new(self);
-        let formatted_prompt = expander.expand(formatted_prompt.as_str()).await?;
+        let formatted_prompt = expansion::basic_expand_word_str(self, &formatted_prompt).await?;
 
         Ok(formatted_prompt)
     }
@@ -543,6 +542,15 @@ impl Shell {
             patterns::pattern_expand(glob.as_str(), self.working_dir.as_path())
         {
             candidates
+                .into_iter()
+                .map(|p| {
+                    let mut s = p.to_string_lossy().to_string();
+                    if p.is_dir() {
+                        s.push('/');
+                    }
+                    s
+                })
+                .collect()
         } else {
             vec![]
         };
