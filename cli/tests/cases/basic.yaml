@@ -29,12 +29,13 @@ cases:
           exit 22
     args: ["./script.sh"]
 
-  - name: "Basic defaulted environment"
+  - name: "Basic defaulted PATH var"
     stdin: |
       if [[ -z "$PATH" ]]; then
         echo "PATH is not set or is empty"
-        exit 1
       else
         echo "PATH is set and non-empty"
-        exit 0
       fi
+
+  - name: "Ensure ~ is resolvable"
+    stdin: "test ~"
