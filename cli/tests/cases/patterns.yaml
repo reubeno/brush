@@ -1,18 +1,93 @@
 name: "Patterns"
 cases:
-  - name: "Brace patterns"
+  - name: "Single file expansion"
+    stdin: "echo file1.txt"
+
+  - name: "Multiple file expansion"
+    stdin: "echo *.txt"
+    files:
+      - name: "file1.txt"
+        content: "This is file1"
+      - name: "file2.txt"
+        content: "This is file2"
+
+  - name: "Nested directory expansion"
+    stdin: "echo dir/*"
+    files:
+      - name: "dir/file1.txt"
+        content: "This is file1 in dir"
+
+  - name: "Multiple level directory expansion"
+    stdin: "echo dir/subdir/*.txt"
+    files:
+      - name: "dir/subdir/file1.txt"
+        content: "This is file1 in subdir"
+
+  - name: "Expansion with no matches"
+    stdin: "echo *.jpg"
+    files:
+      - name: "file1.txt"
+        content: "This is file1"
+
+  - name: "Expansion with special characters"
+    stdin: "echo file?.txt"
+    files:
+      - name: "file1.txt"
+        content: "This is file1"
+      - name: "file2.txt"
+        content: "This is file2"
+
+  - name: "Expansion with brackets"
+    stdin: "echo file[12].txt"
+    files:
+      - name: "file1.txt"
+        content: "This is file1"
+      - name: "file2.txt"
+        content: "This is file2"
+
+  - name: "Expansion with curly braces"
     known_failure: true
+    stdin: "echo file{1,2}.txt"
+    files:
+      - name: "file1.txt"
+        content: "This is file1"
+      - name: "file2.txt"
+        content: "This is file2"
+
+  - name: "Expansion with range"
+    stdin: "echo file[1-2].txt"
+    files:
+      - name: "file1.txt"
+        content: "This is file1"
+      - name: "file2.txt"
+        content: "This is file2"
+
+  - name: "Expansion with negation"
+    stdin: "echo file[!2].txt"
+    files:
+      - name: "file1.txt"
+        content: "This is file1"
+      - name: "file2.txt"
+        content: "This is file2"
+
+  - name: "Expansion with tilde"
     stdin: |
-      echo ab{c,racadabra}
-  - name: "Star patterns"
+      HOME=/some/dir
+      echo ~/file1.txt
+
+  - name: "Expansion with dots"
     stdin: |
-      touch ./test
-      echo t*
-  - name: "Question-mark patterns"
-    stdin: |
-      touch ./test
-      echo tes?
-  - name: "Bracket patterns"
-    stdin: |
-      touch ./a0 ./a1 ./b2
-      echo a[0-9]
+      echo ./file1.txt
+      echo ../file1.txt
+
+  - name: "Expansion with mixed patterns"
+    stdin: "echo dir/*/file?.txt"
+    files:
+      - name: "dir/subdir/file1.txt"
+        content: "This is file1 in subdir"
+
+  - name: "Expansion with escaped characters"
+    stdin: "echo file\\*.txt"
+    files:
+      - name: "file*.txt"
+        content: "This is file with asterisk"
