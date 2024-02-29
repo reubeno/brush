@@ -616,8 +616,6 @@ peg::parser! {
         }
 
         rule assignment_word() -> ast::Assignment =
-            // TODO: implement assignment_word more accurately, i.e., check to make sure
-            // the variable being assigned is a legitimate variable name.
             // TODO: make sure array syntax isn't present in sh mode
             [Token::Word(w, _)] specific_operator("(") elements:([Token::Word(e, _)] { e })* specific_operator(")") {?
                 parse_array_assignment(w.as_str(), &elements)
@@ -641,51 +639,92 @@ peg::parser! {
     }
 }
 
-fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
-    let variable_name: String;
-    let value;
-    let append;
-    if let Some((mut first, second)) = word.split_once('=') {
-        append = first.ends_with('+');
-        if append && first.len() > 1 {
-            first = &first[..first.len() - 1];
-        }
-        variable_name = first.to_owned();
-        value = second.to_owned();
-    } else {
-        return Err("not assignment word");
-    }
+peg::parser! {
+    grammar assignments() for str {
+        pub(crate) rule name_and_scalar_value() -> ast::Assignment =
+            nae:name_and_equals() value:scalar_value() {
+                let (name, append) = nae;
+                ast::Assignment { name, value, append }
+            }
 
-    Ok(ast::Assignment::Scalar {
-        name: variable_name,
-        value: ast::Word { value },
-        append,
-    })
+        pub(crate) rule name_and_equals() -> (ast::AssignmentName, bool) =
+            name:name() append:("+"?) "=" {
+                (name, append.is_some())
+            }
+
+        pub(crate) rule literal_array_element() -> (Option<String>, String) =
+            "[" inner:$((!"]" [_])*) "]=" value:$([_]*) {
+                (Some(inner.to_owned()), value.to_owned())
+            } /
+            value:$([_]+) {
+                (None, value.to_owned())
+            }
+
+        rule name() -> ast::AssignmentName =
+            aen:array_element_name() {
+                let (name, index) = aen;
+                ast::AssignmentName::ArrayElementName(name.to_owned(), index.to_owned())
+            } /
+            name:scalar_name() {
+                ast::AssignmentName::VariableName(name.to_owned())
+            }
+
+        rule array_element_name() -> (&'input str, &'input str) =
+            name:scalar_name() "[" ai:array_index() "]" { (name, ai) }
+
+        rule array_index() -> &'input str =
+            $((![']'] [_])*)
+
+        rule scalar_name() -> &'input str =
+            $(alpha_or_underscore() non_first_variable_char()*)
+
+        rule non_first_variable_char() -> () =
+            ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z'] {}
+
+        rule alpha_or_underscore() -> () =
+            ['_' | 'a'..='z' | 'A'..='Z'] {}
+
+        rule scalar_value() -> ast::AssignmentValue =
+            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word { value: v.to_owned() }) }
+    }
+}
+
+fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
+    let parse_result = assignments::name_and_scalar_value(word);
+    match parse_result {
+        Ok(assignment) => Ok(assignment),
+        Err(_) => Err("not assignment word"),
+    }
 }
 
 fn parse_array_assignment(
     word: &str,
     elements: &[&String],
 ) -> Result<ast::Assignment, &'static str> {
-    if let Some(variable_name) = word.strip_suffix('=') {
-        if variable_name.contains('=') {
-            Err("not assignment word")
-        } else {
-            // TODO: handle appending to an array
-            Ok(ast::Assignment::Array {
-                name: variable_name.to_owned(),
-                values: elements
-                    .iter()
-                    .map(|e| ast::Word {
-                        value: (*e).to_owned(),
-                    })
-                    .collect(),
-                append: false,
-            })
-        }
-    } else {
-        Err("not assignment word")
-    }
+    let (assignment_name, append) =
+        assignments::name_and_equals(word).map_err(|_| "not assignment word")?;
+
+    let elements = elements
+        .iter()
+        .map(|element| assignments::literal_array_element(element))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "invalid array element in literal")?;
+
+    let elements_as_words = elements
+        .into_iter()
+        .map(|(key, value)| {
+            (
+                key.map(|k| ast::Word::new(k.as_str())),
+                ast::Word::new(value.as_str()),
+            )
+        })
+        .collect();
+
+    Ok(ast::Assignment {
+        name: assignment_name,
+        value: ast::AssignmentValue::Array(elements_as_words),
+        append,
+    })
 }
 
 #[cfg(test)]

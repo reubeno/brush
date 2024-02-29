@@ -1,0 +1,26 @@
+name: "Assignments"
+cases:
+  - name: "First char is equals sign"
+    ignore_stderr: true
+    stdin: |
+      =x
+
+  - name: "Basic assignment"
+    stdin: |
+      x=yz
+      echo "x: ${x}"
+
+  - name: "Invalid variable name"
+    ignore_stderr: true
+    stdin: |
+      @=something
+
+  - name: "Quoted equals sign"
+    ignore_stderr: true
+    stdin: |
+      x"="3
+
+  - name: "Multiple equals signs"
+    stdin: |
+      x=y=z
+      echo "x: ${x}"

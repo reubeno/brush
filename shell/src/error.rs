@@ -17,7 +17,7 @@ pub enum Error {
     #[error("not a directory: {0}")]
     NotADirectory(PathBuf),
 
-    #[error("arithmetic evaluation error")]
+    #[error("arithmetic evaluation error: {0}")]
     EvalError(#[from] crate::arithmetic::EvalError),
 
     #[error("failed to parse integer")]

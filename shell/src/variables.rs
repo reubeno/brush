@@ -1,7 +1,7 @@
 use anyhow::Result;
 use itertools::Itertools;
 use rand::Rng;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
 use crate::error;
@@ -45,15 +45,80 @@ impl ShellVariable {
     pub fn set_by_str(&mut self, _value_str: &str) -> Result<(), error::Error> {
         error::unimp("set_by_str not implemented yet")
     }
+
+    pub fn assign(&mut self, value: ScalarOrArray, append: bool) -> Result<(), error::Error> {
+        if append {
+            match &mut self.value {
+                ShellValue::String(base) => match value {
+                    ScalarOrArray::Scalar(suffix) => {
+                        base.push_str(suffix.as_str());
+                        Ok(())
+                    }
+                    ScalarOrArray::Array(_) => error::unimp("appending array to string"),
+                },
+                ShellValue::IndexedArray(existing_values) => match value {
+                    ScalarOrArray::Scalar(_) => error::unimp("appending scalar to array"),
+                    ScalarOrArray::Array(new_values) => {
+                        let mut new_key =
+                            if let Some((largest_index, _)) = existing_values.last_key_value() {
+                                largest_index + 1
+                            } else {
+                                0
+                            };
+
+                        for (_key, value) in new_values {
+                            // TODO: do something with the key!
+                            existing_values.insert(new_key, value);
+                            new_key += 1;
+                        }
+
+                        Ok(())
+                    }
+                },
+                _ => error::unimp("appending to unsupported variable type"),
+            }
+        } else {
+            self.value = value.into();
+            Ok(())
+        }
+    }
+
+    #[allow(clippy::unused_self)]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn assign_at_index(
+        &mut self,
+        array_index: &str,
+        value: ScalarOrArray,
+        append: bool,
+    ) -> Result<(), error::Error> {
+        if append {
+            return error::unimp("appending during assignment through index");
+        }
+
+        match &mut self.value {
+            ShellValue::IndexedArray(_) => error::unimp("assigning to index of indexed array"),
+            ShellValue::AssociativeArray(arr) => {
+                arr.insert(array_index.to_owned(), value.into());
+                Ok(())
+            }
+            _ => error::unimp("assigning to index of non-array variable"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum ShellValue {
     String(String),
     Integer(u64),
-    AssociativeArray(HashMap<String, ShellValue>),
-    IndexedArray(Vec<String>),
+    AssociativeArray(BTreeMap<String, ShellValue>),
+    IndexedArray(BTreeMap<u64, String>),
     Random,
+}
+
+#[derive(Clone, Debug)]
+pub enum ScalarOrArray {
+    Scalar(String),
+    Array(Vec<(Option<String>, String)>),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -65,7 +130,10 @@ pub enum FormatStyle {
 impl ShellValue {
     #[allow(clippy::unnecessary_wraps)]
     pub fn new_indexed_array<S: AsRef<str>>(s: S) -> Result<Self, error::Error> {
-        Ok(ShellValue::IndexedArray(vec![s.as_ref().to_owned()]))
+        let mut map = BTreeMap::new();
+        map.insert(0, s.as_ref().to_owned());
+
+        Ok(ShellValue::IndexedArray(map))
     }
 
     pub fn new_associative_array<S: AsRef<str>>(_s: S) -> Result<Self, error::Error> {
@@ -100,11 +168,11 @@ impl ShellValue {
                 let mut result = String::new();
                 result.push('(');
 
-                for (i, value) in values.iter().enumerate() {
+                for (i, (key, value)) in values.iter().enumerate() {
                     if i > 0 {
                         result.push(' ');
                     }
-                    write!(result, "[{i}]=\"{value}\"")
+                    write!(result, "[{key}]=\"{value}\"")
                         .map_err(|e| error::Error::Unknown(e.into()))?;
                 }
 
@@ -126,7 +194,9 @@ impl ShellValue {
             }
             ShellValue::Integer(_) => error::unimp("indexing into integer"),
             ShellValue::AssociativeArray(_) => error::unimp("indexing into associative array"),
-            ShellValue::IndexedArray(values) => Ok(values.get(index as usize).map(|s| s.as_str())),
+            ShellValue::IndexedArray(values) => {
+                Ok(values.get(&(u64::from(index))).map(|s| s.as_str()))
+            }
             ShellValue::Random => error::unimp("indexing into RANDOM"),
         }
     }
@@ -139,8 +209,37 @@ impl ShellValue {
             ShellValue::AssociativeArray(_) => {
                 error::unimp("converting associative array to string")
             }
-            ShellValue::IndexedArray(values) => Ok(values.join(" ")),
+            ShellValue::IndexedArray(values) => {
+                let mut formatted = String::new();
+
+                for (i, (_key, value)) in values.iter().enumerate() {
+                    if i > 0 {
+                        formatted.push(' ');
+                    }
+                    formatted.push_str(value);
+                }
+
+                Ok(formatted)
+            }
             ShellValue::Random => Ok(get_random_str()),
+        }
+    }
+}
+
+impl From<ScalarOrArray> for ShellValue {
+    fn from(value: ScalarOrArray) -> Self {
+        match value {
+            ScalarOrArray::Scalar(value) => ShellValue::String(value),
+            ScalarOrArray::Array(values) => {
+                let mut converted = BTreeMap::new();
+
+                // TODO: do something with key
+                for (i, (_key, value)) in values.iter().enumerate() {
+                    converted.insert(i as u64, value.to_owned());
+                }
+
+                ShellValue::IndexedArray(converted)
+            }
         }
     }
 }
@@ -159,7 +258,11 @@ impl From<&String> for ShellValue {
 
 impl From<&[&str]> for ShellValue {
     fn from(values: &[&str]) -> Self {
-        let owned_values: Vec<String> = values.iter().map(|v| (*v).to_string()).collect();
+        let mut owned_values = BTreeMap::new();
+        for (i, value) in values.iter().enumerate() {
+            owned_values.insert(i as u64, (*value).to_string());
+        }
+
         ShellValue::IndexedArray(owned_values)
     }
 }
@@ -173,7 +276,7 @@ impl From<&ShellValue> for String {
                 todo!("UNIMPLEMENTED: converting associative array to string")
             }
             ShellValue::IndexedArray(values) => {
-                values.first().map_or_else(String::new, |s| s.clone())
+                values.get(&0).map_or_else(String::new, |s| s.clone())
             }
             ShellValue::Random => get_random_str(),
         }

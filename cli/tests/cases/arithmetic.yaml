@@ -28,6 +28,7 @@ cases:
       echo " 1 || 0 == $((1&&0))"
       echo " 1  , 2 == $((1,2))"
 
+  # TODO: This fails because the << operator ends up being parsed as the indicator of a here tag.
   - name: "Shift arithmetic"
     known_failure: true
     stdin: |

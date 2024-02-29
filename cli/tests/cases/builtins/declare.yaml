@@ -1,9 +1,12 @@
 name: "Builtins: declare"
 cases:
-  - name: "Dump a var"
+  - name: "Dump vars"
     stdin: |
       declare myvar=something
       declare -p myvar
+
+      myarr=(a b c)
+      declare -p myarr
 
   - name: "Declare integer"
     known_failure: true
@@ -25,6 +28,13 @@ cases:
     stdin: |
       declare -a arr=("element1" "element2" "element3")
       echo ${arr[*]}
+
+  - name: "Declare associative array"
+    known_failure: true
+    stdin: |
+      declare -A arr=(["x"]=1 ["y"]=2)
+      echo ${arr["x"]}
+      echo ${arr["y"]}
 
   - name: "Declare and export variable"
     stdin: |
