@@ -8,8 +8,14 @@ pub enum EvalError {
     #[error("division by zero")]
     DivideByZero,
 
-    #[error("syntax error in expression")]
-    SyntaxError,
+    #[error("failed to tokenize expression")]
+    FailedToTokenizeExpression,
+
+    #[error("failed to expand expression")]
+    FailedToExpandExpression,
+
+    #[error("failed to parse expression: {0}")]
+    ParseError(String),
 
     #[error("UNIMPLEMENTED: {0}")]
     Unimplemented(&'static str),
@@ -24,8 +30,8 @@ pub trait Evaluatable {
 impl Evaluatable for ast::UnexpandedArithmeticExpr {
     async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
         // Per documentation, first shell-expand it.
-        let tokenized_self =
-            parser::tokenize_str(self.value.as_str()).map_err(|_e| EvalError::SyntaxError)?;
+        let tokenized_self = parser::tokenize_str(self.value.as_str())
+            .map_err(|_e| EvalError::FailedToTokenizeExpression)?;
         let mut expanded_self = String::new();
 
         for token in tokenized_self {
@@ -33,7 +39,7 @@ impl Evaluatable for ast::UnexpandedArithmeticExpr {
                 parser::Token::Word(value, _) => {
                     let expansion = expansion::basic_expand_word(shell, &ast::Word { value })
                         .await
-                        .map_err(|_e| EvalError::SyntaxError)?;
+                        .map_err(|_e| EvalError::FailedToExpandExpression)?;
                     expanded_self.push_str(expansion.as_str());
                 }
                 parser::Token::Operator(value, _) => expanded_self.push_str(value.as_str()),
@@ -41,7 +47,7 @@ impl Evaluatable for ast::UnexpandedArithmeticExpr {
         }
 
         let expr = parser::parse_arithmetic_expression(&expanded_self)
-            .map_err(|_e| EvalError::SyntaxError)?;
+            .map_err(|_e| EvalError::ParseError(expanded_self))?;
         expr.eval(shell).await
     }
 }

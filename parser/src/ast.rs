@@ -401,7 +401,7 @@ impl Display for SimpleCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandPrefix {
@@ -417,7 +417,7 @@ impl Display for CommandPrefix {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandSuffix {
@@ -451,54 +451,63 @@ impl Display for CommandPrefixOrSuffixItem {
 }
 
 #[derive(Clone, Debug)]
-pub enum Assignment {
-    Scalar {
-        name: String,
-        value: Word,
-        append: bool,
-    },
-    Array {
-        name: String,
-        values: Vec<Word>,
-        append: bool,
-    },
+pub struct Assignment {
+    pub name: AssignmentName,
+    pub value: AssignmentValue,
+    pub append: bool,
 }
 
 impl Display for Assignment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if self.append {
+            write!(f, "+")?;
+        }
+        write!(f, "={}", self.value)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum AssignmentName {
+    VariableName(String),
+    ArrayElementName(String, String),
+}
+
+impl Display for AssignmentName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Assignment::Scalar {
-                name,
-                value,
-                append,
-            } => {
-                write!(f, "{name}")?;
-                if *append {
-                    write!(f, "+")?;
-                }
-                write!(f, "={value}")?;
+            AssignmentName::VariableName(name) => write!(f, "{}", name),
+            AssignmentName::ArrayElementName(name, index) => {
+                write!(f, "{}[{}]", name, index)
             }
-            Assignment::Array {
-                name,
-                values,
-                append,
-            } => {
-                write!(f, "{name}")?;
-                if *append {
-                    write!(f, "+")?;
-                }
-                write!(f, "=(")?;
-                for (i, value) in values.iter().enumerate() {
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum AssignmentValue {
+    Scalar(Word),
+    Array(Vec<(Option<Word>, Word)>),
+}
+
+impl Display for AssignmentValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AssignmentValue::Scalar(word) => write!(f, "{}", word),
+            AssignmentValue::Array(words) => {
+                write!(f, "(")?;
+                for (i, value) in words.iter().enumerate() {
                     if i > 0 {
                         write!(f, " ")?;
                     }
-                    write!(f, "{}", value)?;
+                    match value {
+                        (Some(key), value) => write!(f, "[{}]={}", key, value)?,
+                        (None, value) => write!(f, "{}", value)?,
+                    }
                 }
-                write!(f, ")")?;
+                write!(f, ")")
             }
         }
-
-        Ok(())
     }
 }
 
@@ -719,6 +728,12 @@ impl Display for Word {
 }
 
 impl Word {
+    pub fn new(s: &str) -> Self {
+        Self {
+            value: s.to_owned(),
+        }
+    }
+
     pub fn from(t: &tokenizer::Token) -> Word {
         match t {
             tokenizer::Token::Word(value, _) => Word {

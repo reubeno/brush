@@ -1,0 +1,24 @@
+name: "Special parameters"
+cases:
+  - name: "$@ and $*"
+    known_failure: true
+    stdin: |
+      function myfunc() {
+          echo "--myfunc called--"
+
+          echo "AT-SIGN VALUE: '$@'"
+          echo "STAR VALUE: '$*'"
+
+          for arg in "$@"; do
+            echo "AT-SIGN ELEMENT: '${arg}'"
+          done
+
+          for arg in "$*"; do
+            echo "STAR ELEMENT: '${arg}'"
+          done
+      }
+
+      myfunc
+      myfunc 1
+      myfunc 1 2
+      myfunc "a b c" 2

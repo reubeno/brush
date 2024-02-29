@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use clap::Parser;
@@ -163,13 +163,13 @@ impl BuiltinCommand for DeclareCommand {
                         if let Some(value) = value {
                             ShellValue::new_indexed_array(value)?
                         } else {
-                            ShellValue::IndexedArray(vec![])
+                            ShellValue::IndexedArray(BTreeMap::new())
                         }
                     } else if self.make_associative_array.is_some() {
                         if let Some(value) = value {
                             ShellValue::new_associative_array(value)?
                         } else {
-                            ShellValue::AssociativeArray(HashMap::new())
+                            ShellValue::AssociativeArray(BTreeMap::new())
                         }
                     } else {
                         value.unwrap_or("").into()

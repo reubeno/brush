@@ -11,20 +11,36 @@ cases:
       echo "var[3]: ${var[3]}"
       echo "var[4]: ${var[4]}"
       echo "var[*]: ${var[*]}"
+
   - name: "Array updating via index"
     known_failure: true
     stdin: |
       var=(a b c)
       var[1]="d"
       echo "var[*]: ${var[*]}"
+
   - name: "Array updating without index"
     known_failure: true
     stdin: |
       var=(a b c)
       var="x"
       echo "var[*]: ${var[*]}"
+
   - name: "Array replacing"
     stdin: |
       var=(a b c)
       var=(d e f)
+      echo "var[*]: ${var[*]}"
+
+  - name: "Appending array to array"
+    stdin: |
+      var=(a b c)
+      var+=(e f g)
+      echo "var[*]: ${var[*]}"
+
+  - name: "Appending item to array"
+    known_failure: true
+    stdin: |
+      var=(a b c)
+      var+=d
       echo "var[*]: ${var[*]}"

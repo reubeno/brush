@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::ExitStatusExt;
@@ -16,7 +17,7 @@ use crate::error;
 use crate::expansion;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
-use crate::variables::{self, ShellValue};
+use crate::variables::{ScalarOrArray, ShellValue};
 use crate::{builtin, builtins};
 use crate::{extendedtests, patterns};
 
@@ -574,11 +575,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         &self,
         context: &mut PipelineExecutionContext,
     ) -> Result<SpawnResult, error::Error> {
-        let empty_prefix = ast::CommandPrefix(vec![]);
-        let prefix_items = self.prefix.as_ref().unwrap_or(&empty_prefix);
+        let default_prefix = ast::CommandPrefix::default();
+        let prefix_items = self.prefix.as_ref().unwrap_or(&default_prefix);
 
-        let empty_suffix = ast::CommandSuffix(vec![]);
-        let suffix_items = self.suffix.as_ref().unwrap_or(&empty_suffix);
+        let default_suffix = ast::CommandSuffix::default();
+        let suffix_items = self.suffix.as_ref().unwrap_or(&default_suffix);
+
         let mut cmd_name_items = vec![];
         if let Some(cmd_name) = &self.word_or_name {
             cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
@@ -640,55 +642,35 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             }
         }
 
-        let mut env_vars = vec![];
-
-        for assignment in &assignments {
-            match assignment {
-                ast::Assignment::Scalar {
-                    name,
-                    value,
-                    append,
-                } => {
-                    let mut value = value.clone();
-
-                    if *append {
-                        if let Some(prev_value) =
-                            context.shell.env.get(name).map(|v| v.value.clone())
-                        {
-                            // TODO: Find a cleaner way to do this.
-                            let mut prev_str: String = (&prev_value).into();
-                            prev_str.push_str(value.value.as_str());
-                            value = ast::Word { value: prev_str }
-                        }
-                    }
-
-                    let expanded_value =
-                        expansion::basic_expand_word(context.shell, &value).await?;
-                    env_vars.push((name.clone(), ShellValue::String(expanded_value)));
-                }
-                ast::Assignment::Array {
-                    name,
-                    values,
-                    append,
-                } => {
-                    if *append {
-                        log::error!("UNIMPLEMENTED: append assignment");
-                    }
-
-                    let mut expanded_values = vec![];
-                    for value in values {
-                        expanded_values
-                            .push(expansion::basic_expand_word(context.shell, value).await?);
-                    }
-                    env_vars.push((name.clone(), ShellValue::IndexedArray(expanded_values)));
-                }
-            }
-        }
-
+        // If we have a command, then execute it.
         if let Some(cmd_name) = args.first() {
             if context.shell.options.print_commands_and_arguments {
                 println!("+ {}", args.join(" "));
             }
+
+            // Apply all variable assignments in a child shell object, from which we'll harvest
+            // the values to pass through to the child.
+            let mut child_pseudo_shell = context.shell.clone();
+            let mut assigned_vars = HashSet::new();
+            for assignment in &assignments {
+                if let ast::AssignmentName::VariableName(name) = &assignment.name {
+                    assigned_vars.insert(name.clone());
+                }
+                apply_assignment(assignment, &mut child_pseudo_shell).await?;
+            }
+
+            // Extract assigned variables.
+            let env_vars = child_pseudo_shell
+                .env
+                .iter()
+                .filter_map(|(name, var)| {
+                    if assigned_vars.contains(name) {
+                        Some((name.clone(), var.value.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
 
             if !cmd_name.contains('/') {
                 // TODO: Cache these.
@@ -726,28 +708,76 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 .await
             }
         } else {
-            //
-            // This must just be an assignment.
-            //
-
-            for (name, value) in env_vars {
+            // No command to run; assignments must be applied to this shell.
+            for assignment in assignments {
                 if context.shell.options.print_commands_and_arguments {
-                    println!("+ {name}={}", value.format(variables::FormatStyle::Basic)?);
+                    println!("+ {assignment}");
                 }
 
-                // TODO: Handle readonly variables.
-                context.shell.env.update_or_add(
-                    name,
-                    value,
-                    |_| Ok(()),
-                    EnvironmentLookup::Anywhere,
-                    EnvironmentScope::Global,
-                )?;
+                apply_assignment(assignment, context.shell).await?;
             }
 
             Ok(SpawnResult::ImmediateExit(0))
         }
     }
+}
+
+async fn apply_assignment(
+    assignment: &ast::Assignment,
+    shell: &mut Shell,
+) -> Result<(), error::Error> {
+    // Figure out if this is a variable or an array element.
+    let array_index;
+    let variable_name = match &assignment.name {
+        ast::AssignmentName::VariableName(name) => {
+            array_index = None;
+            name
+        }
+        ast::AssignmentName::ArrayElementName(name, index) => {
+            array_index = Some(index);
+            name
+        }
+    };
+
+    // Expand the values.
+    let new_value = match &assignment.value {
+        ast::AssignmentValue::Scalar(unexpanded_value) => {
+            let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
+            ScalarOrArray::Scalar(value)
+        }
+        ast::AssignmentValue::Array(unexpanded_values) => {
+            let mut elements = vec![];
+            for (unexpanded_key, unexpanded_value) in unexpanded_values {
+                let key = match unexpanded_key {
+                    Some(_) => Some(expansion::basic_expand_word(shell, unexpanded_value).await?),
+                    None => None,
+                };
+
+                let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
+                elements.push((key, value));
+            }
+            ScalarOrArray::Array(elements)
+        }
+    };
+
+    // See if we can find an existing value associated with the variable.
+    if let Some(existing_value) = shell.env.get_mut(variable_name.as_str()) {
+        if let Some(array_index) = array_index {
+            // TODO: expand/eval index?
+            existing_value.assign_at_index(array_index.as_str(), new_value, assignment.append)?;
+        } else {
+            existing_value.assign(new_value, assignment.append)?;
+        }
+    } else {
+        // If not, we need to add it.
+        if let Some(_array_index) = array_index {
+            return error::unimp("creating variable from index");
+        } else {
+            shell.env.set_global(variable_name, new_value);
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_lines)] // TODO: refactor this function
