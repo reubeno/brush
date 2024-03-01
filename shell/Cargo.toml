@@ -25,7 +25,7 @@ hostname = "0.3.1"
 itertools = "0.12.1"
 lazy_static = "1.4.0"
 log = "0.4.20"
-nix = { version = "0.27.1", features = ["fs"] }
+nix = { version = "0.28.0", features = ["fs"] }
 rand = "0.8.5"
 regex = "1.10.3"
 tempfile = "3.10.0"
