@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 use crate::error;
-use crate::variables::{ShellValue, ShellVariable, ShellVariableUpdateTransform};
+use crate::variables::{self, ShellValue, ShellVariable};
 
 #[derive(Clone, Copy)]
 pub enum EnvironmentLookup {
@@ -95,7 +95,7 @@ impl ShellEnvironment {
     }
 
     pub fn get_str(&self, name: &str) -> Option<String> {
-        self.get(name).map(|v| String::from(&v.value))
+        self.get(name).map(|v| String::from(v.value()))
     }
 
     pub fn is_set(&self, name: &str) -> bool {
@@ -148,16 +148,16 @@ impl ShellEnvironment {
     // TODO: Enforce 'readonly'.
     //
 
-    pub fn update_or_add<N: AsRef<str>, V: Into<ShellValue>>(
+    pub fn update_or_add<N: AsRef<str>>(
         &mut self,
         name: N,
-        value: V,
+        value: variables::ScalarOrArray,
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
         if let Some(var) = self.get_mut_using_policy(name.as_ref(), lookup_policy) {
-            var.value = value.into();
+            var.assign(value, false)?;
             updater(var)?;
         } else {
             match scope_if_creating {
@@ -229,18 +229,8 @@ impl ShellVariableMap {
         name: N,
         value: V,
     ) -> &mut ShellVariable {
-        self.variables.insert(
-            name.as_ref().to_owned(),
-            ShellVariable {
-                value: value.into(),
-                exported: false,
-                readonly: false,
-                enumerable: true,
-                transform_on_update: ShellVariableUpdateTransform::None,
-                trace: false,
-                treat_as_integer: false,
-            },
-        );
+        self.variables
+            .insert(name.as_ref().to_owned(), ShellVariable::new(value.into()));
 
         self.variables.get_mut(name.as_ref()).unwrap()
     }

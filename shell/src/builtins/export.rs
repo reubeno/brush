@@ -5,6 +5,7 @@ use itertools::Itertools;
 use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},
     env::{EnvironmentLookup, EnvironmentScope},
+    variables,
 };
 
 #[derive(Parser, Debug)]
@@ -35,7 +36,7 @@ impl BuiltinCommand for ExportCommand {
                 if let Some((name, value)) = name.split_once('=') {
                     context.shell.env.update_or_add(
                         name,
-                        value,
+                        variables::ScalarOrArray::Scalar(value.to_owned()),
                         |var| {
                             var.export();
                             Ok(())
@@ -47,15 +48,15 @@ impl BuiltinCommand for ExportCommand {
                     // Try to find the variable already present; if we find it, then mark it
                     // exported.
                     if let Some(variable) = context.shell.env.get_mut(name) {
-                        variable.exported = true;
+                        variable.export();
                     }
                 }
             }
         } else {
             // Enumerate variables, sorted by key.
             for (name, variable) in context.shell.env.iter().sorted_by_key(|v| v.0) {
-                if variable.exported {
-                    println!("declare -x {}=\"{}\"", name, String::from(&variable.value));
+                if variable.is_exported() {
+                    println!("declare -x {}=\"{}\"", name, String::from(variable.value()));
                 }
             }
         }

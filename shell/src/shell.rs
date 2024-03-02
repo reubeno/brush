@@ -146,14 +146,14 @@ impl Shell {
 
         // Set some additional ones.
         env.set_global("EUID", format!("{}", uzers::get_effective_uid()).as_str())
-            .readonly = true;
+            .set_readonly();
         env.set_global("RANDOM", variables::ShellValue::Random)
-            .enumerable = false;
+            .hide_from_enumeration();
 
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
             if let Some(home_dir) = env.get("HOME") {
-                let home_dir: String = (&home_dir.value).into();
+                let home_dir: String = home_dir.value().into();
                 let home_dir = PathBuf::from(home_dir);
                 let histfile = home_dir.join(".brush_history");
                 env.set_global("HISTFILE", histfile.to_string_lossy().to_string().as_str());
@@ -428,7 +428,7 @@ impl Shell {
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
         self.env
             .get(name)
-            .map_or_else(|| default.to_owned(), |s| String::from(&s.value))
+            .map_or_else(|| default.to_owned(), |s| String::from(s.value()))
     }
 
     pub fn current_option_flags(&self) -> String {
@@ -466,7 +466,7 @@ impl Shell {
 
     pub fn get_history_file_path(&self) -> Option<PathBuf> {
         self.env.get("HISTFILE").map(|var| {
-            let histfile_str: String = (&var.value).into();
+            let histfile_str: String = (var.value()).into();
             PathBuf::from(histfile_str)
         })
     }
@@ -624,7 +624,7 @@ impl Shell {
         self.working_dir = cleaned_path;
         self.env.update_or_add(
             "PWD",
-            pwd.as_str(),
+            variables::ScalarOrArray::Scalar(pwd),
             |var| {
                 var.export();
                 Ok(())
@@ -639,7 +639,7 @@ impl Shell {
     pub fn tilde_shorten(&self, s: String) -> String {
         let home_dir_opt = self.env.get("HOME");
         if let Some(home_dir) = home_dir_opt {
-            if let Some(stripped) = s.strip_prefix(&String::from(&home_dir.value)) {
+            if let Some(stripped) = s.strip_prefix(&String::from(home_dir.value())) {
                 return format!("~{stripped}");
             }
         }

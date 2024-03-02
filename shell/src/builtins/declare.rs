@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
@@ -102,7 +100,7 @@ impl BuiltinCommand for DeclareCommand {
                         println!(
                             "declare -{cs} {entry}={}",
                             variable
-                                .value
+                                .value()
                                 .format(variables::FormatStyle::DeclarePrint)?
                         );
                     } else {
@@ -161,18 +159,18 @@ impl BuiltinCommand for DeclareCommand {
                 } else {
                     let initial_value = if self.make_indexed_array.is_some() {
                         if let Some(value) = value {
-                            ShellValue::new_indexed_array(value)?
+                            variables::ScalarOrArray::Array(vec![(None, value.to_owned())])
                         } else {
-                            ShellValue::IndexedArray(BTreeMap::new())
+                            variables::ScalarOrArray::Array(vec![])
                         }
                     } else if self.make_associative_array.is_some() {
                         if let Some(value) = value {
-                            ShellValue::new_associative_array(value)?
+                            variables::ScalarOrArray::Array(vec![(None, value.to_owned())])
                         } else {
-                            ShellValue::AssociativeArray(BTreeMap::new())
+                            variables::ScalarOrArray::Array(vec![])
                         }
                     } else {
-                        value.unwrap_or("").into()
+                        variables::ScalarOrArray::Scalar(value.unwrap_or_default().to_owned())
                     };
 
                     // TODO: handle declaring without value for variable of different type.
@@ -195,47 +193,47 @@ impl BuiltinCommand for DeclareCommand {
 
             // We start by excluding all variables that are not enumerable.
             let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool>> =
-                vec![Box::new(|(_, v)| v.enumerable)];
+                vec![Box::new(|(_, v)| v.is_enumerable())];
 
             // Add filters depending on attribute flags.
             if let Some(value) = self.make_indexed_array.to_bool() {
                 filters.push(Box::new(move |(_, v)| {
-                    matches!(v.value, ShellValue::IndexedArray(_)) == value
+                    matches!(v.value(), ShellValue::IndexedArray(_)) == value
                 }));
             }
             if let Some(value) = self.make_associative_array.to_bool() {
                 filters.push(Box::new(move |(_, v)| {
-                    matches!(v.value, ShellValue::AssociativeArray(_)) == value
+                    matches!(v.value(), ShellValue::AssociativeArray(_)) == value
                 }));
             }
             if let Some(value) = self.make_integer.to_bool() {
-                filters.push(Box::new(move |(_, v)| v.treat_as_integer == value));
+                filters.push(Box::new(move |(_, v)| v.is_treated_as_integer() == value));
             }
             if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
                 filters.push(Box::new(move |(_, v)| {
                     matches!(
-                        v.transform_on_update,
+                        v.get_update_transform(),
                         ShellVariableUpdateTransform::Lowercase
                     ) == value
                 }));
             }
             // TODO: nameref
             if let Some(value) = self.make_readonly.to_bool() {
-                filters.push(Box::new(move |(_, v)| v.readonly == value));
+                filters.push(Box::new(move |(_, v)| v.is_readonly() == value));
             }
             if let Some(value) = self.make_readonly.to_bool() {
-                filters.push(Box::new(move |(_, v)| v.trace == value));
+                filters.push(Box::new(move |(_, v)| v.is_trace_enabled() == value));
             }
             if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
                 filters.push(Box::new(move |(_, v)| {
                     matches!(
-                        v.transform_on_update,
+                        v.get_update_transform(),
                         ShellVariableUpdateTransform::Uppercase
                     ) == value
                 }));
             }
             if let Some(value) = self.make_exported.to_bool() {
-                filters.push(Box::new(move |(_, v)| v.exported == value));
+                filters.push(Box::new(move |(_, v)| v.is_exported() == value));
             }
 
             for (name, variable) in context
@@ -250,13 +248,13 @@ impl BuiltinCommand for DeclareCommand {
                     println!(
                         "declare -{cs} {name}={}",
                         variable
-                            .value
+                            .value()
                             .format(variables::FormatStyle::DeclarePrint)?
                     );
                 } else {
                     println!(
                         "{name}={}",
-                        variable.value.format(variables::FormatStyle::Basic)?
+                        variable.value().format(variables::FormatStyle::Basic)?
                     );
                 }
             }
@@ -271,16 +269,20 @@ impl BuiltinCommand for DeclareCommand {
 impl DeclareCommand {
     fn apply_attributes(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
         if let Some(value) = self.make_integer.to_bool() {
-            var.treat_as_integer = value;
+            if value {
+                var.treat_as_integer();
+            } else {
+                var.unset_treat_as_integer();
+            }
         }
         if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
             if value {
-                var.transform_on_update = ShellVariableUpdateTransform::Lowercase;
+                var.set_update_transform(ShellVariableUpdateTransform::Lowercase);
             } else if matches!(
-                var.transform_on_update,
+                var.get_update_transform(),
                 ShellVariableUpdateTransform::Lowercase
             ) {
-                var.transform_on_update = ShellVariableUpdateTransform::None;
+                var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
         if let Some(value) = self.make_nameref.to_bool() {
@@ -290,23 +292,35 @@ impl DeclareCommand {
             }
         }
         if let Some(value) = self.make_readonly.to_bool() {
-            var.readonly = value;
+            if value {
+                var.set_readonly();
+            } else {
+                var.unset_readonly();
+            }
         }
         if let Some(value) = self.make_traced.to_bool() {
-            var.trace = value;
+            if value {
+                var.enable_trace();
+            } else {
+                var.disable_trace();
+            }
         }
         if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
             if value {
-                var.transform_on_update = ShellVariableUpdateTransform::Uppercase;
+                var.set_update_transform(ShellVariableUpdateTransform::Uppercase);
             } else if matches!(
-                var.transform_on_update,
+                var.get_update_transform(),
                 ShellVariableUpdateTransform::Uppercase
             ) {
-                var.transform_on_update = ShellVariableUpdateTransform::None;
+                var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
         if let Some(value) = self.make_exported.to_bool() {
-            var.exported = value;
+            if value {
+                var.export();
+            } else {
+                var.unexport();
+            }
         }
 
         Ok(())
@@ -316,29 +330,29 @@ impl DeclareCommand {
 fn get_declare_flag_str(variable: &ShellVariable) -> String {
     let mut result = String::new();
 
-    if matches!(variable.value, ShellValue::IndexedArray(_)) {
+    if matches!(variable.value(), ShellValue::IndexedArray(_)) {
         result.push('a');
     }
-    if matches!(variable.value, ShellValue::AssociativeArray(_)) {
+    if matches!(variable.value(), ShellValue::AssociativeArray(_)) {
         result.push('A');
     }
-    if variable.treat_as_integer {
+    if variable.is_treated_as_integer() {
         result.push('i');
     }
-    if let ShellVariableUpdateTransform::Lowercase = variable.transform_on_update {
+    if let ShellVariableUpdateTransform::Lowercase = variable.get_update_transform() {
         result.push('l');
     }
     // TODO: nameref
-    if variable.readonly {
+    if variable.is_readonly() {
         result.push('r');
     }
-    if variable.trace {
+    if variable.is_trace_enabled() {
         result.push('t');
     }
-    if let ShellVariableUpdateTransform::Uppercase = variable.transform_on_update {
+    if let ShellVariableUpdateTransform::Uppercase = variable.get_update_transform() {
         result.push('u');
     }
-    if variable.exported {
+    if variable.is_exported() {
         result.push('x');
     }
 

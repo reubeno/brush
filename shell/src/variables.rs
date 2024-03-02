@@ -8,13 +8,13 @@ use crate::error;
 
 #[derive(Clone, Debug)]
 pub struct ShellVariable {
-    pub value: ShellValue,
-    pub exported: bool,
-    pub readonly: bool,
-    pub enumerable: bool,
-    pub transform_on_update: ShellVariableUpdateTransform,
-    pub trace: bool,
-    pub treat_as_integer: bool,
+    value: ShellValue,
+    exported: bool,
+    readonly: bool,
+    enumerable: bool,
+    transform_on_update: ShellVariableUpdateTransform,
+    trace: bool,
+    treat_as_integer: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -24,13 +24,46 @@ pub enum ShellVariableUpdateTransform {
     Uppercase,
 }
 
+impl Default for ShellVariable {
+    fn default() -> Self {
+        Self {
+            value: ShellValue::String(String::new()),
+            exported: false,
+            readonly: false,
+            enumerable: true,
+            transform_on_update: ShellVariableUpdateTransform::None,
+            trace: false,
+            treat_as_integer: false,
+        }
+    }
+}
+
 impl ShellVariable {
+    pub fn new(value: ShellValue) -> Self {
+        Self {
+            value,
+            ..ShellVariable::default()
+        }
+    }
+
+    pub fn value(&self) -> &ShellValue {
+        &self.value
+    }
+
+    pub fn is_exported(&self) -> bool {
+        self.exported
+    }
+
     pub fn export(&mut self) {
         self.exported = true;
     }
 
     pub fn unexport(&mut self) {
         self.exported = false;
+    }
+
+    pub fn is_readonly(&self) -> bool {
+        self.readonly
     }
 
     pub fn set_readonly(&mut self) {
@@ -41,6 +74,46 @@ impl ShellVariable {
         self.readonly = false;
     }
 
+    pub fn is_trace_enabled(&self) -> bool {
+        self.trace
+    }
+
+    pub fn enable_trace(&mut self) {
+        self.trace = true;
+    }
+
+    pub fn disable_trace(&mut self) {
+        self.trace = false;
+    }
+
+    pub fn is_enumerable(&self) -> bool {
+        self.enumerable
+    }
+
+    pub fn hide_from_enumeration(&mut self) {
+        self.enumerable = false;
+    }
+
+    pub fn get_update_transform(&self) -> ShellVariableUpdateTransform {
+        self.transform_on_update.clone()
+    }
+
+    pub fn set_update_transform(&mut self, transform: ShellVariableUpdateTransform) {
+        self.transform_on_update = transform;
+    }
+
+    pub fn is_treated_as_integer(&self) -> bool {
+        self.treat_as_integer
+    }
+
+    pub fn treat_as_integer(&mut self) {
+        self.treat_as_integer = true;
+    }
+
+    pub fn unset_treat_as_integer(&mut self) {
+        self.treat_as_integer = false;
+    }
+
     #[allow(clippy::unused_self)]
     pub fn set_by_str(&mut self, _value_str: &str) -> Result<(), error::Error> {
         error::unimp("set_by_str not implemented yet")
@@ -48,13 +121,26 @@ impl ShellVariable {
 
     pub fn assign(&mut self, value: ScalarOrArray, append: bool) -> Result<(), error::Error> {
         if append {
+            // If we're trying to append an array to a string, we first promote the string to be an array
+            // with the string being present at index 0.
+            if matches!(self.value, ShellValue::String(_))
+                && matches!(value, ScalarOrArray::Array(_))
+            {
+                let mut new_values = BTreeMap::new();
+                new_values.insert(0, String::from(&self.value));
+                self.value = ShellValue::IndexedArray(new_values);
+            }
+
             match &mut self.value {
                 ShellValue::String(base) => match value {
                     ScalarOrArray::Scalar(suffix) => {
                         base.push_str(suffix.as_str());
                         Ok(())
                     }
-                    ScalarOrArray::Array(_) => error::unimp("appending array to string"),
+                    ScalarOrArray::Array(_) => {
+                        // This case was already handled (see above).
+                        Ok(())
+                    }
                 },
                 ShellValue::IndexedArray(existing_values) => match value {
                     ScalarOrArray::Scalar(_) => error::unimp("appending scalar to array"),
@@ -78,7 +164,16 @@ impl ShellVariable {
                 _ => error::unimp("appending to unsupported variable type"),
             }
         } else {
-            self.value = value.into();
+            // If we're updating an array value with a string, then treat it as an update to
+            // just the 0th item of the array.
+            if matches!(self.value, ShellValue::IndexedArray(_))
+                && matches!(value, ScalarOrArray::Scalar(_))
+            {
+                self.assign_at_index("0", value, false)?;
+            } else {
+                self.value = value.into();
+            }
+
             Ok(())
         }
     }
@@ -96,7 +191,18 @@ impl ShellVariable {
         }
 
         match &mut self.value {
-            ShellValue::IndexedArray(_) => error::unimp("assigning to index of indexed array"),
+            ShellValue::IndexedArray(arr) => {
+                match value {
+                    ScalarOrArray::Scalar(s) => {
+                        let key: u64 = array_index.parse().unwrap_or(0);
+                        arr.insert(key, s);
+                    }
+                    ScalarOrArray::Array(_) => {
+                        return error::unimp("assigning array to array index");
+                    }
+                }
+                Ok(())
+            }
             ShellValue::AssociativeArray(arr) => {
                 arr.insert(array_index.to_owned(), value.into());
                 Ok(())
@@ -128,18 +234,6 @@ pub enum FormatStyle {
 }
 
 impl ShellValue {
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn new_indexed_array<S: AsRef<str>>(s: S) -> Result<Self, error::Error> {
-        let mut map = BTreeMap::new();
-        map.insert(0, s.as_ref().to_owned());
-
-        Ok(ShellValue::IndexedArray(map))
-    }
-
-    pub fn new_associative_array<S: AsRef<str>>(_s: S) -> Result<Self, error::Error> {
-        error::unimp("new associative array from string")
-    }
-
     pub fn format(&self, style: FormatStyle) -> Result<String, error::Error> {
         match self {
             ShellValue::String(s) => {
