@@ -13,17 +13,17 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-anyhow = "1.0.80"
+anyhow = "1.0.81"
 brush-interactive-shell = { path = "../interactive-shell" }
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
-clap = { version = "4.5.1", features = ["derive"] }
+clap = { version = "4.5.2", features = ["derive"] }
 env_logger = "0.10.2"
-log = "0.4.20"
+log = "0.4.21"
 tokio = { version = "1.36.0", features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
-anyhow = "1.0.80"
+anyhow = "1.0.81"
 assert_cmd = "2.0.14"
 assert_fs = "1.1.1"
 colored = "2.1.0"
@@ -33,5 +33,5 @@ indent = "0.1.1"
 pathdiff = "0.2.1"
 prettydiff = "0.6.4"
 regex = "1.10.3"
-serde = { version = "1.0.196", features = ["derive"] }
-serde_yaml = "0.9.32"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_yaml = "0.9.33"

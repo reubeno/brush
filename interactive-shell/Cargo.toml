@@ -12,8 +12,8 @@ name = "interactive_shell"
 workspace = true
 
 [dependencies]
-anyhow = "1.0.80"
+anyhow = "1.0.81"
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
-log = "0.4.20"
-rustyline = { version = "13.0.0", features = ["derive"] }
+log = "0.4.21"
+rustyline = { version = "14.0.0", features = ["derive"] }
