@@ -1,7 +1,7 @@
 use anyhow::Result;
 use parser::ast;
 
-use crate::{env, expansion, Shell};
+use crate::{env, expansion, variables, Shell};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvalError {
@@ -101,7 +101,7 @@ fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64
             let value_str: String = shell
                 .env
                 .get(name)
-                .map_or_else(String::new, |v| (&v.value).into());
+                .map_or_else(String::new, |v| v.value().into());
 
             let value: i64 = value_str.parse().unwrap_or(0);
             Ok(value)
@@ -205,7 +205,7 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
                 .env
                 .update_or_add(
                     name.as_str(),
-                    value.to_string().as_str(),
+                    variables::ScalarOrArray::Scalar(value.to_string()),
                     |_| Ok(()),
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,

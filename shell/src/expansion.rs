@@ -6,7 +6,6 @@ use crate::error;
 use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
-use crate::variables::ShellVariable;
 
 pub(crate) async fn basic_expand_word(
     shell: &mut Shell,
@@ -129,7 +128,7 @@ impl<'a> WordExpander<'a> {
             .shell
             .env
             .get("IFS")
-            .map_or_else(|| " \t\n".to_owned(), |v| String::from(&v.value));
+            .map_or_else(|| " \t\n".to_owned(), |v| String::from(v.value()));
 
         let mut fields: Vec<WordField> = vec![];
         let mut current_field: WordField = vec![];
@@ -280,7 +279,7 @@ impl<'a> WordExpander<'a> {
         }
 
         if let Some(home) = self.shell.env.get("HOME") {
-            return Ok(String::from(&home.value));
+            return Ok(String::from(home.value()));
         } else {
             // HOME isn't set, so let's query passwd et al. to figure out the current
             // user's home directory.
@@ -484,10 +483,11 @@ impl<'a> WordExpander<'a> {
                 .shell
                 .env
                 .get(n)
-                .map_or_else(String::new, |v| String::from(&v.value))),
+                .map_or_else(String::new, |v| String::from(v.value()))),
             parser::word::Parameter::NamedWithIndex { name, index } => {
                 match self.shell.env.get(name) {
-                    Some(ShellVariable { value, .. }) => Ok(value
+                    Some(var) => Ok(var
+                        .value()
                         .get_at(*index)?
                         .map_or_else(String::new, |s| s.to_owned())),
                     None => Ok(String::new()),
@@ -495,7 +495,7 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 match self.shell.env.get(name) {
-                    Some(ShellVariable { value, .. }) => value.get_all(*concatenate),
+                    Some(var) => var.value().get_all(*concatenate),
                     None => Ok(String::new()),
                 }
             }

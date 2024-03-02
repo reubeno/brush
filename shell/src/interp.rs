@@ -382,7 +382,7 @@ impl Execute for ast::ForClauseCommand {
                 // Update the variable.
                 shell.env.update_or_add(
                     &self.variable_name,
-                    value.as_str(),
+                    ScalarOrArray::Scalar(value),
                     |_| Ok(()),
                     EnvironmentLookup::Anywhere,
                     EnvironmentScope::Global,
@@ -665,7 +665,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 .iter()
                 .filter_map(|(name, var)| {
                     if assigned_vars.contains(name) {
-                        Some((name.clone(), var.value.clone()))
+                        Some((name.clone(), var.value().clone()))
                     } else {
                         None
                     }
@@ -728,13 +728,26 @@ async fn apply_assignment(
 ) -> Result<(), error::Error> {
     // Figure out if this is a variable or an array element.
     let array_index;
+    let evaled_array_index;
     let variable_name = match &assignment.name {
         ast::AssignmentName::VariableName(name) => {
             array_index = None;
+            evaled_array_index = None;
             name
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
-            array_index = Some(index);
+            let expanded = expansion::basic_expand_word_str(shell, index).await?;
+
+            // TODO: We should not always eval.
+            evaled_array_index = Some(
+                ast::UnexpandedArithmeticExpr {
+                    value: expanded.clone(),
+                }
+                .eval(shell)
+                .await,
+            );
+
+            array_index = Some(expanded);
             name
         }
     };
@@ -763,7 +776,13 @@ async fn apply_assignment(
     // See if we can find an existing value associated with the variable.
     if let Some(existing_value) = shell.env.get_mut(variable_name.as_str()) {
         if let Some(array_index) = array_index {
-            // TODO: expand/eval index?
+            let array_index = if !matches!(existing_value.value(), ShellValue::AssociativeArray(_))
+            {
+                array_index
+            } else {
+                evaled_array_index.unwrap()?.to_string()
+            };
+
             existing_value.assign_at_index(array_index.as_str(), new_value, assignment.append)?;
         } else {
             existing_value.assign(new_value, assignment.append)?;
@@ -803,8 +822,8 @@ async fn execute_external_command(
 
     // Add in exported variables.
     for (name, var) in context.shell.env.iter() {
-        if var.exported {
-            cmd.env(name, &String::from(&var.value));
+        if var.is_exported() {
+            cmd.env(name, &String::from(var.value()));
         }
     }
 
