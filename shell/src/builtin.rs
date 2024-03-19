@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use futures::future::BoxFuture;
 
+use crate::commands::CommandArg;
 use crate::{error, shell::Shell};
 
 #[macro_export]
@@ -9,8 +10,7 @@ macro_rules! minus_or_plus_flag_arg {
     ($struct_name:ident, $flag_char:literal, $desc:literal) => {
         #[derive(clap::Parser, Debug)]
         pub(crate) struct $struct_name {
-            /// $desc
-            #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue)]
+            #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue, help = $desc)]
             _enable: bool,
             #[arg(long = concat!("+", $flag_char), name = concat!(stringify!($struct_name), "_disable"), action = clap::ArgAction::SetTrue, hide = true)]
             _disable: bool,
@@ -67,16 +67,13 @@ pub struct BuiltinExecutionContext<'a> {
 #[allow(clippy::module_name_repetitions)]
 pub type BuiltinCommandExecuteFunc = fn(
     BuiltinExecutionContext<'_>,
-    Vec<String>,
+    Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<BuiltinResult, error::Error>>;
 
 #[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
 pub trait BuiltinCommand: Parser {
-    async fn execute_args(
-        mut context: BuiltinExecutionContext<'_>,
-        args: Vec<String>,
-    ) -> Result<BuiltinResult, error::Error> {
+    async fn new(args: Vec<String>) -> Result<Self, clap::Error> {
         // N.B. clap doesn't support named options like '+x'. To work around this, we
         // establish a pattern of renaming them.
         let args: Vec<_> = args
@@ -90,24 +87,17 @@ pub trait BuiltinCommand: Parser {
             })
             .collect();
 
-        let parse_result = Self::try_parse_from(args);
-        let parsed_args = match parse_result {
-            Ok(parsed_args) => parsed_args,
-            Err(e) => {
-                log::error!("{}", e);
-                return Ok(BuiltinResult {
-                    exit_code: BuiltinExitCode::InvalidUsage,
-                });
-            }
-        };
-
-        Ok(BuiltinResult {
-            exit_code: parsed_args.execute(&mut context).await?,
-        })
+        Self::try_parse_from(args)
     }
 
     async fn execute(
         &self,
         context: &mut BuiltinExecutionContext<'_>,
     ) -> Result<BuiltinExitCode, error::Error>;
+}
+
+#[allow(clippy::module_name_repetitions)]
+#[async_trait::async_trait]
+pub trait BuiltinDeclarationCommand: BuiltinCommand {
+    fn set_declarations(&mut self, declarations: Vec<CommandArg>);
 }

@@ -24,7 +24,7 @@ pub enum Parameter {
     Positional(u32),
     Special(SpecialParameter),
     Named(String),
-    NamedWithIndex { name: String, index: u32 },
+    NamedWithIndex { name: String, index: String },
     NamedWithAllIndices { name: String, concatenate: bool },
 }
 
@@ -285,9 +285,8 @@ peg::parser! {
             p:special_parameter() { Parameter::Special(p) } /
             p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
             p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: true } } /
-            p:variable_name() "[" n:$(['0'..='9']+) "]" {?
-                let index = n.parse().or(Err("u32"))?;
-                Ok(Parameter::NamedWithIndex { name: p.to_owned(), index })
+            p:variable_name() "[" index:$((!"]" [_])*) "]" {?
+                Ok(Parameter::NamedWithIndex { name: p.to_owned(), index: index.to_owned() })
             } /
             p:variable_name() { Parameter::Named(p.to_owned()) }
 

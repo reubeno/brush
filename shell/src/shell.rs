@@ -12,7 +12,7 @@ use crate::jobs;
 use crate::options::RuntimeOptions;
 use crate::patterns;
 use crate::prompt::expand_prompt;
-use crate::variables;
+use crate::variables::{self, ShellValue, ShellVariable};
 
 pub struct Shell {
     // TODO: open files
@@ -141,14 +141,22 @@ impl Shell {
 
         // Seed parameters from environment.
         for (k, v) in std::env::vars() {
-            env.set_global(k, v.as_str()).export();
+            let mut var = ShellVariable::new(ShellValue::String(v));
+            var.export();
+            env.set_global(k, var);
         }
 
         // Set some additional ones.
-        env.set_global("EUID", format!("{}", uzers::get_effective_uid()).as_str())
-            .set_readonly();
-        env.set_global("RANDOM", variables::ShellValue::Random)
-            .hide_from_enumeration();
+        let mut euid_var = ShellVariable::new(ShellValue::String(format!(
+            "{}",
+            uzers::get_effective_uid()
+        )));
+        euid_var.set_readonly();
+        env.set_global("EUID", euid_var);
+
+        let mut random_var = ShellVariable::new(ShellValue::Random);
+        random_var.hide_from_enumeration();
+        env.set_global("RANDOM", random_var);
 
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
@@ -156,23 +164,30 @@ impl Shell {
                 let home_dir: String = home_dir.value().into();
                 let home_dir = PathBuf::from(home_dir);
                 let histfile = home_dir.join(".brush_history");
-                env.set_global("HISTFILE", histfile.to_string_lossy().to_string().as_str());
+                env.set_global(
+                    "HISTFILE",
+                    ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
+                );
             }
         }
         if !env.is_set("PATH") {
             env.set_global(
                 "PATH",
-                "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                ShellVariable::new(
+                    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
+                ),
             );
         }
 
         // TODO: don't set these in sh mode
         if let Some(shell_name) = &options.shell_name {
-            env.set_global("BASH", shell_name);
+            env.set_global("BASH", ShellVariable::new(shell_name.into()));
         }
         env.set_global(
             "BASH_VERSINFO",
-            ["5", "1", "1", "1", "release", "unknown"].as_slice(),
+            ShellVariable::new(ShellValue::indexed_array_from_slice(
+                ["5", "1", "1", "1", "release", "unknown"].as_slice(),
+            )),
         );
 
         env
@@ -624,7 +639,7 @@ impl Shell {
         self.working_dir = cleaned_path;
         self.env.update_or_add(
             "PWD",
-            variables::ScalarOrArray::Scalar(pwd),
+            variables::ShellValueLiteral::Scalar(pwd),
             |var| {
                 var.export();
                 Ok(())

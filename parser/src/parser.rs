@@ -3,9 +3,11 @@ use log::debug;
 
 use crate::ast::{self, SeparatorOperator};
 use crate::tokenizer::{
-    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerError, TokenizerOptions, Tokens,
+    SourcePosition, Token, TokenEndReason, TokenLocation, Tokenizer, TokenizerError,
+    TokenizerOptions, Tokens,
 };
 
+#[derive(Debug)]
 pub enum ParseError {
     ParsingNearToken(Token),
     ParsingAtEndOfInput,
@@ -91,16 +93,7 @@ fn parse_tokens_impl(tokens: &Vec<Token>) -> Result<ast::Program, ParseError> {
         Ok(program) => Ok(program),
         Err(parse_error) => {
             debug!("Parse error: {:?}", parse_error);
-
-            let approx_token_index = parse_error.location;
-
-            if approx_token_index < tokens.len() {
-                Err(ParseError::ParsingNearToken(
-                    tokens[approx_token_index].clone(),
-                ))
-            } else {
-                Err(ParseError::ParsingAtEndOfInput)
-            }
+            Err(convert_peg_parse_error(parse_error, tokens.as_slice()))
         }
     };
 
@@ -111,6 +104,41 @@ fn parse_tokens_impl(tokens: &Vec<Token>) -> Result<ast::Program, ParseError> {
     }
 
     result
+}
+
+fn convert_peg_parse_error(err: peg::error::ParseError<usize>, tokens: &[Token]) -> ParseError {
+    let approx_token_index = err.location;
+
+    if approx_token_index < tokens.len() {
+        ParseError::ParsingNearToken(tokens[approx_token_index].clone())
+    } else {
+        ParseError::ParsingAtEndOfInput
+    }
+}
+
+pub fn parse_assignment(s: &str) -> Result<ast::Assignment, ParseError> {
+    let tokens = vec![Token::Word(
+        s.to_owned(),
+        TokenLocation {
+            start: SourcePosition {
+                index: 0,
+                line: 0,
+                column: 0,
+            },
+            end: SourcePosition {
+                index: s.len() as i32,
+                line: 0,
+                column: s.len() as i32,
+            },
+        },
+    )];
+    let tokens_slice = tokens.as_slice();
+    let (assignment, _) = token_parser::assignment_word(&Tokens {
+        tokens: tokens_slice,
+    })
+    .map_err(|err| convert_peg_parse_error(err, tokens_slice))?;
+
+    Ok(assignment)
 }
 
 impl<'a> peg::Parse for Tokens<'a> {
@@ -144,11 +172,28 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
     type Slice = String;
 
     fn parse_slice(&'a self, start: usize, end: usize) -> Self::Slice {
-        self.tokens[start..end]
-            .iter()
-            .map(|t| t.to_str())
-            .collect::<Vec<_>>()
-            .join("")
+        let mut result = String::new();
+        let mut last_token_was_word = false;
+
+        for token in &self.tokens[start..end] {
+            match token {
+                Token::Operator(s, _) => {
+                    result.push_str(s);
+                    last_token_was_word = false;
+                }
+                Token::Word(s, _) => {
+                    // Place spaces between adjacent words.
+                    if last_token_was_word {
+                        result.push(' ');
+                    }
+
+                    result.push_str(s);
+                    last_token_was_word = true;
+                }
+            }
+        }
+
+        result
     }
 }
 
@@ -491,16 +536,26 @@ peg::parser! {
         rule cmd_prefix() -> ast::CommandPrefix =
             p:(
                 i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
-                w:assignment_word() { ast::CommandPrefixOrSuffixItem::AssignmentWord(w) }
+                assignment_and_word:assignment_word() {
+                    let (assignment, word) = assignment_and_word;
+                    ast::CommandPrefixOrSuffixItem::AssignmentWord(assignment, word)
+                }
             )+ { ast::CommandPrefix(p) }
 
         rule cmd_suffix() -> ast::CommandSuffix =
             s:(
-                i:io_redirect() { ast::CommandPrefixOrSuffixItem::IoRedirect(i) } /
+                i:io_redirect() {
+                    ast::CommandPrefixOrSuffixItem::IoRedirect(i)
+                } /
                 // TODO: this is a hack; we don't yet understand how other shells manage to parse command invocations
                 // like `local var=()`
-                value:$(assignment_word()) { ast::CommandPrefixOrSuffixItem::Word(ast::Word { value }) } /
-                w:word() { ast::CommandPrefixOrSuffixItem::Word(ast::Word::from(w)) }
+                assignment_and_word:assignment_word() {
+                    let (assignment, word) = assignment_and_word;
+                    ast::CommandPrefixOrSuffixItem::AssignmentWord(assignment, word)
+                } /
+                w:word() {
+                    ast::CommandPrefixOrSuffixItem::Word(ast::Word::from(w))
+                }
             )+ { ast::CommandSuffix(s) }
 
         rule redirect_list() -> ast::RedirectList =
@@ -615,13 +670,26 @@ peg::parser! {
             specific_operator("\n") {}
         }
 
-        rule assignment_word() -> ast::Assignment =
+        pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
             // TODO: make sure array syntax isn't present in sh mode
             [Token::Word(w, _)] specific_operator("(") elements:([Token::Word(e, _)] { e })* specific_operator(")") {?
-                parse_array_assignment(w.as_str(), &elements)
+                let parsed = parse_array_assignment(w.as_str(), &elements)?;
+
+                let mut all_as_word = w.to_owned();
+                all_as_word.push('(');
+                for (i, e) in elements.iter().enumerate() {
+                    if i > 0 {
+                        all_as_word.push(' ');
+                    }
+                    all_as_word.push_str(e);
+                }
+                all_as_word.push(')');
+
+                Ok((parsed, ast::Word { value: all_as_word }))
             } /
             [Token::Word(w, _)] {?
-                parse_assignment_word(w.as_str())
+                let parsed = parse_assignment_word(w.as_str())?;
+                Ok((parsed, ast::Word { value: w.to_owned() }))
             }
 
         rule io_number() -> u32 =

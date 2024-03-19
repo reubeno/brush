@@ -3,10 +3,14 @@ use clap::Parser;
 use itertools::Itertools;
 
 use crate::{
-    builtin::{self, BuiltinCommand, BuiltinExitCode},
+    builtin::{self, BuiltinCommand, BuiltinDeclarationCommand, BuiltinExitCode},
+    commands::CommandArg,
     env::{EnvironmentLookup, EnvironmentScope},
     error,
-    variables::{self, ShellValue, ShellVariable, ShellVariableUpdateTransform},
+    variables::{
+        self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
+        ShellVariableUpdateTransform,
+    },
 };
 
 builtin::minus_or_plus_flag_arg!(MakeIndexedArrayFlag, 'a', "");
@@ -63,10 +67,16 @@ pub(crate) struct DeclareCommand {
     make_exported: MakeExportedFlag,
 
     //
-    // Names
+    // Declarations
     //
-    #[arg(name = "name[=value]")]
-    names: Vec<String>,
+    #[clap(skip)]
+    declarations: Vec<CommandArg>,
+}
+
+impl BuiltinDeclarationCommand for DeclareCommand {
+    fn set_declarations(&mut self, declarations: Vec<CommandArg>) {
+        self.declarations = declarations;
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -87,24 +97,40 @@ impl BuiltinCommand for DeclareCommand {
         }
 
         let mut result = BuiltinExitCode::Success;
-        if !self.names.is_empty() {
-            for entry in &self.names {
+        if !self.declarations.is_empty() {
+            for declaration in &self.declarations {
                 if self.print {
+                    let name = match declaration {
+                        CommandArg::String(s) => s,
+                        CommandArg::Assignment(assignment) => match &assignment.name {
+                            parser::ast::AssignmentName::VariableName(name) => name,
+                            parser::ast::AssignmentName::ArrayElementName(_, _) => {
+                                return error::unimp("declare -p with array index");
+                            }
+                        },
+                    };
+
                     if self.function_names_only || self.function_names_or_defs_only {
                         log::error!(
                             "UNIMPLEMENTED: declare -p: function names or definitions only"
                         );
                         return Ok(BuiltinExitCode::Unimplemented);
-                    } else if let Some(variable) = context.shell.env.get(entry) {
+                    } else if let Some(variable) = context.shell.env.get(name) {
                         let cs = get_declare_flag_str(variable);
+                        let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
+                            ""
+                        } else {
+                            "="
+                        };
+
                         println!(
-                            "declare -{cs} {entry}={}",
+                            "declare -{cs} {name}{separator_str}{}",
                             variable
                                 .value()
                                 .format(variables::FormatStyle::DeclarePrint)?
                         );
                     } else {
-                        eprintln!("declare: {entry}: not found");
+                        eprintln!("declare: {name}: not found");
                         result = BuiltinExitCode::Custom(1);
                     }
 
@@ -120,11 +146,6 @@ impl BuiltinCommand for DeclareCommand {
                     return Ok(BuiltinExitCode::Unimplemented);
                 }
 
-                let (name, value) = entry.split_once('=').map_or_else(
-                    || (entry.as_str(), None),
-                    |(name, value)| (name, Some(value)),
-                );
-
                 let lookup = if create_var_local {
                     EnvironmentLookup::OnlyInCurrentLocal
                 } else {
@@ -137,10 +158,49 @@ impl BuiltinCommand for DeclareCommand {
                     EnvironmentScope::Global
                 };
 
+                let name;
+                let initial_value;
+
+                match declaration {
+                    CommandArg::String(s) => {
+                        name = s.clone();
+                        initial_value = None;
+                    }
+                    CommandArg::Assignment(assignment) => {
+                        match &assignment.name {
+                            parser::ast::AssignmentName::VariableName(var_name) => {
+                                name = var_name.to_owned();
+                            }
+                            parser::ast::AssignmentName::ArrayElementName(_, _) => {
+                                return error::unimp("declaring array index");
+                            }
+                        }
+
+                        match &assignment.value {
+                            parser::ast::AssignmentValue::Scalar(s) => {
+                                initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
+                            }
+                            parser::ast::AssignmentValue::Array(a) => {
+                                initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
+                                    a.iter()
+                                        .map(|(i, v)| {
+                                            (i.as_ref().map(|w| w.value.clone()), v.value.clone())
+                                        })
+                                        .collect(),
+                                )));
+                            }
+                        }
+                    }
+                }
+
                 // TODO
                 result = BuiltinExitCode::Unimplemented;
 
-                if let Some(var) = context.shell.env.get_mut_using_policy(name, lookup) {
+                if let Some(var) = context
+                    .shell
+                    .env
+                    .get_mut_using_policy(name.as_str(), lookup)
+                {
                     if self.make_indexed_array.is_some() {
                         log::error!("UNIMPLEMENTED: declare -a: converting to indexed array");
                         return Ok(BuiltinExitCode::Unimplemented);
@@ -150,38 +210,28 @@ impl BuiltinCommand for DeclareCommand {
                         return Ok(BuiltinExitCode::Unimplemented);
                     }
 
-                    // TODO: handle setting the attributes *before* the new assignment.
-                    if let Some(value) = value {
-                        var.set_by_str(value)?;
-                    }
-
                     self.apply_attributes(var)?;
+
+                    if let Some(initial_value) = initial_value {
+                        var.assign(initial_value, false)?;
+                    }
                 } else {
-                    let initial_value = if self.make_indexed_array.is_some() {
-                        if let Some(value) = value {
-                            variables::ScalarOrArray::Array(vec![(None, value.to_owned())])
-                        } else {
-                            variables::ScalarOrArray::Array(vec![])
-                        }
+                    let unset_type = if self.make_indexed_array.is_some() {
+                        ShellValueUnsetType::IndexedArray
                     } else if self.make_associative_array.is_some() {
-                        if let Some(value) = value {
-                            variables::ScalarOrArray::Array(vec![(None, value.to_owned())])
-                        } else {
-                            variables::ScalarOrArray::Array(vec![])
-                        }
+                        ShellValueUnsetType::AssociativeArray
                     } else {
-                        variables::ScalarOrArray::Scalar(value.unwrap_or_default().to_owned())
+                        ShellValueUnsetType::Untyped
                     };
 
-                    // TODO: handle declaring without value for variable of different type.
-                    // TODO: handle setting the attributes *before* the first assignment.
-                    context.shell.env.update_or_add(
-                        name,
-                        initial_value,
-                        |v| self.apply_attributes(v),
-                        lookup,
-                        scope,
-                    )?;
+                    let mut var = ShellVariable::new(ShellValue::Unset(unset_type));
+                    self.apply_attributes(&mut var)?;
+
+                    if let Some(initial_value) = initial_value {
+                        var.assign(initial_value, false)?;
+                    }
+
+                    context.shell.env.add(name, var, scope)?;
                 }
             }
         } else {
@@ -245,8 +295,14 @@ impl BuiltinCommand for DeclareCommand {
             {
                 if self.print {
                     let cs = get_declare_flag_str(variable);
+                    let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
+                        ""
+                    } else {
+                        "="
+                    };
+
                     println!(
-                        "declare -{cs} {name}={}",
+                        "declare -{cs} {name}{separator_str}{}",
                         variable
                             .value()
                             .format(variables::FormatStyle::DeclarePrint)?
@@ -330,10 +386,16 @@ impl DeclareCommand {
 fn get_declare_flag_str(variable: &ShellVariable) -> String {
     let mut result = String::new();
 
-    if matches!(variable.value(), ShellValue::IndexedArray(_)) {
+    if matches!(
+        variable.value(),
+        ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
+    ) {
         result.push('a');
     }
-    if matches!(variable.value(), ShellValue::AssociativeArray(_)) {
+    if matches!(
+        variable.value(),
+        ShellValue::AssociativeArray(_) | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+    ) {
         result.push('A');
     }
     if variable.is_treated_as_integer() {

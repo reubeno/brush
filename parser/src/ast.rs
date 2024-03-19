@@ -437,7 +437,7 @@ impl Display for CommandSuffix {
 pub enum CommandPrefixOrSuffixItem {
     IoRedirect(IoRedirect),
     Word(Word),
-    AssignmentWord(Assignment),
+    AssignmentWord(Assignment, Word),
 }
 
 impl Display for CommandPrefixOrSuffixItem {
@@ -445,7 +445,7 @@ impl Display for CommandPrefixOrSuffixItem {
         match self {
             CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{}", io_redirect),
             CommandPrefixOrSuffixItem::Word(word) => write!(f, "{}", word),
-            CommandPrefixOrSuffixItem::AssignmentWord(assignment) => write!(f, "{}", assignment),
+            CommandPrefixOrSuffixItem::AssignmentWord(_assignment, word) => write!(f, "{}", word),
         }
     }
 }

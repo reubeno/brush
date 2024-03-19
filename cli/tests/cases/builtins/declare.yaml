@@ -9,7 +9,6 @@ cases:
       declare -p myarr
 
   - name: "Declare integer"
-    known_failure: true
     stdin: |
       declare -i num=10
       echo $num
@@ -24,17 +23,25 @@ cases:
       var="change"
 
   - name: "Declare array"
-    known_failure: true
     stdin: |
       declare -a arr=("element1" "element2" "element3")
-      echo ${arr[*]}
+      declare -p arr
+      echo "[0]: ${arr[0]}"
+      echo "[1]: ${arr[0]}"
+      echo "[2]: ${arr[0]}"
+      echo "[3]: ${arr[0]}"
+      echo "STAR: ${arr[*]}"
+      echo "AT: ${arr[*]}"
 
   - name: "Declare associative array"
-    known_failure: true
     stdin: |
-      declare -A arr=(["x"]=1 ["y"]=2)
-      echo ${arr["x"]}
-      echo ${arr["y"]}
+      declare -A arr=(["x1"]=1 ["x2"]=2)
+      declare -p arr
+      echo "[x]: ${arr[x1]}"
+      echo "[y]: ${arr[x2]}"
+      echo "[z]: ${arr[x3]}"
+      echo "STAR: ${arr[*]}"
+      echo "AT: ${arr[*]}"
 
   - name: "Declare and export variable"
     stdin: |
@@ -48,10 +55,11 @@ cases:
       echo "var: ${var}"
 
   - name: "Declaring without value"
-    known_failure: true
     stdin: |
       [[ -v var ]] && echo "1: Variable is set"
       declare var
+      declare -p var
       [[ -v var ]] && echo "2: Variable is set"
       declare var2=""
+      declare -p var2
       [[ -v var2 ]] && echo "3: Variable is set"
