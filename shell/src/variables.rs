@@ -1,5 +1,4 @@
 use anyhow::Result;
-use itertools::Itertools;
 use rand::Rng;
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -114,37 +113,45 @@ impl ShellVariable {
         self.treat_as_integer = false;
     }
 
-    #[allow(clippy::unused_self)]
-    pub fn set_by_str(&mut self, _value_str: &str) -> Result<(), error::Error> {
-        error::unimp("set_by_str not implemented yet")
+    fn convert_to_indexed_array(&mut self) {
+        let mut new_values = BTreeMap::new();
+        new_values.insert(0, String::from(&self.value));
+        self.value = ShellValue::IndexedArray(new_values);
     }
 
-    pub fn assign(&mut self, value: ScalarOrArray, append: bool) -> Result<(), error::Error> {
+    pub fn assign(&mut self, value: ShellValueLiteral, append: bool) -> Result<(), error::Error> {
         if append {
             // If we're trying to append an array to a string, we first promote the string to be an array
             // with the string being present at index 0.
             if matches!(self.value, ShellValue::String(_))
-                && matches!(value, ScalarOrArray::Array(_))
+                && matches!(value, ShellValueLiteral::Array(_))
             {
-                let mut new_values = BTreeMap::new();
-                new_values.insert(0, String::from(&self.value));
-                self.value = ShellValue::IndexedArray(new_values);
+                self.convert_to_indexed_array();
             }
+
+            let treat_as_int = self.is_treated_as_integer();
 
             match &mut self.value {
                 ShellValue::String(base) => match value {
-                    ScalarOrArray::Scalar(suffix) => {
-                        base.push_str(suffix.as_str());
+                    ShellValueLiteral::Scalar(suffix) => {
+                        if treat_as_int {
+                            let int_value = base.parse::<i64>().unwrap_or(0)
+                                + suffix.parse::<i64>().unwrap_or(0);
+                            base.clear();
+                            base.push_str(int_value.to_string().as_str());
+                        } else {
+                            base.push_str(suffix.as_str());
+                        }
                         Ok(())
                     }
-                    ScalarOrArray::Array(_) => {
+                    ShellValueLiteral::Array(_) => {
                         // This case was already handled (see above).
                         Ok(())
                     }
                 },
                 ShellValue::IndexedArray(existing_values) => match value {
-                    ScalarOrArray::Scalar(_) => error::unimp("appending scalar to array"),
-                    ScalarOrArray::Array(new_values) => {
+                    ShellValueLiteral::Scalar(_) => error::unimp("appending scalar to array"),
+                    ShellValueLiteral::Array(new_values) => {
                         let mut new_key =
                             if let Some((largest_index, _)) = existing_values.last_key_value() {
                                 largest_index + 1
@@ -152,7 +159,7 @@ impl ShellVariable {
                                 0
                             };
 
-                        for (_key, value) in new_values {
+                        for (_key, value) in new_values.0 {
                             // TODO: do something with the key!
                             existing_values.insert(new_key, value);
                             new_key += 1;
@@ -164,17 +171,53 @@ impl ShellVariable {
                 _ => error::unimp("appending to unsupported variable type"),
             }
         } else {
-            // If we're updating an array value with a string, then treat it as an update to
-            // just the 0th item of the array.
-            if matches!(self.value, ShellValue::IndexedArray(_))
-                && matches!(value, ScalarOrArray::Scalar(_))
-            {
-                self.assign_at_index("0", value, false)?;
-            } else {
-                self.value = value.into();
-            }
+            match (&self.value, value) {
+                // If we're updating an array value with a string, then treat it as an update to
+                // just the "0"-indexed element of the array.
+                (
+                    ShellValue::IndexedArray(_)
+                    | ShellValue::AssociativeArray(_)
+                    | ShellValue::Unset(
+                        ShellValueUnsetType::AssociativeArray | ShellValueUnsetType::IndexedArray,
+                    ),
+                    ShellValueLiteral::Scalar(s),
+                ) => self.assign_at_index("0", s.as_str(), false),
 
-            Ok(())
+                // If we're updating an indexed array value with an array, then preserve the array type.
+                // We also default to using an indexed array if we are assigning an array to a previously
+                // string-holding variable.
+                (
+                    ShellValue::IndexedArray(_)
+                    | ShellValue::Unset(
+                        ShellValueUnsetType::IndexedArray | ShellValueUnsetType::Untyped,
+                    )
+                    | ShellValue::String(_)
+                    | ShellValue::Random,
+                    ShellValueLiteral::Array(values),
+                ) => {
+                    self.value = ShellValue::indexed_array_from_literals(values);
+                    Ok(())
+                }
+
+                // If we're updating an associative array value with an array, then preserve the array type.
+                (
+                    ShellValue::AssociativeArray(_)
+                    | ShellValue::Unset(ShellValueUnsetType::AssociativeArray),
+                    ShellValueLiteral::Array(values),
+                ) => {
+                    self.value = ShellValue::associative_array_from_literals(values);
+                    Ok(())
+                }
+
+                // Drop other updates to random values.
+                (ShellValue::Random, _) => Ok(()),
+
+                // Assign a scalar value to a scalar or unset (and untyped) variable.
+                (ShellValue::String(_) | ShellValue::Unset(_), ShellValueLiteral::Scalar(s)) => {
+                    self.value = ShellValue::String(s);
+                    Ok(())
+                }
+            }
         }
     }
 
@@ -183,49 +226,65 @@ impl ShellVariable {
     pub fn assign_at_index(
         &mut self,
         array_index: &str,
-        value: ScalarOrArray,
+        value: &str,
         append: bool,
     ) -> Result<(), error::Error> {
         if append {
             return error::unimp("appending during assignment through index");
         }
 
+        match &self.value {
+            ShellValue::Unset(_) => {
+                self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
+            }
+            ShellValue::String(_) => {
+                self.convert_to_indexed_array();
+            }
+            _ => (),
+        }
+
         match &mut self.value {
             ShellValue::IndexedArray(arr) => {
-                match value {
-                    ScalarOrArray::Scalar(s) => {
-                        let key: u64 = array_index.parse().unwrap_or(0);
-                        arr.insert(key, s);
-                    }
-                    ScalarOrArray::Array(_) => {
-                        return error::unimp("assigning array to array index");
-                    }
-                }
+                let key: u64 = array_index.parse().unwrap_or(0);
+                arr.insert(key, value.to_owned());
                 Ok(())
             }
             ShellValue::AssociativeArray(arr) => {
-                arr.insert(array_index.to_owned(), value.into());
+                arr.insert(array_index.to_owned(), value.to_owned());
                 Ok(())
             }
-            _ => error::unimp("assigning to index of non-array variable"),
+            _ => {
+                log::error!("assigning to index {array_index} of {:?}", self.value);
+                error::unimp("assigning to index of non-array variable")
+            }
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub enum ShellValue {
+    Unset(ShellValueUnsetType),
     String(String),
-    Integer(u64),
-    AssociativeArray(BTreeMap<String, ShellValue>),
+    AssociativeArray(BTreeMap<String, String>),
     IndexedArray(BTreeMap<u64, String>),
     Random,
 }
 
 #[derive(Clone, Debug)]
-pub enum ScalarOrArray {
-    Scalar(String),
-    Array(Vec<(Option<String>, String)>),
+pub enum ShellValueUnsetType {
+    Untyped,
+    AssociativeArray,
+    IndexedArray,
 }
+
+#[derive(Clone, Debug)]
+pub enum ShellValueLiteral {
+    Scalar(String),
+    Array(ArrayLiteral),
+}
+
+#[derive(Clone, Debug)]
+pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
 
 #[derive(Copy, Clone, Debug)]
 pub enum FormatStyle {
@@ -234,8 +293,58 @@ pub enum FormatStyle {
 }
 
 impl ShellValue {
+    pub fn indexed_array_from_slice(values: &[&str]) -> Self {
+        let mut owned_values = BTreeMap::new();
+        for (i, value) in values.iter().enumerate() {
+            owned_values.insert(i as u64, (*value).to_string());
+        }
+
+        ShellValue::IndexedArray(owned_values)
+    }
+
+    pub fn indexed_array_from_literals(values: ArrayLiteral) -> Self {
+        let mut arr = BTreeMap::new();
+
+        let mut key: u64 = 0;
+        for (literal_key, value) in values.0 {
+            if let Some(literal_key) = literal_key {
+                key = literal_key.parse().unwrap_or(0);
+            }
+
+            arr.insert(key, value);
+            key += 1;
+        }
+
+        ShellValue::IndexedArray(arr)
+    }
+
+    pub fn associative_array_from_literals(values: ArrayLiteral) -> Self {
+        let mut arr = BTreeMap::new();
+
+        let mut current_key = None;
+        for (literal_key, value) in values.0 {
+            if let Some(literal_key) = literal_key {
+                current_key = Some(literal_key);
+            }
+
+            if let Some(key) = current_key {
+                current_key = None;
+                arr.insert(key, value);
+            } else {
+                current_key = Some(value);
+            }
+        }
+
+        if let Some(key) = current_key {
+            arr.insert(key, String::new());
+        }
+
+        ShellValue::AssociativeArray(arr)
+    }
+
     pub fn format(&self, style: FormatStyle) -> Result<String, error::Error> {
         match self {
+            ShellValue::Unset(_) => Ok(String::new()),
             ShellValue::String(s) => {
                 // TODO: Handle embedded newlines and other special chars.
                 match style {
@@ -249,14 +358,17 @@ impl ShellValue {
                     FormatStyle::DeclarePrint => Ok(format!("\"{s}\"")),
                 }
             }
-            ShellValue::Integer(_) => error::unimp("formatting integers"),
             ShellValue::AssociativeArray(values) => {
-                let arr_str = values
-                    .iter()
-                    .map(|(k, v)| format!("[{}]={}", k, String::from(v)))
-                    .join(" ");
+                let mut result = String::new();
+                result.push('(');
 
-                Ok(arr_str)
+                for (key, value) in values {
+                    write!(result, "[{key}]=\"{value}\" ")
+                        .map_err(|e| error::Error::Unknown(e.into()))?;
+                }
+
+                result.push(')');
+                Ok(result)
             }
             ShellValue::IndexedArray(values) => {
                 let mut result = String::new();
@@ -277,31 +389,43 @@ impl ShellValue {
         }
     }
 
-    pub fn get_at(&self, index: u32) -> Result<Option<&str>, error::Error> {
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn get_at(&self, index: &str) -> Result<Option<String>, error::Error> {
         match self {
+            ShellValue::Unset(_) => Ok(None),
             ShellValue::String(s) => {
-                if index == 0 {
-                    Ok(Some(s.as_str()))
+                if index.parse::<u64>().unwrap_or(0) == 0 {
+                    Ok(Some(s.to_owned()))
                 } else {
                     Ok(None)
                 }
             }
-            ShellValue::Integer(_) => error::unimp("indexing into integer"),
-            ShellValue::AssociativeArray(_) => error::unimp("indexing into associative array"),
+            ShellValue::AssociativeArray(values) => Ok(values.get(index).map(|s| s.to_owned())),
             ShellValue::IndexedArray(values) => {
-                Ok(values.get(&(u64::from(index))).map(|s| s.as_str()))
+                let key = index.parse::<u64>().unwrap_or(0);
+                Ok(values.get(&key).map(|s| s.to_owned()))
             }
-            ShellValue::Random => error::unimp("indexing into RANDOM"),
+            ShellValue::Random => Ok(Some(get_random_str())),
         }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn get_all(&self, _concatenate: bool) -> Result<String, error::Error> {
         // TODO: implement concatenate (or not)
         match self {
+            ShellValue::Unset(_) => Ok(String::new()),
             ShellValue::String(s) => Ok(s.to_owned()),
-            ShellValue::Integer(i) => Ok(i.to_string()),
-            ShellValue::AssociativeArray(_) => {
-                error::unimp("converting associative array to string")
+            ShellValue::AssociativeArray(values) => {
+                let mut formatted = String::new();
+
+                for (i, (_key, value)) in values.iter().enumerate() {
+                    if i > 0 {
+                        formatted.push(' ');
+                    }
+                    formatted.push_str(value);
+                }
+
+                Ok(formatted)
             }
             ShellValue::IndexedArray(values) => {
                 let mut formatted = String::new();
@@ -320,24 +444,6 @@ impl ShellValue {
     }
 }
 
-impl From<ScalarOrArray> for ShellValue {
-    fn from(value: ScalarOrArray) -> Self {
-        match value {
-            ScalarOrArray::Scalar(value) => ShellValue::String(value),
-            ScalarOrArray::Array(values) => {
-                let mut converted = BTreeMap::new();
-
-                // TODO: do something with key
-                for (i, (_key, value)) in values.iter().enumerate() {
-                    converted.insert(i as u64, value.to_owned());
-                }
-
-                ShellValue::IndexedArray(converted)
-            }
-        }
-    }
-}
-
 impl From<&str> for ShellValue {
     fn from(value: &str) -> Self {
         ShellValue::String(value.to_owned())
@@ -350,24 +456,13 @@ impl From<&String> for ShellValue {
     }
 }
 
-impl From<&[&str]> for ShellValue {
-    fn from(values: &[&str]) -> Self {
-        let mut owned_values = BTreeMap::new();
-        for (i, value) in values.iter().enumerate() {
-            owned_values.insert(i as u64, (*value).to_string());
-        }
-
-        ShellValue::IndexedArray(owned_values)
-    }
-}
-
 impl From<&ShellValue> for String {
     fn from(value: &ShellValue) -> Self {
         match value {
+            ShellValue::Unset(_) => String::new(),
             ShellValue::String(s) => s.clone(),
-            ShellValue::Integer(i) => i.to_string(),
-            ShellValue::AssociativeArray(_) => {
-                todo!("UNIMPLEMENTED: converting associative array to string")
+            ShellValue::AssociativeArray(values) => {
+                values.get("0").map_or_else(String::new, |s| s.clone())
             }
             ShellValue::IndexedArray(values) => {
                 values.get(&0).map_or_else(String::new, |s| s.clone())

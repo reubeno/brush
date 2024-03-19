@@ -15,7 +15,6 @@ cases:
     args: ["./script.sh"]
 
   - name: "Local with empty array"
-    known_failure: true
     test_files:
       - path: "script.sh"
         contents: |

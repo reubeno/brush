@@ -488,8 +488,8 @@ impl<'a> WordExpander<'a> {
                 match self.shell.env.get(name) {
                     Some(var) => Ok(var
                         .value()
-                        .get_at(*index)?
-                        .map_or_else(String::new, |s| s.to_owned())),
+                        .get_at(index.as_str())?
+                        .map_or_else(String::new, |s| s.clone())),
                     None => Ok(String::new()),
                 }
             }

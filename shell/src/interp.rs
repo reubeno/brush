@@ -12,12 +12,13 @@ use parser::ast::{self, CommandPrefixOrSuffixItem};
 use tokio_command_fds::{CommandFdExt, FdMapping};
 
 use crate::arithmetic::Evaluatable;
+use crate::commands::CommandArg;
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::error;
 use crate::expansion;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
-use crate::variables::{ScalarOrArray, ShellValue};
+use crate::variables::{ArrayLiteral, ShellValue, ShellValueLiteral, ShellVariable};
 use crate::{builtin, builtins};
 use crate::{extendedtests, patterns};
 
@@ -382,7 +383,7 @@ impl Execute for ast::ForClauseCommand {
                 // Update the variable.
                 shell.env.update_or_add(
                     &self.variable_name,
-                    ScalarOrArray::Scalar(value),
+                    ShellValueLiteral::Scalar(value),
                     |_| Ok(()),
                     EnvironmentLookup::Anywhere,
                     EnvironmentScope::Global,
@@ -588,7 +589,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         let mut open_files = OpenFiles::new();
         let mut assignments = vec![];
-        let mut args = vec![];
+        let mut args: Vec<CommandArg> = vec![];
+        let mut invoking_declaration_builtin = false;
 
         for item in prefix_items
             .0
@@ -603,13 +605,41 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     {
                         // TODO: Don't just count on the fd being valid.
                         if let OpenFile::ProcessSubstitutionFile(f) = open_file {
-                            args.push(std::format!("/dev/fd/{}", f.as_raw_fd()));
+                            args.push(CommandArg::String(std::format!(
+                                "/dev/fd/{}",
+                                f.as_raw_fd()
+                            )));
                         }
                     } else {
                         return Ok(SpawnResult::ImmediateExit(1));
                     }
                 }
-                CommandPrefixOrSuffixItem::AssignmentWord(pair) => assignments.push(pair),
+                CommandPrefixOrSuffixItem::AssignmentWord(assignment, word) => {
+                    if args.is_empty() {
+                        // If we haven't yet seen any arguments, then this must be a proper
+                        // scoped assignment. Add it to the list we're accumulating.
+                        assignments.push(assignment);
+                    } else {
+                        if invoking_declaration_builtin {
+                            // This looks like an assignment, and the command being invoked is a
+                            // well-known builtin that takes arguments that need to function like
+                            // assignments (but which are processed by the builtin).
+                            let expanded =
+                                basic_expand_assignment(context.shell, assignment).await?;
+                            args.push(CommandArg::Assignment(expanded));
+                        } else {
+                            // This *looks* like an assignment, but it's really a string we should fully
+                            // treat as a regular looking argument.
+                            let mut next_args =
+                                expansion::full_expand_and_split_word(context.shell, word)
+                                    .await?
+                                    .into_iter()
+                                    .map(CommandArg::String)
+                                    .collect();
+                            args.append(&mut next_args);
+                        }
+                    }
+                }
                 CommandPrefixOrSuffixItem::Word(arg) => {
                     //
                     // TODO: Reevaluate if this is an appropriate place to handle aliases.
@@ -634,18 +664,27 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                                 next_args = alias_pieces;
                             }
+
+                            // Check if we're going to be invoking a special declaration builtin. That will
+                            // change how we parse and process args.
+                            if builtins::get_declaration_builtin_names()
+                                .contains(next_args[0].as_str())
+                            {
+                                invoking_declaration_builtin = true;
+                            }
                         }
                     }
 
+                    let mut next_args = next_args.into_iter().map(CommandArg::String).collect();
                     args.append(&mut next_args);
                 }
             }
         }
 
         // If we have a command, then execute it.
-        if let Some(cmd_name) = args.first() {
+        if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
             if context.shell.options.print_commands_and_arguments {
-                println!("+ {}", args.join(" "));
+                println!("+ {}", args.iter().map(|arg| arg.to_string()).join(" "));
             }
 
             // Apply all variable assignments in a child shell object, from which we'll harvest
@@ -679,12 +718,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                 // TODO: cache the builtins
                 if let Some(builtin) = special_builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, args, env_vars).await
+                    execute_builtin_command(*builtin, context, cmd_name, args, env_vars).await
                 } else if context.shell.funcs.contains_key(cmd_name.as_str()) {
                     // Strip the function name off args.
                     invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars).await
                 } else if let Some(builtin) = builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, args, env_vars).await
+                    execute_builtin_command(*builtin, context, cmd_name, args, env_vars).await
                 } else {
                     // Strip the command name off args.
                     execute_external_command(
@@ -722,6 +761,56 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     }
 }
 
+#[allow(dead_code)]
+async fn basic_expand_assignment(
+    shell: &mut Shell,
+    assignment: &ast::Assignment,
+) -> Result<ast::Assignment> {
+    let value = basic_expand_assignment_value(shell, &assignment.value).await?;
+    Ok(ast::Assignment {
+        name: assignment.name.clone(),
+        value,
+        append: assignment.append,
+    })
+}
+
+async fn basic_expand_assignment_value(
+    shell: &mut Shell,
+    value: &ast::AssignmentValue,
+) -> Result<ast::AssignmentValue> {
+    let expanded = match value {
+        ast::AssignmentValue::Scalar(s) => {
+            let expanded_word = expansion::basic_expand_word(shell, s).await?;
+            ast::AssignmentValue::Scalar(ast::Word {
+                value: expanded_word,
+            })
+        }
+        ast::AssignmentValue::Array(arr) => {
+            let mut expanded_values = vec![];
+            for (key, value) in arr {
+                let expanded_key = match key {
+                    Some(k) => Some(ast::Word {
+                        value: expansion::basic_expand_word(shell, k).await?,
+                    }),
+                    None => None,
+                };
+
+                let expanded_value = expansion::basic_expand_word(shell, value).await?;
+                expanded_values.push((
+                    expanded_key,
+                    ast::Word {
+                        value: expanded_value,
+                    },
+                ));
+            }
+
+            ast::AssignmentValue::Array(expanded_values)
+        }
+    };
+
+    Ok(expanded)
+}
+
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
@@ -756,7 +845,7 @@ async fn apply_assignment(
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
             let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
-            ScalarOrArray::Scalar(value)
+            ShellValueLiteral::Scalar(value)
         }
         ast::AssignmentValue::Array(unexpanded_values) => {
             let mut elements = vec![];
@@ -769,7 +858,7 @@ async fn apply_assignment(
                 let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
                 elements.push((key, value));
             }
-            ScalarOrArray::Array(elements)
+            ShellValueLiteral::Array(ArrayLiteral(elements))
         }
     };
 
@@ -783,7 +872,18 @@ async fn apply_assignment(
                 evaled_array_index.unwrap()?.to_string()
             };
 
-            existing_value.assign_at_index(array_index.as_str(), new_value, assignment.append)?;
+            match new_value {
+                ShellValueLiteral::Scalar(s) => {
+                    existing_value.assign_at_index(
+                        array_index.as_str(),
+                        s.as_str(),
+                        assignment.append,
+                    )?;
+                }
+                ShellValueLiteral::Array(_) => {
+                    return error::unimp("replacing an array item with an array");
+                }
+            }
         } else {
             existing_value.assign(new_value, assignment.append)?;
         }
@@ -792,7 +892,16 @@ async fn apply_assignment(
         if let Some(_array_index) = array_index {
             return error::unimp("creating variable from index");
         } else {
-            shell.env.set_global(variable_name, new_value);
+            let new_value = match new_value {
+                ShellValueLiteral::Scalar(s) => ShellValue::String(s),
+                ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values),
+            };
+
+            shell.env.add(
+                variable_name,
+                ShellVariable::new(new_value),
+                EnvironmentScope::Global,
+            )?;
         }
     }
 
@@ -804,14 +913,16 @@ async fn execute_external_command(
     context: &mut PipelineExecutionContext<'_>,
     open_files: &mut OpenFiles,
     cmd_name: &str,
-    args: &[String],
+    args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult, error::Error> {
     let mut cmd = process::Command::new(cmd_name);
 
     // Pass through args.
     for arg in args {
-        cmd.arg(arg);
+        if let CommandArg::String(s) = arg {
+            cmd.arg(s);
+        }
     }
 
     // Use the shell's current working dir.
@@ -971,12 +1082,13 @@ async fn execute_external_command(
 async fn execute_builtin_command<'a>(
     builtin: builtin::BuiltinCommandExecuteFunc,
     context: &'a mut PipelineExecutionContext<'_>,
-    args: Vec<String>,
+    builtin_name: String,
+    args: Vec<CommandArg>,
     _env_vars: Vec<(String, ShellValue)>,
 ) -> Result<SpawnResult, error::Error> {
     let builtin_context = builtin::BuiltinExecutionContext {
         shell: context.shell,
-        builtin_name: args[0].clone(),
+        builtin_name,
     };
 
     let exit_code = match builtin(builtin_context, args).await {
@@ -1003,7 +1115,7 @@ async fn execute_builtin_command<'a>(
 async fn invoke_shell_function(
     context: &mut PipelineExecutionContext<'_>,
     cmd_name: &str,
-    args: &[String],
+    args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult, error::Error> {
     // TODO: We should figure out how to avoid cloning.
@@ -1020,7 +1132,7 @@ async fn invoke_shell_function(
 
     // Temporarily replace positional parameters.
     let prior_positional_params = std::mem::take(&mut context.shell.positional_parameters);
-    context.shell.positional_parameters = args.to_owned();
+    context.shell.positional_parameters = args.iter().map(|a| a.to_string()).collect();
 
     // Note that we're going deeper.
     context.shell.enter_function();

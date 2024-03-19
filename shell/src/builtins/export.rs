@@ -36,7 +36,7 @@ impl BuiltinCommand for ExportCommand {
                 if let Some((name, value)) = name.split_once('=') {
                     context.shell.env.update_or_add(
                         name,
-                        variables::ScalarOrArray::Scalar(value.to_owned()),
+                        variables::ShellValueLiteral::Scalar(value.to_owned()),
                         |var| {
                             var.export();
                             Ok(())

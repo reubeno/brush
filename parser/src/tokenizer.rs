@@ -30,7 +30,7 @@ impl Display for SourcePosition {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct TokenLocation {
     pub start: SourcePosition,
     pub end: SourcePosition,

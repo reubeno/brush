@@ -205,7 +205,7 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
                 .env
                 .update_or_add(
                     name.as_str(),
-                    variables::ScalarOrArray::Scalar(value.to_string()),
+                    variables::ShellValueLiteral::Scalar(value.to_string()),
                     |_| Ok(()),
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,

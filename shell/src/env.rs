@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 use crate::error;
-use crate::variables::{self, ShellValue, ShellVariable};
+use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
 
 #[derive(Clone, Copy)]
 pub enum EnvironmentLookup {
@@ -99,7 +99,11 @@ impl ShellEnvironment {
     }
 
     pub fn is_set(&self, name: &str) -> bool {
-        self.get(name).is_some()
+        if let Some(var) = self.get(name) {
+            !matches!(var.value(), ShellValue::Unset(_))
+        } else {
+            false
+        }
     }
 
     //
@@ -151,40 +155,47 @@ impl ShellEnvironment {
     pub fn update_or_add<N: AsRef<str>>(
         &mut self,
         name: N,
-        value: variables::ScalarOrArray,
+        value: variables::ShellValueLiteral,
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
         if let Some(var) = self.get_mut_using_policy(name.as_ref(), lookup_policy) {
             var.assign(value, false)?;
-            updater(var)?;
+            updater(var)
         } else {
-            match scope_if_creating {
-                EnvironmentScope::Local => {
-                    if let Some(map) = self.locals_stack.last_mut() {
-                        let var = map.set(name.as_ref(), value);
-                        updater(var)?;
-                    } else {
-                        return Err(error::Error::SetLocalVarOutsideFunction);
-                    }
-                }
-                EnvironmentScope::Global => {
-                    let var = self.set_global(name.as_ref(), value);
-                    updater(var)?;
-                }
-            };
+            let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
+            var.assign(value, false)?;
+            updater(&mut var)?;
+
+            self.add(name, var, scope_if_creating)
         }
+    }
+
+    pub fn add<N: AsRef<str>>(
+        &mut self,
+        name: N,
+        var: ShellVariable,
+        scope: EnvironmentScope,
+    ) -> Result<(), error::Error> {
+        match scope {
+            EnvironmentScope::Local => {
+                if let Some(map) = self.locals_stack.last_mut() {
+                    map.set(name.as_ref(), var);
+                } else {
+                    return Err(error::Error::SetLocalVarOutsideFunction);
+                }
+            }
+            EnvironmentScope::Global => {
+                self.set_global(name.as_ref(), var);
+            }
+        };
 
         Ok(())
     }
 
-    pub fn set_global<N: AsRef<str>, V: Into<ShellValue>>(
-        &mut self,
-        name: N,
-        value: V,
-    ) -> &mut ShellVariable {
-        self.globals.set(name, value)
+    pub fn set_global<N: AsRef<str>>(&mut self, name: N, var: ShellVariable) {
+        self.globals.set(name, var);
     }
 }
 
@@ -224,14 +235,7 @@ impl ShellVariableMap {
         self.variables.remove(name).is_some()
     }
 
-    pub fn set<N: AsRef<str>, V: Into<ShellValue>>(
-        &mut self,
-        name: N,
-        value: V,
-    ) -> &mut ShellVariable {
-        self.variables
-            .insert(name.as_ref().to_owned(), ShellVariable::new(value.into()));
-
-        self.variables.get_mut(name.as_ref()).unwrap()
+    pub fn set<N: AsRef<str>>(&mut self, name: N, var: ShellVariable) {
+        self.variables.insert(name.as_ref().to_owned(), var);
     }
 }
