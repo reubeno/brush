@@ -42,7 +42,6 @@ cases:
       declare -p var
 
   - name: "Appending item to array"
-    known_failure: true
     stdin: |
       var=(a b c)
       var+=d

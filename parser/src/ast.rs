@@ -226,7 +226,15 @@ impl Display for CompoundList {
                 writeln!(f)?;
             }
 
-            write!(f, "{}", item)?;
+            // Write the and-or list.
+            write!(f, "{}", item.0)?;
+
+            // Write the separator... unless we're on the list item and it's a ';'.
+            if i == self.0.len() - 1 && matches!(item.1, SeparatorOperator::Sequence) {
+                // Skip
+            } else {
+                write!(f, "{}", item.1)?;
+            }
         }
 
         Ok(())
@@ -316,7 +324,7 @@ pub struct FunctionDefinition {
 
 impl Display for FunctionDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{} ()", self.fname)?;
+        writeln!(f, "{} () ", self.fname)?;
         write!(f, "{}", self.body)?;
         Ok(())
     }
@@ -341,7 +349,7 @@ pub struct BraceGroupCommand(pub CompoundList);
 
 impl Display for BraceGroupCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{{")?;
+        writeln!(f, "{{ ")?;
         write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", self.0)?;
         writeln!(f)?;
         write!(f, "}}")?;
