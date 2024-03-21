@@ -124,11 +124,7 @@ impl<'a> WordExpander<'a> {
     }
 
     fn split_fields(&self, pieces: Vec<ExpandedWordPiece>) -> Vec<WordField> {
-        let ifs = self
-            .shell
-            .env
-            .get("IFS")
-            .map_or_else(|| " \t\n".to_owned(), |v| String::from(v.value()));
+        let ifs = self.shell.get_ifs();
 
         let mut fields: Vec<WordField> = vec![];
         let mut current_field: WordField = vec![];
@@ -507,9 +503,17 @@ impl<'a> WordExpander<'a> {
         parameter: &parser::word::SpecialParameter,
     ) -> Result<String, error::Error> {
         match parameter {
-            parser::word::SpecialParameter::AllPositionalParameters { concatenate: _ } => {
-                // TODO: implement concatenate policy
-                Ok(self.shell.positional_parameters.join(" "))
+            parser::word::SpecialParameter::AllPositionalParameters { concatenate } => {
+                if *concatenate {
+                    let separator = self.shell.get_ifs().chars().next().unwrap_or(' ');
+                    Ok(self
+                        .shell
+                        .positional_parameters
+                        .join(separator.to_string().as_str()))
+                } else {
+                    // TODO: implement concatenate policy
+                    Ok(self.shell.positional_parameters.join(" "))
+                }
             }
             parser::word::SpecialParameter::PositionalParameterCount => {
                 Ok(self.shell.positional_parameters.len().to_string())

@@ -9,12 +9,20 @@ cases:
           echo "AT-SIGN VALUE: '$@'"
           echo "STAR VALUE: '$*'"
 
+          for arg in $@; do
+              echo "AT-SIGN ELEMENT: '${arg}'"
+          done
+
+          for arg in $*; do
+              echo "STAR ELEMENT: '${arg}'"
+          done
+
           for arg in "$@"; do
-            echo "AT-SIGN ELEMENT: '${arg}'"
+            echo "DOUBLE-QUOTED AT-SIGN ELEMENT: '${arg}'"
           done
 
           for arg in "$*"; do
-            echo "STAR ELEMENT: '${arg}'"
+            echo "DOUBLE-QUOTED STAR ELEMENT: '${arg}'"
           done
       }
 

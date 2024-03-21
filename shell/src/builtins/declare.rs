@@ -210,11 +210,13 @@ impl BuiltinCommand for DeclareCommand {
                         return Ok(BuiltinExitCode::Unimplemented);
                     }
 
-                    self.apply_attributes(var)?;
+                    self.apply_attributes_before_update(var)?;
 
                     if let Some(initial_value) = initial_value {
                         var.assign(initial_value, false)?;
                     }
+
+                    self.apply_attributes_after_update(var)?;
                 } else {
                     let unset_type = if self.make_indexed_array.is_some() {
                         ShellValueUnsetType::IndexedArray
@@ -225,11 +227,14 @@ impl BuiltinCommand for DeclareCommand {
                     };
 
                     let mut var = ShellVariable::new(ShellValue::Unset(unset_type));
-                    self.apply_attributes(&mut var)?;
+
+                    self.apply_attributes_before_update(&mut var)?;
 
                     if let Some(initial_value) = initial_value {
                         var.assign(initial_value, false)?;
                     }
+
+                    self.apply_attributes_after_update(&mut var)?;
 
                     context.shell.env.add(name, var, scope)?;
                 }
@@ -323,7 +328,7 @@ impl BuiltinCommand for DeclareCommand {
 }
 
 impl DeclareCommand {
-    fn apply_attributes(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
+    fn apply_attributes_before_update(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
         if let Some(value) = self.make_integer.to_bool() {
             if value {
                 var.treat_as_integer();
@@ -345,13 +350,6 @@ impl DeclareCommand {
             if value {
                 log::error!("UNIMPLEMENTED: declare -n: make nameref");
                 return Err(error::Error::Unimplemented("declare with nameref"));
-            }
-        }
-        if let Some(value) = self.make_readonly.to_bool() {
-            if value {
-                var.set_readonly();
-            } else {
-                var.unset_readonly();
             }
         }
         if let Some(value) = self.make_traced.to_bool() {
@@ -376,6 +374,19 @@ impl DeclareCommand {
                 var.export();
             } else {
                 var.unexport();
+            }
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn apply_attributes_after_update(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
+        if let Some(value) = self.make_readonly.to_bool() {
+            if value {
+                var.set_readonly();
+            } else {
+                var.unset_readonly();
             }
         }
 

@@ -23,6 +23,9 @@ pub enum Error {
     #[error("failed to parse integer")]
     IntParseError(#[from] std::num::ParseIntError),
 
+    #[error("cannot mutate readonly variable")]
+    ReadonlyVariable,
+
     #[error("invalid pattern: '{0}'")]
     InvalidPattern(String),
 

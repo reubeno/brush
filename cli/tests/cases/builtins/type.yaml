@@ -45,7 +45,6 @@ cases:
     stdin: type -f ls
 
   - name: Test type with -a option and a function
-    known_failure: true
     stdin: |
       function myfunc() { echo "Hello, world!"; }
       type -a myfunc

@@ -120,6 +120,10 @@ impl ShellVariable {
     }
 
     pub fn assign(&mut self, value: ShellValueLiteral, append: bool) -> Result<(), error::Error> {
+        if self.is_readonly() {
+            return Err(error::Error::ReadonlyVariable);
+        }
+
         if append {
             // If we're trying to append an array to a string, we first promote the string to be an array
             // with the string being present at index 0.
@@ -150,7 +154,9 @@ impl ShellVariable {
                     }
                 },
                 ShellValue::IndexedArray(existing_values) => match value {
-                    ShellValueLiteral::Scalar(_) => error::unimp("appending scalar to array"),
+                    ShellValueLiteral::Scalar(new_value) => {
+                        self.assign_at_index("0", new_value.as_str(), append)
+                    }
                     ShellValueLiteral::Array(new_values) => {
                         let mut new_key =
                             if let Some((largest_index, _)) = existing_values.last_key_value() {
@@ -229,10 +235,6 @@ impl ShellVariable {
         value: &str,
         append: bool,
     ) -> Result<(), error::Error> {
-        if append {
-            return error::unimp("appending during assignment through index");
-        }
-
         match &self.value {
             ShellValue::Unset(_) => {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
@@ -243,14 +245,34 @@ impl ShellVariable {
             _ => (),
         }
 
+        let treat_as_int = self.is_treated_as_integer();
+
         match &mut self.value {
             ShellValue::IndexedArray(arr) => {
                 let key: u64 = array_index.parse().unwrap_or(0);
-                arr.insert(key, value.to_owned());
+
+                if append {
+                    let existing_value = arr.get(&key);
+
+                    if treat_as_int {
+                        return error::unimp("append-assignment to int element of indexed array");
+                    } else {
+                        let mut new_value = existing_value.map_or_else(String::new, |v| v.clone());
+                        new_value.push_str(value);
+                        arr.insert(key, new_value);
+                    }
+                } else {
+                    arr.insert(key, value.to_owned());
+                }
+
                 Ok(())
             }
             ShellValue::AssociativeArray(arr) => {
-                arr.insert(array_index.to_owned(), value.to_owned());
+                if append {
+                    return error::unimp("append-assignment to index of associative array");
+                } else {
+                    arr.insert(array_index.to_owned(), value.to_owned());
+                }
                 Ok(())
             }
             _ => {

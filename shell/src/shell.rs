@@ -366,7 +366,14 @@ impl Shell {
         }
 
         let result = match parse_result {
-            Ok(prog) => self.run_program(prog, capture_output).await?,
+            Ok(prog) => match self.run_program(prog, capture_output).await {
+                Ok(result) => result,
+                Err(e) => {
+                    log::error!("error: {:#}", e);
+                    self.last_exit_status = 1;
+                    ExecutionResult::new(1)
+                }
+            },
             Err(parser::ParseError::ParsingNearToken(token_near_error)) => {
                 let error_loc = &token_near_error.location().start;
 
@@ -484,6 +491,12 @@ impl Shell {
             let histfile_str: String = (var.value()).into();
             PathBuf::from(histfile_str)
         })
+    }
+
+    pub fn get_ifs(&self) -> String {
+        self.env
+            .get("IFS")
+            .map_or_else(|| " \t\n".to_owned(), |v| String::from(v.value()))
     }
 
     #[allow(clippy::cast_sign_loss)]

@@ -16,7 +16,7 @@ cases:
       echo $num
 
   - name: "Declare readonly variable"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       declare -r var="readonly"
       echo $var
