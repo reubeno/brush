@@ -54,3 +54,18 @@ cases:
       var+=(a b c)
       echo "var[*]: ${var[*]}"
       declare -p var
+
+  - name: "Fill associative array"
+    stdin: |
+      declare -Ag myarray
+
+      myfunc() {
+          local myarg=$1 element
+          shift
+          for element in "$@"; do
+              echo "Setting: myarray[$element]=$myarg"
+              myarray[$element]="${myarg}${element}"
+          done
+      }
+
+      myfunc 'first' bunzip2 bzcat pbunzip2 pbzcat lbunzip2 lbzcat

@@ -18,7 +18,9 @@ use crate::error;
 use crate::expansion;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
-use crate::variables::{ArrayLiteral, ShellValue, ShellValueLiteral, ShellVariable};
+use crate::variables::{
+    ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
+};
 use crate::{builtin, builtins};
 use crate::{extendedtests, patterns};
 
@@ -815,27 +817,15 @@ async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
 ) -> Result<(), error::Error> {
-    // Figure out if this is a variable or an array element.
-    let array_index;
-    let evaled_array_index;
+    // Figure out if we are trying to assign to a variable or assign to an element of an existing array.
+    let mut array_index;
     let variable_name = match &assignment.name {
         ast::AssignmentName::VariableName(name) => {
             array_index = None;
-            evaled_array_index = None;
             name
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
             let expanded = expansion::basic_expand_word_str(shell, index).await?;
-
-            // TODO: We should not always eval.
-            evaled_array_index = Some(
-                ast::UnexpandedArithmeticExpr {
-                    value: expanded.clone(),
-                }
-                .eval(shell)
-                .await,
-            );
-
             array_index = Some(expanded);
             name
         }
@@ -862,16 +852,26 @@ async fn apply_assignment(
         }
     };
 
+    // See if we need to eval an array index.
+    if let Some(idx) = &array_index {
+        if let Some(existing_value) = shell.env.get(variable_name.as_str()) {
+            if matches!(
+                existing_value.value(),
+                ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
+            ) {
+                array_index = Some(
+                    ast::UnexpandedArithmeticExpr { value: idx.clone() }
+                        .eval(shell)
+                        .await?
+                        .to_string(),
+                );
+            }
+        }
+    }
+
     // See if we can find an existing value associated with the variable.
     if let Some(existing_value) = shell.env.get_mut(variable_name.as_str()) {
         if let Some(array_index) = array_index {
-            let array_index = if !matches!(existing_value.value(), ShellValue::AssociativeArray(_))
-            {
-                array_index
-            } else {
-                evaled_array_index.unwrap()?.to_string()
-            };
-
             match new_value {
                 ShellValueLiteral::Scalar(s) => {
                     existing_value.assign_at_index(

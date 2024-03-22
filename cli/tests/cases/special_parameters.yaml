@@ -1,7 +1,6 @@
 name: "Special parameters"
 cases:
   - name: "$@ and $*"
-    known_failure: true
     stdin: |
       function myfunc() {
           echo "--myfunc called--"

@@ -32,10 +32,11 @@ pub(crate) async fn full_expand_and_split_word(
         .await
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum ExpandedWordPiece {
     Unsplittable(String),
     Splittable(String),
+    Separator,
 }
 
 impl ExpandedWordPiece {
@@ -43,6 +44,7 @@ impl ExpandedWordPiece {
         match self {
             ExpandedWordPiece::Unsplittable(s) => s.as_str(),
             ExpandedWordPiece::Splittable(s) => s.as_str(),
+            ExpandedWordPiece::Separator => "",
         }
     }
 
@@ -50,6 +52,7 @@ impl ExpandedWordPiece {
         match self {
             ExpandedWordPiece::Unsplittable(s) => s,
             ExpandedWordPiece::Splittable(s) => s,
+            ExpandedWordPiece::Separator => String::new(),
         }
     }
 }
@@ -85,12 +88,11 @@ impl<'a> WordExpander<'a> {
 
         let mut expanded_pieces = vec![];
         for piece in pieces {
-            expanded_pieces.push(self.expand_word_piece(&piece).await?);
+            let mut next_expanded_pieces = self.expand_word_piece(&piece).await?;
+            expanded_pieces.append(&mut next_expanded_pieces);
         }
 
-        let expanded_pieces = coalesce_expanded_pieces(expanded_pieces);
-
-        Ok(expanded_pieces)
+        Ok(coalesce_expanded_pieces(expanded_pieces))
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -129,9 +131,16 @@ impl<'a> WordExpander<'a> {
         let mut fields: Vec<WordField> = vec![];
         let mut current_field: WordField = vec![];
 
+        // Go through all the already-expanded pieces in this word.
         for piece in pieces {
             match piece {
                 ExpandedWordPiece::Unsplittable(_) => current_field.push(piece),
+                ExpandedWordPiece::Separator => {
+                    if !current_field.is_empty() {
+                        fields.push(current_field);
+                        current_field = vec![];
+                    }
+                }
                 ExpandedWordPiece::Splittable(_) => {
                     for c in piece.as_str().chars() {
                         if ifs.contains(c) {
@@ -146,6 +155,7 @@ impl<'a> WordExpander<'a> {
                                     current_field
                                         .push(ExpandedWordPiece::Splittable(c.to_string()));
                                 }
+                                _ => unreachable!(),
                             }
                         }
                     }
@@ -204,6 +214,7 @@ impl<'a> WordExpander<'a> {
                         _ => Ok(vec![pattern]),
                     }
                 }
+                ExpandedWordPiece::Separator => Ok(vec![]),
             }
         }
     }
@@ -224,25 +235,85 @@ impl<'a> WordExpander<'a> {
     async fn expand_word_piece(
         &mut self,
         word_piece: &parser::word::WordPiece,
-    ) -> Result<ExpandedWordPiece, error::Error> {
+    ) -> Result<Vec<ExpandedWordPiece>, error::Error> {
         let expansion = match word_piece {
-            parser::word::WordPiece::Text(t) => ExpandedWordPiece::Splittable(t.clone()),
+            parser::word::WordPiece::Text(t) => vec![ExpandedWordPiece::Splittable(t.clone())],
             parser::word::WordPiece::SingleQuotedText(t) => {
-                ExpandedWordPiece::Unsplittable(t.clone())
+                vec![ExpandedWordPiece::Unsplittable(t.clone())]
             }
             parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
-                let mut expanded_pieces = String::new();
+                let mut results = vec![];
                 for piece in pieces {
-                    expanded_pieces.push_str(self.expand_word_piece(piece).await?.as_str());
+                    // Expand the piece, and concatenate its raw string contents.
+                    let inner_expanded_pieces = self.expand_word_piece(piece).await?;
+                    for (i, expanded_piece) in inner_expanded_pieces.into_iter().enumerate() {
+                        if matches!(expanded_piece, ExpandedWordPiece::Separator) {
+                            results.push(ExpandedWordPiece::Separator);
+                        } else if i == 0 {
+                            let next_str = expanded_piece.as_str();
+                            match results.last_mut() {
+                                Some(ExpandedWordPiece::Unsplittable(s)) => s.push_str(next_str),
+                                None => results
+                                    .push(ExpandedWordPiece::Unsplittable(next_str.to_owned())),
+                                Some(_) => unreachable!(),
+                            }
+                        } else {
+                            let next_str = expanded_piece.as_str();
+                            results.push(ExpandedWordPiece::Unsplittable(next_str.to_owned()));
+                        }
+                    }
                 }
-                ExpandedWordPiece::Unsplittable(expanded_pieces)
+
+                results
             }
             parser::word::WordPiece::TildePrefix(prefix) => {
-                ExpandedWordPiece::Splittable(self.expand_tilde_expression(prefix)?)
+                vec![ExpandedWordPiece::Splittable(
+                    self.expand_tilde_expression(prefix)?,
+                )]
             }
-            parser::word::WordPiece::ParameterExpansion(p) => {
-                ExpandedWordPiece::Splittable(self.expand_parameter_expr(p).await?)
-            }
+            parser::word::WordPiece::ParameterExpansion(p) => match p {
+                parser::word::ParameterExpr::Parameter {
+                    parameter:
+                        parser::word::Parameter::Special(
+                            parser::word::SpecialParameter::AllPositionalParameters {
+                                concatenate: false,
+                            },
+                        ),
+                } => {
+                    let result = self
+                        .shell
+                        .positional_parameters
+                        .iter()
+                        .map(|p| ExpandedWordPiece::Splittable(p.to_owned()));
+
+                    itertools::Itertools::intersperse(result, ExpandedWordPiece::Separator)
+                        .collect()
+                }
+                parser::word::ParameterExpr::Parameter {
+                    parameter:
+                        parser::word::Parameter::NamedWithAllIndices {
+                            name,
+                            concatenate: false,
+                        },
+                } => match self.shell.env.get(name) {
+                    Some(var) => {
+                        let result = var
+                            .value()
+                            .get_all_elements()?
+                            .into_iter()
+                            .map(ExpandedWordPiece::Splittable);
+
+                        itertools::Itertools::intersperse(result, ExpandedWordPiece::Separator)
+                            .collect()
+                    }
+                    None => vec![],
+                },
+                _ => {
+                    vec![ExpandedWordPiece::Splittable(
+                        self.expand_parameter_expr(p).await?,
+                    )]
+                }
+            },
             parser::word::WordPiece::CommandSubstitution(s) => {
                 let exec_result = self.shell.run_string(s.as_str(), true).await?;
                 let exec_output = exec_result.output;
@@ -256,13 +327,17 @@ impl<'a> WordExpander<'a> {
                 // We trim trailing newlines, per spec.
                 let exec_output = exec_output.trim_end_matches('\n');
 
-                ExpandedWordPiece::Splittable(exec_output.to_owned())
+                vec![ExpandedWordPiece::Splittable(exec_output.to_owned())]
             }
             parser::word::WordPiece::EscapeSequence(s) => {
-                ExpandedWordPiece::Unsplittable(s.strip_prefix('\\').unwrap().to_owned())
+                vec![ExpandedWordPiece::Unsplittable(
+                    s.strip_prefix('\\').unwrap().to_owned(),
+                )]
             }
             parser::word::WordPiece::ArithmeticExpression(e) => {
-                ExpandedWordPiece::Splittable(self.expand_arithmetic_expr(e).await?)
+                vec![ExpandedWordPiece::Splittable(
+                    self.expand_arithmetic_expr(e).await?,
+                )]
             }
         };
 
@@ -489,12 +564,13 @@ impl<'a> WordExpander<'a> {
                     None => Ok(String::new()),
                 }
             }
-            parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
-                match self.shell.env.get(name) {
-                    Some(var) => var.value().get_all(*concatenate),
-                    None => Ok(String::new()),
-                }
-            }
+            parser::word::Parameter::NamedWithAllIndices {
+                name,
+                concatenate: _concatenate,
+            } => match self.shell.env.get(name) {
+                Some(var) => var.value().get_all(),
+                None => Ok(String::new()),
+            },
         }
     }
 
@@ -561,6 +637,9 @@ fn coalesce_expanded_pieces(pieces: Vec<ExpandedWordPiece>) -> Vec<ExpandedWordP
                 } else {
                     acc.push(ExpandedWordPiece::Splittable(s));
                 }
+            }
+            ExpandedWordPiece::Separator => {
+                acc.push(ExpandedWordPiece::Separator);
             }
         }
         acc
