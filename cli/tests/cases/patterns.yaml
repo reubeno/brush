@@ -4,12 +4,14 @@ cases:
     stdin: "echo file1.txt"
 
   - name: "Multiple file expansion"
-    stdin: "echo *.txt"
     files:
       - name: "file1.txt"
         content: "This is file1"
       - name: "file2.txt"
         content: "This is file2"
+    stdin: |
+      echo *.txt
+      echo *."txt"
 
   - name: "Nested directory expansion"
     stdin: "echo dir/*"
