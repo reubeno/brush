@@ -44,6 +44,26 @@ cases:
       x="abc"
       echo "len = ${#x}"
 
+  - name: "Array access"
+    stdin: |
+      y=(a b c)
+
+      for f in "${y[@]}"; do
+          echo "quoted-@ => Element: $f"
+      done
+
+      for f in ${y[@]}; do
+          echo "@ => Element: $f"
+      done
+
+      for f in "${y[*]}"; do
+          echo "quoted-* => Element: $f"
+      done
+
+      for f in ${y[*]}; do
+          echo "* => Element: $f"
+      done
+
   - name: "Array length"
     known_failure: true
     stdin: |

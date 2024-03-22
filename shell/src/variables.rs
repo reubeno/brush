@@ -165,7 +165,11 @@ impl ShellVariable {
                                 0
                             };
 
-                        for (_key, value) in new_values.0 {
+                        for (key, value) in new_values.0 {
+                            if let Some(key) = key {
+                                new_key = key.parse().unwrap_or(0);
+                            }
+
                             // TODO: do something with the key!
                             existing_values.insert(new_key, value);
                             new_key += 1;
@@ -432,8 +436,20 @@ impl ShellValue {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    pub fn get_all(&self, _concatenate: bool) -> Result<String, error::Error> {
-        // TODO: implement concatenate (or not)
+    pub fn get_all_elements(&self) -> Result<Vec<String>, error::Error> {
+        let result = match self {
+            ShellValue::Unset(_) => vec![],
+            ShellValue::String(s) => vec![s.to_owned()],
+            ShellValue::AssociativeArray(arr) => arr.values().map(|s| s.to_owned()).collect(),
+            ShellValue::IndexedArray(arr) => arr.values().map(|s| s.to_owned()).collect(),
+            ShellValue::Random => vec![get_random_str()],
+        };
+
+        Ok(result)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn get_all(&self) -> Result<String, error::Error> {
         match self {
             ShellValue::Unset(_) => Ok(String::new()),
             ShellValue::String(s) => Ok(s.to_owned()),
