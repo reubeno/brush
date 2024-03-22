@@ -184,8 +184,8 @@ impl<'a> WordExpander<'a> {
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
         // Expand only items marked splittable.
         let expansion_candidates = field.into_iter().map(|piece| match piece {
-            ExpandedWordPiece::Unsplittable(s) => self.expand_pathnames_in_string(s),
-            ExpandedWordPiece::Splittable(s) => vec![s],
+            ExpandedWordPiece::Unsplittable(s) => vec![s],
+            ExpandedWordPiece::Splittable(s) => self.expand_pathnames_in_string(s),
             ExpandedWordPiece::Separator => vec![],
         });
 
