@@ -8,6 +8,10 @@ pub(crate) fn pattern_expand(
     pattern: &str,
     working_dir: &Path,
 ) -> Result<Vec<PathBuf>, error::Error> {
+    if pattern.is_empty() {
+        return Ok(vec![]);
+    }
+
     // Workaround to deal with effective working directory being different from
     // the actual process's working directory.
     let prefix_to_remove;

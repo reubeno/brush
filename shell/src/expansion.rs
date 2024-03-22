@@ -114,7 +114,7 @@ impl<'a> WordExpander<'a> {
                 if self.shell.options.disable_filename_globbing {
                     self.unquote_field_as_vec(field)
                 } else {
-                    self.expand_pathnames(field)
+                    Ok(self.expand_pathnames_in_field(field))
                 }
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -181,41 +181,28 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::unused_self)]
-    #[allow(clippy::unnecessary_wraps)]
-    fn expand_pathnames(&self, mut field: WordField) -> Result<Vec<String>, error::Error> {
-        // TODO: handle pathnames with mixed quotes/non-quotes
-        if field.len() != 1 {
-            for piece in &field {
-                if let ExpandedWordPiece::Splittable(pattern) = piece {
-                    if pattern.contains(|c| {
-                        c == '*' || c == '?' || c == '[' || c == ']' || c == '{' || c == '}'
-                    }) {
-                        log::error!(
-                            "UNIMPLEMENTED: pathname expansion with multiple pieces: {field:?}"
-                        );
-                    }
-                }
-            }
+    fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
+        // Expand only items marked splittable.
+        let expansion_candidates = field.into_iter().map(|piece| match piece {
+            ExpandedWordPiece::Unsplittable(s) => self.expand_pathnames_in_string(s),
+            ExpandedWordPiece::Splittable(s) => vec![s],
+            ExpandedWordPiece::Separator => vec![],
+        });
 
-            self.unquote_field_as_vec(field)
-        } else {
-            match field.remove(0) {
-                ExpandedWordPiece::Unsplittable(s) => Ok(vec![s]),
-                ExpandedWordPiece::Splittable(pattern) => {
-                    match patterns::pattern_expand(
-                        pattern.as_str(),
-                        self.shell.working_dir.as_path(),
-                    ) {
-                        Ok(expanded) if !expanded.is_empty() => Ok(expanded
-                            .into_iter()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .collect()),
-                        _ => Ok(vec![pattern]),
-                    }
-                }
-                ExpandedWordPiece::Separator => Ok(vec![]),
-            }
+        // Now generate the cartesian product of all the expansions.
+        itertools::Itertools::multi_cartesian_product(expansion_candidates)
+            .map(|v| v.join(""))
+            .collect()
+    }
+
+    #[allow(clippy::unused_self)]
+    fn expand_pathnames_in_string(&self, pattern: String) -> Vec<String> {
+        match patterns::pattern_expand(pattern.as_str(), self.shell.working_dir.as_path()) {
+            Ok(expanded) if !expanded.is_empty() => expanded
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+            _ => vec![pattern],
         }
     }
 
