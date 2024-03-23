@@ -63,3 +63,21 @@ cases:
       declare var2=""
       declare -p var2
       [[ -v var2 ]] && echo "3: Variable is set"
+
+  - name: "Displaying local vars"
+    stdin: |
+      function test {
+          echo "Dumping local variables (should be empty)"
+          local -p
+
+          local -i int_var=10
+          local -A assoc_array=(["x1"]=1 ["x2"]=2)
+          local -a array=(a b c)
+          local -r ro_var="readonly"
+          local -t traced="value"
+
+          echo "Dump all variables"
+          local -p
+      }
+
+      test

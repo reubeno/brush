@@ -69,3 +69,21 @@ cases:
       }
 
       myfunc 'first' bunzip2 bzcat pbunzip2 pbzcat lbunzip2 lbzcat
+
+  - name: "Declare via array index"
+    known_failure: true
+    stdin: |
+      declare -A assoc_array["key"]="value"
+      declare -p assoc_array
+
+      declare -a indexed_array[5]="value"
+      declare -p indexed_array
+
+      declare implicit_array[5]="value"
+      declare -p implicit_array
+
+      declare -A no_value_assoc_array["key"]
+      declare -p no_value_assoc_array
+
+      declare no_value_indexed_array[33]
+      declare -p no_value_indexed_array

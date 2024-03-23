@@ -6,4 +6,11 @@ workspace_root="$(realpath "${script_dir}/..")"
 
 cd "${workspace_root}"
 source <(cargo llvm-cov show-env --export-prefix)
-cargo llvm-cov test --workspace --html -- --show-output
+
+cargo llvm-cov clean --workspace
+
+cargo build
+
+cargo test -- --show-output
+
+cargo llvm-cov report --html

@@ -1,0 +1,23 @@
+name: "Builtins: dot"
+cases:
+  - name: "Basic dot usage"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In sourced script"
+          var="updated"
+    stdin: |
+      var="orig"
+      . script.sh
+      echo "var: ${var}"
+
+  - name: "Basic source usage"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In sourced script"
+          var="updated"
+    stdin: |
+      var="orig"
+      source script.sh
+      echo "var: ${var}"

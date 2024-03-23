@@ -583,8 +583,11 @@ impl Shell {
             vec![]
         };
 
+        // If this appears to be the command token (and if there's *some* prefix without
+        // a path separator) then also consider whether we should search the path for
+        // completions too.
         // TODO: Do a better job than just checking if index == 0.
-        if token_index == 0 && !prefix.is_empty() {
+        if token_index == 0 && !prefix.is_empty() && !prefix.contains('/') {
             let glob_pattern = std::format!("{prefix}*");
 
             for path in self.find_executables_in_path(&glob_pattern) {
