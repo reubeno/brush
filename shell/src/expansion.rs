@@ -488,7 +488,7 @@ impl<'a> WordExpander<'a> {
                         Ok(result)
                     }
                     parser::word::ParameterTransformOp::CapitalizeInitial => {
-                        error::unimp("parameter transformation: CapitalizeInitial")
+                        Ok(to_initial_capitals(expanded_parameter.as_str()))
                     }
                     parser::word::ParameterTransformOp::ExpandEscapeSequences => {
                         error::unimp("parameter transformation: ExpandEscapeSequences")
@@ -506,10 +506,10 @@ impl<'a> WordExpander<'a> {
                         error::unimp("parameter transformation: ToAttributeFlags")
                     }
                     parser::word::ParameterTransformOp::ToLowerCase => {
-                        error::unimp("parameter transformation: ToLowerCase")
+                        Ok(expanded_parameter.to_lowercase())
                     }
                     parser::word::ParameterTransformOp::ToUpperCase => {
-                        error::unimp("parameter transformation: ToUpperCase")
+                        Ok(expanded_parameter.to_uppercase())
                     }
                 }
             }
@@ -631,4 +631,23 @@ fn coalesce_expanded_pieces(pieces: Vec<ExpandedWordPiece>) -> Vec<ExpandedWordP
         }
         acc
     })
+}
+
+fn to_initial_capitals(s: &str) -> String {
+    let mut result = String::new();
+    let mut capitalize_next = true;
+
+    for c in s.chars() {
+        if c.is_whitespace() {
+            capitalize_next = true;
+            result.push(c);
+        } else if capitalize_next {
+            result.push_str(c.to_uppercase().to_string().as_str());
+            capitalize_next = false;
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }

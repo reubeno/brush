@@ -51,19 +51,37 @@ impl ShellEnvironment {
     //
 
     pub fn iter(&self) -> impl Iterator<Item = (&String, &ShellVariable)> {
+        self.iter_using_policy(EnvironmentLookup::Anywhere)
+    }
+
+    pub fn iter_using_policy(
+        &self,
+        lookup_policy: EnvironmentLookup,
+    ) -> impl Iterator<Item = (&String, &ShellVariable)> {
         let mut visible_vars: HashMap<&String, &ShellVariable> = HashMap::new();
 
-        for var_map in self.locals_stack.iter().rev() {
-            for (name, var) in var_map.iter() {
-                if !visible_vars.contains_key(name) {
-                    visible_vars.insert(name, var);
+        if !matches!(lookup_policy, EnvironmentLookup::OnlyInGlobal) {
+            for var_map in self.locals_stack.iter().rev() {
+                for (name, var) in var_map.iter() {
+                    if !visible_vars.contains_key(name) {
+                        visible_vars.insert(name, var);
+                    }
+                }
+
+                if matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal) {
+                    break;
                 }
             }
         }
 
-        for (name, var) in self.globals.iter() {
-            if !visible_vars.contains_key(name) {
-                visible_vars.insert(name, var);
+        if matches!(
+            lookup_policy,
+            EnvironmentLookup::Anywhere | EnvironmentLookup::OnlyInGlobal
+        ) {
+            for (name, var) in self.globals.iter() {
+                if !visible_vars.contains_key(name) {
+                    visible_vars.insert(name, var);
+                }
             }
         }
 

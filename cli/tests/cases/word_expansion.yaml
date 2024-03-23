@@ -71,3 +71,10 @@ cases:
       echo "len(y)    = ${#y}"
       echo "len(y[*]) = ${#y[*]}"
       echo "len(y[@]) = ${#y[@]}"
+
+  - name: "Operator parameter expansion"
+    stdin: |
+      var="hElLo WoRlD"
+      echo "${var@U}"
+      echo "${var@u}"
+      echo "${var@L}"

@@ -261,7 +261,7 @@ peg::parser! {
             }
 
         rule non_posix_parameter_transformation_op() -> ParameterTransformOp =
-            // TODO: handle others: ${parameter@operator} where operator is in [Kak] -- where @ and * can be used as parameter
+            "U" { ParameterTransformOp::ToUpperCase } /
             "u" { ParameterTransformOp::CapitalizeInitial } /
             "L" { ParameterTransformOp::ToLowerCase } /
             "Q" { ParameterTransformOp::Quoted } /

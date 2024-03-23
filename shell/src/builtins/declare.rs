@@ -291,10 +291,16 @@ impl BuiltinCommand for DeclareCommand {
                 filters.push(Box::new(move |(_, v)| v.is_exported() == value));
             }
 
+            let iter_policy = if called_as_local {
+                EnvironmentLookup::OnlyInCurrentLocal
+            } else {
+                EnvironmentLookup::Anywhere
+            };
+
             for (name, variable) in context
                 .shell
                 .env
-                .iter()
+                .iter_using_policy(iter_policy)
                 .filter(|pair| filters.iter().all(|f| f(*pair)))
                 .sorted_by_key(|v| v.0)
             {
@@ -412,12 +418,12 @@ fn get_declare_flag_str(variable: &ShellVariable) -> String {
     if variable.is_treated_as_integer() {
         result.push('i');
     }
-    if let ShellVariableUpdateTransform::Lowercase = variable.get_update_transform() {
-        result.push('l');
-    }
     // TODO: nameref
     if variable.is_readonly() {
         result.push('r');
+    }
+    if let ShellVariableUpdateTransform::Lowercase = variable.get_update_transform() {
+        result.push('l');
     }
     if variable.is_trace_enabled() {
         result.push('t');

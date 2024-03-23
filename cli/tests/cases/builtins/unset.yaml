@@ -1,0 +1,32 @@
+name: "Builtins: unset"
+cases:
+  - name: "Basic unset usage"
+    stdin: |
+      var=value
+      unset var
+      echo "var: ${var}"
+
+  - name: "Unset multiple variables"
+    stdin: |
+      var1=value1
+      var2=value2
+      unset var1 var2
+      echo "var1: ${var1}, var2: ${var2}"
+
+  - name: "Unset function"
+    ignore_stderr: true
+    stdin: |
+      function myfunc() {
+        echo "Hello, world!"
+      }
+      unset myfunc
+      myfunc
+
+  - name: "Unset -f function"
+    ignore_stderr: true
+    stdin: |
+      function myfunc() {
+        echo "Hello, world!"
+      }
+      unset -f myfunc
+      myfunc
