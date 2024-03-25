@@ -14,9 +14,9 @@ workspace = true
 [dependencies]
 anyhow = "1.0.81"
 async-recursion = "1.1.0"
-async-trait = "0.1.78"
+async-trait = "0.1.79"
 brush-parser = { path = "../parser" }
-clap = { version = "4.5.2", features = ["derive"] }
+clap = { version = "4.5.3", features = ["derive"] }
 exec = "0.3.1"
 faccess = "0.2.4"
 futures = "0.3.30"
@@ -27,7 +27,7 @@ lazy_static = "1.4.0"
 log = "0.4.21"
 nix = { version = "0.28.0", features = ["fs"] }
 rand = "0.8.5"
-regex = "1.10.3"
+regex = "1.10.4"
 tempfile = "3.10.1"
 thiserror = "1.0.58"
 tokio = { version = "1.36.0", features = [
