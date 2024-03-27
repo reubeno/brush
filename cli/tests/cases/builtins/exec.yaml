@@ -1,0 +1,18 @@
+name: "Builtins: exec"
+cases:
+  - name: "Exec an invalid path"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      exec /some/nonexistent/path
+
+  - name: "Exec with no arguments"
+    stdin: |
+      pid=$$
+      exec
+      [[ "${pid}" == "$$" ]] || echo "PID changed"
+
+  - name: "Exec a command"
+    stdin: |
+      exec $0 -c 'echo "In child shell"'
+      echo "This is never reached"

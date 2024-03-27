@@ -182,7 +182,7 @@ peg::parser! {
 
         // TODO: Constrain syntax of parameter in brace-less form
         // TODO: Deal with fact that there may be a quoted word or escaped closing brace chars.
-        // TODO: Improve on ow we handle a '$' not followed by a valid variable name or parameter.
+        // TODO: Improve on how we handle a '$' not followed by a valid variable name or parameter.
         rule parameter_expansion() -> WordPiece =
             "${" e:parameter_expression() "}" {
                 WordPiece::ParameterExpansion(e)
@@ -238,9 +238,7 @@ peg::parser! {
             }
 
         rule non_posix_parameter_expression() -> ParameterExpr =
-            // TODO: Handle bash extensions:
-            //   ${parameter:offset}
-            //   ${parameter:offset:length}
+            // TODO: Handle additional bash extensions:
             //   ${!prefix*}
             //   ${!prefix@}
             //   ${!name[@]}

@@ -585,85 +585,83 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                     // Now peek beyond to see what we have.
                     let char_after_dollar_sign = self.peek_char()?;
-                    if let Some(cads) = char_after_dollar_sign {
-                        match cads {
-                            '(' => {
-                                // Add the '$' we already consumed to the token.
-                                state.append_char('$');
+                    match char_after_dollar_sign {
+                        Some('(') => {
+                            // Add the '$' we already consumed to the token.
+                            state.append_char('$');
 
-                                // Consume the '(' and add it to the token.
+                            // Consume the '(' and add it to the token.
+                            state.append_char(self.next_char()?.unwrap());
+
+                            // Check to see if this is possibly an arithmetic expression
+                            // (i.e., one that starts with `$((`).
+                            let mut required_end_parens = 1;
+                            if matches!(self.peek_char()?, Some('(')) {
+                                // Consume the second '(' and add it to the token.
                                 state.append_char(self.next_char()?.unwrap());
-
-                                // Check to see if this is possibly an arithmetic expression
-                                // (i.e., one that starts with `$((`).
-                                let mut required_end_parens = 1;
-                                if matches!(self.peek_char()?, Some('(')) {
-                                    // Consume the second '(' and add it to the token.
-                                    state.append_char(self.next_char()?.unwrap());
-                                    required_end_parens = 2;
-                                }
-
-                                let mut tokens = vec![];
-
-                                loop {
-                                    let cur_token = self.next_token_until(Some(')'))?;
-                                    if let Some(cur_token_value) = cur_token.token {
-                                        state.append_str(cur_token_value.to_str());
-                                        tokens.push(cur_token_value);
-                                    }
-
-                                    match cur_token.reason {
-                                        TokenEndReason::UnescapedNewLine
-                                        | TokenEndReason::NonNewLineBlank => {
-                                            state.append_char(' ');
-                                        }
-                                        TokenEndReason::SpecifiedTerminatingChar => {
-                                            // We hit the ')' we were looking for; consume and append it.
-                                            if required_end_parens == 2 {
-                                                state.append_char(self.next_char()?.unwrap());
-                                            }
-                                            required_end_parens -= 1;
-                                            if required_end_parens == 0 {
-                                                break;
-                                            }
-                                        }
-                                        _ => (),
-                                    }
-                                }
-
-                                state.append_char(self.next_char()?.unwrap());
+                                required_end_parens = 2;
                             }
 
-                            '{' => {
-                                // Add the '$' we already consumed to the token.
-                                state.append_char('$');
+                            let mut tokens = vec![];
 
-                                // Consume the '{' and add it to the token.
-                                state.append_char(self.next_char()?.unwrap());
+                            loop {
+                                let cur_token = self.next_token_until(Some(')'))?;
+                                if let Some(cur_token_value) = cur_token.token {
+                                    state.append_str(cur_token_value.to_str());
+                                    tokens.push(cur_token_value);
+                                }
 
-                                loop {
-                                    let cur_token = self.next_token_until(Some('}'))?;
-                                    if let Some(cur_token_value) = cur_token.token {
-                                        state.append_str(cur_token_value.to_str())
-                                    }
-
-                                    if cur_token.reason == TokenEndReason::NonNewLineBlank {
+                                match cur_token.reason {
+                                    TokenEndReason::UnescapedNewLine
+                                    | TokenEndReason::NonNewLineBlank => {
                                         state.append_char(' ');
                                     }
-
-                                    if cur_token.reason == TokenEndReason::SpecifiedTerminatingChar
-                                    {
-                                        // We hit the end brace we were looking for but did not
-                                        // yet consume it. Do so now.
-                                        state.append_char(self.next_char()?.unwrap());
-                                        break;
+                                    TokenEndReason::SpecifiedTerminatingChar => {
+                                        // We hit the ')' we were looking for; consume and append it.
+                                        if required_end_parens == 2 {
+                                            state.append_char(self.next_char()?.unwrap());
+                                        }
+                                        required_end_parens -= 1;
+                                        if required_end_parens == 0 {
+                                            break;
+                                        }
                                     }
+                                    _ => (),
                                 }
                             }
-                            _ => {
-                                // Add the '$' we already consumed to the token.
-                                state.append_char('$');
+
+                            state.append_char(self.next_char()?.unwrap());
+                        }
+
+                        Some('{') => {
+                            // Add the '$' we already consumed to the token.
+                            state.append_char('$');
+
+                            // Consume the '{' and add it to the token.
+                            state.append_char(self.next_char()?.unwrap());
+
+                            loop {
+                                let cur_token = self.next_token_until(Some('}'))?;
+                                if let Some(cur_token_value) = cur_token.token {
+                                    state.append_str(cur_token_value.to_str())
+                                }
+
+                                if cur_token.reason == TokenEndReason::NonNewLineBlank {
+                                    state.append_char(' ');
+                                }
+
+                                if cur_token.reason == TokenEndReason::SpecifiedTerminatingChar {
+                                    // We hit the end brace we were looking for but did not
+                                    // yet consume it. Do so now.
+                                    state.append_char(self.next_char()?.unwrap());
+                                    break;
+                                }
                             }
+                        }
+                        _ => {
+                            // This is either a different character, or else the end of the string.
+                            // Either way, add the '$' we already consumed to the token.
+                            state.append_char('$');
                         }
                     }
                 } else {
@@ -1064,6 +1062,31 @@ SOMETHING
             [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
                 t1.to_str() == "a$((1+2))b" &&
                 t2.to_str() == "c"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_special_parameters() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("$$")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "$$"
+        );
+        assert_matches!(
+            &tokenize_str("$@")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "$@"
+        );
+        assert_matches!(
+            &tokenize_str("$!")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "$!"
+        );
+        assert_matches!(
+            &tokenize_str("$?")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "$?"
+        );
+        assert_matches!(
+            &tokenize_str("$*")?[..],
+            [t1 @ Token::Word(_, _)] if t1.to_str() == "$*"
         );
         Ok(())
     }
