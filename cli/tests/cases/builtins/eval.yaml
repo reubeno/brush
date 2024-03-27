@@ -1,0 +1,5 @@
+name: "Builtins: eval"
+cases:
+  - name: "Basic eval usage"
+    stdin: |
+      eval 'echo 1 + 1 == $((1 + 1))'

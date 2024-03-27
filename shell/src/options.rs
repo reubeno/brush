@@ -124,6 +124,7 @@ pub struct RuntimeOptions {
     // Options set by the shell.
     //
     pub interactive: bool,
+    pub read_commands_from_stdin: bool,
 }
 
 impl RuntimeOptions {
@@ -131,6 +132,7 @@ impl RuntimeOptions {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {
             interactive: create_options.interactive,
+            read_commands_from_stdin: create_options.read_commands_from_stdin,
             posix_mode: create_options.posix,
             print_commands_and_arguments: create_options.print_commands_and_arguments,
             print_shell_input_lines: create_options.verbose,
@@ -143,6 +145,7 @@ impl RuntimeOptions {
             interactive_comments: true,
             expand_prompt_strings: true,
             source_builtin_searches_path: true,
+            perform_brace_expansion: true,
             ..Self::default()
         };
 

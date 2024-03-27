@@ -68,7 +68,7 @@ builtin::minus_or_plus_flag_arg!(
     "Shell functions inherit DEBUG and RETURN traps"
 );
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[clap(disable_help_flag = true)]
 pub(crate) struct SetCommand {
     #[clap(long, action = clap::ArgAction::HelpLong)]

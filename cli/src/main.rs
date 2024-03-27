@@ -44,6 +44,9 @@ struct CommandLineArgs {
     #[clap(long = "posix", help = "Disable non-POSIX extensions.")]
     posix: bool,
 
+    #[clap(short = 's', help = "Read commands from standard input.")]
+    read_commands_from_stdin: bool,
+
     #[clap(
         short = 'v',
         long = "verbose",
@@ -116,6 +119,9 @@ async fn run(cli_args: &[String]) -> Result<u8> {
 
     let args = CommandLineArgs::parse_from(cli_args);
 
+    let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
+        || (args.script_path.is_none() && args.command.is_none());
+
     let options = shell::CreateOptions {
         login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
         interactive: args.is_interactive(),
@@ -124,6 +130,7 @@ async fn run(cli_args: &[String]) -> Result<u8> {
         no_rc: args.no_rc,
         posix: args.posix,
         print_commands_and_arguments: args.print_commands_and_arguments,
+        read_commands_from_stdin,
         shell_name: argv0.clone(),
         verbose: args.verbose,
     };
@@ -133,6 +140,8 @@ async fn run(cli_args: &[String]) -> Result<u8> {
     if let Some(command) = args.command {
         // TODO: Use script_path as $0 and remaining args as positional parameters.
         shell.shell_mut().run_string(&command, false).await?;
+    } else if args.read_commands_from_stdin {
+        shell.run_interactively().await?;
     } else if let Some(script_path) = args.script_path {
         shell
             .shell_mut()

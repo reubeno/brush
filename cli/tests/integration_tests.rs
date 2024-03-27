@@ -156,6 +156,8 @@ struct TestCase {
     #[serde(default)]
     pub ignore_stdout: bool,
     #[serde(default)]
+    pub ignore_whitespace: bool,
+    #[serde(default)]
     pub test_files: Vec<TestFile>,
     #[serde(default)]
     pub known_failure: bool,
@@ -397,7 +399,7 @@ impl TestCase {
         // Compare stdout
         if self.ignore_stdout {
             comparison.stdout = StringComparison::Ignored;
-        } else if oracle_result.stdout == test_result.stdout {
+        } else if self.output_matches(&oracle_result.stdout, &test_result.stdout) {
             comparison.stdout = StringComparison::Same(oracle_result.stdout);
         } else {
             comparison.stdout = StringComparison::TestDiffers {
@@ -409,7 +411,7 @@ impl TestCase {
         // Compare stderr
         if self.ignore_stderr {
             comparison.stderr = StringComparison::Ignored;
-        } else if oracle_result.stderr == test_result.stderr {
+        } else if self.output_matches(&oracle_result.stderr, &test_result.stderr) {
             comparison.stderr = StringComparison::Same(oracle_result.stderr);
         } else {
             comparison.stderr = StringComparison::TestDiffers {
@@ -475,6 +477,19 @@ impl TestCase {
             stdout: String::from_utf8(cmd_result.stdout)?,
             stderr: String::from_utf8(cmd_result.stderr)?,
         })
+    }
+
+    fn output_matches<S: AsRef<str>>(&self, oracle: S, test: S) -> bool {
+        if self.ignore_whitespace {
+            let whitespace_re = regex::Regex::new(r"\s+").unwrap();
+
+            let cleaned_oracle = whitespace_re.replace_all(oracle.as_ref(), " ").to_string();
+            let cleaned_test = whitespace_re.replace_all(test.as_ref(), " ").to_string();
+
+            cleaned_oracle == cleaned_test
+        } else {
+            oracle.as_ref() == test.as_ref()
+        }
     }
 }
 

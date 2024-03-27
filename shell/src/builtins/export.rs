@@ -8,7 +8,7 @@ use crate::{
     variables,
 };
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct ExportCommand {
     #[arg(short = 'f')]
     names_are_functions: bool,

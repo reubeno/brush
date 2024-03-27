@@ -4,7 +4,7 @@ use clap::Parser;
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
 /// Manage aliases within the shell.
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct AliasCommand {
     /// Print all defined aliases in a reusable format.
     #[arg(short = 'p')]

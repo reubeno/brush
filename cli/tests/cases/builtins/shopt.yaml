@@ -1,0 +1,35 @@
+name: "Builtins: shopt"
+cases:
+  - name: "shopt toggle"
+    ignore_whitespace: true
+    stdin: |
+      echo "Setting checkwinsize"
+      shopt -s checkwinsize
+
+      echo "Displaying checkwinsize"
+      shopt checkwinsize
+      shopt -p checkwinsize
+
+      echo "Unsetting checkwinsize"
+      shopt -u checkwinsize
+
+      echo "Displaying checkwinsize"
+      shopt checkwinsize
+      shopt -p checkwinsize
+
+  - name: "shopt -o usage"
+    ignore_whitespace: true
+    stdin: |
+      echo "Setting emacs"
+      shopt -o -s emacs
+
+      echo "Displaying emacs"
+      shopt -o emacs
+      shopt -o -p emacs
+
+      echo "Unsetting emacs"
+      shopt -o -u emacs
+
+      echo "Displaying emacs"
+      shopt -o emacs
+      shopt -o -p emacs

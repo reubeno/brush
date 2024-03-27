@@ -6,7 +6,7 @@ use clap::Parser;
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
 /// Change the current working directory.
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct CdCommand {
     /// Force following symlinks.
     #[arg(short = 'L')]

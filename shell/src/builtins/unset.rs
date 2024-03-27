@@ -3,7 +3,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct UnsetCommand {
     #[clap(flatten)]
     name_interpretation: UnsetNameInterpretation,
@@ -11,7 +11,7 @@ pub(crate) struct UnsetCommand {
     names: Vec<String>,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct UnsetNameInterpretation {
