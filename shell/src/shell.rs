@@ -73,6 +73,7 @@ pub struct CreateOptions {
     pub no_rc: bool,
     pub posix: bool,
     pub print_commands_and_arguments: bool,
+    pub read_commands_from_stdin: bool,
     pub shell_name: Option<String>,
     pub verbose: bool,
 }

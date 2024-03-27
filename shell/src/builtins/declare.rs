@@ -23,7 +23,7 @@ builtin::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "");
 builtin::minus_or_plus_flag_arg!(UppercaseValueOnAssignmentFlag, 'u', "");
 builtin::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "");
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct DeclareCommand {
     /// Constrain to function names or definitions.
     #[arg(short = 'f')]

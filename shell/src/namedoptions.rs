@@ -18,153 +18,162 @@ impl OptionDefinition {
 }
 
 lazy_static! {
-    pub(crate) static ref SET_OPTIONS: HashMap<char, OptionDefinition> = HashMap::from([
-        (
-            'a',
-            OptionDefinition::new(
-                |shell| shell.options.export_variables_on_modification,
-                |shell, value| shell.options.export_variables_on_modification = value
-            )
-        ),
-        (
-            'b',
-            OptionDefinition::new(
-                |shell| shell.options.notify_job_termination_immediately,
-                |shell, value| shell.options.notify_job_termination_immediately = value
-            )
-        ),
-        (
-            'e',
-            OptionDefinition::new(
-                |shell| shell.options.exit_on_nonzero_command_exit,
-                |shell, value| shell.options.exit_on_nonzero_command_exit = value
-            )
-        ),
-        (
-            'f',
-            OptionDefinition::new(
-                |shell| shell.options.disable_filename_globbing,
-                |shell, value| shell.options.disable_filename_globbing = value
-            )
-        ),
-        (
-            'h',
-            OptionDefinition::new(
-                |shell| shell.options.remember_command_locations,
-                |shell, value| shell.options.remember_command_locations = value
-            )
-        ),
-        (
-            'k',
-            OptionDefinition::new(
-                |shell| shell.options.place_all_assignment_args_in_command_env,
-                |shell, value| shell.options.place_all_assignment_args_in_command_env = value
-            )
-        ),
-        (
-            'm',
-            OptionDefinition::new(
-                |shell| shell.options.enable_job_control,
-                |shell, value| shell.options.enable_job_control = value
-            )
-        ),
-        (
-            'n',
-            OptionDefinition::new(
-                |shell| shell.options.do_not_execute_commands,
-                |shell, value| shell.options.do_not_execute_commands = value
-            )
-        ),
-        (
-            'p',
-            OptionDefinition::new(
-                |shell| shell.options.real_effective_uid_mismatch,
-                |shell, value| shell.options.real_effective_uid_mismatch = value
-            )
-        ),
-        (
-            't',
-            OptionDefinition::new(
-                |shell| shell.options.exit_after_one_command,
-                |shell, value| shell.options.exit_after_one_command = value
-            )
-        ),
-        (
-            'u',
-            OptionDefinition::new(
-                |shell| shell.options.treat_unset_variables_as_error,
-                |shell, value| shell.options.treat_unset_variables_as_error = value
-            )
-        ),
-        (
-            'v',
-            OptionDefinition::new(
-                |shell| shell.options.print_shell_input_lines,
-                |shell, value| shell.options.print_shell_input_lines = value
-            )
-        ),
-        (
-            'x',
-            OptionDefinition::new(
-                |shell| shell.options.print_commands_and_arguments,
-                |shell, value| shell.options.print_commands_and_arguments = value
-            )
-        ),
-        (
-            'B',
-            OptionDefinition::new(
-                |shell| shell.options.perform_brace_expansion,
-                |shell, value| shell.options.perform_brace_expansion = value
-            )
-        ),
-        (
-            'C',
-            OptionDefinition::new(
-                |shell| shell
-                    .options
-                    .disallow_overwriting_regular_files_via_output_redirection,
-                |shell, value| shell
-                    .options
-                    .disallow_overwriting_regular_files_via_output_redirection =
-                    value
-            )
-        ),
-        (
-            'E',
-            OptionDefinition::new(
-                |shell| shell.options.shell_functions_inherit_err_trap,
-                |shell, value| shell.options.shell_functions_inherit_err_trap = value
-            )
-        ),
-        (
-            'H',
-            OptionDefinition::new(
-                |shell| shell.options.enable_bang_style_history_substitution,
-                |shell, value| shell.options.enable_bang_style_history_substitution = value
-            )
-        ),
-        (
-            'P',
-            OptionDefinition::new(
-                |shell| shell.options.do_not_resolve_symlinks_when_changing_dir,
-                |shell, value| shell.options.do_not_resolve_symlinks_when_changing_dir = value
-            )
-        ),
-        (
-            'T',
-            OptionDefinition::new(
-                |shell| shell.options.shell_functions_inherit_debug_and_return_traps,
-                |shell, value| shell.options.shell_functions_inherit_debug_and_return_traps = value
-            )
-        ),
-        (
-            'i',
-            OptionDefinition::new(
-                |shell| shell.options.interactive,
-                |shell, value| shell.options.interactive = value
-            )
-        ),
-    ]);
+    pub(crate) static ref SET_OPTIONS: indexmap::IndexMap<char, OptionDefinition> =
+        indexmap::IndexMap::from([
+            (
+                'a',
+                OptionDefinition::new(
+                    |shell| shell.options.export_variables_on_modification,
+                    |shell, value| shell.options.export_variables_on_modification = value
+                )
+            ),
+            (
+                'b',
+                OptionDefinition::new(
+                    |shell| shell.options.notify_job_termination_immediately,
+                    |shell, value| shell.options.notify_job_termination_immediately = value
+                )
+            ),
+            (
+                'e',
+                OptionDefinition::new(
+                    |shell| shell.options.exit_on_nonzero_command_exit,
+                    |shell, value| shell.options.exit_on_nonzero_command_exit = value
+                )
+            ),
+            (
+                'f',
+                OptionDefinition::new(
+                    |shell| shell.options.disable_filename_globbing,
+                    |shell, value| shell.options.disable_filename_globbing = value
+                )
+            ),
+            (
+                'h',
+                OptionDefinition::new(
+                    |shell| shell.options.remember_command_locations,
+                    |shell, value| shell.options.remember_command_locations = value
+                )
+            ),
+            (
+                'i',
+                OptionDefinition::new(
+                    |shell| shell.options.interactive,
+                    |shell, value| shell.options.interactive = value
+                )
+            ),
+            (
+                'k',
+                OptionDefinition::new(
+                    |shell| shell.options.place_all_assignment_args_in_command_env,
+                    |shell, value| shell.options.place_all_assignment_args_in_command_env = value
+                )
+            ),
+            (
+                'm',
+                OptionDefinition::new(
+                    |shell| shell.options.enable_job_control,
+                    |shell, value| shell.options.enable_job_control = value
+                )
+            ),
+            (
+                'n',
+                OptionDefinition::new(
+                    |shell| shell.options.do_not_execute_commands,
+                    |shell, value| shell.options.do_not_execute_commands = value
+                )
+            ),
+            (
+                'p',
+                OptionDefinition::new(
+                    |shell| shell.options.real_effective_uid_mismatch,
+                    |shell, value| shell.options.real_effective_uid_mismatch = value
+                )
+            ),
+            (
+                't',
+                OptionDefinition::new(
+                    |shell| shell.options.exit_after_one_command,
+                    |shell, value| shell.options.exit_after_one_command = value
+                )
+            ),
+            (
+                'u',
+                OptionDefinition::new(
+                    |shell| shell.options.treat_unset_variables_as_error,
+                    |shell, value| shell.options.treat_unset_variables_as_error = value
+                )
+            ),
+            (
+                'v',
+                OptionDefinition::new(
+                    |shell| shell.options.print_shell_input_lines,
+                    |shell, value| shell.options.print_shell_input_lines = value
+                )
+            ),
+            (
+                'x',
+                OptionDefinition::new(
+                    |shell| shell.options.print_commands_and_arguments,
+                    |shell, value| shell.options.print_commands_and_arguments = value
+                )
+            ),
+            (
+                'B',
+                OptionDefinition::new(
+                    |shell| shell.options.perform_brace_expansion,
+                    |shell, value| shell.options.perform_brace_expansion = value
+                )
+            ),
+            (
+                'C',
+                OptionDefinition::new(
+                    |shell| shell
+                        .options
+                        .disallow_overwriting_regular_files_via_output_redirection,
+                    |shell, value| shell
+                        .options
+                        .disallow_overwriting_regular_files_via_output_redirection =
+                        value
+                )
+            ),
+            (
+                'E',
+                OptionDefinition::new(
+                    |shell| shell.options.shell_functions_inherit_err_trap,
+                    |shell, value| shell.options.shell_functions_inherit_err_trap = value
+                )
+            ),
+            (
+                'H',
+                OptionDefinition::new(
+                    |shell| shell.options.enable_bang_style_history_substitution,
+                    |shell, value| shell.options.enable_bang_style_history_substitution = value
+                )
+            ),
+            (
+                'P',
+                OptionDefinition::new(
+                    |shell| shell.options.do_not_resolve_symlinks_when_changing_dir,
+                    |shell, value| shell.options.do_not_resolve_symlinks_when_changing_dir = value
+                )
+            ),
+            (
+                'T',
+                OptionDefinition::new(
+                    |shell| shell.options.shell_functions_inherit_debug_and_return_traps,
+                    |shell, value| shell.options.shell_functions_inherit_debug_and_return_traps =
+                        value
+                )
+            ),
+            (
+                's',
+                OptionDefinition::new(
+                    |shell| shell.options.read_commands_from_stdin,
+                    |shell, value| shell.options.read_commands_from_stdin = value
+                )
+            ),
+        ]);
     pub(crate) static ref SET_O_OPTIONS: HashMap<&'static str, OptionDefinition> = HashMap::from([
         (
             "allexport",

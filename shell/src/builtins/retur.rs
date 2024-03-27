@@ -3,7 +3,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct ReturnCommand {
     code: Option<i32>,
 }

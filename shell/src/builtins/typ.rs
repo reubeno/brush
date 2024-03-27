@@ -9,7 +9,7 @@ use crate::{
     Shell,
 };
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct TypeCommand {
     #[arg(short = 'a')]
     all_locations: bool,

@@ -2,7 +2,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use anyhow::Result;
 use clap::Parser;
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct HelpCommand {}
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");

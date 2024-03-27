@@ -1,6 +1,5 @@
 use anyhow::Result;
 
-#[derive(Debug)]
 pub enum PromptPiece {
     AsciiCharacter(u32),
     Backslash,
@@ -31,13 +30,11 @@ pub enum PromptPiece {
     Time(PromptTimeFormat),
 }
 
-#[derive(Debug)]
 pub enum PromptDateFormat {
     WeekdayMonthDate,
     Custom(String),
 }
 
-#[derive(Debug)]
 pub enum PromptTimeFormat {
     TwelveHourAM,
     TwelveHourHHMMSS,

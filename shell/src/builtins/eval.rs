@@ -2,7 +2,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use anyhow::Result;
 use clap::Parser;
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct EvalCommand {
     #[clap(allow_hyphen_values = true)]
     pub args: Vec<String>,

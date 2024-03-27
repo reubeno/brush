@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 pub(crate) struct ShoptCommand {
     #[arg(short = 'o')]
     set_o_names_only: bool,
@@ -61,8 +61,13 @@ impl BuiltinCommand for ShoptCommand {
                 }
 
                 if self.print {
-                    let option_value_str = if option_value { "-s" } else { "-u" };
-                    println!("shopt {option_value_str} {option_name}");
+                    if self.set_o_names_only {
+                        let option_value_str = if option_value { "-o" } else { "+o" };
+                        println!("set {option_value_str} {option_name}");
+                    } else {
+                        let option_value_str = if option_value { "-s" } else { "-u" };
+                        println!("shopt {option_value_str} {option_name}");
+                    }
                 } else {
                     let option_value_str = if option_value { "on" } else { "off" };
                     println!("{option_name:15} {option_value_str}");
@@ -94,8 +99,13 @@ impl BuiltinCommand for ShoptCommand {
 
                         if !self.quiet {
                             if self.print {
-                                let option_value_str = if option_value { "-s" } else { "-u" };
-                                println!("shopt {option_value_str} {option_name}");
+                                if self.set_o_names_only {
+                                    let option_value_str = if option_value { "-o" } else { "+o" };
+                                    println!("set {option_value_str} {option_name}");
+                                } else {
+                                    let option_value_str = if option_value { "-s" } else { "-u" };
+                                    println!("shopt {option_value_str} {option_name}");
+                                }
                             } else {
                                 let option_value_str = if option_value { "on" } else { "off" };
                                 println!("{option_name:15} {option_value_str}");
