@@ -436,7 +436,10 @@ impl TestCase {
             ShellInvocation::ExecShellBinary => match which {
                 WhichShell::ShellUnderTest(name) => {
                     let cli_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                    let target_dir = cli_dir.parent().unwrap().join("target");
+                    let default_target_dir = || cli_dir.parent().unwrap().join("target");
+                    let target_dir = std::env::var("CARGO_TARGET_DIR")
+                        .ok()
+                        .map_or_else(default_target_dir, PathBuf::from);
                     (assert_cmd::Command::cargo_bin(name)?, Some(target_dir))
                 }
                 WhichShell::NamedShell(name) => (assert_cmd::Command::new(name), None),

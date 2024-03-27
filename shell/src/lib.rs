@@ -2,7 +2,6 @@ mod arithmetic;
 mod builtin;
 mod builtins;
 mod commands;
-mod context;
 mod env;
 mod error;
 mod expansion;
