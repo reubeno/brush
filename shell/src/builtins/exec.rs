@@ -17,11 +17,8 @@ pub(crate) struct ExecCommand {
     #[arg(short = 'l')]
     exec_as_login: bool,
 
-    /// Command to exec.
-    command: Option<String>,
-
-    /// Arguments to pass to command.
-    #[clap(allow_hyphen_values = true)]
+    /// Command and args.
+    #[arg(trailing_var_arg = true)]
     args: Vec<String>,
     // TODO: redirection?
 }
@@ -47,8 +44,11 @@ impl BuiltinCommand for ExecCommand {
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
-        if let Some(command) = &self.command {
-            let err = exec::Command::new(command).args(&self.args).exec();
+        if !self.args.is_empty() {
+            // TODO: Do the Right Thing with the environment.
+            let err = exec::Command::new(self.args[0].as_str())
+                .args(&self.args[1..])
+                .exec();
             match err {
                 exec::Error::BadArgument(_) => {
                     Err(crate::error::Error::Unknown(anyhow!("invalid arguments")))

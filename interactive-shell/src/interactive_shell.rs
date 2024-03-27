@@ -51,14 +51,12 @@ impl InteractiveShell {
             .max_history_size(1000)?
             .history_ignore_dups(true)?
             .auto_add_history(true)
+            .bell_style(rustyline::config::BellStyle::None)
             .completion_type(rustyline::config::CompletionType::List)
             .build();
 
-        let helper = EditorHelper::new(shell);
-
-        // TODO: Create an editor with a helper object so we can do completion.
         let mut editor = rustyline::Editor::with_config(config)?;
-        editor.set_helper(Some(helper));
+        editor.set_helper(Some(EditorHelper::new(shell)));
 
         Ok(editor)
     }
