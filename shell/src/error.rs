@@ -8,6 +8,15 @@ pub enum Error {
     #[error("cannot expand tilde expression with HOME not set")]
     TildeWithoutValidHome,
 
+    #[error("cannot assign list to array member")]
+    AssigningListToArrayMember,
+
+    #[error("cannot convert associative array to indexed array")]
+    ConvertingAssociativeArrayToIndexedArray,
+
+    #[error("cannot convert indexed array to associative array")]
+    ConvertingIndexedArrayToAssociativeArray,
+
     #[error("failed to source file: {0}")]
     FailedSourcingFile(PathBuf, std::io::Error),
 

@@ -140,6 +140,32 @@ impl ShellEnvironment {
         self.globals.unset(name)
     }
 
+    pub fn get_using_policy<N: AsRef<str>>(
+        &self,
+        name: N,
+        lookup_policy: EnvironmentLookup,
+    ) -> Option<&ShellVariable> {
+        match lookup_policy {
+            EnvironmentLookup::Anywhere => self.get(name.as_ref()),
+            EnvironmentLookup::OnlyInGlobal => self.globals.get(name.as_ref()),
+            EnvironmentLookup::OnlyInCurrentLocal => {
+                if let Some(map) = self.locals_stack.last() {
+                    map.get(name.as_ref())
+                } else {
+                    None
+                }
+            }
+            EnvironmentLookup::OnlyInLocal => {
+                for map in self.locals_stack.iter().rev() {
+                    if let Some(var) = map.get(name.as_ref()) {
+                        return Some(var);
+                    }
+                }
+                None
+            }
+        }
+    }
+
     pub fn get_mut_using_policy<N: AsRef<str>>(
         &mut self,
         name: N,

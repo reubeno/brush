@@ -8,7 +8,7 @@ use crate::{error, shell::Shell};
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
     ($struct_name:ident, $flag_char:literal, $desc:literal) => {
-        #[derive(clap::Parser, Debug)]
+        #[derive(clap::Parser)]
         pub(crate) struct $struct_name {
             #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue, help = $desc)]
             _enable: bool,
@@ -42,13 +42,11 @@ macro_rules! minus_or_plus_flag_arg {
 pub(crate) use minus_or_plus_flag_arg;
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug)]
 pub struct BuiltinResult {
     pub exit_code: BuiltinExitCode,
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug)]
 pub enum BuiltinExitCode {
     Success,
     InvalidUsage,

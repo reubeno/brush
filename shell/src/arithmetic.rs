@@ -122,7 +122,7 @@ fn apply_unary_op(
         ast::UnaryOperator::UnaryPlus => Ok(operand),
         ast::UnaryOperator::UnaryMinus => Ok(-operand),
         ast::UnaryOperator::BitwiseNot => Ok(!operand),
-        ast::UnaryOperator::LogicalNot => Ok(bool_to_i64(operand != 0)),
+        ast::UnaryOperator::LogicalNot => Ok(bool_to_i64(operand == 0)),
     }
 }
 
