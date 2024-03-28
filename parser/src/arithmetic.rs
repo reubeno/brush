@@ -67,6 +67,9 @@ peg::parser! {
             x:lvalue() "++" { ast::ArithmeticExpr::UnaryAssignment(ast::UnaryAssignmentOperator::PostfixIncrement, x) }
             x:lvalue() "--" { ast::ArithmeticExpr::UnaryAssignment(ast::UnaryAssignmentOperator::PostfixDecrement, x) }
             --
+            "+" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::UnaryPlus, Box::new(x)) }
+            "-" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::UnaryMinus, Box::new(x)) }
+            --
             // TODO: What about parentheses?
             // TODO: Is this where literals and such should go?
             n:literal_number() { ast::ArithmeticExpr::Literal(n) }

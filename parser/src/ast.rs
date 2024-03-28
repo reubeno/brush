@@ -144,10 +144,10 @@ impl Display for CompoundCommand {
             }
             CompoundCommand::IfClause(if_clause_command) => write!(f, "{}", if_clause_command),
             CompoundCommand::WhileClause(while_or_until_clause_command) => {
-                write!(f, "{}", while_or_until_clause_command)
+                write!(f, "while {}", while_or_until_clause_command)
             }
             CompoundCommand::UntilClause(while_or_until_clause_command) => {
-                write!(f, "{}", while_or_until_clause_command)
+                write!(f, "until {}", while_or_until_clause_command)
             }
         }
     }
@@ -168,9 +168,10 @@ impl Display for ArithmeticCommand {
 pub struct SubshellCommand(pub CompoundList);
 
 impl Display for SubshellCommand {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting SubshellCommand");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "( ")?;
+        write!(f, "{}", self.0)?;
+        write!(f, " )")
     }
 }
 
@@ -182,9 +183,22 @@ pub struct ForClauseCommand {
 }
 
 impl Display for ForClauseCommand {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting ForClauseCommand");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "for {} in ", self.variable_name)?;
+
+        if let Some(values) = &self.values {
+            for (i, value) in values.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " ")?;
+                }
+
+                write!(f, "{}", value)?;
+            }
+        }
+
+        writeln!(f, ";")?;
+
+        write!(f, "{}", self.body)
     }
 }
 
@@ -197,9 +211,28 @@ pub struct ArithmeticForClauseCommand {
 }
 
 impl Display for ArithmeticForClauseCommand {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting ArithmeticForClauseCommand");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "for ((")?;
+
+        if let Some(initializer) = &self.initializer {
+            write!(f, "{}", initializer)?;
+        }
+
+        write!(f, "; ")?;
+
+        if let Some(condition) = &self.condition {
+            write!(f, "{}", condition)?;
+        }
+
+        write!(f, "; ")?;
+
+        if let Some(updater) = &self.updater {
+            write!(f, "{}", updater)?;
+        }
+
+        writeln!(f, "))")?;
+
+        write!(f, "{}", self.body)
     }
 }
 
@@ -210,9 +243,13 @@ pub struct CaseClauseCommand {
 }
 
 impl Display for CaseClauseCommand {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting CaseClauseCommand");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "case {} in", self.value)?;
+        for case in &self.cases {
+            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", case)?;
+        }
+        writeln!(f)?;
+        write!(f, "esac")
     }
 }
 
@@ -261,7 +298,7 @@ pub struct IfClauseCommand {
 
 impl Display for IfClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "if {} then", self.condition)?;
+        writeln!(f, "if {}; then", self.condition)?;
         write!(
             indenter::indented(f).with_str(DISPLAY_INDENT),
             "{}",
@@ -287,9 +324,19 @@ pub struct ElseClause {
 }
 
 impl Display for ElseClause {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting ElseClause");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f)?;
+        if let Some(condition) = &self.condition {
+            writeln!(f, "elif {}; then", condition)?;
+        } else {
+            writeln!(f, "else")?;
+        }
+
+        write!(
+            indenter::indented(f).with_str(DISPLAY_INDENT),
+            "{}",
+            self.body
+        )
     }
 }
 
@@ -300,9 +347,21 @@ pub struct CaseItem {
 }
 
 impl Display for CaseItem {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting CaseItem");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f)?;
+        for (i, pattern) in self.patterns.iter().enumerate() {
+            if i > 0 {
+                write!(f, "|")?;
+            }
+            write!(f, "{}", pattern)?;
+        }
+        writeln!(f, ")")?;
+
+        if let Some(cmd) = &self.cmd {
+            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", cmd)?;
+        }
+        writeln!(f)?;
+        write!(f, ";;")
     }
 }
 
@@ -310,9 +369,8 @@ impl Display for CaseItem {
 pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand);
 
 impl Display for WhileOrUntilClauseCommand {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting WhileOrUntilClauseCommand");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}; {}", self.0, self.1)
     }
 }
 
@@ -362,9 +420,11 @@ impl Display for BraceGroupCommand {
 pub struct DoGroupCommand(pub CompoundList);
 
 impl Display for DoGroupCommand {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting DoGroupCommand");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "do")?;
+        write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", self.0)?;
+        writeln!(f)?;
+        write!(f, "done")
     }
 }
 
@@ -548,13 +608,34 @@ impl Display for IoRedirect {
 
                 write!(f, "{} {}", kind, target)?;
             }
-            IoRedirect::HereDocument(_, _) => {
-                log::error!("UNIMPLEMENTED: formatting HereDocument");
-                return Err(std::fmt::Error);
+            IoRedirect::HereDocument(
+                fd_num,
+                IoHereDocument {
+                    remove_tabs,
+                    here_end,
+                    doc,
+                },
+            ) => {
+                if let Some(fd_num) = fd_num {
+                    write!(f, "{}", fd_num)?;
+                }
+
+                write!(f, "<<")?;
+                if *remove_tabs {
+                    write!(f, "-")?;
+                }
+
+                writeln!(f, "{}", here_end)?;
+
+                write!(f, "{}", doc)?;
+                writeln!(f, "{}", here_end)?;
             }
-            IoRedirect::HereString(_, _) => {
-                log::error!("UNIMPLEMENTED: formatting HereString");
-                return Err(std::fmt::Error);
+            IoRedirect::HereString(fd_num, s) => {
+                if let Some(fd_num) = fd_num {
+                    write!(f, "{}", fd_num)?;
+                }
+
+                write!(f, "<<< {}", s)?;
             }
         }
 
@@ -679,9 +760,33 @@ pub enum UnaryPredicate {
 }
 
 impl Display for UnaryPredicate {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        log::error!("UNIMPLEMENTED: formatting UnaryPredicate");
-        Err(std::fmt::Error)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryPredicate::FileExists => write!(f, "-e"),
+            UnaryPredicate::FileExistsAndIsBlockSpecialFile => write!(f, "-b"),
+            UnaryPredicate::FileExistsAndIsCharSpecialFile => write!(f, "-c"),
+            UnaryPredicate::FileExistsAndIsDir => write!(f, "-d"),
+            UnaryPredicate::FileExistsAndIsRegularFile => write!(f, "-f"),
+            UnaryPredicate::FileExistsAndIsSetgid => write!(f, "-g"),
+            UnaryPredicate::FileExistsAndIsSymlink => write!(f, "-h"),
+            UnaryPredicate::FileExistsAndHasStickyBit => write!(f, "-k"),
+            UnaryPredicate::FileExistsAndIsFifo => write!(f, "-p"),
+            UnaryPredicate::FileExistsAndIsReadable => write!(f, "-r"),
+            UnaryPredicate::FileExistsAndIsNotZeroLength => write!(f, "-s"),
+            UnaryPredicate::FdIsOpenTerminal => write!(f, "-t"),
+            UnaryPredicate::FileExistsAndIsSetuid => write!(f, "-u"),
+            UnaryPredicate::FileExistsAndIsWritable => write!(f, "-w"),
+            UnaryPredicate::FileExistsAndIsExecutable => write!(f, "-x"),
+            UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => write!(f, "-G"),
+            UnaryPredicate::FileExistsAndModifiedSinceLastRead => write!(f, "-N"),
+            UnaryPredicate::FileExistsAndOwnedByEffectiveUserId => write!(f, "-O"),
+            UnaryPredicate::FileExistsAndIsSocket => write!(f, "-S"),
+            UnaryPredicate::ShellOptionEnabled => write!(f, "-o"),
+            UnaryPredicate::ShellVariableIsSetAndAssigned => write!(f, "-v"),
+            UnaryPredicate::ShellVariableIsSetAndNameRef => write!(f, "-R"),
+            UnaryPredicate::StringHasZeroLength => write!(f, "-z"),
+            UnaryPredicate::StringHasNonZeroLength => write!(f, "-n"),
+        }
     }
 }
 

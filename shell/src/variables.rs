@@ -61,6 +61,11 @@ impl ShellVariable {
         self.exported = false;
     }
 
+    #[allow(clippy::unused_self)]
+    pub fn is_nameref(&self) -> bool {
+        false
+    }
+
     pub fn is_readonly(&self) -> bool {
         self.readonly
     }
@@ -69,8 +74,13 @@ impl ShellVariable {
         self.readonly = true;
     }
 
-    pub fn unset_readonly(&mut self) {
+    pub fn unset_readonly(&mut self) -> Result<(), error::Error> {
+        if self.readonly {
+            return Err(error::Error::ReadonlyVariable);
+        }
+
         self.readonly = false;
+        Ok(())
     }
 
     pub fn is_trace_enabled(&self) -> bool {
@@ -113,10 +123,34 @@ impl ShellVariable {
         self.treat_as_integer = false;
     }
 
-    fn convert_to_indexed_array(&mut self) {
-        let mut new_values = BTreeMap::new();
-        new_values.insert(0, String::from(&self.value));
-        self.value = ShellValue::IndexedArray(new_values);
+    pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
+        match self.value() {
+            ShellValue::IndexedArray(_) => Ok(()),
+            ShellValue::AssociativeArray(_) => {
+                Err(error::Error::ConvertingAssociativeArrayToIndexedArray)
+            }
+            _ => {
+                let mut new_values = BTreeMap::new();
+                new_values.insert(0, String::from(&self.value));
+                self.value = ShellValue::IndexedArray(new_values);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
+        match self.value() {
+            ShellValue::AssociativeArray(_) => Ok(()),
+            ShellValue::IndexedArray(_) => {
+                Err(error::Error::ConvertingIndexedArrayToAssociativeArray)
+            }
+            _ => {
+                let mut new_values = BTreeMap::new();
+                new_values.insert("0".to_owned(), String::from(&self.value));
+                self.value = ShellValue::AssociativeArray(new_values);
+                Ok(())
+            }
+        }
     }
 
     pub fn assign(&mut self, value: ShellValueLiteral, append: bool) -> Result<(), error::Error> {
@@ -130,7 +164,7 @@ impl ShellVariable {
             if matches!(self.value, ShellValue::String(_))
                 && matches!(value, ShellValueLiteral::Array(_))
             {
-                self.convert_to_indexed_array();
+                self.convert_to_indexed_array()?;
             }
 
             let treat_as_int = self.is_treated_as_integer();
@@ -244,7 +278,7 @@ impl ShellVariable {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
             }
             ShellValue::String(_) => {
-                self.convert_to_indexed_array();
+                self.convert_to_indexed_array()?;
             }
             _ => (),
         }

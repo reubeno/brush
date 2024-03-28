@@ -11,6 +11,15 @@ cases:
   - name: "Declare integer"
     stdin: |
       declare -i num=10
+      declare -p num
+
+      echo $num
+      num+=10
+      echo $num
+
+      declare +i num
+      declare -p num
+
       echo $num
       num+=10
       echo $num
@@ -19,8 +28,17 @@ cases:
     ignore_stderr: true
     stdin: |
       declare -r var="readonly"
+      declare -p var
+
       echo $var
+
       var="change"
+      echo "change result: $?"
+      echo "var: ${var}"
+
+      declare +r var
+      echo "+r result: $?"
+      declare -p var
 
   - name: "Declare array"
     stdin: |
@@ -81,3 +99,117 @@ cases:
       }
 
       test
+
+  - name: "Displaying function names"
+    stdin: |
+      echo "Dumping function names"
+      declare -F
+      declare -p -F
+
+      function test {
+        :
+      }
+
+      echo "Dumping function names again"
+      declare -F
+      declare -p -F
+
+      echo "Dumping test"
+      declare -F test
+      declare -p -F test
+
+  - name: "Displaying functions"
+    stdin: |
+      echo "Dumping functions"
+      declare -f
+      declare -p -f
+
+      function test {
+        :
+      }
+
+      echo "Dumping functions again"
+      declare -f
+      declare -p -f
+
+      echo "Dumping test"
+      declare -f test
+      declare -p -f test
+
+  - name: "Valid conversions"
+    stdin: |
+      declare -a arr1=(a b c)
+      declare -a arr1
+      echo "Conversion result: $?"
+      declare -p arr1
+
+      declare -A arr2=(["x1"]=1 ["x2"]=2)
+      declare -A arr2
+      echo "Conversion result: $?"
+      declare -p arr2
+
+      declare scalar1="value"
+      declare -a scalar1
+      echo "Conversion result: $?"
+      declare -p scalar1
+
+      declare scalar2="value"
+      declare -A scalar2
+      echo "Conversion result: $?"
+      declare -p scalar2
+
+  - name: "Bad conversions"
+    ignore_stderr: true
+    stdin: |
+      declare -a arr1=(a b c)
+      declare -A arr1
+      echo "Conversion result: $?"
+      declare -p arr1
+
+      declare -A arr2=(["x1"]=1 ["x2"]=2)
+      declare -a arr2
+      echo "Conversion result: $?"
+      declare -p arr2
+
+  - name: "Declare -p using invalid forms"
+    ignore_stderr: true
+    stdin: |
+      declare arr=(a b c)
+      declare -p arr[0]
+      echo "Result: $?"
+      declare -p arr[0]=1
+      echo "Result: $?"
+
+      declare scalar=x
+      echo "Result: $?"
+      declare -p scalar=y
+      echo "Result: $?"
+
+  - name: "Updating value"
+    stdin: |
+      declare var="value"
+      declare -p var
+      declare var="changed"
+      declare -p var
+
+  - name: "Updating array"
+    stdin: |
+      declare arr=(a b c)
+      declare -p arr
+      declare arr=(d e)
+      declare -p arr
+      declare arr=10
+      declare -p arr
+
+      declare arr2=a
+      declare -p arr2
+      declare -A arr2=(["key"]="value")
+      declare -p arr2
+
+  - name: "Updating causing conversion"
+    known_failure: true
+    stdin: |
+      declare var="scalar-value"
+      declare -p var
+      declare -A var["key"]="key-value"
+      declare -p var
