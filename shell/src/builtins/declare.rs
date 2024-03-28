@@ -509,7 +509,9 @@ fn get_declare_flag_str(variable: &ShellVariable) -> String {
     if variable.is_treated_as_integer() {
         result.push('i');
     }
-    // TODO: nameref
+    if variable.is_nameref() {
+        result.push('n');
+    }
     if variable.is_readonly() {
         result.push('r');
     }

@@ -72,9 +72,341 @@ cases:
       echo "len(y[*]) = ${#y[*]}"
       echo "len(y[@]) = ${#y[@]}"
 
-  - name: "Operator parameter expansion"
+  - name: "Parameter expression: default value"
+    known_failure: true
+    stdin: |
+      value="value"
+      empty=""
+      declare declared
+      unset undeclared
+
+      # -
+      echo "\${value-default}       : ${value-default}"
+      echo "\${empty-default}       : ${empty-default}"
+      echo "\${declared-default}    : ${declared-default}"
+      echo "\${undeclared-default}  : ${undeclared-default}"
+
+      echo "\${value-}              : ${value-}"
+      echo "\${empty-}              : ${empty-}"
+      echo "\${declared-}           : ${declared-}"
+      echo "\${undeclared-}         : ${undeclared-}"
+
+      # :-
+      echo "\${value:-default}      : ${value:-default}"
+      echo "\${empty:-default}      : ${empty:-default}"
+      echo "\${declared:-default}   : ${declared:-default}"
+      echo "\${undeclared:-default} : ${undeclared:-default}"
+
+      echo "\${value:-}             : ${value:-}"
+      echo "\${empty:-}             : ${empty:-}"
+      echo "\${declared:-}          : ${declared:-}"
+      echo "\${undeclared:-}        : ${undeclared:-}"
+
+  - name: "Parameter expression: assign default value (no colon)"
+    known_failure: true
+    stdin: |
+      value="value"
+      empty=""
+      declare declared
+      unset undeclared
+
+      # =
+      echo "\${value=default}       : ${value=default}"
+      declare -p value
+      echo "\${empty=default}       : ${empty=default}"
+      declare -p empty
+      echo "\${declared=default}    : ${declared=default}"
+      declare -p declared
+      echo "\${undeclared=default}  : ${undeclared=default}"
+      declare -p undeclared
+
+  - name: "Parameter expression: assign default value (no colon, empty replacement)"
+    known_failure: true
+    stdin: |
+      value="value"
+      empty=""
+      declare declared
+      unset undeclared
+
+      # =
+      echo "\${value=}              : ${value=}"
+      declare -p value
+      echo "\${empty=}              : ${empty=}"
+      declare -p empty
+      echo "\${declared=}           : ${declared=}"
+      declare -p declared
+      echo "\${undeclared=}         : ${undeclared=}"
+      declare -p undeclared
+
+  - name: "Parameter expression: assign default value (colon)"
+    known_failure: true
+    stdin: |
+      value="value"
+      empty=""
+      declare declared
+      unset undeclared
+
+      # :=
+      echo "\${value:=default}       : ${value:=default}"
+      declare -p value
+      echo "\${empty:=default}       : ${empty:=default}"
+      declare -p empty
+      echo "\${declared:=default}    : ${declared:=default}"
+      declare -p declared
+      echo "\${undeclared:=default}  : ${undeclared:=default}"
+      declare -p undeclared
+
+  - name: "Parameter expression: assign default value (colon, empty replacement)"
+    known_failure: true
+    stdin: |
+      value="value"
+      empty=""
+      declare declared
+      unset undeclared
+
+      # :=
+      echo "\${value:=}              : ${value:=}"
+      declare -p value
+      echo "\${empty:=}              : ${empty:=}"
+      declare -p empty
+      echo "\${declared:=}           : ${declared:=}"
+      declare -p declared
+      echo "\${undeclared:=}         : ${undeclared:=}"
+      declare -p undeclared
+
+  - name: "Parameter expression: alternative value"
+    known_failure: true
+    stdin: |
+      value="value"
+      empty=""
+      declare declared
+      unset undeclared
+
+      # +
+      echo "\${value+default}       : ${value+default}"
+      echo "\${empty+default}       : ${empty+default}"
+      echo "\${declared+default}    : ${declared+default}"
+      echo "\${undeclared+default}  : ${undeclared+default}"
+
+      echo "\${value+}              : ${value+}"
+      echo "\${empty+}              : ${empty+}"
+      echo "\${declared+}           : ${declared+}"
+      echo "\${undeclared+}         : ${undeclared+}"
+
+      # :+
+      echo "\${value:+default}      : ${value:+default}"
+      echo "\${empty:+default}      : ${empty:+default}"
+      echo "\${declared:+default}   : ${declared:+default}"
+      echo "\${undeclared:+default} : ${undeclared:+default}"
+
+      echo "\${value:+}             : ${value:+}"
+      echo "\${empty:+}             : ${empty:+}"
+      echo "\${declared:+}          : ${declared:+}"
+      echo "\${undeclared:+}        : ${undeclared:+}"
+
+  - name: "Parameter expression: error on condition"
+    known_failure: true
+    stdin: |
+      value="value"
+      empty=""
+      declare declared
+      unset undeclared
+
+      # ?
+      echo "\${value?default}       : ${value?default}"
+      echo "  -> result: $?"
+      echo "\${empty?default}       : ${empty?default}"
+      echo "  -> result: $?"
+      echo "\${declared?default}    : ${declared?default}"
+      echo "  -> result: $?"
+      echo "\${undeclared?default}  : ${undeclared?default}"
+      echo "  -> result: $?"
+
+      echo "\${value?}              : ${value?}"
+      echo "  -> result: $?"
+      echo "\${empty?}              : ${empty?}"
+      echo "  -> result: $?"
+      echo "\${declared?}           : ${declared?}"
+      echo "  -> result: $?"
+      echo "\${undeclared?}         : ${undeclared?}"
+      echo "  -> result: $?"
+
+      # :?
+      echo "\${value:?default}      : ${value:?default}"
+      echo "  -> result: $?"
+      echo "\${empty:?default}      : ${empty:?default}"
+      echo "  -> result: $?"
+      echo "\${declared:?default}   : ${declared:?default}"
+      echo "  -> result: $?"
+      echo "\${undeclared:?default} : ${undeclared:?default}"
+      echo "  -> result: $?"
+
+      echo "\${value:?}             : ${value:?}"
+      echo "  -> result: $?"
+      echo "\${empty:?}             : ${empty:?}"
+      echo "  -> result: $?"
+      echo "\${declared:?}          : ${declared:?}"
+      echo "  -> result: $?"
+      echo "\${undeclared:?}        : ${undeclared:?}"
+      echo "  -> result: $?"
+
+  - name: "Remove prefix/suffix"
+    stdin: |
+      var="prepre-abc-sufsuf"
+
+      # Smallest suffix
+      echo "\${var%}:    ${var%}"
+      echo "\${var%pre}: ${var%pre}"
+      echo "\${var%suf}: ${var%suf}"
+
+      # Largest suffix
+      echo "\${var%%}:    ${var%%}"
+      echo "\${var%%pre}: ${var%%pre}"
+      echo "\${var%%suf}: ${var%%suf}"
+
+      # Smallest prefix
+      echo "\${var#}:     ${var#}"
+      echo "\${var#pre}:  ${var#pre}"
+      echo "\${var#suf}:  ${var#suf}"
+
+      # Largest prefix
+      echo "\${var##}:    ${var##}"
+      echo "\${var##pre}: ${var##pre}"
+      echo "\${var##suf}: ${var##suf}"
+
+  - name: "Indirect variable references"
+    known_failure: true
+    stdin: |
+      var="Hello"
+      ref="var"
+      echo "${!ref}"
+
+  - name: "Variable prefix match"
+    known_failure: true
+    stdin: |
+      var1="Hello"
+      var2="World"
+
+      echo "${!var*}"
+      echo "${!var@}"
+
+      echo "Dumping *"
+      for i in "${!var*}"; do
+          echo "i: $i"
+      done
+
+      echo "Dumping @"
+      for i in "${!var@}"; do
+          echo "i: $i"
+      done
+
+  - name: "Array keys"
+    known_failure: true
+    stdin: |
+      arr=("element1" "element2" "element3")
+      echo "${!arr[@]}"
+      echo "${!arr[*]}"
+
+      echo "Dumping [@]"
+      for i in "${!arr[@]}"; do
+          echo "i: $i"
+      done
+
+      echo "Dumping [*]"
+      for i in "${!arr[*]}"; do
+          echo "i: $i"
+      done
+
+  - name: "Uppercase first character"
+    known_failure: true
+    stdin: |
+      var="hello"
+      echo "${var^}"
+      echo "${var^ignored}"
+
+  - name: "Uppercase all characters"
+    known_failure: true
+    stdin: |
+      var="hello"
+      echo "${var^^}"
+      echo "${var^^ignored}"
+
+  - name: "Lowercase first character"
+    known_failure: true
+    stdin: |
+      var="HELLO"
+      echo "${var,}"
+      echo "${var,ignored}"
+
+  - name: "Lowercase all characters"
+    known_failure: true
+    stdin: |
+      var="HELLO"
+      echo "${var,,}"
+      echo "${var,,ignored}"
+
+  - name: "Substring replacement"
+    known_failure: true
+    stdin: |
+      var="Hello, world!"
+      echo "${var/world/WORLD}"
+
+  - name: "Global substring replacement"
+    known_failure: true
+    stdin: |
+      var="Hello, world, world!"
+      echo "${var//world/WORLD}"
+
+  - name: "Substring from offset"
+    known_failure: true
+    stdin: |
+      var="Hello, world!"
+      echo "\${var:0}:  ${var:0}"
+      echo "\${var:7}:  ${var:7}"
+      echo "\${var:50}: ${var:50}"
+      echo "\${var:-1}: ${var:-1}"
+
+  - name: "Substring with length"
+    known_failure: true
+    stdin: |
+      var="Hello, world!"
+      echo "\${var:0:1}:  ${var:0:1}"
+      echo "\${var:0:0}:  ${var:0:0}"
+      echo "\${var:0:50}: ${var:0:50}"
+      echo "\${var:0:-1}: ${var:0:-1}"
+      echo "\${var:0:-3}: ${var:0:-3}"
+      echo "\${var:7:3}:  ${var:7:3}"
+      echo "\${var:50:2}: ${var:50:2}"
+      echo "\${var:-1:1}: ${var:-1:1}"
+      echo "\${var:-3:1}: ${var:-3:1}"
+
+  - name: "Parameter case transformation"
     stdin: |
       var="hElLo WoRlD"
       echo "${var@U}"
       echo "${var@u}"
       echo "${var@L}"
+
+  - name: "Parameter quote transformations"
+    known_failure: true
+    stdin: |
+      var="Hello, world!"
+      echo "\${var@Q}: ${var@Q}"
+      echo "\${var@K}: ${var@K}"
+      echo "\${var@k}: ${var@k}"
+
+      declare -A arr=(["a"]=1 ["b"]=2)
+      declare -p arr
+      echo "\${arr@Q}: ${arr@Q}"
+      echo "\${arr@K}: ${arr@K}"
+      echo "\${arr@k}: ${arr@k}"
+
+  - name: "Parameter transformations: other"
+    known_failure: true
+    stdin: |
+      declare -ia arr=(1 2 3)
+      echo "\${arr@a}: ${arr@a}"
+      echo "\${arr@A}: ${arr@A}"
+
+      var="a\n\"b"
+      echo "\${var@E}: ${var@E}"

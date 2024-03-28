@@ -32,7 +32,7 @@ pub(crate) async fn full_expand_and_split_word(
         .await
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum ExpandedWordPiece {
     Unsplittable(String),
     Splittable(String),

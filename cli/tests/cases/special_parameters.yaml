@@ -5,6 +5,7 @@ cases:
       function myfunc() {
           echo "--myfunc called--"
 
+          echo "COUNT: $#"
           echo "AT-SIGN VALUE: '$@'"
           echo "STAR VALUE: '$*'"
 
