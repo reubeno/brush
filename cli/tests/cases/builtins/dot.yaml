@@ -21,3 +21,25 @@ cases:
       var="orig"
       source script.sh
       echo "var: ${var}"
+
+  - name: "Source non-existent file path"
+    ignore_stderr: true
+    stdin: |
+      source script.sh
+      echo "Result: $?"
+
+  - name: "Source dir"
+    ignore_stderr: true
+    stdin: |
+      source .
+      echo "Result: $?"
+
+  - name: "Source script with args"
+    known_failure: true
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In sourced script"
+          echo "Args: $@"
+    stdin: |
+      source script.sh arg1 arg2

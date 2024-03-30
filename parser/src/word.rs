@@ -92,6 +92,40 @@ pub enum ParameterExpr {
         parameter: Parameter,
         op: ParameterTransformOp,
     },
+    UppercaseFirstChar {
+        parameter: Parameter,
+        pattern: Option<String>,
+    },
+    UppercasePattern {
+        parameter: Parameter,
+        pattern: Option<String>,
+    },
+    LowercaseFirstChar {
+        parameter: Parameter,
+        pattern: Option<String>,
+    },
+    LowercasePattern {
+        parameter: Parameter,
+        pattern: Option<String>,
+    },
+    ReplaceSubstring {
+        parameter: Parameter,
+        pattern: String,
+        replacement: String,
+        match_kind: SubstringMatchKind,
+    },
+    VariableNames {
+        prefix: String,
+        concatenate: bool,
+    },
+}
+
+#[derive(Debug)]
+pub enum SubstringMatchKind {
+    Prefix,
+    Suffix,
+    FirstOccurrence,
+    Anywhere,
 }
 
 #[derive(Debug)]
@@ -195,8 +229,6 @@ peg::parser! {
             }
 
         rule parameter_expression() -> ParameterExpr =
-            // TODO: don't allow non posix expressions in sh mode
-            e:non_posix_parameter_expression() { e } /
             parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
                 ParameterExpr::UseDefaultValues { parameter, test_type, default_value }
             } /
@@ -224,6 +256,8 @@ peg::parser! {
             parameter:parameter() "#" pattern:parameter_expression_word()? {
                 ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern }
             } /
+            // TODO: don't allow non posix expressions in sh mode
+            e:non_posix_parameter_expression() { e } /
             parameter:parameter() {
                 ParameterExpr::Parameter { parameter }
             }
@@ -239,23 +273,43 @@ peg::parser! {
 
         rule non_posix_parameter_expression() -> ParameterExpr =
             // TODO: Handle additional bash extensions:
-            //   ${!prefix*}
-            //   ${!prefix@}
             //   ${!name[@]}
             //   ${!name[*]}
-            //   ${parameter/pattern/string}
-            //   ${parameter//pattern/string}
-            //   ${parameter/#pattern/string}
-            //   ${parameter/%pattern/string}
-            //   ${parameter^pattern}
-            //   ${parameter^^pattern}
-            //   ${parameter,pattern}
-            //   ${parameter,,pattern}
+            "!" prefix:variable_name() "*" {
+                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: true }
+            } /
+            "!" prefix:variable_name() "@" {
+                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: false }
+            } /
             parameter:parameter() ":" offset:arithmetic_expression(<[':' | '}']>) length:(":" l:arithmetic_expression(<['}']>) { l })? {
                 ParameterExpr::Substring { parameter, offset, length }
             } /
             parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
                 ParameterExpr::Transform { parameter, op }
+            } /
+            parameter:parameter() "/#" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Prefix }
+            } /
+            parameter:parameter() "/%" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Suffix }
+            } /
+            parameter:parameter() "//" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Anywhere }
+            } /
+            parameter:parameter() "/" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::FirstOccurrence }
+            } /
+            parameter:parameter() "^" pattern:parameter_expression_word()? {
+                ParameterExpr::UppercaseFirstChar { parameter, pattern }
+            } /
+            parameter:parameter() "^^" pattern:parameter_expression_word()? {
+                ParameterExpr::UppercasePattern { parameter, pattern }
+            } /
+            parameter:parameter() "," pattern:parameter_expression_word()? {
+                ParameterExpr::LowercaseFirstChar { parameter, pattern }
+            } /
+            parameter:parameter() ",," pattern:parameter_expression_word()? {
+                ParameterExpr::LowercasePattern { parameter, pattern }
             }
 
         rule non_posix_parameter_transformation_op() -> ParameterTransformOp =
@@ -328,6 +382,9 @@ peg::parser! {
             raw_expr:$((!stop_condition() [_])*) {?
                 crate::arithmetic::parse_arithmetic_expression(raw_expr).or(Err("arithmetic expr"))
             }
+
+        rule parameter_replacement_str() -> String =
+            s:$(word(<!['}' | '/']>)) { s.to_owned() }
 
         rule parameter_expression_word() -> String =
             s:$(word(<!['}']>)) { s.to_owned() }

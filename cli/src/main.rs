@@ -57,6 +57,9 @@ struct CommandLineArgs {
     #[clap(short = 'x', help = "Print commands as they execute.")]
     print_commands_and_arguments: bool,
 
+    #[clap(long = "disable-bracketed-paste", help = "Disable bracketed paste.")]
+    disable_bracketed_paste: bool,
+
     #[clap(help = "Path to script to execute")]
     script_path: Option<String>,
 
@@ -122,17 +125,20 @@ async fn run(cli_args: &[String]) -> Result<u8> {
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
         || (args.script_path.is_none() && args.command.is_none());
 
-    let options = shell::CreateOptions {
-        login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
-        interactive: args.is_interactive(),
-        no_editing: args.no_editing,
-        no_profile: args.no_profile,
-        no_rc: args.no_rc,
-        posix: args.posix,
-        print_commands_and_arguments: args.print_commands_and_arguments,
-        read_commands_from_stdin,
-        shell_name: argv0.clone(),
-        verbose: args.verbose,
+    let options = interactive_shell::Options {
+        shell: shell::CreateOptions {
+            login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
+            interactive: args.is_interactive(),
+            no_editing: args.no_editing,
+            no_profile: args.no_profile,
+            no_rc: args.no_rc,
+            posix: args.posix,
+            print_commands_and_arguments: args.print_commands_and_arguments,
+            read_commands_from_stdin,
+            shell_name: argv0.clone(),
+            verbose: args.verbose,
+        },
+        disable_bracketed_paste: args.disable_bracketed_paste,
     };
 
     let mut shell = interactive_shell::InteractiveShell::new(&options).await?;
