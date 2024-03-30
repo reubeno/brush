@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
 use colored::*;
+use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     process::ExitStatus,
 };
@@ -64,6 +66,45 @@ async fn cli_integration_tests() -> Result<()> {
     assert!(fail_count == 0);
 
     Ok(())
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct TestCase {
+    /// Name of the test case
+    pub name: Option<String>,
+    /// How to invoke the shell
+    #[serde(default)]
+    pub invocation: ShellInvocation,
+    /// Command-line arguments to the shell
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment for the shell
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub pty: bool,
+    #[serde(default)]
+    pub stdin: Option<String>,
+    #[serde(default)]
+    pub ignore_exit_status: bool,
+    #[serde(default)]
+    pub ignore_stderr: bool,
+    #[serde(default)]
+    pub ignore_stdout: bool,
+    #[serde(default)]
+    pub ignore_whitespace: bool,
+    #[serde(default)]
+    pub test_files: Vec<TestFile>,
+    #[serde(default)]
+    pub known_failure: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct TestFile {
+    /// Relative path to test file
+    pub path: PathBuf,
+    /// Contents to seed the file with
+    pub contents: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -132,43 +173,6 @@ impl TestCaseSet {
             fail_count,
         })
     }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct TestCase {
-    /// Name of the test case
-    pub name: Option<String>,
-    /// How to invoke the shell
-    #[serde(default)]
-    pub invocation: ShellInvocation,
-    /// Command-line arguments to the shell
-    #[serde(default)]
-    pub args: Vec<String>,
-    /// Environment for the shell
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-    #[serde(default)]
-    pub stdin: Option<String>,
-    #[serde(default)]
-    pub ignore_exit_status: bool,
-    #[serde(default)]
-    pub ignore_stderr: bool,
-    #[serde(default)]
-    pub ignore_stdout: bool,
-    #[serde(default)]
-    pub ignore_whitespace: bool,
-    #[serde(default)]
-    pub test_files: Vec<TestFile>,
-    #[serde(default)]
-    pub known_failure: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct TestFile {
-    /// Relative path to test file
-    pub path: PathBuf,
-    /// Contents to seed the file with
-    pub contents: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -365,13 +369,13 @@ impl TestCase {
         let oracle_temp_dir = assert_fs::TempDir::new()?;
         self.create_test_files_in(&oracle_temp_dir)?;
         let oracle_result = self
-            .run_with_shell(&WhichShell::NamedShell("bash".to_owned()), &oracle_temp_dir)
+            .run_shell(&WhichShell::NamedShell("bash".to_owned()), &oracle_temp_dir)
             .await?;
 
         let test_temp_dir = assert_fs::TempDir::new()?;
         self.create_test_files_in(&test_temp_dir)?;
         let test_result = self
-            .run_with_shell(
+            .run_shell(
                 &WhichShell::ShellUnderTest("brush".to_owned()),
                 &test_temp_dir,
             )
@@ -426,12 +430,25 @@ impl TestCase {
         Ok(comparison)
     }
 
-    #[allow(clippy::unused_async)]
-    async fn run_with_shell(
+    async fn run_shell(
         &self,
         which: &WhichShell,
         working_dir: &assert_fs::TempDir,
     ) -> Result<RunResult> {
+        let test_cmd = self.create_command_for_shell(which, working_dir);
+
+        if self.pty {
+            self.run_command_with_pty(test_cmd).await
+        } else {
+            self.run_command_with_stdin(test_cmd).await
+        }
+    }
+
+    fn create_command_for_shell(
+        &self,
+        which: &WhichShell,
+        working_dir: &assert_fs::TempDir,
+    ) -> std::process::Command {
         let (mut test_cmd, coverage_target_dir) = match self.invocation {
             ShellInvocation::ExecShellBinary => match which {
                 WhichShell::ShellUnderTest(name) => {
@@ -440,9 +457,12 @@ impl TestCase {
                     let target_dir = std::env::var("CARGO_TARGET_DIR")
                         .ok()
                         .map_or_else(default_target_dir, PathBuf::from);
-                    (assert_cmd::Command::cargo_bin(name)?, Some(target_dir))
+                    (
+                        std::process::Command::new(assert_cmd::cargo::cargo_bin(name)),
+                        Some(target_dir),
+                    )
                 }
-                WhichShell::NamedShell(name) => (assert_cmd::Command::new(name), None),
+                WhichShell::NamedShell(name) => (std::process::Command::new(name), None),
             },
             ShellInvocation::ExecScript(_) => todo!("UNIMPLEMENTED: exec script test"),
         };
@@ -451,8 +471,16 @@ impl TestCase {
         test_cmd.arg("--norc");
         test_cmd.arg("--noprofile");
 
+        // Disable a few fancy UI options for shells under test.
+        if matches!(which, WhichShell::ShellUnderTest(_)) {
+            test_cmd.arg("--disable-bracketed-paste");
+        }
+
         // Clear all environment vars for consistency.
         test_cmd.args(&self.args).env_clear();
+
+        // Hard-code a well known prompt for PS1.
+        test_cmd.env("PS1", "test$ ");
 
         // Set up any env vars needed for collecting coverage data.
         if let Some(coverage_target_dir) = &coverage_target_dir {
@@ -469,6 +497,84 @@ impl TestCase {
 
         test_cmd.current_dir(working_dir.to_string_lossy().to_string());
 
+        test_cmd
+    }
+
+    #[allow(clippy::unused_async)]
+    async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
+        let mut log = Vec::new();
+        let writer = std::io::Cursor::new(&mut log);
+
+        let mut p = expectrl::session::log(expectrl::Session::spawn(cmd)?, writer)?;
+
+        if let Some(stdin) = &self.stdin {
+            for line in stdin.lines() {
+                if let Some(expectation) = line.strip_prefix("#expect:") {
+                    p.expect(expectation).map_err(|inner| {
+                        anyhow::anyhow!("failed to expect '{expectation}': {}", inner)
+                    })?;
+                } else if let Some(control_code) = line.strip_prefix("#send:") {
+                    match control_code.to_lowercase().as_str() {
+                        "ctrl+d" => p.send(expectrl::ControlCode::EndOfTransmission)?,
+                        "tab" => p.send(expectrl::ControlCode::HorizontalTabulation)?,
+                        "enter" => p.send(expectrl::ControlCode::LineFeed)?,
+                        _ => (),
+                    }
+                } else if line.trim() == "#expect-prompt" {
+                    p.expect("test$ ")
+                        .map_err(|inner| anyhow::anyhow!("failed to expect prompt: {}", inner))?;
+                } else {
+                    p.send(line)?;
+                }
+            }
+        }
+
+        p.expect(expectrl::Eof)?;
+
+        let mut wait_status = p.get_process().status()?;
+
+        if matches!(wait_status, expectrl::WaitStatus::StillAlive) {
+            // Try to terminate it safely.
+            p.get_process_mut().kill(expectrl::Signal::SIGTERM)?;
+            wait_status = p.get_process().wait()?;
+        }
+
+        let output_str = String::from_utf8(log)?;
+        let output: String = output_str
+            .lines()
+            .filter(|line| line.starts_with("read:"))
+            .map(|line| {
+                line.strip_prefix("read: \"")
+                    .unwrap()
+                    .strip_suffix('"')
+                    .unwrap()
+            })
+            .collect();
+
+        // Unescape the escaping done by expectrl's logging mechanism to get
+        // back to a real string.
+        let unescaped = output.to_unescaped().unwrap().to_string();
+
+        // And remove VT escape sequences.
+        let cleaned = strip_ansi_escapes::strip_str(unescaped);
+
+        match wait_status {
+            expectrl::WaitStatus::Exited(_, code) => Ok(RunResult {
+                exit_status: ExitStatus::from_raw(code),
+                stdout: cleaned,
+                stderr: String::new(),
+            }),
+            expectrl::WaitStatus::Signaled(_, _, _) => Err(anyhow::anyhow!("process was signaled")),
+            _ => Err(anyhow::anyhow!(
+                "unexpected status for process: {:?}",
+                wait_status
+            )),
+        }
+    }
+
+    #[allow(clippy::unused_async)]
+    async fn run_command_with_stdin(&self, cmd: std::process::Command) -> Result<RunResult> {
+        let mut test_cmd = assert_cmd::Command::from_std(cmd);
         if let Some(stdin) = &self.stdin {
             test_cmd.write_stdin(stdin.as_bytes());
         }

@@ -12,3 +12,14 @@ cases:
       cd
       echo $?
       echo "pwd: $PWD"
+
+  - name: "cd to file"
+    ignore_stderr: true
+    test_files:
+      - path: "file"
+        contents: "file contents"
+    stdin: |
+      ls -1
+      cd file
+      echo $?
+      ls -1

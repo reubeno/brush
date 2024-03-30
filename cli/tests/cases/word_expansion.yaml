@@ -73,7 +73,6 @@ cases:
       echo "len(y[@]) = ${#y[@]}"
 
   - name: "Parameter expression: default value"
-    known_failure: true
     stdin: |
       value="value"
       empty=""
@@ -175,7 +174,6 @@ cases:
       declare -p undeclared
 
   - name: "Parameter expression: alternative value"
-    known_failure: true
     stdin: |
       value="value"
       empty=""
@@ -322,34 +320,48 @@ cases:
     stdin: |
       var="hello"
       echo "${var^}"
-      echo "${var^ignored}"
+      echo "${var^l}"
 
-  - name: "Uppercase all characters"
+  - name: "Uppercase matching characters"
     known_failure: true
     stdin: |
       var="hello"
       echo "${var^^}"
-      echo "${var^^ignored}"
+      echo "${var^^l}"
 
   - name: "Lowercase first character"
     known_failure: true
     stdin: |
       var="HELLO"
       echo "${var,}"
-      echo "${var,ignored}"
+      echo "${var,L}"
 
-  - name: "Lowercase all characters"
+  - name: "Lowercase matching characters"
     known_failure: true
     stdin: |
       var="HELLO"
       echo "${var,,}"
-      echo "${var,,ignored}"
+      echo "${var,,L}"
 
   - name: "Substring replacement"
     known_failure: true
     stdin: |
       var="Hello, world!"
       echo "${var/world/WORLD}"
+
+  - name: "Prefix substring replacement"
+    known_failure: true
+    stdin: |
+      var="Hello, world!"
+      echo "${var/#world/WORLD}"
+      echo "${var/#Hello/HELLO}"
+
+  - name: "Suffix substring replacement"
+    known_failure: true
+    stdin: |
+      var="Hello, world!"
+      echo "${var/%Hello/HELLO}"
+      echo "${var/%world!/WORLD!}"
 
   - name: "Global substring replacement"
     known_failure: true
@@ -358,7 +370,6 @@ cases:
       echo "${var//world/WORLD}"
 
   - name: "Substring from offset"
-    known_failure: true
     stdin: |
       var="Hello, world!"
       echo "\${var:0}:  ${var:0}"
@@ -367,7 +378,6 @@ cases:
       echo "\${var:-1}: ${var:-1}"
 
   - name: "Substring with length"
-    known_failure: true
     stdin: |
       var="Hello, world!"
       echo "\${var:0:1}:  ${var:0:1}"

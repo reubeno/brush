@@ -1,0 +1,40 @@
+name: "Interactive"
+cases:
+  - name: "Basic interactive test"
+    pty: true
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      echo hi
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "Simple tab completion"
+    pty: true
+    ignore_stdout: true
+    test_files:
+      - path: "test-file.txt"
+        contents: |
+          Hello, world.
+    stdin: |
+      #expect-prompt
+      cat test-file.
+      #send:Tab
+      #send:Enter
+      #expect:Hello, world.
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "Tab completion with broken syntax"
+    pty: true
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      (echo abc
+      #send:Tab
+      )
+      #send:Enter
+      #expect:abc
+      #expect-prompt
+      #send:Ctrl+D

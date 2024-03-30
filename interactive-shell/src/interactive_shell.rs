@@ -5,6 +5,11 @@ use rustyline::validate::ValidationResult;
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
+pub struct Options {
+    pub shell: shell::CreateOptions,
+    pub disable_bracketed_paste: bool,
+}
+
 pub struct InteractiveShell {
     editor: Editor,
     history_file_path: Option<PathBuf>,
@@ -17,13 +22,13 @@ enum InteractiveExecutionResult {
 }
 
 impl InteractiveShell {
-    pub async fn new(options: &shell::CreateOptions) -> Result<InteractiveShell> {
+    pub async fn new(options: &Options) -> Result<InteractiveShell> {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
-        let shell = shell::Shell::new(options).await?;
+        let shell = shell::Shell::new(&options.shell).await?;
         let history_file_path = shell.get_history_file_path();
 
-        let mut editor = Self::new_editor(shell)?;
+        let mut editor = Self::new_editor(options, shell)?;
         if let Some(history_file_path) = &history_file_path {
             if !history_file_path.exists() {
                 std::fs::File::create(history_file_path)?;
@@ -46,13 +51,14 @@ impl InteractiveShell {
         &mut self.editor.helper_mut().unwrap().shell
     }
 
-    fn new_editor(shell: shell::Shell) -> Result<Editor> {
+    fn new_editor(options: &Options, shell: shell::Shell) -> Result<Editor> {
         let config = rustyline::config::Builder::new()
             .max_history_size(1000)?
             .history_ignore_dups(true)?
             .auto_add_history(true)
             .bell_style(rustyline::config::BellStyle::None)
             .completion_type(rustyline::config::CompletionType::List)
+            .bracketed_paste(!options.disable_bracketed_paste)
             .build();
 
         let mut editor = rustyline::Editor::with_config(config)?;

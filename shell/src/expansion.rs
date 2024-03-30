@@ -6,6 +6,7 @@ use crate::error;
 use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
+use crate::variables::ShellValue;
 
 pub(crate) async fn basic_expand_word(
     shell: &mut Shell,
@@ -58,6 +59,94 @@ impl ExpandedWordPiece {
 }
 
 type WordField = Vec<ExpandedWordPiece>;
+
+#[derive(Debug)]
+struct ParameterExpansionResult {
+    pub expansion: ParameterExpansionValue,
+    pub parameter_state: ParameterState,
+}
+
+#[derive(Debug)]
+enum ParameterExpansionValue {
+    String(String),
+    Array(Vec<String>),
+}
+
+impl ParameterExpansionResult {
+    fn new(parameter_state: ParameterState) -> Self {
+        Self {
+            expansion: ParameterExpansionValue::String(String::new()),
+            parameter_state,
+        }
+    }
+}
+
+impl From<String> for ParameterExpansionResult {
+    fn from(s: String) -> Self {
+        let parameter_state = if s.is_empty() {
+            ParameterState::DefinedEmptyString
+        } else {
+            ParameterState::NonZeroLength
+        };
+
+        Self {
+            expansion: ParameterExpansionValue::String(s),
+            parameter_state,
+        }
+    }
+}
+
+impl From<&ShellValue> for ParameterExpansionResult {
+    fn from(value: &ShellValue) -> Self {
+        match value {
+            ShellValue::Unset(_) => Self::new(ParameterState::DeclaredButUnset),
+            ShellValue::Random | ShellValue::String(_) => {
+                ParameterExpansionResult::from(String::from(value))
+            }
+            ShellValue::AssociativeArray(values) => {
+                let just_values = values.values().map(|v| v.to_owned()).collect();
+                let parameter_state = if values.is_empty() {
+                    ParameterState::DefinedEmptyString
+                } else {
+                    ParameterState::NonZeroLength
+                };
+                Self {
+                    expansion: ParameterExpansionValue::Array(just_values),
+                    parameter_state,
+                }
+            }
+            ShellValue::IndexedArray(values) => {
+                let just_values = values.values().map(|v| v.to_owned()).collect();
+                let parameter_state = if values.is_empty() {
+                    ParameterState::DefinedEmptyString
+                } else {
+                    ParameterState::NonZeroLength
+                };
+                Self {
+                    expansion: ParameterExpansionValue::Array(just_values),
+                    parameter_state,
+                }
+            }
+        }
+    }
+}
+
+impl From<ParameterExpansionValue> for String {
+    fn from(value: ParameterExpansionValue) -> Self {
+        match value {
+            ParameterExpansionValue::String(s) => s,
+            ParameterExpansionValue::Array(values) => values.join(" "),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ParameterState {
+    NonZeroLength,
+    DefinedEmptyString,
+    DeclaredButUnset,
+    Undefined,
+}
 
 struct WordExpander<'a> {
     shell: &'a mut Shell,
@@ -357,24 +446,26 @@ impl<'a> WordExpander<'a> {
         &mut self,
         expr: &parser::word::ParameterExpr,
     ) -> Result<String, error::Error> {
-        // TODO: observe test_type
         #[allow(clippy::cast_possible_truncation)]
         match expr {
             parser::word::ParameterExpr::Parameter { parameter } => {
-                self.expand_parameter(parameter)
+                Ok(self.expand_parameter(parameter)?.expansion.into())
             }
             parser::word::ParameterExpr::UseDefaultValues {
                 parameter,
-                test_type: _,
+                test_type,
                 default_value,
             } => {
                 let expanded_parameter = self.expand_parameter(parameter)?;
-                if !expanded_parameter.is_empty() {
-                    Ok(expanded_parameter)
-                } else if let Some(default_value) = default_value {
-                    Ok(self.basic_expand(default_value.as_str()).await?)
-                } else {
-                    Ok(String::new())
+                let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
+
+                match (test_type, expanded_parameter.parameter_state) {
+                    (_, ParameterState::NonZeroLength)
+                    | (
+                        parser::word::ParameterTestType::Unset,
+                        ParameterState::DefinedEmptyString,
+                    ) => Ok(expanded_parameter.expansion.into()),
+                    _ => Ok(self.basic_expand(default_value).await?),
                 }
             }
             parser::word::ParameterExpr::AssignDefaultValues {
@@ -389,24 +480,33 @@ impl<'a> WordExpander<'a> {
             } => error::unimp("expansion: indicate error if null or unset expressions"),
             parser::word::ParameterExpr::UseAlternativeValue {
                 parameter,
-                test_type: _,
+                test_type,
                 alternative_value,
             } => {
                 let expanded_parameter = self.expand_parameter(parameter)?;
-                if !expanded_parameter.is_empty() {
-                    Ok(self
-                        .basic_expand(alternative_value.as_ref().map_or("", |av| av.as_str()))
-                        .await?)
-                } else {
-                    Ok(String::new())
+                let alternative_value = alternative_value
+                    .as_ref()
+                    .map_or_else(|| "", |v| v.as_str());
+
+                match (test_type, expanded_parameter.parameter_state) {
+                    (_, ParameterState::NonZeroLength)
+                    | (
+                        parser::word::ParameterTestType::Unset,
+                        ParameterState::DefinedEmptyString,
+                    ) => Ok(self.basic_expand(alternative_value).await?),
+                    _ => Ok(String::new()),
                 }
             }
             parser::word::ParameterExpr::ParameterLength { parameter } => {
-                let expanded_parameter = self.expand_parameter(parameter)?;
-                Ok(expanded_parameter.len().to_string())
+                let len = match self.expand_parameter(parameter)?.expansion {
+                    ParameterExpansionValue::String(s) => s.len(),
+                    ParameterExpansionValue::Array(values) => values.len(),
+                };
+
+                Ok(len.to_string())
             }
             parser::word::ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern } => {
-                let expanded_parameter = self.expand_parameter(parameter)?;
+                let expanded_parameter: String = self.expand_parameter(parameter)?.expansion.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_smallest_matching_suffix(
                     expanded_parameter.as_str(),
@@ -415,7 +515,7 @@ impl<'a> WordExpander<'a> {
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern } => {
-                let expanded_parameter = self.expand_parameter(parameter)?;
+                let expanded_parameter: String = self.expand_parameter(parameter)?.expansion.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_largest_matching_suffix(
                     expanded_parameter.as_str(),
@@ -425,7 +525,7 @@ impl<'a> WordExpander<'a> {
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern } => {
-                let expanded_parameter = self.expand_parameter(parameter)?;
+                let expanded_parameter: String = self.expand_parameter(parameter)?.expansion.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_smallest_matching_prefix(
                     expanded_parameter.as_str(),
@@ -435,7 +535,7 @@ impl<'a> WordExpander<'a> {
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::RemoveLargestPrefixPattern { parameter, pattern } => {
-                let expanded_parameter = self.expand_parameter(parameter)?;
+                let expanded_parameter: String = self.expand_parameter(parameter)?.expansion.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_largest_matching_prefix(
                     expanded_parameter.as_str(),
@@ -449,9 +549,8 @@ impl<'a> WordExpander<'a> {
                 offset,
                 length,
             } => {
-                let expanded_parameter = self.expand_parameter(parameter)?;
+                let expanded_parameter: String = self.expand_parameter(parameter)?.expansion.into();
 
-                // TODO: handle negative offset
                 let expanded_offset = offset.eval(self.shell).await?;
                 let expanded_offset = usize::try_from(expanded_offset)
                     .map_err(|e| error::Error::Unknown(e.into()))?;
@@ -461,9 +560,11 @@ impl<'a> WordExpander<'a> {
                 }
 
                 let result = if let Some(length) = length {
-                    let expanded_length = length.eval(self.shell).await?;
+                    let mut expanded_length = length.eval(self.shell).await?;
                     if expanded_length < 0 {
-                        return error::unimp("substring with negative length");
+                        let param_length: i64 = i64::try_from(expanded_parameter.len())
+                            .map_err(|e| error::Error::Unknown(e.into()))?;
+                        expanded_length += param_length;
                     }
 
                     let expanded_length = std::cmp::min(
@@ -480,7 +581,7 @@ impl<'a> WordExpander<'a> {
                 Ok(result.to_owned())
             }
             parser::word::ParameterExpr::Transform { parameter, op } => {
-                let expanded_parameter = self.expand_parameter(parameter)?;
+                let expanded_parameter: String = self.expand_parameter(parameter)?.expansion.into();
                 match op {
                     parser::word::ParameterTransformOp::PromptExpand => {
                         let result =
@@ -513,90 +614,146 @@ impl<'a> WordExpander<'a> {
                     }
                 }
             }
+            parser::word::ParameterExpr::UppercaseFirstChar {
+                parameter: _parameter,
+                pattern: _pattern,
+            } => error::unimp("expansion: uppercase first char"),
+            parser::word::ParameterExpr::UppercasePattern {
+                parameter: _parameter,
+                pattern: _pattern,
+            } => error::unimp("expansion: uppercase pattern"),
+            parser::word::ParameterExpr::LowercaseFirstChar {
+                parameter,
+                pattern: _pattern,
+            } => {
+                let expanded_parameter: String = self.expand_parameter(parameter)?.expansion.into();
+                if let Some(first_char) = expanded_parameter.chars().next() {
+                    let mut result = String::new();
+                    result.push(first_char.to_lowercase().next().unwrap());
+                    result.push_str(expanded_parameter.get(1..).unwrap());
+                    Ok(result)
+                } else {
+                    Ok(expanded_parameter)
+                }
+            }
+            parser::word::ParameterExpr::LowercasePattern {
+                parameter: _parameter,
+                pattern: _pattern,
+            } => error::unimp("expansion: lowercase pattern"),
+            parser::word::ParameterExpr::ReplaceSubstring {
+                parameter: _parameter,
+                pattern: _patter,
+                replacement: _replacement,
+                match_kind: _match_kind,
+            } => error::unimp("expansion: replace substring"),
+            parser::word::ParameterExpr::VariableNames {
+                prefix: _prefix,
+                concatenate: _concatenate,
+            } => error::unimp("expansion: variable names"),
         }
     }
 
     fn expand_parameter(
         &mut self,
         parameter: &parser::word::Parameter,
-    ) -> Result<String, error::Error> {
+    ) -> Result<ParameterExpansionResult, error::Error> {
         match parameter {
             parser::word::Parameter::Positional(p) => {
                 if *p == 0 {
                     return Err(anyhow::anyhow!("unexpected positional parameter").into());
                 }
 
-                let parameter: &str = if let Some(parameter) =
-                    self.shell.positional_parameters.get((p - 1) as usize)
-                {
-                    parameter
+                if let Some(parameter) = self.shell.positional_parameters.get((p - 1) as usize) {
+                    Ok(ParameterExpansionResult::from(parameter.to_owned()))
                 } else {
-                    ""
-                };
-
-                Ok(parameter.to_owned())
+                    Ok(ParameterExpansionResult::new(ParameterState::Undefined))
+                }
             }
             parser::word::Parameter::Special(s) => self.expand_special_parameter(s),
-            parser::word::Parameter::Named(n) => Ok(self
-                .shell
-                .env
-                .get(n)
-                .map_or_else(String::new, |v| String::from(v.value()))),
+            parser::word::Parameter::Named(n) => {
+                if let Some(var) = self.shell.env.get(n) {
+                    if matches!(var.value(), ShellValue::Unset(_)) {
+                        Ok(ParameterExpansionResult::new(
+                            ParameterState::DeclaredButUnset,
+                        ))
+                    } else {
+                        Ok(ParameterExpansionResult::from(String::from(var.value())))
+                    }
+                } else {
+                    Ok(ParameterExpansionResult::new(ParameterState::Undefined))
+                }
+            }
             parser::word::Parameter::NamedWithIndex { name, index } => {
-                match self.shell.env.get(name) {
-                    Some(var) => Ok(var
-                        .value()
-                        .get_at(index.as_str())?
-                        .map_or_else(String::new, |s| s.clone())),
-                    None => Ok(String::new()),
+                if let Some(var) = self.shell.env.get(name) {
+                    if matches!(var.value(), ShellValue::Unset(_)) {
+                        Ok(ParameterExpansionResult::new(
+                            ParameterState::DeclaredButUnset,
+                        ))
+                    } else {
+                        if let Some(value) = var.value().get_at(index.as_str())? {
+                            Ok(ParameterExpansionResult::from(value))
+                        } else {
+                            Ok(ParameterExpansionResult::new(ParameterState::Undefined))
+                        }
+                    }
+                } else {
+                    Ok(ParameterExpansionResult::new(ParameterState::Undefined))
                 }
             }
             parser::word::Parameter::NamedWithAllIndices {
                 name,
                 concatenate: _concatenate,
-            } => match self.shell.env.get(name) {
-                Some(var) => var.value().get_all(),
-                None => Ok(String::new()),
-            },
+            } => {
+                if let Some(var) = self.shell.env.get(name) {
+                    if matches!(var.value(), ShellValue::Unset(_)) {
+                        Ok(ParameterExpansionResult::new(
+                            ParameterState::DeclaredButUnset,
+                        ))
+                    } else {
+                        Ok(ParameterExpansionResult::from(var.value().get_all()?))
+                    }
+                } else {
+                    Ok(ParameterExpansionResult::new(ParameterState::Undefined))
+                }
+            }
         }
     }
 
     fn expand_special_parameter(
         &mut self,
         parameter: &parser::word::SpecialParameter,
-    ) -> Result<String, error::Error> {
-        match parameter {
+    ) -> Result<ParameterExpansionResult, error::Error> {
+        let expansion = match parameter {
             parser::word::SpecialParameter::AllPositionalParameters { concatenate } => {
                 if *concatenate {
                     let separator = self.shell.get_ifs().chars().next().unwrap_or(' ');
-                    Ok(self
-                        .shell
+                    self.shell
                         .positional_parameters
-                        .join(separator.to_string().as_str()))
+                        .join(separator.to_string().as_str())
                 } else {
                     // TODO: implement concatenate policy
-                    Ok(self.shell.positional_parameters.join(" "))
+                    self.shell.positional_parameters.join(" ")
                 }
             }
             parser::word::SpecialParameter::PositionalParameterCount => {
-                Ok(self.shell.positional_parameters.len().to_string())
+                self.shell.positional_parameters.len().to_string()
             }
             parser::word::SpecialParameter::LastExitStatus => {
-                Ok(self.shell.last_exit_status.to_string())
+                self.shell.last_exit_status.to_string()
             }
-            parser::word::SpecialParameter::CurrentOptionFlags => {
-                Ok(self.shell.current_option_flags())
-            }
-            parser::word::SpecialParameter::ProcessId => Ok(std::process::id().to_string()),
+            parser::word::SpecialParameter::CurrentOptionFlags => self.shell.current_option_flags(),
+            parser::word::SpecialParameter::ProcessId => std::process::id().to_string(),
             parser::word::SpecialParameter::LastBackgroundProcessId => {
-                error::unimp("expansion: last background process id")
+                return error::unimp("expansion: last background process id");
             }
-            parser::word::SpecialParameter::ShellName => Ok(self
+            parser::word::SpecialParameter::ShellName => self
                 .shell
                 .shell_name
                 .as_ref()
-                .map_or_else(String::new, |name| name.clone())),
-        }
+                .map_or_else(String::new, |name| name.clone()),
+        };
+
+        Ok(ParameterExpansionResult::from(expansion))
     }
 
     async fn expand_arithmetic_expr(
