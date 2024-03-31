@@ -118,6 +118,9 @@ pub enum ParameterExpr {
         prefix: String,
         concatenate: bool,
     },
+    DereferenceVariable {
+        variable_name: String,
+    },
 }
 
 #[derive(Debug)]
@@ -280,6 +283,9 @@ peg::parser! {
             } /
             "!" prefix:variable_name() "@" {
                 ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: false }
+            } /
+            "!" variable_name:variable_name() {
+                ParameterExpr::DereferenceVariable { variable_name: variable_name.to_owned() }
             } /
             parameter:parameter() ":" offset:arithmetic_expression(<[':' | '}']>) length:(":" l:arithmetic_expression(<['}']>) { l })? {
                 ParameterExpr::Substring { parameter, offset, length }

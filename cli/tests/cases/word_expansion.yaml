@@ -278,8 +278,10 @@ cases:
       ref="var"
       echo "${!ref}"
 
+      var="not-defined"
+      echo "$!{ref}"
+
   - name: "Variable prefix match"
-    known_failure: true
     stdin: |
       var1="Hello"
       var2="World"
@@ -319,27 +321,31 @@ cases:
     stdin: |
       var="hello"
       echo "${var^}"
+      echo "${var^h}"
       echo "${var^l}"
 
-  - name: "Uppercase matching characters"
+  - name: "Uppercase matching pattern"
     known_failure: true
     stdin: |
       var="hello"
       echo "${var^^}"
       echo "${var^^l}"
+      echo "${var^^m}"
 
   - name: "Lowercase first character"
     known_failure: true
     stdin: |
       var="HELLO"
       echo "${var,}"
+      echo "${var,H}"
       echo "${var,L}"
 
-  - name: "Lowercase matching characters"
+  - name: "Lowercase matching pattern"
     known_failure: true
     stdin: |
       var="HELLO"
       echo "${var,,}"
+      echo "${var,,M}"
       echo "${var,,L}"
 
   - name: "Substring replacement"
