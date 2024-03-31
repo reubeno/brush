@@ -1,6 +1,7 @@
 mod arithmetic;
 pub mod ast;
 mod parser;
+pub mod pattern;
 pub mod prompt;
 mod tokenizer;
 pub mod word;

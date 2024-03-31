@@ -593,10 +593,25 @@ impl<'a> WordExpander<'a> {
                 parameter: _parameter,
                 pattern: _pattern,
             } => error::unimp("expansion: uppercase first char"),
-            parser::word::ParameterExpr::UppercasePattern {
-                parameter: _parameter,
-                pattern: _pattern,
-            } => error::unimp("expansion: uppercase pattern"),
+            parser::word::ParameterExpr::UppercasePattern { parameter, pattern } => {
+                let expanded_parameter: String = self.expand_parameter(parameter)?.into();
+
+                if let Some(pattern) = pattern {
+                    let expanded_pattern = self.basic_expand(pattern).await?;
+                    if !expanded_pattern.is_empty() {
+                        let regex = patterns::match_pattern_to_regex(expanded_pattern.as_str())?;
+                        let result = regex
+                            .replace_all(expanded_parameter.as_ref(), |caps: &regex::Captures| {
+                                caps[0].to_uppercase()
+                            });
+                        Ok(ParameterExpansion::from(result.into_owned()))
+                    } else {
+                        Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
+                    }
+                } else {
+                    Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
+                }
+            }
             parser::word::ParameterExpr::LowercaseFirstChar {
                 parameter,
                 pattern: _pattern,
@@ -611,34 +626,60 @@ impl<'a> WordExpander<'a> {
                     Ok(ParameterExpansion::from(expanded_parameter))
                 }
             }
-            parser::word::ParameterExpr::LowercasePattern {
-                parameter: _parameter,
-                pattern: _pattern,
-            } => error::unimp("expansion: lowercase pattern"),
+            parser::word::ParameterExpr::LowercasePattern { parameter, pattern } => {
+                let expanded_parameter: String = self.expand_parameter(parameter)?.into();
+
+                if let Some(pattern) = pattern {
+                    let expanded_pattern = self.basic_expand(pattern).await?;
+                    if !expanded_pattern.is_empty() {
+                        let regex = patterns::match_pattern_to_regex(expanded_pattern.as_str())?;
+                        let result = regex
+                            .replace_all(expanded_parameter.as_ref(), |caps: &regex::Captures| {
+                                caps[0].to_lowercase()
+                            });
+                        Ok(ParameterExpansion::from(result.into_owned()))
+                    } else {
+                        Ok(ParameterExpansion::from(expanded_parameter.to_lowercase()))
+                    }
+                } else {
+                    Ok(ParameterExpansion::from(expanded_parameter.to_lowercase()))
+                }
+            }
             parser::word::ParameterExpr::ReplaceSubstring {
-                parameter: _,
-                pattern: _,
-                replacement: _,
+                parameter,
+                pattern,
+                replacement,
                 match_kind,
             } => {
-                // let expanded_parameter: String = self.expand_parameter(parameter)?.into();
-                // let expanded_pattern = self.basic_expand(pattern).await?;
-                // let expanded_replacement = self.basic_expand(replacement).await?;
+                let expanded_parameter: String = self.expand_parameter(parameter)?.into();
+                let expanded_pattern = self.basic_expand(pattern).await?;
+                let expanded_replacement = self.basic_expand(replacement).await?;
+
+                let mut regex_str = patterns::match_pattern_to_regex_str(expanded_pattern.as_str())
+                    .map_err(|e| error::Error::Unknown(e.into()))?;
 
                 match match_kind {
-                    parser::word::SubstringMatchKind::Prefix => {
-                        error::unimp("string replacement with prefix")
-                    }
-                    parser::word::SubstringMatchKind::Suffix => {
-                        error::unimp("string replacement with suffix")
-                    }
-                    parser::word::SubstringMatchKind::FirstOccurrence => {
-                        error::unimp("string replacement with first occurrence")
-                    }
-                    parser::word::SubstringMatchKind::Anywhere => {
-                        error::unimp("string replacement with multiple replacements")
-                    }
+                    parser::word::SubstringMatchKind::Prefix => regex_str.insert(0, '^'),
+                    parser::word::SubstringMatchKind::Suffix => regex_str.push('$'),
+                    _ => (),
                 }
+
+                let regex = regex::Regex::new(regex_str.as_str())
+                    .map_err(|e| error::Error::Unknown(e.into()))?;
+
+                let result = match match_kind {
+                    parser::word::SubstringMatchKind::Prefix
+                    | parser::word::SubstringMatchKind::Suffix
+                    | parser::word::SubstringMatchKind::FirstOccurrence => regex
+                        .replace(expanded_parameter.as_ref(), expanded_replacement)
+                        .into_owned(),
+
+                    parser::word::SubstringMatchKind::Anywhere => regex
+                        .replace_all(expanded_parameter.as_ref(), expanded_replacement)
+                        .into_owned(),
+                };
+
+                Ok(ParameterExpansion::from(result))
             }
             parser::word::ParameterExpr::VariableNames {
                 prefix,
@@ -674,6 +715,17 @@ impl<'a> WordExpander<'a> {
                     } else {
                         Ok(ParameterExpansion::undefined())
                     }
+                } else {
+                    Ok(ParameterExpansion::undefined())
+                }
+            }
+            parser::word::ParameterExpr::MemberKeys {
+                variable_name,
+                concatenate,
+            } => {
+                if let Some(var) = self.shell.env.get(variable_name) {
+                    let keys = var.value().get_element_keys();
+                    Ok(ParameterExpansion::array(keys, *concatenate))
                 } else {
                     Ok(ParameterExpansion::undefined())
                 }
@@ -727,7 +779,7 @@ impl<'a> WordExpander<'a> {
             parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 if let Some(var) = self.shell.env.get(name) {
                     Ok(ParameterExpansion::array(
-                        var.value().get_element_values()?,
+                        var.value().get_element_values(),
                         *concatenate,
                     ))
                 } else {

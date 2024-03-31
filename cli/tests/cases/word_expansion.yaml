@@ -272,14 +272,13 @@ cases:
       echo "\${var##suf}: ${var##suf}"
 
   - name: "Indirect variable references"
-    known_failure: true
     stdin: |
       var="Hello"
       ref="var"
       echo "${!ref}"
 
       var="not-defined"
-      echo "$!{ref}"
+      echo "${!ref}"
 
   - name: "Variable prefix match"
     stdin: |
@@ -300,7 +299,6 @@ cases:
       done
 
   - name: "Array keys"
-    known_failure: true
     stdin: |
       arr=("element1" "element2" "element3")
       echo "${!arr[@]}"
@@ -325,7 +323,6 @@ cases:
       echo "${var^l}"
 
   - name: "Uppercase matching pattern"
-    known_failure: true
     stdin: |
       var="hello"
       echo "${var^^}"
@@ -341,7 +338,6 @@ cases:
       echo "${var,L}"
 
   - name: "Lowercase matching pattern"
-    known_failure: true
     stdin: |
       var="HELLO"
       echo "${var,,}"
@@ -349,27 +345,23 @@ cases:
       echo "${var,,L}"
 
   - name: "Substring replacement"
-    known_failure: true
     stdin: |
       var="Hello, world!"
       echo "${var/world/WORLD}"
 
   - name: "Prefix substring replacement"
-    known_failure: true
     stdin: |
       var="Hello, world!"
       echo "${var/#world/WORLD}"
       echo "${var/#Hello/HELLO}"
 
   - name: "Suffix substring replacement"
-    known_failure: true
     stdin: |
       var="Hello, world!"
       echo "${var/%Hello/HELLO}"
       echo "${var/%world!/WORLD!}"
 
   - name: "Global substring replacement"
-    known_failure: true
     stdin: |
       var="Hello, world, world!"
       echo "${var//world/WORLD}"

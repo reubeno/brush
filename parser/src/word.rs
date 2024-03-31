@@ -121,6 +121,10 @@ pub enum ParameterExpr {
     DereferenceVariable {
         variable_name: String,
     },
+    MemberKeys {
+        variable_name: String,
+        concatenate: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -275,9 +279,12 @@ peg::parser! {
             }
 
         rule non_posix_parameter_expression() -> ParameterExpr =
-            // TODO: Handle additional bash extensions:
-            //   ${!name[@]}
-            //   ${!name[*]}
+            "!" variable_name:variable_name() "[*]" {
+                ParameterExpr::MemberKeys { variable_name: variable_name.to_owned(), concatenate: true }
+            } /
+            "!" variable_name:variable_name() "[@]" {
+                ParameterExpr::MemberKeys { variable_name: variable_name.to_owned(), concatenate: false }
+            } /
             "!" prefix:variable_name() "*" {
                 ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: true }
             } /
@@ -293,29 +300,29 @@ peg::parser! {
             parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
                 ParameterExpr::Transform { parameter, op }
             } /
-            parameter:parameter() "/#" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+            parameter:parameter() "/#" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
                 ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Prefix }
             } /
-            parameter:parameter() "/%" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+            parameter:parameter() "/%" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
                 ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Suffix }
             } /
-            parameter:parameter() "//" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+            parameter:parameter() "//" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
                 ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Anywhere }
             } /
-            parameter:parameter() "/" pattern:parameter_expression_word() "/" replacement:parameter_replacement_str() {
+            parameter:parameter() "/" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
                 ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::FirstOccurrence }
-            } /
-            parameter:parameter() "^" pattern:parameter_expression_word()? {
-                ParameterExpr::UppercaseFirstChar { parameter, pattern }
             } /
             parameter:parameter() "^^" pattern:parameter_expression_word()? {
                 ParameterExpr::UppercasePattern { parameter, pattern }
             } /
-            parameter:parameter() "," pattern:parameter_expression_word()? {
-                ParameterExpr::LowercaseFirstChar { parameter, pattern }
+            parameter:parameter() "^" pattern:parameter_expression_word()? {
+                ParameterExpr::UppercaseFirstChar { parameter, pattern }
             } /
             parameter:parameter() ",," pattern:parameter_expression_word()? {
                 ParameterExpr::LowercasePattern { parameter, pattern }
+            } /
+            parameter:parameter() "," pattern:parameter_expression_word()? {
+                ParameterExpr::LowercaseFirstChar { parameter, pattern }
             }
 
         rule non_posix_parameter_transformation_op() -> ParameterTransformOp =
@@ -390,6 +397,9 @@ peg::parser! {
             }
 
         rule parameter_replacement_str() -> String =
+            s:$(word(<!['}' | '/']>)) { s.to_owned() }
+
+        rule parameter_search_pattern() -> String =
             s:$(word(<!['}' | '/']>)) { s.to_owned() }
 
         rule parameter_expression_word() -> String =

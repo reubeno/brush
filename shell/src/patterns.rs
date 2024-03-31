@@ -75,6 +75,16 @@ pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool, error:
     Ok(matches)
 }
 
+pub(crate) fn match_pattern_to_regex(pattern: &str) -> Result<regex::Regex, error::Error> {
+    let regex_str = match_pattern_to_regex_str(pattern)?;
+    let re = regex::Regex::new(regex_str.as_str()).map_err(|e| error::Error::Unknown(e.into()))?;
+    Ok(re)
+}
+
+pub(crate) fn match_pattern_to_regex_str(pattern: &str) -> Result<String, error::Error> {
+    parser::pattern::pattern_to_regex_str(pattern).map_err(error::Error::Unknown)
+}
+
 pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool, error::Error> {
     let re = regex::Regex::new(regex_pattern).map_err(|e| error::Error::Unknown(e.into()))?;
 
