@@ -483,35 +483,27 @@ impl ShellValue {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    pub fn get_all(&self) -> Result<String, error::Error> {
+    pub fn get_element_values(&self) -> Result<Vec<String>, error::Error> {
         match self {
-            ShellValue::Unset(_) => Ok(String::new()),
-            ShellValue::String(s) => Ok(s.to_owned()),
-            ShellValue::AssociativeArray(values) => {
-                let mut formatted = String::new();
-
-                for (i, (_key, value)) in values.iter().enumerate() {
-                    if i > 0 {
-                        formatted.push(' ');
-                    }
-                    formatted.push_str(value);
+            ShellValue::Unset(_) => Ok(vec![]),
+            ShellValue::String(s) => Ok(vec![s.to_owned()]),
+            ShellValue::AssociativeArray(array) => {
+                let mut values = vec![];
+                for value in array.values() {
+                    values.push(value.to_owned());
                 }
 
-                Ok(formatted)
+                Ok(values)
             }
-            ShellValue::IndexedArray(values) => {
-                let mut formatted = String::new();
-
-                for (i, (_key, value)) in values.iter().enumerate() {
-                    if i > 0 {
-                        formatted.push(' ');
-                    }
-                    formatted.push_str(value);
+            ShellValue::IndexedArray(array) => {
+                let mut values = vec![];
+                for value in array.values() {
+                    values.push(value.to_owned());
                 }
 
-                Ok(formatted)
+                Ok(values)
             }
-            ShellValue::Random => Ok(get_random_str()),
+            ShellValue::Random => Ok(vec![get_random_str()]),
         }
     }
 }

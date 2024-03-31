@@ -65,7 +65,6 @@ cases:
       done
 
   - name: "Array length"
-    known_failure: true
     stdin: |
       y=(a b c)
       echo "len(y)    = ${#y}"
