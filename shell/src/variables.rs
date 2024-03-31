@@ -469,41 +469,22 @@ impl ShellValue {
         }
     }
 
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn get_all_elements(&self) -> Result<Vec<String>, error::Error> {
-        let result = match self {
+    pub fn get_element_keys(&self) -> Vec<String> {
+        match self {
             ShellValue::Unset(_) => vec![],
-            ShellValue::String(s) => vec![s.to_owned()],
-            ShellValue::AssociativeArray(arr) => arr.values().map(|s| s.to_owned()).collect(),
-            ShellValue::IndexedArray(arr) => arr.values().map(|s| s.to_owned()).collect(),
-            ShellValue::Random => vec![get_random_str()],
-        };
-
-        Ok(result)
+            ShellValue::String(_) | ShellValue::Random => vec!["0".to_owned()],
+            ShellValue::AssociativeArray(array) => array.keys().map(|k| k.to_owned()).collect(),
+            ShellValue::IndexedArray(array) => array.keys().map(|k| k.to_string()).collect(),
+        }
     }
 
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn get_element_values(&self) -> Result<Vec<String>, error::Error> {
+    pub fn get_element_values(&self) -> Vec<String> {
         match self {
-            ShellValue::Unset(_) => Ok(vec![]),
-            ShellValue::String(s) => Ok(vec![s.to_owned()]),
-            ShellValue::AssociativeArray(array) => {
-                let mut values = vec![];
-                for value in array.values() {
-                    values.push(value.to_owned());
-                }
-
-                Ok(values)
-            }
-            ShellValue::IndexedArray(array) => {
-                let mut values = vec![];
-                for value in array.values() {
-                    values.push(value.to_owned());
-                }
-
-                Ok(values)
-            }
-            ShellValue::Random => Ok(vec![get_random_str()]),
+            ShellValue::Unset(_) => vec![],
+            ShellValue::String(s) => vec![s.to_owned()],
+            ShellValue::AssociativeArray(array) => array.values().map(|v| v.to_owned()).collect(),
+            ShellValue::IndexedArray(array) => array.values().map(|v| v.to_owned()).collect(),
+            ShellValue::Random => vec![get_random_str()],
         }
     }
 }
