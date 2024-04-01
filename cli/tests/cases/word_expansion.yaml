@@ -101,7 +101,6 @@ cases:
       echo "\${undeclared:-}        : ${undeclared:-}"
 
   - name: "Parameter expression: assign default value (no colon)"
-    known_failure: true
     stdin: |
       value="value"
       empty=""
@@ -119,7 +118,6 @@ cases:
       declare -p undeclared
 
   - name: "Parameter expression: assign default value (no colon, empty replacement)"
-    known_failure: true
     stdin: |
       value="value"
       empty=""
@@ -137,7 +135,6 @@ cases:
       declare -p undeclared
 
   - name: "Parameter expression: assign default value (colon)"
-    known_failure: true
     stdin: |
       value="value"
       empty=""
@@ -155,7 +152,6 @@ cases:
       declare -p undeclared
 
   - name: "Parameter expression: assign default value (colon, empty replacement)"
-    known_failure: true
     stdin: |
       value="value"
       empty=""
@@ -201,8 +197,9 @@ cases:
       echo "\${declared:+}          : ${declared:+}"
       echo "\${undeclared:+}        : ${undeclared:+}"
 
-  - name: "Parameter expression: error on condition"
-    known_failure: true
+  - name: "Parameter expression: error on condition (interactive)"
+    ignore_stderr: true
+    args: ["-i"]
     stdin: |
       value="value"
       empty=""
@@ -210,42 +207,49 @@ cases:
       unset undeclared
 
       # ?
-      echo "\${value?default}       : ${value?default}"
+      echo "\${value?error message}       : ${value?error message}"
       echo "  -> result: $?"
-      echo "\${empty?default}       : ${empty?default}"
+      echo "\${empty?error message}       : ${empty?error message}"
       echo "  -> result: $?"
-      echo "\${declared?default}    : ${declared?default}"
+      echo "\${declared?error message}    : ${declared?error message}"
       echo "  -> result: $?"
-      echo "\${undeclared?default}  : ${undeclared?default}"
+      echo "\${undeclared?error message}  : ${undeclared?error message}"
       echo "  -> result: $?"
 
-      echo "\${value?}              : ${value?}"
+      echo "\${value?}                    : ${value?}"
       echo "  -> result: $?"
-      echo "\${empty?}              : ${empty?}"
+      echo "\${empty?}                    : ${empty?}"
       echo "  -> result: $?"
-      echo "\${declared?}           : ${declared?}"
+      echo "\${declared?}                 : ${declared?}"
       echo "  -> result: $?"
-      echo "\${undeclared?}         : ${undeclared?}"
+      echo "\${undeclared?}               : ${undeclared?}"
       echo "  -> result: $?"
 
       # :?
-      echo "\${value:?default}      : ${value:?default}"
+      echo "\${value:?error message}      : ${value:?error message}"
       echo "  -> result: $?"
-      echo "\${empty:?default}      : ${empty:?default}"
+      echo "\${empty:?error message}      : ${empty:?error message}"
       echo "  -> result: $?"
-      echo "\${declared:?default}   : ${declared:?default}"
+      echo "\${declared:?error message}   : ${declared:?error message}"
       echo "  -> result: $?"
-      echo "\${undeclared:?default} : ${undeclared:?default}"
+      echo "\${undeclared:?error message} : ${undeclared:?error message}"
       echo "  -> result: $?"
 
-      echo "\${value:?}             : ${value:?}"
+      echo "\${value:?}                   : ${value:?}"
       echo "  -> result: $?"
-      echo "\${empty:?}             : ${empty:?}"
+      echo "\${empty:?}                   : ${empty:?}"
       echo "  -> result: $?"
-      echo "\${declared:?}          : ${declared:?}"
+      echo "\${declared:?}                : ${declared:?}"
       echo "  -> result: $?"
-      echo "\${undeclared:?}        : ${undeclared:?}"
+      echo "\${undeclared:?}              : ${undeclared:?}"
       echo "  -> result: $?"
+
+  - name: "Parameter expression: error on condition (non-interactive)"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      echo "${non_existent_var?error message}"
+      echo "This should never execute"
 
   - name: "Remove prefix/suffix"
     stdin: |
@@ -315,56 +319,62 @@ cases:
       done
 
   - name: "Uppercase first character"
-    known_failure: true
     stdin: |
       var="hello"
-      echo "${var^}"
-      echo "${var^h}"
-      echo "${var^l}"
+      echo "\${var^}:   ${var^}"
+      echo "\${var^h}:  ${var^h}"
+      echo "\${var^l}:  ${var^l}"
+      echo "\${var^h*}: ${var^h*}"
+      echo "\${var^he}: ${var^he}"
+      echo "\${var^?}:  ${var^?}"
+      echo "\${var^*}:  ${var^*}"
 
   - name: "Uppercase matching pattern"
     stdin: |
       var="hello"
-      echo "${var^^}"
-      echo "${var^^l}"
-      echo "${var^^m}"
+      echo "\${var^^}:  ${var^^}"
+      echo "\${var^^l}: ${var^^l}"
+      echo "\${var^^m}: ${var^^m}"
 
   - name: "Lowercase first character"
-    known_failure: true
     stdin: |
       var="HELLO"
-      echo "${var,}"
-      echo "${var,H}"
-      echo "${var,L}"
+      echo "\${var,}:   ${var,}"
+      echo "\${var,H}:  ${var,H}"
+      echo "\${var,L}:  ${var,L}"
+      echo "\${var,H*}: ${var,H*}"
+      echo "\${var,HE}: ${var,HE}"
+      echo "\${var,?}:  ${var,?}"
+      echo "\${var,*}:  ${var,*}"
 
   - name: "Lowercase matching pattern"
     stdin: |
       var="HELLO"
-      echo "${var,,}"
-      echo "${var,,M}"
-      echo "${var,,L}"
+      echo "\${var,,}:  ${var,,}"
+      echo "\${var,,M}: ${var,,M}"
+      echo "\${var,,L}: ${var,,L}"
 
   - name: "Substring replacement"
     stdin: |
       var="Hello, world!"
-      echo "${var/world/WORLD}"
+      echo "\${var/world/WORLD}: ${var/world/WORLD}"
 
   - name: "Prefix substring replacement"
     stdin: |
       var="Hello, world!"
-      echo "${var/#world/WORLD}"
-      echo "${var/#Hello/HELLO}"
+      echo "\${var/#world/WORLD}: ${var/#world/WORLD}"
+      echo "\${var/#Hello/HELLO}: ${var/#Hello/HELLO}"
 
   - name: "Suffix substring replacement"
     stdin: |
       var="Hello, world!"
-      echo "${var/%Hello/HELLO}"
-      echo "${var/%world!/WORLD!}"
+      echo "\${var/%Hello/HELLO}:   ${var/%Hello/HELLO}"
+      echo "\${var/%world!/WORLD!}: ${var/%world!/WORLD!}"
 
   - name: "Global substring replacement"
     stdin: |
       var="Hello, world, world!"
-      echo "${var//world/WORLD}"
+      echo "\${var//world/WORLD}: ${var//world/WORLD}"
 
   - name: "Substring from offset"
     stdin: |

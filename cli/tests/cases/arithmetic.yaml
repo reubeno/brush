@@ -51,9 +51,7 @@ cases:
       echo "1 % 0 == $((1%0))"
       echo "Result: $?"
 
-  # TODO: This fails because the << operator ends up being parsed as the indicator of a here tag.
   - name: "Shift arithmetic"
-    known_failure: true
     stdin: |
       echo "32 >> 2 == $((32>>2))"
       echo " 1 << 4 == $((1<<4))"
@@ -87,9 +85,9 @@ cases:
       echo "x is now $x"
 
   - name: "Array arithmetic"
-    known_failure: true
     stdin: |
       a=(1 2 3)
+      declare -p a
       echo "a[0]: $((a[0]))"
       echo "a[2]: $((a[2]))"
       echo "a[3]: $((a[3]))"

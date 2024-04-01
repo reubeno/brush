@@ -160,6 +160,8 @@ struct CrossTokenParseState {
     current_here_tags: Vec<HereTag>,
     /// Tokens already tokenized that should be used first to serve requests for tokens.
     queued_tokens: Vec<TokenizeResult>,
+    /// Are we in an arithmetic expansion?
+    arithmetic_expansion: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -364,6 +366,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 here_state: HereState::None,
                 current_here_tags: vec![],
                 queued_tokens: vec![],
+                arithmetic_expansion: false,
             },
         }
     }
@@ -513,7 +516,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // N.B. If the completed operator indicates a here-document, then keep
                     // track that the *next* token should be the here-tag.
                     //
-                    if state.is_specific_operator("<<") {
+                    if self.cross_state.arithmetic_expansion {
+                        // Nothing to do; we're in an arithmetic expansion so << and <<-
+                        // are not here-docs, they're either a left-shift operator or
+                        // a left-shift operator followed by a unary minus operator.
+                    } else if state.is_specific_operator("<<") {
                         self.cross_state.here_state =
                             HereState::NextTokenIsHereTag { remove_tabs: false };
                     } else if state.is_specific_operator("<<-") {
@@ -600,6 +607,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 // Consume the second '(' and add it to the token.
                                 state.append_char(self.next_char()?.unwrap());
                                 required_end_parens = 2;
+                                self.cross_state.arithmetic_expansion = true;
                             }
 
                             let mut tokens = vec![];
@@ -629,6 +637,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     _ => (),
                                 }
                             }
+
+                            self.cross_state.arithmetic_expansion = false;
 
                             state.append_char(self.next_char()?.unwrap());
                         }

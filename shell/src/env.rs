@@ -192,10 +192,6 @@ impl ShellEnvironment {
         }
     }
 
-    //
-    // TODO: Enforce 'readonly'.
-    //
-
     pub fn update_or_add<N: AsRef<str>>(
         &mut self,
         name: N,
@@ -210,6 +206,33 @@ impl ShellEnvironment {
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
             var.assign(value, false)?;
+            updater(&mut var)?;
+
+            self.add(name, var, scope_if_creating)
+        }
+    }
+
+    pub fn update_or_add_array_element<N: AsRef<str>, I: AsRef<str>, V: AsRef<str>>(
+        &mut self,
+        name: N,
+        index: I,
+        value: V,
+        updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
+        lookup_policy: EnvironmentLookup,
+        scope_if_creating: EnvironmentScope,
+    ) -> Result<(), error::Error> {
+        if let Some(var) = self.get_mut_using_policy(name.as_ref(), lookup_policy) {
+            var.assign_at_index(index.as_ref(), value.as_ref(), false)?;
+            updater(var)
+        } else {
+            let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
+            var.assign(
+                variables::ShellValueLiteral::Array(variables::ArrayLiteral(vec![(
+                    Some(index.as_ref().to_owned()),
+                    value.as_ref().to_owned(),
+                )])),
+                false,
+            )?;
             updater(&mut var)?;
 
             self.add(name, var, scope_if_creating)

@@ -3,11 +3,12 @@ use parser::ast;
 use uzers::os::unix::UserExt;
 
 use crate::arithmetic::Evaluatable;
+use crate::env;
 use crate::error;
 use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
-use crate::variables::ShellValue;
+use crate::variables::{self, ShellValue};
 
 pub(crate) async fn basic_expand_word(
     shell: &mut Shell,
@@ -438,15 +439,45 @@ impl<'a> WordExpander<'a> {
                 }
             }
             parser::word::ParameterExpr::AssignDefaultValues {
-                parameter: _,
-                test_type: _,
-                default_value: _,
-            } => error::unimp("expansion: assign default values expressions"),
+                parameter,
+                test_type,
+                default_value,
+            } => {
+                let expanded_parameter = self.expand_parameter(parameter)?;
+                let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
+
+                match (test_type, expanded_parameter.state()) {
+                    (_, ParameterState::NonZeroLength)
+                    | (
+                        parser::word::ParameterTestType::Unset,
+                        ParameterState::DefinedEmptyString,
+                    ) => Ok(expanded_parameter),
+                    _ => {
+                        let expanded_default_value = self.basic_expand(default_value).await?;
+                        self.assign_to_parameter(parameter, expanded_default_value.as_str())?;
+                        Ok(ParameterExpansion::from(expanded_default_value))
+                    }
+                }
+            }
             parser::word::ParameterExpr::IndicateErrorIfNullOrUnset {
-                parameter: _,
-                test_type: _,
-                error_message: _,
-            } => error::unimp("expansion: indicate error if null or unset expressions"),
+                parameter,
+                test_type,
+                error_message,
+            } => {
+                let expanded_parameter = self.expand_parameter(parameter)?;
+                let error_message = error_message.as_ref().map_or_else(|| "", |v| v.as_str());
+
+                match (test_type, expanded_parameter.state()) {
+                    (_, ParameterState::NonZeroLength)
+                    | (
+                        parser::word::ParameterTestType::Unset,
+                        ParameterState::DefinedEmptyString,
+                    ) => Ok(expanded_parameter),
+                    _ => Err(error::Error::CheckedExpansionError(
+                        self.basic_expand(error_message).await?,
+                    )),
+                }
+            }
             parser::word::ParameterExpr::UseAlternativeValue {
                 parameter,
                 test_type,
@@ -589,10 +620,32 @@ impl<'a> WordExpander<'a> {
                     }
                 }
             }
-            parser::word::ParameterExpr::UppercaseFirstChar {
-                parameter: _parameter,
-                pattern: _pattern,
-            } => error::unimp("expansion: uppercase first char"),
+            parser::word::ParameterExpr::UppercaseFirstChar { parameter, pattern } => {
+                let expanded_parameter: String = self.expand_parameter(parameter)?.into();
+                if let Some(first_char) = expanded_parameter.chars().next() {
+                    let applicable = if let Some(pattern) = pattern {
+                        let expanded_pattern = self.basic_expand(pattern).await?;
+                        expanded_pattern.is_empty()
+                            || patterns::pattern_matches(
+                                expanded_pattern.as_str(),
+                                first_char.to_string().as_str(),
+                            )?
+                    } else {
+                        true
+                    };
+
+                    if applicable {
+                        let mut result = String::new();
+                        result.push(first_char.to_uppercase().next().unwrap());
+                        result.push_str(expanded_parameter.get(1..).unwrap());
+                        Ok(ParameterExpansion::from(result))
+                    } else {
+                        Ok(ParameterExpansion::from(expanded_parameter))
+                    }
+                } else {
+                    Ok(ParameterExpansion::from(expanded_parameter))
+                }
+            }
             parser::word::ParameterExpr::UppercasePattern { parameter, pattern } => {
                 let expanded_parameter: String = self.expand_parameter(parameter)?.into();
 
@@ -612,16 +665,28 @@ impl<'a> WordExpander<'a> {
                     Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
                 }
             }
-            parser::word::ParameterExpr::LowercaseFirstChar {
-                parameter,
-                pattern: _pattern,
-            } => {
+            parser::word::ParameterExpr::LowercaseFirstChar { parameter, pattern } => {
                 let expanded_parameter: String = self.expand_parameter(parameter)?.into();
                 if let Some(first_char) = expanded_parameter.chars().next() {
-                    let mut result = String::new();
-                    result.push(first_char.to_lowercase().next().unwrap());
-                    result.push_str(expanded_parameter.get(1..).unwrap());
-                    Ok(ParameterExpansion::from(result))
+                    let applicable = if let Some(pattern) = pattern {
+                        let expanded_pattern = self.basic_expand(pattern).await?;
+                        expanded_pattern.is_empty()
+                            || patterns::pattern_matches(
+                                expanded_pattern.as_str(),
+                                first_char.to_string().as_str(),
+                            )?
+                    } else {
+                        true
+                    };
+
+                    if applicable {
+                        let mut result = String::new();
+                        result.push(first_char.to_lowercase().next().unwrap());
+                        result.push_str(expanded_parameter.get(1..).unwrap());
+                        Ok(ParameterExpansion::from(result))
+                    } else {
+                        Ok(ParameterExpansion::from(expanded_parameter))
+                    }
                 } else {
                     Ok(ParameterExpansion::from(expanded_parameter))
                 }
@@ -730,6 +795,46 @@ impl<'a> WordExpander<'a> {
                     Ok(ParameterExpansion::undefined())
                 }
             }
+        }
+    }
+
+    fn assign_to_parameter(
+        &mut self,
+        parameter: &parser::word::Parameter,
+        value: &str,
+    ) -> Result<(), error::Error> {
+        let (variable_name, index) = match parameter {
+            parser::word::Parameter::Named(name) => (name.as_str(), None),
+            parser::word::Parameter::NamedWithIndex { name, index } => {
+                (name.as_str(), Some(index.as_str()))
+            }
+            parser::word::Parameter::Positional(_)
+            | parser::word::Parameter::NamedWithAllIndices {
+                name: _,
+                concatenate: _,
+            }
+            | parser::word::Parameter::Special(_) => {
+                return Err(error::Error::CannotAssignToSpecialParameter);
+            }
+        };
+
+        if let Some(index) = index {
+            self.shell.env.update_or_add_array_element(
+                variable_name,
+                index,
+                value,
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )
+        } else {
+            self.shell.env.update_or_add(
+                variable_name,
+                variables::ShellValueLiteral::Scalar(value.to_owned()),
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )
         }
     }
 

@@ -14,11 +14,14 @@ pub enum EvalError {
     #[error("failed to expand expression")]
     FailedToExpandExpression,
 
+    #[error("failed to access array")]
+    FailedToAccessArray,
+
+    #[error("failed to update environment")]
+    FailedToUpdateEnvironment,
+
     #[error("failed to parse expression: {0}")]
     ParseError(String),
-
-    #[error("UNIMPLEMENTED: {0}")]
-    Unimplemented(&'static str),
 }
 
 #[async_trait::async_trait]
@@ -57,7 +60,7 @@ impl Evaluatable for ast::ArithmeticExpr {
     async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
         let value = match self {
             ast::ArithmeticExpr::Literal(l) => *l,
-            ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue)?,
+            ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue).await?,
             ast::ArithmeticExpr::UnaryOp(op, operand) => {
                 let operand_eval = operand.eval(shell).await?;
                 apply_unary_op(shell, *op, operand_eval)?
@@ -75,18 +78,18 @@ impl Evaluatable for ast::ArithmeticExpr {
             }
             ast::ArithmeticExpr::Assignment(lvalue, expr) => {
                 let expr_eval = expr.eval(shell).await?;
-                assign(shell, lvalue, expr_eval)?
+                assign(shell, lvalue, expr_eval).await?
             }
             ast::ArithmeticExpr::UnaryAssignment(op, lvalue) => {
-                apply_unary_assignment_op(shell, lvalue, *op)?
+                apply_unary_assignment_op(shell, lvalue, *op).await?
             }
             ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
                 let value = apply_binary_op(
                     *op,
-                    deref_lvalue(shell, lvalue)?,
+                    deref_lvalue(shell, lvalue).await?,
                     operand.eval(shell).await?,
                 )?;
-                assign(shell, lvalue, value)?
+                assign(shell, lvalue, value).await?
             }
         };
 
@@ -94,22 +97,26 @@ impl Evaluatable for ast::ArithmeticExpr {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
-    match lvalue {
-        ast::ArithmeticTarget::Variable(name) => {
-            let value_str: String = shell
+async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
+    let value_str: String = match lvalue {
+        ast::ArithmeticTarget::Variable(name) => shell
+            .env
+            .get(name)
+            .map_or_else(String::new, |v| v.value().into()),
+        ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
+            let index_str = index_expr.eval(shell).await?.to_string();
+
+            shell
                 .env
                 .get(name)
-                .map_or_else(String::new, |v| v.value().into());
+                .map_or_else(|| Ok(None), |v| v.value().get_at(index_str.as_str()))
+                .map_err(|_err| EvalError::FailedToAccessArray)?
+                .unwrap_or_else(String::new)
+        }
+    };
 
-            let value: i64 = value_str.parse().unwrap_or(0);
-            Ok(value)
-        }
-        ast::ArithmeticTarget::ArrayElement(_, _) => {
-            Err(EvalError::Unimplemented("deref array element"))
-        }
-    }
+    let value: i64 = value_str.parse().unwrap_or(0);
+    Ok(value)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -166,39 +173,43 @@ fn apply_binary_op(op: ast::BinaryOperator, left: i64, right: i64) -> Result<i64
     }
 }
 
-fn apply_unary_assignment_op(
+async fn apply_unary_assignment_op(
     shell: &mut Shell,
     lvalue: &ast::ArithmeticTarget,
     op: ast::UnaryAssignmentOperator,
 ) -> Result<i64, EvalError> {
-    let value = deref_lvalue(shell, lvalue)?;
+    let value = deref_lvalue(shell, lvalue).await?;
 
     match op {
         ast::UnaryAssignmentOperator::PrefixIncrement => {
             let new_value = value + 1;
-            assign(shell, lvalue, new_value)?;
+            assign(shell, lvalue, new_value).await?;
             Ok(new_value)
         }
         ast::UnaryAssignmentOperator::PrefixDecrement => {
             let new_value = value - 1;
-            assign(shell, lvalue, new_value)?;
+            assign(shell, lvalue, new_value).await?;
             Ok(new_value)
         }
         ast::UnaryAssignmentOperator::PostfixIncrement => {
             let new_value = value + 1;
-            assign(shell, lvalue, new_value)?;
+            assign(shell, lvalue, new_value).await?;
             Ok(value)
         }
         ast::UnaryAssignmentOperator::PostfixDecrement => {
             let new_value = value - 1;
-            assign(shell, lvalue, new_value)?;
+            assign(shell, lvalue, new_value).await?;
             Ok(value)
         }
     }
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Result<i64, EvalError> {
+async fn assign(
+    shell: &mut Shell,
+    lvalue: &ast::ArithmeticTarget,
+    value: i64,
+) -> Result<i64, EvalError> {
     match lvalue {
         ast::ArithmeticTarget::Variable(name) => {
             shell
@@ -210,13 +221,26 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,
                 )
-                .unwrap();
-            Ok(value)
+                .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
         }
-        ast::ArithmeticTarget::ArrayElement(_, _) => {
-            Err(EvalError::Unimplemented("assign array element"))
+        ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
+            let index_str = index_expr.eval(shell).await?.to_string();
+
+            shell
+                .env
+                .update_or_add_array_element(
+                    name.as_str(),
+                    index_str.as_str(),
+                    value.to_string(),
+                    |_| Ok(()),
+                    env::EnvironmentLookup::Anywhere,
+                    env::EnvironmentScope::Global,
+                )
+                .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
         }
     }
+
+    Ok(value)
 }
 
 fn bool_to_i64(value: bool) -> i64 {
