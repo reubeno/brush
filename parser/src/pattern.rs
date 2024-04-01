@@ -21,9 +21,12 @@ peg::parser! {
         rule escape_sequence() -> String =
             "\\" c:[_] { c.to_string() }
 
-        // TODO: do something with invert
         rule bracket_expression() -> String =
             "[" invert:(("!")?) members:bracket_member()+ "]" {
+                let mut members = members;
+                if invert.is_some() {
+                    members.insert(0, String::from("^"));
+                }
                 members.join("")
             }
 

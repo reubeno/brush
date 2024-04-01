@@ -77,14 +77,20 @@ peg::parser! {
         }
 
         rule lvalue() -> ast::ArithmeticTarget =
-            // TODO: implement correctly
-            // TODO: add array index references
-            name:$(['a'..='z' | 'A'..='Z' | '_']+) { ast::ArithmeticTarget::Variable(String::from(name)) }
+            name:variable_name() "[" index:expression() "]" {
+                ast::ArithmeticTarget::ArrayElement(name.to_owned(), Box::new(index))
+            } /
+            name:variable_name() {
+                ast::ArithmeticTarget::Variable(name.to_owned())
+            }
+
+        rule variable_name() -> &'input str =
+            $(['a'..='z' | 'A'..='Z' | '_']+)
 
         rule _() -> () = quiet!{[' ' | '\t' | '\n' | '\r']*} {}
 
         rule literal_number() -> i64 =
-            // TODO: handle hex, octal, and binary
+            // TODO: handle binary?
             "0" ['x' | 'X'] s:$(['0'..='9']*) {? i64::from_str_radix(s, 16).or(Err("i64")) } /
             s:$("0" ['0'..='9']*) {? i64::from_str_radix(s, 8).or(Err("i64")) } /
             s:$(['1'..='9'] ['0'..='9']*) {? s.parse().or(Err("i64")) }

@@ -20,6 +20,12 @@ pub enum Error {
     #[error("failed to source file: {0}")]
     FailedSourcingFile(PathBuf, std::io::Error),
 
+    #[error("cannot assign in this way")]
+    CannotAssignToSpecialParameter,
+
+    #[error("expansion error: {0}")]
+    CheckedExpansionError(String),
+
     #[error("UNIMPLEMENTED: {0}")]
     Unimplemented(&'static str),
 
