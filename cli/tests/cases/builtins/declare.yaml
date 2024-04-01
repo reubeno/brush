@@ -1,4 +1,18 @@
 name: "Builtins: declare"
+common_test_files:
+  - path: "helpers.sh"
+    contents: |
+      stable_print_assoc_array() {
+          # TODO: enable use of nameref when implemented; for now
+          # we assume the name of the array is assoc_array
+          # local -n assoc_array=$1
+          local key
+
+          for key in $(printf "%s\n" "${!assoc_array[@]}" | sort -n); do
+              echo "\"${key}\" => ${assoc_array[${key}]}"
+          done
+      }
+
 cases:
   - name: "Dump vars"
     stdin: |
@@ -207,9 +221,11 @@ cases:
       declare -p arr2
 
   - name: "Updating causing conversion"
-    known_failure: true
     stdin: |
-      declare var="scalar-value"
-      declare -p var
-      declare -A var["key"]="key-value"
-      declare -p var
+      source helpers.sh
+
+      declare assoc_array="scalar-value"
+      declare -p assoc_array
+
+      declare -A assoc_array["key"]="key-value"
+      stable_print_assoc_array assoc_array

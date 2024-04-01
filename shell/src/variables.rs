@@ -14,6 +14,7 @@ pub struct ShellVariable {
     transform_on_update: ShellVariableUpdateTransform,
     trace: bool,
     treat_as_integer: bool,
+    treat_as_nameref: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -33,6 +34,7 @@ impl Default for ShellVariable {
             transform_on_update: ShellVariableUpdateTransform::None,
             trace: false,
             treat_as_integer: false,
+            treat_as_nameref: false,
         }
     }
 }
@@ -59,11 +61,6 @@ impl ShellVariable {
 
     pub fn unexport(&mut self) {
         self.exported = false;
-    }
-
-    #[allow(clippy::unused_self)]
-    pub fn is_nameref(&self) -> bool {
-        false
     }
 
     pub fn is_readonly(&self) -> bool {
@@ -123,6 +120,18 @@ impl ShellVariable {
         self.treat_as_integer = false;
     }
 
+    pub fn is_treated_as_nameref(&self) -> bool {
+        self.treat_as_nameref
+    }
+
+    pub fn treat_as_nameref(&mut self) {
+        self.treat_as_nameref = true;
+    }
+
+    pub fn unset_treat_as_nameref(&mut self) {
+        self.treat_as_nameref = false;
+    }
+
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
         match self.value() {
             ShellValue::IndexedArray(_) => Ok(()),
@@ -159,12 +168,24 @@ impl ShellVariable {
         }
 
         if append {
-            // If we're trying to append an array to a string, we first promote the string to be an array
-            // with the string being present at index 0.
-            if matches!(self.value, ShellValue::String(_))
-                && matches!(value, ShellValueLiteral::Array(_))
-            {
-                self.convert_to_indexed_array()?;
+            match (&self.value, &value) {
+                // If we're appending an array to a declared-but-unset variable (or appending anything to a declared-but-unset array),
+                // then fill it out first.
+                (ShellValue::Unset(_), ShellValueLiteral::Array(_))
+                | (
+                    ShellValue::Unset(
+                        ShellValueUnsetType::IndexedArray | ShellValueUnsetType::AssociativeArray,
+                    ),
+                    _,
+                ) => {
+                    self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
+                }
+                // If we're trying to append an array to a string, we first promote the string to be an array
+                // with the string being present at index 0.
+                (ShellValue::String(_), ShellValueLiteral::Array(_)) => {
+                    self.convert_to_indexed_array()?;
+                }
+                _ => (),
             }
 
             let treat_as_int = self.is_treated_as_integer();
@@ -192,27 +213,22 @@ impl ShellVariable {
                         self.assign_at_index("0", new_value.as_str(), append)
                     }
                     ShellValueLiteral::Array(new_values) => {
-                        let mut new_key =
-                            if let Some((largest_index, _)) = existing_values.last_key_value() {
-                                largest_index + 1
-                            } else {
-                                0
-                            };
-
-                        for (key, value) in new_values.0 {
-                            if let Some(key) = key {
-                                new_key = key.parse().unwrap_or(0);
-                            }
-
-                            // TODO: do something with the key!
-                            existing_values.insert(new_key, value);
-                            new_key += 1;
-                        }
-
-                        Ok(())
+                        ShellValue::update_indexed_array_from_literals(existing_values, new_values)
                     }
                 },
-                _ => error::unimp("appending to unsupported variable type"),
+                ShellValue::AssociativeArray(existing_values) => match value {
+                    ShellValueLiteral::Scalar(new_value) => {
+                        self.assign_at_index("0", new_value.as_str(), append)
+                    }
+                    ShellValueLiteral::Array(new_values) => {
+                        ShellValue::update_associative_array_from_literals(
+                            existing_values,
+                            new_values,
+                        )
+                    }
+                },
+                ShellValue::Unset(_) => error::unimp("appending to unset variable"),
+                ShellValue::Random => Ok(()),
             }
         } else {
             match (&self.value, value) {
@@ -237,9 +253,9 @@ impl ShellVariable {
                     )
                     | ShellValue::String(_)
                     | ShellValue::Random,
-                    ShellValueLiteral::Array(values),
+                    ShellValueLiteral::Array(literal_values),
                 ) => {
-                    self.value = ShellValue::indexed_array_from_literals(values);
+                    self.value = ShellValue::indexed_array_from_literals(literal_values)?;
                     Ok(())
                 }
 
@@ -247,9 +263,9 @@ impl ShellVariable {
                 (
                     ShellValue::AssociativeArray(_)
                     | ShellValue::Unset(ShellValueUnsetType::AssociativeArray),
-                    ShellValueLiteral::Array(values),
+                    ShellValueLiteral::Array(literal_values),
                 ) => {
-                    self.value = ShellValue::associative_array_from_literals(values);
+                    self.value = ShellValue::associative_array_from_literals(literal_values)?;
                     Ok(())
                 }
 
@@ -307,7 +323,15 @@ impl ShellVariable {
             }
             ShellValue::AssociativeArray(arr) => {
                 if append {
-                    return error::unimp("append-assignment to index of associative array");
+                    let existing_value = arr.get(array_index);
+
+                    if treat_as_int {
+                        return error::unimp("append-assignment to int element of indexed array");
+                    } else {
+                        let mut new_value = existing_value.map_or_else(String::new, |v| v.clone());
+                        new_value.push_str(value);
+                        arr.insert(array_index.to_owned(), new_value);
+                    }
                 } else {
                     arr.insert(array_index.to_owned(), value.to_owned());
                 }
@@ -318,6 +342,51 @@ impl ShellVariable {
                 error::unimp("assigning to index of non-array variable")
             }
         }
+    }
+
+    pub fn get_attribute_flags(&self) -> String {
+        let mut result = String::new();
+
+        if matches!(
+            self.value(),
+            ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
+        ) {
+            result.push('a');
+        }
+        if matches!(
+            self.value(),
+            ShellValue::AssociativeArray(_)
+                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+        ) {
+            result.push('A');
+        }
+        if self.is_treated_as_integer() {
+            result.push('i');
+        }
+        if self.is_treated_as_nameref() {
+            result.push('n');
+        }
+        if self.is_readonly() {
+            result.push('r');
+        }
+        if let ShellVariableUpdateTransform::Lowercase = self.get_update_transform() {
+            result.push('l');
+        }
+        if self.is_trace_enabled() {
+            result.push('t');
+        }
+        if let ShellVariableUpdateTransform::Uppercase = self.get_update_transform() {
+            result.push('u');
+        }
+        if self.is_exported() {
+            result.push('x');
+        }
+
+        if result.is_empty() {
+            result.push('-');
+        }
+
+        result
     }
 }
 
@@ -362,44 +431,69 @@ impl ShellValue {
         ShellValue::IndexedArray(owned_values)
     }
 
-    pub fn indexed_array_from_literals(values: ArrayLiteral) -> Self {
-        let mut arr = BTreeMap::new();
+    pub fn indexed_array_from_literals(literals: ArrayLiteral) -> Result<ShellValue, error::Error> {
+        let mut values = BTreeMap::new();
+        ShellValue::update_indexed_array_from_literals(&mut values, literals)?;
 
-        let mut key: u64 = 0;
-        for (literal_key, value) in values.0 {
-            if let Some(literal_key) = literal_key {
-                key = literal_key.parse().unwrap_or(0);
-            }
-
-            arr.insert(key, value);
-            key += 1;
-        }
-
-        ShellValue::IndexedArray(arr)
+        Ok(ShellValue::IndexedArray(values))
     }
 
-    pub fn associative_array_from_literals(values: ArrayLiteral) -> Self {
-        let mut arr = BTreeMap::new();
+    #[allow(clippy::unnecessary_wraps)]
+    fn update_indexed_array_from_literals(
+        existing_values: &mut BTreeMap<u64, String>,
+        literal_values: ArrayLiteral,
+    ) -> Result<(), error::Error> {
+        let mut new_key = if let Some((largest_index, _)) = existing_values.last_key_value() {
+            largest_index + 1
+        } else {
+            0
+        };
 
-        let mut current_key = None;
-        for (literal_key, value) in values.0 {
-            if let Some(literal_key) = literal_key {
-                current_key = Some(literal_key);
+        for (key, value) in literal_values.0 {
+            if let Some(key) = key {
+                new_key = key.parse().unwrap_or(0);
             }
 
-            if let Some(key) = current_key {
-                current_key = None;
-                arr.insert(key, value);
+            existing_values.insert(new_key, value);
+            new_key += 1;
+        }
+
+        Ok(())
+    }
+
+    pub fn associative_array_from_literals(
+        literals: ArrayLiteral,
+    ) -> Result<ShellValue, error::Error> {
+        let mut values = BTreeMap::new();
+        ShellValue::update_associative_array_from_literals(&mut values, literals)?;
+
+        Ok(ShellValue::AssociativeArray(values))
+    }
+
+    fn update_associative_array_from_literals(
+        existing_values: &mut BTreeMap<String, String>,
+        literal_values: ArrayLiteral,
+    ) -> Result<(), error::Error> {
+        let mut current_key = None;
+        for (key, value) in literal_values.0 {
+            if let Some(current_key) = current_key.take() {
+                if key.is_some() {
+                    return error::unimp("misaligned keys/values in associative array literal");
+                } else {
+                    existing_values.insert(current_key, value);
+                }
+            } else if let Some(key) = key {
+                existing_values.insert(key, value);
             } else {
                 current_key = Some(value);
             }
         }
 
-        if let Some(key) = current_key {
-            arr.insert(key, String::new());
+        if let Some(current_key) = current_key {
+            existing_values.insert(current_key, String::new());
         }
 
-        ShellValue::AssociativeArray(arr)
+        Ok(())
     }
 
     pub fn format(&self, style: FormatStyle) -> Result<String, error::Error> {

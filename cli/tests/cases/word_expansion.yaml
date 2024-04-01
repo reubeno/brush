@@ -302,7 +302,7 @@ cases:
           echo "i: $i"
       done
 
-  - name: "Array keys"
+  - name: "Array keys: indexed array"
     stdin: |
       arr=("element1" "element2" "element3")
       echo "${!arr[@]}"
@@ -418,12 +418,20 @@ cases:
       echo "\${arr@K}: ${arr@K}"
       echo "\${arr@k}: ${arr@k}"
 
-  - name: "Parameter transformations: other"
+  - name: "Parameter transformations: expand escapes"
+    known_failure: true
+    stdin: |
+      var="a\n\"b"
+      echo "\${var@E}: ${var@E}"
+
+  - name: "Parameter transformation: assignment"
+    known_failure: true
+    stdin: |
+      declare -ia arr=(1 2 3)
+      echo "\${arr@A}: ${arr@A}"
+
+  - name: "Parameter transformation: attributes"
     known_failure: true
     stdin: |
       declare -ia arr=(1 2 3)
       echo "\${arr@a}: ${arr@a}"
-      echo "\${arr@A}: ${arr@A}"
-
-      var="a\n\"b"
-      echo "\${var@E}: ${var@E}"

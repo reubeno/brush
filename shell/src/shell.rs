@@ -194,7 +194,7 @@ impl Shell {
         env
     }
 
-    async fn load_config(&mut self, options: &CreateOptions) -> Result<()> {
+    async fn load_config(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
         if options.login {
             // --noprofile means skip this.
             if options.no_profile {
@@ -249,7 +249,9 @@ impl Shell {
                     //
                     // TODO: look at $BASH_ENV; source its expansion if that file exists
                     //
-                    return Err(anyhow::anyhow!("UNIMPLEMENTED: load config from $BASH_ENV for non-interactive, non-login shell"));
+                    return error::unimp(
+                        "load config from $BASH_ENV for non-interactive, non-login shell",
+                    );
                 }
             }
         }
@@ -311,12 +313,7 @@ impl Shell {
         let orig_shell_name = self.shell_name.take();
         let orig_params = self.positional_parameters.clone();
         self.shell_name = Some(origin.get_name());
-        self.positional_parameters = vec![];
-
-        // TODO: handle args
-        if !args.is_empty() {
-            log::error!("UNIMPLEMENTED: source built-in invoked with args: {origin}",);
-        }
+        self.positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
 
         let result = self.run_parsed_result(parse_result, origin, false).await;
 

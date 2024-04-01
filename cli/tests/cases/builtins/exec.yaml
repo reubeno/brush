@@ -1,7 +1,6 @@
 name: "Builtins: exec"
 cases:
   - name: "Exec an invalid path"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       exec /some/nonexistent/path

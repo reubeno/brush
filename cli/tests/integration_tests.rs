@@ -113,6 +113,9 @@ struct TestCaseSet {
     pub name: Option<String>,
     /// Set of test cases
     pub cases: Vec<TestCase>,
+    /// Common test files applicable to all children test cases
+    #[serde(default)]
+    pub common_test_files: Vec<TestFile>,
 }
 
 #[allow(clippy::struct_field_names)]
@@ -148,7 +151,7 @@ impl TestCaseSet {
         let mut fail_count = 0;
         let mut test_case_results = vec![];
         for test_case in &self.cases {
-            let test_case_result = test_case.run().await?;
+            let test_case_result = test_case.run(self).await?;
 
             if test_case_result.success {
                 if test_case.known_failure {
@@ -344,8 +347,8 @@ impl TestCaseResult {
 }
 
 impl TestCase {
-    pub async fn run(&self) -> Result<TestCaseResult> {
-        let comparison = self.run_with_oracle_and_test().await?;
+    pub async fn run(&self, test_case_set: &TestCaseSet) -> Result<TestCaseResult> {
+        let comparison = self.run_with_oracle_and_test(test_case_set).await?;
         let success = !comparison.is_failure();
         Ok(TestCaseResult {
             success,
@@ -355,8 +358,16 @@ impl TestCase {
         })
     }
 
-    fn create_test_files_in(&self, temp_dir: &assert_fs::TempDir) -> Result<()> {
-        for test_file in &self.test_files {
+    fn create_test_files_in(
+        &self,
+        temp_dir: &assert_fs::TempDir,
+        test_case_set: &TestCaseSet,
+    ) -> Result<()> {
+        for test_file in test_case_set
+            .common_test_files
+            .iter()
+            .chain(self.test_files.iter())
+        {
             temp_dir
                 .child(test_file.path.as_path())
                 .write_str(test_file.contents.as_str())?;
@@ -365,15 +376,15 @@ impl TestCase {
         Ok(())
     }
 
-    async fn run_with_oracle_and_test(&self) -> Result<RunComparison> {
+    async fn run_with_oracle_and_test(&self, test_case_set: &TestCaseSet) -> Result<RunComparison> {
         let oracle_temp_dir = assert_fs::TempDir::new()?;
-        self.create_test_files_in(&oracle_temp_dir)?;
+        self.create_test_files_in(&oracle_temp_dir, test_case_set)?;
         let oracle_result = self
             .run_shell(&WhichShell::NamedShell("bash".to_owned()), &oracle_temp_dir)
             .await?;
 
         let test_temp_dir = assert_fs::TempDir::new()?;
-        self.create_test_files_in(&test_temp_dir)?;
+        self.create_test_files_in(&test_temp_dir, test_case_set)?;
         let test_result = self
             .run_shell(
                 &WhichShell::ShellUnderTest("brush".to_owned()),

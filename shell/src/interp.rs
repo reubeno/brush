@@ -770,10 +770,30 @@ async fn basic_expand_assignment(
 ) -> Result<ast::Assignment> {
     let value = basic_expand_assignment_value(shell, &assignment.value).await?;
     Ok(ast::Assignment {
-        name: assignment.name.clone(),
+        name: basic_expand_assignment_name(shell, &assignment.name).await?,
         value,
         append: assignment.append,
     })
+}
+
+async fn basic_expand_assignment_name(
+    shell: &mut Shell,
+    name: &ast::AssignmentName,
+) -> Result<ast::AssignmentName> {
+    match name {
+        ast::AssignmentName::VariableName(name) => {
+            let expanded = expansion::basic_expand_word_str(shell, name).await?;
+            Ok(ast::AssignmentName::VariableName(expanded))
+        }
+        ast::AssignmentName::ArrayElementName(name, index) => {
+            let expanded_name = expansion::basic_expand_word_str(shell, name).await?;
+            let expanded_index = expansion::basic_expand_word_str(shell, index).await?;
+            Ok(ast::AssignmentName::ArrayElementName(
+                expanded_name,
+                expanded_index,
+            ))
+        }
+    }
 }
 
 async fn basic_expand_assignment_value(
@@ -841,7 +861,9 @@ async fn apply_assignment(
             let mut elements = vec![];
             for (unexpanded_key, unexpanded_value) in unexpanded_values {
                 let key = match unexpanded_key {
-                    Some(_) => Some(expansion::basic_expand_word(shell, unexpanded_value).await?),
+                    Some(unexpanded_key) => {
+                        Some(expansion::basic_expand_word(shell, unexpanded_key).await?)
+                    }
                     None => None,
                 };
 
@@ -853,6 +875,7 @@ async fn apply_assignment(
     };
 
     // See if we need to eval an array index.
+    // TODO: Handle associative arrays correctly; index is *not* an arithmetic expression
     if let Some(idx) = &array_index {
         if let Some(existing_value) = shell.env.get(variable_name.as_str()) {
             if matches!(
@@ -894,7 +917,9 @@ async fn apply_assignment(
         } else {
             let new_value = match new_value {
                 ShellValueLiteral::Scalar(s) => ShellValue::String(s),
-                ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values),
+                ShellValueLiteral::Array(values) => {
+                    ShellValue::indexed_array_from_literals(values)?
+                }
             };
 
             shell.env.add(
