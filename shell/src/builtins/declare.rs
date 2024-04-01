@@ -165,7 +165,7 @@ impl DeclareCommand {
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
-            let cs = get_declare_flag_str(variable);
+            let cs = variable.get_attribute_flags();
             let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
                 ""
             } else {
@@ -200,7 +200,8 @@ impl DeclareCommand {
         }
 
         // Extract the variable name and the initial value being assigned (if any).
-        let (name, initial_value) = self.declaration_to_name_and_value(declaration)?;
+        let (name, assigned_index, initial_value, name_is_array) =
+            self.declaration_to_name_and_value(declaration)?;
 
         // Figure out where we should look.
         let lookup = if create_var_local {
@@ -225,7 +226,8 @@ impl DeclareCommand {
             self.apply_attributes_before_update(var)?;
 
             if let Some(initial_value) = initial_value {
-                var.assign(initial_value, false)?;
+                // We append if the declaration included an explicit index.
+                var.assign(initial_value, assigned_index.is_some())?;
             }
 
             self.apply_attributes_after_update(var)?;
@@ -234,6 +236,8 @@ impl DeclareCommand {
                 ShellValueUnsetType::IndexedArray
             } else if self.make_associative_array.is_some() {
                 ShellValueUnsetType::AssociativeArray
+            } else if name_is_array {
+                ShellValueUnsetType::IndexedArray
             } else {
                 ShellValueUnsetType::Untyped
             };
@@ -264,18 +268,33 @@ impl DeclareCommand {
     fn declaration_to_name_and_value(
         &self,
         declaration: &CommandArg,
-    ) -> Result<(String, Option<ShellValueLiteral>), error::Error> {
+    ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), error::Error> {
         let name;
+        let assigned_index;
         let initial_value;
+        let name_is_array;
 
         match declaration {
             CommandArg::String(s) => {
-                name = s.clone();
+                // We need to handle the case of someone invoking `declare array[index]`.
+                // In such case, we ignore the index and treat it as a declaration of
+                // the array.
+                lazy_static::lazy_static! {
+                    static ref ARRAY_AND_INDEX_RE: regex::Regex =
+                        regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap();
+                }
+                if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s) {
+                    name = captures.get(1).unwrap().as_str().to_owned();
+                    assigned_index = Some(captures.get(2).unwrap().as_str().to_owned());
+                    name_is_array = true;
+                } else {
+                    name = s.clone();
+                    assigned_index = None;
+                    name_is_array = false;
+                }
                 initial_value = None;
             }
             CommandArg::Assignment(assignment) => {
-                let assigned_index;
-
                 match &assignment.name {
                     parser::ast::AssignmentName::VariableName(var_name) => {
                         name = var_name.to_owned();
@@ -293,13 +312,15 @@ impl DeclareCommand {
 
                 match &assignment.value {
                     parser::ast::AssignmentValue::Scalar(s) => {
-                        if let Some(index) = assigned_index {
+                        if let Some(index) = &assigned_index {
                             initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
-                                Some(index),
+                                Some(index.to_owned()),
                                 s.value.clone(),
                             )])));
+                            name_is_array = true;
                         } else {
                             initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
+                            name_is_array = false;
                         }
                     }
                     parser::ast::AssignmentValue::Array(a) => {
@@ -310,12 +331,13 @@ impl DeclareCommand {
                                 })
                                 .collect(),
                         )));
+                        name_is_array = true;
                     }
                 }
             }
         }
 
-        Ok((name, initial_value))
+        Ok((name, assigned_index, initial_value, name_is_array))
     }
 
     fn display_matching_env_declarations(
@@ -355,7 +377,7 @@ impl DeclareCommand {
             }));
         }
         if let Some(value) = self.make_nameref.to_bool() {
-            filters.push(Box::new(move |(_, v)| v.is_nameref() == value));
+            filters.push(Box::new(move |(_, v)| v.is_treated_as_nameref() == value));
         }
         if let Some(value) = self.make_readonly.to_bool() {
             filters.push(Box::new(move |(_, v)| v.is_readonly() == value));
@@ -391,7 +413,7 @@ impl DeclareCommand {
             .sorted_by_key(|v| v.0)
         {
             if self.print {
-                let cs = get_declare_flag_str(variable);
+                let cs = variable.get_attribute_flags();
                 let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
                     ""
                 } else {
@@ -425,6 +447,7 @@ impl DeclareCommand {
         }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn apply_attributes_before_update(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
         if let Some(value) = self.make_integer.to_bool() {
             if value {
@@ -445,8 +468,9 @@ impl DeclareCommand {
         }
         if let Some(value) = self.make_nameref.to_bool() {
             if value {
-                log::error!("UNIMPLEMENTED: declare -n: make nameref");
-                return Err(error::Error::Unimplemented("declare with nameref"));
+                var.treat_as_nameref();
+            } else {
+                var.unset_treat_as_nameref();
             }
         }
         if let Some(value) = self.make_traced.to_bool() {
@@ -489,48 +513,4 @@ impl DeclareCommand {
 
         Ok(())
     }
-}
-
-fn get_declare_flag_str(variable: &ShellVariable) -> String {
-    let mut result = String::new();
-
-    if matches!(
-        variable.value(),
-        ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
-    ) {
-        result.push('a');
-    }
-    if matches!(
-        variable.value(),
-        ShellValue::AssociativeArray(_) | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-    ) {
-        result.push('A');
-    }
-    if variable.is_treated_as_integer() {
-        result.push('i');
-    }
-    if variable.is_nameref() {
-        result.push('n');
-    }
-    if variable.is_readonly() {
-        result.push('r');
-    }
-    if let ShellVariableUpdateTransform::Lowercase = variable.get_update_transform() {
-        result.push('l');
-    }
-    if variable.is_trace_enabled() {
-        result.push('t');
-    }
-    if let ShellVariableUpdateTransform::Uppercase = variable.get_update_transform() {
-        result.push('u');
-    }
-    if variable.is_exported() {
-        result.push('x');
-    }
-
-    if result.is_empty() {
-        result.push('-');
-    }
-
-    result
 }

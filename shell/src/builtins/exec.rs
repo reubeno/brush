@@ -20,7 +20,6 @@ pub(crate) struct ExecCommand {
     /// Command and args.
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
-    // TODO: redirection?
 }
 
 #[async_trait::async_trait]
@@ -53,7 +52,15 @@ impl BuiltinCommand for ExecCommand {
                 exec::Error::BadArgument(_) => {
                     Err(crate::error::Error::Unknown(anyhow!("invalid arguments")))
                 }
-                exec::Error::Errno(errno) => Err(crate::error::Error::Unknown(errno.into())),
+                exec::Error::Errno(errno) => {
+                    let io_err: std::io::Error = errno.into();
+
+                    if io_err.kind() == std::io::ErrorKind::NotFound {
+                        Ok(BuiltinExitCode::Custom(127))
+                    } else {
+                        Err(crate::error::Error::Unknown(io_err.into()))
+                    }
+                }
             }
         } else {
             return Ok(BuiltinExitCode::Success);

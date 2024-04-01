@@ -35,7 +35,6 @@ cases:
       echo "Result: $?"
 
   - name: "Source script with args"
-    known_failure: true
     test_files:
       - path: "script.sh"
         contents: |

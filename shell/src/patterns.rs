@@ -59,11 +59,6 @@ pub(crate) fn pattern_expand(
 pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool, error::Error> {
     // TODO: pattern matching with **
     if pattern.contains("**") {
-        log::error!(
-            "UNIMPLEMENTED: matching with pattern '{}' against value '{}'",
-            pattern,
-            value
-        );
         return error::unimp("pattern matching with '**' pattern");
     }
 
