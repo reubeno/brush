@@ -64,7 +64,7 @@ impl Clone for Shell {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CreateOptions {
     pub login: bool,
     pub interactive: bool,
@@ -343,6 +343,19 @@ impl Shell {
         parser.parse(true)
     }
 
+    pub async fn basic_expand_string<S: AsRef<str>>(&mut self, s: S) -> Result<String> {
+        let result = expansion::basic_expand_str(self, s.as_ref()).await?;
+        Ok(result)
+    }
+
+    pub async fn full_expand_and_split_string<S: AsRef<str>>(
+        &mut self,
+        s: S,
+    ) -> Result<Vec<String>> {
+        let result = expansion::full_expand_and_split_str(self, s.as_ref()).await?;
+        Ok(result)
+    }
+
     pub async fn run_script<S: AsRef<str>>(
         &mut self,
         script_path: &Path,
@@ -436,7 +449,7 @@ impl Shell {
         let formatted_prompt = re.replace_all(formatted_prompt.as_str(), "").to_string();
 
         // Now expand.
-        let formatted_prompt = expansion::basic_expand_word_str(self, &formatted_prompt).await?;
+        let formatted_prompt = expansion::basic_expand_str(self, &formatted_prompt).await?;
 
         Ok(formatted_prompt)
     }

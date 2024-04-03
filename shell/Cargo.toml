@@ -36,8 +36,16 @@ tokio = { version = "1.37.0", features = [
     "macros",
     "process",
     "rt",
+    "rt-multi-thread",
     "signal",
 ] }
 tokio-macros = "2.2.0"
 tokio-command-fds = "0.2.1"
 uzers = "0.11.3"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
+
+[[bench]]
+name = "shell"
+harness = false

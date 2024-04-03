@@ -61,3 +61,12 @@ jobs:
             cargo check --all-targets
             cargo deny check
             cargo clippy --all-targets
+
+      - name: Performance analysis
+        uses: devcontainers/ci@v0.3
+        with:
+          cacheFrom: ghcr.io/reubeno/brush/devcontainer
+          push: never
+          runCmd: |
+            set -euo pipefail
+            cargo bench --workspace
