@@ -18,6 +18,10 @@ async fn cli_integration_tests() -> Result<()> {
     let mut known_failure_count = 0;
     let mut fail_count = 0;
     let mut join_handles = vec![];
+    let mut success_duration_comparison = DurationComparison {
+        oracle: std::time::Duration::default(),
+        test: std::time::Duration::default(),
+    };
 
     // Spawn each test case set separately.
     for entry in glob::glob(format!("{dir}/tests/cases/**/*.yaml").as_ref()).unwrap() {
@@ -37,6 +41,8 @@ async fn cli_integration_tests() -> Result<()> {
         success_count += results.success_count;
         known_failure_count += results.known_failure_count;
         fail_count += results.fail_count;
+        success_duration_comparison.oracle += results.success_duration_comparison.oracle;
+        success_duration_comparison.test += results.success_duration_comparison.test;
 
         results.report();
     }
@@ -60,6 +66,10 @@ async fn cli_integration_tests() -> Result<()> {
         success_count.to_string().green(),
         formatted_fail_count,
         formatted_known_failure_count
+    );
+    println!(
+        "duration of successful tests: {:?} (oracle) vs. {:?} (test)",
+        success_duration_comparison.oracle, success_duration_comparison.test,
     );
     println!("==============================================================");
 
@@ -125,6 +135,7 @@ struct TestCaseSetResults {
     pub known_failure_count: u32,
     pub fail_count: u32,
     pub test_case_results: Vec<TestCaseResult>,
+    pub success_duration_comparison: DurationComparison,
 }
 
 impl TestCaseSetResults {
@@ -141,6 +152,11 @@ impl TestCaseSetResults {
         for test_case_result in &self.test_case_results {
             test_case_result.report();
         }
+
+        println!(
+            "    successful cases ran in {:?} (oracle) and {:?} (test)",
+            self.success_duration_comparison.oracle, self.success_duration_comparison.test
+        );
     }
 }
 
@@ -149,6 +165,10 @@ impl TestCaseSet {
         let mut success_count = 0;
         let mut known_failure_count = 0;
         let mut fail_count = 0;
+        let mut success_duration_comparison = DurationComparison {
+            oracle: std::time::Duration::default(),
+            test: std::time::Duration::default(),
+        };
         let mut test_case_results = vec![];
         for test_case in &self.cases {
             let test_case_result = test_case.run(self).await?;
@@ -158,6 +178,9 @@ impl TestCaseSet {
                     fail_count += 1;
                 } else {
                     success_count += 1;
+                    success_duration_comparison.oracle +=
+                        test_case_result.comparison.duration.oracle;
+                    success_duration_comparison.test += test_case_result.comparison.duration.test;
                 }
             } else if test_case.known_failure {
                 known_failure_count += 1;
@@ -174,6 +197,7 @@ impl TestCaseSet {
             success_count,
             known_failure_count,
             fail_count,
+            success_duration_comparison,
         })
     }
 }
@@ -397,6 +421,10 @@ impl TestCase {
             stdout: StringComparison::Ignored,
             stderr: StringComparison::Ignored,
             temp_dir: DirComparison::Ignored,
+            duration: DurationComparison {
+                oracle: oracle_result.duration,
+                test: test_result.duration,
+            },
         };
 
         // Compare exit status
@@ -516,6 +544,7 @@ impl TestCase {
         let mut log = Vec::new();
         let writer = std::io::Cursor::new(&mut log);
 
+        let start_time = std::time::Instant::now();
         let mut p = expectrl::session::log(expectrl::Session::spawn(cmd)?, writer)?;
 
         if let Some(stdin) = &self.stdin {
@@ -550,6 +579,8 @@ impl TestCase {
             wait_status = p.get_process().wait()?;
         }
 
+        let duration = start_time.elapsed();
+
         let output_str = String::from_utf8(log)?;
         let output: String = output_str
             .lines()
@@ -574,6 +605,7 @@ impl TestCase {
                 exit_status: ExitStatus::from_raw(code),
                 stdout: cleaned,
                 stderr: String::new(),
+                duration,
             }),
             expectrl::WaitStatus::Signaled(_, _, _) => Err(anyhow::anyhow!("process was signaled")),
             _ => Err(anyhow::anyhow!(
@@ -590,12 +622,15 @@ impl TestCase {
             test_cmd.write_stdin(stdin.as_bytes());
         }
 
+        let start_time = std::time::Instant::now();
         let cmd_result = test_cmd.output()?;
+        let duration = start_time.elapsed();
 
         Ok(RunResult {
             exit_status: cmd_result.status,
             stdout: String::from_utf8(cmd_result.stdout)?,
             stderr: String::from_utf8(cmd_result.stderr)?,
+            duration,
         })
     }
 
@@ -617,6 +652,7 @@ struct RunResult {
     pub exit_status: ExitStatus,
     pub stdout: String,
     pub stderr: String,
+    pub duration: std::time::Duration,
 }
 
 struct RunComparison {
@@ -624,6 +660,7 @@ struct RunComparison {
     pub stdout: StringComparison,
     pub stderr: StringComparison,
     pub temp_dir: DirComparison,
+    pub duration: DurationComparison,
 }
 
 impl RunComparison {
@@ -633,6 +670,11 @@ impl RunComparison {
             || self.stderr.is_failure()
             || self.temp_dir.is_failure()
     }
+}
+
+struct DurationComparison {
+    pub oracle: std::time::Duration,
+    pub test: std::time::Duration,
 }
 
 enum ExitStatusComparison {

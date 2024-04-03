@@ -25,3 +25,8 @@ utf8-chars = "3.0.2"
 
 [dev-dependencies]
 assert_matches = "1.5.0"
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[[bench]]
+name = "parser"
+harness = false

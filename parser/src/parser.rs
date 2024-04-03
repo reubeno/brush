@@ -82,11 +82,11 @@ impl<R: std::io::BufRead> Parser<R> {
             }
         }
 
-        parse_tokens_impl(&tokens)
+        parse_tokens(&tokens)
     }
 }
 
-fn parse_tokens_impl(tokens: &Vec<Token>) -> Result<ast::Program, ParseError> {
+pub fn parse_tokens(tokens: &Vec<Token>) -> Result<ast::Program, ParseError> {
     let parse_result = token_parser::program(&Tokens { tokens });
 
     let result = match parse_result {

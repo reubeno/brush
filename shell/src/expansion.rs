@@ -15,13 +15,10 @@ pub(crate) async fn basic_expand_word(
     shell: &mut Shell,
     word: &ast::Word,
 ) -> Result<String, error::Error> {
-    basic_expand_word_str(shell, word.flatten().as_str()).await
+    basic_expand_str(shell, word.flatten().as_str()).await
 }
 
-pub(crate) async fn basic_expand_word_str(
-    shell: &mut Shell,
-    s: &str,
-) -> Result<String, error::Error> {
+pub(crate) async fn basic_expand_str(shell: &mut Shell, s: &str) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell);
     expander.basic_expand(s).await
 }
@@ -30,10 +27,15 @@ pub(crate) async fn full_expand_and_split_word(
     shell: &mut Shell,
     word: &ast::Word,
 ) -> Result<Vec<String>, error::Error> {
+    full_expand_and_split_str(shell, word.flatten().as_str()).await
+}
+
+pub(crate) async fn full_expand_and_split_str(
+    shell: &mut Shell,
+    s: &str,
+) -> Result<Vec<String>, error::Error> {
     let mut expander = WordExpander::new(shell);
-    expander
-        .full_expand_with_splitting(word.flatten().as_str())
-        .await
+    expander.full_expand_with_splitting(s).await
 }
 
 #[derive(Clone)]
