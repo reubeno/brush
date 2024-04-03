@@ -306,15 +306,19 @@ impl ShellVariable {
                 let key: u64 = array_index.parse().unwrap_or(0);
 
                 if append {
-                    let existing_value = arr.get(&key);
+                    let existing_value = arr.get(&key).map_or_else(String::new, |v| v.clone());
 
+                    let mut new_value;
                     if treat_as_int {
-                        return error::unimp("append-assignment to int element of indexed array");
+                        new_value = (existing_value.parse::<i64>().unwrap_or(0)
+                            + value.parse::<i64>().unwrap_or(0))
+                        .to_string();
                     } else {
-                        let mut new_value = existing_value.map_or_else(String::new, |v| v.clone());
+                        new_value = existing_value.clone();
                         new_value.push_str(value);
-                        arr.insert(key, new_value);
                     }
+
+                    arr.insert(key, new_value);
                 } else {
                     arr.insert(key, value.to_owned());
                 }
@@ -323,15 +327,20 @@ impl ShellVariable {
             }
             ShellValue::AssociativeArray(arr) => {
                 if append {
-                    let existing_value = arr.get(array_index);
+                    let existing_value =
+                        arr.get(array_index).map_or_else(String::new, |v| v.clone());
 
+                    let mut new_value;
                     if treat_as_int {
-                        return error::unimp("append-assignment to int element of indexed array");
+                        new_value = (existing_value.parse::<i64>().unwrap_or(0)
+                            + value.parse::<i64>().unwrap_or(0))
+                        .to_string();
                     } else {
-                        let mut new_value = existing_value.map_or_else(String::new, |v| v.clone());
+                        new_value = existing_value.clone();
                         new_value.push_str(value);
-                        arr.insert(array_index.to_owned(), new_value);
                     }
+
+                    arr.insert(array_index.to_owned(), new_value.to_string());
                 } else {
                     arr.insert(array_index.to_owned(), value.to_owned());
                 }

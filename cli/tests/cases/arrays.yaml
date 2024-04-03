@@ -90,7 +90,6 @@ cases:
       declare -p var
 
   - name: "Appending item to element of int indexed array"
-    known_failure: true
     stdin: |
       declare -ai var=(1 2 3)
       var[1]+=2
@@ -126,7 +125,6 @@ cases:
       stable_print_assoc_array assoc_array
 
   - name: "Appending item to element of int associative array"
-    known_failure: true
     stdin: |
       source helpers.sh
       declare -Ai assoc_array=([a]=1 [b]=2 [c]=3)
