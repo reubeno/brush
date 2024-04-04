@@ -720,17 +720,19 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                 // TODO: cache the builtins
                 if let Some(builtin) = special_builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, cmd_name, args, env_vars).await
+                    execute_builtin_command(*builtin, context, open_files, cmd_name, args, env_vars)
+                        .await
                 } else if context.shell.funcs.contains_key(cmd_name.as_str()) {
                     // Strip the function name off args.
                     invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars).await
                 } else if let Some(builtin) = builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, cmd_name, args, env_vars).await
+                    execute_builtin_command(*builtin, context, open_files, cmd_name, args, env_vars)
+                        .await
                 } else {
                     // Strip the command name off args.
                     execute_external_command(
                         context,
-                        &mut open_files,
+                        open_files,
                         cmd_name.as_ref(),
                         &args[1..],
                         &env_vars,
@@ -741,7 +743,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 // Strip the command name off args.
                 execute_external_command(
                     context,
-                    &mut open_files,
+                    open_files,
                     cmd_name.as_ref(),
                     &args[1..],
                     &env_vars,
@@ -936,7 +938,7 @@ async fn apply_assignment(
 #[allow(clippy::too_many_lines)] // TODO: refactor this function
 async fn execute_external_command(
     context: &mut PipelineExecutionContext<'_>,
-    open_files: &mut OpenFiles,
+    mut open_files: OpenFiles,
     cmd_name: &str,
     args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
@@ -996,6 +998,7 @@ async fn execute_external_command(
     // If we were asked to capture the output of this command (and if it's the last command
     // in the pipeline), then we need to arrange to redirect output to a pipe that we can
     // read later.
+    // TODO: Reuse this logic for builtins.
     if context.params.capture_output && context.pipeline_len == context.current_pipeline_index + 1 {
         if redirected_stdout {
             log::warn!(
@@ -1107,6 +1110,7 @@ async fn execute_external_command(
 async fn execute_builtin_command<'a>(
     builtin: builtin::BuiltinCommandExecuteFunc,
     context: &'a mut PipelineExecutionContext<'_>,
+    open_files: OpenFiles,
     builtin_name: String,
     args: Vec<CommandArg>,
     _env_vars: Vec<(String, ShellValue)>,
@@ -1114,6 +1118,7 @@ async fn execute_builtin_command<'a>(
     let builtin_context = builtin::BuiltinExecutionContext {
         shell: context.shell,
         builtin_name,
+        open_files,
     };
 
     let exit_code = match builtin(builtin_context, args).await {

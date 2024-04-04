@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -62,36 +63,51 @@ impl BuiltinCommand for TypeCommand {
                     // Do nothing.
                 } else if self.type_only {
                     match resolved_type {
-                        ResolvedType::Alias(_) => println!("alias"),
-                        ResolvedType::Keyword => println!("keyword"),
-                        ResolvedType::Function(_) => println!("function"),
-                        ResolvedType::Builtin => println!("builtin"),
+                        ResolvedType::Alias(_) => {
+                            writeln!(context.stdout(), "alias")?;
+                        }
+                        ResolvedType::Keyword => {
+                            writeln!(context.stdout(), "keyword")?;
+                        }
+                        ResolvedType::Function(_) => {
+                            writeln!(context.stdout(), "function")?;
+                        }
+                        ResolvedType::Builtin => {
+                            writeln!(context.stdout(), "builtin")?;
+                        }
                         ResolvedType::File(path) => {
                             if self.show_path_only || self.force_path_search {
-                                println!("{}", path.to_string_lossy());
+                                writeln!(context.stdout(), "{}", path.to_string_lossy())?;
                             } else {
-                                println!("file");
+                                writeln!(context.stdout(), "file")?;
                             }
                         }
                     }
                 } else {
                     match resolved_type {
-                        ResolvedType::Alias(target) => println!("{name} is aliased to '{target}'"),
-                        ResolvedType::Keyword => println!("{name} is a shell keyword"),
-                        ResolvedType::Function(def) => {
-                            println!("{name} is a function");
-                            println!("{def}");
+                        ResolvedType::Alias(target) => {
+                            writeln!(context.stdout(), "{name} is aliased to '{target}'")?;
                         }
-                        ResolvedType::Builtin => println!("{name} is a shell builtin"),
+                        ResolvedType::Keyword => {
+                            writeln!(context.stdout(), "{name} is a shell keyword")?;
+                        }
+                        ResolvedType::Function(def) => {
+                            writeln!(context.stdout(), "{name} is a function")?;
+                            writeln!(context.stdout(), "{def}")?;
+                        }
+                        ResolvedType::Builtin => {
+                            writeln!(context.stdout(), "{name} is a shell builtin")?;
+                        }
                         ResolvedType::File(path) => {
                             if self.show_path_only || self.force_path_search {
-                                println!("{}", path.to_string_lossy());
+                                writeln!(context.stdout(), "{}", path.to_string_lossy())?;
                             } else {
-                                println!(
+                                writeln!(
+                                    context.stdout(),
                                     "{name} is {path}",
                                     name = name,
                                     path = path.to_string_lossy()
-                                );
+                                )?;
                             }
                         }
                     }

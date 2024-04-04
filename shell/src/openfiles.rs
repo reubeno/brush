@@ -38,6 +38,44 @@ impl From<OpenFile> for Stdio {
     }
 }
 
+impl std::io::Write for &OpenFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut file = match self {
+            OpenFile::Stdout => {
+                return std::io::stdout().write(buf);
+            }
+            OpenFile::Stderr => {
+                return std::io::stderr().write(buf);
+            }
+            OpenFile::File(f) => f,
+            OpenFile::ProcessSubstitutionFile(f) => f,
+            OpenFile::HereDocument(_) => {
+                return Err(std::io::Error::other(anyhow::anyhow!(
+                    "cannot write to here document"
+                )))
+            }
+        };
+
+        file.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut file = match self {
+            OpenFile::Stdout => {
+                return std::io::stdout().flush();
+            }
+            OpenFile::Stderr => {
+                return std::io::stderr().flush();
+            }
+            OpenFile::File(f) => f,
+            OpenFile::ProcessSubstitutionFile(f) => f,
+            OpenFile::HereDocument(_) => return Ok(()),
+        };
+
+        file.flush()
+    }
+}
+
 pub(crate) struct OpenFiles {
     pub files: HashMap<u32, OpenFile>,
 }

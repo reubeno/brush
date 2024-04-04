@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
+use std::io::Write;
 
 use crate::{
     builtin::{self, BuiltinCommand, BuiltinDeclarationCommand, BuiltinExitCode},
@@ -119,7 +120,7 @@ impl BuiltinCommand for DeclareCommand {
             if !called_as_local
                 && (!self.print || self.function_names_only || self.function_names_or_defs_only)
             {
-                self.display_matching_functions(context);
+                self.display_matching_functions(context)?;
             }
         }
 
@@ -137,7 +138,7 @@ impl DeclareCommand {
         let name = match declaration {
             CommandArg::String(s) => s,
             CommandArg::Assignment(_) => {
-                eprintln!("declare: {declaration}: not found");
+                writeln!(context.stderr(), "declare: {declaration}: not found")?;
                 return Ok(false);
             }
         };
@@ -152,16 +153,16 @@ impl DeclareCommand {
             if let Some(def) = context.shell.funcs.get(name) {
                 if self.function_names_only {
                     if self.print {
-                        println!("declare -f {name}");
+                        writeln!(context.stdout(), "declare -f {name}")?;
                     } else {
-                        println!("{name}");
+                        writeln!(context.stdout(), "{name}")?;
                     }
                 } else {
-                    println!("{def}");
+                    writeln!(context.stdout(), "{def}")?;
                 }
                 Ok(true)
             } else {
-                eprintln!("declare: {name}: not found");
+                writeln!(context.stderr(), "declare: {name}: not found")?;
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
@@ -172,16 +173,17 @@ impl DeclareCommand {
                 "="
             };
 
-            println!(
+            writeln!(
+                context.stdout(),
                 "declare -{cs} {name}{separator_str}{}",
                 variable
                     .value()
                     .format(variables::FormatStyle::DeclarePrint)?
-            );
+            )?;
 
             Ok(true)
         } else {
-            eprintln!("declare: {name}: not found");
+            writeln!(context.stderr(), "declare: {name}: not found")?;
             Ok(false)
         }
     }
@@ -420,31 +422,38 @@ impl DeclareCommand {
                     "="
                 };
 
-                println!(
+                writeln!(
+                    context.stdout(),
                     "declare -{cs} {name}{separator_str}{}",
                     variable
                         .value()
                         .format(variables::FormatStyle::DeclarePrint)?
-                );
+                )?;
             } else {
-                println!(
+                writeln!(
+                    context.stdout(),
                     "{name}={}",
                     variable.value().format(variables::FormatStyle::Basic)?
-                );
+                )?;
             }
         }
 
         Ok(())
     }
 
-    fn display_matching_functions(&self, context: &crate::builtin::BuiltinExecutionContext<'_>) {
+    fn display_matching_functions(
+        &self,
+        context: &crate::builtin::BuiltinExecutionContext<'_>,
+    ) -> Result<(), error::Error> {
         for (name, def) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {
-                println!("declare -f {name}");
+                writeln!(context.stdout(), "declare -f {name}")?;
             } else {
-                println!("{def}");
+                writeln!(context.stdout(), "{def}")?;
             }
         }
+
+        Ok(())
     }
 
     #[allow(clippy::unnecessary_wraps)]

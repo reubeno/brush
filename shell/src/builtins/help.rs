@@ -1,6 +1,7 @@
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 #[derive(Parser)]
 pub(crate) struct HelpCommand {}
@@ -11,9 +12,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 impl BuiltinCommand for HelpCommand {
     async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        println!("brush version {VERSION}");
+        writeln!(context.stdout(), "brush version {VERSION}")?;
         Ok(BuiltinExitCode::Success)
     }
 }

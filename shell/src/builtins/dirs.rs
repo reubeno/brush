@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -39,11 +40,11 @@ impl BuiltinCommand for DirsCommand {
 
             for (i, dir) in dirs.iter().enumerate() {
                 if !one_per_line && i > 0 {
-                    print!(" ");
+                    write!(context.stdout(), " ")?;
                 }
 
                 if self.print_one_per_line_with_index {
-                    print!("{i:2}  ");
+                    write!(context.stdout(), "{i:2}  ")?;
                 }
 
                 let mut dir_str = dir.to_string_lossy().to_string();
@@ -52,10 +53,10 @@ impl BuiltinCommand for DirsCommand {
                     dir_str = context.shell.tilde_shorten(dir_str);
                 }
 
-                print!("{dir_str}");
+                write!(context.stdout(), "{dir_str}")?;
 
                 if one_per_line || i == dirs.len() - 1 {
-                    println!();
+                    writeln!(context.stdout())?;
                 }
             }
 
