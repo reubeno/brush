@@ -1,6 +1,7 @@
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 #[derive(Parser)]
 pub(crate) struct PwdCommand {
@@ -34,8 +35,7 @@ impl BuiltinCommand for PwdCommand {
 
         let cwd = context.shell.working_dir.to_string_lossy().into_owned();
 
-        // TODO: Need to print to whatever the stdout is for the shell.
-        println!("{cwd}");
+        writeln!(context.stdout(), "{cwd}")?;
 
         Ok(BuiltinExitCode::Success)
     }

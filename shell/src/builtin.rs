@@ -60,6 +60,25 @@ pub enum BuiltinExitCode {
 pub struct BuiltinExecutionContext<'a> {
     pub shell: &'a mut Shell,
     pub builtin_name: String,
+    pub open_files: crate::openfiles::OpenFiles,
+}
+
+impl BuiltinExecutionContext<'_> {
+    pub fn stdout(&self) -> impl std::io::Write + '_ {
+        if let Some(open_file) = self.open_files.files.get(&1) {
+            open_file
+        } else {
+            &crate::openfiles::OpenFile::Stdout
+        }
+    }
+
+    pub fn stderr(&self) -> impl std::io::Write + '_ {
+        if let Some(open_file) = self.open_files.files.get(&2) {
+            open_file
+        } else {
+            &crate::openfiles::OpenFile::Stderr
+        }
+    }
 }
 
 #[allow(clippy::module_name_repetitions)]

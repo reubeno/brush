@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -63,14 +64,14 @@ impl BuiltinCommand for ShoptCommand {
                 if self.print {
                     if self.set_o_names_only {
                         let option_value_str = if option_value { "-o" } else { "+o" };
-                        println!("set {option_value_str} {option_name}");
+                        writeln!(context.stdout(), "set {option_value_str} {option_name}")?;
                     } else {
                         let option_value_str = if option_value { "-s" } else { "-u" };
-                        println!("shopt {option_value_str} {option_name}");
+                        writeln!(context.stdout(), "shopt {option_value_str} {option_name}")?;
                     }
                 } else {
                     let option_value_str = if option_value { "on" } else { "off" };
-                    println!("{option_name:15} {option_value_str}");
+                    writeln!(context.stdout(), "{option_name:15} {option_value_str}")?;
                 }
             }
 
@@ -101,22 +102,30 @@ impl BuiltinCommand for ShoptCommand {
                             if self.print {
                                 if self.set_o_names_only {
                                     let option_value_str = if option_value { "-o" } else { "+o" };
-                                    println!("set {option_value_str} {option_name}");
+                                    writeln!(
+                                        context.stdout(),
+                                        "set {option_value_str} {option_name}"
+                                    )?;
                                 } else {
                                     let option_value_str = if option_value { "-s" } else { "-u" };
-                                    println!("shopt {option_value_str} {option_name}");
+                                    writeln!(
+                                        context.stdout(),
+                                        "shopt {option_value_str} {option_name}"
+                                    )?;
                                 }
                             } else {
                                 let option_value_str = if option_value { "on" } else { "off" };
-                                println!("{option_name:15} {option_value_str}");
+                                writeln!(context.stdout(), "{option_name:15} {option_value_str}")?;
                             }
                         }
                     }
                 } else {
-                    eprintln!(
+                    writeln!(
+                        context.stderr(),
                         "{}: {}: invalid shell option name",
-                        context.builtin_name, option_name
-                    );
+                        context.builtin_name,
+                        option_name
+                    )?;
                     return_value = BuiltinExitCode::Custom(1);
                 }
             }

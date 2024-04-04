@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -29,7 +30,7 @@ impl BuiltinCommand for AliasCommand {
 
         if self.print || self.aliases.is_empty() {
             for (name, value) in &context.shell.aliases {
-                println!("alias {name}='{value}'");
+                writeln!(context.stdout(), "alias {name}='{value}'")?;
             }
         } else {
             for alias in &self.aliases {
@@ -39,9 +40,13 @@ impl BuiltinCommand for AliasCommand {
                         .aliases
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else if let Some(value) = context.shell.aliases.get(alias) {
-                    println!("alias {alias}='{value}'");
+                    writeln!(context.stdout(), "alias {alias}='{value}'")?;
                 } else {
-                    eprintln!("{}: {alias}: not found", context.builtin_name);
+                    writeln!(
+                        context.stderr(),
+                        "{}: {alias}: not found",
+                        context.builtin_name
+                    )?;
                     exit_code = BuiltinExitCode::Custom(1);
                 }
             }

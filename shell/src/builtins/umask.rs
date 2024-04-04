@@ -1,6 +1,7 @@
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 #[derive(Parser)]
 pub(crate) struct UmaskCommand {
@@ -44,9 +45,9 @@ impl BuiltinCommand for UmaskCommand {
             };
 
             if self.print_roundtrippable {
-                println!("umask {umask}");
+                writeln!(context.stdout(), "umask {umask}")?;
             } else {
-                println!("{umask}");
+                writeln!(context.stdout(), "{umask}")?;
             }
         }
 

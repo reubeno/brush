@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
+use std::io::Write;
 
 use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},
@@ -56,7 +57,12 @@ impl BuiltinCommand for ExportCommand {
             // Enumerate variables, sorted by key.
             for (name, variable) in context.shell.env.iter().sorted_by_key(|v| v.0) {
                 if variable.is_exported() {
-                    println!("declare -x {}=\"{}\"", name, String::from(variable.value()));
+                    writeln!(
+                        context.stdout(),
+                        "declare -x {}=\"{}\"",
+                        name,
+                        String::from(variable.value())
+                    )?;
                 }
             }
         }

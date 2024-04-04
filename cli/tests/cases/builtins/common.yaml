@@ -4,3 +4,11 @@ cases:
     known_failure: true
     stdin: |
       shopt | wc -l | wc -l
+
+  - name: "Redirecting builtin output"
+    stdin: |
+      declare my_variable=10
+      declare -p my_variable >out.txt
+
+      echo "Dumping file contents..."
+      cat out.txt
