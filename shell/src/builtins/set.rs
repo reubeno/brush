@@ -123,6 +123,10 @@ pub(crate) struct SetCommand {
 
 #[async_trait::async_trait]
 impl BuiltinCommand for SetCommand {
+    fn takes_plus_options() -> bool {
+        true
+    }
+
     async fn execute(
         &self,
         context: crate::context::CommandExecutionContext<'_>,

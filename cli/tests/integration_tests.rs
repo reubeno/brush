@@ -5,6 +5,7 @@ use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    os::unix::fs::PermissionsExt,
     os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     process::ExitStatus,
@@ -115,6 +116,9 @@ struct TestFile {
     pub path: PathBuf,
     /// Contents to seed the file with
     pub contents: String,
+    /// Executable?
+    #[serde(default)]
+    pub executable: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -392,9 +396,16 @@ impl TestCase {
             .iter()
             .chain(self.test_files.iter())
         {
-            temp_dir
-                .child(test_file.path.as_path())
-                .write_str(test_file.contents.as_str())?;
+            let test_file_path = temp_dir.child(test_file.path.as_path());
+
+            test_file_path.write_str(test_file.contents.as_str())?;
+
+            if test_file.executable {
+                // chmod u+x
+                let mut perms = test_file_path.metadata()?.permissions();
+                perms.set_mode(perms.mode() | 0o100);
+                std::fs::set_permissions(test_file_path, perms)?;
+            }
         }
 
         Ok(())

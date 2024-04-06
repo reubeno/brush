@@ -85,6 +85,10 @@ impl BuiltinDeclarationCommand for DeclareCommand {
 #[allow(clippy::too_many_lines)]
 #[async_trait::async_trait]
 impl BuiltinCommand for DeclareCommand {
+    fn takes_plus_options() -> bool {
+        true
+    }
+
     async fn execute(
         &self,
         mut context: crate::context::CommandExecutionContext<'_>,

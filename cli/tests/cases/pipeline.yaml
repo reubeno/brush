@@ -14,3 +14,14 @@ cases:
       echo "! false: $?"
       ! true
       echo "! true: $?"
+
+  - name: "Exit codes for piped commands"
+    test_files:
+      - path: "script.sh"
+        executable: true
+        contents: |
+          #!/bin/sh
+          (cat; echo -n "-> $1")
+          exit $1
+    stdin: |
+      ./script.sh 10 | ./script.sh 0 | ./script.sh 33

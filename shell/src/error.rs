@@ -32,6 +32,9 @@ pub enum Error {
     #[error("not a directory: {0}")]
     NotADirectory(PathBuf),
 
+    #[error("invalid redirection")]
+    InvalidRedirection,
+
     #[error("arithmetic evaluation error: {0}")]
     EvalError(#[from] crate::arithmetic::EvalError),
 

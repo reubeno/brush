@@ -59,30 +59,49 @@ cases:
   - name: "Assignment arithmetic"
     stdin: |
       x=0
-      #
+
       echo "x = 1 => $((x = 1))"
       echo "x is now $x"
-      #
+
       echo "x += 1 => $((x += 1))"
       echo "x is now $x"
-      #
+
       echo "x -= 1 => $((x -= 1))"
       echo "x is now $x"
-      #
+
       echo "x *= 2 => $((x *= 2))"
       echo "x is now $x"
-      #
+
       echo "x++ == $((x++))"
       echo "x is now $x"
-      #
+
       echo "++x == $((++x))"
       echo "x is now $x"
-      #
+
       echo "x-- == $((x--))"
       echo "x is now $x"
-      #
+
       echo "--x == $((--x))"
       echo "x is now $x"
+
+  - name: "Assignments in logical boolean expressions"
+    known_failure: true
+    stdin: |
+      x=0
+      echo "0 && x+=1 => $(( 0 && (x+=1) ))"
+      echo "x: $x"
+
+      x=0
+      echo "1 && x+=1 => $(( 1 && (x+=1) ))"
+      echo "x: $x"
+
+      x=0
+      echo "0 || x+=1 => $(( 0 || (x+=1) ))"
+      echo "x: $x"
+
+      x=0
+      echo "1 || x+=1 => $(( 1 || (x+=1) ))"
+      echo "x: $x"
 
   - name: "Array arithmetic"
     stdin: |

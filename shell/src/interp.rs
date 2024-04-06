@@ -201,7 +201,6 @@ impl Execute for ast::Pipeline {
     ) -> Result<ExecutionResult, error::Error> {
         //
         // TODO: implement logic deciding when to abort
-        // TODO: confirm whether exit code comes from first or last in pipeline
         //
 
         let mut pipeline_context = PipelineExecutionContext {
@@ -216,7 +215,6 @@ impl Execute for ast::Pipeline {
         for command in &self.seq {
             let spawn_result = command.execute_in_pipeline(&mut pipeline_context).await?;
             pipeline_context.spawn_results.push(spawn_result);
-
             pipeline_context.current_pipeline_index += 1;
         }
 
@@ -255,18 +253,6 @@ impl Execute for ast::Pipeline {
 
                     // TODO: Confirm what to return if it was signaled.
                     result = ExecutionResult::new(exit_code);
-
-                    if capture_output && child_index + 1 == child_count {
-                        let pipe_reader = std::mem::take(&mut last_pipe_reader);
-                        if let Some(pipe_reader) = pipe_reader {
-                            let output_str = std::io::read_to_string(pipe_reader)?;
-                            result.output = Some(output_str);
-                        } else {
-                            return error::unimp(
-                                "no pipe reader for last command when capture required",
-                            );
-                        }
-                    }
                 }
                 SpawnResult::ImmediateExit(exit_code) => {
                     result = ExecutionResult::new(exit_code);
@@ -284,6 +270,16 @@ impl Execute for ast::Pipeline {
                         return_from_function_or_script: true,
                         ..ExecutionResult::default()
                     }
+                }
+            }
+
+            if capture_output && child_index + 1 == child_count {
+                let pipe_reader = std::mem::take(&mut last_pipe_reader);
+                if let Some(pipe_reader) = pipe_reader {
+                    let output_str = std::io::read_to_string(pipe_reader)?;
+                    result.output = Some(output_str);
+                } else {
+                    return error::unimp("no pipe reader for last command when capture required");
                 }
             }
 
@@ -684,9 +680,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                             // Check if we're going to be invoking a special declaration builtin. That will
                             // change how we parse and process args.
-                            if builtins::get_declaration_builtin_names()
-                                .contains(next_args[0].as_str())
-                            {
+                            if builtins::DECLARATION_BUILTINS.contains(next_args[0].as_str()) {
                                 invoking_declaration_builtin = true;
                             }
                         }
@@ -736,12 +730,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             };
 
             if !cmd_context.command_name.contains('/') {
-                // TODO: Cache these.
-                let special_builtins = builtins::get_special_builtins();
-                let builtins = builtins::get_builtins();
-
-                // TODO: cache the builtins
-                if let Some(builtin) = special_builtins.get(cmd_context.command_name.as_str()) {
+                if let Some(builtin) =
+                    builtins::SPECIAL_BUILTINS.get(cmd_context.command_name.as_str())
+                {
                     execute_builtin_command(*builtin, cmd_context, args, env_vars).await
                 } else if cmd_context
                     .shell
@@ -750,7 +741,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 {
                     // Strip the function name off args.
                     invoke_shell_function(cmd_context, &args[1..], &env_vars).await
-                } else if let Some(builtin) = builtins.get(cmd_context.command_name.as_str()) {
+                } else if let Some(builtin) =
+                    builtins::BUILTINS.get(cmd_context.command_name.as_str())
+                {
                     execute_builtin_command(*builtin, cmd_context, args, env_vars).await
                 } else {
                     // Strip the command name off args.
@@ -910,11 +903,7 @@ async fn apply_assignment(
         if let Some(array_index) = array_index {
             match new_value {
                 ShellValueLiteral::Scalar(s) => {
-                    existing_value.assign_at_index(
-                        array_index.as_str(),
-                        s.as_str(),
-                        assignment.append,
-                    )?;
+                    existing_value.assign_at_index(array_index, s, assignment.append)?;
                 }
                 ShellValueLiteral::Array(_) => {
                     return error::unimp("replacing an array item with an array");
@@ -970,14 +959,15 @@ async fn execute_external_command(
     // Add in exported variables.
     for (name, var) in context.shell.env.iter() {
         if var.is_exported() {
-            cmd.env(name, &String::from(var.value()));
+            let value_as_str = var.value().to_cow_string();
+            cmd.env(name, value_as_str.as_ref());
         }
     }
 
     // Overlay any variables explicitly provided as part of command execution.
     for (name, value) in env_vars {
-        let value_as_str: String = value.into();
-        cmd.env(name, value_as_str);
+        let value_as_str = value.to_cow_string();
+        cmd.env(name, value_as_str.as_ref());
     }
 
     // Redirect stdin, if applicable.
@@ -1045,7 +1035,7 @@ async fn execute_external_command(
             Ok(SpawnResult::SpawnedChild(child))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            log::error!("command not found: {}", context.command_name);
+            log::error!("{}: command not found", context.command_name);
             Ok(SpawnResult::ImmediateExit(127))
         }
         Err(e) => {
@@ -1161,55 +1151,63 @@ async fn setup_redirect<'a>(
     open_files: &'a mut OpenFiles,
     shell: &mut Shell,
     redirect: &ast::IoRedirect,
-) -> Result<Option<&'a OpenFile>> {
+) -> Result<Option<&'a OpenFile>, error::Error> {
     match redirect {
-        ast::IoRedirect::File(fd_num, kind, target) => {
-            // If not specified, we default fd to stdout.
-            let mut fd_num = fd_num.unwrap_or(1);
-
+        ast::IoRedirect::File(specified_fd_num, kind, target) => {
+            let fd_num;
             let target_file;
             match target {
                 ast::IoFileRedirectTarget::Filename(f) => {
                     let mut options = std::fs::File::options();
 
+                    let default_fd_if_unspecified;
                     match kind {
                         ast::IoFileRedirectKind::Read => {
+                            default_fd_if_unspecified = 0;
                             options.read(true);
                         }
                         ast::IoFileRedirectKind::Write => {
-                            // TODO: observe noclobber options
+                            // TODO: honor noclobber options
+                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.write(true);
                             options.truncate(true);
                         }
                         ast::IoFileRedirectKind::Append => {
+                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.append(true);
                         }
                         ast::IoFileRedirectKind::ReadAndWrite => {
+                            default_fd_if_unspecified = 0;
                             options.create(true);
                             options.read(true);
                             options.write(true);
                         }
                         ast::IoFileRedirectKind::Clobber => {
+                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.write(true);
                             options.truncate(true);
                         }
                         ast::IoFileRedirectKind::DuplicateInput => {
+                            default_fd_if_unspecified = 0;
                             options.read(true);
                         }
                         ast::IoFileRedirectKind::DuplicateOutput => {
+                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.write(true);
                         }
                     }
 
+                    fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+
                     let mut expanded_file_path =
                         expansion::full_expand_and_split_word(shell, f).await?;
 
                     if expanded_file_path.len() != 1 {
-                        return Err(anyhow::anyhow!("invalid redirect"));
+                        return Err(error::Error::InvalidRedirection);
                     }
 
                     let expanded_file_path = expanded_file_path.remove(0);
@@ -1222,6 +1220,16 @@ async fn setup_redirect<'a>(
                     target_file = OpenFile::File(opened_file);
                 }
                 ast::IoFileRedirectTarget::Fd(fd) => {
+                    let default_fd_if_unspecified = match kind {
+                        ast::IoFileRedirectKind::DuplicateInput => 0,
+                        ast::IoFileRedirectKind::DuplicateOutput => 1,
+                        _ => {
+                            return error::unimp("unexpected redirect kind");
+                        }
+                    };
+
+                    fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+
                     if let Some(f) = open_files.files.get(fd) {
                         target_file = f.try_dup()?;
                     } else {
@@ -1256,15 +1264,9 @@ async fn setup_redirect<'a>(
                             target_file = OpenFile::ProcessSubstitutionFile(temp_file);
                         }
                         ast::IoFileRedirectKind::Write => {
-                            log::error!(
-                                "UNIMPLEMENTED: process substitution to write to stdin of command: {:?}",
-                                subshell_cmd
-                            );
-                            return Err(anyhow::anyhow!(
-                                "UNIMPLEMENTED: process substitution to write to command"
-                            ));
+                            return error::unimp("process substitution to write to command");
                         }
-                        _ => return Err(anyhow::anyhow!("invalid process substitution")),
+                        _ => return error::unimp("invalid process substitution"),
                     }
                 }
             }

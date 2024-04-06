@@ -1,6 +1,7 @@
 use anyhow::Result;
 use faccess::PathExt;
 use log::debug;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -165,7 +166,7 @@ impl Shell {
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
             if let Some(home_dir) = env.get("HOME") {
-                let home_dir: String = home_dir.value().into();
+                let home_dir: String = home_dir.value().to_cow_string().to_string();
                 let home_dir = PathBuf::from(home_dir);
                 let histfile = home_dir.join(".brush_history");
                 env.set_global(
@@ -312,17 +313,24 @@ impl Shell {
         let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
         let parse_result = parser.parse(false);
 
+        let mut other_positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
+        let mut other_shell_name = Some(origin.get_name());
+
         // TODO: Find a cleaner way to change args.
-        let orig_shell_name = self.shell_name.take();
-        let orig_params = self.positional_parameters.clone();
-        self.shell_name = Some(origin.get_name());
-        self.positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
+        std::mem::swap(&mut self.shell_name, &mut other_shell_name);
+        std::mem::swap(
+            &mut self.positional_parameters,
+            &mut other_positional_parameters,
+        );
 
         let result = self.run_parsed_result(parse_result, origin, false).await;
 
         // Restore.
-        self.shell_name = orig_shell_name;
-        self.positional_parameters = orig_params;
+        std::mem::swap(&mut self.shell_name, &mut other_shell_name);
+        std::mem::swap(
+            &mut self.positional_parameters,
+            &mut other_positional_parameters,
+        );
 
         result
     }
@@ -444,7 +452,7 @@ impl Shell {
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
 
         // Expand it.
-        let formatted_prompt = expand_prompt(self, ps1.as_str())?;
+        let formatted_prompt = expand_prompt(self, ps1.as_ref())?;
 
         // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
         // so we strip them here.
@@ -462,9 +470,10 @@ impl Shell {
     }
 
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
-        self.env
-            .get(name)
-            .map_or_else(|| default.to_owned(), |s| String::from(s.value()))
+        self.env.get(name).map_or_else(
+            || default.to_owned(),
+            |s| s.value().to_cow_string().to_string(),
+        )
     }
 
     pub fn current_option_flags(&self) -> String {
@@ -502,15 +511,15 @@ impl Shell {
 
     pub fn get_history_file_path(&self) -> Option<PathBuf> {
         self.env.get("HISTFILE").map(|var| {
-            let histfile_str: String = (var.value()).into();
+            let histfile_str: String = var.value().to_cow_string().to_string();
             PathBuf::from(histfile_str)
         })
     }
 
-    pub fn get_ifs(&self) -> String {
+    pub fn get_ifs(&self) -> Cow<'_, str> {
         self.env
             .get("IFS")
-            .map_or_else(|| " \t\n".to_owned(), |v| String::from(v.value()))
+            .map_or_else(|| Cow::Borrowed(" \t\n"), |v| v.value().to_cow_string())
     }
 
     #[allow(clippy::cast_sign_loss)]
@@ -684,7 +693,7 @@ impl Shell {
     pub fn tilde_shorten(&self, s: String) -> String {
         let home_dir_opt = self.env.get("HOME");
         if let Some(home_dir) = home_dir_opt {
-            if let Some(stripped) = s.strip_prefix(&String::from(home_dir.value())) {
+            if let Some(stripped) = s.strip_prefix(home_dir.value().to_cow_string().as_ref()) {
                 return format!("~{stripped}");
             }
         }

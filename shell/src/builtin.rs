@@ -66,21 +66,29 @@ pub type BuiltinCommandExecuteFunc = fn(
 #[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
 pub trait BuiltinCommand: Parser {
-    async fn new(args: Vec<String>) -> Result<Self, clap::Error> {
-        // N.B. clap doesn't support named options like '+x'. To work around this, we
-        // establish a pattern of renaming them.
-        let args: Vec<_> = args
-            .into_iter()
-            .map(|arg| {
+    fn new<I>(args: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        if !Self::takes_plus_options() {
+            Self::try_parse_from(args)
+        } else {
+            // N.B. clap doesn't support named options like '+x'. To work around this, we
+            // establish a pattern of renaming them.
+            let args = args.into_iter().map(|arg| {
                 if arg.starts_with('+') {
                     format!("--{arg}")
                 } else {
                     arg
                 }
-            })
-            .collect();
+            });
 
-        Self::try_parse_from(args)
+            Self::try_parse_from(args)
+        }
+    }
+
+    fn takes_plus_options() -> bool {
+        false
     }
 
     async fn execute(

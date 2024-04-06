@@ -110,7 +110,7 @@ impl InteractiveShell {
     async fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult> {
         // If there's a variable called PROMPT_COMMAND, then run it first.
         if let Some(prompt_cmd) = self.shell().env.get("PROMPT_COMMAND") {
-            let prompt_cmd: String = prompt_cmd.value().into();
+            let prompt_cmd = prompt_cmd.value().to_cow_string().to_string();
             self.shell_mut()
                 .run_string(prompt_cmd.as_str(), false)
                 .await?;

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use anyhow::Result;
 use parser::ast;
 
@@ -62,14 +64,15 @@ impl Evaluatable for ast::ArithmeticExpr {
             ast::ArithmeticExpr::Literal(l) => *l,
             ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue).await?,
             ast::ArithmeticExpr::UnaryOp(op, operand) => {
-                let operand_eval = operand.eval(shell).await?;
-                apply_unary_op(shell, *op, operand_eval)?
+                apply_unary_op(shell, *op, operand).await?
             }
             ast::ArithmeticExpr::BinaryOp(op, left, right) => {
-                apply_binary_op(*op, left.eval(shell).await?, right.eval(shell).await?)?
+                apply_binary_op(shell, *op, left, right).await?
             }
             ast::ArithmeticExpr::Conditional(condition, then_expr, else_expr) => {
                 let conditional_eval = condition.eval(shell).await?;
+
+                // Ensure we only evaluate the branch indicated by the condition.
                 if conditional_eval != 0 {
                     then_expr.eval(shell).await?
                 } else {
@@ -85,10 +88,12 @@ impl Evaluatable for ast::ArithmeticExpr {
             }
             ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
                 let value = apply_binary_op(
+                    shell,
                     *op,
-                    deref_lvalue(shell, lvalue).await?,
-                    operand.eval(shell).await?,
-                )?;
+                    &ast::ArithmeticExpr::Reference(lvalue.clone()),
+                    operand,
+                )
+                .await?;
                 assign(shell, lvalue, value).await?
             }
         };
@@ -98,11 +103,11 @@ impl Evaluatable for ast::ArithmeticExpr {
 }
 
 async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
-    let value_str: String = match lvalue {
+    let value_str: Cow<'_, str> = match lvalue {
         ast::ArithmeticTarget::Variable(name) => shell
             .env
             .get(name)
-            .map_or_else(String::new, |v| v.value().into()),
+            .map_or_else(|| Cow::Borrowed(""), |v| v.value().to_cow_string()),
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = index_expr.eval(shell).await?.to_string();
 
@@ -111,7 +116,7 @@ async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Resu
                 .get(name)
                 .map_or_else(|| Ok(None), |v| v.value().get_at(index_str.as_str()))
                 .map_err(|_err| EvalError::FailedToAccessArray)?
-                .unwrap_or_else(String::new)
+                .unwrap_or(Cow::Borrowed(""))
         }
     };
 
@@ -120,20 +125,57 @@ async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Resu
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn apply_unary_op(
-    _shell: &mut Shell,
+async fn apply_unary_op(
+    shell: &mut Shell,
     op: ast::UnaryOperator,
-    operand: i64,
+    operand: &ast::ArithmeticExpr,
 ) -> Result<i64, EvalError> {
+    let operand_eval = operand.eval(shell).await?;
+
     match op {
-        ast::UnaryOperator::UnaryPlus => Ok(operand),
-        ast::UnaryOperator::UnaryMinus => Ok(-operand),
-        ast::UnaryOperator::BitwiseNot => Ok(!operand),
-        ast::UnaryOperator::LogicalNot => Ok(bool_to_i64(operand == 0)),
+        ast::UnaryOperator::UnaryPlus => Ok(operand_eval),
+        ast::UnaryOperator::UnaryMinus => Ok(-operand_eval),
+        ast::UnaryOperator::BitwiseNot => Ok(!operand_eval),
+        ast::UnaryOperator::LogicalNot => Ok(bool_to_i64(operand_eval == 0)),
     }
 }
 
-fn apply_binary_op(op: ast::BinaryOperator, left: i64, right: i64) -> Result<i64, EvalError> {
+async fn apply_binary_op(
+    shell: &mut Shell,
+    op: ast::BinaryOperator,
+    left: &ast::ArithmeticExpr,
+    right: &ast::ArithmeticExpr,
+) -> Result<i64, EvalError> {
+    // First, special-case short-circuiting operators. For those, we need
+    // to ensure we don't eagerly evaluate both operands. After we
+    // get these out of the way, we can easily just evaluate operands
+    // for the other operators.
+    match op {
+        ast::BinaryOperator::LogicalAnd => {
+            let left = left.eval(shell).await?;
+            if left == 0 {
+                return Ok(bool_to_i64(false));
+            }
+
+            let right = right.eval(shell).await?;
+            return Ok(bool_to_i64(right != 0));
+        }
+        ast::BinaryOperator::LogicalOr => {
+            let left = left.eval(shell).await?;
+            if left != 0 {
+                return Ok(bool_to_i64(true));
+            }
+
+            let right = right.eval(shell).await?;
+            return Ok(bool_to_i64(right != 0));
+        }
+        _ => (),
+    }
+
+    // The remaining operators unconditionally operate both operands.
+    let left = left.eval(shell).await?;
+    let right = right.eval(shell).await?;
+
     #[allow(clippy::cast_possible_truncation)]
     #[allow(clippy::cast_sign_loss)]
     match op {
@@ -167,9 +209,8 @@ fn apply_binary_op(op: ast::BinaryOperator, left: i64, right: i64) -> Result<i64
         ast::BinaryOperator::BitwiseAnd => Ok(left & right),
         ast::BinaryOperator::BitwiseXor => Ok(left ^ right),
         ast::BinaryOperator::BitwiseOr => Ok(left | right),
-        // TODO: check if these should short-circuit
-        ast::BinaryOperator::LogicalAnd => Ok(bool_to_i64((left != 0) && (right != 0))),
-        ast::BinaryOperator::LogicalOr => Ok(bool_to_i64((left != 0) || (right != 0))),
+        ast::BinaryOperator::LogicalAnd => unreachable!("LogicalAnd covered above"),
+        ast::BinaryOperator::LogicalOr => unreachable!("LogicalOr covered above"),
     }
 }
 
@@ -230,7 +271,7 @@ async fn assign(
                 .env
                 .update_or_add_array_element(
                     name.as_str(),
-                    index_str.as_str(),
+                    index_str,
                     value.to_string(),
                     |_| Ok(()),
                     env::EnvironmentLookup::Anywhere,
