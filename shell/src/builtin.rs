@@ -3,7 +3,8 @@ use clap::Parser;
 use futures::future::BoxFuture;
 
 use crate::commands::CommandArg;
-use crate::{error, shell::Shell};
+use crate::context;
+use crate::error;
 
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
@@ -57,33 +58,8 @@ pub enum BuiltinExitCode {
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub struct BuiltinExecutionContext<'a> {
-    pub shell: &'a mut Shell,
-    pub builtin_name: String,
-    pub open_files: crate::openfiles::OpenFiles,
-}
-
-impl BuiltinExecutionContext<'_> {
-    pub fn stdout(&self) -> impl std::io::Write + '_ {
-        if let Some(open_file) = self.open_files.files.get(&1) {
-            open_file
-        } else {
-            &crate::openfiles::OpenFile::Stdout
-        }
-    }
-
-    pub fn stderr(&self) -> impl std::io::Write + '_ {
-        if let Some(open_file) = self.open_files.files.get(&2) {
-            open_file
-        } else {
-            &crate::openfiles::OpenFile::Stderr
-        }
-    }
-}
-
-#[allow(clippy::module_name_repetitions)]
 pub type BuiltinCommandExecuteFunc = fn(
-    BuiltinExecutionContext<'_>,
+    context::CommandExecutionContext<'_>,
     Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<BuiltinResult, error::Error>>;
 
@@ -109,7 +85,7 @@ pub trait BuiltinCommand: Parser {
 
     async fn execute(
         &self,
-        context: &mut BuiltinExecutionContext<'_>,
+        context: context::CommandExecutionContext<'_>,
     ) -> Result<BuiltinExitCode, error::Error>;
 }
 

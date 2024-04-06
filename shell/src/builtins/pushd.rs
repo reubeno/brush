@@ -18,7 +18,7 @@ pub(crate) struct PushdCommand {
 impl BuiltinCommand for PushdCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.no_directory_change {
             log::error!("UNIMPLEMENTED: pushd -n");

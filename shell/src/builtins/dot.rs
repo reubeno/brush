@@ -17,7 +17,7 @@ pub(crate) struct DotCommand {
 impl BuiltinCommand for DotCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         // TODO: Handle trap inheritance.
         let script_args: Vec<_> = self.script_args.iter().map(|a| a.as_str()).collect();

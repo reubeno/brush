@@ -25,7 +25,7 @@ pub(crate) struct UmaskCommand {
 impl BuiltinCommand for UmaskCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         // TODO: handle output redirects
         if let Some(mode) = &self.mode {

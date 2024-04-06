@@ -10,7 +10,7 @@ pub(crate) struct TrueCommand {}
 impl BuiltinCommand for TrueCommand {
     async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        _context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         Ok(BuiltinExitCode::Success)
     }

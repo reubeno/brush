@@ -42,7 +42,7 @@ enum ResolvedType {
 impl BuiltinCommand for TypeCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         let mut result = BuiltinExitCode::Success;
 

@@ -19,7 +19,7 @@ pub(crate) struct TrapCommand {
 impl BuiltinCommand for TrapCommand {
     async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        _context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.list_signals {
             log::error!("UNIMPLEMENTED: trap -l");

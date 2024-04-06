@@ -95,6 +95,7 @@ impl InteractiveShell {
         }
 
         if self.shell().options.interactive {
+            // TODO: Write this to the correct output stream.
             eprintln!("exit");
         }
 

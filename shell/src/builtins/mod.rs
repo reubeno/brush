@@ -6,6 +6,7 @@ use crate::builtin::{
     self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinDeclarationCommand, BuiltinResult,
 };
 use crate::commands::CommandArg;
+use crate::context;
 use crate::error;
 
 mod alias;
@@ -37,14 +38,14 @@ mod unimp;
 mod unset;
 
 fn exec_builtin<T: BuiltinCommand + Send>(
-    context: builtin::BuiltinExecutionContext<'_>,
+    context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
     Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
 }
 
 async fn exec_builtin_impl<T: BuiltinCommand + Send>(
-    mut context: builtin::BuiltinExecutionContext<'_>,
+    context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<BuiltinResult, error::Error> {
     let plain_args = args
@@ -67,20 +68,20 @@ async fn exec_builtin_impl<T: BuiltinCommand + Send>(
     };
 
     Ok(BuiltinResult {
-        exit_code: command.execute(&mut context).await?,
+        exit_code: command.execute(context).await?,
     })
 }
 
 #[allow(dead_code)]
 fn exec_declaration_builtin<T: BuiltinDeclarationCommand + Send>(
-    context: builtin::BuiltinExecutionContext<'_>,
+    context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
     Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
 }
 
 async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
-    mut context: builtin::BuiltinExecutionContext<'_>,
+    context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<BuiltinResult, error::Error> {
     let mut options = vec![];
@@ -109,7 +110,7 @@ async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
     command.set_declarations(declarations);
 
     Ok(BuiltinResult {
-        exit_code: command.execute(&mut context).await?,
+        exit_code: command.execute(context).await?,
     })
 }
 
