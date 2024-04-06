@@ -366,7 +366,7 @@ impl<'a> WordExpander<'a> {
                 let exec_output = exec_result.output;
 
                 if exec_output.is_none() {
-                    log::error!("error: no output captured from command substitution");
+                    log::debug!("error: no output captured from command substitution");
                 }
 
                 let exec_output = exec_output.unwrap_or_else(String::new);
@@ -397,7 +397,7 @@ impl<'a> WordExpander<'a> {
         }
 
         if let Some(home) = self.shell.env.get("HOME") {
-            return Ok(String::from(home.value()));
+            return Ok(home.value().to_cow_string().to_string());
         } else {
             // HOME isn't set, so let's query passwd et al. to figure out the current
             // user's home directory.
@@ -457,7 +457,7 @@ impl<'a> WordExpander<'a> {
                     ) => Ok(expanded_parameter),
                     _ => {
                         let expanded_default_value = self.basic_expand(default_value).await?;
-                        self.assign_to_parameter(parameter, expanded_default_value.as_str())
+                        self.assign_to_parameter(parameter, expanded_default_value.clone())
                             .await?;
                         Ok(ParameterExpansion::from(expanded_default_value))
                     }
@@ -781,9 +781,11 @@ impl<'a> WordExpander<'a> {
             parser::word::ParameterExpr::DereferenceVariable { variable_name } => {
                 // TODO: handle nameref variables?
                 if let Some(var) = self.shell.env.get(variable_name) {
-                    let target_name: String = var.value().into();
-                    if let Some(target_var) = self.shell.env.get(target_name.as_str()) {
-                        Ok(ParameterExpansion::from(String::from(target_var.value())))
+                    let target_name = var.value().to_cow_string();
+                    if let Some(target_var) = self.shell.env.get(target_name.as_ref()) {
+                        Ok(ParameterExpansion::from(
+                            target_var.value().to_cow_string().to_string(),
+                        ))
                     } else {
                         Ok(ParameterExpansion::undefined())
                     }
@@ -808,7 +810,7 @@ impl<'a> WordExpander<'a> {
     async fn assign_to_parameter(
         &mut self,
         parameter: &parser::word::Parameter,
-        value: &str,
+        value: String,
     ) -> Result<(), error::Error> {
         let (variable_name, index) = match parameter {
             parser::word::Parameter::Named(name) => (name.as_str(), None),
@@ -850,7 +852,7 @@ impl<'a> WordExpander<'a> {
         } else {
             self.shell.env.update_or_add(
                 variable_name,
-                variables::ShellValueLiteral::Scalar(value.to_owned()),
+                variables::ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -880,7 +882,9 @@ impl<'a> WordExpander<'a> {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         Ok(ParameterExpansion::undefined())
                     } else {
-                        Ok(ParameterExpansion::from(String::from(var.value())))
+                        Ok(ParameterExpansion::from(
+                            var.value().to_cow_string().to_string(),
+                        ))
                     }
                 } else {
                     Ok(ParameterExpansion::undefined())
@@ -906,7 +910,7 @@ impl<'a> WordExpander<'a> {
                 // Index into the array.
                 if let Some(var) = self.shell.env.get(name) {
                     if let Some(value) = var.value().get_at(index_to_use.as_str())? {
-                        Ok(ParameterExpansion::from(value))
+                        Ok(ParameterExpansion::from(value.to_string()))
                     } else {
                         Ok(ParameterExpansion::undefined())
                     }

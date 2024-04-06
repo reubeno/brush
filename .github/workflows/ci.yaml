@@ -13,28 +13,34 @@ env:
 
 jobs:
   build:
-    name: "Build and test"
+    name: "Build"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          toolchain: stable
+
+      - name: Build
+        run: cargo build
+
+  test:
+    name: "Test"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
 
       - name: Test
-        uses: devcontainers/ci@v0.3
-        with:
-          cacheFrom: ghcr.io/reubeno/brush/devcontainer
-          push: never
-          runCmd: |
-            set -euo pipefail
-            cargo build
-            cargo test -- --show-output
+        run: cargo test -- --show-output
 
   check:
     name: "Source code checks"
@@ -43,30 +49,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          toolchain: stable
 
-      - name: Test
-        uses: devcontainers/ci@v0.3
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.6.4
+
+      - name: Format check
+        run: cargo fmt --check --all
+
+      - name: Check
+        run: cargo check --all-targets
+
+      - name: Deny check
+        run: |
+          set -euo pipefail
+          cargo binstall --no-confirm cargo-deny
+          cargo deny check
+
+      - name: Clippy check
+        run: cargo clippy --all-targets
+
+  benchmark:
+    name: "Benchmarks"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          cacheFrom: ghcr.io/reubeno/brush/devcontainer
-          push: never
-          runCmd: |
-            set -euo pipefail
-            cargo fmt --check --all
-            cargo check --all-targets
-            cargo deny check
-            cargo clippy --all-targets
+          toolchain: stable
 
       - name: Performance analysis
-        uses: devcontainers/ci@v0.3
-        with:
-          cacheFrom: ghcr.io/reubeno/brush/devcontainer
-          push: never
-          runCmd: |
-            set -euo pipefail
-            cargo bench --workspace
+        run: cargo bench --workspace

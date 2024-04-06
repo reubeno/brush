@@ -3,6 +3,20 @@ cases:
   - name: "Basic subshell usage"
     stdin: |
       (echo hi)
+
+  - name: "Subshell env usage"
+    known_failure: true
+    stdin: |
+      (subshell_var=value && echo "subshell_var: ${subshell_var}")
+      echo "subshell_var: ${subshell_var}"
+
+  - name: "Subshell output redirection"
+    known_failure: true
+    stdin: |
+      (echo Hello; echo world) >out.txt
+      echo "Dumping out.txt..."
+      cat out.txt
+
   - name: "Piped subshell usage"
     known_failure: true
     stdin: |

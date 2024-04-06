@@ -61,7 +61,7 @@ impl BuiltinCommand for ExportCommand {
                         context.stdout(),
                         "declare -x {}=\"{}\"",
                         name,
-                        String::from(variable.value())
+                        variable.value().to_cow_string()
                     )?;
                 }
             }

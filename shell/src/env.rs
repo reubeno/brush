@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::error;
@@ -112,8 +113,8 @@ impl ShellEnvironment {
         return self.globals.get_mut(name);
     }
 
-    pub fn get_str(&self, name: &str) -> Option<String> {
-        self.get(name).map(|v| String::from(v.value()))
+    pub fn get_str(&self, name: &str) -> Option<Cow<'_, str>> {
+        self.get(name).map(|v| v.value().to_cow_string())
     }
 
     pub fn is_set(&self, name: &str) -> bool {
@@ -212,24 +213,24 @@ impl ShellEnvironment {
         }
     }
 
-    pub fn update_or_add_array_element<N: AsRef<str>, I: AsRef<str>, V: AsRef<str>>(
+    pub fn update_or_add_array_element<N: AsRef<str>>(
         &mut self,
         name: N,
-        index: I,
-        value: V,
+        index: String,
+        value: String,
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
         if let Some(var) = self.get_mut_using_policy(name.as_ref(), lookup_policy) {
-            var.assign_at_index(index.as_ref(), value.as_ref(), false)?;
+            var.assign_at_index(index, value, false)?;
             updater(var)
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
             var.assign(
                 variables::ShellValueLiteral::Array(variables::ArrayLiteral(vec![(
-                    Some(index.as_ref().to_owned()),
-                    value.as_ref().to_owned(),
+                    Some(index),
+                    value,
                 )])),
                 false,
             )?;

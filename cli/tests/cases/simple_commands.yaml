@@ -7,3 +7,16 @@ cases:
   - name: "Simple command with reserved word args"
     stdin: |
       echo then
+
+  - name: "Command that's a directory"
+    ignore_stderr: true
+    stdin: |
+      mkdir test-dir
+      ./test-dir
+      echo "Result: $?"
+
+  - name: "Non-existent command"
+    ignore_stderr: true
+    stdin: |
+      ./non-existent-command
+      echo "Result: $?"

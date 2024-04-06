@@ -18,7 +18,6 @@ cases:
       cat out.txt
 
   - name: "Input redirection from file"
-    known_failure: true
     test_files:
       - path: "in.txt"
         contents: |

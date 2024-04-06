@@ -55,13 +55,17 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.to_async(tokio())
             .iter(|| black_box(run_one_command("declare new-variable")));
     });
-    c.bench_function("run one external command", |b| {
+    c.bench_function("run echo built-in command", |b| {
         b.to_async(tokio())
             .iter(|| black_box(run_one_command("echo 'Hello, world!' >/dev/null")));
     });
+    c.bench_function("run one external command", |b| {
+        b.to_async(tokio())
+            .iter(|| black_box(run_one_command("/usr/bin/echo 'Hello, world!' >/dev/null")));
+    });
     c.bench_function("run one external command (directly)", |b| {
         b.to_async(tokio())
-            .iter(|| black_box(run_command_directly("echo", &["Hello, world!"])));
+            .iter(|| black_box(run_command_directly("/usr/bin/echo", &["Hello, world!"])));
     });
     c.bench_function("expand one string", |b| {
         b.iter(|| black_box(expand_one_string()));

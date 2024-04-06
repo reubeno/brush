@@ -16,6 +16,7 @@ mod complete;
 mod declare;
 mod dirs;
 mod dot;
+mod echo;
 mod eval;
 mod exec;
 mod exit;
@@ -48,15 +49,12 @@ async fn exec_builtin_impl<T: BuiltinCommand + Send>(
     context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<BuiltinResult, error::Error> {
-    let plain_args = args
-        .into_iter()
-        .map(|arg| match arg {
-            CommandArg::String(s) => s,
-            CommandArg::Assignment(a) => a.to_string(),
-        })
-        .collect();
+    let plain_args = args.into_iter().map(|arg| match arg {
+        CommandArg::String(s) => s,
+        CommandArg::Assignment(a) => a.to_string(),
+    });
 
-    let result = T::new(plain_args).await;
+    let result = T::new(plain_args);
     let command = match result {
         Ok(command) => command,
         Err(e) => {
@@ -96,7 +94,7 @@ async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
         }
     }
 
-    let result = T::new(options).await;
+    let result = T::new(options);
     let mut command = match result {
         Ok(command) => command,
         Err(e) => {
@@ -117,9 +115,10 @@ async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
 lazy_static::lazy_static! {
     pub(crate) static ref SPECIAL_BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_special_builtins();
     pub(crate) static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_builtins();
+    pub(crate) static ref DECLARATION_BUILTINS: HashSet<&'static str> = get_declaration_builtin_names();
 }
 
-pub(crate) fn get_declaration_builtin_names() -> HashSet<&'static str> {
+fn get_declaration_builtin_names() -> HashSet<&'static str> {
     let mut s = HashSet::new();
     s.insert("alias");
     s.insert("declare");
@@ -130,7 +129,7 @@ pub(crate) fn get_declaration_builtin_names() -> HashSet<&'static str> {
     s
 }
 
-pub(crate) fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
+fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
     //
     // POSIX special builtins
     //
@@ -159,7 +158,7 @@ pub(crate) fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExec
     m
 }
 
-pub(crate) fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
+fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
     let mut m = HashMap::<&'static str, BuiltinCommandExecuteFunc>::new();
 
     m.insert("alias", exec_builtin::<alias::AliasCommand>); // TODO: should be exec_declaration_builtin
@@ -196,7 +195,7 @@ pub(crate) fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc>
         "declare",
         exec_declaration_builtin::<declare::DeclareCommand>,
     );
-    // m.insert("echo", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("echo", exec_builtin::<echo::EchoCommand>);
     m.insert("enable", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("let", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("local", exec_declaration_builtin::<declare::DeclareCommand>);

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rand::Rng;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
@@ -140,7 +141,7 @@ impl ShellVariable {
             }
             _ => {
                 let mut new_values = BTreeMap::new();
-                new_values.insert(0, String::from(&self.value));
+                new_values.insert(0, self.value.to_cow_string().to_string());
                 self.value = ShellValue::IndexedArray(new_values);
                 Ok(())
             }
@@ -154,8 +155,8 @@ impl ShellVariable {
                 Err(error::Error::ConvertingIndexedArrayToAssociativeArray)
             }
             _ => {
-                let mut new_values = BTreeMap::new();
-                new_values.insert("0".to_owned(), String::from(&self.value));
+                let mut new_values: BTreeMap<String, String> = BTreeMap::new();
+                new_values.insert(String::from("0"), self.value.to_cow_string().to_string());
                 self.value = ShellValue::AssociativeArray(new_values);
                 Ok(())
             }
@@ -210,7 +211,7 @@ impl ShellVariable {
                 },
                 ShellValue::IndexedArray(existing_values) => match value {
                     ShellValueLiteral::Scalar(new_value) => {
-                        self.assign_at_index("0", new_value.as_str(), append)
+                        self.assign_at_index(String::from("0"), new_value, append)
                     }
                     ShellValueLiteral::Array(new_values) => {
                         ShellValue::update_indexed_array_from_literals(existing_values, new_values)
@@ -218,7 +219,7 @@ impl ShellVariable {
                 },
                 ShellValue::AssociativeArray(existing_values) => match value {
                     ShellValueLiteral::Scalar(new_value) => {
-                        self.assign_at_index("0", new_value.as_str(), append)
+                        self.assign_at_index(String::from("0"), new_value, append)
                     }
                     ShellValueLiteral::Array(new_values) => {
                         ShellValue::update_associative_array_from_literals(
@@ -241,7 +242,7 @@ impl ShellVariable {
                         ShellValueUnsetType::AssociativeArray | ShellValueUnsetType::IndexedArray,
                     ),
                     ShellValueLiteral::Scalar(s),
-                ) => self.assign_at_index("0", s.as_str(), false),
+                ) => self.assign_at_index(String::from("0"), s, false),
 
                 // If we're updating an indexed array value with an array, then preserve the array type.
                 // We also default to using an indexed array if we are assigning an array to a previously
@@ -285,8 +286,8 @@ impl ShellVariable {
     #[allow(clippy::needless_pass_by_value)]
     pub fn assign_at_index(
         &mut self,
-        array_index: &str,
-        value: &str,
+        array_index: String,
+        value: String,
         append: bool,
     ) -> Result<(), error::Error> {
         match &self.value {
@@ -306,7 +307,7 @@ impl ShellVariable {
                 let key: u64 = array_index.parse().unwrap_or(0);
 
                 if append {
-                    let existing_value = arr.get(&key).map_or_else(String::new, |v| v.clone());
+                    let existing_value = arr.get(&key).map_or_else(|| "", |v| v.as_str());
 
                     let mut new_value;
                     if treat_as_int {
@@ -314,21 +315,22 @@ impl ShellVariable {
                             + value.parse::<i64>().unwrap_or(0))
                         .to_string();
                     } else {
-                        new_value = existing_value.clone();
-                        new_value.push_str(value);
+                        new_value = existing_value.to_owned();
+                        new_value.push_str(value.as_str());
                     }
 
                     arr.insert(key, new_value);
                 } else {
-                    arr.insert(key, value.to_owned());
+                    arr.insert(key, value);
                 }
 
                 Ok(())
             }
             ShellValue::AssociativeArray(arr) => {
                 if append {
-                    let existing_value =
-                        arr.get(array_index).map_or_else(String::new, |v| v.clone());
+                    let existing_value = arr
+                        .get(array_index.as_str())
+                        .map_or_else(|| "", |v| v.as_str());
 
                     let mut new_value;
                     if treat_as_int {
@@ -336,13 +338,13 @@ impl ShellVariable {
                             + value.parse::<i64>().unwrap_or(0))
                         .to_string();
                     } else {
-                        new_value = existing_value.clone();
-                        new_value.push_str(value);
+                        new_value = existing_value.to_owned();
+                        new_value.push_str(value.as_str());
                     }
 
-                    arr.insert(array_index.to_owned(), new_value.to_string());
+                    arr.insert(array_index, new_value.to_string());
                 } else {
-                    arr.insert(array_index.to_owned(), value.to_owned());
+                    arr.insert(array_index, value);
                 }
                 Ok(())
             }
@@ -553,22 +555,24 @@ impl ShellValue {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    pub fn get_at(&self, index: &str) -> Result<Option<String>, error::Error> {
+    pub fn get_at(&self, index: &str) -> Result<Option<Cow<'_, str>>, error::Error> {
         match self {
             ShellValue::Unset(_) => Ok(None),
             ShellValue::String(s) => {
                 if index.parse::<u64>().unwrap_or(0) == 0 {
-                    Ok(Some(s.to_owned()))
+                    Ok(Some(Cow::Borrowed(s)))
                 } else {
                     Ok(None)
                 }
             }
-            ShellValue::AssociativeArray(values) => Ok(values.get(index).map(|s| s.to_owned())),
+            ShellValue::AssociativeArray(values) => {
+                Ok(values.get(index).map(|s| Cow::Borrowed(s.as_str())))
+            }
             ShellValue::IndexedArray(values) => {
                 let key = index.parse::<u64>().unwrap_or(0);
-                Ok(values.get(&key).map(|s| s.to_owned()))
+                Ok(values.get(&key).map(|s| Cow::Borrowed(s.as_str())))
             }
-            ShellValue::Random => Ok(Some(get_random_str())),
+            ShellValue::Random => Ok(Some(Cow::Owned(get_random_str()))),
         }
     }
 
@@ -590,6 +594,20 @@ impl ShellValue {
             ShellValue::Random => vec![get_random_str()],
         }
     }
+
+    pub fn to_cow_string(&self) -> Cow<'_, str> {
+        match self {
+            ShellValue::Unset(_) => Cow::Borrowed(""),
+            ShellValue::String(s) => Cow::Borrowed(s.as_str()),
+            ShellValue::AssociativeArray(values) => values
+                .get("0")
+                .map_or_else(|| Cow::Borrowed(""), |s| Cow::Borrowed(s.as_str())),
+            ShellValue::IndexedArray(values) => values
+                .get(&0)
+                .map_or_else(|| Cow::Borrowed(""), |s| Cow::Borrowed(s.as_str())),
+            ShellValue::Random => Cow::Owned(get_random_str()),
+        }
+    }
 }
 
 impl From<&str> for ShellValue {
@@ -601,22 +619,6 @@ impl From<&str> for ShellValue {
 impl From<&String> for ShellValue {
     fn from(value: &String) -> Self {
         ShellValue::String(value.clone())
-    }
-}
-
-impl From<&ShellValue> for String {
-    fn from(value: &ShellValue) -> Self {
-        match value {
-            ShellValue::Unset(_) => String::new(),
-            ShellValue::String(s) => s.clone(),
-            ShellValue::AssociativeArray(values) => {
-                values.get("0").map_or_else(String::new, |s| s.clone())
-            }
-            ShellValue::IndexedArray(values) => {
-                values.get(&0).map_or_else(String::new, |s| s.clone())
-            }
-            ShellValue::Random => get_random_str(),
-        }
     }
 }
 
