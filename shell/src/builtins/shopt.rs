@@ -29,7 +29,7 @@ pub(crate) struct ShoptCommand {
 impl BuiltinCommand for ShoptCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.set && self.unset {
             log::error!("cannot set and unset shell options simultaneously");
@@ -123,7 +123,7 @@ impl BuiltinCommand for ShoptCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {}: invalid shell option name",
-                        context.builtin_name,
+                        context.command_name,
                         option_name
                     )?;
                     return_value = BuiltinExitCode::Custom(1);

@@ -26,7 +26,7 @@ pub(crate) struct ExecCommand {
 impl BuiltinCommand for ExecCommand {
     async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        _context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.name_for_argv0.is_some() {
             log::error!("UNIMPLEMENTED: exec -a: name as argv[0]");

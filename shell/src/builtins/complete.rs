@@ -90,7 +90,7 @@ pub(crate) struct CompleteCommand {
 impl BuiltinCommand for CompleteCommand {
     async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        _context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.print {
             log::debug!("UNIMPLEMENTED: complete -p");

@@ -9,13 +9,14 @@ use crate::error;
 use crate::expansion;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::jobs;
+use crate::openfiles;
 use crate::options::RuntimeOptions;
 use crate::patterns;
 use crate::prompt::expand_prompt;
 use crate::variables::{self, ShellValue, ShellVariable};
 
 pub struct Shell {
-    // TODO: open files
+    pub open_files: openfiles::OpenFiles,
     pub working_dir: PathBuf,
     pub umask: u32,
     pub file_size_limit: u64,
@@ -47,6 +48,7 @@ pub struct Shell {
 impl Clone for Shell {
     fn clone(&self) -> Self {
         Self {
+            open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
             umask: self.umask,
             file_size_limit: self.file_size_limit,
@@ -113,6 +115,7 @@ impl Shell {
     pub async fn new(options: &CreateOptions) -> Result<Shell> {
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
+            open_files: openfiles::OpenFiles::default(),
             working_dir: std::env::current_dir()?,
             umask: Default::default(),           // TODO: populate umask
             file_size_limit: Default::default(), // TODO: populate file size limit

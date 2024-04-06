@@ -26,7 +26,7 @@ pub(crate) struct DirsCommand {
 impl BuiltinCommand for DirsCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.clear {
             context.shell.directory_stack.clear();

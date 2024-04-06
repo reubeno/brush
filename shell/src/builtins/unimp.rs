@@ -13,7 +13,7 @@ pub(crate) struct UnimplementedCommand {
 impl BuiltinCommand for UnimplementedCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         log::error!(
             "UNIMPLEMENTED: {}: built-in unimplemented: {} {}",
@@ -22,7 +22,7 @@ impl BuiltinCommand for UnimplementedCommand {
                 .shell_name
                 .as_ref()
                 .map_or("(unknown shell)", |sn| sn),
-            context.builtin_name,
+            context.command_name,
             self.args.join(" ")
         );
         Ok(BuiltinExitCode::Unimplemented)

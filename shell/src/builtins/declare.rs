@@ -87,9 +87,9 @@ impl BuiltinDeclarationCommand for DeclareCommand {
 impl BuiltinCommand for DeclareCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        mut context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        let called_as_local = context.builtin_name == "local";
+        let called_as_local = context.command_name == "local";
 
         // TODO: implement declare -I
         if self.locals_inherit_from_prev_scope {
@@ -101,11 +101,11 @@ impl BuiltinCommand for DeclareCommand {
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print {
-                    if !self.try_display_declaration(context, declaration, called_as_local)? {
+                    if !self.try_display_declaration(&mut context, declaration, called_as_local)? {
                         result = BuiltinExitCode::Custom(1);
                     }
                 } else {
-                    if !self.process_declaration(context, declaration, called_as_local)? {
+                    if !self.process_declaration(&mut context, declaration, called_as_local)? {
                         result = BuiltinExitCode::Custom(1);
                     }
                 }
@@ -113,14 +113,14 @@ impl BuiltinCommand for DeclareCommand {
         } else {
             // Display matching declarations from the variable environment.
             if !self.function_names_only && !self.function_names_or_defs_only {
-                self.display_matching_env_declarations(context, called_as_local)?;
+                self.display_matching_env_declarations(&mut context, called_as_local)?;
             }
 
             // Do the same for functions.
             if !called_as_local
                 && (!self.print || self.function_names_only || self.function_names_or_defs_only)
             {
-                self.display_matching_functions(context)?;
+                self.display_matching_functions(&mut context)?;
             }
         }
 
@@ -131,7 +131,7 @@ impl BuiltinCommand for DeclareCommand {
 impl DeclareCommand {
     fn try_display_declaration(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: &mut crate::context::CommandExecutionContext<'_>,
         declaration: &CommandArg,
         called_as_local: bool,
     ) -> Result<bool, error::Error> {
@@ -190,7 +190,7 @@ impl DeclareCommand {
 
     fn process_declaration(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: &mut crate::context::CommandExecutionContext<'_>,
         declaration: &CommandArg,
         called_as_local: bool,
     ) -> Result<bool, error::Error> {
@@ -344,7 +344,7 @@ impl DeclareCommand {
 
     fn display_matching_env_declarations(
         &self,
-        context: &crate::builtin::BuiltinExecutionContext<'_>,
+        context: &mut crate::context::CommandExecutionContext<'_>,
         called_as_local: bool,
     ) -> Result<(), error::Error> {
         //
@@ -443,7 +443,7 @@ impl DeclareCommand {
 
     fn display_matching_functions(
         &self,
-        context: &crate::builtin::BuiltinExecutionContext<'_>,
+        context: &mut crate::context::CommandExecutionContext<'_>,
     ) -> Result<(), error::Error> {
         for (name, def) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {

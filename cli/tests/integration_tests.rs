@@ -700,6 +700,7 @@ impl ExitStatusComparison {
 
 enum StringComparison {
     Ignored,
+    #[allow(dead_code)]
     Same(String),
     TestDiffers {
         test_string: String,

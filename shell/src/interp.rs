@@ -14,7 +14,6 @@ use tokio_command_fds::{CommandFdExt, FdMapping};
 use crate::arithmetic::Evaluatable;
 use crate::commands::CommandArg;
 use crate::env::{EnvironmentLookup, EnvironmentScope};
-use crate::error;
 use crate::expansion;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
@@ -22,6 +21,7 @@ use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
 use crate::{builtin, builtins};
+use crate::{context, error};
 use crate::{extendedtests, patterns};
 
 #[derive(Debug, Default)]
@@ -63,6 +63,7 @@ struct PipelineExecutionContext<'a> {
     pipeline_len: usize,
 
     spawn_results: Vec<SpawnResult>,
+    output_pipes: Vec<os_pipe::PipeReader>,
 
     params: ExecutionParameters,
 }
@@ -131,7 +132,7 @@ impl Execute for ast::CompoundList {
 
                 let job_number = shell.jobs.add(background_job);
 
-                // TODO: don't always log to stdout! Shouldn't if we're in a script or non-interactive?
+                // TODO: Write this to the correct ouptut stream.
                 println!("[{job_number}] <pid unknown>");
             } else {
                 result = ao_list.execute(shell, params).await?;
@@ -208,6 +209,7 @@ impl Execute for ast::Pipeline {
             current_pipeline_index: 0,
             pipeline_len: self.seq.len(),
             spawn_results: vec![],
+            output_pipes: vec![],
             params: params.clone(),
         };
 
@@ -222,6 +224,7 @@ impl Execute for ast::Pipeline {
 
         let capture_output = pipeline_context.params.capture_output;
         let child_count = pipeline_context.spawn_results.len();
+        let mut last_pipe_reader = pipeline_context.output_pipes.pop();
         for (child_index, child) in pipeline_context.spawn_results.into_iter().enumerate() {
             match child {
                 SpawnResult::SpawnedChild(child) => {
@@ -254,9 +257,15 @@ impl Execute for ast::Pipeline {
                     result = ExecutionResult::new(exit_code);
 
                     if capture_output && child_index + 1 == child_count {
-                        let output_str = std::str::from_utf8(output.stdout.as_slice())
-                            .map_err(|e| error::Error::Unknown(e.into()))?;
-                        result.output = Some(output_str.to_owned());
+                        let pipe_reader = std::mem::take(&mut last_pipe_reader);
+                        if let Some(pipe_reader) = pipe_reader {
+                            let output_str = std::io::read_to_string(pipe_reader)?;
+                            result.output = Some(output_str);
+                        } else {
+                            return error::unimp(
+                                "no pipe reader for last command when capture required",
+                            );
+                        }
                     }
                 }
                 SpawnResult::ImmediateExit(exit_code) => {
@@ -298,19 +307,22 @@ impl ExecuteInPipeline for ast::Command {
     ) -> Result<SpawnResult, error::Error> {
         match self {
             ast::Command::Simple(simple) => simple.execute_in_pipeline(pipeline_context).await,
-            ast::Command::Compound(compound, _redirects) => {
-                //
-                // TODO: handle redirects
-                // TODO: Need to execute in the pipeline.
-                //
+            ast::Command::Compound(compound, redirects) => {
+                if redirects.is_some() {
+                    // TODO: handle redirects
+                    log::error!(
+                        "UNIMPLEMENTED: redirects not yet implemented for compound commands",
+                    );
+                }
 
+                // TODO: Need to execute in the pipeline.
                 let result = compound
                     .execute(pipeline_context.shell, &pipeline_context.params)
                     .await?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
-            // TODO: Need to execute in pipeline.
             ast::Command::Function(func) => {
+                // TODO: Need to execute in pipeline.
                 let result = func
                     .execute(pipeline_context.shell, &pipeline_context.params)
                     .await?;
@@ -558,9 +570,11 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        //
-        // TODO: confirm whether defining a function resets the last execution.
-        //
+        if self.body.1.is_some() {
+            // TODO: When redirections are present with the function definition, then
+            // execution of the function body needs to set up those redirections.
+            return error::unimp("function bodies with redirections");
+        }
 
         shell.funcs.insert(self.fname.clone(), self.clone());
 
@@ -589,10 +603,13 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
         }
 
-        let mut open_files = OpenFiles::new();
+        let mut open_files = context.shell.open_files.clone();
         let mut assignments = vec![];
         let mut args: Vec<CommandArg> = vec![];
         let mut invoking_declaration_builtin = false;
+
+        // Set up pipelining.
+        setup_pipeline_redirection(&mut open_files, context)?;
 
         for item in prefix_items
             .0
@@ -643,9 +660,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     }
                 }
                 CommandPrefixOrSuffixItem::Word(arg) => {
-                    //
                     // TODO: Reevaluate if this is an appropriate place to handle aliases.
-                    //
                     let mut next_args =
                         expansion::full_expand_and_split_word(context.shell, arg).await?;
 
@@ -686,6 +701,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
             if context.shell.options.print_commands_and_arguments {
+                // TODO: Write this to the correct ouptut stream.
                 println!("+ {}", args.iter().map(|arg| arg.to_string()).join(" "));
             }
 
@@ -713,47 +729,42 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 })
                 .collect::<Vec<_>>();
 
-            if !cmd_name.contains('/') {
+            let cmd_context = context::CommandExecutionContext {
+                shell: context.shell,
+                command_name: cmd_name,
+                open_files,
+            };
+
+            if !cmd_context.command_name.contains('/') {
                 // TODO: Cache these.
                 let special_builtins = builtins::get_special_builtins();
                 let builtins = builtins::get_builtins();
 
                 // TODO: cache the builtins
-                if let Some(builtin) = special_builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, open_files, cmd_name, args, env_vars)
-                        .await
-                } else if context.shell.funcs.contains_key(cmd_name.as_str()) {
+                if let Some(builtin) = special_builtins.get(cmd_context.command_name.as_str()) {
+                    execute_builtin_command(*builtin, cmd_context, args, env_vars).await
+                } else if cmd_context
+                    .shell
+                    .funcs
+                    .contains_key(cmd_context.command_name.as_str())
+                {
                     // Strip the function name off args.
-                    invoke_shell_function(context, cmd_name.as_str(), &args[1..], &env_vars).await
-                } else if let Some(builtin) = builtins.get(cmd_name.as_str()) {
-                    execute_builtin_command(*builtin, context, open_files, cmd_name, args, env_vars)
-                        .await
+                    invoke_shell_function(cmd_context, &args[1..], &env_vars).await
+                } else if let Some(builtin) = builtins.get(cmd_context.command_name.as_str()) {
+                    execute_builtin_command(*builtin, cmd_context, args, env_vars).await
                 } else {
                     // Strip the command name off args.
-                    execute_external_command(
-                        context,
-                        open_files,
-                        cmd_name.as_ref(),
-                        &args[1..],
-                        &env_vars,
-                    )
-                    .await
+                    execute_external_command(cmd_context, &args[1..], &env_vars).await
                 }
             } else {
                 // Strip the command name off args.
-                execute_external_command(
-                    context,
-                    open_files,
-                    cmd_name.as_ref(),
-                    &args[1..],
-                    &env_vars,
-                )
-                .await
+                execute_external_command(cmd_context, &args[1..], &env_vars).await
             }
         } else {
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
                 if context.shell.options.print_commands_and_arguments {
+                    // TODO: Write this to the correct ouptut stream.
                     println!("+ {assignment}");
                 }
 
@@ -937,13 +948,11 @@ async fn apply_assignment(
 
 #[allow(clippy::too_many_lines)] // TODO: refactor this function
 async fn execute_external_command(
-    context: &mut PipelineExecutionContext<'_>,
-    mut open_files: OpenFiles,
-    cmd_name: &str,
+    mut context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult, error::Error> {
-    let mut cmd = process::Command::new(cmd_name);
+    let mut cmd = process::Command::new(context.command_name.clone());
 
     // Pass through args.
     for arg in args {
@@ -973,7 +982,7 @@ async fn execute_external_command(
 
     // Redirect stdin, if applicable.
     let mut stdin_here_doc = None;
-    if let Some(stdin_file) = open_files.files.remove(&0) {
+    if let Some(stdin_file) = context.open_files.files.remove(&0) {
         if let OpenFile::HereDocument(doc) = &stdin_file {
             stdin_here_doc = Some(doc.clone());
         }
@@ -983,38 +992,16 @@ async fn execute_external_command(
     }
 
     // Redirect stdout, if applicable.
-    let mut redirected_stdout;
-    match open_files.files.remove(&1) {
-        Some(OpenFile::Stdout) | None => {
-            redirected_stdout = false;
-        }
+    match context.open_files.files.remove(&1) {
+        Some(OpenFile::Stdout) | None => (),
         Some(stdout_file) => {
             let as_stdio: Stdio = stdout_file.into();
             cmd.stdout(as_stdio);
-            redirected_stdout = true;
-        }
-    }
-
-    // If we were asked to capture the output of this command (and if it's the last command
-    // in the pipeline), then we need to arrange to redirect output to a pipe that we can
-    // read later.
-    // TODO: Reuse this logic for builtins.
-    if context.params.capture_output && context.pipeline_len == context.current_pipeline_index + 1 {
-        if redirected_stdout {
-            log::warn!(
-                "UNIMPLEMENTED: {}: output redirection used in command substitution; command=[{} {}]",
-                context.shell.shell_name.as_ref().map_or("", |sn| sn),
-                cmd.as_std().get_program().to_string_lossy(),
-                cmd.as_std().get_args().map(|a| a.to_string_lossy().to_string()).join(" "),
-            );
-        } else {
-            cmd.stdout(Stdio::piped());
-            redirected_stdout = true;
         }
     }
 
     // Redirect stderr, if applicable.
-    match open_files.files.remove(&2) {
+    match context.open_files.files.remove(&2) {
         Some(OpenFile::Stderr) | None => {}
         Some(stderr_file) => {
             let as_stdio: Stdio = stderr_file.into();
@@ -1023,56 +1010,17 @@ async fn execute_external_command(
     }
 
     // Inject any appropriate fds.
-    let open_files_keys = open_files.files.keys().copied().collect::<Vec<_>>();
+    let open_files_keys = context.open_files.files.keys().copied().collect::<Vec<_>>();
     for key in open_files_keys {
-        if let Some(OpenFile::ProcessSubstitutionFile(temp_file)) = open_files.files.remove(&key) {
+        if let Some(OpenFile::ProcessSubstitutionFile(temp_file)) =
+            context.open_files.files.remove(&key)
+        {
             #[allow(clippy::cast_possible_wrap)]
             cmd.fd_mappings(vec![FdMapping {
                 child_fd: key as i32,
                 parent_fd: temp_file.as_raw_fd(),
             }])
             .map_err(|e| error::Error::Unknown(e.into()))?;
-        }
-    }
-
-    // See if we need to set up piping.
-    if context.pipeline_len > 1 {
-        // TODO: Handle stderr/other redirects/etc.
-        if (context.current_pipeline_index < context.pipeline_len - 1) && redirected_stdout {
-            log::warn!(
-                "UNIMPLEMENTED: {}: mix of redirection and pipes in command '{}'",
-                context.shell.shell_name.as_ref().map_or("", |sn| sn),
-                cmd_name,
-            );
-        }
-
-        if context.current_pipeline_index > 0 {
-            // Find the stdout from the preceding process.
-            if let Some(mut preceding_result) = context.spawn_results.pop() {
-                match &mut preceding_result {
-                    SpawnResult::SpawnedChild(child) => {
-                        let stream_fd = child.stdout.take().unwrap().into_owned_fd()?;
-                        let stream_file: std::fs::File = stream_fd.into();
-
-                        // Set up stdin of this process to take stdout of the preceding process.
-                        cmd.stdin(stream_file);
-                    }
-                    SpawnResult::ImmediateExit(_code)
-                    | SpawnResult::ExitShell(_code)
-                    | SpawnResult::ReturnFromFunctionOrScript(_code) => {
-                        log::error!("UNIMPLEMENTED: unable to retrieve piped command output");
-                        cmd.stdin(Stdio::null());
-                    }
-                }
-
-                // Push it back so we can wait on it later.
-                context.spawn_results.push(preceding_result);
-            }
-        }
-
-        if context.current_pipeline_index < context.pipeline_len - 1 {
-            // Set up stdout of this process to go to stdin of the succeeding process.
-            cmd.stdout(Stdio::piped());
         }
     }
 
@@ -1097,7 +1045,7 @@ async fn execute_external_command(
             Ok(SpawnResult::SpawnedChild(child))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            log::error!("command not found: {}", cmd_name);
+            log::error!("command not found: {}", context.command_name);
             Ok(SpawnResult::ImmediateExit(127))
         }
         Err(e) => {
@@ -1107,21 +1055,13 @@ async fn execute_external_command(
     }
 }
 
-async fn execute_builtin_command<'a>(
+async fn execute_builtin_command(
     builtin: builtin::BuiltinCommandExecuteFunc,
-    context: &'a mut PipelineExecutionContext<'_>,
-    open_files: OpenFiles,
-    builtin_name: String,
+    context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
     _env_vars: Vec<(String, ShellValue)>,
 ) -> Result<SpawnResult, error::Error> {
-    let builtin_context = builtin::BuiltinExecutionContext {
-        shell: context.shell,
-        builtin_name,
-        open_files,
-    };
-
-    let exit_code = match builtin(builtin_context, args).await {
+    let exit_code = match builtin(context, args).await {
         Ok(builtin_result) => match builtin_result.exit_code {
             builtin::BuiltinExitCode::Success => 0,
             builtin::BuiltinExitCode::InvalidUsage => 2,
@@ -1141,15 +1081,18 @@ async fn execute_builtin_command<'a>(
     Ok(SpawnResult::ImmediateExit(exit_code))
 }
 
-#[async_recursion::async_recursion]
 async fn invoke_shell_function(
-    context: &mut PipelineExecutionContext<'_>,
-    cmd_name: &str,
+    context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult, error::Error> {
     // TODO: We should figure out how to avoid cloning.
-    let function_definition = context.shell.funcs.get(cmd_name).unwrap().clone();
+    let function_definition = context
+        .shell
+        .funcs
+        .get(context.command_name.as_str())
+        .unwrap()
+        .clone();
 
     if !env_vars.is_empty() {
         log::error!("UNIMPLEMENTED: invoke function with environment variables");
@@ -1181,6 +1124,37 @@ async fn invoke_shell_function(
     Ok(SpawnResult::ImmediateExit(result?.exit_code))
 }
 
+fn setup_pipeline_redirection(
+    open_files: &mut OpenFiles,
+    context: &mut PipelineExecutionContext<'_>,
+) -> Result<()> {
+    if context.current_pipeline_index > 0 {
+        // Find the stdout from the preceding process.
+        if let Some(preceding_output_reader) = context.output_pipes.pop() {
+            // Set up stdin of this process to take stdout of the preceding process.
+            open_files
+                .files
+                .insert(0, OpenFile::PipeReader(preceding_output_reader));
+        } else {
+            open_files.files.insert(0, OpenFile::Null);
+        }
+    }
+
+    // If this is a non-last command in a multi-command pipeline, or if it's the last command and we're
+    // expected to capture output of this command, then we need to arrange to redirect output
+    // to a pipe that we can read later.
+    if (context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1)
+        || context.params.capture_output
+    {
+        // Set up stdout of this process to go to stdin of the succeeding process.
+        let (reader, writer) = os_pipe::pipe().map_err(|e| error::Error::Unknown(e.into()))?;
+        context.output_pipes.push(reader);
+        open_files.files.insert(1, OpenFile::PipeWriter(writer));
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)] // TODO: refactor this function
 #[async_recursion::async_recursion]
 async fn setup_redirect<'a>(
@@ -1191,7 +1165,6 @@ async fn setup_redirect<'a>(
     match redirect {
         ast::IoRedirect::File(fd_num, kind, target) => {
             // If not specified, we default fd to stdout.
-            // TODO: Validate this is correct.
             let mut fd_num = fd_num.unwrap_or(1);
 
             let target_file;

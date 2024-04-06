@@ -32,7 +32,7 @@ pub(crate) struct CdCommand {
 impl BuiltinCommand for CdCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         // TODO: implement options
         if self.force_follow_symlinks

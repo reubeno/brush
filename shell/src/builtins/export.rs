@@ -28,7 +28,7 @@ pub(crate) struct ExportCommand {
 impl BuiltinCommand for ExportCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if !self.names.is_empty() {
             for name in &self.names {

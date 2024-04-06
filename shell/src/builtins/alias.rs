@@ -19,11 +19,10 @@ pub(crate) struct AliasCommand {
 impl BuiltinCommand for AliasCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         //
         // TODO: implement flags
-        // TODO: Don't use println
         //
 
         let mut exit_code = BuiltinExitCode::Success;
@@ -45,7 +44,7 @@ impl BuiltinCommand for AliasCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {alias}: not found",
-                        context.builtin_name
+                        context.command_name
                     )?;
                     exit_code = BuiltinExitCode::Custom(1);
                 }

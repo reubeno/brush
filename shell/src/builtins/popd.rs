@@ -16,7 +16,7 @@ pub(crate) struct PopdCommand {
 impl BuiltinCommand for PopdCommand {
     async fn execute(
         &self,
-        context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if let Some(popped) = context.shell.directory_stack.pop() {
             if !self.no_directory_change {

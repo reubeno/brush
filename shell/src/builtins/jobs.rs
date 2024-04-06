@@ -28,7 +28,7 @@ pub(crate) struct JobsCommand {
 impl BuiltinCommand for JobsCommand {
     async fn execute(
         &self,
-        _context: &mut crate::builtin::BuiltinExecutionContext<'_>,
+        _context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         // TODO: jobs!
         Ok(BuiltinExitCode::Success)
