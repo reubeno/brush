@@ -46,7 +46,7 @@ if args.rebuild_container_image:
     args.restart_container = True
 
 this_script_dir = os.path.dirname(os.path.abspath(__file__))
-source_root = this_script_dir
+source_root = os.path.join(this_script_dir, "..")
 
 if not os.path.isdir(os.path.join(source_root, ".devcontainer")):
     sys.stderr.write("error: couldn't find repo root\n")
