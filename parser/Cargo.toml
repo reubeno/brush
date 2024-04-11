@@ -27,6 +27,7 @@ utf8-chars = "3.0.2"
 [dev-dependencies]
 assert_matches = "1.5.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
+pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }
 
 [[bench]]
 name = "parser"
