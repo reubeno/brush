@@ -7,6 +7,7 @@ version.workspace = true
 
 [lib]
 name = "parser"
+bench = false
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
