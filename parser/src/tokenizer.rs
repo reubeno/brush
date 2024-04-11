@@ -164,10 +164,19 @@ struct CrossTokenParseState {
     arithmetic_expansion: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TokenizerOptions {
     pub enable_extended_globbing: bool,
     pub posix_mode: bool,
+}
+
+impl Default for TokenizerOptions {
+    fn default() -> Self {
+        Self {
+            enable_extended_globbing: true,
+            posix_mode: false,
+        }
+    }
 }
 
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
