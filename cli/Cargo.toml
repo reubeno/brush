@@ -8,6 +8,7 @@ version.workspace = true
 [[bin]]
 name = "brush"
 path = "src/main.rs"
+bench = false
 
 [lints]
 workspace = true
