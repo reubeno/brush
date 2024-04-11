@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use parser::{parse_tokens, tokenize_str};
+use pprof::criterion::{Output, PProfProfiler};
 
 fn parse_script(contents: &str) -> parser::ast::Program {
     let tokens = tokenize_str(contents).unwrap();
@@ -39,5 +40,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    targets = criterion_benchmark
+}
 criterion_main!(benches);
