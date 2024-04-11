@@ -34,7 +34,7 @@ expectrl = "0.7.1"
 glob = "0.3.1"
 indent = "0.1.1"
 pathdiff = "0.2.1"
-prettydiff = "0.6.4"
+prettydiff = { version = "0.6.4", default-features = false }
 regex = "1.10.4"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_yaml = "0.9.34"
