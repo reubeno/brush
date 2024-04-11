@@ -63,7 +63,7 @@ jobs:
       - name: Test
         run: |
           set -euxo pipefail
-          cargo binstall --no-confirm cargo-llvm-cov
+          cargo binstall --no-confirm --force cargo-llvm-cov
           source <(cargo llvm-cov show-env --export-prefix)
           cargo llvm-cov clean --workspace
           cargo test -- --show-output
