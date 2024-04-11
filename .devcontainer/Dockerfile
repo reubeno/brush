@@ -1,19 +1,16 @@
-FROM mcr.microsoft.com/onebranch/cbl-mariner/build:2.0
+FROM ubuntu:latest
 
 ARG DEFAULT_USER=devel
 
-# Fail fast (on error)!
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
-
-# Install dnf for a better package management experience, and then use it to install prerequisites:
-#   - vim: for developer convenience (text editing)
-#   - vim-extra: for developer convenience (syntax highlighting)
-#   - zsh: for developer convenience
-RUN tdnf install -qy dnf dnf-plugins-core && \
-    dnf install -y \
-        man \
-        vim \
-        vim-extra \
+RUN apt-get update -y && \
+    apt-get install -y \
+        curl \
+        git \
+	language-pack-en \
+        neovim \
+        sed \
+        sudo \
+	wget \
         zsh
 
 # Add a non-root user that we'll do our best to use for development.

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-gh_cli_version="2.38.0"
+gh_cli_version="2.47.0"
 
 gh_arch="$(arch)"
 if [[ "${gh_arch}" == "x86_64" ]]; then
