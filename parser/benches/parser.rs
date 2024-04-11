@@ -13,7 +13,7 @@ fn parse_sample_script() -> parser::ast::Program {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("parse sample script", |b| {
+    c.bench_function("parse_sample_script", |b| {
         b.iter(|| black_box(parse_sample_script()))
     });
 }
