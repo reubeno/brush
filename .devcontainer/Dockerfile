@@ -4,13 +4,14 @@ ARG DEFAULT_USER=devel
 
 RUN apt-get update -y && \
     apt-get install -y \
+        build-essential \
         curl \
         git \
-	language-pack-en \
+        language-pack-en \
         neovim \
         sed \
         sudo \
-	wget \
+        wget \
         zsh
 
 # Add a non-root user that we'll do our best to use for development.
