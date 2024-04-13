@@ -21,7 +21,11 @@ fn benchmark_parsing_script(c: &mut Criterion, script_path: &std::path::Path) {
     let contents = std::fs::read_to_string(script_path).unwrap();
 
     c.bench_function(
-        std::format!("parse {}", script_path.to_string_lossy()).as_str(),
+        std::format!(
+            "parse_{}",
+            script_path.file_name().unwrap().to_string_lossy()
+        )
+        .as_str(),
         |b| b.iter(|| black_box(parse_script(contents.as_str()))),
     );
 }
