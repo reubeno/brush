@@ -1,4 +1,5 @@
 use crate::ast;
+use crate::ParserOptions;
 use anyhow::{Context, Result};
 
 #[derive(Debug)]
@@ -148,11 +149,11 @@ pub enum ParameterTransformOp {
     ToUpperCase,
 }
 
-pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
+pub fn parse_word_for_expansion(word: &str, options: &ParserOptions) -> Result<Vec<WordPiece>> {
     log::debug!("Parsing word '{}'", word);
 
-    let pieces =
-        expansion_parser::unexpanded_word(word).context(format!("parsing word '{word}'"))?;
+    let pieces = expansion_parser::unexpanded_word(word, options)
+        .context(format!("parsing word '{word}'"))?;
 
     log::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
 
@@ -160,7 +161,7 @@ pub fn parse_word_for_expansion(word: &str) -> Result<Vec<WordPiece>> {
 }
 
 peg::parser! {
-    grammar expansion_parser() for str {
+    grammar expansion_parser(parser_options: &ParserOptions) for str {
         pub(crate) rule unexpanded_word() -> Vec<WordPiece> = word(<&[_]>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPiece> =
@@ -263,8 +264,8 @@ peg::parser! {
             parameter:parameter() "#" pattern:parameter_expression_word()? {
                 ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern }
             } /
-            // TODO: don't allow non posix expressions in sh mode
-            e:non_posix_parameter_expression() { e } /
+            // N.B. The following case is for non-sh extensions.
+            non_posix_extensions_enabled() e:non_posix_parameter_expression() { e } /
             parameter:parameter() {
                 ParameterExpr::Parameter { parameter }
             }
@@ -348,9 +349,9 @@ peg::parser! {
         rule parameter() -> Parameter =
             p:positional_parameter() { Parameter::Positional(p) } /
             p:special_parameter() { Parameter::Special(p) } /
-            p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
-            p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: true } } /
-            p:variable_name() "[" index:$((!"]" [_])*) "]" {?
+            non_posix_extensions_enabled() p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
+            non_posix_extensions_enabled() p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: true } } /
+            non_posix_extensions_enabled() p:variable_name() "[" index:$((!"]" [_])*) "]" {?
                 Ok(Parameter::NamedWithIndex { name: p.to_owned(), index: index.to_owned() })
             } /
             p:variable_name() { Parameter::Named(p.to_owned()) }
@@ -404,6 +405,9 @@ peg::parser! {
 
         rule parameter_expression_word() -> String =
             s:$(word(<!['}']>)) { s.to_owned() }
+
+        rule non_posix_extensions_enabled() -> () =
+            &[_] {? if !parser_options.sh_mode { Ok(()) } else { Err("posix") } }
     }
 }
 
@@ -414,12 +418,12 @@ mod tests {
 
     #[test]
     fn parse_command_substitution() -> Result<()> {
-        super::expansion_parser::command_piece("echo")?;
-        super::expansion_parser::command_piece("hi")?;
-        super::expansion_parser::command("echo hi")?;
-        super::expansion_parser::command_substitution("$(echo hi)")?;
+        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
+        super::expansion_parser::command_piece("hi", &ParserOptions::default())?;
+        super::expansion_parser::command("echo hi", &ParserOptions::default())?;
+        super::expansion_parser::command_substitution("$(echo hi)", &ParserOptions::default())?;
 
-        let parsed = super::parse_word_for_expansion("$(echo hi)")?;
+        let parsed = super::parse_word_for_expansion("$(echo hi)", &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPiece::CommandSubstitution(s)] if s.as_str() == "echo hi"
@@ -430,12 +434,15 @@ mod tests {
 
     #[test]
     fn parse_command_substitution_with_embedded_quotes() -> Result<()> {
-        super::expansion_parser::command_piece("echo")?;
-        super::expansion_parser::command_piece(r#""hi""#)?;
-        super::expansion_parser::command(r#"echo "hi""#)?;
-        super::expansion_parser::command_substitution(r#"$(echo "hi")"#)?;
+        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
+        super::expansion_parser::command_piece(r#""hi""#, &ParserOptions::default())?;
+        super::expansion_parser::command(r#"echo "hi""#, &ParserOptions::default())?;
+        super::expansion_parser::command_substitution(
+            r#"$(echo "hi")"#,
+            &ParserOptions::default(),
+        )?;
 
-        let parsed = super::parse_word_for_expansion(r#"$(echo "hi")"#)?;
+        let parsed = super::parse_word_for_expansion(r#"$(echo "hi")"#, &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPiece::CommandSubstitution(s)] if s.as_str() == r#"echo "hi""#

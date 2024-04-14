@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
+use std::os::fd::AsRawFd;
 use std::process::Stdio;
 
 pub enum OpenFile {
@@ -9,7 +10,6 @@ pub enum OpenFile {
     File(std::fs::File),
     PipeReader(os_pipe::PipeReader),
     PipeWriter(os_pipe::PipeWriter),
-    ProcessSubstitutionFile(std::fs::File),
     HereDocument(String),
 }
 
@@ -22,13 +22,26 @@ impl OpenFile {
             OpenFile::File(f) => OpenFile::File(f.try_clone()?),
             OpenFile::PipeReader(f) => OpenFile::PipeReader(f.try_clone()?),
             OpenFile::PipeWriter(f) => OpenFile::PipeWriter(f.try_clone()?),
-            OpenFile::ProcessSubstitutionFile(f) => {
-                OpenFile::ProcessSubstitutionFile(f.try_clone()?)
-            }
             OpenFile::HereDocument(doc) => OpenFile::HereDocument(doc.clone()),
         };
 
         Ok(result)
+    }
+
+    pub(crate) fn as_raw_fd(&self) -> Result<i32> {
+        match self {
+            OpenFile::Stdout => Ok(std::io::stdout().as_raw_fd()),
+            OpenFile::Stderr => Ok(std::io::stderr().as_raw_fd()),
+            OpenFile::Null => Err(anyhow::anyhow!(
+                "UNIMPLEMENTED: as_raw_fd for null open file"
+            )),
+            OpenFile::File(f) => Ok(f.as_raw_fd()),
+            OpenFile::PipeReader(r) => Ok(r.as_raw_fd()),
+            OpenFile::PipeWriter(w) => Ok(w.as_raw_fd()),
+            OpenFile::HereDocument(_) => {
+                Err(anyhow::anyhow!("UNIMPLEMENTED: as_raw_fd for here doc"))
+            }
+        }
     }
 }
 
@@ -41,7 +54,6 @@ impl From<OpenFile> for Stdio {
             OpenFile::File(f) => f.into(),
             OpenFile::PipeReader(f) => f.into(),
             OpenFile::PipeWriter(f) => f.into(),
-            OpenFile::ProcessSubstitutionFile(f) => f.into(),
             OpenFile::HereDocument(_) => Stdio::piped(),
         }
     }
@@ -58,7 +70,6 @@ impl std::io::Write for OpenFile {
                 "cannot write to pipe reader"
             ))),
             OpenFile::PipeWriter(writer) => writer.write(buf),
-            OpenFile::ProcessSubstitutionFile(f) => f.write(buf),
             OpenFile::HereDocument(_) => Err(std::io::Error::other(anyhow::anyhow!(
                 "cannot write to here document"
             ))),
@@ -73,7 +84,6 @@ impl std::io::Write for OpenFile {
             OpenFile::File(f) => f.flush(),
             OpenFile::PipeReader(_) => Ok(()),
             OpenFile::PipeWriter(writer) => writer.flush(),
-            OpenFile::ProcessSubstitutionFile(f) => f.flush(),
             OpenFile::HereDocument(_) => Ok(()),
         }
     }

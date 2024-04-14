@@ -3,3 +3,13 @@ cases:
   - name: "Default options"
     stdin: |
       echo "Default options: $-"
+
+  - name: "set -a"
+    known_failure: true
+    stdin: |
+      unexported=original
+      set -a
+      newvar=bar
+      unexported=updated
+      env | grep newvar
+      env | grep unexported

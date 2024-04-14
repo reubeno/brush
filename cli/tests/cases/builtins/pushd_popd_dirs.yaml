@@ -1,4 +1,5 @@
 name: "Builtins: pushd/popd/dirs"
+incompatible_configs: ["sh"]
 cases:
   - name: "Basic pushd usage"
     stdin: |

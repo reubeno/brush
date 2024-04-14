@@ -111,16 +111,14 @@ impl InteractiveShell {
         // If there's a variable called PROMPT_COMMAND, then run it first.
         if let Some(prompt_cmd) = self.shell().env.get("PROMPT_COMMAND") {
             let prompt_cmd = prompt_cmd.value().to_cow_string().to_string();
-            self.shell_mut()
-                .run_string(prompt_cmd.as_str(), false)
-                .await?;
+            self.shell_mut().run_string(prompt_cmd.as_str()).await?;
         }
 
         // Now that we've done that, compose the prompt.
         let prompt = self.shell_mut().compose_prompt().await?;
 
         match self.editor.readline(&prompt) {
-            Ok(read_result) => match self.shell_mut().run_string(&read_result, false).await {
+            Ok(read_result) => match self.shell_mut().run_string(&read_result).await {
                 Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
                 Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
             },

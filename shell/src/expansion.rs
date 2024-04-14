@@ -5,6 +5,7 @@ use uzers::os::unix::UserExt;
 use crate::arithmetic::Evaluatable;
 use crate::env;
 use crate::error;
+use crate::openfiles;
 use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
@@ -143,11 +144,17 @@ impl From<ParameterExpansion> for String {
 
 struct WordExpander<'a> {
     shell: &'a mut Shell,
+    parser_options: parser::ParserOptions,
 }
 
 impl<'a> WordExpander<'a> {
     pub fn new(shell: &'a mut Shell) -> Self {
-        Self { shell }
+        let parser_options = shell.parser_options();
+
+        Self {
+            shell,
+            parser_options,
+        }
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
@@ -166,7 +173,8 @@ impl<'a> WordExpander<'a> {
         //
         // Expand: tildes, parameters, command substitutions, arithmetic.
         //
-        let pieces = parser::parse_word_for_expansion(word).map_err(error::Error::Unknown)?;
+        let pieces = parser::parse_word_for_expansion(word, &self.parser_options)
+            .map_err(error::Error::Unknown)?;
 
         let mut expanded_pieces = vec![];
         for piece in pieces {
@@ -362,19 +370,32 @@ impl<'a> WordExpander<'a> {
                 }
             }
             parser::word::WordPiece::CommandSubstitution(s) => {
-                let exec_result = self.shell.run_string(s.as_str(), true).await?;
-                let exec_output = exec_result.output;
+                // Insantiate a subshell to run the command in.
+                let mut subshell = self.shell.clone();
 
-                if exec_output.is_none() {
-                    log::debug!("error: no output captured from command substitution");
-                }
+                // Set up pipe so we can read the output.
+                let (reader, writer) =
+                    os_pipe::pipe().map_err(|e| error::Error::Unknown(e.into()))?;
+                subshell
+                    .open_files
+                    .files
+                    .insert(1, openfiles::OpenFile::PipeWriter(writer));
 
-                let exec_output = exec_output.unwrap_or_else(String::new);
+                // Run the command.
+                // TODO: inspect result?
+                let _ = subshell.run_string(s.as_str()).await?;
+
+                // Make sure the subshell is closed; among other things, this
+                // ensures it's not holding onto the write end of the pipe.
+                drop(subshell);
+
+                // Extract output.
+                let output_str = std::io::read_to_string(reader)?;
 
                 // We trim trailing newlines, per spec.
-                let exec_output = exec_output.trim_end_matches('\n');
+                let output_str = output_str.trim_end_matches('\n');
 
-                vec![ExpandedWordPiece::Splittable(exec_output.to_owned())]
+                vec![ExpandedWordPiece::Splittable(output_str.to_owned())]
             }
             parser::word::WordPiece::EscapeSequence(s) => {
                 vec![ExpandedWordPiece::Unsplittable(
@@ -878,7 +899,10 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::Parameter::Special(s) => self.expand_special_parameter(s),
             parser::word::Parameter::Named(n) => {
-                if let Some(var) = self.shell.env.get(n) {
+                if !valid_variable_name(n) {
+                    eprintln!("BAD: ||{n}||");
+                    Err(error::Error::BadSubstitution)
+                } else if let Some(var) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         Ok(ParameterExpansion::undefined())
                     } else {
@@ -1029,4 +1053,14 @@ fn to_initial_capitals(s: &str) -> String {
     }
 
     result
+}
+
+fn valid_variable_name(s: &str) -> bool {
+    let mut cs = s.chars();
+    match cs.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+            cs.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        Some(_) | None => false,
+    }
 }

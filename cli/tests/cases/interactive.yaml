@@ -1,4 +1,5 @@
 name: "Interactive"
+incompatible_configs: ["sh"]
 cases:
   - name: "Basic interactive test"
     pty: true

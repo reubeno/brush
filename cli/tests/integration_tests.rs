@@ -4,12 +4,68 @@ use colored::*;
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
-    os::unix::fs::PermissionsExt,
-    os::unix::process::ExitStatusExt,
+    collections::{HashMap, HashSet},
+    os::unix::{fs::PermissionsExt, process::ExitStatusExt},
     path::{Path, PathBuf},
     process::ExitStatus,
 };
+
+#[derive(Clone)]
+struct ShellConfig {
+    pub which: WhichShell,
+    pub default_args: Vec<String>,
+}
+
+#[derive(Clone)]
+struct TestConfig {
+    pub name: String,
+    pub oracle_shell: ShellConfig,
+    pub test_shell: ShellConfig,
+}
+
+impl TestConfig {
+    pub fn for_bash_testing() -> Self {
+        // Skip rc file and profile for deterministic behavior across systems/distros.
+        Self {
+            name: String::from("bash"),
+            oracle_shell: ShellConfig {
+                which: WhichShell::NamedShell(String::from("bash")),
+                default_args: vec![String::from("--norc"), String::from("--noprofile")],
+            },
+            test_shell: ShellConfig {
+                which: WhichShell::ShellUnderTest(String::from("brush")),
+                // Disable a few fancy UI options for shells under test.
+                default_args: vec![
+                    String::from("--norc"),
+                    String::from("--noprofile"),
+                    String::from("--disable-bracketed-paste"),
+                ],
+            },
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn for_sh_testing() -> Self {
+        // Skip rc file and profile for deterministic behavior across systems/distros.
+        Self {
+            name: String::from("sh"),
+            oracle_shell: ShellConfig {
+                which: WhichShell::NamedShell(String::from("sh")),
+                default_args: vec![],
+            },
+            test_shell: ShellConfig {
+                which: WhichShell::ShellUnderTest(String::from("brush")),
+                // Disable a few fancy UI options for shells under test.
+                default_args: vec![
+                    String::from("--sh"),
+                    String::from("--norc"),
+                    String::from("--noprofile"),
+                    String::from("--disable-bracketed-paste"),
+                ],
+            },
+        }
+    }
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 32)]
 async fn cli_integration_tests() -> Result<()> {
@@ -24,6 +80,12 @@ async fn cli_integration_tests() -> Result<()> {
         test: std::time::Duration::default(),
     };
 
+    let test_configs = vec![
+        TestConfig::for_bash_testing(),
+        // Uncomment the following line to enable sh testing
+        // TestConfig::for_sh_testing(),
+    ];
+
     // Spawn each test case set separately.
     for entry in glob::glob(format!("{dir}/tests/cases/**/*.yaml").as_ref()).unwrap() {
         let entry = entry.unwrap();
@@ -32,7 +94,24 @@ async fn cli_integration_tests() -> Result<()> {
         let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
             .context(format!("parsing {}", entry.to_string_lossy()))?;
 
-        join_handles.push(tokio::spawn(async move { test_case_set.run().await }));
+        for test_config in &test_configs {
+            // Make sure it's compatible.
+            if test_case_set
+                .incompatible_configs
+                .contains(&test_config.name)
+            {
+                continue;
+            }
+
+            // Clone the test case set and test config so the spawned function below
+            // can take ownership of the clones.
+            let test_case_set = test_case_set.clone();
+            let test_config = test_config.clone();
+
+            join_handles.push(tokio::spawn(
+                async move { test_case_set.run(test_config).await },
+            ));
+        }
     }
 
     // Now go through and await everything.
@@ -79,7 +158,7 @@ async fn cli_integration_tests() -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct TestCase {
     /// Name of the test case
     pub name: Option<String>,
@@ -108,9 +187,11 @@ struct TestCase {
     pub test_files: Vec<TestFile>,
     #[serde(default)]
     pub known_failure: bool,
+    #[serde(default)]
+    pub incompatible_configs: HashSet<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct TestFile {
     /// Relative path to test file
     pub path: PathBuf,
@@ -121,7 +202,7 @@ struct TestFile {
     pub executable: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct TestCaseSet {
     /// Name of the test case set
     pub name: Option<String>,
@@ -130,11 +211,14 @@ struct TestCaseSet {
     /// Common test files applicable to all children test cases
     #[serde(default)]
     pub common_test_files: Vec<TestFile>,
+    #[serde(default)]
+    pub incompatible_configs: HashSet<String>,
 }
 
 #[allow(clippy::struct_field_names)]
 struct TestCaseSetResults {
     pub name: Option<String>,
+    pub config_name: String,
     pub success_count: u32,
     pub known_failure_count: u32,
     pub fail_count: u32,
@@ -145,12 +229,13 @@ struct TestCaseSetResults {
 impl TestCaseSetResults {
     pub fn report(&self) {
         println!(
-            "=================== {}: [{}] ===================",
+            "=================== {}: [{}/{}] ===================",
             "Running test case set".blue(),
             self.name
                 .as_ref()
                 .unwrap_or(&("(unnamed)".to_owned()))
-                .italic()
+                .italic(),
+            self.config_name.magenta(),
         );
 
         for test_case_result in &self.test_case_results {
@@ -165,7 +250,7 @@ impl TestCaseSetResults {
 }
 
 impl TestCaseSet {
-    pub async fn run(&self) -> Result<TestCaseSetResults> {
+    pub async fn run(&self, test_config: TestConfig) -> Result<TestCaseSetResults> {
         let mut success_count = 0;
         let mut known_failure_count = 0;
         let mut fail_count = 0;
@@ -175,7 +260,12 @@ impl TestCaseSet {
         };
         let mut test_case_results = vec![];
         for test_case in &self.cases {
-            let test_case_result = test_case.run(self).await?;
+            // Make sure it's compatible.
+            if test_case.incompatible_configs.contains(&test_config.name) {
+                continue;
+            }
+
+            let test_case_result = test_case.run(self, &test_config).await?;
 
             if test_case_result.success {
                 if test_case.known_failure {
@@ -197,6 +287,7 @@ impl TestCaseSet {
 
         Ok(TestCaseSetResults {
             name: self.name.clone(),
+            config_name: test_config.name.clone(),
             test_case_results,
             success_count,
             known_failure_count,
@@ -206,7 +297,7 @@ impl TestCaseSet {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 enum ShellInvocation {
     ExecShellBinary,
     ExecScript(String),
@@ -218,6 +309,7 @@ impl Default for ShellInvocation {
     }
 }
 
+#[derive(Clone)]
 enum WhichShell {
     ShellUnderTest(String),
     NamedShell(String),
@@ -375,8 +467,14 @@ impl TestCaseResult {
 }
 
 impl TestCase {
-    pub async fn run(&self, test_case_set: &TestCaseSet) -> Result<TestCaseResult> {
-        let comparison = self.run_with_oracle_and_test(test_case_set).await?;
+    pub async fn run(
+        &self,
+        test_case_set: &TestCaseSet,
+        test_config: &TestConfig,
+    ) -> Result<TestCaseResult> {
+        let comparison = self
+            .run_with_oracle_and_test(test_case_set, test_config)
+            .await?;
         let success = !comparison.is_failure();
         Ok(TestCaseResult {
             success,
@@ -411,20 +509,21 @@ impl TestCase {
         Ok(())
     }
 
-    async fn run_with_oracle_and_test(&self, test_case_set: &TestCaseSet) -> Result<RunComparison> {
+    async fn run_with_oracle_and_test(
+        &self,
+        test_case_set: &TestCaseSet,
+        test_config: &TestConfig,
+    ) -> Result<RunComparison> {
         let oracle_temp_dir = assert_fs::TempDir::new()?;
         self.create_test_files_in(&oracle_temp_dir, test_case_set)?;
         let oracle_result = self
-            .run_shell(&WhichShell::NamedShell("bash".to_owned()), &oracle_temp_dir)
+            .run_shell(&test_config.oracle_shell, &oracle_temp_dir)
             .await?;
 
         let test_temp_dir = assert_fs::TempDir::new()?;
         self.create_test_files_in(&test_temp_dir, test_case_set)?;
         let test_result = self
-            .run_shell(
-                &WhichShell::ShellUnderTest("brush".to_owned()),
-                &test_temp_dir,
-            )
+            .run_shell(&test_config.test_shell, &test_temp_dir)
             .await?;
 
         let mut comparison = RunComparison {
@@ -482,10 +581,10 @@ impl TestCase {
 
     async fn run_shell(
         &self,
-        which: &WhichShell,
+        shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
     ) -> Result<RunResult> {
-        let test_cmd = self.create_command_for_shell(which, working_dir);
+        let test_cmd = self.create_command_for_shell(shell_config, working_dir);
 
         if self.pty {
             self.run_command_with_pty(test_cmd).await
@@ -496,11 +595,11 @@ impl TestCase {
 
     fn create_command_for_shell(
         &self,
-        which: &WhichShell,
+        shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
     ) -> std::process::Command {
         let (mut test_cmd, coverage_target_dir) = match self.invocation {
-            ShellInvocation::ExecShellBinary => match which {
+            ShellInvocation::ExecShellBinary => match &shell_config.which {
                 WhichShell::ShellUnderTest(name) => {
                     let cli_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                     let default_target_dir = || cli_dir.parent().unwrap().join("target");
@@ -517,13 +616,8 @@ impl TestCase {
             ShellInvocation::ExecScript(_) => todo!("UNIMPLEMENTED: exec script test"),
         };
 
-        // Skip rc file and profile for deterministic behavior across systems/distros.
-        test_cmd.arg("--norc");
-        test_cmd.arg("--noprofile");
-
-        // Disable a few fancy UI options for shells under test.
-        if matches!(which, WhichShell::ShellUnderTest(_)) {
-            test_cmd.arg("--disable-bracketed-paste");
+        for arg in &shell_config.default_args {
+            test_cmd.arg(arg);
         }
 
         // Clear all environment vars for consistency.
@@ -561,9 +655,14 @@ impl TestCase {
         if let Some(stdin) = &self.stdin {
             for line in stdin.lines() {
                 if let Some(expectation) = line.strip_prefix("#expect:") {
-                    p.expect(expectation).map_err(|inner| {
-                        anyhow::anyhow!("failed to expect '{expectation}': {}", inner)
-                    })?;
+                    if let Err(inner) = p.expect(expectation) {
+                        return Ok(RunResult {
+                            exit_status: ExitStatus::from_raw(1),
+                            stdout: String::new(),
+                            stderr: std::format!("failed to expect '{expectation}': {inner}"),
+                            duration: start_time.elapsed(),
+                        });
+                    }
                 } else if let Some(control_code) = line.strip_prefix("#send:") {
                     match control_code.to_lowercase().as_str() {
                         "ctrl+d" => p.send(expectrl::ControlCode::EndOfTransmission)?,
@@ -572,8 +671,14 @@ impl TestCase {
                         _ => (),
                     }
                 } else if line.trim() == "#expect-prompt" {
-                    p.expect("test$ ")
-                        .map_err(|inner| anyhow::anyhow!("failed to expect prompt: {}", inner))?;
+                    if let Err(inner) = p.expect("test$ ") {
+                        return Ok(RunResult {
+                            exit_status: ExitStatus::from_raw(1),
+                            stdout: String::new(),
+                            stderr: std::format!("failed to expect prompt: {inner}"),
+                            duration: start_time.elapsed(),
+                        });
+                    }
                 } else {
                     p.send(line)?;
                 }

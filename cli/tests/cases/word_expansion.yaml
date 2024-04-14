@@ -35,9 +35,17 @@ cases:
 
   - name: "Command substitution"
     stdin: |
+      var="value"
+
+      echo "1:"
       echo $(echo hi)
+      echo "2:"
       echo "$(echo hi)"
+      echo "3:"
       echo "$(echo "hi")"
+      echo "4:"
+      echo "$(var="updated"; echo ${var})"
+      echo "var=${var}"
 
   - name: "String length"
     stdin: |

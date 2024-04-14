@@ -22,7 +22,7 @@ async fn instantiate_shell_with_init_scripts() -> shell::Shell {
 async fn run_one_command(command: &str) -> shell::ExecutionResult {
     let options = shell::CreateOptions::default();
     let mut shell = shell::Shell::new(&options).await.unwrap();
-    shell.run_string(command, false).await.unwrap()
+    shell.run_string(command).await.unwrap()
 }
 
 async fn run_command_directly(command: &str, args: &[&str]) -> std::process::ExitStatus {
