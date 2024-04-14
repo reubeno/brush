@@ -5,6 +5,7 @@ cases:
       until true; do echo 'In loop'; done
 
   - name: "Arithmetic in until loop"
+    incompatible_configs: ["sh"]
     stdin: |
       i=5
       until ((i == 0)); do echo $i; i=$((i - 1)); done

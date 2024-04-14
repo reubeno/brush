@@ -16,3 +16,12 @@ cases:
             echo $f
           done
     args: ["./script.sh"]
+
+  - name: "For loop piped"
+    known_failure: true
+    stdin: |
+      for f in ab ac bd ef; do echo $f; done | grep b
+
+  - name: "For loop output redirection"
+    stdin: |
+      for f in a b c; do echo $f; done > ./out.txt

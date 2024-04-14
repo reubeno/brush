@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::io::Write;
-use std::os::fd::AsRawFd;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
@@ -14,7 +12,6 @@ use tokio_command_fds::{CommandFdExt, FdMapping};
 use crate::arithmetic::Evaluatable;
 use crate::commands::CommandArg;
 use crate::env::{EnvironmentLookup, EnvironmentScope};
-use crate::expansion;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
 use crate::variables::{
@@ -22,6 +19,7 @@ use crate::variables::{
 };
 use crate::{builtin, builtins};
 use crate::{context, error};
+use crate::{expansion, openfiles};
 use crate::{extendedtests, patterns};
 
 #[derive(Debug, Default)]
@@ -29,7 +27,6 @@ pub struct ExecutionResult {
     pub exit_code: u8,
     pub exit_shell: bool,
     pub return_from_function_or_script: bool,
-    pub output: Option<String>,
 }
 
 impl ExecutionResult {
@@ -68,9 +65,9 @@ struct PipelineExecutionContext<'a> {
     params: ExecutionParameters,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 pub struct ExecutionParameters {
-    pub capture_output: bool,
+    pub open_files: openfiles::OpenFiles,
 }
 
 #[async_trait::async_trait]
@@ -220,10 +217,7 @@ impl Execute for ast::Pipeline {
 
         let mut result = ExecutionResult::success();
 
-        let capture_output = pipeline_context.params.capture_output;
-        let child_count = pipeline_context.spawn_results.len();
-        let mut last_pipe_reader = pipeline_context.output_pipes.pop();
-        for (child_index, child) in pipeline_context.spawn_results.into_iter().enumerate() {
+        for child in pipeline_context.spawn_results {
             match child {
                 SpawnResult::SpawnedChild(child) => {
                     let child_future = child.wait_with_output();
@@ -273,16 +267,6 @@ impl Execute for ast::Pipeline {
                 }
             }
 
-            if capture_output && child_index + 1 == child_count {
-                let pipe_reader = std::mem::take(&mut last_pipe_reader);
-                if let Some(pipe_reader) = pipe_reader {
-                    let output_str = std::io::read_to_string(pipe_reader)?;
-                    result.output = Some(output_str);
-                } else {
-                    return error::unimp("no pipe reader for last command when capture required");
-                }
-            }
-
             shell.last_exit_status = result.exit_code;
         }
 
@@ -304,17 +288,18 @@ impl ExecuteInPipeline for ast::Command {
         match self {
             ast::Command::Simple(simple) => simple.execute_in_pipeline(pipeline_context).await,
             ast::Command::Compound(compound, redirects) => {
-                if redirects.is_some() {
-                    // TODO: handle redirects
-                    log::error!(
-                        "UNIMPLEMENTED: redirects not yet implemented for compound commands",
-                    );
+                let mut params = pipeline_context.params.clone();
+
+                // Set up redirects.
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(&mut params.open_files, pipeline_context.shell, redirect)
+                            .await?;
+                    }
                 }
 
                 // TODO: Need to execute in the pipeline.
-                let result = compound
-                    .execute(pipeline_context.shell, &pipeline_context.params)
-                    .await?;
+                let result = compound.execute(pipeline_context.shell, &params).await?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::Function(func) => {
@@ -353,9 +338,9 @@ impl Execute for ast::CompoundCommand {
                 g.execute(shell, params).await
             }
             ast::CompoundCommand::Subshell(ast::SubshellCommand(s)) => {
-                // TODO: actually implement subshell semantics
-                // TODO: for that matter, look at shell properties in builtin invocation
-                s.execute(shell, params).await
+                // Clone off a new subshell, and run the body of the subshell there.
+                let mut subshell = shell.clone();
+                s.execute(&mut subshell, params).await
             }
             ast::CompoundCommand::ForClause(f) => f.execute(shell, params).await,
             ast::CompoundCommand::CaseClause(c) => c.execute(shell, params).await,
@@ -566,12 +551,6 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        if self.body.1.is_some() {
-            // TODO: When redirections are present with the function definition, then
-            // execution of the function body needs to set up those redirections.
-            return error::unimp("function bodies with redirections");
-        }
-
         shell.funcs.insert(self.fname.clone(), self.clone());
 
         let result = ExecutionResult::success();
@@ -599,7 +578,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
         }
 
-        let mut open_files = context.shell.open_files.clone();
+        let mut open_files = context.params.open_files.clone();
         let mut assignments = vec![];
         let mut args: Vec<CommandArg> = vec![];
         let mut invoking_declaration_builtin = false;
@@ -615,17 +594,23 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if let Some(open_file) =
+                    if let Some(installed_fd_num) =
                         setup_redirect(&mut open_files, context.shell, redirect).await?
                     {
-                        // TODO: Don't just count on the fd being valid.
-                        if let OpenFile::ProcessSubstitutionFile(f) = open_file {
+                        if matches!(
+                            redirect,
+                            ast::IoRedirect::File(
+                                _,
+                                _,
+                                ast::IoFileRedirectTarget::ProcessSubstitution(_)
+                            )
+                        ) {
                             args.push(CommandArg::String(std::format!(
-                                "/dev/fd/{}",
-                                f.as_raw_fd()
+                                "/dev/fd/{installed_fd_num}"
                             )));
                         }
                     } else {
+                        // Something went wrong.
                         return Ok(SpawnResult::ImmediateExit(1));
                     }
                 }
@@ -730,6 +715,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             };
 
             if !cmd_context.command_name.contains('/') {
+                let normal_builtin_lookup = if cmd_context.shell.options.sh_mode {
+                    |s: &str| builtins::POSIX_ONLY_BUILTINS.get(s)
+                } else {
+                    |s: &str| builtins::BUILTINS.get(s)
+                };
+
                 if let Some(builtin) =
                     builtins::SPECIAL_BUILTINS.get(cmd_context.command_name.as_str())
                 {
@@ -742,7 +733,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     // Strip the function name off args.
                     invoke_shell_function(cmd_context, &args[1..], &env_vars).await
                 } else if let Some(builtin) =
-                    builtins::BUILTINS.get(cmd_context.command_name.as_str())
+                    normal_builtin_lookup(cmd_context.command_name.as_str())
                 {
                     execute_builtin_command(*builtin, cmd_context, args, env_vars).await
                 } else {
@@ -999,20 +990,18 @@ async fn execute_external_command(
         }
     }
 
-    // Inject any appropriate fds.
-    let open_files_keys = context.open_files.files.keys().copied().collect::<Vec<_>>();
-    for key in open_files_keys {
-        if let Some(OpenFile::ProcessSubstitutionFile(temp_file)) =
-            context.open_files.files.remove(&key)
-        {
-            #[allow(clippy::cast_possible_wrap)]
-            cmd.fd_mappings(vec![FdMapping {
-                child_fd: key as i32,
-                parent_fd: temp_file.as_raw_fd(),
-            }])
-            .map_err(|e| error::Error::Unknown(e.into()))?;
-        }
-    }
+    // Inject any other fds.
+    let fd_mappings = context
+        .open_files
+        .files
+        .iter()
+        .map(|(child_fd, open_file)| FdMapping {
+            child_fd: i32::try_from(*child_fd).unwrap(),
+            parent_fd: open_file.as_raw_fd().unwrap(),
+        })
+        .collect();
+    cmd.fd_mappings(fd_mappings)
+        .map_err(|e| error::Error::Unknown(e.into()))?;
 
     log::debug!(
         "Spawning: {} {}",
@@ -1035,7 +1024,16 @@ async fn execute_external_command(
             Ok(SpawnResult::SpawnedChild(child))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            log::error!("{}: command not found", context.command_name);
+            if context.shell.options.sh_mode {
+                log::error!(
+                    "{}: {}: {}: not found",
+                    context.shell.shell_name.as_ref().unwrap_or(&String::new()),
+                    context.shell.get_current_input_line_number(),
+                    context.command_name
+                );
+            } else {
+                log::error!("{}: not found", context.command_name);
+            }
             Ok(SpawnResult::ImmediateExit(127))
         }
         Err(e) => {
@@ -1072,7 +1070,7 @@ async fn execute_builtin_command(
 }
 
 async fn invoke_shell_function(
-    context: context::CommandExecutionContext<'_>,
+    mut context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult, error::Error> {
@@ -1089,8 +1087,12 @@ async fn invoke_shell_function(
     }
 
     let ast::FunctionBody(body, redirects) = &function_definition.body;
-    if redirects.is_some() {
-        log::error!("UNIMPLEMENTED: invoke function with redirects");
+
+    // Apply any redirects specified at function definition-time.
+    if let Some(redirects) = redirects {
+        for redirect in &redirects.0 {
+            setup_redirect(&mut context.open_files, context.shell, redirect).await?;
+        }
     }
 
     // Temporarily replace positional parameters.
@@ -1100,10 +1102,16 @@ async fn invoke_shell_function(
     // Note that we're going deeper.
     context.shell.enter_function();
 
+    // Pass through open files.
+    let params = ExecutionParameters {
+        open_files: context.open_files.clone(),
+    };
+
     // Invoke the function.
-    let result = body
-        .execute(context.shell, &ExecutionParameters::default())
-        .await;
+    let result = body.execute(context.shell, &params).await;
+
+    // Clean up parameters so any owned files are closed.
+    drop(params);
 
     // We've come back out, reflect it.
     context.shell.leave_function();
@@ -1130,12 +1138,9 @@ fn setup_pipeline_redirection(
         }
     }
 
-    // If this is a non-last command in a multi-command pipeline, or if it's the last command and we're
-    // expected to capture output of this command, then we need to arrange to redirect output
+    // If this is a non-last command in a multi-command, then we need to arrange to redirect output
     // to a pipe that we can read later.
-    if (context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1)
-        || context.params.capture_output
-    {
+    if context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1 {
         // Set up stdout of this process to go to stdin of the succeeding process.
         let (reader, writer) = os_pipe::pipe().map_err(|e| error::Error::Unknown(e.into()))?;
         context.output_pipes.push(reader);
@@ -1146,12 +1151,11 @@ fn setup_pipeline_redirection(
 }
 
 #[allow(clippy::too_many_lines)] // TODO: refactor this function
-#[async_recursion::async_recursion]
 async fn setup_redirect<'a>(
     open_files: &'a mut OpenFiles,
     shell: &mut Shell,
     redirect: &ast::IoRedirect,
-) -> Result<Option<&'a OpenFile>, error::Error> {
+) -> Result<Option<u32>, error::Error> {
     match redirect {
         ast::IoRedirect::File(specified_fd_num, kind, target) => {
             let fd_num;
@@ -1241,30 +1245,53 @@ async fn setup_redirect<'a>(
                     subshell_cmd,
                 )) => {
                     match kind {
-                        #[allow(clippy::cast_sign_loss)]
-                        ast::IoFileRedirectKind::Read => {
+                        ast::IoFileRedirectKind::Read | ast::IoFileRedirectKind::Write => {
                             // TODO: Don't execute synchronously!
-                            let text_results = subshell_cmd
-                                .execute(
-                                    shell,
-                                    &ExecutionParameters {
-                                        capture_output: true,
-                                    },
-                                )
-                                .await?
-                                .output
-                                .unwrap();
+                            // Execute in a subshell.
+                            let mut subshell = shell.clone();
 
-                            let mut temp_file = tempfile::tempfile()?;
-                            temp_file.write_all(text_results.as_bytes())?;
+                            // Set up pipe so we can connect to the command.
+                            let (reader, writer) =
+                                os_pipe::pipe().map_err(|e| error::Error::Unknown(e.into()))?;
 
-                            // TODO: Don't just count on the fd being valid.
-                            fd_num = temp_file.as_raw_fd() as u32;
+                            if matches!(kind, ast::IoFileRedirectKind::Read) {
+                                subshell
+                                    .open_files
+                                    .files
+                                    .insert(1, openfiles::OpenFile::PipeWriter(writer));
+                                target_file = OpenFile::PipeReader(reader);
+                            } else {
+                                subshell
+                                    .open_files
+                                    .files
+                                    .insert(0, openfiles::OpenFile::PipeReader(reader));
+                                target_file = OpenFile::PipeWriter(writer);
+                            }
 
-                            target_file = OpenFile::ProcessSubstitutionFile(temp_file);
-                        }
-                        ast::IoFileRedirectKind::Write => {
-                            return error::unimp("process substitution to write to command");
+                            let exec_params = ExecutionParameters {
+                                open_files: subshell.open_files.clone(),
+                            };
+
+                            // TODO: inspect result of execution?
+                            let _ = subshell_cmd.execute(&mut subshell, &exec_params).await?;
+
+                            // Make sure the subshell + parameters are closed; among other
+                            // things, this ensures they're not holding onto the write end
+                            // of the pipe.
+                            drop(exec_params);
+                            drop(subshell);
+
+                            // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
+                            // available fd.
+                            let mut candidate_fd_num = 63;
+                            while open_files.files.contains_key(&candidate_fd_num) {
+                                candidate_fd_num -= 1;
+                                if candidate_fd_num == 0 {
+                                    return error::unimp("no available file descriptors");
+                                }
+                            }
+
+                            fd_num = candidate_fd_num;
                         }
                         _ => return error::unimp("invalid process substitution"),
                     }
@@ -1272,7 +1299,7 @@ async fn setup_redirect<'a>(
             }
 
             open_files.files.insert(fd_num, target_file);
-            return Ok(Some(open_files.files.get(&fd_num).unwrap()));
+            Ok(Some(fd_num))
         }
         ast::IoRedirect::HereDocument(fd_num, io_here) => {
             // If not specified, default to stdin (fd 0).
@@ -1284,7 +1311,7 @@ async fn setup_redirect<'a>(
             open_files
                 .files
                 .insert(fd_num, OpenFile::HereDocument(io_here_doc));
-            return Ok(Some(open_files.files.get(&fd_num).unwrap()));
+            Ok(Some(fd_num))
         }
         ast::IoRedirect::HereString(fd_num, word) => {
             // If not specified, default to stdin (fd 0).
@@ -1296,7 +1323,7 @@ async fn setup_redirect<'a>(
             open_files
                 .files
                 .insert(fd_num, OpenFile::HereDocument(expanded_word));
-            return Ok(Some(open_files.files.get(&fd_num).unwrap()));
+            Ok(Some(fd_num))
         }
     }
 }

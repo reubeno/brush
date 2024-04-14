@@ -31,7 +31,6 @@ nix = { version = "0.28.0", features = ["fs"] }
 os_pipe = "1.1.5"
 rand = "0.8.5"
 regex = "1.10.4"
-tempfile = "3.10.1"
 thiserror = "1.0.58"
 tokio = { version = "1.37.0", features = [
     "io-util",

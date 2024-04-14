@@ -1,4 +1,5 @@
 name: "Arrays"
+incompatible_configs: ["sh"]
 common_test_files:
   - path: "helpers.sh"
     contents: |

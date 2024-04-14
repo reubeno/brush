@@ -19,10 +19,7 @@ impl BuiltinCommand for EvalCommand {
 
             log::debug!("Applying eval to: {:?}", args_concatenated);
 
-            let exec_result = context
-                .shell
-                .run_string(args_concatenated.as_str(), false)
-                .await?;
+            let exec_result = context.shell.run_string(args_concatenated.as_str()).await?;
 
             Ok(BuiltinExitCode::Custom(exec_result.exit_code))
         } else {

@@ -135,7 +135,7 @@ impl TypeCommand {
             }
 
             // Check for keywords.
-            if is_keyword(name) {
+            if is_keyword(shell, name) {
                 types.push(ResolvedType::Keyword);
             }
 
@@ -167,7 +167,7 @@ impl TypeCommand {
     }
 }
 
-fn is_keyword(name: &str) -> bool {
+fn is_keyword(shell: &Shell, name: &str) -> bool {
     match name {
         "!" => true,
         "{" => true,
@@ -186,11 +186,10 @@ fn is_keyword(name: &str) -> bool {
         "until" => true,
         "while" => true,
         // N.B. bash also treats the following as reserved.
-        // TODO: Disable these in POSIX compliance mode.
-        "[[" => true,
-        "]]" => true,
-        "function" => true,
-        "select" => true,
+        "[[" if !shell.options.sh_mode => true,
+        "]]" if !shell.options.sh_mode => true,
+        "function" if !shell.options.sh_mode => true,
+        "select" if !shell.options.sh_mode => true,
         _ => false,
     }
 }

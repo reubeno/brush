@@ -44,6 +44,9 @@ pub struct Shell {
 
     // Directory stack used by pushd et al.
     pub directory_stack: Vec<PathBuf>,
+
+    // Current line number being processed.
+    pub current_line_number: u32,
 }
 
 impl Clone for Shell {
@@ -63,6 +66,7 @@ impl Clone for Shell {
             shell_name: self.shell_name.clone(),
             function_call_depth: self.function_call_depth,
             directory_stack: self.directory_stack.clone(),
+            current_line_number: self.current_line_number,
         }
     }
 }
@@ -78,6 +82,7 @@ pub struct CreateOptions {
     pub print_commands_and_arguments: bool,
     pub read_commands_from_stdin: bool,
     pub shell_name: Option<String>,
+    pub sh_mode: bool,
     pub verbose: bool,
 }
 
@@ -130,6 +135,7 @@ impl Shell {
             shell_name: options.shell_name.clone(),
             function_call_depth: 0,
             directory_stack: vec![],
+            current_line_number: 0,
         };
 
         // TODO: Figure out how this got hard-coded.
@@ -184,16 +190,17 @@ impl Shell {
             );
         }
 
-        // TODO: don't set these in sh mode
-        if let Some(shell_name) = &options.shell_name {
-            env.set_global("BASH", ShellVariable::new(shell_name.into()));
+        if !options.sh_mode {
+            if let Some(shell_name) = &options.shell_name {
+                env.set_global("BASH", ShellVariable::new(shell_name.into()));
+            }
+            env.set_global(
+                "BASH_VERSINFO",
+                ShellVariable::new(ShellValue::indexed_array_from_slice(
+                    ["5", "1", "1", "1", "release", "unknown"].as_slice(),
+                )),
+            );
         }
-        env.set_global(
-            "BASH_VERSINFO",
-            ShellVariable::new(ShellValue::indexed_array_from_slice(
-                ["5", "1", "1", "1", "release", "unknown"].as_slice(),
-            )),
-        );
 
         env
     }
@@ -215,23 +222,28 @@ impl Shell {
             //
             self.source_if_exists(Path::new("/etc/profile")).await?;
             if let Ok(home_path) = std::env::var("HOME") {
-                if !self
-                    .source_if_exists(Path::new(&home_path).join(".bash_profile").as_path())
-                    .await?
-                {
+                if options.sh_mode {
+                    self.source_if_exists(Path::new(&home_path).join(".profile").as_path())
+                        .await?;
+                } else {
                     if !self
-                        .source_if_exists(Path::new(&home_path).join(".bash_login").as_path())
+                        .source_if_exists(Path::new(&home_path).join(".bash_profile").as_path())
                         .await?
                     {
-                        self.source_if_exists(Path::new(&home_path).join(".profile").as_path())
-                            .await?;
+                        if !self
+                            .source_if_exists(Path::new(&home_path).join(".bash_login").as_path())
+                            .await?
+                        {
+                            self.source_if_exists(Path::new(&home_path).join(".profile").as_path())
+                                .await?;
+                        }
                     }
                 }
             }
         } else {
             if options.interactive {
-                // --norc means skip this.
-                if options.no_rc {
+                // --norc means skip this. Also skip in sh mode.
+                if options.no_rc || options.sh_mode {
                     return Ok(());
                 }
 
@@ -249,12 +261,14 @@ impl Shell {
                         .await?;
                 }
             } else {
-                if self.env.is_set("BASH_ENV") {
+                let env_var_name = if options.sh_mode { "ENV" } else { "BASH_ENV" };
+
+                if self.env.is_set(env_var_name) {
                     //
-                    // TODO: look at $BASH_ENV; source its expansion if that file exists
+                    // TODO: look at $ENV/BASH_ENV; source its expansion if that file exists
                     //
                     return error::unimp(
-                        "load config from $BASH_ENV for non-interactive, non-login shell",
+                        "load config from $ENV/BASH_ENV for non-interactive, non-login shell",
                     );
                 }
             }
@@ -323,7 +337,7 @@ impl Shell {
             &mut other_positional_parameters,
         );
 
-        let result = self.run_parsed_result(parse_result, origin, false).await;
+        let result = self.run_parsed_result(parse_result, origin).await;
 
         // Restore.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -335,13 +349,14 @@ impl Shell {
         result
     }
 
-    pub async fn run_string(
-        &mut self,
-        command: &str,
-        capture_output: bool,
-    ) -> Result<ExecutionResult, error::Error> {
+    pub async fn run_string(&mut self, command: &str) -> Result<ExecutionResult, error::Error> {
+        // TODO: Actually track line numbers; this is something of a hack, assuming each time
+        // this function is invoked we are on the next line of the input. For one thing,
+        // each string we run could be multiple lines.
+        self.current_line_number += 1;
+
         let parse_result = self.parse_string(command);
-        self.run_parsed_result(parse_result, &ProgramOrigin::String, capture_output)
+        self.run_parsed_result(parse_result, &ProgramOrigin::String)
             .await
     }
 
@@ -379,7 +394,6 @@ impl Shell {
         &mut self,
         parse_result: Result<parser::ast::Program, parser::ParseError>,
         origin: &ProgramOrigin,
-        capture_output: bool,
     ) -> Result<ExecutionResult, error::Error> {
         let mut error_prefix = String::new();
 
@@ -388,7 +402,7 @@ impl Shell {
         }
 
         let result = match parse_result {
-            Ok(prog) => match self.run_program(prog, capture_output).await {
+            Ok(prog) => match self.run_program(prog).await {
                 Ok(result) => result,
                 Err(e) => {
                     log::error!("error: {:#}", e);
@@ -438,10 +452,14 @@ impl Shell {
     pub async fn run_program(
         &mut self,
         program: parser::ast::Program,
-        capture_output: bool,
     ) -> Result<ExecutionResult, error::Error> {
         program
-            .execute(self, &ExecutionParameters { capture_output })
+            .execute(
+                self,
+                &ExecutionParameters {
+                    open_files: self.open_files.clone(),
+                },
+            )
             .await
     }
 
@@ -488,10 +506,11 @@ impl Shell {
         cs.into_iter().collect()
     }
 
-    fn parser_options(&self) -> parser::ParserOptions {
+    pub fn parser_options(&self) -> parser::ParserOptions {
         parser::ParserOptions {
             enable_extended_globbing: self.options.extended_globbing,
             posix_mode: self.options.posix_mode,
+            sh_mode: self.options.sh_mode,
         }
     }
 
@@ -514,6 +533,10 @@ impl Shell {
             let histfile_str: String = var.value().to_cow_string().to_string();
             PathBuf::from(histfile_str)
         })
+    }
+
+    pub fn get_current_input_line_number(&self) -> u32 {
+        self.current_line_number
     }
 
     pub fn get_ifs(&self) -> Cow<'_, str> {

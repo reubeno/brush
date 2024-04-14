@@ -3,8 +3,7 @@ use log::debug;
 
 use crate::ast::{self, SeparatorOperator};
 use crate::tokenizer::{
-    SourcePosition, Token, TokenEndReason, TokenLocation, Tokenizer, TokenizerError,
-    TokenizerOptions, Tokens,
+    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerError, TokenizerOptions, Tokens,
 };
 
 #[derive(Debug)]
@@ -17,10 +16,21 @@ pub enum ParseError {
     },
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ParserOptions {
     pub enable_extended_globbing: bool,
     pub posix_mode: bool,
+    pub sh_mode: bool,
+}
+
+impl Default for ParserOptions {
+    fn default() -> Self {
+        Self {
+            enable_extended_globbing: true,
+            posix_mode: false,
+            sh_mode: false,
+        }
+    }
 }
 
 pub struct Parser<R> {
@@ -82,12 +92,15 @@ impl<R: std::io::BufRead> Parser<R> {
             }
         }
 
-        parse_tokens(&tokens)
+        parse_tokens(&tokens, &self.options)
     }
 }
 
-pub fn parse_tokens(tokens: &Vec<Token>) -> Result<ast::Program, ParseError> {
-    let parse_result = token_parser::program(&Tokens { tokens });
+pub fn parse_tokens(
+    tokens: &Vec<Token>,
+    options: &ParserOptions,
+) -> Result<ast::Program, ParseError> {
+    let parse_result = token_parser::program(&Tokens { tokens }, options);
 
     let result = match parse_result {
         Ok(program) => Ok(program),
@@ -114,31 +127,6 @@ fn convert_peg_parse_error(err: peg::error::ParseError<usize>, tokens: &[Token])
     } else {
         ParseError::ParsingAtEndOfInput
     }
-}
-
-pub fn parse_assignment(s: &str) -> Result<ast::Assignment, ParseError> {
-    let tokens = vec![Token::Word(
-        s.to_owned(),
-        TokenLocation {
-            start: SourcePosition {
-                index: 0,
-                line: 0,
-                column: 0,
-            },
-            end: SourcePosition {
-                index: s.len() as i32,
-                line: 0,
-                column: s.len() as i32,
-            },
-        },
-    )];
-    let tokens_slice = tokens.as_slice();
-    let (assignment, _) = token_parser::assignment_word(&Tokens {
-        tokens: tokens_slice,
-    })
-    .map_err(|err| convert_peg_parse_error(err, tokens_slice))?;
-
-    Ok(assignment)
 }
 
 impl<'a> peg::Parse for Tokens<'a> {
@@ -198,7 +186,7 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
 }
 
 peg::parser! {
-    grammar token_parser<'a>() for Tokens<'a> {
+    grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
         pub(crate) rule program() -> ast::Program =
             linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
             linebreak() { ast::Program { complete_commands: vec![] } }
@@ -248,15 +236,14 @@ peg::parser! {
             c:simple_command() { ast::Command::Simple(c) } /
             c:compound_command() r:redirect_list()? { ast::Command::Compound(c, r) } /
             // N.B. Extended test commands are bash extensions.
-            // TODO: Don't allow ExtendedTest in POSIX compliance mode.
-            c:extended_test_command() { ast::Command::ExtendedTest(c) } /
+            non_posix_extensions_enabled() c:extended_test_command() { ast::Command::ExtendedTest(c) } /
             expected!("command")
 
         // N.B. The arithmetic command is a non-sh extension.
         // N.B. The arithmetic for clause command is a non-sh extension.
-        // TODO: Don't allow the arithmetic command in sh mode.
+        //
         rule compound_command() -> ast::CompoundCommand =
-            a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
+            non_posix_extensions_enabled() a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
             b:brace_group() { ast::CompoundCommand::BraceGroup(b) } /
             s:subshell() { ast::CompoundCommand::Subshell(s) } /
             f:for_clause() { ast::CompoundCommand::ForClause(f) } /
@@ -264,9 +251,7 @@ peg::parser! {
             i:if_clause() { ast::CompoundCommand::IfClause(i) } /
             w:while_clause() { ast::CompoundCommand::WhileClause(w) } /
             u:until_clause() { ast::CompoundCommand::UntilClause(u) } /
-            // N.B. Arithmetic for clause commands are bash extensions
-            // TODO: Don't allow ArithmeticForClause in POSIX compliance mode.
-            c:arithmetic_for_clause() { ast::CompoundCommand::ArithmeticForClause(c) } /
+            non_posix_extensions_enabled() c:arithmetic_for_clause() { ast::CompoundCommand::ArithmeticForClause(c) } /
             expected!("compound command")
 
         // N.B. This is not supported in sh.
@@ -318,7 +303,6 @@ peg::parser! {
 
         //
         // N.B. The arithmetic for loop is a non-sh extension.
-        // TODO: Only support this kind of for loop when running in non-sh mode.
         //
         rule arithmetic_for_clause() -> ast::ArithmeticForClauseCommand =
             specific_word("for")
@@ -563,23 +547,21 @@ peg::parser! {
             expected!("redirect list")
 
         // N.B. here strings are extensions to the POSIX standard.
-        // TODO: don't support here strings in sh mode
         rule io_redirect() -> ast::IoRedirect =
             n:io_number()? f:io_file() {
                 let (kind, target) = f;
                 ast::IoRedirect::File(n, kind, target)
             } /
-            n:io_number()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
+            non_posix_extensions_enabled() n:io_number()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
             n:io_number()? h:io_here() { ast::IoRedirect::HereDocument(n, h) } /
             expected!("I/O redirect")
 
         // N.B. Process substitution forms are extensions to the POSIX standard.
-        // TODO: don't support process substitution in sh mode
         rule io_file() -> (ast::IoFileRedirectKind, ast::IoFileRedirectTarget) =
-            specific_operator("<") s:subshell() { (ast::IoFileRedirectKind::Read, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
+            non_posix_extensions_enabled() specific_operator("<") s:subshell() { (ast::IoFileRedirectKind::Read, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
             specific_operator("<")  f:io_filename() { (ast::IoFileRedirectKind::Read, f) } /
             specific_operator("<&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
-            specific_operator(">") s:subshell() { (ast::IoFileRedirectKind::Write, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
+            non_posix_extensions_enabled() specific_operator(">") s:subshell() { (ast::IoFileRedirectKind::Write, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
             specific_operator(">")  f:io_filename() { (ast::IoFileRedirectKind::Write, f) } /
             specific_operator(">&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
             specific_operator(">>") f:io_filename() { (ast::IoFileRedirectKind::Append, f) } /
@@ -660,7 +642,9 @@ peg::parser! {
             specific_word("while") /
 
             // N.B. bash also treats the following as reserved.
-            // TODO: Disable these in POSIX compliance mode.
+            non_posix_extensions_enabled() token:non_posix_reserved_word_token() { token }
+
+        rule non_posix_reserved_word_token() -> &'input Token =
             specific_word("[[") /
             specific_word("]]") /
             specific_word("function") /
@@ -671,8 +655,7 @@ peg::parser! {
         }
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
-            // TODO: make sure array syntax isn't present in sh mode
-            [Token::Word(w, _)] specific_operator("(") elements:([Token::Word(e, _)] { e })* specific_operator(")") {?
+            non_posix_extensions_enabled() [Token::Word(w, _)] specific_operator("(") elements:([Token::Word(e, _)] { e })* specific_operator(")") {?
                 let parsed = parse_array_assignment(w.as_str(), &elements)?;
 
                 let mut all_as_word = w.to_owned();
@@ -704,6 +687,9 @@ peg::parser! {
 
         rule specific_word(expected: &str) -> &'input Token =
             [Token::Word(w, _) if w.as_str() == expected]
+
+        rule non_posix_extensions_enabled() -> () =
+            &[_] {? if !parser_options.sh_mode { Ok(()) } else { Err("posix") } }
     }
 }
 
@@ -811,9 +797,12 @@ esac\
 ";
 
         let tokens = tokenize_str(input)?;
-        let command = super::token_parser::case_clause(&Tokens {
-            tokens: tokens.as_slice(),
-        })?;
+        let command = super::token_parser::case_clause(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+        )?;
 
         assert_eq!(command.cases.len(), 1);
         assert_eq!(command.cases[0].patterns.len(), 1);
@@ -832,9 +821,12 @@ esac\
 ";
 
         let tokens = tokenize_str(input)?;
-        let command = super::token_parser::case_clause(&Tokens {
-            tokens: tokens.as_slice(),
-        })?;
+        let command = super::token_parser::case_clause(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+        )?;
 
         assert_eq!(command.cases.len(), 1);
         assert_eq!(command.cases[0].patterns.len(), 1);

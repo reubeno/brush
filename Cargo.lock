@@ -283,7 +283,6 @@ dependencies = [
  "pprof",
  "rand",
  "regex",
- "tempfile",
  "thiserror",
  "tokio",
  "tokio-command-fds",

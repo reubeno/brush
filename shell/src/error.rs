@@ -52,6 +52,9 @@ pub enum Error {
 
     #[error("{0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("bad substitution")]
+    BadSubstitution,
 }
 
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {

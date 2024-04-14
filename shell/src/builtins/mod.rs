@@ -114,7 +114,8 @@ async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
 
 lazy_static::lazy_static! {
     pub(crate) static ref SPECIAL_BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_special_builtins();
-    pub(crate) static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_builtins();
+    pub(crate) static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_builtins(true);
+    pub(crate) static ref POSIX_ONLY_BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_builtins(false);
     pub(crate) static ref DECLARATION_BUILTINS: HashSet<&'static str> = get_declaration_builtin_names();
 }
 
@@ -158,7 +159,7 @@ fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
     m
 }
 
-fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
+fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
     let mut m = HashMap::<&'static str, BuiltinCommandExecuteFunc>::new();
 
     m.insert("alias", exec_builtin::<alias::AliasCommand>); // TODO: should be exec_declaration_builtin
@@ -183,41 +184,40 @@ fn get_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
     m.insert("unalias", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("wait", exec_builtin::<unimp::UnimplementedCommand>);
 
-    //
-    // N.B These builtins are extensions.
-    // TODO: make them unavailable in sh mode.
-    //
-
-    m.insert("bind", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("builtin", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("caller", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert(
-        "declare",
-        exec_declaration_builtin::<declare::DeclareCommand>,
-    );
-    m.insert("echo", exec_builtin::<echo::EchoCommand>);
-    m.insert("enable", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("let", exec_builtin::<unimp::UnimplementedCommand>);
+    // TODO: does this belong?
     m.insert("local", exec_declaration_builtin::<declare::DeclareCommand>);
-    m.insert("logout", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("mapfile", exec_builtin::<unimp::UnimplementedCommand>);
-    // m.insert("printf", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("readarray", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("shopt", exec_builtin::<shopt::ShoptCommand>);
-    m.insert("source", exec_builtin::<dot::DotCommand>);
-    // m.insert("test", exec_builtin::<unimp::UnimplementedCommand>);
-    // m.insert("[", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("typeset", exec_builtin::<unimp::UnimplementedCommand>);
 
-    // Completion builtins
-    m.insert("complete", exec_builtin::<complete::CompleteCommand>);
-    m.insert("compgen", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("compopt", exec_builtin::<unimp::UnimplementedCommand>);
+    if include_extended {
+        m.insert("bind", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("builtin", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("caller", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert(
+            "declare",
+            exec_declaration_builtin::<declare::DeclareCommand>,
+        );
+        m.insert("echo", exec_builtin::<echo::EchoCommand>);
+        m.insert("enable", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("let", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("logout", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("mapfile", exec_builtin::<unimp::UnimplementedCommand>);
+        // m.insert("printf", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("readarray", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("shopt", exec_builtin::<shopt::ShoptCommand>);
+        m.insert("source", exec_builtin::<dot::DotCommand>);
+        // m.insert("test", exec_builtin::<unimp::UnimplementedCommand>);
+        // m.insert("[", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("typeset", exec_builtin::<declare::DeclareCommand>);
 
-    // Dir stack builtins
-    m.insert("dirs", exec_builtin::<dirs::DirsCommand>);
-    m.insert("popd", exec_builtin::<popd::PopdCommand>);
-    m.insert("pushd", exec_builtin::<pushd::PushdCommand>);
+        // Completion builtins
+        m.insert("complete", exec_builtin::<complete::CompleteCommand>);
+        m.insert("compgen", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("compopt", exec_builtin::<unimp::UnimplementedCommand>);
+
+        // Dir stack builtins
+        m.insert("dirs", exec_builtin::<dirs::DirsCommand>);
+        m.insert("popd", exec_builtin::<popd::PopdCommand>);
+        m.insert("pushd", exec_builtin::<pushd::PushdCommand>);
+    }
 
     m
 }

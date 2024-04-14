@@ -125,6 +125,7 @@ pub struct RuntimeOptions {
     //
     pub interactive: bool,
     pub read_commands_from_stdin: bool,
+    pub sh_mode: bool,
 }
 
 impl RuntimeOptions {
@@ -133,6 +134,7 @@ impl RuntimeOptions {
         let mut options = Self {
             interactive: create_options.interactive,
             read_commands_from_stdin: create_options.read_commands_from_stdin,
+            sh_mode: create_options.sh_mode,
             posix_mode: create_options.posix,
             print_commands_and_arguments: create_options.print_commands_and_arguments,
             print_shell_input_lines: create_options.verbose,

@@ -47,6 +47,9 @@ struct CommandLineArgs {
     #[clap(short = 's', help = "Read commands from standard input.")]
     read_commands_from_stdin: bool,
 
+    #[clap(long = "sh", help = "Run in sh compatibility mode.")]
+    sh_mode: bool,
+
     #[clap(
         short = 'v',
         long = "verbose",
@@ -114,13 +117,16 @@ fn main() {
 }
 
 async fn run(cli_args: &[String]) -> Result<u8> {
-    let argv0 = if !cli_args.is_empty() {
+    let args = CommandLineArgs::parse_from(cli_args);
+
+    let argv0 = if args.sh_mode {
+        // Simulate having been run as "sh".
+        Some(String::from("sh"))
+    } else if !cli_args.is_empty() {
         Some(cli_args[0].clone())
     } else {
         None
     };
-
-    let args = CommandLineArgs::parse_from(cli_args);
 
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
         || (args.script_path.is_none() && args.command.is_none());
@@ -132,10 +138,11 @@ async fn run(cli_args: &[String]) -> Result<u8> {
             no_editing: args.no_editing,
             no_profile: args.no_profile,
             no_rc: args.no_rc,
-            posix: args.posix,
+            posix: args.posix || args.sh_mode,
             print_commands_and_arguments: args.print_commands_and_arguments,
             read_commands_from_stdin,
             shell_name: argv0.clone(),
+            sh_mode: args.sh_mode,
             verbose: args.verbose,
         },
         disable_bracketed_paste: args.disable_bracketed_paste,
@@ -145,7 +152,7 @@ async fn run(cli_args: &[String]) -> Result<u8> {
 
     if let Some(command) = args.command {
         // TODO: Use script_path as $0 and remaining args as positional parameters.
-        shell.shell_mut().run_string(&command, false).await?;
+        shell.shell_mut().run_string(&command).await?;
     } else if args.read_commands_from_stdin {
         shell.run_interactively().await?;
     } else if let Some(script_path) = args.script_path {

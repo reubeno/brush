@@ -39,3 +39,12 @@ cases:
           myfunc
           echo "Returned: $?"
     args: ["./script.sh"]
+
+  - name: "Function definition with output redirection"
+    stdin: |
+      myfunc() {
+          echo "In myfunc()"
+      } >>./test.txt
+
+      myfunc
+      myfunc
