@@ -1,75 +1,113 @@
-# Root options
+[graph]
+# If 1 or more target triples (and optionally, target_features) are specified,
+# only the specified targets will be checked when running `cargo deny check`.
+# This means, if a particular package is only ever used as a target specific
+# dependency, such as, for example, the `nix` crate only being used via the
+# `target_family = "unix"` configuration, that only having windows targets in
+# this list would mean the nix crate, as well as any of its exclusive
+# dependencies not shared by any other crates, would be ignored, as the target
+# list here is effectively saying which targets you are building for.
 targets = []
+#exclude = []
 all-features = false
 no-default-features = false
+#features = []
+
+[output]
 feature-depth = 1
 
+# This section is considered when running `cargo deny check advisories`
+# More documentation for the advisories section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
 [advisories]
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
-ignore = []
+version = 2
+#db-path = "$CARGO_HOME/advisory-dbs"
+#db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = [
+    # We only use ansi_term via dev dependency; we somewhat make sure that
+    # doesn't widen through bans.
+    { id = "RUSTSEC-2021-0139", reason = "ansi_term" }
+]
+#git-fetch-with-cli = true
 
+# This section is considered when running `cargo deny check licenses`
+# More documentation for the licenses section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
 [licenses]
-unlicensed = "deny"
-allow = ["MIT", "Apache-2.0", "Unicode-DFS-2016", "BSL-1.0", "BSD-3-Clause"]
-unused-allowed-license = "allow"
-deny = []
-copyleft = "deny"
-
-# Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
-# * both - The license will be approved if it is both OSI-approved *AND* FSF
-# * either - The license will be approved if it is either OSI-approved *OR* FSF
-# * osi-only - The license will be approved if is OSI-approved *AND NOT* FSF
-# * fsf-only - The license will be approved if is FSF *AND NOT* OSI-approved
-# * neither - This predicate is ignored and the default lint level is used
-allow-osi-fsf-free = "neither"
-
-# Lint level used when no other predicates are matched
-# 1. License isn't in the allow or deny lists
-# 2. License isn't copyleft
-# 3. License isn't OSI/FSF, or allow-osi-fsf-free = "neither"
-default = "deny"
+version = 2
+# List of explicitly allowed licenses
+# See https://spdx.org/licenses/ for list of possible licenses
+# [possible values: any SPDX 3.11 short identifier (+ optional exception)].
+allow = [
+    "Apache-2.0",
+    "BSL-1.0",
+    "MIT",
+    "Unicode-DFS-2016"
+]
+# The confidence threshold for detecting a license from license text.
+# The higher the value, the more closely the license text must be to the
+# canonical license text of a valid SPDX license file.
+# [possible values: any between 0.0 and 1.0].
 confidence-threshold = 0.8
+# Allow 1 or more licenses on a per-crate basis, so that particular licenses
+# aren't accepted for every possible crate as with the normal allow list
 exceptions = []
-
-# Some crates don't have (easily) machine readable licensing information,
-# adding a clarification entry for it allows you to manually specify the
-# licensing information
-#[[licenses.clarify]]
-# The name of the crate the clarification applies to
-#name = "ring"
-# The optional version constraint for the crate
-#version = "*"
-# The SPDX expression for the license requirements of the crate
-#expression = "MIT AND ISC AND OpenSSL"
-# One or more files in the crate's source used as the "source of truth" for
-# the license expression. If the contents match, the clarification will be used
-# when running the license check, otherwise the clarification will be ignored
-# and the crate will be checked normally, which may produce warnings or errors
-# depending on the rest of your configuration
-#license-files = [
-# Each entry is a crate relative path, and the (opaque) hash of its contents
-#{ path = "LICENSE", hash = 0xbd0eed23 }
-#]
 
 [licenses.private]
 ignore = false
+registries = []
 
+# This section is considered when running `cargo deny check bans`.
+# More documentation about the 'bans' section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
+# List of crates that are allowed. Use with care!
 allow = []
-skip = []
-skip-tree = []
+# List of crates to deny
+deny = [
+    # ansi_term is unmaintained; only allow prettydiff to use it
+    { crate = "ansi_term", wrappers = ["prettydiff"] },
+    # don't let use of prettydiff spread (and it's only a dev dependency)
+    { crate = "prettydiff", wrappers = ["brush-cli"] }
+]
 
+# List of features to allow/deny
+# Each entry the name of a crate and a version range. If version is
+# not specified, all versions will be matched.
+#[[bans.features]]
+#crate = "reqwest"
+# Features to not allow
+#deny = ["json"]
+# Features to allow
+#allow = []
+# If true, the allowed features must exactly match the enabled feature set. If
+# this is set there is no point setting `deny`
+#exact = true
+
+# Certain crates/versions that will be skipped when doing duplicate detection.
+# N.B. faccess depends on a 1.x version of bitflags
+skip = ["bitflags"]
+# Lots of conflicts with windows-specific crates
+skip-tree = ["windows-sys", "windows-targets"]
+
+# This section is considered when running `cargo deny check sources`.
+# More documentation about the 'sources' section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
 [sources]
 unknown-registry = "warn"
 unknown-git = "warn"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+# 1 or more github.com organizations to allow git sources for
+github = []
+# 1 or more gitlab.com organizations to allow git sources for
+gitlab = []
+# 1 or more bitbucket.org organizations to allow git sources for
+bitbucket = []
