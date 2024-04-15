@@ -114,6 +114,11 @@ async fn cli_integration_tests() -> Result<()> {
         }
     }
 
+    // Figure out if we're meant to display the full report.
+    let display_report_value =
+        std::env::var("BRUSH_TEST_REPORT").unwrap_or_else(|_| String::from("1"));
+    let display_report = display_report_value.parse::<u32>().unwrap_or(1) != 0;
+
     // Now go through and await everything.
     for join_handle in join_handles {
         let results = join_handle.await??;
@@ -124,7 +129,9 @@ async fn cli_integration_tests() -> Result<()> {
         success_duration_comparison.oracle += results.success_duration_comparison.oracle;
         success_duration_comparison.test += results.success_duration_comparison.test;
 
-        results.report();
+        if display_report {
+            results.report();
+        }
     }
 
     let formatted_fail_count = if fail_count > 0 {
@@ -139,19 +146,21 @@ async fn cli_integration_tests() -> Result<()> {
         known_failure_count.to_string().green()
     };
 
-    println!("==============================================================");
-    println!(
-        "{} test case(s) ran: {} succeeded, {} failed, {} known to fail.",
-        success_count + fail_count + known_failure_count,
-        success_count.to_string().green(),
-        formatted_fail_count,
-        formatted_known_failure_count
-    );
-    println!(
-        "duration of successful tests: {:?} (oracle) vs. {:?} (test)",
-        success_duration_comparison.oracle, success_duration_comparison.test,
-    );
-    println!("==============================================================");
+    if display_report {
+        eprintln!("==============================================================");
+        eprintln!(
+            "{} test case(s) ran: {} succeeded, {} failed, {} known to fail.",
+            success_count + fail_count + known_failure_count,
+            success_count.to_string().green(),
+            formatted_fail_count,
+            formatted_known_failure_count
+        );
+        eprintln!(
+            "duration of successful tests: {:?} (oracle) vs. {:?} (test)",
+            success_duration_comparison.oracle, success_duration_comparison.test,
+        );
+        eprintln!("==============================================================");
+    }
 
     assert!(fail_count == 0);
 
@@ -228,7 +237,7 @@ struct TestCaseSetResults {
 
 impl TestCaseSetResults {
     pub fn report(&self) {
-        println!(
+        eprintln!(
             "=================== {}: [{}/{}] ===================",
             "Running test case set".blue(),
             self.name
@@ -242,7 +251,7 @@ impl TestCaseSetResults {
             test_case_result.report();
         }
 
-        println!(
+        eprintln!(
             "    successful cases ran in {:?} (oracle) and {:?} (test)",
             self.success_duration_comparison.oracle, self.success_duration_comparison.test
         );
@@ -336,22 +345,22 @@ impl TestCaseResult {
 
         if !self.comparison.is_failure() {
             if self.known_failure {
-                println!("{}", "unexpected success.".bright_red());
+                eprintln!("{}", "unexpected success.".bright_red());
             } else {
-                println!("{}", "ok.".bright_green());
+                eprintln!("{}", "ok.".bright_green());
                 return;
             }
         } else if self.known_failure {
-            println!("{}", "known failure.".bright_magenta());
+            eprintln!("{}", "known failure.".bright_magenta());
             return;
         }
 
-        println!();
+        eprintln!();
 
         match self.comparison.exit_status {
-            ExitStatusComparison::Ignored => println!("    status {}", "ignored".cyan()),
+            ExitStatusComparison::Ignored => eprintln!("    status {}", "ignored".cyan()),
             ExitStatusComparison::Same(status) => {
-                println!(
+                eprintln!(
                     "    status matches ({}) {}",
                     format!("{status}").green(),
                     "✔️".green()
@@ -361,7 +370,7 @@ impl TestCaseResult {
                 test_exit_status,
                 oracle_exit_status,
             } => {
-                println!(
+                eprintln!(
                     "    status mismatch: {} from oracle vs. {} from test",
                     format!("{oracle_exit_status}").cyan(),
                     format!("{test_exit_status}").bright_red()
@@ -370,20 +379,20 @@ impl TestCaseResult {
         }
 
         match &self.comparison.stdout {
-            StringComparison::Ignored => println!("    stdout {}", "ignored".cyan()),
-            StringComparison::Same(_) => println!("    stdout matches {}", "✔️".green()),
+            StringComparison::Ignored => eprintln!("    stdout {}", "ignored".cyan()),
+            StringComparison::Same(_) => eprintln!("    stdout matches {}", "✔️".green()),
             StringComparison::TestDiffers {
                 test_string: t,
                 oracle_string: o,
             } => {
-                println!("    stdout {}", "DIFFERS:".bright_red());
+                eprintln!("    stdout {}", "DIFFERS:".bright_red());
 
-                println!(
+                eprintln!(
                     "        {}",
                     "------ Oracle <> Test: stdout ---------------------------------".cyan()
                 );
 
-                println!(
+                eprintln!(
                     "{}",
                     indent::indent_all_by(
                         8,
@@ -391,7 +400,7 @@ impl TestCaseResult {
                     )
                 );
 
-                println!(
+                eprintln!(
                     "        {}",
                     "---------------------------------------------------------------".cyan()
                 );
@@ -399,20 +408,20 @@ impl TestCaseResult {
         }
 
         match &self.comparison.stderr {
-            StringComparison::Ignored => println!("    stderr {}", "ignored".cyan()),
-            StringComparison::Same(_) => println!("    stderr matches {}", "✔️".green()),
+            StringComparison::Ignored => eprintln!("    stderr {}", "ignored".cyan()),
+            StringComparison::Same(_) => eprintln!("    stderr matches {}", "✔️".green()),
             StringComparison::TestDiffers {
                 test_string: t,
                 oracle_string: o,
             } => {
-                println!("    stderr {}", "DIFFERS:".bright_red());
+                eprintln!("    stderr {}", "DIFFERS:".bright_red());
 
-                println!(
+                eprintln!(
                     "        {}",
                     "------ Oracle <> Test: stderr ---------------------------------".cyan()
                 );
 
-                println!(
+                eprintln!(
                     "{}",
                     indent::indent_all_by(
                         8,
@@ -420,7 +429,7 @@ impl TestCaseResult {
                     )
                 );
 
-                println!(
+                eprintln!(
                     "        {}",
                     "---------------------------------------------------------------".cyan()
                 );
@@ -428,29 +437,29 @@ impl TestCaseResult {
         }
 
         match &self.comparison.temp_dir {
-            DirComparison::Ignored => println!("    temp dir {}", "ignored".cyan()),
-            DirComparison::Same => println!("    temp dir matches {}", "✔️".green()),
+            DirComparison::Ignored => eprintln!("    temp dir {}", "ignored".cyan()),
+            DirComparison::Same => eprintln!("    temp dir matches {}", "✔️".green()),
             DirComparison::TestDiffers(entries) => {
-                println!("    temp dir {}", "DIFFERS".bright_red());
+                eprintln!("    temp dir {}", "DIFFERS".bright_red());
 
                 for entry in entries {
                     const INDENT: &str = "        ";
                     match entry {
                         DirComparisonEntry::Different(left, right) => {
-                            println!(
+                            eprintln!(
                                 "{INDENT}oracle file {} differs from test file {}",
                                 left.to_string_lossy(),
                                 right.to_string_lossy()
                             );
                         }
                         DirComparisonEntry::LeftOnly(p) => {
-                            println!(
+                            eprintln!(
                                 "{INDENT}file missing from test dir: {}",
                                 p.to_string_lossy()
                             );
                         }
                         DirComparisonEntry::RightOnly(p) => {
-                            println!(
+                            eprintln!(
                                 "{INDENT}unexpected file in test dir: {}",
                                 p.to_string_lossy()
                             );
@@ -461,7 +470,7 @@ impl TestCaseResult {
         }
 
         if !self.success {
-            println!("    {}", "FAILED.".bright_red());
+            eprintln!("    {}", "FAILED.".bright_red());
         }
     }
 }

@@ -13,7 +13,7 @@ bench = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.81"
+anyhow = "1.0.82"
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
 log = "0.4.21"

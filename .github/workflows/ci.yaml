@@ -60,14 +60,40 @@ jobs:
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@v1.6.4
 
+      - name: Install cargo-llvm-cov
+        run: cargo binstall --no-confirm --force cargo-llvm-cov
+
       - name: Test
         run: |
           set -euxo pipefail
-          cargo binstall --no-confirm --force cargo-llvm-cov
           source <(cargo llvm-cov show-env --export-prefix)
           cargo llvm-cov clean --workspace
-          cargo test -- --show-output
+
+          result=0
+          RUSTC_BOOTSTRAP=1 BRUSH_TEST_REPORT=0 cargo test -- -Z unstable-options --show-output --format junit >raw-test-output.txt 2>test-errors.txt || result=$?
+
+          if [[ -f test-errors.txt ]]; then
+            cat test-errors.txt
+          fi
+
           cargo llvm-cov report --cobertura --output-path ./codecov.xml
+
+          # Process raw test output
+          linenum=0
+          while IFS= read -r line
+          do
+            linenum=$((linenum+1))
+            echo "${line}" >"test-results-${linenum}.xml"
+          done <raw-test-output.txt
+
+          exit ${result}
+
+      - name: "Publish test results"
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: |
+            test-results-*.xml
 
       - name: "Generate code coverage report"
         uses: clearlyip/code-coverage-report-action@v4
@@ -157,6 +183,7 @@ jobs:
 
       - name: Compare benchmark results
         uses: openpgpjs/github-action-pull-request-benchmark@v1
+        if: ${{ github.actor != 'dependabot[bot]' }}
         with:
           name: "Time benchmark"
           tool: "cargo"

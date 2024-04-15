@@ -13,9 +13,9 @@ bench = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.81"
+anyhow = "1.0.82"
 async-recursion = "1.1.0"
-async-trait = "0.1.79"
+async-trait = "0.1.80"
 brush-parser = { path = "../parser" }
 clap = { version = "4.5.4", features = ["derive"] }
 exec = "0.3.1"

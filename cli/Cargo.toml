@@ -14,7 +14,7 @@ bench = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.81"
+anyhow = "1.0.82"
 brush-interactive-shell = { path = "../interactive-shell" }
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
@@ -24,7 +24,7 @@ log = "0.4.21"
 tokio = { version = "1.37.0", features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
-anyhow = "1.0.81"
+anyhow = "1.0.82"
 assert_cmd = "2.0.14"
 assert_fs = "1.1.1"
 colored = "2.1.0"
