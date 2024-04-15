@@ -17,7 +17,7 @@ collapsible_else_if = "allow"
 if_same_then_else = "allow"
 
 [dependencies]
-anyhow = "1.0.81"
+anyhow = "1.0.82"
 indenter = "0.3.3"
 log = "0.4.21"
 peg = "0.8.2"
