@@ -5,7 +5,7 @@ cases:
       echo "Default options: $-"
 
   - name: "set -a"
-    known_failure: true
+    known_failure: true # Issue #154
     stdin: |
       unexported=original
       set -a

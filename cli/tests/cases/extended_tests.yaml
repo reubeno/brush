@@ -116,7 +116,7 @@ cases:
       [[ a* != "abc" ]] && echo "3. Pass"
 
   - name: "Quoted pattern binary string matching"
-    known_failure: true
+    known_failure: true # Issue #156
     stdin: |
       [[ "abc" != "a*" ]] && echo "1. Fail"
 

@@ -70,7 +70,7 @@ jobs:
           cargo llvm-cov clean --workspace
 
           result=0
-          RUSTC_BOOTSTRAP=1 BRUSH_TEST_REPORT=0 cargo test -- -Z unstable-options --show-output --format junit >raw-test-output.txt 2>test-errors.txt || result=$?
+          RUSTC_BOOTSTRAP=1 BRUSH_TEST_REPORT=0 cargo test --workspace -- -Z unstable-options --format junit >raw-test-output.txt 2>test-errors.txt || result=$?
 
           if [[ -f test-errors.txt ]]; then
             cat test-errors.txt

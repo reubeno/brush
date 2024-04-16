@@ -11,7 +11,7 @@ cases:
       myalias 'hello'
 
   - name: "Alias referencing to alias"
-    known_failure: true
+    known_failure: true # Issue #149
     args: ["-i"]
     env:
       PS1: "$ "
