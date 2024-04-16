@@ -23,10 +23,11 @@ struct TestConfig {
     pub name: String,
     pub oracle_shell: ShellConfig,
     pub test_shell: ShellConfig,
+    pub options: TestOptions,
 }
 
 impl TestConfig {
-    pub fn for_bash_testing() -> Self {
+    pub fn for_bash_testing(options: &TestOptions) -> Self {
         // Skip rc file and profile for deterministic behavior across systems/distros.
         Self {
             name: String::from("bash"),
@@ -43,11 +44,11 @@ impl TestConfig {
                     String::from("--disable-bracketed-paste"),
                 ],
             },
+            options: options.clone(),
         }
     }
 
-    #[allow(dead_code)]
-    pub fn for_sh_testing() -> Self {
+    pub fn for_sh_testing(options: &TestOptions) -> Self {
         // Skip rc file and profile for deterministic behavior across systems/distros.
         Self {
             name: String::from("sh"),
@@ -65,6 +66,7 @@ impl TestConfig {
                     String::from("--disable-bracketed-paste"),
                 ],
             },
+            options: options.clone(),
         }
     }
 }
@@ -81,11 +83,15 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
         test: std::time::Duration::default(),
     };
 
-    let test_configs = vec![
-        TestConfig::for_bash_testing(),
-        // Uncomment the following line to enable sh testing
-        // TestConfig::for_sh_testing(),
-    ];
+    let mut test_configs = vec![];
+
+    if options.should_enable_config("bash") {
+        test_configs.push(TestConfig::for_bash_testing(&options));
+    }
+
+    if options.should_enable_config("sh") {
+        test_configs.push(TestConfig::for_sh_testing(&options));
+    }
 
     // Spawn each test case set separately.
     for entry in glob::glob(format!("{dir}/tests/cases/**/*.yaml").as_ref()).unwrap() {
@@ -104,14 +110,24 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
                 continue;
             }
 
-            // Clone the test case set and test config so the spawned function below
-            // can take ownership of the clones.
-            let test_case_set = test_case_set.clone();
-            let test_config = test_config.clone();
+            if options.list_tests_only {
+                for test_case in &test_case_set.cases {
+                    println!(
+                        "{}::{}: test",
+                        test_case_set.name.as_deref().unwrap_or("unnamed"),
+                        test_case.name.as_deref().unwrap_or("unnamed"),
+                    );
+                }
+            } else {
+                // Clone the test case set and test config so the spawned function below
+                // can take ownership of the clones.
+                let test_case_set = test_case_set.clone();
+                let test_config = test_config.clone();
 
-            join_handles.push(tokio::spawn(
-                async move { test_case_set.run(test_config).await },
-            ));
+                join_handles.push(tokio::spawn(
+                    async move { test_case_set.run(test_config).await },
+                ));
+            }
         }
     }
 
@@ -129,7 +145,11 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
         all_results.push(results);
     }
 
-    report_integration_test_results(all_results, options.format).unwrap();
+    if options.list_tests_only {
+        return Ok(());
+    }
+
+    report_integration_test_results(all_results, &options).unwrap();
 
     if matches!(options.format, OutputFormat::Pretty) {
         let formatted_fail_count = if fail_count > 0 {
@@ -166,15 +186,19 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
 
 fn report_integration_test_results(
     results: Vec<TestCaseSetResults>,
-    format: OutputFormat,
+    options: &TestOptions,
 ) -> Result<()> {
-    match format {
-        OutputFormat::Pretty => report_integration_test_results_pretty(results),
-        OutputFormat::Junit => report_integration_test_results_junit(results),
+    match options.format {
+        OutputFormat::Pretty => report_integration_test_results_pretty(results, options),
+        OutputFormat::Junit => report_integration_test_results_junit(results, options),
+        OutputFormat::Terse => Ok(()),
     }
 }
 
-fn report_integration_test_results_junit(results: Vec<TestCaseSetResults>) -> Result<()> {
+fn report_integration_test_results_junit(
+    results: Vec<TestCaseSetResults>,
+    _options: &TestOptions,
+) -> Result<()> {
     let mut report = junit_report::Report::new();
 
     for result in results {
@@ -214,9 +238,12 @@ fn report_integration_test_results_junit(results: Vec<TestCaseSetResults>) -> Re
     Ok(())
 }
 
-fn report_integration_test_results_pretty(results: Vec<TestCaseSetResults>) -> Result<()> {
+fn report_integration_test_results_pretty(
+    results: Vec<TestCaseSetResults>,
+    options: &TestOptions,
+) -> Result<()> {
     for result in results {
-        result.report_pretty()?;
+        result.report_pretty(options)?;
     }
     Ok(())
 }
@@ -290,31 +317,35 @@ struct TestCaseSetResults {
 }
 
 impl TestCaseSetResults {
-    pub fn report_pretty(&self) -> Result<()> {
-        self.write_details(std::io::stderr())
+    pub fn report_pretty(&self, options: &TestOptions) -> Result<()> {
+        self.write_details(std::io::stderr(), options)
     }
 
-    fn write_details<W: std::io::Write>(&self, mut writer: W) -> Result<()> {
-        writeln!(
-            writer,
-            "=================== {}: [{}/{}] ===================",
-            "Running test case set".blue(),
-            self.name
-                .as_ref()
-                .unwrap_or(&("(unnamed)".to_owned()))
-                .italic(),
-            self.config_name.magenta(),
-        )?;
-
-        for test_case_result in &self.test_case_results {
-            test_case_result.report_pretty()?;
+    fn write_details<W: std::io::Write>(&self, mut writer: W, options: &TestOptions) -> Result<()> {
+        if !options.quiet {
+            writeln!(
+                writer,
+                "=================== {}: [{}/{}] ===================",
+                "Running test case set".blue(),
+                self.name
+                    .as_ref()
+                    .unwrap_or(&("(unnamed)".to_owned()))
+                    .italic(),
+                self.config_name.magenta(),
+            )?;
         }
 
-        writeln!(
-            writer,
-            "    successful cases ran in {:?} (oracle) and {:?} (test)",
-            self.success_duration_comparison.oracle, self.success_duration_comparison.test
-        )?;
+        for test_case_result in &self.test_case_results {
+            test_case_result.report_pretty(options)?;
+        }
+
+        if !options.quiet {
+            writeln!(
+                writer,
+                "    successful cases ran in {:?} (oracle) and {:?} (test)",
+                self.success_duration_comparison.oracle, self.success_duration_comparison.test
+            )?;
+        }
 
         Ok(())
     }
@@ -333,6 +364,11 @@ impl TestCaseSet {
         for test_case in &self.cases {
             // Make sure it's compatible.
             if test_case.incompatible_configs.contains(&test_config.name) {
+                continue;
+            }
+
+            // Make sure it passes filters.
+            if !test_config.options.should_run_test(self, test_case) {
                 continue;
             }
 
@@ -394,12 +430,24 @@ struct TestCaseResult {
 }
 
 impl TestCaseResult {
-    pub fn report_pretty(&self) -> Result<()> {
-        self.write_details(std::io::stderr())
+    pub fn report_pretty(&self, options: &TestOptions) -> Result<()> {
+        self.write_details(std::io::stderr(), options)
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn write_details<W: std::io::Write>(&self, mut writer: W) -> Result<()> {
+    pub fn write_details<W: std::io::Write>(
+        &self,
+        mut writer: W,
+        options: &TestOptions,
+    ) -> Result<()> {
+        if options.quiet {
+            if (!self.comparison.is_failure() && !self.known_failure)
+                || (self.comparison.is_failure() && self.known_failure)
+            {
+                return Ok(());
+            }
+        }
+
         write!(
             writer,
             "* {}: [{}]... ",
@@ -419,7 +467,9 @@ impl TestCaseResult {
             }
         } else if self.known_failure {
             writeln!(writer, "{}", "known failure.".bright_magenta())?;
-            return Ok(());
+            if !options.display_known_failure_details {
+                return Ok(());
+            }
         }
 
         writeln!(writer)?;
@@ -978,25 +1028,111 @@ fn diff_dirs(oracle_path: &Path, test_path: &Path) -> Result<DirComparison> {
     }
 }
 
-#[derive(Clone, Copy, clap::ValueEnum)]
+#[derive(Clone, Copy, Default, clap::ValueEnum)]
 enum OutputFormat {
+    #[default]
     Pretty,
     Junit,
+    Terse,
 }
 
-#[derive(Parser)]
+#[derive(Clone, Parser)]
 #[clap(version, about, disable_help_flag = true, disable_version_flag = true)]
 struct TestOptions {
-    #[clap(short = 'Z')]
-    unstable_flag: Vec<String>,
+    /// Display usage information
+    #[clap(long = "help", action = clap::ArgAction::HelpLong)]
+    pub help: Option<bool>,
 
-    #[clap(long = "format")]
-    format: OutputFormat,
+    /// Output format for test results
+    #[clap(long = "format", default_value = "pretty")]
+    pub format: OutputFormat,
+
+    /// Display full details on known failures
+    #[clap(long = "known-failure-details")]
+    pub display_known_failure_details: bool,
+
+    /// Omit details regarding successful test cases
+    #[clap(short = 'q', long = "quiet")]
+    pub quiet: bool,
+
+    /// Enable a specific configuration
+    #[clap(long = "enable-config")]
+    pub enabled_configs: Vec<String>,
+
+    /// List available tests without running them
+    #[clap(long = "list")]
+    pub list_tests_only: bool,
+
+    /// Exactly match filters (not just substring match)
+    #[clap(long = "exact")]
+    pub exact_match: bool,
+
+    //
+    // Compat-only options
+    //
+    /// Show output from test cases (for compatibility only, has no effect)
+    #[clap(long = "show-output")]
+    pub show_output: bool,
+
+    /// Capture output? (for compatibility only, has no effect)
+    #[clap(long = "nocapture")]
+    pub no_capture: bool,
+
+    #[clap(long = "ignored")]
+    pub ignored: bool,
+
+    /// Unstable flags (for compatibility only, has no effect)
+    #[clap(short = 'Z')]
+    pub unstable_flag: Vec<String>,
+
+    //
+    // Filters
+    //
+    pub filters: Vec<String>,
+}
+
+impl TestOptions {
+    pub fn should_enable_config(&self, config: &str) -> bool {
+        let enabled_configs = if self.enabled_configs.is_empty() {
+            vec![String::from("bash")]
+        } else {
+            self.enabled_configs.clone()
+        };
+
+        enabled_configs.contains(&config.to_string())
+    }
+
+    pub fn should_run_test(&self, test_case_set: &TestCaseSet, test_case: &TestCase) -> bool {
+        if self.filters.is_empty() {
+            return true;
+        }
+
+        let test_case_set_name = test_case_set.name.as_deref().unwrap_or("");
+        let test_case_name = test_case.name.as_deref().unwrap_or("");
+
+        if test_case_set_name.is_empty() || test_case_name.is_empty() {
+            return false;
+        }
+
+        let qualified_name = format!("{test_case_set_name}::{test_case_name}");
+
+        if self.exact_match {
+            self.filters.contains(&qualified_name)
+        } else {
+            self.filters
+                .iter()
+                .any(|filter| qualified_name.contains(filter))
+        }
+    }
 }
 
 fn main() {
     let unparsed_args: Vec<_> = std::env::args().collect();
     let options = TestOptions::parse_from(unparsed_args);
+
+    if options.list_tests_only && options.ignored {
+        return;
+    }
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
