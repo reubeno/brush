@@ -48,7 +48,7 @@ cases:
         content: "This is file2"
 
   - name: "Expansion with curly braces"
-    known_failure: true
+    known_failure: true # Issue #152
     stdin: "echo file{1,2}.txt"
     files:
       - name: "file1.txt"

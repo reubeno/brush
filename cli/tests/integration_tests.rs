@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
-use colored::*;
+use clap::Parser;
+use colored::Colorize;
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    io::Write,
     os::unix::{fs::PermissionsExt, process::ExitStatusExt},
     path::{Path, PathBuf},
     process::ExitStatus,
@@ -67,8 +69,7 @@ impl TestConfig {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 32)]
-async fn cli_integration_tests() -> Result<()> {
+async fn cli_integration_tests(options: TestOptions) -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
     let mut success_count = 0;
@@ -114,12 +115,8 @@ async fn cli_integration_tests() -> Result<()> {
         }
     }
 
-    // Figure out if we're meant to display the full report.
-    let display_report_value =
-        std::env::var("BRUSH_TEST_REPORT").unwrap_or_else(|_| String::from("1"));
-    let display_report = display_report_value.parse::<u32>().unwrap_or(1) != 0;
-
     // Now go through and await everything.
+    let mut all_results = vec![];
     for join_handle in join_handles {
         let results = join_handle.await??;
 
@@ -129,24 +126,24 @@ async fn cli_integration_tests() -> Result<()> {
         success_duration_comparison.oracle += results.success_duration_comparison.oracle;
         success_duration_comparison.test += results.success_duration_comparison.test;
 
-        if display_report {
-            results.report();
-        }
+        all_results.push(results);
     }
 
-    let formatted_fail_count = if fail_count > 0 {
-        fail_count.to_string().red()
-    } else {
-        fail_count.to_string().green()
-    };
+    report_integration_test_results(all_results, options.format).unwrap();
 
-    let formatted_known_failure_count = if known_failure_count > 0 {
-        known_failure_count.to_string().magenta()
-    } else {
-        known_failure_count.to_string().green()
-    };
+    if matches!(options.format, OutputFormat::Pretty) {
+        let formatted_fail_count = if fail_count > 0 {
+            fail_count.to_string().red()
+        } else {
+            fail_count.to_string().green()
+        };
 
-    if display_report {
+        let formatted_known_failure_count = if known_failure_count > 0 {
+            known_failure_count.to_string().magenta()
+        } else {
+            known_failure_count.to_string().green()
+        };
+
         eprintln!("==============================================================");
         eprintln!(
             "{} test case(s) ran: {} succeeded, {} failed, {} known to fail.",
@@ -164,6 +161,63 @@ async fn cli_integration_tests() -> Result<()> {
 
     assert!(fail_count == 0);
 
+    Ok(())
+}
+
+fn report_integration_test_results(
+    results: Vec<TestCaseSetResults>,
+    format: OutputFormat,
+) -> Result<()> {
+    match format {
+        OutputFormat::Pretty => report_integration_test_results_pretty(results),
+        OutputFormat::Junit => report_integration_test_results_junit(results),
+    }
+}
+
+fn report_integration_test_results_junit(results: Vec<TestCaseSetResults>) -> Result<()> {
+    let mut report = junit_report::Report::new();
+
+    for result in results {
+        let mut suite = junit_report::TestSuite::new(result.name.unwrap_or(String::new()).as_str());
+        for r in result.test_case_results {
+            let test_case_name = r.name.as_deref().unwrap_or("");
+            let test_case: junit_report::TestCase = if r.success {
+                junit_report::TestCase::success(
+                    test_case_name,
+                    r.comparison.duration.test.try_into()?,
+                )
+            } else if r.known_failure {
+                junit_report::TestCase::skipped(test_case_name)
+            } else {
+                junit_report::TestCase::failure(
+                    test_case_name,
+                    r.comparison.duration.test.try_into()?,
+                    "test failure",
+                    "failed",
+                )
+            };
+
+            // TODO: enable this
+            // let mut output_buf: Vec<u8> = vec![];
+            // r.write_details(&mut output_buf)?;
+            // test_case.set_system_out(String::from_utf8(output_buf)?.as_str());
+
+            suite.add_testcase(test_case);
+        }
+
+        report.add_testsuite(suite);
+    }
+
+    report.write_xml(std::io::stdout())?;
+    writeln!(std::io::stdout())?;
+
+    Ok(())
+}
+
+fn report_integration_test_results_pretty(results: Vec<TestCaseSetResults>) -> Result<()> {
+    for result in results {
+        result.report_pretty()?;
+    }
     Ok(())
 }
 
@@ -236,8 +290,13 @@ struct TestCaseSetResults {
 }
 
 impl TestCaseSetResults {
-    pub fn report(&self) {
-        eprintln!(
+    pub fn report_pretty(&self) -> Result<()> {
+        self.write_details(std::io::stderr())
+    }
+
+    fn write_details<W: std::io::Write>(&self, mut writer: W) -> Result<()> {
+        writeln!(
+            writer,
             "=================== {}: [{}/{}] ===================",
             "Running test case set".blue(),
             self.name
@@ -245,16 +304,19 @@ impl TestCaseSetResults {
                 .unwrap_or(&("(unnamed)".to_owned()))
                 .italic(),
             self.config_name.magenta(),
-        );
+        )?;
 
         for test_case_result in &self.test_case_results {
-            test_case_result.report();
+            test_case_result.report_pretty()?;
         }
 
-        eprintln!(
+        writeln!(
+            writer,
             "    successful cases ran in {:?} (oracle) and {:?} (test)",
             self.success_duration_comparison.oracle, self.success_duration_comparison.test
-        );
+        )?;
+
+        Ok(())
     }
 }
 
@@ -332,137 +394,153 @@ struct TestCaseResult {
 }
 
 impl TestCaseResult {
+    pub fn report_pretty(&self) -> Result<()> {
+        self.write_details(std::io::stderr())
+    }
+
     #[allow(clippy::too_many_lines)]
-    pub fn report(&self) {
-        print!(
+    pub fn write_details<W: std::io::Write>(&self, mut writer: W) -> Result<()> {
+        write!(
+            writer,
             "* {}: [{}]... ",
             "Test case".bright_yellow(),
             self.name
                 .as_ref()
                 .unwrap_or(&("(unnamed)".to_owned()))
                 .italic()
-        );
+        )?;
 
         if !self.comparison.is_failure() {
             if self.known_failure {
-                eprintln!("{}", "unexpected success.".bright_red());
+                writeln!(writer, "{}", "unexpected success.".bright_red())?;
             } else {
-                eprintln!("{}", "ok.".bright_green());
-                return;
+                writeln!(writer, "{}", "ok.".bright_green())?;
+                return Ok(());
             }
         } else if self.known_failure {
-            eprintln!("{}", "known failure.".bright_magenta());
-            return;
+            writeln!(writer, "{}", "known failure.".bright_magenta())?;
+            return Ok(());
         }
 
-        eprintln!();
+        writeln!(writer)?;
 
         match self.comparison.exit_status {
-            ExitStatusComparison::Ignored => eprintln!("    status {}", "ignored".cyan()),
+            ExitStatusComparison::Ignored => writeln!(writer, "    status {}", "ignored".cyan())?,
             ExitStatusComparison::Same(status) => {
-                eprintln!(
+                writeln!(
+                    writer,
                     "    status matches ({}) {}",
                     format!("{status}").green(),
                     "✔️".green()
-                );
+                )?;
             }
             ExitStatusComparison::TestDiffers {
                 test_exit_status,
                 oracle_exit_status,
             } => {
-                eprintln!(
+                writeln!(
+                    writer,
                     "    status mismatch: {} from oracle vs. {} from test",
                     format!("{oracle_exit_status}").cyan(),
                     format!("{test_exit_status}").bright_red()
-                );
+                )?;
             }
         }
 
         match &self.comparison.stdout {
-            StringComparison::Ignored => eprintln!("    stdout {}", "ignored".cyan()),
-            StringComparison::Same(_) => eprintln!("    stdout matches {}", "✔️".green()),
+            StringComparison::Ignored => writeln!(writer, "    stdout {}", "ignored".cyan())?,
+            StringComparison::Same(_) => writeln!(writer, "    stdout matches {}", "✔️".green())?,
             StringComparison::TestDiffers {
                 test_string: t,
                 oracle_string: o,
             } => {
-                eprintln!("    stdout {}", "DIFFERS:".bright_red());
+                writeln!(writer, "    stdout {}", "DIFFERS:".bright_red())?;
 
-                eprintln!(
+                writeln!(
+                    writer,
                     "        {}",
                     "------ Oracle <> Test: stdout ---------------------------------".cyan()
-                );
+                )?;
 
-                eprintln!(
+                writeln!(
+                    writer,
                     "{}",
                     indent::indent_all_by(
                         8,
                         prettydiff::diff_lines(o.as_str(), t.as_str()).format()
                     )
-                );
+                )?;
 
-                eprintln!(
+                writeln!(
+                    writer,
                     "        {}",
                     "---------------------------------------------------------------".cyan()
-                );
+                )?;
             }
         }
 
         match &self.comparison.stderr {
-            StringComparison::Ignored => eprintln!("    stderr {}", "ignored".cyan()),
-            StringComparison::Same(_) => eprintln!("    stderr matches {}", "✔️".green()),
+            StringComparison::Ignored => writeln!(writer, "    stderr {}", "ignored".cyan())?,
+            StringComparison::Same(_) => writeln!(writer, "    stderr matches {}", "✔️".green())?,
             StringComparison::TestDiffers {
                 test_string: t,
                 oracle_string: o,
             } => {
-                eprintln!("    stderr {}", "DIFFERS:".bright_red());
+                writeln!(writer, "    stderr {}", "DIFFERS:".bright_red())?;
 
-                eprintln!(
+                writeln!(
+                    writer,
                     "        {}",
                     "------ Oracle <> Test: stderr ---------------------------------".cyan()
-                );
+                )?;
 
-                eprintln!(
+                writeln!(
+                    writer,
                     "{}",
                     indent::indent_all_by(
                         8,
                         prettydiff::diff_lines(o.as_str(), t.as_str()).format()
                     )
-                );
+                )?;
 
-                eprintln!(
+                writeln!(
+                    writer,
                     "        {}",
                     "---------------------------------------------------------------".cyan()
-                );
+                )?;
             }
         }
 
         match &self.comparison.temp_dir {
-            DirComparison::Ignored => eprintln!("    temp dir {}", "ignored".cyan()),
-            DirComparison::Same => eprintln!("    temp dir matches {}", "✔️".green()),
+            DirComparison::Ignored => writeln!(writer, "    temp dir {}", "ignored".cyan())?,
+            DirComparison::Same => writeln!(writer, "    temp dir matches {}", "✔️".green())?,
             DirComparison::TestDiffers(entries) => {
-                eprintln!("    temp dir {}", "DIFFERS".bright_red());
+                writeln!(writer, "    temp dir {}", "DIFFERS".bright_red())?;
 
                 for entry in entries {
                     const INDENT: &str = "        ";
                     match entry {
                         DirComparisonEntry::Different(left, right) => {
-                            eprintln!(
+                            writeln!(
+                                writer,
                                 "{INDENT}oracle file {} differs from test file {}",
                                 left.to_string_lossy(),
                                 right.to_string_lossy()
-                            );
+                            )?;
                         }
                         DirComparisonEntry::LeftOnly(p) => {
-                            eprintln!(
+                            writeln!(
+                                writer,
                                 "{INDENT}file missing from test dir: {}",
                                 p.to_string_lossy()
-                            );
+                            )?;
                         }
                         DirComparisonEntry::RightOnly(p) => {
-                            eprintln!(
+                            writeln!(
+                                writer,
                                 "{INDENT}unexpected file in test dir: {}",
                                 p.to_string_lossy()
-                            );
+                            )?;
                         }
                     }
                 }
@@ -470,8 +548,10 @@ impl TestCaseResult {
         }
 
         if !self.success {
-            eprintln!("    {}", "FAILED.".bright_red());
+            writeln!(writer, "    {}", "FAILED.".bright_red())?;
         }
+
+        Ok(())
     }
 }
 
@@ -896,4 +976,33 @@ fn diff_dirs(oracle_path: &Path, test_path: &Path) -> Result<DirComparison> {
     } else {
         Ok(DirComparison::TestDiffers(result))
     }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum OutputFormat {
+    Pretty,
+    Junit,
+}
+
+#[derive(Parser)]
+#[clap(version, about, disable_help_flag = true, disable_version_flag = true)]
+struct TestOptions {
+    #[clap(short = 'Z')]
+    unstable_flag: Vec<String>,
+
+    #[clap(long = "format")]
+    format: OutputFormat,
+}
+
+fn main() {
+    let unparsed_args: Vec<_> = std::env::args().collect();
+    let options = TestOptions::parse_from(unparsed_args);
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(32)
+        .build()
+        .unwrap()
+        .block_on(cli_integration_tests(options))
+        .unwrap();
 }

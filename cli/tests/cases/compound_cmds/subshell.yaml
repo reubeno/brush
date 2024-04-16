@@ -16,6 +16,6 @@ cases:
       cat out.txt
 
   - name: "Piped subshell usage"
-    known_failure: true
+    known_failure: true # Issue #150
     stdin: |
       (echo hi) | wc -l

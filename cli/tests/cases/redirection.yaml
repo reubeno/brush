@@ -38,7 +38,7 @@ cases:
       echo "${var}"
 
   # - name: "Process substitution: input + output"
-  #   known_failure: true
+  #   known_failure: true # Issue #151
   #   stdin: |
   #     shopt -u -o posix
   #     cp <(echo hi) >(cat)
