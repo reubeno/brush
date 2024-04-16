@@ -610,6 +610,14 @@ impl Shell {
         token_index: usize,
         token_count: usize,
     ) -> Vec<String> {
+        // N.B. We expand first.
+        let mut throwaway_shell = self.clone();
+        let prefix = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(throwaway_shell.basic_expand_string(prefix))
+                .unwrap_or_else(|_| prefix.to_owned())
+        });
+
         // TODO: Contextually generate different completions.
         let glob = std::format!("{prefix}*");
         let mut candidates = if let Ok(candidates) =
