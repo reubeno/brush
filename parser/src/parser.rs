@@ -666,8 +666,8 @@ peg::parser! {
         }
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
-            non_posix_extensions_enabled() [Token::Word(w, _)] specific_operator("(") elements:([Token::Word(e, _)] { e })* specific_operator(")") {?
-                let parsed = parse_array_assignment(w.as_str(), &elements)?;
+            non_posix_extensions_enabled() [Token::Word(w, _)] specific_operator("(") elements:array_elements() specific_operator(")") {?
+                let parsed = parse_array_assignment(w.as_str(), elements.as_slice())?;
 
                 let mut all_as_word = w.to_owned();
                 all_as_word.push('(');
@@ -685,6 +685,12 @@ peg::parser! {
                 let parsed = parse_assignment_word(w.as_str())?;
                 Ok((parsed, ast::Word { value: w.to_owned() }))
             }
+
+        rule array_elements() -> Vec<&'input String> =
+            e:array_element()*
+
+        rule array_element() -> &'input String =
+            linebreak() [Token::Word(e, _)] linebreak() { e }
 
         rule io_number() -> u32 =
             // TODO: implement io_number more accurately.

@@ -33,7 +33,6 @@ cases:
     args: ["./script.sh"]
 
   - name: "For loop piped"
-    known_failure: true # Issue #150
     stdin: |
       for f in ab ac bd ef; do echo $f; done | grep b
 

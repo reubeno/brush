@@ -4,6 +4,7 @@ use std::os::fd::AsRawFd;
 use std::process::Stdio;
 
 pub enum OpenFile {
+    Stdin,
     Stdout,
     Stderr,
     Null,
@@ -16,6 +17,7 @@ pub enum OpenFile {
 impl OpenFile {
     pub fn try_dup(&self) -> Result<OpenFile> {
         let result = match self {
+            OpenFile::Stdin => OpenFile::Stdin,
             OpenFile::Stdout => OpenFile::Stdout,
             OpenFile::Stderr => OpenFile::Stderr,
             OpenFile::Null => OpenFile::Null,
@@ -30,6 +32,7 @@ impl OpenFile {
 
     pub(crate) fn as_raw_fd(&self) -> Result<i32> {
         match self {
+            OpenFile::Stdin => Ok(std::io::stdin().as_raw_fd()),
             OpenFile::Stdout => Ok(std::io::stdout().as_raw_fd()),
             OpenFile::Stderr => Ok(std::io::stderr().as_raw_fd()),
             OpenFile::Null => Err(anyhow::anyhow!(
@@ -48,8 +51,9 @@ impl OpenFile {
 impl From<OpenFile> for Stdio {
     fn from(open_file: OpenFile) -> Self {
         match open_file {
-            OpenFile::Stdout => std::io::stdout().into(),
-            OpenFile::Stderr => std::io::stderr().into(),
+            OpenFile::Stdin => Stdio::inherit(),
+            OpenFile::Stdout => Stdio::inherit(),
+            OpenFile::Stderr => Stdio::inherit(),
             OpenFile::Null => Stdio::null(),
             OpenFile::File(f) => f.into(),
             OpenFile::PipeReader(f) => f.into(),
@@ -59,9 +63,35 @@ impl From<OpenFile> for Stdio {
     }
 }
 
+impl std::io::Read for OpenFile {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            OpenFile::Stdin => std::io::stdin().read(buf),
+            OpenFile::Stdout => Err(std::io::Error::other(anyhow::anyhow!(
+                "cannot read from stdout"
+            ))),
+            OpenFile::Stderr => Err(std::io::Error::other(anyhow::anyhow!(
+                "cannot read from stderr"
+            ))),
+            OpenFile::Null => Ok(0),
+            OpenFile::File(f) => f.read(buf),
+            OpenFile::PipeReader(reader) => reader.read(buf),
+            OpenFile::PipeWriter(_) => Err(std::io::Error::other(anyhow::anyhow!(
+                "cannot read from pipe writer"
+            ))),
+            OpenFile::HereDocument(_) => Err(std::io::Error::other(anyhow::anyhow!(
+                "cannot read from here document"
+            ))),
+        }
+    }
+}
+
 impl std::io::Write for OpenFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
+            OpenFile::Stdin => Err(std::io::Error::other(anyhow::anyhow!(
+                "cannot write to stdin"
+            ))),
             OpenFile::Stdout => std::io::stdout().write(buf),
             OpenFile::Stderr => std::io::stderr().write(buf),
             OpenFile::Null => Ok(buf.len()),
@@ -78,6 +108,7 @@ impl std::io::Write for OpenFile {
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
+            OpenFile::Stdin => Ok(()),
             OpenFile::Stdout => std::io::stdout().flush(),
             OpenFile::Stderr => std::io::stderr().flush(),
             OpenFile::Null => Ok(()),
@@ -102,8 +133,11 @@ impl Clone for OpenFiles {
 impl Default for OpenFiles {
     fn default() -> Self {
         Self {
-            // TODO: Figure out if we need to populate stdin here.
-            files: HashMap::from([(1, OpenFile::Stdout), (2, OpenFile::Stderr)]),
+            files: HashMap::from([
+                (0, OpenFile::Stdin),
+                (1, OpenFile::Stdout),
+                (2, OpenFile::Stderr),
+            ]),
         }
     }
 }

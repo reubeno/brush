@@ -8,6 +8,10 @@ pub struct CommandExecutionContext<'a> {
 }
 
 impl CommandExecutionContext<'_> {
+    pub fn stdin(&self) -> crate::openfiles::OpenFile {
+        self.open_files.files.get(&0).unwrap().try_dup().unwrap()
+    }
+
     pub fn stdout(&self) -> crate::openfiles::OpenFile {
         self.open_files.files.get(&1).unwrap().try_dup().unwrap()
     }

@@ -208,7 +208,6 @@ cases:
       declare -p dest4
 
   - name: "Multi-line definition of array"
-    known_failure: true
     stdin: |
       array=(
           a

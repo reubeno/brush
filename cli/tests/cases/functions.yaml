@@ -62,7 +62,6 @@ cases:
       myfunc
 
   - name: "Function call with env variables"
-    known_failure: true
     stdin: |
       myfunc() {
           echo ${myvar}
