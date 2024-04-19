@@ -319,7 +319,10 @@ impl ExecuteInPipeline for ast::Command {
             ast::Command::Compound(compound, redirects) => {
                 let mut params = pipeline_context.params.clone();
 
-                // Set up redirects.
+                // Set up pipelining.
+                setup_pipeline_redirection(&mut params.open_files, pipeline_context)?;
+
+                // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
                         setup_redirect(&mut params.open_files, pipeline_context.shell, redirect)
@@ -327,12 +330,10 @@ impl ExecuteInPipeline for ast::Command {
                     }
                 }
 
-                // TODO: Need to execute in the pipeline.
                 let result = compound.execute(pipeline_context.shell, &params).await?;
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::Function(func) => {
-                // TODO: Need to execute in pipeline.
                 let result = func
                     .execute(pipeline_context.shell, &pipeline_context.params)
                     .await?;
@@ -1154,10 +1155,6 @@ pub(crate) async fn invoke_shell_function(
         .unwrap()
         .clone();
 
-    if !env_vars.is_empty() {
-        log::error!("UNIMPLEMENTED: invoke function with environment variables");
-    }
-
     let ast::FunctionBody(body, redirects) = &function_definition.body;
 
     // Apply any redirects specified at function definition-time.
@@ -1180,6 +1177,13 @@ pub(crate) async fn invoke_shell_function(
     let params = ExecutionParameters {
         open_files: context.open_files.clone(),
     };
+
+    // Update variables.
+    for (name, value) in env_vars {
+        let mut var = ShellVariable::new(value.clone());
+        var.export();
+        context.shell.env.add(name, var, EnvironmentScope::Local)?;
+    }
 
     // Invoke the function.
     let result = body.execute(context.shell, &params).await;
@@ -1245,7 +1249,7 @@ async fn setup_redirect<'a>(
                 .truncate(true)
                 .open(expanded_file_path.as_str())
                 .context(format!(
-                    "opening {} for I/O redirection",
+                    "opening {} for out + error redirection",
                     expanded_file_path.as_str()
                 ))?;
 

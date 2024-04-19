@@ -1,6 +1,19 @@
 name: "Builtins: read"
 cases:
-  - name: "Basic read usage"
-    known_failure: true
+  - name: "Basic read usage from file"
+    test_files:
+      - path: "data.txt"
+        contents: |
+          a
+          b
+    stdin: |
+      while read name; do echo "Hello, $name"; done < data.txt
+
+  - name: "Basic read usage from pipe"
+    test_files:
+      - path: "data.txt"
+        contents: |
+          a
+          b
     stdin: |
       (echo a; echo b) | while read name; do echo "Hello, $name"; done

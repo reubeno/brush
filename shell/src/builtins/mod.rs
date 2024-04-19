@@ -32,6 +32,7 @@ mod popd;
 mod printf;
 mod pushd;
 mod pwd;
+mod read;
 mod retur;
 mod set;
 mod shift;
@@ -181,7 +182,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
     m.insert("kill", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("newgrp", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("pwd", exec_builtin::<pwd::PwdCommand>);
-    m.insert("read", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("read", exec_builtin::<read::ReadCommand>);
     m.insert("true", exec_builtin::<tru::TrueCommand>);
     m.insert("type", exec_builtin::<typ::TypeCommand>);
     m.insert("ulimit", exec_builtin::<unimp::UnimplementedCommand>);
