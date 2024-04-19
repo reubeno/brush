@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::io::Write;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
@@ -27,6 +28,8 @@ pub struct ExecutionResult {
     pub exit_code: u8,
     pub exit_shell: bool,
     pub return_from_function_or_script: bool,
+    pub break_loop: Option<u8>,
+    pub continue_loop: Option<u8>,
 }
 
 impl ExecutionResult {
@@ -46,11 +49,13 @@ impl ExecutionResult {
     }
 }
 
-enum SpawnResult {
+pub(crate) enum SpawnResult {
     SpawnedChild(process::Child),
     ImmediateExit(u8),
     ExitShell(u8),
     ReturnFromFunctionOrScript(u8),
+    BreakLoop(u8),
+    ContinueLoop(u8),
 }
 
 struct PipelineExecutionContext<'a> {
@@ -139,6 +144,11 @@ impl Execute for ast::CompoundList {
             if result.return_from_function_or_script {
                 break;
             }
+
+            // TODO: Check for continue/break being in for/while/until loop.
+            if result.continue_loop.is_some() || result.break_loop.is_some() {
+                break;
+            }
         }
 
         shell.last_exit_status = result.exit_code;
@@ -167,6 +177,11 @@ impl Execute for ast::AndOrList {
         for next_ao in &self.additional {
             if result.exit_shell || result.return_from_function_or_script {
                 break;
+            }
+
+            // Check for continue/break
+            if result.continue_loop.is_some() || result.break_loop.is_some() {
+                return error::unimp("continue || break in and-or list");
             }
 
             let (is_and, pipeline) = match next_ao {
@@ -262,6 +277,20 @@ impl Execute for ast::Pipeline {
                     result = ExecutionResult {
                         exit_code,
                         return_from_function_or_script: true,
+                        ..ExecutionResult::default()
+                    }
+                }
+                SpawnResult::BreakLoop(count) => {
+                    result = ExecutionResult {
+                        exit_code: 0,
+                        break_loop: Some(count),
+                        ..ExecutionResult::default()
+                    }
+                }
+                SpawnResult::ContinueLoop(count) => {
+                    result = ExecutionResult {
+                        exit_code: 0,
+                        continue_loop: Some(count),
                         ..ExecutionResult::default()
                     }
                 }
@@ -385,6 +414,22 @@ impl Execute for ast::ForClauseCommand {
                 )?;
 
                 result = self.body.0.execute(shell, params).await?;
+
+                if let Some(continue_count) = &result.continue_loop {
+                    if *continue_count > 0 {
+                        return error::unimp("continue with count > 0");
+                    }
+
+                    result.continue_loop = None;
+                }
+                if let Some(break_count) = &result.break_loop {
+                    if *break_count == 0 {
+                        result.break_loop = None;
+                    } else {
+                        result.break_loop = Some(*break_count - 1);
+                    }
+                    break;
+                }
             }
         }
 
@@ -680,8 +725,11 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
             if context.shell.options.print_commands_and_arguments {
-                // TODO: Write this to the correct ouptut stream.
-                println!("+ {}", args.iter().map(|arg| arg.to_string()).join(" "));
+                writeln!(
+                    context.shell.stdout(),
+                    "+ {}",
+                    args.iter().map(|arg| arg.to_string()).join(" ")
+                )?;
             }
 
             // Apply all variable assignments in a child shell object, from which we'll harvest
@@ -748,8 +796,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
                 if context.shell.options.print_commands_and_arguments {
-                    // TODO: Write this to the correct ouptut stream.
-                    println!("+ {assignment}");
+                    writeln!(context.shell.stdout(), "+ {assignment}")?;
                 }
 
                 apply_assignment(assignment, context.shell).await?;
@@ -864,8 +911,16 @@ async fn apply_assignment(
                     None => None,
                 };
 
-                let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
-                elements.push((key, value));
+                if key.is_some() {
+                    let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
+                    elements.push((key, value));
+                } else {
+                    let values =
+                        expansion::full_expand_and_split_word(shell, unexpanded_value).await?;
+                    for value in values {
+                        elements.push((None, value));
+                    }
+                }
             }
             ShellValueLiteral::Array(ArrayLiteral(elements))
         }
@@ -874,18 +929,24 @@ async fn apply_assignment(
     // See if we need to eval an array index.
     // TODO: Handle associative arrays correctly; index is *not* an arithmetic expression
     if let Some(idx) = &array_index {
-        if let Some(existing_value) = shell.env.get(variable_name.as_str()) {
-            if matches!(
+        let will_be_indexed_array = if let Some(existing_value) =
+            shell.env.get(variable_name.as_str())
+        {
+            matches!(
                 existing_value.value(),
                 ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
-            ) {
-                array_index = Some(
-                    ast::UnexpandedArithmeticExpr { value: idx.clone() }
-                        .eval(shell)
-                        .await?
-                        .to_string(),
-                );
-            }
+            )
+        } else {
+            true
+        };
+
+        if will_be_indexed_array {
+            array_index = Some(
+                ast::UnexpandedArithmeticExpr { value: idx.clone() }
+                    .eval(shell)
+                    .await?
+                    .to_string(),
+            );
         }
     }
 
@@ -905,22 +966,29 @@ async fn apply_assignment(
         }
     } else {
         // If not, we need to add it.
-        if let Some(_array_index) = array_index {
-            return error::unimp("creating variable from index");
+        let new_value = if let Some(array_index) = array_index {
+            match new_value {
+                ShellValueLiteral::Scalar(s) => ShellValue::indexed_array_from_literals(
+                    ArrayLiteral(vec![(Some(array_index), s)]),
+                )?,
+                ShellValueLiteral::Array(_) => {
+                    return error::unimp("cannot assign list to array member");
+                }
+            }
         } else {
-            let new_value = match new_value {
+            match new_value {
                 ShellValueLiteral::Scalar(s) => ShellValue::String(s),
                 ShellValueLiteral::Array(values) => {
                     ShellValue::indexed_array_from_literals(values)?
                 }
-            };
+            }
+        };
 
-            shell.env.add(
-                variable_name,
-                ShellVariable::new(new_value),
-                EnvironmentScope::Global,
-            )?;
-        }
+        shell.env.add(
+            variable_name,
+            ShellVariable::new(new_value),
+            EnvironmentScope::Global,
+        )?;
     }
 
     Ok(())
@@ -1059,6 +1127,10 @@ async fn execute_builtin_command(
             builtin::BuiltinExitCode::ReturnFromFunctionOrScript(code) => {
                 return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
             }
+            builtin::BuiltinExitCode::BreakLoop(count) => return Ok(SpawnResult::BreakLoop(count)),
+            builtin::BuiltinExitCode::ContinueLoop(count) => {
+                return Ok(SpawnResult::ContinueLoop(count))
+            }
         },
         Err(e) => {
             log::error!("error: {}", e);
@@ -1069,7 +1141,7 @@ async fn execute_builtin_command(
     Ok(SpawnResult::ImmediateExit(exit_code))
 }
 
-async fn invoke_shell_function(
+pub(crate) async fn invoke_shell_function(
     mut context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
@@ -1100,7 +1172,9 @@ async fn invoke_shell_function(
     context.shell.positional_parameters = args.iter().map(|a| a.to_string()).collect();
 
     // Note that we're going deeper.
-    context.shell.enter_function();
+    context
+        .shell
+        .enter_function(context.command_name.as_str(), &function_definition)?;
 
     // Pass through open files.
     let params = ExecutionParameters {
@@ -1114,7 +1188,7 @@ async fn invoke_shell_function(
     drop(params);
 
     // We've come back out, reflect it.
-    context.shell.leave_function();
+    context.shell.leave_function()?;
 
     // Restore positional parameters.
     context.shell.positional_parameters = prior_positional_params;
@@ -1157,6 +1231,32 @@ async fn setup_redirect<'a>(
     redirect: &ast::IoRedirect,
 ) -> Result<Option<u32>, error::Error> {
     match redirect {
+        ast::IoRedirect::OutputAndError(f) => {
+            let mut expanded_file_path = expansion::full_expand_and_split_word(shell, f).await?;
+            if expanded_file_path.len() != 1 {
+                return Err(error::Error::InvalidRedirection);
+            }
+
+            let expanded_file_path = expanded_file_path.remove(0);
+
+            let opened_file = std::fs::File::options()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(expanded_file_path.as_str())
+                .context(format!(
+                    "opening {} for I/O redirection",
+                    expanded_file_path.as_str()
+                ))?;
+
+            let stdout_file = OpenFile::File(opened_file);
+            let stderr_file = stdout_file.try_dup()?;
+
+            open_files.files.insert(1, stdout_file);
+            open_files.files.insert(2, stderr_file);
+
+            Ok(Some(1))
+        }
         ast::IoRedirect::File(specified_fd_num, kind, target) => {
             let fd_num;
             let target_file;

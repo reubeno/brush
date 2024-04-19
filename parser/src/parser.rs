@@ -21,6 +21,7 @@ pub struct ParserOptions {
     pub enable_extended_globbing: bool,
     pub posix_mode: bool,
     pub sh_mode: bool,
+    pub tilde_expansion: bool,
 }
 
 impl Default for ParserOptions {
@@ -29,6 +30,7 @@ impl Default for ParserOptions {
             enable_extended_globbing: true,
             posix_mode: false,
             sh_mode: false,
+            tilde_expansion: true,
         }
     }
 }
@@ -36,13 +38,15 @@ impl Default for ParserOptions {
 pub struct Parser<R> {
     reader: R,
     options: ParserOptions,
+    source_info: SourceInfo,
 }
 
 impl<R: std::io::BufRead> Parser<R> {
-    pub fn new(reader: R, options: &ParserOptions) -> Self {
+    pub fn new(reader: R, options: &ParserOptions, source_info: &SourceInfo) -> Self {
         Parser {
             reader,
             options: options.clone(),
+            source_info: source_info.clone(),
         }
     }
 
@@ -92,15 +96,16 @@ impl<R: std::io::BufRead> Parser<R> {
             }
         }
 
-        parse_tokens(&tokens, &self.options)
+        parse_tokens(&tokens, &self.options, &self.source_info)
     }
 }
 
 pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
+    source_info: &SourceInfo,
 ) -> Result<ast::Program, ParseError> {
-    let parse_result = token_parser::program(&Tokens { tokens }, options);
+    let parse_result = token_parser::program(&Tokens { tokens }, options, source_info);
 
     let result = match parse_result {
         Ok(program) => Ok(program),
@@ -185,8 +190,13 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct SourceInfo {
+    pub source: String,
+}
+
 peg::parser! {
-    grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
+    grammar token_parser<'a>(parser_options: &ParserOptions, source_info: &SourceInfo) for Tokens<'a> {
         pub(crate) rule program() -> ast::Program =
             linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
             linebreak() { ast::Program { complete_commands: vec![] } }
@@ -440,7 +450,7 @@ peg::parser! {
 
         // TODO: validate if this should call non_reserved_word() or word()
         rule pattern() -> Vec<ast::Word> =
-            (w:non_reserved_word() { ast::Word::from(w) }) ++ specific_operator("|")
+            (w:word() { ast::Word::from(w) }) ++ specific_operator("|")
 
         rule if_clause() -> ast::IfClauseCommand =
             specific_word("if") condition:compound_list() specific_word("then") then:compound_list() elses:else_part()? specific_word("fi") {
@@ -486,10 +496,10 @@ peg::parser! {
         // TODO: Validate usage of this keyword.
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function")? fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body }
+                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body }
+                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
             } /
             expected!("function definition")
 
@@ -552,6 +562,7 @@ peg::parser! {
                 let (kind, target) = f;
                 ast::IoRedirect::File(n, kind, target)
             } /
+            non_posix_extensions_enabled() specific_operator("&>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target)) } /
             non_posix_extensions_enabled() n:io_number()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
             n:io_number()? h:io_here() { ast::IoRedirect::HereDocument(n, h) } /
             expected!("I/O redirect")
@@ -802,6 +813,7 @@ esac\
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
+            &SourceInfo::default(),
         )?;
 
         assert_eq!(command.cases.len(), 1);
@@ -826,6 +838,7 @@ esac\
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
+            &SourceInfo::default(),
         )?;
 
         assert_eq!(command.cases.len(), 1);

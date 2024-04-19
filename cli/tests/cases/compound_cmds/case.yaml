@@ -12,3 +12,26 @@ cases:
   - name: "One-line case statement with double semi"
     stdin: |
       case x in x) echo "hi";; esac
+
+  - name: "Interesting characters in cases"
+    stdin: |
+      case "{" in
+      {) echo "curly brace" ;;
+      *) echo "unhandled case" ;;
+      esac
+
+  - name: "Interesting patterns in cases"
+    known_failure: true
+    stdin: |
+      for word in "-a" "!b" "*c" "(d" "{e" ":f" "'g"; do
+        case "${word}" in
+        \!*) echo "starts with exclamation" ;;
+        -*)  echo "starts with hyphen" ;;
+        \**) echo "starts with asterisk" ;;
+        \(*) echo "starts with open parenthesis" ;;
+        \{*) echo "starts with open curly brace" ;;
+        :*)  echo "starts with colon" ;;
+        \'*) echo "starts with single quote" ;;
+        *)   echo "unhandled case" ;;
+        esac
+      done

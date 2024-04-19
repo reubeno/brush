@@ -1,4 +1,5 @@
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use std::io::Write;
 
 use anyhow::Result;
 use clap::Parser;
@@ -15,7 +16,8 @@ impl BuiltinCommand for UnimplementedCommand {
         &self,
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        log::error!(
+        writeln!(
+            context.stderr(),
             "UNIMPLEMENTED: {}: built-in unimplemented: {} {}",
             context
                 .shell
@@ -24,7 +26,7 @@ impl BuiltinCommand for UnimplementedCommand {
                 .map_or("(unknown shell)", |sn| sn),
             context.command_name,
             self.args.join(" ")
-        );
+        )?;
         Ok(BuiltinExitCode::Unimplemented)
     }
 }

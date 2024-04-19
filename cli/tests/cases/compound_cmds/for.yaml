@@ -8,6 +8,21 @@ cases:
     stdin: |
       for f in; do echo $f; done
 
+  - name: "Break in for loop"
+    stdin: |
+      for f in 1 2 3; do
+        echo $f
+        break
+      done
+
+  - name: "Continue in for loop"
+    stdin: |
+      for f in 1 2 3; do
+        echo $f
+        continue
+        echo $f
+      done
+
   - name: "Multi-line for loop"
     test_files:
       - path: "script.sh"

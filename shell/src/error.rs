@@ -17,7 +17,7 @@ pub enum Error {
     #[error("cannot convert indexed array to associative array")]
     ConvertingIndexedArrayToAssociativeArray,
 
-    #[error("failed to source file: {0}")]
+    #[error("failed to source file: {0}; {1}")]
     FailedSourcingFile(PathBuf, std::io::Error),
 
     #[error("cannot assign in this way")]
@@ -41,6 +41,9 @@ pub enum Error {
     #[error("failed to parse integer")]
     IntParseError(#[from] std::num::ParseIntError),
 
+    #[error("failed to decode utf-8")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
+
     #[error("cannot mutate readonly variable")]
     ReadonlyVariable,
 
@@ -50,7 +53,7 @@ pub enum Error {
     #[error("{0}")]
     Unknown(#[from] anyhow::Error),
 
-    #[error("{0}")]
+    #[error("i/o error: {0}")]
     IoError(#[from] std::io::Error),
 
     #[error("bad substitution")]

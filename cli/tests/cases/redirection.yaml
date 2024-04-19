@@ -37,6 +37,10 @@ cases:
       echo "Done."
       echo "${var}"
 
+  - name: "Redirect stdout and stderr"
+    stdin: |
+      ls -d . non-existent-dir &>/dev/null
+
   # - name: "Process substitution: input + output"
   #   known_failure: true # Issue #151
   #   stdin: |

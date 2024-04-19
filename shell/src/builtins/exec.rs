@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -26,20 +27,23 @@ pub(crate) struct ExecCommand {
 impl BuiltinCommand for ExecCommand {
     async fn execute(
         &self,
-        _context: crate::context::CommandExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.name_for_argv0.is_some() {
-            log::error!("UNIMPLEMENTED: exec -a: name as argv[0]");
+            writeln!(context.stderr(), "UNIMPLEMENTED: exec -a: name as argv[0]")?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
         if self.empty_environment {
-            log::error!("UNIMPLEMENTED: exec -c: empty environment");
+            writeln!(
+                context.stderr(),
+                "UNIMPLEMENTED: exec -c: empty environment"
+            )?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
         if self.exec_as_login {
-            log::error!("UNIMPLEMENTED: exec -l: exec as login");
+            writeln!(context.stderr(), "UNIMPLEMENTED: exec -l: exec as login")?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 

@@ -4,7 +4,12 @@ use pprof::criterion::{Output, PProfProfiler};
 
 fn parse_script(contents: &str) -> parser::ast::Program {
     let tokens = tokenize_str(contents).unwrap();
-    parse_tokens(&tokens, &parser::ParserOptions::default()).unwrap()
+    parse_tokens(
+        &tokens,
+        &parser::ParserOptions::default(),
+        &parser::SourceInfo::default(),
+    )
+    .unwrap()
 }
 
 fn parse_sample_script() -> parser::ast::Program {

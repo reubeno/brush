@@ -35,6 +35,15 @@ jobs:
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.6.4
+
+      - name: Patch sources
+        run: |
+          set -euo pipefail
+          cargo binstall --no-confirm --force cargo-patch
+          cargo patch
+
       - name: Build
         run: cargo build --release
 
@@ -62,6 +71,12 @@ jobs:
 
       - name: Install cargo-llvm-cov
         run: cargo binstall --no-confirm --force cargo-llvm-cov
+
+      - name: Patch sources
+        run: |
+          set -euo pipefail
+          cargo binstall --no-confirm --force cargo-patch
+          cargo patch
 
       - name: Test
         run: |
@@ -130,6 +145,12 @@ jobs:
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@v1.6.4
 
+      - name: Patch sources
+        run: |
+          set -euo pipefail
+          cargo binstall --no-confirm --force cargo-patch
+          cargo patch
+
       - name: Format check
         run: cargo fmt --check --all
 
@@ -172,6 +193,22 @@ jobs:
           workspaces: |
             ./pr
             ./main
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.6.4
+
+      - name: Patch sources
+        run: |
+          set -euo pipefail
+          cargo binstall --no-confirm --force cargo-patch
+
+          cd pr
+          cargo patch
+          cd ..
+
+          cd main
+          cargo patch
+          cd ..
 
       - name: Performance analysis on PR
         run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt

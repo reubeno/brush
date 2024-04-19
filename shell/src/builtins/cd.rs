@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -49,7 +50,7 @@ impl BuiltinCommand for CdCommand {
             if let Some(home_var) = context.shell.env.get_str("HOME") {
                 PathBuf::from(home_var.to_string())
             } else {
-                log::error!("HOME not set");
+                writeln!(context.stderr(), "HOME not set")?;
                 return Ok(BuiltinExitCode::Custom(1));
             }
         };
@@ -57,7 +58,7 @@ impl BuiltinCommand for CdCommand {
         match context.shell.set_working_dir(&target_dir) {
             Ok(()) => {}
             Err(e) => {
-                log::error!("cd: {}", e);
+                writeln!(context.stderr(), "cd: {e}")?;
                 return Ok(BuiltinExitCode::Custom(1));
             }
         }

@@ -51,7 +51,7 @@ impl BuiltinCommand for TypeCommand {
 
             if resolved_types.is_empty() {
                 if !self.type_only && !self.force_path_search {
-                    log::error!("type: {name} not found");
+                    writeln!(context.stderr(), "type: {name} not found")?;
                 }
 
                 result = BuiltinExitCode::Custom(1);

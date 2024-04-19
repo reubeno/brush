@@ -6,12 +6,13 @@ use anyhow::{Context, Result};
 pub enum WordPiece {
     Text(String),
     SingleQuotedText(String),
+    AnsiCQuotedText(String),
     DoubleQuotedSequence(Vec<WordPiece>),
     TildePrefix(String),
     ParameterExpansion(ParameterExpr),
     CommandSubstitution(String),
     EscapeSequence(String),
-    ArithmeticExpression(ast::ArithmeticExpr),
+    ArithmeticExpression(ast::UnexpandedArithmeticExpr),
 }
 
 #[derive(Debug)]
@@ -86,8 +87,8 @@ pub enum ParameterExpr {
     },
     Substring {
         parameter: Parameter,
-        offset: ast::ArithmeticExpr,
-        length: Option<ast::ArithmeticExpr>,
+        offset: ast::UnexpandedArithmeticExpr,
+        length: Option<ast::UnexpandedArithmeticExpr>,
     },
     Transform {
         parameter: Parameter,
@@ -160,6 +161,13 @@ pub fn parse_word_for_expansion(word: &str, options: &ParserOptions) -> Result<V
     Ok(pieces)
 }
 
+pub fn parse_parameter(word: &str, options: &ParserOptions) -> Result<Parameter> {
+    let pieces = expansion_parser::parameter(word, options)
+        .context(format!("parsing parameter '{word}'"))?;
+
+    Ok(pieces)
+}
+
 peg::parser! {
     grammar expansion_parser(parser_options: &ParserOptions) for str {
         pub(crate) rule unexpanded_word() -> Vec<WordPiece> = word(<&[_]>)
@@ -174,7 +182,9 @@ peg::parser! {
                 all_pieces
             }
 
-        // TODO: Handle quoting.
+        rule arithmetic_word<T>(stop_condition: rule<T>) -> Vec<WordPiece> =
+            pieces:word_piece(<stop_condition()>)*
+
         rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
             arithmetic_expansion() /
             command_substitution() /
@@ -191,6 +201,7 @@ peg::parser! {
         rule unquoted_text<T>(stop_condition: rule<T>) -> WordPiece =
             s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
             s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
+            s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
             normal_escape_sequence() /
             unquoted_literal_text(<stop_condition()>)
 
@@ -202,6 +213,9 @@ peg::parser! {
 
         rule single_quoted_literal_text() -> &'input str =
             "\'" inner:$([^'\'']*) "\'" { inner }
+
+        rule ansi_c_quoted_text() -> &'input str =
+            "$\'" inner:$([^'\'']*) "\'" { inner }
 
         rule unquoted_literal_text<T>(stop_condition: rule<T>) -> WordPiece =
             s:$((stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"'])+) { WordPiece::Text(s.to_owned()) }
@@ -220,7 +234,7 @@ peg::parser! {
 
         // TODO: Handle colon syntax mentioned above
         rule tilde_prefix() -> WordPiece =
-            "~" cs:$((!"/" [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
+            tilde_parsing_enabled() "~" cs:$((!"/" [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
 
         // TODO: Constrain syntax of parameter in brace-less form
         // TODO: Deal with fact that there may be a quoted word or escaped closing brace chars.
@@ -232,7 +246,7 @@ peg::parser! {
             "$" parameter:unbraced_parameter() {
                 WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter })
             } /
-            "$" {
+            "$" !['\''] {
                 WordPiece::Text("$".to_owned())
             }
 
@@ -295,7 +309,7 @@ peg::parser! {
             "!" variable_name:variable_name() {
                 ParameterExpr::DereferenceVariable { variable_name: variable_name.to_owned() }
             } /
-            parameter:parameter() ":" offset:arithmetic_expression(<[':' | '}']>) length:(":" l:arithmetic_expression(<['}']>) { l })? {
+            parameter:parameter() ":" offset:substring_offset() length:(":" l:substring_length() { l })? {
                 ParameterExpr::Substring { parameter, offset, length }
             } /
             parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
@@ -345,8 +359,7 @@ peg::parser! {
             p:variable_name() { Parameter::Named(p.to_owned()) }
 
         // N.B. The indexing syntax is not a standard sh-ism.
-        // TODO: Disable supporting array indexing in sh mode.
-        rule parameter() -> Parameter =
+        pub(crate) rule parameter() -> Parameter =
             p:positional_parameter() { Parameter::Positional(p) } /
             p:special_parameter() { Parameter::Special(p) } /
             non_posix_extensions_enabled() p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
@@ -389,13 +402,13 @@ peg::parser! {
             "<BACKQUOTES UNIMPLEMENTED>" {}
 
         rule arithmetic_expansion() -> WordPiece =
-            "$((" e:arithmetic_expression(<"))">) "))" { WordPiece::ArithmeticExpression(e) }
+            "$((" e:$(arithmetic_word(<!"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
 
-        // TODO: don't always assume an arithmetic expr stops on "))"; not true for substrings.
-        rule arithmetic_expression<T>(stop_condition: rule<T>) -> ast::ArithmeticExpr =
-            raw_expr:$((!stop_condition() [_])*) {?
-                crate::arithmetic::parse_arithmetic_expression(raw_expr).or(Err("arithmetic expr"))
-            }
+        rule substring_offset() -> ast::UnexpandedArithmeticExpr =
+            s:$(arithmetic_word(<![':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
+
+        rule substring_length() -> ast::UnexpandedArithmeticExpr =
+            s:$(arithmetic_word(<![':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
 
         rule parameter_replacement_str() -> String =
             s:$(word(<!['}' | '/']>)) { s.to_owned() }
@@ -408,6 +421,9 @@ peg::parser! {
 
         rule non_posix_extensions_enabled() -> () =
             &[_] {? if !parser_options.sh_mode { Ok(()) } else { Err("posix") } }
+
+        rule tilde_parsing_enabled() -> () =
+            &[_] {? if parser_options.tilde_expansion { Ok(()) } else { Err("no tilde expansion") } }
     }
 }
 

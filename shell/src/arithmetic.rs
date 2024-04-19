@@ -35,24 +35,15 @@ pub trait Evaluatable {
 impl Evaluatable for ast::UnexpandedArithmeticExpr {
     async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
         // Per documentation, first shell-expand it.
-        let tokenized_self = parser::tokenize_str(self.value.as_str())
-            .map_err(|_e| EvalError::FailedToTokenizeExpression)?;
-        let mut expanded_self = String::new();
+        let expanded_self = expansion::basic_expand_str_without_tilde(shell, self.value.as_str())
+            .await
+            .map_err(|_e| EvalError::FailedToExpandExpression)?;
 
-        for token in tokenized_self {
-            match token {
-                parser::Token::Word(value, _) => {
-                    let expansion = expansion::basic_expand_word(shell, &ast::Word { value })
-                        .await
-                        .map_err(|_e| EvalError::FailedToExpandExpression)?;
-                    expanded_self.push_str(expansion.as_str());
-                }
-                parser::Token::Operator(value, _) => expanded_self.push_str(value.as_str()),
-            }
-        }
-
+        // Now parse.
         let expr = parser::parse_arithmetic_expression(&expanded_self)
             .map_err(|_e| EvalError::ParseError(expanded_self))?;
+
+        // Now evaluate.
         expr.eval(shell).await
     }
 }

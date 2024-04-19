@@ -33,6 +33,15 @@ cases:
     stdin: |
       echo "\""
 
+  - name: "ANSI-C quotes"
+    stdin: |
+      single_quoted='\n'
+      echo "Single quoted len: ${#single_quoted}"
+      echo -n '\n' | hexdump -C
+      ansi_c_quoted=$'\n'
+      echo "ANSI-C quoted len: ${#ansi_c_quoted}"
+      echo -n $'\n' | hexdump -C
+
   - name: "Command substitution"
     stdin: |
       var="value"
@@ -292,6 +301,13 @@ cases:
       var="not-defined"
       echo "${!ref}"
 
+  - name: "Indirect variable references with special parameters"
+    stdin: |
+      set a b c
+
+      ref="2"
+      echo "${!ref}"
+
   - name: "Variable prefix match"
     stdin: |
       var1="Hello"
@@ -404,6 +420,13 @@ cases:
       echo "\${var:50:2}: ${var:50:2}"
       echo "\${var:-1:1}: ${var:-1:1}"
       echo "\${var:-3:1}: ${var:-3:1}"
+
+  - name: "Substring with length (with nested expressions)"
+    stdin: |
+      var="Hello, world!"
+      offset=7
+      length=5
+      echo "\${var:\$offset:\${length}}: ${var:$offset:${length}}"
 
   - name: "Parameter case transformation"
     stdin: |

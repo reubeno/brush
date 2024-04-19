@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -27,7 +28,7 @@ impl BuiltinCommand for PopdCommand {
             let dirs_cmd = crate::builtins::dirs::DirsCommand::default();
             dirs_cmd.execute(context).await?;
         } else {
-            log::error!("popd: directory stack empty");
+            writeln!(context.stderr(), "popd: directory stack empty")?;
             return Ok(BuiltinExitCode::Custom(1));
         }
 

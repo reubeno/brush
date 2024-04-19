@@ -161,6 +161,43 @@ impl EditorHelper {
 
         s.to_owned()
     }
+
+    async fn complete_async(
+        &mut self,
+        line: &str,
+        pos: usize,
+    ) -> rustyline::Result<(usize, Vec<rustyline::completion::Pair>)> {
+        // Intentionally ignore any errors that arise.
+        let completion_future = self.shell.get_completions(line, pos);
+        tokio::pin!(completion_future);
+
+        // Wait for the completions to come back or interruption, whichever happens first.
+        let result = loop {
+            tokio::select! {
+                result = &mut completion_future => {
+                    break result;
+                }
+                _ = tokio::signal::ctrl_c() => {
+                },
+            }
+        };
+
+        let completions = result.unwrap_or_else(|_| shell::Completions {
+            start: pos,
+            candidates: vec![],
+        });
+
+        let candidates = completions
+            .candidates
+            .into_iter()
+            .map(|c| rustyline::completion::Pair {
+                display: Self::get_completion_candidate_display_str(c.as_str()),
+                replacement: c,
+            })
+            .collect();
+
+        Ok((completions.start, candidates))
+    }
 }
 
 impl rustyline::highlight::Highlighter for EditorHelper {
@@ -187,23 +224,14 @@ impl rustyline::completion::Completer for EditorHelper {
     type Candidate = rustyline::completion::Pair;
 
     fn complete(
-        &self,
+        &mut self,
         line: &str,
         pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        // Intentionally ignore any errors that arise.
-        let completions = self.shell.get_completions(line, pos).unwrap_or_default();
-        let candidates = completions
-            .candidates
-            .into_iter()
-            .map(|c| rustyline::completion::Pair {
-                display: Self::get_completion_candidate_display_str(c.as_str()),
-                replacement: c,
-            })
-            .collect();
-
-        Ok((completions.start, candidates))
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.complete_async(line, pos))
+        })
     }
 }
 

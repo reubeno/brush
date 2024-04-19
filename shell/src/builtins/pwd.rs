@@ -29,7 +29,7 @@ impl BuiltinCommand for PwdCommand {
         //
 
         if self.physical || self.allow_symlinks {
-            log::error!("UNIMPLEMENTED: pwd with -P or -L");
+            writeln!(context.stderr(), "UNIMPLEMENTED: pwd with -P or -L")?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
