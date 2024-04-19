@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -66,7 +67,10 @@ impl BuiltinCommand for UnsetCommand {
             if unspecified || self.name_interpretation.names_are_shell_variables {
                 if let Some(variable) = context.shell.env.get(name) {
                     if variable.is_readonly() {
-                        log::error!("unset: {}: cannot unset: readonly variable", name);
+                        writeln!(
+                            context.stderr(),
+                            "unset: {name}: cannot unset: readonly variable",
+                        )?;
                         errors = true;
                     }
                 }

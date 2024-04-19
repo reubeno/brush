@@ -322,7 +322,7 @@ impl TestCaseSetResults {
     }
 
     fn write_details<W: std::io::Write>(&self, mut writer: W, options: &TestOptions) -> Result<()> {
-        if !options.quiet {
+        if options.verbose {
             writeln!(
                 writer,
                 "=================== {}: [{}/{}] ===================",
@@ -339,7 +339,7 @@ impl TestCaseSetResults {
             test_case_result.report_pretty(options)?;
         }
 
-        if !options.quiet {
+        if options.verbose {
             writeln!(
                 writer,
                 "    successful cases ran in {:?} (oracle) and {:?} (test)",
@@ -440,7 +440,7 @@ impl TestCaseResult {
         mut writer: W,
         options: &TestOptions,
     ) -> Result<()> {
-        if options.quiet {
+        if !options.verbose {
             if (!self.comparison.is_failure() && !self.known_failure)
                 || (self.comparison.is_failure() && self.known_failure)
             {
@@ -1051,9 +1051,9 @@ struct TestOptions {
     #[clap(long = "known-failure-details")]
     pub display_known_failure_details: bool,
 
-    /// Omit details regarding successful test cases
-    #[clap(short = 'q', long = "quiet")]
-    pub quiet: bool,
+    /// Display details regarding successful test cases
+    #[clap(short = 'v', long = "verbose")]
+    pub verbose: bool,
 
     /// Enable a specific configuration
     #[clap(long = "enable-config")]

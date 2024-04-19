@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -19,22 +20,25 @@ pub(crate) struct TrapCommand {
 impl BuiltinCommand for TrapCommand {
     async fn execute(
         &self,
-        _context: crate::context::CommandExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.list_signals {
-            log::error!("UNIMPLEMENTED: trap -l");
+            writeln!(context.stderr(), "UNIMPLEMENTED: trap -l")?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
         if self.print_trap_commands {
-            log::error!("UNIMPLEMENTED: trap -p");
+            writeln!(context.stderr(), "UNIMPLEMENTED: trap -p")?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 
         // TODO: handle case where trap_command is a signal itself
         if let Some(trap_command) = &self.command {
             if self.signals.is_empty() {
-                log::error!("UNIMPLEMENTED: trap builtin called with command but no signals");
+                writeln!(
+                    context.stderr(),
+                    "UNIMPLEMENTED: trap builtin called with command but no signals"
+                )?;
                 return Ok(BuiltinExitCode::Unimplemented);
             }
 
@@ -42,12 +46,15 @@ impl BuiltinCommand for TrapCommand {
                 match signal.as_str() {
                     "DEBUG" => (),
                     _ => {
-                        log::error!("UNIMPLEMENTED: trap builtin called for signal {signal} (command: '{trap_command}')");
+                        writeln!(context.stderr(), "UNIMPLEMENTED: trap builtin called for signal {signal} (command: '{trap_command}')")?;
                     }
                 }
             }
         } else {
-            log::error!("UNIMPLEMENTED: trap builtin called without command");
+            writeln!(
+                context.stderr(),
+                "UNIMPLEMENTED: trap builtin called without command"
+            )?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 

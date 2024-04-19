@@ -423,6 +423,26 @@ pub enum ShellValueLiteral {
     Array(ArrayLiteral),
 }
 
+impl From<&str> for ShellValueLiteral {
+    fn from(value: &str) -> Self {
+        ShellValueLiteral::Scalar(value.to_owned())
+    }
+}
+
+impl From<String> for ShellValueLiteral {
+    fn from(value: String) -> Self {
+        ShellValueLiteral::Scalar(value)
+    }
+}
+
+impl From<Vec<&str>> for ShellValueLiteral {
+    fn from(value: Vec<&str>) -> Self {
+        ShellValueLiteral::Array(ArrayLiteral(
+            value.into_iter().map(|s| (None, s.to_owned())).collect(),
+        ))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
 

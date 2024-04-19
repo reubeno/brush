@@ -97,7 +97,10 @@ impl BuiltinCommand for DeclareCommand {
 
         // TODO: implement declare -I
         if self.locals_inherit_from_prev_scope {
-            log::error!("UNIMPLEMENTED: declare -I: locals inherit from previous scope");
+            writeln!(
+                context.stderr(),
+                "UNIMPLEMENTED: declare -I: locals inherit from previous scope"
+            )?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 

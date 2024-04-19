@@ -170,3 +170,49 @@ cases:
 
       declare no_value_indexed_array[33]
       declare -p no_value_indexed_array
+
+  - name: "Create array via index update"
+    stdin: |
+      i=0
+      my_array[i++]="c"
+      echo "0: i=$i array=${my_array[@]}"
+      my_array[i++]="b"
+      echo "1: i=$i array=${my_array[@]}"
+      my_array[i++]="a"
+      echo "2: i=$i array=${my_array[@]}"
+
+  - name: "Expansion of array body"
+    stdin: |
+      elements="a b c"
+
+      array1=(${elements})
+      declare -p array1
+
+      array2=("${elements}")
+      declare -p array2
+
+  - name: "Copy array"
+    stdin: |
+      src=(a b c)
+
+      dest1=("${src[*]}")
+      declare -p dest1
+
+      dest2=(${src[*]})
+      declare -p dest2
+
+      dest3=("${src[@]}")
+      declare -p dest3
+
+      dest4=(${src[@]})
+      declare -p dest4
+
+  - name: "Multi-line definition of array"
+    known_failure: true
+    stdin: |
+      array=(
+          a
+          b
+          c
+      )
+      declare -p array

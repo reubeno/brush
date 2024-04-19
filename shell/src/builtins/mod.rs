@@ -1,6 +1,7 @@
 use anyhow::Result;
 use futures::future::BoxFuture;
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 
 use crate::builtin::{
     self, BuiltinCommand, BuiltinCommandExecuteFunc, BuiltinDeclarationCommand, BuiltinResult,
@@ -10,9 +11,11 @@ use crate::context;
 use crate::error;
 
 mod alias;
+mod brea;
 mod cd;
 mod colon;
 mod complete;
+mod continu;
 mod declare;
 mod dirs;
 mod dot;
@@ -22,9 +25,11 @@ mod exec;
 mod exit;
 mod export;
 mod fals;
+mod getopts;
 mod help;
 mod jobs;
 mod popd;
+mod printf;
 mod pushd;
 mod pwd;
 mod retur;
@@ -58,7 +63,7 @@ async fn exec_builtin_impl<T: BuiltinCommand + Send>(
     let command = match result {
         Ok(command) => command,
         Err(e) => {
-            log::error!("{}", e);
+            writeln!(context.stderr(), "{e}")?;
             return Ok(BuiltinResult {
                 exit_code: builtin::BuiltinExitCode::InvalidUsage,
             });
@@ -98,7 +103,7 @@ async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
     let mut command = match result {
         Ok(command) => command,
         Err(e) => {
-            log::error!("{}", e);
+            writeln!(context.stderr(), "{e}")?;
             return Ok(BuiltinResult {
                 exit_code: builtin::BuiltinExitCode::InvalidUsage,
             });
@@ -140,9 +145,9 @@ fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
 
     let mut m = HashMap::<&'static str, BuiltinCommandExecuteFunc>::new();
 
-    m.insert("break", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("break", exec_builtin::<brea::BreakCommand>);
     m.insert(":", exec_builtin::<colon::ColonCommand>);
-    m.insert("continue", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("continue", exec_builtin::<continu::ContinueCommand>);
     m.insert(".", exec_builtin::<dot::DotCommand>);
     m.insert("eval", exec_builtin::<eval::EvalCommand>);
     m.insert("exec", exec_builtin::<exec::ExecCommand>);
@@ -169,7 +174,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
     m.insert("false", exec_builtin::<fals::FalseCommand>);
     m.insert("fc", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("fg", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("getopts", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("getopts", exec_builtin::<getopts::GetOptsCommand>);
     m.insert("hash", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("help", exec_builtin::<help::HelpCommand>);
     m.insert("jobs", exec_builtin::<jobs::JobsCommand>);
@@ -200,7 +205,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
         m.insert("let", exec_builtin::<unimp::UnimplementedCommand>);
         m.insert("logout", exec_builtin::<unimp::UnimplementedCommand>);
         m.insert("mapfile", exec_builtin::<unimp::UnimplementedCommand>);
-        // m.insert("printf", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("printf", exec_builtin::<printf::PrintfCommand>);
         m.insert("readarray", exec_builtin::<unimp::UnimplementedCommand>);
         m.insert("shopt", exec_builtin::<shopt::ShoptCommand>);
         m.insert("source", exec_builtin::<dot::DotCommand>);
@@ -210,7 +215,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
 
         // Completion builtins
         m.insert("complete", exec_builtin::<complete::CompleteCommand>);
-        m.insert("compgen", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("compgen", exec_builtin::<complete::CompGenCommand>);
         m.insert("compopt", exec_builtin::<unimp::UnimplementedCommand>);
 
         // Dir stack builtins

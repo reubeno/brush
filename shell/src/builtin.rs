@@ -55,6 +55,8 @@ pub enum BuiltinExitCode {
     Custom(u8),
     ExitShell(u8),
     ReturnFromFunctionOrScript(u8),
+    ContinueLoop(u8),
+    BreakLoop(u8),
 }
 
 #[allow(clippy::module_name_repetitions)]

@@ -2,17 +2,19 @@ use anyhow::Result;
 use faccess::PathExt;
 use log::debug;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
+use crate::commands;
+use crate::completion;
+use crate::context;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::error;
 use crate::expansion;
-use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
+use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::jobs;
 use crate::openfiles;
 use crate::options::RuntimeOptions;
-use crate::patterns;
 use crate::prompt::expand_prompt;
 use crate::variables::{self, ShellValue, ShellVariable};
 
@@ -40,13 +42,16 @@ pub struct Shell {
     pub shell_name: Option<String>,
 
     // Function call stack.
-    pub function_call_depth: u32,
+    pub function_call_stack: VecDeque<FunctionCall>,
 
     // Directory stack used by pushd et al.
     pub directory_stack: Vec<PathBuf>,
 
     // Current line number being processed.
     pub current_line_number: u32,
+
+    // Completion configuration.
+    pub completion_config: completion::CompletionConfig,
 }
 
 impl Clone for Shell {
@@ -64,9 +69,10 @@ impl Clone for Shell {
             last_exit_status: self.last_exit_status,
             positional_parameters: self.positional_parameters.clone(),
             shell_name: self.shell_name.clone(),
-            function_call_depth: self.function_call_depth,
+            function_call_stack: self.function_call_stack.clone(),
             directory_stack: self.directory_stack.clone(),
             current_line_number: self.current_line_number,
+            completion_config: self.completion_config.clone(),
         }
     }
 }
@@ -88,33 +94,10 @@ pub struct CreateOptions {
 
 type ShellFunction = parser::ast::FunctionDefinition;
 
-#[derive(Debug)]
-pub struct FunctionCall {}
-
-pub enum ProgramOrigin {
-    File(PathBuf),
-    String,
-}
-
-impl ProgramOrigin {
-    fn get_name(&self) -> String {
-        match self {
-            ProgramOrigin::File(path) => path.to_string_lossy().to_string(),
-            ProgramOrigin::String => "<string>".to_owned(),
-        }
-    }
-}
-
-impl std::fmt::Display for ProgramOrigin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.get_name())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Completions {
-    pub start: usize,
-    pub candidates: Vec<String>,
+#[derive(Clone, Debug)]
+pub struct FunctionCall {
+    function_name: String,
+    source: String,
 }
 
 impl Shell {
@@ -133,9 +116,10 @@ impl Shell {
             last_exit_status: 0,
             positional_parameters: vec![],
             shell_name: options.shell_name.clone(),
-            function_call_depth: 0,
+            function_call_stack: VecDeque::new(),
             directory_stack: vec![],
             current_line_number: 0,
+            completion_config: completion::CompletionConfig::default(),
         };
 
         // TODO: Figure out how this got hard-coded.
@@ -168,6 +152,8 @@ impl Shell {
         let mut random_var = ShellVariable::new(ShellValue::Random);
         random_var.hide_from_enumeration();
         env.set_global("RANDOM", random_var);
+
+        env.set_global("IFS", ShellVariable::new(" \t\n".into()));
 
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
@@ -312,23 +298,25 @@ impl Shell {
             ));
         }
 
-        let origin = ProgramOrigin::File(path.to_owned());
+        let source_info = parser::SourceInfo {
+            source: path.to_string_lossy().to_string(),
+        };
 
-        self.source_file(&opened_file, &origin, args).await
+        self.source_file(&opened_file, &source_info, args).await
     }
 
     pub async fn source_file<S: AsRef<str>>(
         &mut self,
         file: &std::fs::File,
-        origin: &ProgramOrigin,
+        source_info: &parser::SourceInfo,
         args: &[S],
     ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
-        let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
+        let mut parser = parser::Parser::new(&mut reader, &self.parser_options(), source_info);
         let parse_result = parser.parse(false);
 
         let mut other_positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
-        let mut other_shell_name = Some(origin.get_name());
+        let mut other_shell_name = Some(source_info.source.clone());
 
         // TODO: Find a cleaner way to change args.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -337,7 +325,7 @@ impl Shell {
             &mut other_positional_parameters,
         );
 
-        let result = self.run_parsed_result(parse_result, origin).await;
+        let result = self.run_parsed_result(parse_result, source_info).await;
 
         // Restore.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -349,6 +337,34 @@ impl Shell {
         result
     }
 
+    pub async fn invoke_function(&mut self, name: &str, args: &[&str]) -> Result<u8, error::Error> {
+        let open_files = self.open_files.clone();
+        let command_name = String::from(name);
+
+        let context = context::CommandExecutionContext {
+            shell: self,
+            command_name,
+            open_files,
+        };
+
+        let command_args = args
+            .iter()
+            .map(|s| commands::CommandArg::String(String::from(*s)))
+            .collect::<Vec<_>>();
+
+        match interp::invoke_shell_function(context, &command_args, &[]).await? {
+            interp::SpawnResult::SpawnedChild(_) => {
+                error::unimp("child spawned from function invocation")
+            }
+            interp::SpawnResult::ImmediateExit(code) => Ok(code),
+            interp::SpawnResult::ExitShell(code) => Ok(code),
+            interp::SpawnResult::ReturnFromFunctionOrScript(code) => Ok(code),
+            interp::SpawnResult::BreakLoop(_) | interp::SpawnResult::ContinueLoop(_) => {
+                error::unimp("break or continue returned from function invocation")
+            }
+        }
+    }
+
     pub async fn run_string(&mut self, command: &str) -> Result<ExecutionResult, error::Error> {
         // TODO: Actually track line numbers; this is something of a hack, assuming each time
         // this function is invoked we are on the next line of the input. For one thing,
@@ -356,8 +372,10 @@ impl Shell {
         self.current_line_number += 1;
 
         let parse_result = self.parse_string(command);
-        self.run_parsed_result(parse_result, &ProgramOrigin::String)
-            .await
+        let source_info = parser::SourceInfo {
+            source: String::from("main"),
+        };
+        self.run_parsed_result(parse_result, &source_info).await
     }
 
     pub fn parse_string<S: AsRef<str>>(
@@ -365,7 +383,10 @@ impl Shell {
         s: S,
     ) -> Result<parser::ast::Program, parser::ParseError> {
         let mut reader = std::io::BufReader::new(s.as_ref().as_bytes());
-        let mut parser = parser::Parser::new(&mut reader, &self.parser_options());
+        let source_info = parser::SourceInfo {
+            source: String::from("main"),
+        };
+        let mut parser = parser::Parser::new(&mut reader, &self.parser_options(), &source_info);
         parser.parse(true)
     }
 
@@ -393,12 +414,12 @@ impl Shell {
     async fn run_parsed_result(
         &mut self,
         parse_result: Result<parser::ast::Program, parser::ParseError>,
-        origin: &ProgramOrigin,
+        source_info: &parser::SourceInfo,
     ) -> Result<ExecutionResult, error::Error> {
         let mut error_prefix = String::new();
 
-        if let ProgramOrigin::File(file_path) = origin {
-            error_prefix = format!("{}: ", file_path.display());
+        if !source_info.source.is_empty() {
+            error_prefix = format!("{}: ", source_info.source);
         }
 
         let result = match parse_result {
@@ -425,6 +446,7 @@ impl Shell {
             }
             Err(parser::ParseError::ParsingAtEndOfInput) => {
                 log::error!("{}syntax error at end of input", error_prefix);
+
                 self.last_exit_status = 2;
                 ExecutionResult::new(2)
             }
@@ -511,21 +533,71 @@ impl Shell {
             enable_extended_globbing: self.options.extended_globbing,
             posix_mode: self.options.posix_mode,
             sh_mode: self.options.sh_mode,
+            tilde_expansion: true,
         }
     }
 
     pub fn in_function(&self) -> bool {
-        self.function_call_depth > 0
+        !self.function_call_stack.is_empty()
     }
 
-    pub fn enter_function(&mut self) {
-        self.function_call_depth += 1;
+    pub fn enter_function(
+        &mut self,
+        name: &str,
+        function_def: &parser::ast::FunctionDefinition,
+    ) -> Result<()> {
+        self.function_call_stack.push_front(FunctionCall {
+            function_name: name.to_owned(),
+            source: function_def.source.clone(),
+        });
         self.env.push_locals();
+        self.update_funcname_var()?;
+        Ok(())
     }
 
-    pub fn leave_function(&mut self) {
+    pub fn leave_function(&mut self) -> Result<()> {
         self.env.pop_locals();
-        self.function_call_depth -= 1;
+        self.function_call_stack.pop_front();
+        self.update_funcname_var()?;
+        Ok(())
+    }
+
+    fn update_funcname_var(&mut self) -> Result<()> {
+        //
+        // Fill out FUNCNAME[*]
+        //
+        let funcname_values = self
+            .function_call_stack
+            .iter()
+            .map(|s| (None, s.function_name.clone()))
+            .collect::<Vec<_>>();
+
+        self.env.update_or_add(
+            "FUNCNAME",
+            variables::ShellValueLiteral::Array(variables::ArrayLiteral(funcname_values)),
+            |_| Ok(()),
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+
+        //
+        // Fill out BASH_SOURCE[*]
+        //
+        let source_values = self
+            .function_call_stack
+            .iter()
+            .map(|s| (None, s.source.clone()))
+            .collect::<Vec<_>>();
+
+        self.env.update_or_add(
+            "BASH_SOURCE",
+            variables::ShellValueLiteral::Array(variables::ArrayLiteral(source_values)),
+            |_| Ok(()),
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+
+        Ok(())
     }
 
     pub fn get_history_file_path(&self) -> Option<PathBuf> {
@@ -545,121 +617,15 @@ impl Shell {
             .map_or_else(|| Cow::Borrowed(" \t\n"), |v| v.value().to_cow_string())
     }
 
-    #[allow(clippy::cast_sign_loss)]
-    pub fn get_completions(&self, input: &str, position: usize) -> Result<Completions> {
-        // Make a best-effort attempt to tokenize.
-        if let Ok(result) = parser::tokenize_str(input) {
-            let cursor: i32 = i32::try_from(position)?;
-            let mut completion_prefix = "";
-            let mut insertion_point = cursor;
-            let mut completion_token_index = result.len();
-
-            // Try to find which token we are in.
-            for (i, token) in result.iter().enumerate() {
-                // If the cursor is before the start of the token, then it's between
-                // this token and the one that preceded it (or it's before the first
-                // token if this is the first token).
-                if cursor < token.location().start.index {
-                    completion_token_index = i;
-                    break;
-                }
-                // If the cursor is anywhere from the first char of the token up to
-                // (and including) the first char after the token, then this we need
-                // to generate completions to replace/update this token. We'll pay
-                // attention to the position to figure out the prefix that we should
-                // be completing.
-                else if cursor >= token.location().start.index
-                    && cursor <= token.location().end.index
-                {
-                    // Update insertion point.
-                    insertion_point = token.location().start.index;
-
-                    // Update prefix.
-                    let offset_into_token = (cursor - insertion_point) as usize;
-                    let token_str = token.to_str();
-                    completion_prefix = &token_str[..offset_into_token];
-
-                    // Update token index.
-                    completion_token_index = i;
-
-                    break;
-                }
-
-                // Otherwise, we need to keep looking.
-            }
-
-            Ok(Completions {
-                start: insertion_point as usize,
-                candidates: self.get_completions_with_prefix(
-                    completion_prefix,
-                    completion_token_index,
-                    result.len(),
-                ),
-            })
-        } else {
-            Ok(Completions {
-                start: position,
-                candidates: vec![],
-            })
-        }
-    }
-
-    fn get_completions_with_prefix(
-        &self,
-        prefix: &str,
-        token_index: usize,
-        token_count: usize,
-    ) -> Vec<String> {
-        // N.B. We expand first.
-        let mut throwaway_shell = self.clone();
-        let prefix = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(throwaway_shell.basic_expand_string(prefix))
-                .unwrap_or_else(|_| prefix.to_owned())
-        });
-
-        // TODO: Contextually generate different completions.
-        let glob = std::format!("{prefix}*");
-        let mut candidates = if let Ok(candidates) =
-            patterns::pattern_expand(glob.as_str(), self.working_dir.as_path())
-        {
-            candidates
-                .into_iter()
-                .map(|p| {
-                    let mut s = p.to_string_lossy().to_string();
-                    if p.is_dir() {
-                        s.push('/');
-                    }
-                    s
-                })
-                .collect()
-        } else {
-            vec![]
-        };
-
-        // If this appears to be the command token (and if there's *some* prefix without
-        // a path separator) then also consider whether we should search the path for
-        // completions too.
-        // TODO: Do a better job than just checking if index == 0.
-        if token_index == 0 && !prefix.is_empty() && !prefix.contains('/') {
-            let glob_pattern = std::format!("{prefix}*");
-
-            for path in self.find_executables_in_path(&glob_pattern) {
-                if let Some(file_name) = path.file_name() {
-                    candidates.push(file_name.to_string_lossy().to_string());
-                }
-            }
-        }
-
-        if token_index + 1 >= token_count {
-            for candidate in &mut candidates {
-                if !candidate.ends_with('/') {
-                    candidate.push(' ');
-                }
-            }
-        }
-
-        candidates
+    pub async fn get_completions(
+        &mut self,
+        input: &str,
+        position: usize,
+    ) -> Result<completion::Completions> {
+        let completion_config = self.completion_config.clone();
+        completion_config
+            .get_completions(self, input, position)
+            .await
     }
 
     #[allow(clippy::manual_flatten)]
@@ -729,5 +695,13 @@ impl Shell {
             }
         }
         s
+    }
+
+    pub fn stdout(&self) -> openfiles::OpenFile {
+        self.open_files.files.get(&1).unwrap().try_dup().unwrap()
+    }
+
+    pub fn stderr(&self) -> openfiles::OpenFile {
+        self.open_files.files.get(&2).unwrap().try_dup().unwrap()
     }
 }

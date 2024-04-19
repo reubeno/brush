@@ -5,6 +5,7 @@ use uzers::os::unix::UserExt;
 use crate::arithmetic::Evaluatable;
 use crate::env;
 use crate::error;
+use crate::escape;
 use crate::openfiles;
 use crate::patterns;
 use crate::prompt;
@@ -24,6 +25,15 @@ pub(crate) async fn basic_expand_str(shell: &mut Shell, s: &str) -> Result<Strin
     expander.basic_expand(s).await
 }
 
+pub(crate) async fn basic_expand_str_without_tilde(
+    shell: &mut Shell,
+    s: &str,
+) -> Result<String, error::Error> {
+    let mut expander = WordExpander::new(shell);
+    expander.parser_options.tilde_expansion = false;
+    expander.basic_expand(s).await
+}
+
 pub(crate) async fn full_expand_and_split_word(
     shell: &mut Shell,
     word: &ast::Word,
@@ -39,7 +49,7 @@ pub(crate) async fn full_expand_and_split_str(
     expander.full_expand_with_splitting(s).await
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum ExpandedWordPiece {
     Unsplittable(String),
     Splittable(String),
@@ -160,6 +170,7 @@ impl<'a> WordExpander<'a> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand(&mut self, word: &str) -> Result<String, error::Error> {
         let expanded_pieces = self.basic_expand_into_pieces(word).await?;
+
         let flattened = expanded_pieces.into_iter().map(|p| p.unwrap()).collect();
         Ok(flattened)
     }
@@ -195,7 +206,7 @@ impl<'a> WordExpander<'a> {
         let expanded_pieces = self.basic_expand_into_pieces(word).await?;
 
         // Then split.
-        let fields = self.split_fields(expanded_pieces);
+        let fields: Vec<Vec<ExpandedWordPiece>> = self.split_fields(expanded_pieces);
 
         // Now expand pathnames if necessary. This also unquotes as a side effect.
         let result = fields
@@ -318,8 +329,19 @@ impl<'a> WordExpander<'a> {
             parser::word::WordPiece::SingleQuotedText(t) => {
                 vec![ExpandedWordPiece::Unsplittable(t.clone())]
             }
+            parser::word::WordPiece::AnsiCQuotedText(t) => {
+                let (expanded, _) =
+                    escape::expand_backslash_escapes(t.as_str(), escape::EscapeMode::AnsiCQuotes)?;
+                vec![ExpandedWordPiece::Unsplittable(expanded)]
+            }
             parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
                 let mut results = vec![];
+
+                // Handle case of empty string.
+                if pieces.is_empty() {
+                    return Ok(vec![ExpandedWordPiece::Unsplittable(String::new())]);
+                }
+
                 for piece in pieces {
                     // Expand the piece, and concatenate its raw string contents.
                     let inner_expanded_pieces = self.expand_word_piece(piece).await?;
@@ -398,9 +420,8 @@ impl<'a> WordExpander<'a> {
                 vec![ExpandedWordPiece::Splittable(output_str.to_owned())]
             }
             parser::word::WordPiece::EscapeSequence(s) => {
-                vec![ExpandedWordPiece::Unsplittable(
-                    s.strip_prefix('\\').unwrap().to_owned(),
-                )]
+                let expanded = s.strip_prefix('\\').unwrap();
+                vec![ExpandedWordPiece::Unsplittable(expanded.to_owned())]
             }
             parser::word::WordPiece::ArithmeticExpression(e) => {
                 vec![ExpandedWordPiece::Splittable(
@@ -802,14 +823,12 @@ impl<'a> WordExpander<'a> {
             parser::word::ParameterExpr::DereferenceVariable { variable_name } => {
                 // TODO: handle nameref variables?
                 if let Some(var) = self.shell.env.get(variable_name) {
-                    let target_name = var.value().to_cow_string();
-                    if let Some(target_var) = self.shell.env.get(target_name.as_ref()) {
-                        Ok(ParameterExpansion::from(
-                            target_var.value().to_cow_string().to_string(),
-                        ))
-                    } else {
-                        Ok(ParameterExpansion::undefined())
-                    }
+                    let target_name = var.value().to_cow_string().to_string();
+                    let parameter =
+                        parser::word::parse_parameter(target_name.as_str(), &self.parser_options)?;
+
+                    // TODO: handle cycles?
+                    self.expand_parameter(&parameter).await
                 } else {
                     Ok(ParameterExpansion::undefined())
                 }
@@ -963,7 +982,9 @@ impl<'a> WordExpander<'a> {
         let index_to_use = if for_set_associative_array {
             self.basic_expand(index).await?
         } else {
-            let index_expr = parser::parse_arithmetic_expression(index)?;
+            let index_expr = ast::UnexpandedArithmeticExpr {
+                value: index.to_owned(),
+            };
             self.expand_arithmetic_expr(&index_expr).await?
         };
 
@@ -1004,7 +1025,7 @@ impl<'a> WordExpander<'a> {
 
     async fn expand_arithmetic_expr(
         &mut self,
-        expr: &parser::ast::ArithmeticExpr,
+        expr: &parser::ast::UnexpandedArithmeticExpr,
     ) -> Result<String, error::Error> {
         let value = expr.eval(self.shell).await?;
         Ok(value.to_string())

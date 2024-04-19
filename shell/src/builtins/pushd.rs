@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -21,7 +22,7 @@ impl BuiltinCommand for PushdCommand {
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.no_directory_change {
-            log::error!("UNIMPLEMENTED: pushd -n");
+            writeln!(context.stderr(), "UNIMPLEMENTED: pushd -n")?;
             return Ok(BuiltinExitCode::Unimplemented);
         }
 

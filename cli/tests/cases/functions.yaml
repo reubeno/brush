@@ -26,6 +26,18 @@ cases:
           echo "Returned."
     args: ["./script.sh"]
 
+  - name: "Function invocation with empty arg"
+    stdin: |
+      myfunc() {
+          echo "count: ${#*}"
+          echo "\$1: $1"
+          echo "\$2: $2"
+          echo "\$3: $3"
+      }
+
+      myfunc a b c
+      myfunc a "" c
+
   - name: "Return in function"
     test_files:
       - path: "script.sh"
@@ -47,4 +59,16 @@ cases:
       } >>./test.txt
 
       myfunc
+      myfunc
+
+  - name: "Function call with env variables"
+    known_failure: true
+    stdin: |
+      myfunc() {
+          echo ${myvar}
+      }
+
+      myvar="default"
+      myfunc
+      myvar="overridden" myfunc
       myfunc

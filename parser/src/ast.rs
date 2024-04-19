@@ -378,6 +378,7 @@ impl Display for WhileOrUntilClauseCommand {
 pub struct FunctionDefinition {
     pub fname: String,
     pub body: FunctionBody,
+    pub source: String,
 }
 
 impl Display for FunctionDefinition {
@@ -596,6 +597,7 @@ pub enum IoRedirect {
     File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
     HereDocument(Option<u32>, IoHereDocument),
     HereString(Option<u32>, Word),
+    OutputAndError(Word),
 }
 
 impl Display for IoRedirect {
@@ -607,6 +609,9 @@ impl Display for IoRedirect {
                 }
 
                 write!(f, "{} {}", kind, target)?;
+            }
+            IoRedirect::OutputAndError(target) => {
+                write!(f, "&> {}", target)?;
             }
             IoRedirect::HereDocument(
                 fd_num,

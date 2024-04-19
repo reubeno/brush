@@ -56,6 +56,23 @@ cases:
       echo "32 >> 2 == $((32>>2))"
       echo " 1 << 4 == $((1<<4))"
 
+  - name: "Variable references"
+    stdin: |
+      x=10
+
+      echo "x => $((x))"
+      echo "x + 1 => $((x+1))"
+
+  - name: "Nested expressions"
+    stdin: |
+      echo "1: $(($(echo -n 1; echo 2) + 37))"
+
+      op="+"
+      echo "2: $((10 ${op} 20))"
+
+      expr="13 * 7"
+      echo "3: $(($expr))"
+
   - name: "Assignment arithmetic"
     stdin: |
       x=0

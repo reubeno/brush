@@ -1,0 +1,6 @@
+name: "Builtins: read"
+cases:
+  - name: "Basic read usage"
+    known_failure: true
+    stdin: |
+      (echo a; echo b) | while read name; do echo "Hello, $name"; done

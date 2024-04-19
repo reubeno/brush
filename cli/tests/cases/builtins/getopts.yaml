@@ -1,0 +1,19 @@
+name: "Builtins: getopts"
+cases:
+  - name: "Basic getopts"
+    stdin: |
+      func() {
+        echo "Beginning of args"
+        while getopts "ab:" option "$@"; do
+          case ${option} in
+            a) echo "Option a; OPTARG=${OPTARG}";;
+            b) echo "Option b; OPTARG=${OPTARG}";;
+            *) echo "Unknown option: ${option}";;
+          esac
+          echo "OPTIND is now ${OPTIND}"
+        done
+        echo "End of args"
+      }
+
+      func -a -b my_b_arg
+      echo "OPTIND: ${OPTIND}"

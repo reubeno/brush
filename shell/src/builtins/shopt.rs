@@ -32,7 +32,10 @@ impl BuiltinCommand for ShoptCommand {
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if self.set && self.unset {
-            log::error!("cannot set and unset shell options simultaneously");
+            writeln!(
+                context.stderr(),
+                "cannot set and unset shell options simultaneously"
+            )?;
             return Ok(BuiltinExitCode::InvalidUsage);
         }
 
