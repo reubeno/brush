@@ -56,35 +56,66 @@ pub(crate) fn pattern_expand(
     Ok(paths)
 }
 
-pub(crate) fn pattern_matches(pattern: &str, value: &str) -> Result<bool, error::Error> {
+pub(crate) fn pattern_exactly_matches(
+    pattern: &str,
+    value: &str,
+    enable_extended_globbing: bool,
+) -> Result<bool, error::Error> {
+    let re = pattern_to_regex(pattern, true, true, enable_extended_globbing)?;
+    re.is_match(value)
+        .map_err(|err| error::Error::Unknown(err.into()))
+}
+
+pub(crate) fn pattern_to_regex(
+    pattern: &str,
+    strict_prefix_match: bool,
+    strict_suffix_match: bool,
+    enable_extended_globbing: bool,
+) -> Result<fancy_regex::Regex, error::Error> {
+    let regex_str = pattern_to_regex_str(
+        pattern,
+        strict_prefix_match,
+        strict_suffix_match,
+        enable_extended_globbing,
+    )?;
+
+    let re =
+        fancy_regex::Regex::new(regex_str.as_str()).map_err(|e| error::Error::Unknown(e.into()))?;
+    Ok(re)
+}
+
+pub(crate) fn pattern_to_regex_str(
+    pattern: &str,
+    strict_prefix_match: bool,
+    strict_suffix_match: bool,
+    enable_extended_globbing: bool,
+) -> Result<String, error::Error> {
     // TODO: pattern matching with **
     if pattern.contains("**") {
         return error::unimp("pattern matching with '**' pattern");
     }
 
-    // TODO: Double-check use of current working dir
-    let matches = glob::Pattern::new(pattern)
-        .map_err(|e| error::Error::Unknown(e.into()))?
-        .matches(value);
+    let mut regex_str = parser::pattern::pattern_to_regex_str(pattern, enable_extended_globbing)
+        .map_err(error::Error::Unknown)?;
 
-    Ok(matches)
-}
+    if strict_prefix_match {
+        regex_str.insert(0, '^');
+    }
 
-pub(crate) fn match_pattern_to_regex(pattern: &str) -> Result<regex::Regex, error::Error> {
-    let regex_str = match_pattern_to_regex_str(pattern)?;
-    let re = regex::Regex::new(regex_str.as_str()).map_err(|e| error::Error::Unknown(e.into()))?;
-    Ok(re)
-}
+    if strict_suffix_match {
+        regex_str.push('$');
+    }
 
-pub(crate) fn match_pattern_to_regex_str(pattern: &str) -> Result<String, error::Error> {
-    parser::pattern::pattern_to_regex_str(pattern).map_err(error::Error::Unknown)
+    Ok(regex_str)
 }
 
 pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool, error::Error> {
-    let re = regex::Regex::new(regex_pattern).map_err(|e| error::Error::Unknown(e.into()))?;
+    let re = fancy_regex::Regex::new(regex_pattern).map_err(|e| error::Error::Unknown(e.into()))?;
 
     // TODO: Evaluate how compatible the `regex` crate is with POSIX EREs.
-    let matches = re.is_match(value);
+    let matches = re
+        .is_match(value)
+        .map_err(|e| error::Error::Unknown(e.into()))?;
 
     Ok(matches)
 }
@@ -92,10 +123,11 @@ pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool, er
 pub(crate) fn remove_largest_matching_prefix<'a>(
     s: &'a str,
     pattern: &str,
+    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in (0..s.len()).rev() {
         let prefix = &s[0..=i];
-        if pattern_matches(pattern, prefix)? {
+        if pattern_exactly_matches(pattern, prefix, enable_extended_globbing)? {
             return Ok(&s[i + 1..]);
         }
     }
@@ -105,10 +137,11 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
 pub(crate) fn remove_smallest_matching_prefix<'a>(
     s: &'a str,
     pattern: &str,
+    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in 0..s.len() {
         let prefix = &s[0..=i];
-        if pattern_matches(pattern, prefix)? {
+        if pattern_exactly_matches(pattern, prefix, enable_extended_globbing)? {
             return Ok(&s[i + 1..]);
         }
     }
@@ -118,10 +151,11 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 pub(crate) fn remove_largest_matching_suffix<'a>(
     s: &'a str,
     pattern: &str,
+    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in 0..s.len() {
         let suffix = &s[i..];
-        if pattern_matches(pattern, suffix)? {
+        if pattern_exactly_matches(pattern, suffix, enable_extended_globbing)? {
             return Ok(&s[..i]);
         }
     }
@@ -131,10 +165,11 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
 pub(crate) fn remove_smallest_matching_suffix<'a>(
     s: &'a str,
     pattern: &str,
+    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in (0..s.len()).rev() {
         let suffix = &s[i..];
-        if pattern_matches(pattern, suffix)? {
+        if pattern_exactly_matches(pattern, suffix, enable_extended_globbing)? {
             return Ok(&s[..i]);
         }
     }
@@ -145,45 +180,74 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
 mod tests {
     use super::*;
 
+    fn ext_pattern_to_exact_regex_str(pattern: &str) -> Result<String, error::Error> {
+        pattern_to_regex_str(pattern, true, true, true)
+    }
+
+    #[test]
+    fn test_pattern_translation() -> Result<()> {
+        assert_eq!(ext_pattern_to_exact_regex_str("a")?.as_str(), "^a$");
+        assert_eq!(ext_pattern_to_exact_regex_str("a*")?.as_str(), "^a.*$");
+        assert_eq!(ext_pattern_to_exact_regex_str("a?")?.as_str(), "^a.$");
+        assert_eq!(
+            ext_pattern_to_exact_regex_str("a@(b|c)")?.as_str(),
+            "^a(b|c)$",
+        );
+        assert_eq!(
+            ext_pattern_to_exact_regex_str("a?(b|c)")?.as_str(),
+            "^a(b|c)?$",
+        );
+        assert_eq!(
+            ext_pattern_to_exact_regex_str("a*(ab|ac)")?.as_str(),
+            "^a(ab|ac)*$",
+        );
+        assert_eq!(
+            ext_pattern_to_exact_regex_str("a+(ab|ac)")?.as_str(),
+            "^a(ab|ac)+$",
+        );
+
+        Ok(())
+    }
+
     #[test]
     fn test_remove_largest_matching_prefix() -> Result<()> {
-        assert_eq!(remove_largest_matching_prefix("ooof", "")?, "ooof");
-        assert_eq!(remove_largest_matching_prefix("ooof", "x")?, "ooof");
-        assert_eq!(remove_largest_matching_prefix("ooof", "o")?, "oof");
-        assert_eq!(remove_largest_matching_prefix("ooof", "o*o")?, "f");
-        assert_eq!(remove_largest_matching_prefix("ooof", "o*")?, "");
+        assert_eq!(remove_largest_matching_prefix("ooof", "", true)?, "ooof");
+        assert_eq!(remove_largest_matching_prefix("ooof", "x", true)?, "ooof");
+        assert_eq!(remove_largest_matching_prefix("ooof", "o", true)?, "oof");
+        assert_eq!(remove_largest_matching_prefix("ooof", "o*o", true)?, "f");
+        assert_eq!(remove_largest_matching_prefix("ooof", "o*", true)?, "");
         Ok(())
     }
 
     #[test]
     fn test_remove_smallest_matching_prefix() -> Result<()> {
-        assert_eq!(remove_smallest_matching_prefix("ooof", "")?, "ooof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "x")?, "ooof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "o")?, "oof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "o*o")?, "of");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "o*")?, "oof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "ooof")?, "");
+        assert_eq!(remove_smallest_matching_prefix("ooof", "", true)?, "ooof");
+        assert_eq!(remove_smallest_matching_prefix("ooof", "x", true)?, "ooof");
+        assert_eq!(remove_smallest_matching_prefix("ooof", "o", true)?, "oof");
+        assert_eq!(remove_smallest_matching_prefix("ooof", "o*o", true)?, "of");
+        assert_eq!(remove_smallest_matching_prefix("ooof", "o*", true)?, "oof");
+        assert_eq!(remove_smallest_matching_prefix("ooof", "ooof", true)?, "");
         Ok(())
     }
 
     #[test]
     fn test_remove_largest_matching_suffix() -> Result<()> {
-        assert_eq!(remove_largest_matching_suffix("foo", "")?, "foo");
-        assert_eq!(remove_largest_matching_suffix("foo", "x")?, "foo");
-        assert_eq!(remove_largest_matching_suffix("foo", "o")?, "fo");
-        assert_eq!(remove_largest_matching_suffix("foo", "o*")?, "f");
-        assert_eq!(remove_largest_matching_suffix("foo", "foo")?, "");
+        assert_eq!(remove_largest_matching_suffix("foo", "", true)?, "foo");
+        assert_eq!(remove_largest_matching_suffix("foo", "x", true)?, "foo");
+        assert_eq!(remove_largest_matching_suffix("foo", "o", true)?, "fo");
+        assert_eq!(remove_largest_matching_suffix("foo", "o*", true)?, "f");
+        assert_eq!(remove_largest_matching_suffix("foo", "foo", true)?, "");
         Ok(())
     }
 
     #[test]
     fn test_remove_smallest_matching_suffix() -> Result<()> {
-        assert_eq!(remove_smallest_matching_suffix("fooo", "")?, "fooo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "x")?, "fooo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "o")?, "foo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "o*o")?, "fo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "o*")?, "foo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "fooo")?, "");
+        assert_eq!(remove_smallest_matching_suffix("fooo", "", true)?, "fooo");
+        assert_eq!(remove_smallest_matching_suffix("fooo", "x", true)?, "fooo");
+        assert_eq!(remove_smallest_matching_suffix("fooo", "o", true)?, "foo");
+        assert_eq!(remove_smallest_matching_suffix("fooo", "o*o", true)?, "fo");
+        assert_eq!(remove_smallest_matching_suffix("fooo", "o*", true)?, "foo");
+        assert_eq!(remove_smallest_matching_suffix("fooo", "fooo", true)?, "");
         Ok(())
     }
 }

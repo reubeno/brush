@@ -563,6 +563,7 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_smallest_matching_suffix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
+                    self.parser_options.enable_extended_globbing,
                 )?;
                 Ok(ParameterExpansion::from(result.to_owned()))
             }
@@ -572,6 +573,7 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_largest_matching_suffix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
+                    self.parser_options.enable_extended_globbing,
                 )?;
 
                 Ok(ParameterExpansion::from(result.to_owned()))
@@ -582,6 +584,7 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_smallest_matching_prefix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
+                    self.parser_options.enable_extended_globbing,
                 )?;
 
                 Ok(ParameterExpansion::from(result.to_owned()))
@@ -592,6 +595,7 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_largest_matching_prefix(
                     expanded_parameter.as_str(),
                     expanded_pattern.as_str(),
+                    self.parser_options.enable_extended_globbing,
                 )?;
 
                 Ok(ParameterExpansion::from(result.to_owned()))
@@ -674,9 +678,10 @@ impl<'a> WordExpander<'a> {
                     let applicable = if let Some(pattern) = pattern {
                         let expanded_pattern = self.basic_expand(pattern).await?;
                         expanded_pattern.is_empty()
-                            || patterns::pattern_matches(
+                            || patterns::pattern_exactly_matches(
                                 expanded_pattern.as_str(),
                                 first_char.to_string().as_str(),
+                                self.shell.options.extended_globbing,
                             )?
                     } else {
                         true
@@ -700,11 +705,16 @@ impl<'a> WordExpander<'a> {
                 if let Some(pattern) = pattern {
                     let expanded_pattern = self.basic_expand(pattern).await?;
                     if !expanded_pattern.is_empty() {
-                        let regex = patterns::match_pattern_to_regex(expanded_pattern.as_str())?;
-                        let result = regex
-                            .replace_all(expanded_parameter.as_ref(), |caps: &regex::Captures| {
-                                caps[0].to_uppercase()
-                            });
+                        let regex = patterns::pattern_to_regex(
+                            expanded_pattern.as_str(),
+                            false,
+                            false,
+                            self.parser_options.enable_extended_globbing,
+                        )?;
+                        let result = regex.replace_all(
+                            expanded_parameter.as_ref(),
+                            |caps: &fancy_regex::Captures| caps[0].to_uppercase(),
+                        );
                         Ok(ParameterExpansion::from(result.into_owned()))
                     } else {
                         Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
@@ -719,9 +729,10 @@ impl<'a> WordExpander<'a> {
                     let applicable = if let Some(pattern) = pattern {
                         let expanded_pattern = self.basic_expand(pattern).await?;
                         expanded_pattern.is_empty()
-                            || patterns::pattern_matches(
+                            || patterns::pattern_exactly_matches(
                                 expanded_pattern.as_str(),
                                 first_char.to_string().as_str(),
+                                self.shell.options.extended_globbing,
                             )?
                     } else {
                         true
@@ -745,11 +756,16 @@ impl<'a> WordExpander<'a> {
                 if let Some(pattern) = pattern {
                     let expanded_pattern = self.basic_expand(pattern).await?;
                     if !expanded_pattern.is_empty() {
-                        let regex = patterns::match_pattern_to_regex(expanded_pattern.as_str())?;
-                        let result = regex
-                            .replace_all(expanded_parameter.as_ref(), |caps: &regex::Captures| {
-                                caps[0].to_lowercase()
-                            });
+                        let regex = patterns::pattern_to_regex(
+                            expanded_pattern.as_str(),
+                            false,
+                            false,
+                            self.parser_options.enable_extended_globbing,
+                        )?;
+                        let result = regex.replace_all(
+                            expanded_parameter.as_ref(),
+                            |caps: &fancy_regex::Captures| caps[0].to_lowercase(),
+                        );
                         Ok(ParameterExpansion::from(result.into_owned()))
                     } else {
                         Ok(ParameterExpansion::from(expanded_parameter.to_lowercase()))
@@ -768,17 +784,13 @@ impl<'a> WordExpander<'a> {
                 let expanded_pattern = self.basic_expand(pattern).await?;
                 let expanded_replacement = self.basic_expand(replacement).await?;
 
-                let mut regex_str = patterns::match_pattern_to_regex_str(expanded_pattern.as_str())
-                    .map_err(|e| error::Error::Unknown(e.into()))?;
-
-                match match_kind {
-                    parser::word::SubstringMatchKind::Prefix => regex_str.insert(0, '^'),
-                    parser::word::SubstringMatchKind::Suffix => regex_str.push('$'),
-                    _ => (),
-                }
-
-                let regex = regex::Regex::new(regex_str.as_str())
-                    .map_err(|e| error::Error::Unknown(e.into()))?;
+                let regex = patterns::pattern_to_regex(
+                    expanded_pattern.as_str(),
+                    matches!(match_kind, parser::word::SubstringMatchKind::Prefix),
+                    matches!(match_kind, parser::word::SubstringMatchKind::Suffix),
+                    self.parser_options.enable_extended_globbing,
+                )
+                .map_err(|e| error::Error::Unknown(e.into()))?;
 
                 let result = match match_kind {
                     parser::word::SubstringMatchKind::Prefix

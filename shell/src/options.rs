@@ -54,8 +54,6 @@ pub struct RuntimeOptions {
     pub enable_command_history: bool,
     /// 'ignoreeof'
     pub ignore_eof: bool,
-    /// 'interactive-comments'
-    pub allow_comments_in_interactive_commands: bool,
     /// 'pipefail'
     pub return_first_failure_from_pipeline: bool,
     /// 'posix'
@@ -133,6 +131,8 @@ impl RuntimeOptions {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {
             interactive: create_options.interactive,
+            enable_command_history: create_options.interactive,
+            enable_job_control: create_options.interactive,
             read_commands_from_stdin: create_options.read_commands_from_stdin,
             sh_mode: create_options.sh_mode,
             posix_mode: create_options.posix,
@@ -140,7 +140,7 @@ impl RuntimeOptions {
             print_shell_input_lines: create_options.verbose,
             remember_command_locations: true,
             check_window_size_after_external_commands: true,
-            enable_command_history: true,
+            save_multiline_cmds_in_history: true,
             extquote: true,
             force_fignore: true,
             enable_hostname_completion: true,
@@ -148,6 +148,9 @@ impl RuntimeOptions {
             expand_prompt_strings: true,
             source_builtin_searches_path: true,
             perform_brace_expansion: true,
+            quote_all_metachars_in_completion: true,
+            programmable_completion: true,
+            glob_ranges_use_c_locale: true,
             ..Self::default()
         };
 

@@ -248,8 +248,8 @@ lazy_static! {
         (
             "interactive-comments",
             OptionDefinition::new(
-                |shell| shell.options.allow_comments_in_interactive_commands,
-                |shell, value| shell.options.allow_comments_in_interactive_commands = value
+                |shell| shell.options.interactive_comments,
+                |shell, value| shell.options.interactive_comments = value
             )
         ),
         (

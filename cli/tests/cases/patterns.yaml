@@ -4,73 +4,59 @@ cases:
     stdin: "echo file1.txt"
 
   - name: "Multiple file expansion"
-    files:
-      - name: "file1.txt"
-        content: "This is file1"
-      - name: "file2.txt"
-        content: "This is file2"
+    known_failure: true
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
     stdin: |
       echo *.txt
       echo *."txt"
 
   - name: "Nested directory expansion"
+    test_files:
+      - path: "dir/file1.txt"
     stdin: "echo dir/*"
-    files:
-      - name: "dir/file1.txt"
-        content: "This is file1 in dir"
 
   - name: "Multiple level directory expansion"
+    test_files:
+      - path: "dir/subdir/file1.txt"
     stdin: "echo dir/subdir/*.txt"
-    files:
-      - name: "dir/subdir/file1.txt"
-        content: "This is file1 in subdir"
 
   - name: "Expansion with no matches"
+    test_files:
+      - path: "file1.txt"
     stdin: "echo *.jpg"
-    files:
-      - name: "file1.txt"
-        content: "This is file1"
 
   - name: "Expansion with special characters"
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
     stdin: "echo file?.txt"
-    files:
-      - name: "file1.txt"
-        content: "This is file1"
-      - name: "file2.txt"
-        content: "This is file2"
 
   - name: "Expansion with brackets"
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
     stdin: "echo file[12].txt"
-    files:
-      - name: "file1.txt"
-        content: "This is file1"
-      - name: "file2.txt"
-        content: "This is file2"
 
   - name: "Expansion with curly braces"
     known_failure: true # Issue #152
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
     stdin: "echo file{1,2}.txt"
-    files:
-      - name: "file1.txt"
-        content: "This is file1"
-      - name: "file2.txt"
-        content: "This is file2"
 
   - name: "Expansion with range"
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
     stdin: "echo file[1-2].txt"
-    files:
-      - name: "file1.txt"
-        content: "This is file1"
-      - name: "file2.txt"
-        content: "This is file2"
 
   - name: "Expansion with negation"
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
     stdin: "echo file[!2].txt"
-    files:
-      - name: "file1.txt"
-        content: "This is file1"
-      - name: "file2.txt"
-        content: "This is file2"
 
   - name: "Expansion with tilde"
     stdin: |
@@ -83,13 +69,135 @@ cases:
       echo ../file1.txt
 
   - name: "Expansion with mixed patterns"
+    test_files:
+      - path: "dir/subdir/file1.txt"
     stdin: "echo dir/*/file?.txt"
-    files:
-      - name: "dir/subdir/file1.txt"
-        content: "This is file1 in subdir"
 
   - name: "Expansion with escaped characters"
+    test_files:
+      - path: "file*.txt"
     stdin: "echo file\\*.txt"
-    files:
-      - name: "file*.txt"
-        content: "This is file with asterisk"
+
+  - name: "Extglob pattern matching"
+    stdin: |
+      shopt -s extglob
+
+      test_pattern() {
+        local str="$1"
+        local pattern="$2"
+
+        if [[ "${str}" == ${pattern} ]]; then
+          echo "Matched: ${str} using ${pattern}"
+        else
+          echo "No match: ${str} using ${pattern}"
+        fi
+      }
+
+      test_pattern "aabc" "!(a*)"
+      test_pattern "abc" "!(a*)"
+      test_pattern "def" "!(a*)"
+
+      test_pattern "a.foo.tar.gz" "a.!(foo|bar).tar.gz"
+      test_pattern "a.bar.tar.gz" "a.!(foo|bar).tar.gz"
+      test_pattern "a.baz.tar.gz" "a.!(foo|bar).tar.gz"
+      test_pattern "a.tar.tar.gz" "a.!(foo|bar).tar.gz"
+      test_pattern "a..tar.gz" "a.!(foo|bar).tar.gz"
+      test_pattern "a.tar.gz" "a.!(foo|bar).tar.gz"
+
+      test_pattern "abc" "@(abc|def)"
+      test_pattern "def" "@(abc|def)"
+      test_pattern "ghi" "@(abc|def)"
+
+      test_pattern "abc" "ab?(c)"
+      test_pattern "ab" "ab?(c)"
+      test_pattern "abd" "ab?(c)"
+
+      test_pattern "" "*(ab|ac)"
+      test_pattern "ab" "*(ab|ac)"
+      test_pattern "abab" "*(ab|ac)"
+      test_pattern "ad" "*(ab|ac)"
+
+      test_pattern "" "+(ab|ac)"
+      test_pattern "ab" "+(ab|ac)"
+      test_pattern "abab" "+(ab|ac)"
+      test_pattern "ad" "+(ab|ac)"
+
+  - name: "Pathname expansion: extglob disabled"
+    known_failure: true
+    ignore_stderr: true
+    test_files:
+      - path: "ab.txt"
+      - path: "abc.txt"
+      - path: "abd.txt"
+      - path: "def.txt"
+      - path: "abadac.txt"
+      - path: "fabadac.txt"
+      - path: "f.txt"
+    stdin: |
+      shopt -u extglob
+
+      echo !(a*)
+      echo "result: $?"
+
+      echo @(abc|abd).txt
+      echo "result: $?"
+
+      echo ab?(c).txt
+      echo "result: $?"
+
+      echo *(ab|ad|ac).txt
+      echo "result: $?"
+
+      echo f+(ab|ad|ac).txt
+      echo "result: $?"
+
+  - name: "Pathname expansion: Inverted patterns"
+    known_failure: true
+    ignore_stderr: true
+    test_files:
+      - path: "abc.txt"
+      - path: "abd.txt"
+      - path: "def.txt"
+    stdin: |
+      shopt -s extglob
+      echo !(a*)
+
+  - name: "Pathname expansion: Extended patterns"
+    known_failure: true
+    ignore_stderr: true
+    test_files:
+      - path: "abc.txt"
+      - path: "abd.txt"
+    stdin: |
+      shopt -s extglob
+      echo @(abc|abd).txt
+
+  - name: "Pathname expansion: Optional patterns"
+    known_failure: true
+    ignore_stderr: true
+    test_files:
+      - path: "ab.txt"
+      - path: "abc.txt"
+    stdin: |
+      shopt -s extglob
+      echo ab?(c).txt
+
+  - name: "Pathname expansion: Star patterns"
+    known_failure: true
+    ignore_stderr: true
+    test_files:
+      - path: "abadac.txt"
+      - path: "ab.txt"
+    stdin: |
+      shopt -s extglob
+      echo *(ab|ad|ac).txt
+
+  - name: "Pathname expansion: Plus patterns"
+    known_failure: true
+    ignore_stderr: true
+    test_files:
+      - path: "fabadac.txt"
+      - path: "f.txt"
+    stdin: |
+      shopt -s extglob
+      echo f+(ab|ad|ac).txt
