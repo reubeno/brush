@@ -1,4 +1,3 @@
-use anyhow::Result;
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -548,8 +547,7 @@ impl ShellValue {
                 result.push('(');
 
                 for (key, value) in values {
-                    write!(result, "[{key}]=\"{value}\" ")
-                        .map_err(|e| error::Error::Unknown(e.into()))?;
+                    write!(result, "[{key}]=\"{value}\" ")?;
                 }
 
                 result.push(')');
@@ -563,8 +561,7 @@ impl ShellValue {
                     if i > 0 {
                         result.push(' ');
                     }
-                    write!(result, "[{key}]=\"{value}\"")
-                        .map_err(|e| error::Error::Unknown(e.into()))?;
+                    write!(result, "[{key}]=\"{value}\"")?;
                 }
 
                 result.push(')');

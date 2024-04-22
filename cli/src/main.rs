@@ -1,6 +1,5 @@
 use std::{io::IsTerminal, io::Write, path::Path};
 
-use anyhow::Result;
 use clap::Parser;
 use log::error;
 
@@ -116,7 +115,7 @@ fn main() {
     std::process::exit(exit_code as i32);
 }
 
-async fn run(cli_args: &[String]) -> Result<u8> {
+async fn run(cli_args: &[String]) -> Result<u8, interactive_shell::InteractiveShellError> {
     let args = CommandLineArgs::parse_from(cli_args);
 
     let argv0 = if args.sh_mode {

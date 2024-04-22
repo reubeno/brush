@@ -32,8 +32,14 @@ pub enum Error {
     #[error("not a directory: {0}")]
     NotADirectory(PathBuf),
 
+    #[error("no current user")]
+    NoCurrentUser,
+
     #[error("invalid redirection")]
     InvalidRedirection,
+
+    #[error("failed to redirect to {0}: {1}")]
+    RedirectionFailure(String, std::io::Error),
 
     #[error("arithmetic evaluation error: {0}")]
     EvalError(#[from] crate::arithmetic::EvalError),
@@ -41,8 +47,14 @@ pub enum Error {
     #[error("failed to parse integer")]
     IntParseError(#[from] std::num::ParseIntError),
 
+    #[error("failed to parse integer")]
+    TryIntParseError(#[from] std::num::TryFromIntError),
+
     #[error("failed to decode utf-8")]
-    Utf8Error(#[from] std::string::FromUtf8Error),
+    FromUtf8Error(#[from] std::string::FromUtf8Error),
+
+    #[error("failed to decode utf-8")]
+    Utf8Error(#[from] std::str::Utf8Error),
 
     #[error("cannot mutate readonly variable")]
     ReadonlyVariable,
@@ -50,14 +62,29 @@ pub enum Error {
     #[error("invalid pattern: '{0}'")]
     InvalidPattern(String),
 
-    #[error("{0}")]
-    Unknown(#[from] anyhow::Error),
+    #[error("invalid regex: {0}")]
+    RegexError(#[from] fancy_regex::Error),
 
     #[error("i/o error: {0}")]
     IoError(#[from] std::io::Error),
 
+    #[error("glob pattern error: {0}")]
+    GlobError(#[from] glob::GlobError),
+
     #[error("bad substitution")]
     BadSubstitution,
+
+    #[error("invalid arguments")]
+    InvalidArguments,
+
+    #[error("failed to create child process")]
+    ChildCreationFailure,
+
+    #[error("{0}")]
+    FormattingError(#[from] std::fmt::Error),
+
+    #[error("{0}")]
+    WordParseError(#[from] parser::WordParseError),
 }
 
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {

@@ -1,5 +1,9 @@
 name: "Arithmetic"
 cases:
+  - name: "Empty expression"
+    stdin: |
+      echo $(())
+
   - name: "Unquoted arithmetic"
     stdin: |
       echo $((1+1))

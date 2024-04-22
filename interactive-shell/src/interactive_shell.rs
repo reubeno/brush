@@ -1,7 +1,5 @@
-use std::{borrow::Cow, path::PathBuf};
-
-use anyhow::Result;
 use rustyline::validate::ValidationResult;
+use std::{borrow::Cow, path::PathBuf};
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
@@ -15,6 +13,19 @@ pub struct InteractiveShell {
     history_file_path: Option<PathBuf>,
 }
 
+#[allow(clippy::module_name_repetitions)]
+#[derive(thiserror::Error, Debug)]
+pub enum InteractiveShellError {
+    #[error("{0}")]
+    ShellError(#[from] shell::Error),
+
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("input error: {0}")]
+    ReadlineError(#[from] rustyline::error::ReadlineError),
+}
+
 enum InteractiveExecutionResult {
     Executed(shell::ExecutionResult),
     Failed(shell::Error),
@@ -22,7 +33,7 @@ enum InteractiveExecutionResult {
 }
 
 impl InteractiveShell {
-    pub async fn new(options: &Options) -> Result<InteractiveShell> {
+    pub async fn new(options: &Options) -> Result<InteractiveShell, InteractiveShellError> {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
         let shell = shell::Shell::new(&options.shell).await?;
@@ -51,7 +62,7 @@ impl InteractiveShell {
         &mut self.editor.helper_mut().unwrap().shell
     }
 
-    fn new_editor(options: &Options, shell: shell::Shell) -> Result<Editor> {
+    fn new_editor(options: &Options, shell: shell::Shell) -> Result<Editor, InteractiveShellError> {
         let config = rustyline::config::Builder::new()
             .max_history_size(1000)?
             .history_ignore_dups(true)?
@@ -67,7 +78,7 @@ impl InteractiveShell {
         Ok(editor)
     }
 
-    pub async fn run_interactively(&mut self) -> Result<()> {
+    pub async fn run_interactively(&mut self) -> Result<(), InteractiveShellError> {
         loop {
             let result = self.run_interactively_once().await?;
             match result {
@@ -107,7 +118,9 @@ impl InteractiveShell {
         Ok(())
     }
 
-    async fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult> {
+    async fn run_interactively_once(
+        &mut self,
+    ) -> Result<InteractiveExecutionResult, InteractiveShellError> {
         // If there's a variable called PROMPT_COMMAND, then run it first.
         if let Some(prompt_cmd) = self.shell().env.get("PROMPT_COMMAND") {
             let prompt_cmd = prompt_cmd.value().to_cow_string().to_string();

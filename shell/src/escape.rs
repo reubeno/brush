@@ -68,10 +68,7 @@ pub(crate) fn expand_backslash_escapes(
                         let value = u8::from_str_radix(octal_chars.as_str(), 8)?;
 
                         // TODO: Should really parse as ASCII.
-                        result.push_str(
-                            std::str::from_utf8(&[value])
-                                .map_err(|e| crate::error::Error::Unknown(e.into()))?,
-                        );
+                        result.push_str(std::str::from_utf8(&[value])?);
                     }
                     'x' => {
                         // Consume 1-2 valid hex chars
@@ -94,10 +91,7 @@ pub(crate) fn expand_backslash_escapes(
                             let value = u8::from_str_radix(hex_chars.as_str(), 16)?;
 
                             // TODO: Should really parse as ASCII.
-                            result.push_str(
-                                std::str::from_utf8(&[value])
-                                    .map_err(|e| crate::error::Error::Unknown(e.into()))?,
-                            );
+                            result.push_str(std::str::from_utf8(&[value])?);
                         }
                     }
                     'u' => {

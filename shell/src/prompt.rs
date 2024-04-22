@@ -1,8 +1,5 @@
-use std::path::Path;
-
-use anyhow::Result;
-
 use crate::{error, shell::Shell};
+use std::path::Path;
 
 const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 const VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
@@ -99,9 +96,8 @@ pub(crate) fn format_prompt_piece(
     Ok(formatted)
 }
 
-fn get_current_username() -> Result<String> {
-    let username =
-        uzers::get_current_username().ok_or_else(|| anyhow::anyhow!("no current user"))?;
+fn get_current_username() -> Result<String, error::Error> {
+    let username = uzers::get_current_username().ok_or_else(|| error::Error::NoCurrentUser)?;
     Ok(username.to_string_lossy().to_string())
 }
 

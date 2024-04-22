@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error;
 
 pub enum ExtendedGlobKind {
     Plus,
@@ -8,8 +8,12 @@ pub enum ExtendedGlobKind {
     Star,
 }
 
-pub fn pattern_to_regex_str(pattern: &str, enable_extended_globbing: bool) -> Result<String> {
-    let regex_str = pattern_to_regex_translator::pattern(pattern, enable_extended_globbing)?;
+pub fn pattern_to_regex_str(
+    pattern: &str,
+    enable_extended_globbing: bool,
+) -> Result<String, error::WordParseError> {
+    let regex_str = pattern_to_regex_translator::pattern(pattern, enable_extended_globbing)
+        .map_err(error::WordParseError::Pattern)?;
     Ok(regex_str)
 }
 
@@ -120,6 +124,7 @@ fn needs_escaping(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
 
     #[test]
     fn test_extended_glob() -> Result<()> {

@@ -1,7 +1,8 @@
-use anyhow::Result;
 use std::collections::HashMap;
 use std::os::fd::AsRawFd;
 use std::process::Stdio;
+
+use crate::error;
 
 pub enum OpenFile {
     Stdin,
@@ -15,7 +16,7 @@ pub enum OpenFile {
 }
 
 impl OpenFile {
-    pub fn try_dup(&self) -> Result<OpenFile> {
+    pub fn try_dup(&self) -> Result<OpenFile, error::Error> {
         let result = match self {
             OpenFile::Stdin => OpenFile::Stdin,
             OpenFile::Stdout => OpenFile::Stdout,
@@ -30,20 +31,16 @@ impl OpenFile {
         Ok(result)
     }
 
-    pub(crate) fn as_raw_fd(&self) -> Result<i32> {
+    pub(crate) fn as_raw_fd(&self) -> Result<i32, error::Error> {
         match self {
             OpenFile::Stdin => Ok(std::io::stdin().as_raw_fd()),
             OpenFile::Stdout => Ok(std::io::stdout().as_raw_fd()),
             OpenFile::Stderr => Ok(std::io::stderr().as_raw_fd()),
-            OpenFile::Null => Err(anyhow::anyhow!(
-                "UNIMPLEMENTED: as_raw_fd for null open file"
-            )),
+            OpenFile::Null => error::unimp("as_raw_fd for null open file"),
             OpenFile::File(f) => Ok(f.as_raw_fd()),
             OpenFile::PipeReader(r) => Ok(r.as_raw_fd()),
             OpenFile::PipeWriter(w) => Ok(w.as_raw_fd()),
-            OpenFile::HereDocument(_) => {
-                Err(anyhow::anyhow!("UNIMPLEMENTED: as_raw_fd for here doc"))
-            }
+            OpenFile::HereDocument(_) => error::unimp("as_raw_fd for here doc"),
         }
     }
 }
@@ -143,7 +140,7 @@ impl Default for OpenFiles {
 }
 
 impl OpenFiles {
-    pub fn try_clone(&self) -> Result<OpenFiles> {
+    pub fn try_clone(&self) -> Result<OpenFiles, error::Error> {
         let mut files = HashMap::new();
         for (fd, file) in &self.files {
             files.insert(*fd, file.try_dup()?);

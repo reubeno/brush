@@ -1,7 +1,5 @@
-use anyhow::Result;
-use std::{collections::HashMap, path::PathBuf};
-
 use clap::ValueEnum;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{env, error, patterns, variables::ShellValueLiteral, Shell};
 
@@ -342,7 +340,7 @@ impl CompletionConfig {
         shell: &mut Shell,
         input: &str,
         position: usize,
-    ) -> Result<Completions> {
+    ) -> Result<Completions, error::Error> {
         const MAX_RESTARTS: u32 = 10;
 
         // Make a best-effort attempt to tokenize.

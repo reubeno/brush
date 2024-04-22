@@ -1,13 +1,15 @@
+use faccess::PathExt;
+use parser::ast;
 use std::{
     os::unix::fs::{FileTypeExt, MetadataExt},
     path::Path,
 };
 
-use anyhow::Result;
-use faccess::PathExt;
-use parser::ast;
-
-use crate::{error, expansion, patterns, Shell};
+use crate::{
+    env, error, expansion, patterns,
+    variables::{self, ArrayLiteral},
+    Shell,
+};
 
 #[async_recursion::async_recursion]
 pub(crate) async fn eval_expression(
@@ -180,7 +182,26 @@ fn apply_binary_predicate(
         ast::BinaryPredicate::StringMatchesRegex => {
             let s = left;
             let regex_pattern = right;
-            patterns::regex_matches(regex_pattern, s)
+            let (matches, captures) =
+                if let Some(captures) = patterns::regex_matches(regex_pattern, s)? {
+                    (true, captures)
+                } else {
+                    (false, vec![])
+                };
+
+            let captures_value = variables::ShellValueLiteral::Array(ArrayLiteral(
+                captures.into_iter().map(|c| (None, c)).collect(),
+            ));
+
+            shell.env.update_or_add(
+                "BASH_REMATCH",
+                captures_value,
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+
+            Ok(matches)
         }
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
             error::unimp("extended test binary predicate FilesReferToSameDeviceAndInodeNumbers")

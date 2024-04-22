@@ -52,6 +52,44 @@ cases:
           echo "Returned: $?"
     args: ["./script.sh"]
 
+  - name: "Return in for loop in function"
+    stdin: |
+      myfunc() {
+          for i in 1 2 3; do
+              echo "In myfunc: $i"
+              return 5
+          done
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in arithmetic for loop in function"
+    stdin: |
+      myfunc() {
+          for ((i=0; i < 5; i++)); do
+              echo "In myfunc: $i"
+              return 5
+          done
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in while loop in function"
+    stdin: |
+      myfunc() {
+          i=0
+          while [[ $i -lt 5 ]]; do
+            echo "In myfunc: $i"
+            return 33
+            i=$((i+1))
+          done
+      }
+
+      myfunc
+      echo "Returned: $?"
+
   - name: "Function definition with output redirection"
     stdin: |
       myfunc() {

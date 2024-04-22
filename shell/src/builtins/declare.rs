@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
@@ -292,10 +291,7 @@ impl DeclareCommand {
                     static ref ARRAY_AND_INDEX_RE: fancy_regex::Regex =
                         fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap();
                 }
-                if let Some(captures) = ARRAY_AND_INDEX_RE
-                    .captures(s)
-                    .map_err(|e| error::Error::Unknown(e.into()))?
-                {
+                if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
                     name = captures.get(1).unwrap().as_str().to_owned();
                     assigned_index = Some(captures.get(2).unwrap().as_str().to_owned());
                     name_is_array = true;

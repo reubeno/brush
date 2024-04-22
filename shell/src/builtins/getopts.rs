@@ -1,6 +1,5 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use anyhow::Result;
 use clap::Parser;
 
 use crate::{

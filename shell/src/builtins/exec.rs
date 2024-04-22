@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::io::Write;
 
@@ -53,16 +52,14 @@ impl BuiltinCommand for ExecCommand {
                 .args(&self.args[1..])
                 .exec();
             match err {
-                exec::Error::BadArgument(_) => {
-                    Err(crate::error::Error::Unknown(anyhow!("invalid arguments")))
-                }
+                exec::Error::BadArgument(_) => Err(crate::error::Error::InvalidArguments),
                 exec::Error::Errno(errno) => {
                     let io_err: std::io::Error = errno.into();
 
                     if io_err.kind() == std::io::ErrorKind::NotFound {
                         Ok(BuiltinExitCode::Custom(127))
                     } else {
-                        Err(crate::error::Error::Unknown(io_err.into()))
+                        Err(crate::error::Error::from(io_err))
                     }
                 }
             }

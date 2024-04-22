@@ -1,5 +1,4 @@
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
-use anyhow::Result;
 use clap::Parser;
 use std::io::Write;
 

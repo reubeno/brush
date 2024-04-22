@@ -1,6 +1,4 @@
 use std::fmt::Display;
-
-use anyhow::Result;
 use utf8_chars::BufReadCharsExt;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -905,9 +903,9 @@ fn is_quoting_char(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
-
     use super::*;
+    use anyhow::Result;
+    use assert_matches::assert_matches;
 
     #[test]
     fn tokenize_empty() -> Result<()> {

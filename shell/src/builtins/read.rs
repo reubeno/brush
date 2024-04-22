@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::Parser;
 use std::{collections::VecDeque, io::Read};
 
@@ -106,7 +105,7 @@ impl BuiltinCommand for ReadCommand {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn read_line(mut file: openfiles::OpenFile) -> Result<Option<String>> {
+fn read_line(mut file: openfiles::OpenFile) -> Result<Option<String>, crate::error::Error> {
     let mut line = String::new();
     let mut buffer = [0; 1]; // 1-byte buffer
 

@@ -17,7 +17,6 @@ collapsible_else_if = "allow"
 if_same_then_else = "allow"
 
 [dependencies]
-anyhow = "1.0.82"
 indenter = "0.3.3"
 log = "0.4.21"
 peg = "0.8.2"
@@ -25,6 +24,7 @@ thiserror = "1.0.58"
 utf8-chars = "3.0.2"
 
 [dev-dependencies]
+anyhow = "1.0.82"
 assert_matches = "1.5.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }

@@ -1,6 +1,6 @@
 use crate::ast;
+use crate::error;
 use crate::ParserOptions;
-use anyhow::{Context, Result};
 
 #[derive(Debug)]
 pub enum WordPiece {
@@ -150,21 +150,26 @@ pub enum ParameterTransformOp {
     ToUpperCase,
 }
 
-pub fn parse_word_for_expansion(word: &str, options: &ParserOptions) -> Result<Vec<WordPiece>> {
+pub fn parse_word_for_expansion(
+    word: &str,
+    options: &ParserOptions,
+) -> Result<Vec<WordPiece>, error::WordParseError> {
     log::debug!("Parsing word '{}'", word);
 
     let pieces = expansion_parser::unexpanded_word(word, options)
-        .context(format!("parsing word '{word}'"))?;
+        .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
 
     log::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
 
     Ok(pieces)
 }
 
-pub fn parse_parameter(word: &str, options: &ParserOptions) -> Result<Parameter> {
+pub fn parse_parameter(
+    word: &str,
+    options: &ParserOptions,
+) -> Result<Parameter, error::WordParseError> {
     let pieces = expansion_parser::parameter(word, options)
-        .context(format!("parsing parameter '{word}'"))?;
-
+        .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err))?;
     Ok(pieces)
 }
 
@@ -430,6 +435,7 @@ peg::parser! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use assert_matches::assert_matches;
 
     #[test]

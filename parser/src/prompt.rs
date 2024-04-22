@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error;
 
 pub enum PromptPiece {
     AsciiCharacter(u32),
@@ -92,6 +92,7 @@ peg::parser! {
     }
 }
 
-pub fn parse_prompt(s: &str) -> Result<Vec<PromptPiece>> {
-    Ok(prompt_parser::prompt(s)?)
+pub fn parse_prompt(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
+    let result = prompt_parser::prompt(s).map_err(error::WordParseError::Prompt)?;
+    Ok(result)
 }

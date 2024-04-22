@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::Parser;
 
 use crate::builtin::{self, BuiltinCommand, BuiltinExitCode};

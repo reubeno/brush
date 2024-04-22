@@ -34,8 +34,8 @@ impl BuiltinCommand for PrintfCommand {
 
         let output = cmd.output()?;
 
-        let stdout = String::from_utf8(output.stdout).map_err(crate::error::Error::Utf8Error)?;
-        let stderr = String::from_utf8(output.stderr).map_err(crate::error::Error::Utf8Error)?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
 
         write!(context.stderr(), "{stderr}")?;
 

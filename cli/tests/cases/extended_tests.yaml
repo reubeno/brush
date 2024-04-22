@@ -146,6 +146,17 @@ cases:
   - name: "Regex"
     stdin: |
       [[ "a" =~ ^a$ ]] && echo "1. Pass"
-      [[ "abc" =~ a* ]] && echo "1. Pass"
-      [[ a =~ ^(a)$ ]] && echo "1. Pass"
-      [[ a =~ ^(a|b)$ ]] && echo "1. Pass"
+      [[ "abc" =~ a* ]] && echo "2. Pass"
+      [[ a =~ ^(a)$ ]] && echo "3. Pass"
+      [[ a =~ ^(a|b)$ ]] && echo "4. Pass"
+      [[ a =~ c ]] && echo "5. Pass"
+
+  - name: "Regex with capture"
+    stdin: |
+      pattern='(Hello), ([a-z]+)\.'
+      if [[ "Hello, world." =~ ${pattern} ]]; then
+          echo "Match found!"
+          for i in "${!BASH_REMATCH[@]}"; do
+              echo "$i: ${BASH_REMATCH[$i]}"
+          done
+      fi
