@@ -184,8 +184,7 @@ impl<'a> WordExpander<'a> {
         //
         // Expand: tildes, parameters, command substitutions, arithmetic.
         //
-        let pieces = parser::parse_word_for_expansion(word, &self.parser_options)
-            .map_err(error::Error::Unknown)?;
+        let pieces = parser::parse_word_for_expansion(word, &self.parser_options)?;
 
         let mut expanded_pieces = vec![];
         for piece in pieces {
@@ -374,7 +373,7 @@ impl<'a> WordExpander<'a> {
                 let expansion = self.expand_parameter_expr(p).await?;
 
                 let (strs, concatenate) = match expansion {
-                    ParameterExpansion::Undefined => (vec![String::new()], false),
+                    ParameterExpansion::Undefined => (vec![], false),
                     ParameterExpansion::String(s) => (vec![s], false),
                     ParameterExpansion::Array {
                         values,
@@ -396,8 +395,7 @@ impl<'a> WordExpander<'a> {
                 let mut subshell = self.shell.clone();
 
                 // Set up pipe so we can read the output.
-                let (reader, writer) =
-                    os_pipe::pipe().map_err(|e| error::Error::Unknown(e.into()))?;
+                let (reader, writer) = os_pipe::pipe()?;
                 subshell
                     .open_files
                     .files
@@ -608,8 +606,7 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
 
                 let expanded_offset = offset.eval(self.shell).await?;
-                let expanded_offset = usize::try_from(expanded_offset)
-                    .map_err(|e| error::Error::Unknown(e.into()))?;
+                let expanded_offset = usize::try_from(expanded_offset)?;
 
                 if expanded_offset >= expanded_parameter.len() {
                     return Ok(ParameterExpansion::empty_str());
@@ -618,14 +615,12 @@ impl<'a> WordExpander<'a> {
                 let result = if let Some(length) = length {
                     let mut expanded_length = length.eval(self.shell).await?;
                     if expanded_length < 0 {
-                        let param_length: i64 = i64::try_from(expanded_parameter.len())
-                            .map_err(|e| error::Error::Unknown(e.into()))?;
+                        let param_length: i64 = i64::try_from(expanded_parameter.len())?;
                         expanded_length += param_length;
                     }
 
                     let expanded_length = std::cmp::min(
-                        usize::try_from(expanded_length)
-                            .map_err(|e| error::Error::Unknown(e.into()))?,
+                        usize::try_from(expanded_length)?,
                         expanded_parameter.len() - expanded_offset,
                     );
 
@@ -789,8 +784,7 @@ impl<'a> WordExpander<'a> {
                     matches!(match_kind, parser::word::SubstringMatchKind::Prefix),
                     matches!(match_kind, parser::word::SubstringMatchKind::Suffix),
                     self.parser_options.enable_extended_globbing,
-                )
-                .map_err(|e| error::Error::Unknown(e.into()))?;
+                )?;
 
                 let result = match match_kind {
                     parser::word::SubstringMatchKind::Prefix
@@ -919,10 +913,10 @@ impl<'a> WordExpander<'a> {
         match parameter {
             parser::word::Parameter::Positional(p) => {
                 if *p == 0 {
-                    return Err(anyhow::anyhow!("unexpected positional parameter").into());
-                }
-
-                if let Some(parameter) = self.shell.positional_parameters.get((p - 1) as usize) {
+                    self.expand_special_parameter(&parser::word::SpecialParameter::ShellName)
+                } else if let Some(parameter) =
+                    self.shell.positional_parameters.get((p - 1) as usize)
+                {
                     Ok(ParameterExpansion::from(parameter.to_owned()))
                 } else {
                     Ok(ParameterExpansion::undefined())

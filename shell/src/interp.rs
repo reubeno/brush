@@ -1,12 +1,10 @@
+use itertools::Itertools;
+use parser::ast::{self, CommandPrefixOrSuffixItem};
 use std::collections::HashSet;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process;
-
-use anyhow::{Context, Result};
-use itertools::Itertools;
-use parser::ast::{self, CommandPrefixOrSuffixItem};
 use tokio_command_fds::{CommandFdExt, FdMapping};
 
 use crate::arithmetic::Evaluatable;
@@ -428,6 +426,9 @@ impl Execute for ast::ForClauseCommand {
                 )?;
 
                 result = self.body.0.execute(shell, params).await?;
+                if result.return_from_function_or_script {
+                    break;
+                }
 
                 if let Some(continue_count) = &result.continue_loop {
                     if *continue_count > 0 {
@@ -555,6 +556,9 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             }
 
             result = body.0.execute(shell, params).await?;
+            if result.return_from_function_or_script {
+                break;
+            }
         }
 
         Ok(result)
@@ -601,6 +605,9 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             result = self.body.0.execute(shell, params).await?;
+            if result.return_from_function_or_script {
+                break;
+            }
 
             if let Some(updater) = &self.updater {
                 updater.eval(shell).await?;
@@ -832,7 +839,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 async fn basic_expand_assignment(
     shell: &mut Shell,
     assignment: &ast::Assignment,
-) -> Result<ast::Assignment> {
+) -> Result<ast::Assignment, error::Error> {
     let value = basic_expand_assignment_value(shell, &assignment.value).await?;
     Ok(ast::Assignment {
         name: basic_expand_assignment_name(shell, &assignment.name).await?,
@@ -844,7 +851,7 @@ async fn basic_expand_assignment(
 async fn basic_expand_assignment_name(
     shell: &mut Shell,
     name: &ast::AssignmentName,
-) -> Result<ast::AssignmentName> {
+) -> Result<ast::AssignmentName, error::Error> {
     match name {
         ast::AssignmentName::VariableName(name) => {
             let expanded = expansion::basic_expand_str(shell, name).await?;
@@ -864,7 +871,7 @@ async fn basic_expand_assignment_name(
 async fn basic_expand_assignment_value(
     shell: &mut Shell,
     value: &ast::AssignmentValue,
-) -> Result<ast::AssignmentValue> {
+) -> Result<ast::AssignmentValue, error::Error> {
     let expanded = match value {
         ast::AssignmentValue::Scalar(s) => {
             let expanded_word = expansion::basic_expand_word(shell, s).await?;
@@ -1090,7 +1097,7 @@ async fn execute_external_command(
         })
         .collect();
     cmd.fd_mappings(fd_mappings)
-        .map_err(|e| error::Error::Unknown(e.into()))?;
+        .map_err(|_e| error::Error::ChildCreationFailure)?;
 
     log::debug!(
         "Spawning: {} {}",
@@ -1223,7 +1230,7 @@ pub(crate) async fn invoke_shell_function(
 fn setup_pipeline_redirection(
     open_files: &mut OpenFiles,
     context: &mut PipelineExecutionContext<'_>,
-) -> Result<()> {
+) -> Result<(), error::Error> {
     if context.current_pipeline_index > 0 {
         // Find the stdout from the preceding process.
         if let Some(preceding_output_reader) = context.output_pipes.pop() {
@@ -1240,7 +1247,7 @@ fn setup_pipeline_redirection(
     // to a pipe that we can read later.
     if context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1 {
         // Set up stdout of this process to go to stdin of the succeeding process.
-        let (reader, writer) = os_pipe::pipe().map_err(|e| error::Error::Unknown(e.into()))?;
+        let (reader, writer) = os_pipe::pipe()?;
         context.output_pipes.push(reader);
         open_files.files.insert(1, OpenFile::PipeWriter(writer));
     }
@@ -1268,10 +1275,7 @@ async fn setup_redirect<'a>(
                 .write(true)
                 .truncate(true)
                 .open(expanded_file_path.as_str())
-                .context(format!(
-                    "opening {} for out + error redirection",
-                    expanded_file_path.as_str()
-                ))?;
+                .map_err(|err| error::Error::RedirectionFailure(expanded_file_path, err))?;
 
             let stdout_file = OpenFile::File(opened_file);
             let stderr_file = stdout_file.try_dup()?;
@@ -1340,11 +1344,9 @@ async fn setup_redirect<'a>(
 
                     let expanded_file_path = expanded_file_path.remove(0);
 
-                    let opened_file =
-                        options.open(expanded_file_path.as_str()).context(format!(
-                            "opening {} for I/O redirection",
-                            expanded_file_path.as_str()
-                        ))?;
+                    let opened_file = options
+                        .open(expanded_file_path.as_str())
+                        .map_err(|err| error::Error::RedirectionFailure(expanded_file_path, err))?;
                     target_file = OpenFile::File(opened_file);
                 }
                 ast::IoFileRedirectTarget::Fd(fd) => {
@@ -1375,8 +1377,7 @@ async fn setup_redirect<'a>(
                             let mut subshell = shell.clone();
 
                             // Set up pipe so we can connect to the command.
-                            let (reader, writer) =
-                                os_pipe::pipe().map_err(|e| error::Error::Unknown(e.into()))?;
+                            let (reader, writer) = os_pipe::pipe()?;
 
                             if matches!(kind, ast::IoFileRedirectKind::Read) {
                                 subshell

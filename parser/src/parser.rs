@@ -1,20 +1,8 @@
-use anyhow::Result;
 use log::debug;
 
 use crate::ast::{self, SeparatorOperator};
-use crate::tokenizer::{
-    SourcePosition, Token, TokenEndReason, Tokenizer, TokenizerError, TokenizerOptions, Tokens,
-};
-
-#[derive(Debug)]
-pub enum ParseError {
-    ParsingNearToken(Token),
-    ParsingAtEndOfInput,
-    Tokenizing {
-        inner: TokenizerError,
-        position: Option<SourcePosition>,
-    },
-}
+use crate::error;
+use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 
 #[derive(Clone)]
 pub struct ParserOptions {
@@ -50,7 +38,10 @@ impl<R: std::io::BufRead> Parser<R> {
         }
     }
 
-    pub fn parse(&mut self, stop_on_unescaped_newline: bool) -> Result<ast::Program, ParseError> {
+    pub fn parse(
+        &mut self,
+        stop_on_unescaped_newline: bool,
+    ) -> Result<ast::Program, error::ParseError> {
         //
         // References:
         //   * https://www.gnu.org/software/bash/manual/bash.html#Shell-Syntax
@@ -72,7 +63,7 @@ impl<R: std::io::BufRead> Parser<R> {
             let result = match tokenizer.next_token() {
                 Ok(result) => result,
                 Err(e) => {
-                    return Err(ParseError::Tokenizing {
+                    return Err(error::ParseError::Tokenizing {
                         inner: e,
                         position: tokenizer.current_location(),
                     });
@@ -104,14 +95,17 @@ pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
     source_info: &SourceInfo,
-) -> Result<ast::Program, ParseError> {
+) -> Result<ast::Program, error::ParseError> {
     let parse_result = token_parser::program(&Tokens { tokens }, options, source_info);
 
     let result = match parse_result {
         Ok(program) => Ok(program),
         Err(parse_error) => {
             debug!("Parse error: {:?}", parse_error);
-            Err(convert_peg_parse_error(parse_error, tokens.as_slice()))
+            Err(error::convert_peg_parse_error(
+                parse_error,
+                tokens.as_slice(),
+            ))
         }
     };
 
@@ -122,16 +116,6 @@ pub fn parse_tokens(
     }
 
     result
-}
-
-fn convert_peg_parse_error(err: peg::error::ParseError<usize>, tokens: &[Token]) -> ParseError {
-    let approx_token_index = err.location;
-
-    if approx_token_index < tokens.len() {
-        ParseError::ParsingNearToken(tokens[approx_token_index].clone())
-    } else {
-        ParseError::ParsingAtEndOfInput
-    }
 }
 
 impl<'a> peg::Parse for Tokens<'a> {
@@ -800,9 +784,9 @@ fn parse_array_assignment(
 
 #[cfg(test)]
 mod tests {
-    use crate::tokenizer::tokenize_str;
-
     use super::*;
+    use crate::tokenizer::tokenize_str;
+    use anyhow::Result;
 
     #[test]
     fn parse_case() -> Result<()> {

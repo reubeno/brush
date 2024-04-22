@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use anyhow::Result;
 use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};

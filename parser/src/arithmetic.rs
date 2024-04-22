@@ -1,15 +1,24 @@
 use crate::ast;
-use anyhow::Result;
+use crate::error;
 
-pub fn parse_arithmetic_expression(input: &str) -> Result<ast::ArithmeticExpr> {
+pub fn parse_arithmetic_expression(
+    input: &str,
+) -> Result<ast::ArithmeticExpr, crate::error::WordParseError> {
     log::debug!("parsing arithmetic expression: '{input}'");
 
-    let expr = arithmetic::expression(input)?;
+    // Special-case the empty string.
+
+    let expr =
+        arithmetic::full_expression(input).map_err(error::WordParseError::ArithmeticExpression)?;
     Ok(expr)
 }
 
 peg::parser! {
     grammar arithmetic() for str {
+        pub(crate) rule full_expression() -> ast::ArithmeticExpr =
+            ![_] { ast::ArithmeticExpr::Literal(0) } /
+            expression()
+
         // TODO: fix associativity
         pub(crate) rule expression() -> ast::ArithmeticExpr = precedence!{
             x:(@) _ "," _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Comma, Box::new(x), Box::new(y)) }
@@ -74,6 +83,7 @@ peg::parser! {
             // TODO: Is this where literals and such should go?
             n:literal_number() { ast::ArithmeticExpr::Literal(n) }
             l:lvalue() { ast::ArithmeticExpr::Reference(l) }
+
         }
 
         rule lvalue() -> ast::ArithmeticTarget =

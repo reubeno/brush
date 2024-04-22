@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;

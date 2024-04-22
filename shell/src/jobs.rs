@@ -1,5 +1,3 @@
-use anyhow::Result;
-
 use crate::error;
 use crate::ExecutionResult;
 

@@ -1,7 +1,6 @@
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use std::io::Write;
 
-use anyhow::Result;
 use clap::Parser;
 
 #[derive(Parser)]

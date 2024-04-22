@@ -1,4 +1,3 @@
-use anyhow::Result;
 use faccess::PathExt;
 use log::debug;
 use std::borrow::Cow;
@@ -106,7 +105,7 @@ pub struct FunctionCall {
 }
 
 impl Shell {
-    pub async fn new(options: &CreateOptions) -> Result<Shell> {
+    pub async fn new(options: &CreateOptions) -> Result<Shell, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
             open_files: openfiles::OpenFiles::default(),
@@ -274,7 +273,7 @@ impl Shell {
         Ok(())
     }
 
-    async fn source_if_exists(&mut self, path: &Path) -> Result<bool> {
+    async fn source_if_exists(&mut self, path: &Path) -> Result<bool, error::Error> {
         if path.exists() {
             let args: Vec<String> = vec![];
             self.source(path, &args).await?;
@@ -406,7 +405,10 @@ impl Shell {
         parser.parse(true)
     }
 
-    pub async fn basic_expand_string<S: AsRef<str>>(&mut self, s: S) -> Result<String> {
+    pub async fn basic_expand_string<S: AsRef<str>>(
+        &mut self,
+        s: S,
+    ) -> Result<String, error::Error> {
         let result = expansion::basic_expand_str(self, s.as_ref()).await?;
         Ok(result)
     }
@@ -414,7 +416,7 @@ impl Shell {
     pub async fn full_expand_and_split_string<S: AsRef<str>>(
         &mut self,
         s: S,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<String>, error::Error> {
         let result = expansion::full_expand_and_split_str(self, s.as_ref()).await?;
         Ok(result)
     }
@@ -501,7 +503,7 @@ impl Shell {
             .await
     }
 
-    pub async fn compose_prompt(&mut self) -> Result<String> {
+    pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
         const DEFAULT_PROMPT: &str = "$ ";
 
         // Retrieve the spec.
@@ -561,7 +563,7 @@ impl Shell {
         &mut self,
         name: &str,
         function_def: &parser::ast::FunctionDefinition,
-    ) -> Result<()> {
+    ) -> Result<(), error::Error> {
         self.function_call_stack.push_front(FunctionCall {
             function_name: name.to_owned(),
             source: function_def.source.clone(),
@@ -571,14 +573,14 @@ impl Shell {
         Ok(())
     }
 
-    pub fn leave_function(&mut self) -> Result<()> {
+    pub fn leave_function(&mut self) -> Result<(), error::Error> {
         self.env.pop_locals();
         self.function_call_stack.pop_front();
         self.update_funcname_var()?;
         Ok(())
     }
 
-    fn update_funcname_var(&mut self) -> Result<()> {
+    fn update_funcname_var(&mut self) -> Result<(), error::Error> {
         //
         // Fill out FUNCNAME[*]
         //
@@ -637,7 +639,7 @@ impl Shell {
         &mut self,
         input: &str,
         position: usize,
-    ) -> Result<completion::Completions> {
+    ) -> Result<completion::Completions, error::Error> {
         let completion_config = self.completion_config.clone();
         completion_config
             .get_completions(self, input, position)

@@ -1,8 +1,5 @@
-use std::path::{Path, PathBuf};
-
-use anyhow::Result;
-
 use crate::error;
+use std::path::{Path, PathBuf};
 
 pub(crate) fn pattern_expand(
     pattern: &str,
@@ -36,7 +33,7 @@ pub(crate) fn pattern_expand(
     let paths = glob::glob_with(glob_pattern.as_str(), options)
         .map_err(|_e| error::Error::InvalidPattern(pattern.to_owned()))?;
     let paths_results: Result<Vec<_>, glob::GlobError> = paths.collect();
-    let mut paths = paths_results.map_err(|e| error::Error::Unknown(e.into()))?;
+    let mut paths = paths_results?;
 
     if let Some(prefix_to_remove) = prefix_to_remove {
         paths = paths
@@ -62,8 +59,7 @@ pub(crate) fn pattern_exactly_matches(
     enable_extended_globbing: bool,
 ) -> Result<bool, error::Error> {
     let re = pattern_to_regex(pattern, true, true, enable_extended_globbing)?;
-    re.is_match(value)
-        .map_err(|err| error::Error::Unknown(err.into()))
+    Ok(re.is_match(value)?)
 }
 
 pub(crate) fn pattern_to_regex(
@@ -79,8 +75,7 @@ pub(crate) fn pattern_to_regex(
         enable_extended_globbing,
     )?;
 
-    let re =
-        fancy_regex::Regex::new(regex_str.as_str()).map_err(|e| error::Error::Unknown(e.into()))?;
+    let re = fancy_regex::Regex::new(regex_str.as_str())?;
     Ok(re)
 }
 
@@ -95,8 +90,7 @@ pub(crate) fn pattern_to_regex_str(
         return error::unimp("pattern matching with '**' pattern");
     }
 
-    let mut regex_str = parser::pattern::pattern_to_regex_str(pattern, enable_extended_globbing)
-        .map_err(error::Error::Unknown)?;
+    let mut regex_str = parser::pattern::pattern_to_regex_str(pattern, enable_extended_globbing)?;
 
     if strict_prefix_match {
         regex_str.insert(0, '^');
@@ -109,15 +103,19 @@ pub(crate) fn pattern_to_regex_str(
     Ok(regex_str)
 }
 
-pub(crate) fn regex_matches(regex_pattern: &str, value: &str) -> Result<bool, error::Error> {
-    let re = fancy_regex::Regex::new(regex_pattern).map_err(|e| error::Error::Unknown(e.into()))?;
+pub(crate) fn regex_matches(
+    regex_pattern: &str,
+    value: &str,
+) -> Result<Option<Vec<String>>, error::Error> {
+    // TODO: Evaluate how compatible the `fancy_regex` crate is with POSIX EREs.
+    let re = fancy_regex::Regex::new(regex_pattern)?;
 
-    // TODO: Evaluate how compatible the `regex` crate is with POSIX EREs.
-    let matches = re
-        .is_match(value)
-        .map_err(|e| error::Error::Unknown(e.into()))?;
-
-    Ok(matches)
+    Ok(re.captures(value)?.map(|captures| {
+        captures
+            .iter()
+            .map(|c| c.unwrap().as_str().to_owned())
+            .collect()
+    }))
 }
 
 pub(crate) fn remove_largest_matching_prefix<'a>(
@@ -179,6 +177,7 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
 
     fn ext_pattern_to_exact_regex_str(pattern: &str) -> Result<String, error::Error> {
         pattern_to_regex_str(pattern, true, true, true)

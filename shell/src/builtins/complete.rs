@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::{arg, Parser};
 use std::io::Write;
 
@@ -375,7 +374,7 @@ impl CompleteCommand {
             s.push_str(command_name);
         }
 
-        writeln!(context.stdout(), "{s}").map_err(|err| error::Error::Unknown(err.into()))?;
+        writeln!(context.stdout(), "{s}")?;
 
         Ok(())
     }

@@ -1,9 +1,7 @@
 use std::borrow::Cow;
 
-use anyhow::Result;
-use parser::ast;
-
 use crate::{env, expansion, variables, Shell};
+use parser::ast;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvalError {

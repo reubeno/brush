@@ -215,3 +215,20 @@ cases:
           c
       )
       declare -p array
+
+  - name: "Dump keys from non-existent array"
+    stdin: |
+      for key in "${NONEXISTENT[@]}"; do
+        echo "Key: ${key}"
+      done
+
+  - name: "Use non-existent var in indexed array index"
+    stdin: |
+      declare -a myarray=(10)
+      echo "Value: ${myarray[$non_existent_var]}"
+
+  - name: "Use non-existent var in associative array index"
+    ignore_stderr: true
+    stdin: |
+      declare -A myarray=([0]="default" ["a"]="other")
+      echo "Value: ${myarray[$non_existent_var]}"

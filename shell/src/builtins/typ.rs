@@ -1,7 +1,6 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use anyhow::Result;
 use clap::Parser;
 use parser::ast;
 
