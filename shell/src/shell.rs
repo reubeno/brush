@@ -3,6 +3,7 @@ use faccess::PathExt;
 use log::debug;
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::commands;
@@ -41,6 +42,9 @@ pub struct Shell {
     // Shell name
     pub shell_name: Option<String>,
 
+    // Script call stack.
+    pub script_call_stack: VecDeque<String>,
+
     // Function call stack.
     pub function_call_stack: VecDeque<FunctionCall>,
 
@@ -70,6 +74,7 @@ impl Clone for Shell {
             positional_parameters: self.positional_parameters.clone(),
             shell_name: self.shell_name.clone(),
             function_call_stack: self.function_call_stack.clone(),
+            script_call_stack: self.script_call_stack.clone(),
             directory_stack: self.directory_stack.clone(),
             current_line_number: self.current_line_number,
             completion_config: self.completion_config.clone(),
@@ -117,12 +122,14 @@ impl Shell {
             positional_parameters: vec![],
             shell_name: options.shell_name.clone(),
             function_call_stack: VecDeque::new(),
+            script_call_stack: VecDeque::new(),
             directory_stack: vec![],
             current_line_number: 0,
             completion_config: completion::CompletionConfig::default(),
         };
 
-        // TODO: Figure out how this got hard-coded.
+        // TODO: Without this a script that sets extglob will fail because we
+        // parse the entire script with the same settings.
         shell.options.extended_globbing = true;
 
         // Load profiles/configuration.
@@ -154,6 +161,10 @@ impl Shell {
         env.set_global("RANDOM", random_var);
 
         env.set_global("IFS", ShellVariable::new(" \t\n".into()));
+        env.set_global(
+            "COMP_WORDBREAKS",
+            ShellVariable::new(" \t\n\"\'><=;|&(:".into()),
+        );
 
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
@@ -325,7 +336,12 @@ impl Shell {
             &mut other_positional_parameters,
         );
 
+        self.script_call_stack
+            .push_front(source_info.source.clone());
+
         let result = self.run_parsed_result(parse_result, source_info).await;
+
+        self.script_call_stack.pop_front();
 
         // Restore.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -496,7 +512,7 @@ impl Shell {
 
         // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
         // so we strip them here.
-        let re = regex::Regex::new("\x1b][0-2];[^\x07]*\x07")?;
+        let re = fancy_regex::Regex::new("\x1b][0-2];[^\x07]*\x07")?;
         let formatted_prompt = re.replace_all(formatted_prompt.as_str(), "").to_string();
 
         // Now expand.
@@ -703,5 +719,21 @@ impl Shell {
 
     pub fn stderr(&self) -> openfiles::OpenFile {
         self.open_files.files.get(&2).unwrap().try_dup().unwrap()
+    }
+
+    pub fn trace_command<S: AsRef<str>>(&self, command: S) -> Result<(), std::io::Error> {
+        // TODO: get prefix from PS4
+        const DEFAULT_PREFIX: &str = "+ ";
+
+        let mut prefix = DEFAULT_PREFIX.to_owned();
+        if !self.script_call_stack.is_empty() {
+            if let Some(c) = prefix.chars().next() {
+                for _ in 0..self.script_call_stack.len() {
+                    prefix.insert(0, c);
+                }
+            }
+        }
+
+        writeln!(self.stdout(), "{prefix}{}", command.as_ref())
     }
 }

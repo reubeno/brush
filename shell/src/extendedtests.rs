@@ -23,7 +23,7 @@ pub(crate) async fn eval_expression(
         ast::ExtendedTestExpr::BinaryTest(op, left, right) => {
             let expanded_left = expansion::basic_expand_word(shell, left).await?;
             let expanded_right = expansion::basic_expand_word(shell, right).await?;
-            apply_binary_predicate(op, expanded_left.as_str(), expanded_right.as_str())
+            apply_binary_predicate(op, expanded_left.as_str(), expanded_right.as_str(), shell)
         }
         ast::ExtendedTestExpr::And(left, right) => {
             let result =
@@ -157,6 +157,7 @@ fn apply_binary_predicate(
     op: &ast::BinaryPredicate,
     left: &str,
     right: &str,
+    shell: &mut Shell,
 ) -> Result<bool, error::Error> {
     #[allow(clippy::single_match_else)]
     match op {
@@ -167,12 +168,13 @@ fn apply_binary_predicate(
         ast::BinaryPredicate::StringMatchesPattern => {
             let s = left;
             let pattern = right;
-            patterns::pattern_matches(pattern, s)
+            patterns::pattern_exactly_matches(pattern, s, shell.options.extended_globbing)
         }
         ast::BinaryPredicate::StringDoesNotMatchPattern => {
             let s = left;
             let pattern = right;
-            let eq = patterns::pattern_matches(pattern, s)?;
+            let eq =
+                patterns::pattern_exactly_matches(pattern, s, shell.options.extended_globbing)?;
             Ok(!eq)
         }
         ast::BinaryPredicate::StringMatchesRegex => {

@@ -197,7 +197,7 @@ fn report_integration_test_results(
 
 fn report_integration_test_results_junit(
     results: Vec<TestCaseSetResults>,
-    _options: &TestOptions,
+    options: &TestOptions,
 ) -> Result<()> {
     let mut report = junit_report::Report::new();
 
@@ -205,7 +205,7 @@ fn report_integration_test_results_junit(
         let mut suite = junit_report::TestSuite::new(result.name.unwrap_or(String::new()).as_str());
         for r in result.test_case_results {
             let test_case_name = r.name.as_deref().unwrap_or("");
-            let test_case: junit_report::TestCase = if r.success {
+            let mut test_case: junit_report::TestCase = if r.success {
                 junit_report::TestCase::success(
                     test_case_name,
                     r.comparison.duration.test.try_into()?,
@@ -221,10 +221,9 @@ fn report_integration_test_results_junit(
                 )
             };
 
-            // TODO: enable this
-            // let mut output_buf: Vec<u8> = vec![];
-            // r.write_details(&mut output_buf)?;
-            // test_case.set_system_out(String::from_utf8(output_buf)?.as_str());
+            let mut output_buf: Vec<u8> = vec![];
+            r.write_details(&mut output_buf, options)?;
+            test_case.set_system_out(String::from_utf8(output_buf)?.as_str());
 
             suite.add_testcase(test_case);
         }
@@ -286,6 +285,7 @@ struct TestFile {
     /// Relative path to test file
     pub path: PathBuf,
     /// Contents to seed the file with
+    #[serde(default)]
     pub contents: String,
     /// Executable?
     #[serde(default)]

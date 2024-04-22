@@ -94,11 +94,13 @@ jobs:
           cargo llvm-cov report --cobertura --output-path ./codecov.xml
 
           # Process raw test output
-          linenum=0
+          n=1
           while IFS= read -r line
           do
-            linenum=$((linenum+1))
-            echo "${line}" >"test-results-${linenum}.xml"
+            if [[ ${line} == "<?xml"* ]]; then
+              ((n++))
+            fi
+            echo "${line}" >>"test-results-${n}.xml"
           done <raw-test-output.txt
 
           exit ${result}

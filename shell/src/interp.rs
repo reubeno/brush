@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::io::Write;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
@@ -340,6 +339,12 @@ impl ExecuteInPipeline for ast::Command {
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::ExtendedTest(e) => {
+                if pipeline_context.shell.options.print_commands_and_arguments {
+                    pipeline_context
+                        .shell
+                        .trace_command(std::format!("[[ {e} ]]"))?;
+                }
+
                 let result = if extendedtests::eval_expression(e, pipeline_context.shell).await? {
                     0
                 } else {
@@ -405,6 +410,14 @@ impl Execute for ast::ForClauseCommand {
             }
 
             for value in expanded_values {
+                if shell.options.print_commands_and_arguments {
+                    shell.trace_command(std::format!(
+                        "for {} in {}",
+                        self.variable_name,
+                        unexpanded_values.iter().join(" ")
+                    ))?;
+                }
+
                 // Update the variable.
                 shell.env.update_or_add(
                     &self.variable_name,
@@ -447,13 +460,22 @@ impl Execute for ast::CaseClauseCommand {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
+
+        if shell.options.print_commands_and_arguments {
+            shell.trace_command(std::format!("case {expanded_value} in"))?;
+        }
+
         for case in &self.cases {
             let mut matches = false;
 
             for pattern in &case.patterns {
                 // TODO: Handle quoting's impact on pattern matching.
                 let expanded_pattern = expansion::basic_expand_word(shell, pattern).await?;
-                if patterns::pattern_matches(expanded_pattern.as_str(), expanded_value.as_str())? {
+                if patterns::pattern_exactly_matches(
+                    expanded_pattern.as_str(),
+                    expanded_value.as_str(),
+                    shell.options.extended_globbing,
+                )? {
                     matches = true;
                     break;
                 }
@@ -726,11 +748,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
             if context.shell.options.print_commands_and_arguments {
-                writeln!(
-                    context.shell.stdout(),
-                    "+ {}",
-                    args.iter().map(|arg| arg.to_string()).join(" ")
-                )?;
+                context
+                    .shell
+                    .trace_command(args.iter().map(|arg| arg.to_string()).join(" "))?;
             }
 
             // Apply all variable assignments in a child shell object, from which we'll harvest
@@ -797,7 +817,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
                 if context.shell.options.print_commands_and_arguments {
-                    writeln!(context.shell.stdout(), "+ {assignment}")?;
+                    context.shell.trace_command(assignment.to_string())?;
                 }
 
                 apply_assignment(assignment, context.shell).await?;

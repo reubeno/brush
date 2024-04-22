@@ -1,7 +1,44 @@
 name: "Builtins: shopt"
 cases:
+  - name: "shopt defaults"
+    stdin: |
+      shopt | sort | grep -v extglob
+
+  - name: "shopt interactive defaults"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      shopt | sort | grep -v extglob
+
+  - name: "shopt -o defaults"
+    stdin: |
+      shopt -o | sort
+
+  - name: "shopt -o interactive defaults"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      shopt -o | sort | grep -v monitor
+
+  - name: "extglob defaults"
+    known_failure: true
+    stdin: |
+      shopt extglob
+
+  - name: "extglob interactive defaults"
+    args: ["-i"]
+    ignore_stderr: true
+    known_failure: true
+    stdin: |
+      shopt extglob
+
+  # - name: "shopt -o interactive monitor default"
+  #   args: ["-i"]
+  #   ignore_stderr: true
+  #   stdin: |
+  #     shopt -o monitor
+
   - name: "shopt toggle"
-    ignore_whitespace: true
     stdin: |
       echo "Setting checkwinsize"
       shopt -s checkwinsize
@@ -18,7 +55,6 @@ cases:
       shopt -p checkwinsize
 
   - name: "shopt -o usage"
-    ignore_whitespace: true
     stdin: |
       echo "Setting emacs"
       shopt -o -s emacs
