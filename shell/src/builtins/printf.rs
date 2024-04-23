@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},
-    env, variables,
+    expansion,
 };
 
 #[derive(Parser)]
@@ -46,13 +46,7 @@ impl BuiltinCommand for PrintfCommand {
         }
 
         if let Some(variable_name) = &self.output_variable {
-            context.shell.env.update_or_add(
-                variable_name.as_str(),
-                variables::ShellValueLiteral::Scalar(stdout),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
+            expansion::assign_to_named_parameter(context.shell, variable_name, stdout).await?;
         } else {
             write!(context.stdout(), "{stdout}")?;
             context.stdout().flush()?;

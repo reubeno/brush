@@ -78,6 +78,40 @@ cases:
       - path: "file*.txt"
     stdin: "echo file\\*.txt"
 
+  - name: "Basic pattern matching"
+    stdin: |
+      test_pattern() {
+        local str="$1"
+        local pattern="$2"
+
+        if [[ "${str}" == ${pattern} ]]; then
+          echo "Matched: ${str} using ${pattern}"
+        else
+          echo "No match: ${str} using ${pattern}"
+        fi
+      }
+
+      test_pattern "abc" "a*"
+      test_pattern "abc" "b*"
+
+      test_pattern "?bc" "abc"
+      test_pattern "?bc" "aabc"
+
+      test_pattern "ac" "[ab]c"
+      test_pattern "bc" "[ab]c"
+      test_pattern "cc" "[ab]c"
+
+      test_pattern "ad" "[a-c]d"
+      test_pattern "bd" "[a-c]d"
+      test_pattern "dd" "[a-c]d"
+
+      test_pattern "1" "[[:alpha:]]"
+      test_pattern "a" "[[:alpha:]]"
+
+      test_pattern "a/b" "*b"
+      test_pattern "a/b" "a/b"
+      test_pattern "a/b" "*/*"
+
   - name: "Extglob pattern matching"
     stdin: |
       shopt -s extglob
@@ -152,7 +186,6 @@ cases:
       echo "result: $?"
 
   - name: "Pathname expansion: Inverted patterns"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: "abc.txt"
@@ -163,7 +196,6 @@ cases:
       echo !(a*)
 
   - name: "Pathname expansion: Extended patterns"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: "abc.txt"
@@ -173,7 +205,6 @@ cases:
       echo @(abc|abd).txt
 
   - name: "Pathname expansion: Optional patterns"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: "ab.txt"
@@ -183,7 +214,6 @@ cases:
       echo ab?(c).txt
 
   - name: "Pathname expansion: Star patterns"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: "abadac.txt"
@@ -193,7 +223,6 @@ cases:
       echo *(ab|ad|ac).txt
 
   - name: "Pathname expansion: Plus patterns"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: "fabadac.txt"
@@ -201,3 +230,12 @@ cases:
     stdin: |
       shopt -s extglob
       echo f+(ab|ad|ac).txt
+
+  - name: "Pathname expansion: quoting"
+    known_failure: true
+    test_files:
+      - path: test.txt
+      - path: subdir/test.txt
+    stdin: |
+      echo "./test"*.txt
+      echo "subdir"/*.txt

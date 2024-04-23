@@ -45,12 +45,14 @@ peg::parser! {
                 if invert.is_some() {
                     members.insert(0, String::from("^"));
                 }
-                members.join("")
+
+                std::format!("[{}]", members.join(""))
             }
 
         rule bracket_member() -> String =
             char_class_expression() /
-            char_range()
+            char_range() /
+            char_list()
 
         rule char_class_expression() -> String =
             e:$("[:" char_class() ":]") { e.to_owned() }
@@ -60,6 +62,9 @@ peg::parser! {
 
         rule char_range() -> String =
             range:$([_] "-" [_]) { range.to_owned() }
+
+        rule char_list() -> String =
+            chars:$([c if c != ']']+) { chars.to_owned() }
 
         rule wildcard() -> String =
             "?" { String::from(".") } /

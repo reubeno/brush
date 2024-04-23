@@ -49,6 +49,17 @@ pub(crate) async fn full_expand_and_split_str(
     expander.full_expand_with_splitting(s).await
 }
 
+pub(crate) async fn assign_to_named_parameter(
+    shell: &mut Shell,
+    name: &str,
+    value: String,
+) -> Result<(), error::Error> {
+    let parser_options = shell.parser_options();
+    let mut expander = WordExpander::new(shell);
+    let parameter = parser::word::parse_parameter(name, &parser_options)?;
+    expander.assign_to_parameter(&parameter, value).await
+}
+
 #[derive(Clone, Debug)]
 enum ExpandedWordPiece {
     Unsplittable(String),
@@ -171,8 +182,16 @@ impl<'a> WordExpander<'a> {
     pub async fn basic_expand(&mut self, word: &str) -> Result<String, error::Error> {
         let expanded_pieces = self.basic_expand_into_pieces(word).await?;
 
-        let flattened = expanded_pieces.into_iter().map(|p| p.unwrap()).collect();
-        Ok(flattened)
+        let mut expanded = String::new();
+        for piece in expanded_pieces {
+            match piece {
+                ExpandedWordPiece::Unsplittable(s) => expanded.push_str(s.as_str()),
+                ExpandedWordPiece::Splittable(s) => expanded.push_str(s.as_str()),
+                ExpandedWordPiece::Separator => expanded.push(' '),
+            }
+        }
+
+        Ok(expanded)
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -283,6 +302,8 @@ impl<'a> WordExpander<'a> {
 
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
         // Expand only items marked splittable.
+        // FIXME: This is a bug; we should be expanding patterns in splittable pieces only, but the unsplittable
+        // pieces do contribute text to the expanded forms.
         let expansion_candidates = field.into_iter().map(|piece| match piece {
             ExpandedWordPiece::Unsplittable(s) => vec![s],
             ExpandedWordPiece::Splittable(s) => self.expand_pathnames_in_string(s),
@@ -295,19 +316,17 @@ impl<'a> WordExpander<'a> {
             .collect()
     }
 
-    #[allow(clippy::unused_self)]
     fn expand_pathnames_in_string(&self, pattern: String) -> Vec<String> {
-        match patterns::pattern_expand(pattern.as_str(), self.shell.working_dir.as_path()) {
-            Ok(expanded) if !expanded.is_empty() => expanded
-                .into_iter()
-                .map(|p| p.to_string_lossy().to_string())
-                .collect(),
+        match patterns::pattern_expand(
+            pattern.as_str(),
+            self.shell.working_dir.as_path(),
+            self.parser_options.enable_extended_globbing,
+        ) {
+            Ok(expanded) if !expanded.is_empty() => expanded,
             _ => vec![pattern],
         }
     }
 
-    #[allow(clippy::unused_self)]
-    #[allow(clippy::unnecessary_wraps)]
     fn unquote_field_as_vec(&self, field: WordField) -> Result<Vec<String>, error::Error> {
         Ok(vec![self.unquote_field(field)?])
     }
@@ -459,15 +478,17 @@ impl<'a> WordExpander<'a> {
     ) -> Result<ParameterExpansion, error::Error> {
         #[allow(clippy::cast_possible_truncation)]
         match expr {
-            parser::word::ParameterExpr::Parameter { parameter } => {
-                self.expand_parameter(parameter).await
-            }
+            parser::word::ParameterExpr::Parameter {
+                parameter,
+                indirect,
+            } => self.expand_parameter(parameter, *indirect).await,
             parser::word::ParameterExpr::UseDefaultValues {
                 parameter,
+                indirect,
                 test_type,
                 default_value,
             } => {
-                let expanded_parameter = self.expand_parameter(parameter).await?;
+                let expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
                 let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
 
                 match (test_type, expanded_parameter.state()) {
@@ -483,10 +504,11 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::ParameterExpr::AssignDefaultValues {
                 parameter,
+                indirect,
                 test_type,
                 default_value,
             } => {
-                let expanded_parameter = self.expand_parameter(parameter).await?;
+                let expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
                 let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
 
                 match (test_type, expanded_parameter.state()) {
@@ -505,10 +527,11 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::ParameterExpr::IndicateErrorIfNullOrUnset {
                 parameter,
+                indirect,
                 test_type,
                 error_message,
             } => {
-                let expanded_parameter = self.expand_parameter(parameter).await?;
+                let expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
                 let error_message = error_message.as_ref().map_or_else(|| "", |v| v.as_str());
 
                 match (test_type, expanded_parameter.state()) {
@@ -524,10 +547,11 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::ParameterExpr::UseAlternativeValue {
                 parameter,
+                indirect,
                 test_type,
                 alternative_value,
             } => {
-                let expanded_parameter = self.expand_parameter(parameter).await?;
+                let expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
                 let alternative_value = alternative_value
                     .as_ref()
                     .map_or_else(|| "", |v| v.as_str());
@@ -543,8 +567,11 @@ impl<'a> WordExpander<'a> {
                     _ => Ok(ParameterExpansion::empty_str()),
                 }
             }
-            parser::word::ParameterExpr::ParameterLength { parameter } => {
-                let len = match self.expand_parameter(parameter).await? {
+            parser::word::ParameterExpr::ParameterLength {
+                parameter,
+                indirect,
+            } => {
+                let len = match self.expand_parameter(parameter, *indirect).await? {
                     ParameterExpansion::String(s) => s.len(),
                     ParameterExpansion::Array {
                         values,
@@ -555,8 +582,13 @@ impl<'a> WordExpander<'a> {
 
                 Ok(ParameterExpansion::from(len.to_string()))
             }
-            parser::word::ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::RemoveSmallestSuffixPattern {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_smallest_matching_suffix(
                     expanded_parameter.as_str(),
@@ -565,8 +597,13 @@ impl<'a> WordExpander<'a> {
                 )?;
                 Ok(ParameterExpansion::from(result.to_owned()))
             }
-            parser::word::ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::RemoveLargestSuffixPattern {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_largest_matching_suffix(
                     expanded_parameter.as_str(),
@@ -576,8 +613,13 @@ impl<'a> WordExpander<'a> {
 
                 Ok(ParameterExpansion::from(result.to_owned()))
             }
-            parser::word::ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_smallest_matching_prefix(
                     expanded_parameter.as_str(),
@@ -587,8 +629,13 @@ impl<'a> WordExpander<'a> {
 
                 Ok(ParameterExpansion::from(result.to_owned()))
             }
-            parser::word::ParameterExpr::RemoveLargestPrefixPattern { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::RemoveLargestPrefixPattern {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
                 let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
                 let result = patterns::remove_largest_matching_prefix(
                     expanded_parameter.as_str(),
@@ -600,10 +647,12 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::ParameterExpr::Substring {
                 parameter,
+                indirect,
                 offset,
                 length,
             } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
 
                 let expanded_offset = offset.eval(self.shell).await?;
                 let expanded_offset = usize::try_from(expanded_offset)?;
@@ -631,14 +680,20 @@ impl<'a> WordExpander<'a> {
 
                 Ok(ParameterExpansion::from(result.to_owned()))
             }
-            parser::word::ParameterExpr::Transform { parameter, op } => match op {
+            parser::word::ParameterExpr::Transform {
+                parameter,
+                indirect,
+                op,
+            } => match op {
                 parser::word::ParameterTransformOp::PromptExpand => {
-                    let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+                    let expanded_parameter: String =
+                        self.expand_parameter(parameter, *indirect).await?.into();
                     let result = prompt::expand_prompt(self.shell, expanded_parameter.as_str())?;
                     Ok(ParameterExpansion::from(result))
                 }
                 parser::word::ParameterTransformOp::CapitalizeInitial => {
-                    let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+                    let expanded_parameter: String =
+                        self.expand_parameter(parameter, *indirect).await?.into();
                     Ok(ParameterExpansion::from(to_initial_capitals(
                         expanded_parameter.as_str(),
                     )))
@@ -659,16 +714,23 @@ impl<'a> WordExpander<'a> {
                     error::unimp("parameter transformation: ToAttributeFlags")
                 }
                 parser::word::ParameterTransformOp::ToLowerCase => {
-                    let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+                    let expanded_parameter: String =
+                        self.expand_parameter(parameter, *indirect).await?.into();
                     Ok(ParameterExpansion::from(expanded_parameter.to_lowercase()))
                 }
                 parser::word::ParameterTransformOp::ToUpperCase => {
-                    let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+                    let expanded_parameter: String =
+                        self.expand_parameter(parameter, *indirect).await?.into();
                     Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
                 }
             },
-            parser::word::ParameterExpr::UppercaseFirstChar { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::UppercaseFirstChar {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
                 if let Some(first_char) = expanded_parameter.chars().next() {
                     let applicable = if let Some(pattern) = pattern {
                         let expanded_pattern = self.basic_expand(pattern).await?;
@@ -694,8 +756,13 @@ impl<'a> WordExpander<'a> {
                     Ok(ParameterExpansion::from(expanded_parameter))
                 }
             }
-            parser::word::ParameterExpr::UppercasePattern { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::UppercasePattern {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
 
                 if let Some(pattern) = pattern {
                     let expanded_pattern = self.basic_expand(pattern).await?;
@@ -718,8 +785,13 @@ impl<'a> WordExpander<'a> {
                     Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
                 }
             }
-            parser::word::ParameterExpr::LowercaseFirstChar { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::LowercaseFirstChar {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
                 if let Some(first_char) = expanded_parameter.chars().next() {
                     let applicable = if let Some(pattern) = pattern {
                         let expanded_pattern = self.basic_expand(pattern).await?;
@@ -745,8 +817,13 @@ impl<'a> WordExpander<'a> {
                     Ok(ParameterExpansion::from(expanded_parameter))
                 }
             }
-            parser::word::ParameterExpr::LowercasePattern { parameter, pattern } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+            parser::word::ParameterExpr::LowercasePattern {
+                parameter,
+                indirect,
+                pattern,
+            } => {
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
 
                 if let Some(pattern) = pattern {
                     let expanded_pattern = self.basic_expand(pattern).await?;
@@ -771,11 +848,13 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::ParameterExpr::ReplaceSubstring {
                 parameter,
+                indirect,
                 pattern,
                 replacement,
                 match_kind,
             } => {
-                let expanded_parameter: String = self.expand_parameter(parameter).await?.into();
+                let expanded_parameter: String =
+                    self.expand_parameter(parameter, *indirect).await?.into();
                 let expanded_pattern = self.basic_expand(pattern).await?;
                 let expanded_replacement = self.basic_expand(replacement).await?;
 
@@ -824,19 +903,6 @@ impl<'a> WordExpander<'a> {
                         matching_names.collect(),
                         *concatenate,
                     ))
-                }
-            }
-            parser::word::ParameterExpr::DereferenceVariable { variable_name } => {
-                // TODO: handle nameref variables?
-                if let Some(var) = self.shell.env.get(variable_name) {
-                    let target_name = var.value().to_cow_string().to_string();
-                    let parameter =
-                        parser::word::parse_parameter(target_name.as_str(), &self.parser_options)?;
-
-                    // TODO: handle cycles?
-                    self.expand_parameter(&parameter).await
-                } else {
-                    Ok(ParameterExpansion::undefined())
                 }
             }
             parser::word::ParameterExpr::MemberKeys {
@@ -907,6 +973,24 @@ impl<'a> WordExpander<'a> {
     }
 
     async fn expand_parameter(
+        &mut self,
+        parameter: &parser::word::Parameter,
+        indirect: bool,
+    ) -> Result<ParameterExpansion, error::Error> {
+        let expansion = self.expand_parameter_without_indirect(parameter).await?;
+        if !indirect {
+            Ok(expansion)
+        } else {
+            let parameter_str: String = expansion.into();
+            let inner_parameter =
+                parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
+
+            self.expand_parameter_without_indirect(&inner_parameter)
+                .await
+        }
+    }
+
+    async fn expand_parameter_without_indirect(
         &mut self,
         parameter: &parser::word::Parameter,
     ) -> Result<ParameterExpansion, error::Error> {

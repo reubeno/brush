@@ -45,73 +45,90 @@ pub enum SpecialParameter {
 pub enum ParameterExpr {
     Parameter {
         parameter: Parameter,
+        indirect: bool,
     },
     UseDefaultValues {
         parameter: Parameter,
+        indirect: bool,
         test_type: ParameterTestType,
         default_value: Option<String>,
     },
     AssignDefaultValues {
         parameter: Parameter,
+        indirect: bool,
         test_type: ParameterTestType,
         default_value: Option<String>,
     },
     IndicateErrorIfNullOrUnset {
         parameter: Parameter,
+        indirect: bool,
         test_type: ParameterTestType,
         error_message: Option<String>,
     },
     UseAlternativeValue {
         parameter: Parameter,
+        indirect: bool,
         test_type: ParameterTestType,
         alternative_value: Option<String>,
     },
     ParameterLength {
         parameter: Parameter,
+        indirect: bool,
     },
     RemoveSmallestSuffixPattern {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     RemoveLargestSuffixPattern {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     RemoveSmallestPrefixPattern {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     RemoveLargestPrefixPattern {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     Substring {
         parameter: Parameter,
+        indirect: bool,
         offset: ast::UnexpandedArithmeticExpr,
         length: Option<ast::UnexpandedArithmeticExpr>,
     },
     Transform {
         parameter: Parameter,
+        indirect: bool,
         op: ParameterTransformOp,
     },
     UppercaseFirstChar {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     UppercasePattern {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     LowercaseFirstChar {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     LowercasePattern {
         parameter: Parameter,
+        indirect: bool,
         pattern: Option<String>,
     },
     ReplaceSubstring {
         parameter: Parameter,
+        indirect: bool,
         pattern: String,
         replacement: String,
         match_kind: SubstringMatchKind,
@@ -119,9 +136,6 @@ pub enum ParameterExpr {
     VariableNames {
         prefix: String,
         concatenate: bool,
-    },
-    DereferenceVariable {
-        variable_name: String,
     },
     MemberKeys {
         variable_name: String,
@@ -249,44 +263,44 @@ peg::parser! {
                 WordPiece::ParameterExpansion(e)
             } /
             "$" parameter:unbraced_parameter() {
-                WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter })
+                WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter, indirect: false })
             } /
             "$" !['\''] {
                 WordPiece::Text("$".to_owned())
             }
 
         rule parameter_expression() -> ParameterExpr =
-            parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
-                ParameterExpr::UseDefaultValues { parameter, test_type, default_value }
+            indirect:parameter_indirection() parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
+                ParameterExpr::UseDefaultValues { parameter, indirect, test_type, default_value }
             } /
-            parameter:parameter() test_type:parameter_test_type() "=" default_value:parameter_expression_word()? {
-                ParameterExpr::AssignDefaultValues { parameter, test_type, default_value }
+            indirect:parameter_indirection() parameter:parameter() test_type:parameter_test_type() "=" default_value:parameter_expression_word()? {
+                ParameterExpr::AssignDefaultValues { parameter, indirect, test_type, default_value }
             } /
-            parameter:parameter() test_type:parameter_test_type() "?" error_message:parameter_expression_word()? {
-                ParameterExpr::IndicateErrorIfNullOrUnset { parameter, test_type, error_message }
+            indirect:parameter_indirection() parameter:parameter() test_type:parameter_test_type() "?" error_message:parameter_expression_word()? {
+                ParameterExpr::IndicateErrorIfNullOrUnset { parameter, indirect, test_type, error_message }
             } /
-            parameter:parameter() test_type:parameter_test_type() "+" alternative_value:parameter_expression_word()? {
-                ParameterExpr::UseAlternativeValue { parameter, test_type, alternative_value }
+            indirect:parameter_indirection() parameter:parameter() test_type:parameter_test_type() "+" alternative_value:parameter_expression_word()? {
+                ParameterExpr::UseAlternativeValue { parameter, indirect, test_type, alternative_value }
             } /
             "#" parameter:parameter() {
-                ParameterExpr::ParameterLength { parameter }
+                ParameterExpr::ParameterLength { parameter, indirect: false }
             } /
-            parameter:parameter() "%%" pattern:parameter_expression_word()? {
-                ParameterExpr::RemoveLargestSuffixPattern { parameter, pattern }
+            indirect:parameter_indirection() parameter:parameter() "%%" pattern:parameter_expression_word()? {
+                ParameterExpr::RemoveLargestSuffixPattern { parameter, indirect, pattern }
             } /
-            parameter:parameter() "%" pattern:parameter_expression_word()? {
-                ParameterExpr::RemoveSmallestSuffixPattern { parameter, pattern }
+            indirect:parameter_indirection() parameter:parameter() "%" pattern:parameter_expression_word()? {
+                ParameterExpr::RemoveSmallestSuffixPattern { parameter, indirect, pattern }
             } /
-            parameter:parameter() "##" pattern:parameter_expression_word()? {
-                ParameterExpr::RemoveLargestPrefixPattern { parameter, pattern }
+            indirect:parameter_indirection() parameter:parameter() "##" pattern:parameter_expression_word()? {
+                ParameterExpr::RemoveLargestPrefixPattern { parameter, indirect, pattern }
             } /
-            parameter:parameter() "#" pattern:parameter_expression_word()? {
-                ParameterExpr::RemoveSmallestPrefixPattern { parameter, pattern }
+            indirect:parameter_indirection() parameter:parameter() "#" pattern:parameter_expression_word()? {
+                ParameterExpr::RemoveSmallestPrefixPattern { parameter, indirect, pattern }
             } /
             // N.B. The following case is for non-sh extensions.
             non_posix_extensions_enabled() e:non_posix_parameter_expression() { e } /
-            parameter:parameter() {
-                ParameterExpr::Parameter { parameter }
+            indirect:parameter_indirection() parameter:parameter() {
+                ParameterExpr::Parameter { parameter, indirect }
             }
 
         rule parameter_test_type() -> ParameterTestType =
@@ -311,39 +325,40 @@ peg::parser! {
             "!" prefix:variable_name() "@" {
                 ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: false }
             } /
-            "!" variable_name:variable_name() {
-                ParameterExpr::DereferenceVariable { variable_name: variable_name.to_owned() }
+            indirect:parameter_indirection() parameter:parameter() ":" offset:substring_offset() length:(":" l:substring_length() { l })? {
+                ParameterExpr::Substring { parameter, indirect, offset, length }
             } /
-            parameter:parameter() ":" offset:substring_offset() length:(":" l:substring_length() { l })? {
-                ParameterExpr::Substring { parameter, offset, length }
+            indirect:parameter_indirection() parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
+                ParameterExpr::Transform { parameter, indirect, op }
             } /
-            parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
-                ParameterExpr::Transform { parameter, op }
+            indirect:parameter_indirection() parameter:parameter() "/#" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::Prefix }
             } /
-            parameter:parameter() "/#" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
-                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Prefix }
+            indirect:parameter_indirection() parameter:parameter() "/%" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::Suffix }
             } /
-            parameter:parameter() "/%" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
-                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Suffix }
+            indirect:parameter_indirection() parameter:parameter() "//" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::Anywhere }
             } /
-            parameter:parameter() "//" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
-                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::Anywhere }
+            indirect:parameter_indirection() parameter:parameter() "/" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+                ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::FirstOccurrence }
             } /
-            parameter:parameter() "/" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
-                ParameterExpr::ReplaceSubstring { parameter, pattern, replacement, match_kind: SubstringMatchKind::FirstOccurrence }
+            indirect:parameter_indirection() parameter:parameter() "^^" pattern:parameter_expression_word()? {
+                ParameterExpr::UppercasePattern { parameter, indirect, pattern }
             } /
-            parameter:parameter() "^^" pattern:parameter_expression_word()? {
-                ParameterExpr::UppercasePattern { parameter, pattern }
+            indirect:parameter_indirection() parameter:parameter() "^" pattern:parameter_expression_word()? {
+                ParameterExpr::UppercaseFirstChar { parameter, indirect, pattern }
             } /
-            parameter:parameter() "^" pattern:parameter_expression_word()? {
-                ParameterExpr::UppercaseFirstChar { parameter, pattern }
+            indirect:parameter_indirection() parameter:parameter() ",," pattern:parameter_expression_word()? {
+                ParameterExpr::LowercasePattern { parameter, indirect, pattern }
             } /
-            parameter:parameter() ",," pattern:parameter_expression_word()? {
-                ParameterExpr::LowercasePattern { parameter, pattern }
-            } /
-            parameter:parameter() "," pattern:parameter_expression_word()? {
-                ParameterExpr::LowercaseFirstChar { parameter, pattern }
+            indirect:parameter_indirection() parameter:parameter() "," pattern:parameter_expression_word()? {
+                ParameterExpr::LowercaseFirstChar { parameter, indirect, pattern }
             }
+
+        rule parameter_indirection() -> bool =
+            non_posix_extensions_enabled() "!" { true } /
+            { false }
 
         rule non_posix_parameter_transformation_op() -> ParameterTransformOp =
             "U" { ParameterTransformOp::ToUpperCase } /

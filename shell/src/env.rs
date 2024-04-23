@@ -12,7 +12,7 @@ pub enum EnvironmentLookup {
     OnlyInLocal,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum EnvironmentScope {
     Local,
     Global,

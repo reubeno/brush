@@ -1,0 +1,16 @@
+name: "Builtins: printf"
+cases:
+  - name: "Basic printf"
+    stdin: |
+      printf "%s, %s" "Hello" "world"
+
+  - name: "printf -v"
+    stdin: |
+      printf -v myvar "%s, %s" "Hello" "world"
+      echo "myvar: '${myvar}'"
+
+  - name: "printf -v with array index"
+    stdin: |
+      declare -a myarray=()
+      printf -v 'myarray[5]' "%s, %s" "Hello" "world"
+      declare | grep myarray
