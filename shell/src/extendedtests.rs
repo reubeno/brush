@@ -20,11 +20,21 @@ pub(crate) async fn eval_expression(
     match expr {
         ast::ExtendedTestExpr::UnaryTest(op, operand) => {
             let expanded_operand = expansion::basic_expand_word(shell, operand).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell.trace_command(std::format!("[[ {op} {expanded_operand} ]]"))?;
+            }
+
             apply_unary_predicate(op, expanded_operand.as_str(), shell)
         }
         ast::ExtendedTestExpr::BinaryTest(op, left, right) => {
             let expanded_left = expansion::basic_expand_word(shell, left).await?;
             let expanded_right = expansion::basic_expand_word(shell, right).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell.trace_command(std::format!("[[ {expanded_left} {op} {expanded_right} ]]"))?;
+            }
+
             apply_binary_predicate(op, expanded_left.as_str(), expanded_right.as_str(), shell)
         }
         ast::ExtendedTestExpr::And(left, right) => {

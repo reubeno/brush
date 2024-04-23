@@ -1,5 +1,8 @@
 use clap::ValueEnum;
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use crate::{env, error, patterns, variables::ShellValueLiteral, Shell};
 
@@ -494,19 +497,17 @@ impl CompletionConfig {
     ) -> CompletionResult {
         // TODO: Contextually generate different completions.
         let glob = std::format!("{}*", context.token_to_complete);
-        let mut candidates = if let Ok(candidates) =
-            patterns::pattern_expand(glob.as_str(), shell.working_dir.as_path())
-        {
+        let mut candidates = if let Ok(mut candidates) = patterns::pattern_expand(
+            glob.as_str(),
+            shell.working_dir.as_path(),
+            shell.options.extended_globbing,
+        ) {
+            for candidate in &mut candidates {
+                if Path::new(candidate.as_str()).is_dir() {
+                    candidate.push('/');
+                }
+            }
             candidates
-                .into_iter()
-                .map(|p| {
-                    let mut s = p.to_string_lossy().to_string();
-                    if p.is_dir() {
-                        s.push('/');
-                    }
-                    s
-                })
-                .collect()
         } else {
             vec![]
         };

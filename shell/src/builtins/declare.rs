@@ -152,7 +152,7 @@ impl DeclareCommand {
         let lookup = if called_as_local {
             EnvironmentLookup::OnlyInCurrentLocal
         } else {
-            EnvironmentLookup::OnlyInGlobal
+            EnvironmentLookup::Anywhere
         };
 
         if self.function_names_only || self.function_names_or_defs_only {
@@ -215,7 +215,7 @@ impl DeclareCommand {
         let lookup = if create_var_local {
             EnvironmentLookup::OnlyInCurrentLocal
         } else {
-            EnvironmentLookup::OnlyInGlobal
+            EnvironmentLookup::Anywhere
         };
 
         // Look up the variable.

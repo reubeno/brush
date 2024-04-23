@@ -68,9 +68,6 @@ pub enum Error {
     #[error("i/o error: {0}")]
     IoError(#[from] std::io::Error),
 
-    #[error("glob pattern error: {0}")]
-    GlobError(#[from] glob::GlobError),
-
     #[error("bad substitution")]
     BadSubstitution,
 

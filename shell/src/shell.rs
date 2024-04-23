@@ -5,7 +5,6 @@ use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::commands;
 use crate::completion;
 use crate::context;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
@@ -17,6 +16,7 @@ use crate::openfiles;
 use crate::options::RuntimeOptions;
 use crate::prompt::expand_prompt;
 use crate::variables::{self, ShellValue, ShellVariable};
+use crate::{commands, patterns};
 
 pub struct Shell {
     pub open_files: openfiles::OpenFiles,
@@ -164,6 +164,13 @@ impl Shell {
             "COMP_WORDBREAKS",
             ShellVariable::new(" \t\n\"\'><=;|&(:".into()),
         );
+
+        let os_type = match std::env::consts::OS {
+            "linux" => "linux-gnu",
+            "windows" => "windows",
+            _ => "unknown",
+        };
+        env.set_global("OSTYPE", ShellVariable::new(os_type.into()));
 
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
@@ -337,10 +344,12 @@ impl Shell {
 
         self.script_call_stack
             .push_front(source_info.source.clone());
+        self.update_bash_source_var()?;
 
         let result = self.run_parsed_result(parse_result, source_info).await;
 
         self.script_call_stack.pop_front();
+        self.update_bash_source_var()?;
 
         // Restore.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -598,14 +607,23 @@ impl Shell {
             EnvironmentScope::Global,
         )?;
 
+        self.update_bash_source_var()
+    }
+
+    fn update_bash_source_var(&mut self) -> Result<(), error::Error> {
         //
         // Fill out BASH_SOURCE[*]
         //
-        let source_values = self
-            .function_call_stack
-            .iter()
-            .map(|s| (None, s.source.clone()))
-            .collect::<Vec<_>>();
+        let source_values = if self.function_call_stack.is_empty() {
+            self.script_call_stack
+                .front()
+                .map_or_else(Vec::new, |s| vec![(None, s.to_owned())])
+        } else {
+            self.function_call_stack
+                .iter()
+                .map(|s| (None, s.source.clone()))
+                .collect::<Vec<_>>()
+        };
 
         self.env.update_or_add(
             "BASH_SOURCE",
@@ -650,14 +668,16 @@ impl Shell {
     pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
         let mut executables = vec![];
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
-            if let Ok(entries) =
-                glob::glob(std::format!("{dir_str}/{required_glob_pattern}").as_str())
-            {
+            let pattern = std::format!("{dir_str}/{required_glob_pattern}");
+            if let Ok(entries) = patterns::pattern_expand(
+                pattern.as_str(),
+                &self.working_dir,
+                self.options.extended_globbing,
+            ) {
                 for entry in entries {
-                    if let Ok(entry) = entry {
-                        if entry.executable() {
-                            executables.push(entry);
-                        }
+                    let path = Path::new(&entry);
+                    if path.executable() {
+                        executables.push(path.to_path_buf());
                     }
                 }
             }

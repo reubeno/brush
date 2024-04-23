@@ -90,6 +90,60 @@ cases:
       myfunc
       echo "Returned: $?"
 
+  - name: "Return in case"
+    stdin: |
+      myfunc() {
+        case 1 in
+            1)
+                echo "In case"
+                return 5
+                echo "Should not get here"
+                ;;
+        esac
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in brace group"
+    stdin: |
+      myfunc() {
+        {
+          echo "In brace group"
+          return 5
+          echo "Should not get here"
+        }
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in and/or"
+    stdin: |
+      myfunc() {
+        echo "In and/or" && return 5 && echo "Should not get here"
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return from nested clauses"
+    stdin: |
+      myfunc() {
+        while (($#)); do
+          case $1 in
+              *)
+                  shift 2 || {
+                    echo "Returning"
+                    return 5
+                  }
+                  echo "Shifted and fell through"
+          esac
+        done
+      }
+
+      myfunc a b c
+
   - name: "Function definition with output redirection"
     stdin: |
       myfunc() {

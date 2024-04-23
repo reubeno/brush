@@ -1,26 +1,21 @@
 name: "Builtins: local"
 cases:
   - name: "Basic local usage"
-    test_files:
-      - path: "script.sh"
-        contents: |
-          myfunc() {
-            local x=10
-            echo "in myfunc: x==$x"
-          }
-          x=5
-          echo "before call: x==$x"
-          myfunc
-          echo "after call: x==$x"
-    args: ["./script.sh"]
+    stdin: |
+      myfunc() {
+        local x=10
+        echo "in myfunc: x==$x"
+      }
+      x=5
+      echo "before call: x==$x"
+      myfunc
+      echo "after call: x==$x"
 
   - name: "Local with empty array"
-    test_files:
-      - path: "script.sh"
-        contents: |
-          myfunc() {
-            local x=()
-            echo "x[0]: ${x[0]}"
-          }
-          myfunc
-    args: ["./script.sh"]
+    stdin: |
+      myfunc() {
+        local x=()
+        declare -p x
+        echo "x[0]: ${x[0]}"
+      }
+      myfunc

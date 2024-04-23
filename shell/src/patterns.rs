@@ -4,53 +4,81 @@ use std::path::{Path, PathBuf};
 pub(crate) fn pattern_expand(
     pattern: &str,
     working_dir: &Path,
-) -> Result<Vec<PathBuf>, error::Error> {
+    enable_extended_globbing: bool,
+) -> Result<Vec<String>, error::Error> {
     if pattern.is_empty() {
         return Ok(vec![]);
+    } else if !requires_expansion(pattern) {
+        return Ok(vec![pattern.to_owned()]);
     }
 
-    // Workaround to deal with effective working directory being different from
-    // the actual process's working directory.
+    let pattern_as_path = Path::new(pattern);
+    let is_absolute = pattern_as_path.is_absolute();
+
     let prefix_to_remove;
-    let glob_pattern = if pattern.starts_with('/') {
+    let mut paths_so_far = if is_absolute {
         prefix_to_remove = None;
-        pattern.to_string()
+        vec![PathBuf::new()]
     } else {
         let mut working_dir_str = working_dir.to_string_lossy().to_string();
-        if !working_dir_str.ends_with('/') {
-            working_dir_str.push('/');
-        }
+        working_dir_str.push('/');
+
         prefix_to_remove = Some(working_dir_str);
-        working_dir.join(pattern).to_string_lossy().to_string()
+        vec![working_dir.to_path_buf()]
     };
 
-    let options = glob::MatchOptions {
-        case_sensitive: true,
-        require_literal_separator: true,
-        require_literal_leading_dot: false,
-    };
+    for component in pattern_as_path {
+        let component_str = component.to_string_lossy();
+        if !requires_expansion(component_str.as_ref()) {
+            for p in &mut paths_so_far {
+                p.push(component);
+            }
+            continue;
+        }
 
-    let paths = glob::glob_with(glob_pattern.as_str(), options)
-        .map_err(|_e| error::Error::InvalidPattern(pattern.to_owned()))?;
-    let paths_results: Result<Vec<_>, glob::GlobError> = paths.collect();
-    let mut paths = paths_results?;
+        let current_paths = std::mem::take(&mut paths_so_far);
+        for current_path in current_paths {
+            let regex =
+                pattern_to_regex(component_str.as_ref(), true, true, enable_extended_globbing)?;
+            let mut matching_paths_in_dir: Vec<_> = current_path
+                .read_dir()
+                .map_or_else(|_| vec![], |dir| dir.into_iter().collect())
+                .into_iter()
+                .filter_map(|result| result.ok())
+                .filter(|entry| {
+                    regex
+                        .is_match(entry.file_name().to_string_lossy().as_ref())
+                        .unwrap_or(false)
+                })
+                .map(|entry| entry.path())
+                .collect();
 
-    if let Some(prefix_to_remove) = prefix_to_remove {
-        paths = paths
-            .into_iter()
-            .map(|p| {
-                let rel = p
-                    .to_string_lossy()
-                    .strip_prefix(&prefix_to_remove)
-                    .unwrap()
-                    .to_owned();
+            matching_paths_in_dir.sort();
 
-                PathBuf::from(rel)
-            })
-            .collect();
+            paths_so_far.append(&mut matching_paths_in_dir);
+        }
     }
 
-    Ok(paths)
+    let results: Vec<_> = paths_so_far
+        .into_iter()
+        .map(|path| {
+            let path_str = path.to_string_lossy();
+            let mut path_ref = path_str.as_ref();
+
+            if let Some(prefix_to_remove) = &prefix_to_remove {
+                path_ref = path_ref.strip_prefix(prefix_to_remove).unwrap();
+            }
+
+            path_ref.to_string()
+        })
+        .collect();
+
+    Ok(results)
+}
+
+fn requires_expansion(s: &str) -> bool {
+    // TODO: Make this more accurate.
+    s.contains(|c| matches!(c, '*' | '?' | '[' | ']' | '(' | ')'))
 }
 
 pub(crate) fn pattern_exactly_matches(
@@ -204,6 +232,7 @@ mod tests {
             ext_pattern_to_exact_regex_str("a+(ab|ac)")?.as_str(),
             "^a(ab|ac)+$",
         );
+        assert_eq!(ext_pattern_to_exact_regex_str("[ab]")?.as_str(), "^[ab]$",);
 
         Ok(())
     }

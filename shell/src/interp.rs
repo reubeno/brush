@@ -328,7 +328,17 @@ impl ExecuteInPipeline for ast::Command {
                 }
 
                 let result = compound.execute(pipeline_context.shell, &params).await?;
-                Ok(SpawnResult::ImmediateExit(result.exit_code))
+                if result.exit_shell {
+                    Ok(SpawnResult::ExitShell(result.exit_code))
+                } else if result.return_from_function_or_script {
+                    Ok(SpawnResult::ReturnFromFunctionOrScript(result.exit_code))
+                } else if let Some(count) = result.break_loop {
+                    Ok(SpawnResult::BreakLoop(count))
+                } else if let Some(count) = result.continue_loop {
+                    Ok(SpawnResult::ContinueLoop(count))
+                } else {
+                    Ok(SpawnResult::ImmediateExit(result.exit_code))
+                }
             }
             ast::Command::Function(func) => {
                 let result = func
@@ -337,12 +347,6 @@ impl ExecuteInPipeline for ast::Command {
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::ExtendedTest(e) => {
-                if pipeline_context.shell.options.print_commands_and_arguments {
-                    pipeline_context
-                        .shell
-                        .trace_command(std::format!("[[ {e} ]]"))?;
-                }
-
                 let result = if extendedtests::eval_expression(e, pipeline_context.shell).await? {
                     0
                 } else {
@@ -552,6 +556,10 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             let condition_result = test_condition.execute(shell, params).await?;
 
             if condition_result.is_success() != is_while {
+                break;
+            }
+
+            if condition_result.return_from_function_or_script {
                 break;
             }
 

@@ -65,6 +65,28 @@ cases:
     stdin: |
       y=(a b c)
 
+      echo ${y[@]}
+      echo ${y[*]}
+
+      echo "\${y[@]}: ${y[@]}"
+      echo "\${y[*]}: ${y[*]}"
+
+      var1="${y[@]}"
+      echo "var1: ${var1}"
+      echo $var1
+
+      var2=${y[@]}
+      echo "var2: ${var2}"
+      echo $var2
+
+      var3="${y[*]}"
+      echo "var3: ${var3}"
+      echo $var3
+
+      var4=${y[*]}
+      echo "var4: ${var4}"
+      echo $var4
+
       for f in "${y[@]}"; do
           echo "quoted-@ => Element: $f"
       done
@@ -268,6 +290,15 @@ cases:
       echo "${non_existent_var?error message}"
       echo "This should never execute"
 
+  - name: "Parameter expression: complex cases"
+    stdin: |
+      declare -a var=("abc" "def" "ghi")
+
+      echo "Expression 1: ${var+"${var[@]}"}"
+      echo "Expression 2: ${var+${var[@]}}"
+      echo "Expression 3: ${var+"${var[*]}"}"
+      echo "Expression 4: ${var+${var[*]}}"
+
   - name: "Remove prefix/suffix"
     stdin: |
       var="prepre-abc-sufsuf"
@@ -297,15 +328,23 @@ cases:
       var="Hello"
       ref="var"
       echo "${!ref}"
-
-      var="not-defined"
-      echo "${!ref}"
+      echo "${!ref//l/o}"
 
   - name: "Indirect variable references with special parameters"
     stdin: |
       set a b c
 
       ref="2"
+      echo "${!ref}"
+
+  - name: "Indirect variable references with array"
+    stdin: |
+      arr=("element1" "element2" "element3")
+
+      ref="arr[1]"
+      echo "${!ref}"
+
+      ref="arr[10]"
       echo "${!ref}"
 
   - name: "Variable prefix match"

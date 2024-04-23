@@ -16,11 +16,28 @@ cases:
       - path: "script.sh"
         contents: |
           echo "In sourced script"
+          for f in ${FUNCNAME[@]}; do
+            echo "FUNCNAME: '${f}'"
+          done
+          for s in ${BASH_SOURCE[@]}; do
+            echo "BASH_SOURCE: '${s}'"
+          done
           var="updated"
+
+          function script_func() {
+            echo "In script func"
+            for f in ${FUNCNAME[@]}; do
+              echo "FUNCNAME: '${f}'"
+            done
+            for s in ${BASH_SOURCE[@]}; do
+              echo "BASH_SOURCE: '${s}'"
+            done
+          }
     stdin: |
       var="orig"
       source script.sh
       echo "var: ${var}"
+      script_func
 
   - name: "Source non-existent file path"
     ignore_stderr: true
