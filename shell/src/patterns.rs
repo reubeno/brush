@@ -1,6 +1,38 @@
 use crate::error;
 use std::path::{Path, PathBuf};
 
+pub enum PatternPiece {
+    Pattern(String),
+    Literal(String),
+}
+
+impl PatternPiece {
+    pub fn unwrap(self) -> String {
+        match self {
+            PatternPiece::Pattern(s) => s,
+            PatternPiece::Literal(s) => s,
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            PatternPiece::Pattern(s) => s,
+            PatternPiece::Literal(s) => s,
+        }
+    }
+}
+
+pub(crate) fn pattern_expand_ex(
+    pattern_pieces: &[PatternPiece],
+    working_dir: &Path,
+    enable_extended_globbing: bool,
+) -> Result<Vec<String>, error::Error> {
+    let concatenated: String = pattern_pieces.iter().map(|piece| piece.as_str()).collect();
+
+    // FIXME: This doesn't honor quoting.
+    pattern_expand(concatenated.as_str(), working_dir, enable_extended_globbing)
+}
+
 pub(crate) fn pattern_expand(
     pattern: &str,
     working_dir: &Path,
@@ -218,21 +250,23 @@ mod tests {
         assert_eq!(ext_pattern_to_exact_regex_str("a?")?.as_str(), "^a.$");
         assert_eq!(
             ext_pattern_to_exact_regex_str("a@(b|c)")?.as_str(),
-            "^a(b|c)$",
+            "^a(b|c)$"
         );
         assert_eq!(
             ext_pattern_to_exact_regex_str("a?(b|c)")?.as_str(),
-            "^a(b|c)?$",
+            "^a(b|c)?$"
         );
         assert_eq!(
             ext_pattern_to_exact_regex_str("a*(ab|ac)")?.as_str(),
-            "^a(ab|ac)*$",
+            "^a(ab|ac)*$"
         );
         assert_eq!(
             ext_pattern_to_exact_regex_str("a+(ab|ac)")?.as_str(),
-            "^a(ab|ac)+$",
+            "^a(ab|ac)+$"
         );
-        assert_eq!(ext_pattern_to_exact_regex_str("[ab]")?.as_str(), "^[ab]$",);
+        assert_eq!(ext_pattern_to_exact_regex_str("[ab]")?.as_str(), "^[ab]$");
+        assert_eq!(ext_pattern_to_exact_regex_str("[a-d]")?.as_str(), "^[a-d]$");
+        assert_eq!(ext_pattern_to_exact_regex_str(r"\*")?.as_str(), r"^\*$");
 
         Ok(())
     }

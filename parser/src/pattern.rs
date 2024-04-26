@@ -37,7 +37,8 @@ peg::parser! {
             [c] { c.to_string() }
 
         rule escape_sequence() -> String =
-            "\\" c:[_] { c.to_string() }
+            sequence:$(['\\'] [c if needs_escaping(c)]) { sequence.to_owned() } /
+            ['\\'] [c] { c.to_string() }
 
         rule bracket_expression() -> String =
             "[" invert:(("!")?) members:bracket_member()+ "]" {

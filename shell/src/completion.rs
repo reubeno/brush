@@ -395,7 +395,7 @@ impl CompletionConfig {
             let mut restart_count = 0;
             while matches!(result, CompletionResult::RestartCompletionProcess) {
                 if restart_count > MAX_RESTARTS {
-                    log::error!("possible inifinite loop detected in completion process");
+                    log::error!("possible infinite loop detected in completion process");
                     break;
                 }
 

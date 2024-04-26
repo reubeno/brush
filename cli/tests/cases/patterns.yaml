@@ -4,7 +4,6 @@ cases:
     stdin: "echo file1.txt"
 
   - name: "Multiple file expansion"
-    known_failure: true
     test_files:
       - path: "file1.txt"
       - path: "file2.txt"
@@ -239,3 +238,18 @@ cases:
     stdin: |
       echo "./test"*.txt
       echo "subdir"/*.txt
+      echo "test.*"
+
+  - name: "Patterns: escaped special characters"
+    known_failure: true
+    stdin: |
+      myfunc() {
+        if [[ $1 == \\* ]]; then
+          echo "Matched: '$1'"
+        else
+          echo "Did *not* match: '$1'"
+        fi
+      }
+
+      myfunc abc
+      myfunc "*"

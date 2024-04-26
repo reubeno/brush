@@ -15,3 +15,23 @@ cases:
     stdin: |
       i=5
       while ((i > 0)); do echo $i; i=$((i - 1)); done
+
+  - name: "Alternative arithmetic in while loop"
+    stdin: |
+      c=0
+      limit=4
+      while [ $c -lt $limit ]; do
+        case "$c" in
+        0)
+          echo "0"
+          ;;
+        1)
+          echo "1"
+          ;;
+        *)
+          break
+          ;;
+        esac
+        ((c++))
+      done
+      echo "Done"

@@ -17,9 +17,8 @@ peg::parser! {
     grammar arithmetic() for str {
         pub(crate) rule full_expression() -> ast::ArithmeticExpr =
             ![_] { ast::ArithmeticExpr::Literal(0) } /
-            expression()
+            _ e:expression() _ { e }
 
-        // TODO: fix associativity
         pub(crate) rule expression() -> ast::ArithmeticExpr = precedence!{
             x:(@) _ "," _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Comma, Box::new(x), Box::new(y)) }
             --
@@ -34,7 +33,6 @@ peg::parser! {
             --
             x:lvalue() _ "=" _ y:(@) { ast::ArithmeticExpr::Assignment(x, Box::new(y)) }
             --
-            // TODO: validate parens are in the right spot
             x:@ _ "?" _ y:expression() _ ":" _ z:(@) { ast::ArithmeticExpr::Conditional(Box::new(x), Box::new(y), Box::new(z)) }
             --
             x:(@) _ "||" _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::LogicalOr, Box::new(x), Box::new(y)) }
@@ -79,11 +77,9 @@ peg::parser! {
             "+" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::UnaryPlus, Box::new(x)) }
             "-" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::UnaryMinus, Box::new(x)) }
             --
-            // TODO: What about parentheses?
-            // TODO: Is this where literals and such should go?
             n:literal_number() { ast::ArithmeticExpr::Literal(n) }
             l:lvalue() { ast::ArithmeticExpr::Reference(l) }
-
+            "(" _ expr:expression() _ ")" { expr }
         }
 
         rule lvalue() -> ast::ArithmeticTarget =

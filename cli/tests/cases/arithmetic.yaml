@@ -18,6 +18,17 @@ cases:
       echo "$((0x10))"
       echo "$((0x010))"
 
+  - name: "Parentheses"
+    stdin: |
+      echo "$(( (10) ))"
+      echo "$(((10)))"
+
+  - name: "Unquoted parentheses"
+    known_failure: true
+    stdin: |
+      echo $(( (10) ))
+      echo $(((10)))
+
   - name: "Basic quoted arithmetic"
     stdin: |
       echo " 1  + 1 == $((1+1))"
@@ -47,7 +58,6 @@ cases:
       echo "0 ? 2 : 3 == $((0?2:3))"
 
   - name: "Arithmetic with spacing"
-    known_failure: true
     stdin: |
       echo $(( 75 + 68 ))
 
@@ -111,7 +121,7 @@ cases:
       echo "x is now $x"
 
   - name: "Assignments in logical boolean expressions"
-    known_failure: true # Issue #153
+    known_failure: true
     stdin: |
       x=0
       echo "0 && x+=1 => $(( 0 && (x+=1) ))"

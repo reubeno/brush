@@ -103,6 +103,43 @@ cases:
           echo "* => Element: $f"
       done
 
+  - name: "Empty arrays"
+    stdin: |
+      myarray=()
+
+      for f in "${myarray[@]}"; do
+        echo "ELEMENT: $f"
+      done
+
+      for f in ${myarray[@]}; do
+        echo "ELEMENT: $f"
+      done
+
+  - name: "Mixing array elements and other words"
+    stdin: |
+      myarray=(a b c)
+
+      for f in "${myarray[@]} d e f"; do
+        echo "ELEMENT: $f"
+      done
+
+      for f in ${myarray[@]} d e f; do
+        echo "ELEMENT: $f"
+      done
+
+  - name: "Passing array elements to func"
+    stdin: |
+      myfunc() {
+        echo "In function"
+        for arg in $@; do
+          echo "ARG: |${arg}|"
+        done
+      }
+
+      arr=(a b c "" "e f")
+      myfunc ${arr[@]}
+      myfunc "${arr[@]}"
+
   - name: "Array length"
     stdin: |
       y=(a b c)
@@ -368,17 +405,33 @@ cases:
   - name: "Array keys: indexed array"
     stdin: |
       arr=("element1" "element2" "element3")
-      echo "${!arr[@]}"
-      echo "${!arr[*]}"
+      echo "@: ${!arr[@]}"
+      echo "*: ${!arr[*]}"
 
       echo "Dumping [@]"
       for i in "${!arr[@]}"; do
-          echo "i: $i"
+          echo "@i: $i"
       done
 
       echo "Dumping [*]"
       for i in "${!arr[*]}"; do
-          echo "i: $i"
+          echo "*i: $i"
+      done
+
+  - name: "Array keys: empty array"
+    stdin: |
+      arr=()
+      echo "@: ${!arr[@]}"
+      echo "*: ${!arr[*]}"
+
+      echo "Dumping [@]"
+      for i in "${!arr[@]}"; do
+          echo "@i: $i"
+      done
+
+      echo "Dumping [*]"
+      for i in "${!arr[*]}"; do
+          echo "*i: $i"
       done
 
   - name: "Uppercase first character"
@@ -459,6 +512,16 @@ cases:
       echo "\${var:50:2}: ${var:50:2}"
       echo "\${var:-1:1}: ${var:-1:1}"
       echo "\${var:-3:1}: ${var:-3:1}"
+
+  - name: "Substring operator on arrays"
+    stdin: |
+      set abcde fghij klmno pqrst uvwxy z
+      echo "\${@:2:2}: ${@:2:2}"
+      echo "\${@:2}: ${@:2}"
+
+      myarray=(abcde fghij klmno pqrst uvwxy z)
+      echo "\${myarray[@]:2:2}: ${myarray[@]:2:2}"
+      echo "\${myarray[@]:2}: ${myarray[@]:2}"
 
   - name: "Substring with length (with nested expressions)"
     stdin: |
