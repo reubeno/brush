@@ -489,6 +489,8 @@ impl Execute for ast::CaseClauseCommand {
             if matches {
                 if let Some(case_cmd) = &case.cmd {
                     return case_cmd.execute(shell, params).await;
+                } else {
+                    break;
                 }
             }
         }
@@ -565,6 +567,22 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
 
             result = body.0.execute(shell, params).await?;
             if result.return_from_function_or_script {
+                break;
+            }
+
+            if let Some(continue_count) = &result.continue_loop {
+                if *continue_count > 0 {
+                    return error::unimp("continue with count > 0");
+                }
+
+                result.continue_loop = None;
+            }
+            if let Some(break_count) = &result.break_loop {
+                if *break_count == 0 {
+                    result.break_loop = None;
+                } else {
+                    result.break_loop = Some(*break_count - 1);
+                }
                 break;
             }
         }
@@ -963,7 +981,6 @@ async fn apply_assignment(
     };
 
     // See if we need to eval an array index.
-    // TODO: Handle associative arrays correctly; index is *not* an arithmetic expression
     if let Some(idx) = &array_index {
         let will_be_indexed_array = if let Some(existing_value) =
             shell.env.get(variable_name.as_str())

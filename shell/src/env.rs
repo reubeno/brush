@@ -128,16 +128,41 @@ impl ShellEnvironment {
     // Setters
     //
 
-    pub fn unset(&mut self, name: &str) -> bool {
+    pub fn unset(&mut self, name: &str) -> Result<bool, error::Error> {
         // First look through locals, from the top of the stack on down.
-        for map in self.locals_stack.iter_mut().rev() {
-            if map.unset(name) {
-                return true;
+        for (i, map) in self.locals_stack.iter_mut().rev().enumerate() {
+            if Self::try_unset_in_map(map, name)? {
+                // If we end up finding a local in the top-most local frame, then we replace
+                // it with a placeholder.
+                if i == 0 {
+                    map.set(
+                        name,
+                        ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped)),
+                    );
+                }
+
+                return Ok(true);
             }
         }
 
         // If we didn't find it in locals, then look in globals.
-        self.globals.unset(name)
+        Self::try_unset_in_map(&mut self.globals, name)
+    }
+
+    pub fn unset_index(&mut self, name: &str, index: &str) -> Result<bool, error::Error> {
+        if let Some(var) = self.get_mut(name) {
+            var.unset_index(index)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn try_unset_in_map(map: &mut ShellVariableMap, name: &str) -> Result<bool, error::Error> {
+        match map.get(name).map(|v| v.is_readonly()) {
+            Some(true) => Err(error::Error::ReadonlyVariable),
+            Some(false) => Ok(map.unset(name)),
+            None => Ok(false),
+        }
     }
 
     pub fn get_using_policy<N: AsRef<str>>(

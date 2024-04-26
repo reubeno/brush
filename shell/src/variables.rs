@@ -354,6 +354,23 @@ impl ShellVariable {
         }
     }
 
+    pub fn unset_index(&mut self, index: &str) -> Result<bool, error::Error> {
+        match &mut self.value {
+            ShellValue::Unset(ty) => match ty {
+                ShellValueUnsetType::Untyped => Err(error::Error::NotArray),
+                ShellValueUnsetType::AssociativeArray | ShellValueUnsetType::IndexedArray => {
+                    Ok(false)
+                }
+            },
+            ShellValue::String(_) | ShellValue::Random => Err(error::Error::NotArray),
+            ShellValue::AssociativeArray(values) => Ok(values.remove(index).is_some()),
+            ShellValue::IndexedArray(values) => {
+                let key = index.parse::<u64>().unwrap_or(0);
+                Ok(values.remove(&key).is_some())
+            }
+        }
+    }
+
     pub fn get_attribute_flags(&self) -> String {
         let mut result = String::new();
 

@@ -2,7 +2,10 @@ use std::path::Path;
 
 use clap::Parser;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{
+    builtin::{BuiltinCommand, BuiltinExitCode},
+    interp::ExecutionParameters,
+};
 
 #[derive(Debug, Parser)]
 pub(crate) struct DotCommand {
@@ -23,7 +26,13 @@ impl BuiltinCommand for DotCommand {
 
         let result = context
             .shell
-            .source(Path::new(&self.script_path), script_args.as_slice())
+            .source(
+                Path::new(&self.script_path),
+                script_args.as_slice(),
+                &ExecutionParameters {
+                    open_files: context.open_files.clone(),
+                },
+            )
             .await?;
 
         if result.exit_code != 0 {

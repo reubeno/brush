@@ -30,3 +30,83 @@ cases:
       }
       unset -f myfunc
       myfunc
+
+  - name: "Unset array element"
+    stdin: |
+      declare -a myarray=(a b c)
+
+      unset myarray[0]
+      declare -p myarray
+
+      unset myarray[3]
+      declare -p myarray
+
+      unset myarray[2]
+      declare -p myarray
+
+      unset myarray[1]
+      declare -p myarray
+
+  - name: "Unset array element with interesting expression"
+    known_failure: true
+    stdin: |
+      declare -a myarray=(a b c d e)
+
+      unset myarray[6/2]
+      declare -p myarray
+
+  - name: "Unset local in same function"
+    stdin: |
+      var="global"
+
+      myfunc() {
+        echo "In myfunc"
+        local -i var="10"
+        declare -p var
+        unset var
+        echo "After unset"
+        declare -p var
+        var="20"
+      }
+
+      echo "Before call: var=${var}"
+      myfunc
+      echo "After call: var=${var}"
+
+  - name: "Unset locals in callers"
+    stdin: |
+      firstfunc() {
+        local var="first"
+        echo "entered firstfunc: var=${var}"
+        secondfunc
+        echo "leaving firstfunc: var=${var}"
+      }
+
+      secondfunc() {
+        local var="second"
+        echo "entered secondfunc: var=${var}"
+        thirdfunc
+        echo "leaving secondfunc: var=${var}"
+      }
+
+      thirdfunc() {
+        echo "entered thirdfunc: var=${var}"
+        unset -v var
+        echo "after first unset: var=${var}"
+        var+=":updated"
+        echo "   ...and updated: var=${var}"
+        unset -v var
+        echo "after second unset: var=${var}"
+        var+=":updated"
+        echo "   ...and updated: var=${var}"
+        unset -v var
+        echo "after third unset: var=${var}"
+        var+=":updated"
+        echo "   ...and updated: var=${var}"
+        echo "leaving firstfunc: var=${var}"
+      }
+
+      var="global"
+      echo "before calls: var=${var}"
+      firstfunc
+      echo "after calls: var=${var}"

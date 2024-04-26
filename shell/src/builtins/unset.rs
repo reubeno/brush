@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -60,21 +59,31 @@ impl BuiltinCommand for UnsetCommand {
 
         let unspecified = self.name_interpretation.unspecified();
 
-        let mut errors = false;
-
         for name in &self.names {
             if unspecified || self.name_interpretation.names_are_shell_variables {
-                if let Some(variable) = context.shell.env.get(name) {
-                    if variable.is_readonly() {
-                        writeln!(
-                            context.stderr(),
-                            "unset: {name}: cannot unset: readonly variable",
-                        )?;
-                        errors = true;
-                    }
-                }
+                let parameter =
+                    parser::word::parse_parameter(name, &context.shell.parser_options())?;
 
-                if context.shell.env.unset(name) {
+                let result = match parameter {
+                    parser::word::Parameter::Positional(_) => continue,
+                    parser::word::Parameter::Special(_) => continue,
+                    parser::word::Parameter::Named(name) => {
+                        context.shell.env.unset(name.as_str())?
+                    }
+                    parser::word::Parameter::NamedWithIndex { name, index } => {
+                        // TODO: Evaluate index?
+                        context
+                            .shell
+                            .env
+                            .unset_index(name.as_str(), index.as_str())?
+                    }
+                    parser::word::Parameter::NamedWithAllIndices {
+                        name: _,
+                        concatenate: _,
+                    } => continue,
+                };
+
+                if result {
                     continue;
                 }
             }
@@ -87,10 +96,6 @@ impl BuiltinCommand for UnsetCommand {
             }
         }
 
-        Ok(if errors {
-            BuiltinExitCode::Custom(1)
-        } else {
-            BuiltinExitCode::Success
-        })
+        Ok(BuiltinExitCode::Success)
     }
 }

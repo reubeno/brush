@@ -27,6 +27,17 @@ cases:
       echo "var[*]: ${var[*]}"
       declare -p var
 
+  - name: "Arrays with empty values"
+    stdin: |
+      var1=(a "" c)
+      declare -p var1
+
+      var2=(a "$nonexistent" c)
+      declare -p var2
+
+      var3=("" "" "")
+      declare -p var3
+
   - name: "Basic associative array definition and access"
     stdin: |
       declare -A var=([0]=99 [a]=3 [b]=4 [c]=5)
@@ -67,6 +78,13 @@ cases:
       var=(a b c)
       var+=(e f g)
       echo "var[*]: ${var[*]}"
+      declare -p var
+
+      var+=("" "" "")
+      declare -p var
+
+      var+=(h "i" "$nonexistent" j)
+      var+=(j k l)
       declare -p var
 
   - name: "Appending array to declared-but-unset indexed array"
@@ -216,10 +234,13 @@ cases:
       )
       declare -p array
 
-  - name: "Dump keys from non-existent array"
+  - name: "Dump values from non-existent array"
     stdin: |
-      for key in "${NONEXISTENT[@]}"; do
+      for key in ${NONEXISTENT[@]}; do
         echo "Key: ${key}"
+      done
+      for key in "${NONEXISTENT[@]}"; do
+        echo "Quoted Key: ${key}"
       done
 
   - name: "Use non-existent var in indexed array index"

@@ -1,0 +1,6 @@
+name: "Builtins: set"
+cases:
+  - name: "Basic set usage"
+    stdin: |
+      set a b c d
+      echo ${*}

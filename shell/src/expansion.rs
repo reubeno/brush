@@ -98,6 +98,48 @@ enum ParameterExpansion {
     },
 }
 
+impl ParameterExpansion {
+    pub fn len(&self) -> usize {
+        match self {
+            ParameterExpansion::Undefined => 0,
+            ParameterExpansion::String(s) => s.len(),
+            ParameterExpansion::Array {
+                values,
+                concatenate: _concatenate,
+            } => values.len(),
+        }
+    }
+
+    pub fn insert_at(&mut self, index: usize, s: String) -> Result<(), error::Error> {
+        match self {
+            ParameterExpansion::Array {
+                values,
+                concatenate: _,
+            } => {
+                values.insert(index, s);
+                Ok(())
+            }
+            _ => Err(error::Error::NotArray),
+        }
+    }
+
+    pub fn subslice(&self, starting_offset: usize, end_offset: usize) -> ParameterExpansion {
+        match self {
+            ParameterExpansion::Undefined => ParameterExpansion::Undefined,
+            ParameterExpansion::String(s) => {
+                ParameterExpansion::String(s[starting_offset..end_offset].to_owned())
+            }
+            ParameterExpansion::Array {
+                values,
+                concatenate,
+            } => ParameterExpansion::Array {
+                values: values[starting_offset..end_offset].to_owned(),
+                concatenate: *concatenate,
+            },
+        }
+    }
+}
+
 enum ParameterState {
     Undefined,
     DefinedEmptyString,
@@ -301,29 +343,35 @@ impl<'a> WordExpander<'a> {
     }
 
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
-        // Expand only items marked splittable.
-        // FIXME: This is a bug; we should be expanding patterns in splittable pieces only, but the unsplittable
-        // pieces do contribute text to the expanded forms.
-        let expansion_candidates = field.into_iter().map(|piece| match piece {
-            ExpandedWordPiece::Unsplittable(s) => vec![s],
-            ExpandedWordPiece::Splittable(s) => self.expand_pathnames_in_string(s),
-            ExpandedWordPiece::Separator => vec![],
-        });
+        let pieces: Vec<_> = field
+            .into_iter()
+            .filter_map(|piece| match piece {
+                ExpandedWordPiece::Unsplittable(s) => Some(patterns::PatternPiece::Literal(s)),
+                ExpandedWordPiece::Splittable(s) => Some(patterns::PatternPiece::Pattern(s)),
+                ExpandedWordPiece::Separator => None,
+            })
+            .collect();
 
-        // Now generate the cartesian product of all the expansions.
-        itertools::Itertools::multi_cartesian_product(expansion_candidates)
-            .map(|v| v.join(""))
-            .collect()
-    }
-
-    fn expand_pathnames_in_string(&self, pattern: String) -> Vec<String> {
-        match patterns::pattern_expand(
-            pattern.as_str(),
+        let expansions = patterns::pattern_expand_ex(
+            pieces.as_slice(),
             self.shell.working_dir.as_path(),
             self.parser_options.enable_extended_globbing,
-        ) {
-            Ok(expanded) if !expanded.is_empty() => expanded,
-            _ => vec![pattern],
+        )
+        .map_or_else(
+            |_err| vec![],
+            |expansions| {
+                if expansions.is_empty() {
+                    vec![]
+                } else {
+                    expansions
+                }
+            },
+        );
+
+        if expansions.is_empty() {
+            vec![pieces.into_iter().map(|piece| piece.unwrap()).collect()]
+        } else {
+            expansions
         }
     }
 
@@ -390,9 +438,8 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::WordPiece::ParameterExpansion(p) => {
                 let expansion = self.expand_parameter_expr(p).await?;
-
                 let (strs, concatenate) = match expansion {
-                    ParameterExpansion::Undefined => (vec![], false),
+                    ParameterExpansion::Undefined => (vec![String::new()], false),
                     ParameterExpansion::String(s) => (vec![s], false),
                     ParameterExpansion::Array {
                         values,
@@ -422,7 +469,9 @@ impl<'a> WordExpander<'a> {
 
                 // Run the command.
                 // TODO: inspect result?
-                let _ = subshell.run_string(s.as_str()).await?;
+                let _ = subshell
+                    .run_string(s.as_str(), &subshell.default_exec_params())
+                    .await?;
 
                 // Make sure the subshell is closed; among other things, this
                 // ensures it's not holding onto the write end of the pipe.
@@ -651,8 +700,23 @@ impl<'a> WordExpander<'a> {
                 offset,
                 length,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(parameter, *indirect).await?.into();
+                let mut expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
+
+                // If this is ${@:...} then make sure $0 is in the array being sliced.
+                if matches!(
+                    parameter,
+                    parser::word::Parameter::Special(
+                        parser::word::SpecialParameter::AllPositionalParameters { concatenate: _ },
+                    )
+                ) {
+                    let shell_name = self
+                        .shell
+                        .shell_name
+                        .as_ref()
+                        .map_or_else(|| "", |name| name.as_str());
+
+                    expanded_parameter.insert_at(0, shell_name.to_owned())?;
+                }
 
                 let expanded_offset = offset.eval(self.shell).await?;
                 let expanded_offset = usize::try_from(expanded_offset)?;
@@ -661,7 +725,7 @@ impl<'a> WordExpander<'a> {
                     return Ok(ParameterExpansion::empty_str());
                 }
 
-                let result = if let Some(length) = length {
+                let end_offset = if let Some(length) = length {
                     let mut expanded_length = length.eval(self.shell).await?;
                     if expanded_length < 0 {
                         let param_length: i64 = i64::try_from(expanded_parameter.len())?;
@@ -673,12 +737,12 @@ impl<'a> WordExpander<'a> {
                         expanded_parameter.len() - expanded_offset,
                     );
 
-                    &expanded_parameter[expanded_offset..(expanded_offset + expanded_length)]
+                    expanded_offset + expanded_length
                 } else {
-                    &expanded_parameter[expanded_offset..]
+                    expanded_parameter.len()
                 };
 
-                Ok(ParameterExpansion::from(result.to_owned()))
+                Ok(expanded_parameter.subslice(expanded_offset, end_offset))
             }
             parser::word::ParameterExpr::Transform {
                 parameter,
@@ -909,12 +973,13 @@ impl<'a> WordExpander<'a> {
                 variable_name,
                 concatenate,
             } => {
-                if let Some(var) = self.shell.env.get(variable_name) {
-                    let keys = var.value().get_element_keys();
-                    Ok(ParameterExpansion::array(keys, *concatenate))
+                let keys = if let Some(var) = self.shell.env.get(variable_name) {
+                    var.value().get_element_keys()
                 } else {
-                    Ok(ParameterExpansion::undefined())
-                }
+                    vec![]
+                };
+
+                Ok(ParameterExpansion::array(keys, *concatenate))
             }
         }
     }
@@ -1009,7 +1074,6 @@ impl<'a> WordExpander<'a> {
             parser::word::Parameter::Special(s) => self.expand_special_parameter(s),
             parser::word::Parameter::Named(n) => {
                 if !valid_variable_name(n) {
-                    eprintln!("BAD: ||{n}||");
                     Err(error::Error::BadSubstitution)
                 } else if let Some(var) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
@@ -1058,7 +1122,7 @@ impl<'a> WordExpander<'a> {
                         *concatenate,
                     ))
                 } else {
-                    Ok(ParameterExpansion::undefined())
+                    Ok(ParameterExpansion::array(vec![], *concatenate))
                 }
             }
         }

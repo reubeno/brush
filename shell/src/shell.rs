@@ -132,7 +132,9 @@ impl Shell {
         shell.options.extended_globbing = true;
 
         // Load profiles/configuration.
-        shell.load_config(options).await?;
+        shell
+            .load_config(options, &shell.default_exec_params())
+            .await?;
 
         Ok(shell)
     }
@@ -208,7 +210,11 @@ impl Shell {
         env
     }
 
-    async fn load_config(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
+    async fn load_config(
+        &mut self,
+        options: &CreateOptions,
+        params: &ExecutionParameters,
+    ) -> Result<(), error::Error> {
         if options.login {
             // --noprofile means skip this.
             if options.no_profile {
@@ -223,22 +229,32 @@ impl Shell {
             //     * ~/.bash_login
             //     * ~/.profile
             //
-            self.source_if_exists(Path::new("/etc/profile")).await?;
+            self.source_if_exists(Path::new("/etc/profile"), params)
+                .await?;
             if let Ok(home_path) = std::env::var("HOME") {
                 if options.sh_mode {
-                    self.source_if_exists(Path::new(&home_path).join(".profile").as_path())
+                    self.source_if_exists(Path::new(&home_path).join(".profile").as_path(), params)
                         .await?;
                 } else {
                     if !self
-                        .source_if_exists(Path::new(&home_path).join(".bash_profile").as_path())
+                        .source_if_exists(
+                            Path::new(&home_path).join(".bash_profile").as_path(),
+                            params,
+                        )
                         .await?
                     {
                         if !self
-                            .source_if_exists(Path::new(&home_path).join(".bash_login").as_path())
+                            .source_if_exists(
+                                Path::new(&home_path).join(".bash_login").as_path(),
+                                params,
+                            )
                             .await?
                         {
-                            self.source_if_exists(Path::new(&home_path).join(".profile").as_path())
-                                .await?;
+                            self.source_if_exists(
+                                Path::new(&home_path).join(".profile").as_path(),
+                                params,
+                            )
+                            .await?;
                         }
                     }
                 }
@@ -256,11 +272,12 @@ impl Shell {
                 //     /etc/bash.bashrc
                 //     ~/.bashrc
                 //
-                self.source_if_exists(Path::new("/etc/bash.bashrc")).await?;
+                self.source_if_exists(Path::new("/etc/bash.bashrc"), params)
+                    .await?;
                 if let Ok(home_path) = std::env::var("HOME") {
-                    self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path())
+                    self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path(), params)
                         .await?;
-                    self.source_if_exists(Path::new(&home_path).join(".brushrc").as_path())
+                    self.source_if_exists(Path::new(&home_path).join(".brushrc").as_path(), params)
                         .await?;
                 }
             } else {
@@ -280,10 +297,14 @@ impl Shell {
         Ok(())
     }
 
-    async fn source_if_exists(&mut self, path: &Path) -> Result<bool, error::Error> {
+    async fn source_if_exists(
+        &mut self,
+        path: &Path,
+        params: &ExecutionParameters,
+    ) -> Result<bool, error::Error> {
         if path.exists() {
             let args: Vec<String> = vec![];
-            self.source(path, &args).await?;
+            self.source(path, &args, params).await?;
             Ok(true)
         } else {
             debug!("skipping non-existent file: {}", path.display());
@@ -295,6 +316,7 @@ impl Shell {
         &mut self,
         path: &Path,
         args: &[S],
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         log::debug!("sourcing: {}", path.display());
 
@@ -319,7 +341,8 @@ impl Shell {
             source: path.to_string_lossy().to_string(),
         };
 
-        self.source_file(&opened_file, &source_info, args).await
+        self.source_file(&opened_file, &source_info, args, params)
+            .await
     }
 
     pub async fn source_file<S: AsRef<str>>(
@@ -327,6 +350,7 @@ impl Shell {
         file: &std::fs::File,
         source_info: &parser::SourceInfo,
         args: &[S],
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
         let mut parser = parser::Parser::new(&mut reader, &self.parser_options(), source_info);
@@ -346,7 +370,9 @@ impl Shell {
             .push_front(source_info.source.clone());
         self.update_bash_source_var()?;
 
-        let result = self.run_parsed_result(parse_result, source_info).await;
+        let result = self
+            .run_parsed_result(parse_result, source_info, params)
+            .await;
 
         self.script_call_stack.pop_front();
         self.update_bash_source_var()?;
@@ -389,7 +415,11 @@ impl Shell {
         }
     }
 
-    pub async fn run_string(&mut self, command: &str) -> Result<ExecutionResult, error::Error> {
+    pub async fn run_string(
+        &mut self,
+        command: &str,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
         // TODO: Actually track line numbers; this is something of a hack, assuming each time
         // this function is invoked we are on the next line of the input. For one thing,
         // each string we run could be multiple lines.
@@ -399,7 +429,8 @@ impl Shell {
         let source_info = parser::SourceInfo {
             source: String::from("main"),
         };
-        self.run_parsed_result(parse_result, &source_info).await
+        self.run_parsed_result(parse_result, &source_info, params)
+            .await
     }
 
     pub fn parse_string<S: AsRef<str>>(
@@ -430,18 +461,26 @@ impl Shell {
         Ok(result)
     }
 
+    pub fn default_exec_params(&self) -> ExecutionParameters {
+        ExecutionParameters {
+            open_files: self.open_files.clone(),
+        }
+    }
+
     pub async fn run_script<S: AsRef<str>>(
         &mut self,
         script_path: &Path,
         args: &[S],
     ) -> Result<ExecutionResult, error::Error> {
-        self.source(script_path, args).await
+        self.source(script_path, args, &self.default_exec_params())
+            .await
     }
 
     async fn run_parsed_result(
         &mut self,
         parse_result: Result<parser::ast::Program, parser::ParseError>,
         source_info: &parser::SourceInfo,
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut error_prefix = String::new();
 
@@ -450,7 +489,7 @@ impl Shell {
         }
 
         let result = match parse_result {
-            Ok(prog) => match self.run_program(prog).await {
+            Ok(prog) => match self.run_program(prog, params).await {
                 Ok(result) => result,
                 Err(e) => {
                     log::error!("error: {:#}", e);
@@ -501,15 +540,9 @@ impl Shell {
     pub async fn run_program(
         &mut self,
         program: parser::ast::Program,
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        program
-            .execute(
-                self,
-                &ExecutionParameters {
-                    open_files: self.open_files.clone(),
-                },
-            )
-            .await
+        program.execute(self, params).await
     }
 
     pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {

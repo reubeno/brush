@@ -59,3 +59,13 @@ cases:
           echo "Args: $@"
     stdin: |
       source script.sh arg1 arg2
+
+  - name: "Source with redirection"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In sourced script"
+    stdin: |
+      source script.sh arg1 arg2 > out.txt
+      echo "Sourced script; dumping..."
+      cat out.txt

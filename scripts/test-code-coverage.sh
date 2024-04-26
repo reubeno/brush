@@ -11,6 +11,7 @@ source <(cargo llvm-cov show-env --export-prefix)
 
 cargo llvm-cov clean --workspace
 
+cargo patch
 cargo test -- --show-output || true
 
-cargo llvm-cov report --html
+cargo llvm-cov report --html --ignore-filename-regex "target/.*"

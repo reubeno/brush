@@ -32,6 +32,9 @@ pub enum Error {
     #[error("not a directory: {0}")]
     NotADirectory(PathBuf),
 
+    #[error("variable is not an array")]
+    NotArray,
+
     #[error("no current user")]
     NoCurrentUser,
 

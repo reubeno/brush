@@ -201,8 +201,11 @@ peg::parser! {
                 all_pieces
             }
 
-        rule arithmetic_word<T>(stop_condition: rule<T>) -> Vec<WordPiece> =
-            pieces:word_piece(<stop_condition()>)*
+        // N.B. We don't bother returning the word pieces, as all users of this rule
+        // only try to extract the consumed input string and not the parse result.
+        rule arithmetic_word<T>(stop_condition: rule<T>) -> () =
+            "(" word_piece(<stop_condition()>)* ")" {} /
+            word_piece(<stop_condition()>)* {}
 
         rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
             arithmetic_expansion() /

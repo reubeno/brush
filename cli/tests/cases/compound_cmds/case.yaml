@@ -35,3 +35,16 @@ cases:
         *)   echo "unhandled case" ;;
         esac
       done
+
+  - name: "Empty case"
+    stdin: |
+      myfunc() {
+        case abc in
+          *b*) ;;
+          *) return 33;;
+        esac
+
+        echo "Dropped out"
+      }
+
+      myfunc

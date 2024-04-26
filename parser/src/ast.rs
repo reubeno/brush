@@ -819,7 +819,7 @@ impl Display for BinaryPredicate {
             BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => write!(f, "-ef"),
             BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => write!(f, "-nt"),
             BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => write!(f, "-ot"),
-            BinaryPredicate::StringMatchesPattern => write!(f, "="),
+            BinaryPredicate::StringMatchesPattern => write!(f, "=="),
             BinaryPredicate::StringDoesNotMatchPattern => write!(f, "!="),
             BinaryPredicate::StringMatchesRegex => write!(f, "=~"),
             BinaryPredicate::LeftSortsBeforeRight => write!(f, "<"),

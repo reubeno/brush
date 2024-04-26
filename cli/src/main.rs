@@ -151,7 +151,8 @@ async fn run(cli_args: &[String]) -> Result<u8, interactive_shell::InteractiveSh
 
     if let Some(command) = args.command {
         // TODO: Use script_path as $0 and remaining args as positional parameters.
-        shell.shell_mut().run_string(&command).await?;
+        let params = shell.shell().default_exec_params();
+        shell.shell_mut().run_string(&command, &params).await?;
     } else if args.read_commands_from_stdin {
         shell.run_interactively().await?;
     } else if let Some(script_path) = args.script_path {

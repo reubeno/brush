@@ -20,7 +20,7 @@ pub enum EvalError {
     #[error("failed to update environment")]
     FailedToUpdateEnvironment,
 
-    #[error("failed to parse expression: {0}")]
+    #[error("failed to parse expression: '{0}'")]
     ParseError(String),
 }
 
