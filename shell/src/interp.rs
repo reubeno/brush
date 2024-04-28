@@ -1,13 +1,14 @@
 use itertools::Itertools;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
+use std::io::Write;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process;
 use tokio_command_fds::{CommandFdExt, FdMapping};
 
-use crate::arithmetic::Evaluatable;
+use crate::arithmetic::ExpandAndEvaluate;
 use crate::commands::CommandArg;
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
@@ -15,10 +16,9 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{builtin, builtins};
-use crate::{context, error};
-use crate::{expansion, openfiles};
-use crate::{extendedtests, patterns};
+use crate::{
+    builtin, builtins, context, error, expansion, extendedtests, jobs, openfiles, patterns,
+};
 
 #[derive(Debug, Default)]
 pub struct ExecutionResult {
@@ -27,6 +27,22 @@ pub struct ExecutionResult {
     pub return_from_function_or_script: bool,
     pub break_loop: Option<u8>,
     pub continue_loop: Option<u8>,
+}
+
+impl From<std::process::Output> for ExecutionResult {
+    fn from(output: std::process::Output) -> ExecutionResult {
+        #[allow(clippy::cast_sign_loss)]
+        let exit_code = if let Some(code) = output.status.code() {
+            (code & 0xFF) as u8
+        } else if let Some(signal) = output.status.signal() {
+            (signal & 0xFF) as u8 + 128
+        } else {
+            log::error!("unhandled process exit");
+            127
+        };
+
+        Self::new(exit_code)
+    }
 }
 
 impl ExecutionResult {
@@ -60,8 +76,6 @@ struct PipelineExecutionContext<'a> {
 
     current_pipeline_index: usize,
     pipeline_len: usize,
-
-    spawn_results: Vec<SpawnResult>,
     output_pipes: Vec<os_pipe::PipeReader>,
 
     params: ExecutionParameters,
@@ -129,10 +143,16 @@ impl Execute for ast::CompoundList {
                     ao_list.clone(),
                 ));
 
-                let job_number = shell.jobs.add(background_job);
+                // TODO: Find pids
+                let job = shell.jobs.add(jobs::Job::new(
+                    VecDeque::from([background_job]),
+                    vec![],
+                    ao_list.to_string(),
+                    jobs::JobState::Running,
+                ));
+                let job_id = job.id;
 
-                // TODO: Write this to the correct ouptut stream.
-                println!("[{job_number}] <pid unknown>");
+                writeln!(shell.stderr(), "[{job_id}]+\t<pid unknown>")?;
             } else {
                 result = ao_list.execute(shell, params).await?;
             }
@@ -201,6 +221,12 @@ impl Execute for ast::AndOrList {
     }
 }
 
+enum ExecuteWaitResult {
+    WaitCompleted(std::process::Output),
+    Sigtstp,
+}
+
+#[allow(clippy::too_many_lines)] // TODO: refactor this function
 #[async_trait::async_trait]
 impl Execute for ast::Pipeline {
     async fn execute(
@@ -208,57 +234,76 @@ impl Execute for ast::Pipeline {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        //
-        // TODO: implement logic deciding when to abort
-        //
-
         let mut pipeline_context = PipelineExecutionContext {
             shell,
             current_pipeline_index: 0,
             pipeline_len: self.seq.len(),
-            spawn_results: vec![],
             output_pipes: vec![],
             params: params.clone(),
         };
 
+        let mut spawn_results = VecDeque::new();
+
         for command in &self.seq {
             let spawn_result = command.execute_in_pipeline(&mut pipeline_context).await?;
-            pipeline_context.spawn_results.push(spawn_result);
+            spawn_results.push_back(spawn_result);
             pipeline_context.current_pipeline_index += 1;
         }
 
         let mut result = ExecutionResult::success();
 
-        for child in pipeline_context.spawn_results {
+        const SIGTSTP: std::os::raw::c_int = 20;
+        let mut sigtstp =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(SIGTSTP))?;
+
+        let mut stopped: VecDeque<jobs::JobJoinHandle> = VecDeque::new();
+        let mut pids = vec![];
+        while let Some(child) = spawn_results.pop_front() {
             match child {
                 SpawnResult::SpawnedChild(child) => {
-                    let child_future = child.wait_with_output();
-                    tokio::pin!(child_future);
-
-                    // Wait for the process to exit or for interruption, whichever happens first.
-                    let output = loop {
-                        tokio::select! {
-                            output = &mut child_future => {
-                                break output?
-                            },
-                            _ = tokio::signal::ctrl_c() => {
-                            },
-                        }
-                    };
-
-                    let exit_code;
-
-                    #[allow(clippy::cast_sign_loss)]
-                    if let Some(code) = output.status.code() {
-                        exit_code = (code & 0xFF) as u8;
-                    } else if let Some(signal) = output.status.signal() {
-                        exit_code = (signal & 0xFF) as u8 + 128;
-                    } else {
-                        return error::unimp("unhandled process exit");
+                    if let Some(pid) = child.id() {
+                        pids.push(pid);
                     }
 
-                    // TODO: Confirm what to return if it was signaled.
-                    result = ExecutionResult::new(exit_code);
+                    let mut child_future = Box::pin(child.wait_with_output());
+
+                    // Wait for the process to exit or for a relevant signal, whichever happens first.
+                    let wait_result = if stopped.is_empty() {
+                        loop {
+                            tokio::select! {
+                                output = &mut child_future => {
+                                    break ExecuteWaitResult::WaitCompleted(output?)
+                                },
+                                _ = sigtstp.recv() => {
+                                    break ExecuteWaitResult::Sigtstp
+                                },
+                                _ = tokio::signal::ctrl_c() => {
+                                    // SIGINT got thrown. Handle it and continue looping. The child should
+                                    // have received it as well, and either handled it or ended up getting
+                                    // terminated (in which case we'll see the child exit).
+                                },
+                            }
+                        }
+                    } else {
+                        ExecuteWaitResult::Sigtstp
+                    };
+
+                    match wait_result {
+                        ExecuteWaitResult::WaitCompleted(output) => {
+                            result = ExecutionResult::from(output);
+                        }
+                        #[allow(clippy::cast_possible_truncation)]
+                        ExecuteWaitResult::Sigtstp => {
+                            stopped.push_back(tokio::spawn(async move {
+                                child_future
+                                    .await
+                                    .map(ExecutionResult::from)
+                                    .map_err(|err| err.into())
+                            }));
+
+                            result = ExecutionResult::new(128 + SIGTSTP as u8);
+                        }
+                    }
                 }
                 SpawnResult::ImmediateExit(exit_code) => {
                     result = ExecutionResult::new(exit_code);
@@ -294,6 +339,33 @@ impl Execute for ast::Pipeline {
             }
 
             shell.last_exit_status = result.exit_code;
+        }
+
+        if !stopped.is_empty() {
+            let job = shell.jobs.add(jobs::Job::new(
+                stopped,
+                pids,
+                self.to_string(),
+                jobs::JobState::Stopped,
+            ));
+            let job_id = job.id;
+            let job_state = job.state.clone();
+
+            let annotation = if job.is_current() {
+                "+"
+            } else if job.is_prev() {
+                "-"
+            } else {
+                ""
+            };
+
+            // N.B. We use the '\r' to overwrite any ^Z output.
+            writeln!(
+                shell.stderr(),
+                "\r[{job_id}]{annotation:3}{:24}{}",
+                job_state.to_string(),
+                self
+            )?;
         }
 
         if self.bang {
@@ -464,11 +536,13 @@ impl Execute for ast::CaseClauseCommand {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
-
+        // N.B. One would think it makes sense to trace the expanded value being switched
+        // on, but that's not it.
         if shell.options.print_commands_and_arguments {
-            shell.trace_command(std::format!("case {expanded_value} in"))?;
+            shell.trace_command(std::format!("case {} in", &self.value))?;
         }
+
+        let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
 
         for case in &self.cases {
             let mut matches = false;
@@ -598,7 +672,7 @@ impl Execute for ast::ArithmeticCommand {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let value = self.expr.eval(shell).await?;
+        let value = self.expr.eval(shell, true).await?;
         let result = if value != 0 {
             ExecutionResult::success()
         } else {
@@ -620,12 +694,12 @@ impl Execute for ast::ArithmeticForClauseCommand {
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
         if let Some(initializer) = &self.initializer {
-            initializer.eval(shell).await?;
+            initializer.eval(shell, true).await?;
         }
 
         loop {
             if let Some(condition) = &self.condition {
-                if condition.eval(shell).await? == 0 {
+                if condition.eval(shell, true).await? == 0 {
                     break;
                 }
             }
@@ -636,7 +710,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             if let Some(updater) = &self.updater {
-                updater.eval(shell).await?;
+                updater.eval(shell, true).await?;
             }
         }
 
@@ -794,6 +868,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 if let ast::AssignmentName::VariableName(name) = &assignment.name {
                     assigned_vars.insert(name.clone());
                 }
+                child_pseudo_shell.options.print_commands_and_arguments = false;
                 apply_assignment(assignment, &mut child_pseudo_shell).await?;
             }
 
@@ -849,10 +924,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         } else {
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
-                if context.shell.options.print_commands_and_arguments {
-                    context.shell.trace_command(assignment.to_string())?;
-                }
-
                 apply_assignment(assignment, context.shell).await?;
             }
 
@@ -861,7 +932,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     }
 }
 
-#[allow(dead_code)]
 async fn basic_expand_assignment(
     shell: &mut Shell,
     assignment: &ast::Assignment,
@@ -931,6 +1001,7 @@ async fn basic_expand_assignment_value(
     Ok(expanded)
 }
 
+#[allow(clippy::too_many_lines)]
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
@@ -980,6 +1051,11 @@ async fn apply_assignment(
         }
     };
 
+    if shell.options.print_commands_and_arguments {
+        let op = if assignment.append { "+=" } else { "=" };
+        shell.trace_command(std::format!("{}{}{}", assignment.name, op, new_value))?;
+    }
+
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
         let will_be_indexed_array = if let Some(existing_value) =
@@ -996,7 +1072,7 @@ async fn apply_assignment(
         if will_be_indexed_array {
             array_index = Some(
                 ast::UnexpandedArithmeticExpr { value: idx.clone() }
-                    .eval(shell)
+                    .eval(shell, false)
                     .await?
                     .to_string(),
             );

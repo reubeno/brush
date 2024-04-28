@@ -20,6 +20,9 @@ pub enum Error {
     #[error("failed to source file: {0}; {1}")]
     FailedSourcingFile(PathBuf, std::io::Error),
 
+    #[error("failed to send signal to process")]
+    FailedToSendSignal,
+
     #[error("cannot assign in this way")]
     CannotAssignToSpecialParameter,
 

@@ -1,5 +1,5 @@
 use rustyline::validate::ValidationResult;
-use std::{borrow::Cow, path::PathBuf};
+use std::{borrow::Cow, io::Write, path::PathBuf};
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
@@ -106,8 +106,7 @@ impl InteractiveShell {
         }
 
         if self.shell().options.interactive {
-            // TODO: Write this to the correct output stream.
-            eprintln!("exit");
+            writeln!(self.shell().stderr(), "exit")?;
         }
 
         if let Some(history_file_path) = &self.history_file_path {

@@ -2,7 +2,7 @@ use itertools::Itertools;
 use parser::ast;
 use uzers::os::unix::UserExt;
 
-use crate::arithmetic::Evaluatable;
+use crate::arithmetic::ExpandAndEvaluate;
 use crate::env;
 use crate::error;
 use crate::escape;
@@ -88,22 +88,21 @@ impl ExpandedWordPiece {
 type WordField = Vec<ExpandedWordPiece>;
 
 #[derive(Debug)]
-enum ParameterExpansion {
+enum Expansion {
     Undefined,
     String(String),
     Array {
         values: Vec<String>,
-        #[allow(dead_code)]
         concatenate: bool,
     },
 }
 
-impl ParameterExpansion {
+impl Expansion {
     pub fn len(&self) -> usize {
         match self {
-            ParameterExpansion::Undefined => 0,
-            ParameterExpansion::String(s) => s.len(),
-            ParameterExpansion::Array {
+            Expansion::Undefined => 0,
+            Expansion::String(s) => s.len(),
+            Expansion::Array {
                 values,
                 concatenate: _concatenate,
             } => values.len(),
@@ -112,7 +111,7 @@ impl ParameterExpansion {
 
     pub fn insert_at(&mut self, index: usize, s: String) -> Result<(), error::Error> {
         match self {
-            ParameterExpansion::Array {
+            Expansion::Array {
                 values,
                 concatenate: _,
             } => {
@@ -123,16 +122,14 @@ impl ParameterExpansion {
         }
     }
 
-    pub fn subslice(&self, starting_offset: usize, end_offset: usize) -> ParameterExpansion {
+    pub fn subslice(&self, starting_offset: usize, end_offset: usize) -> Expansion {
         match self {
-            ParameterExpansion::Undefined => ParameterExpansion::Undefined,
-            ParameterExpansion::String(s) => {
-                ParameterExpansion::String(s[starting_offset..end_offset].to_owned())
-            }
-            ParameterExpansion::Array {
+            Expansion::Undefined => Expansion::Undefined,
+            Expansion::String(s) => Expansion::String(s[starting_offset..end_offset].to_owned()),
+            Expansion::Array {
                 values,
                 concatenate,
-            } => ParameterExpansion::Array {
+            } => Expansion::Array {
                 values: values[starting_offset..end_offset].to_owned(),
                 concatenate: *concatenate,
             },
@@ -146,7 +143,7 @@ enum ParameterState {
     NonZeroLength,
 }
 
-impl ParameterExpansion {
+impl Expansion {
     fn undefined() -> Self {
         Self::Undefined
     }
@@ -186,18 +183,18 @@ impl ParameterExpansion {
     }
 }
 
-impl From<String> for ParameterExpansion {
+impl From<String> for Expansion {
     fn from(s: String) -> Self {
         Self::String(s)
     }
 }
 
-impl From<ParameterExpansion> for String {
-    fn from(value: ParameterExpansion) -> Self {
+impl From<Expansion> for String {
+    fn from(value: Expansion) -> Self {
         match value {
-            ParameterExpansion::Undefined => String::new(),
-            ParameterExpansion::String(s) => s,
-            ParameterExpansion::Array {
+            Expansion::Undefined => String::new(),
+            Expansion::String(s) => s,
+            Expansion::Array {
                 values,
                 concatenate: _,
             } => values.join(" "),
@@ -439,9 +436,9 @@ impl<'a> WordExpander<'a> {
             parser::word::WordPiece::ParameterExpansion(p) => {
                 let expansion = self.expand_parameter_expr(p).await?;
                 let (strs, concatenate) = match expansion {
-                    ParameterExpansion::Undefined => (vec![String::new()], false),
-                    ParameterExpansion::String(s) => (vec![s], false),
-                    ParameterExpansion::Array {
+                    Expansion::Undefined => (vec![String::new()], false),
+                    Expansion::String(s) => (vec![s], false),
+                    Expansion::Array {
                         values,
                         concatenate,
                     } => (values, concatenate),
@@ -524,7 +521,7 @@ impl<'a> WordExpander<'a> {
     async fn expand_parameter_expr(
         &mut self,
         expr: &parser::word::ParameterExpr,
-    ) -> Result<ParameterExpansion, error::Error> {
+    ) -> Result<Expansion, error::Error> {
         #[allow(clippy::cast_possible_truncation)]
         match expr {
             parser::word::ParameterExpr::Parameter {
@@ -546,9 +543,7 @@ impl<'a> WordExpander<'a> {
                         parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Ok(ParameterExpansion::from(
-                        self.basic_expand(default_value).await?,
-                    )),
+                    _ => Ok(Expansion::from(self.basic_expand(default_value).await?)),
                 }
             }
             parser::word::ParameterExpr::AssignDefaultValues {
@@ -570,7 +565,7 @@ impl<'a> WordExpander<'a> {
                         let expanded_default_value = self.basic_expand(default_value).await?;
                         self.assign_to_parameter(parameter, expanded_default_value.clone())
                             .await?;
-                        Ok(ParameterExpansion::from(expanded_default_value))
+                        Ok(Expansion::from(expanded_default_value))
                     }
                 }
             }
@@ -610,10 +605,12 @@ impl<'a> WordExpander<'a> {
                     | (
                         parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
-                    ) => Ok(ParameterExpansion::from(
-                        self.basic_expand(alternative_value).await?,
-                    )),
-                    _ => Ok(ParameterExpansion::empty_str()),
+                    ) => {
+                        // FIXME: This loses separation between array elements.
+                        let basic_expanded = self.basic_expand(alternative_value).await?;
+                        Ok(Expansion::from(basic_expanded))
+                    }
+                    _ => Ok(Expansion::empty_str()),
                 }
             }
             parser::word::ParameterExpr::ParameterLength {
@@ -621,15 +618,15 @@ impl<'a> WordExpander<'a> {
                 indirect,
             } => {
                 let len = match self.expand_parameter(parameter, *indirect).await? {
-                    ParameterExpansion::String(s) => s.len(),
-                    ParameterExpansion::Array {
+                    Expansion::String(s) => s.len(),
+                    Expansion::Array {
                         values,
                         concatenate: _,
                     } => values.len(),
-                    ParameterExpansion::Undefined => 0,
+                    Expansion::Undefined => 0,
                 };
 
-                Ok(ParameterExpansion::from(len.to_string()))
+                Ok(Expansion::from(len.to_string()))
             }
             parser::word::ParameterExpr::RemoveSmallestSuffixPattern {
                 parameter,
@@ -644,7 +641,7 @@ impl<'a> WordExpander<'a> {
                     expanded_pattern.as_str(),
                     self.parser_options.enable_extended_globbing,
                 )?;
-                Ok(ParameterExpansion::from(result.to_owned()))
+                Ok(Expansion::from(result.to_owned()))
             }
             parser::word::ParameterExpr::RemoveLargestSuffixPattern {
                 parameter,
@@ -660,7 +657,7 @@ impl<'a> WordExpander<'a> {
                     self.parser_options.enable_extended_globbing,
                 )?;
 
-                Ok(ParameterExpansion::from(result.to_owned()))
+                Ok(Expansion::from(result.to_owned()))
             }
             parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
                 parameter,
@@ -676,7 +673,7 @@ impl<'a> WordExpander<'a> {
                     self.parser_options.enable_extended_globbing,
                 )?;
 
-                Ok(ParameterExpansion::from(result.to_owned()))
+                Ok(Expansion::from(result.to_owned()))
             }
             parser::word::ParameterExpr::RemoveLargestPrefixPattern {
                 parameter,
@@ -692,7 +689,7 @@ impl<'a> WordExpander<'a> {
                     self.parser_options.enable_extended_globbing,
                 )?;
 
-                Ok(ParameterExpansion::from(result.to_owned()))
+                Ok(Expansion::from(result.to_owned()))
             }
             parser::word::ParameterExpr::Substring {
                 parameter,
@@ -718,15 +715,15 @@ impl<'a> WordExpander<'a> {
                     expanded_parameter.insert_at(0, shell_name.to_owned())?;
                 }
 
-                let expanded_offset = offset.eval(self.shell).await?;
+                let expanded_offset = offset.eval(self.shell, false).await?;
                 let expanded_offset = usize::try_from(expanded_offset)?;
 
                 if expanded_offset >= expanded_parameter.len() {
-                    return Ok(ParameterExpansion::empty_str());
+                    return Ok(Expansion::empty_str());
                 }
 
                 let end_offset = if let Some(length) = length {
-                    let mut expanded_length = length.eval(self.shell).await?;
+                    let mut expanded_length = length.eval(self.shell, false).await?;
                     if expanded_length < 0 {
                         let param_length: i64 = i64::try_from(expanded_parameter.len())?;
                         expanded_length += param_length;
@@ -753,12 +750,12 @@ impl<'a> WordExpander<'a> {
                     let expanded_parameter: String =
                         self.expand_parameter(parameter, *indirect).await?.into();
                     let result = prompt::expand_prompt(self.shell, expanded_parameter.as_str())?;
-                    Ok(ParameterExpansion::from(result))
+                    Ok(Expansion::from(result))
                 }
                 parser::word::ParameterTransformOp::CapitalizeInitial => {
                     let expanded_parameter: String =
                         self.expand_parameter(parameter, *indirect).await?.into();
-                    Ok(ParameterExpansion::from(to_initial_capitals(
+                    Ok(Expansion::from(to_initial_capitals(
                         expanded_parameter.as_str(),
                     )))
                 }
@@ -780,12 +777,12 @@ impl<'a> WordExpander<'a> {
                 parser::word::ParameterTransformOp::ToLowerCase => {
                     let expanded_parameter: String =
                         self.expand_parameter(parameter, *indirect).await?.into();
-                    Ok(ParameterExpansion::from(expanded_parameter.to_lowercase()))
+                    Ok(Expansion::from(expanded_parameter.to_lowercase()))
                 }
                 parser::word::ParameterTransformOp::ToUpperCase => {
                     let expanded_parameter: String =
                         self.expand_parameter(parameter, *indirect).await?.into();
-                    Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
+                    Ok(Expansion::from(expanded_parameter.to_uppercase()))
                 }
             },
             parser::word::ParameterExpr::UppercaseFirstChar {
@@ -812,12 +809,12 @@ impl<'a> WordExpander<'a> {
                         let mut result = String::new();
                         result.push(first_char.to_uppercase().next().unwrap());
                         result.push_str(expanded_parameter.get(1..).unwrap());
-                        Ok(ParameterExpansion::from(result))
+                        Ok(Expansion::from(result))
                     } else {
-                        Ok(ParameterExpansion::from(expanded_parameter))
+                        Ok(Expansion::from(expanded_parameter))
                     }
                 } else {
-                    Ok(ParameterExpansion::from(expanded_parameter))
+                    Ok(Expansion::from(expanded_parameter))
                 }
             }
             parser::word::ParameterExpr::UppercasePattern {
@@ -841,12 +838,12 @@ impl<'a> WordExpander<'a> {
                             expanded_parameter.as_ref(),
                             |caps: &fancy_regex::Captures| caps[0].to_uppercase(),
                         );
-                        Ok(ParameterExpansion::from(result.into_owned()))
+                        Ok(Expansion::from(result.into_owned()))
                     } else {
-                        Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
+                        Ok(Expansion::from(expanded_parameter.to_uppercase()))
                     }
                 } else {
-                    Ok(ParameterExpansion::from(expanded_parameter.to_uppercase()))
+                    Ok(Expansion::from(expanded_parameter.to_uppercase()))
                 }
             }
             parser::word::ParameterExpr::LowercaseFirstChar {
@@ -873,12 +870,12 @@ impl<'a> WordExpander<'a> {
                         let mut result = String::new();
                         result.push(first_char.to_lowercase().next().unwrap());
                         result.push_str(expanded_parameter.get(1..).unwrap());
-                        Ok(ParameterExpansion::from(result))
+                        Ok(Expansion::from(result))
                     } else {
-                        Ok(ParameterExpansion::from(expanded_parameter))
+                        Ok(Expansion::from(expanded_parameter))
                     }
                 } else {
-                    Ok(ParameterExpansion::from(expanded_parameter))
+                    Ok(Expansion::from(expanded_parameter))
                 }
             }
             parser::word::ParameterExpr::LowercasePattern {
@@ -902,12 +899,12 @@ impl<'a> WordExpander<'a> {
                             expanded_parameter.as_ref(),
                             |caps: &fancy_regex::Captures| caps[0].to_lowercase(),
                         );
-                        Ok(ParameterExpansion::from(result.into_owned()))
+                        Ok(Expansion::from(result.into_owned()))
                     } else {
-                        Ok(ParameterExpansion::from(expanded_parameter.to_lowercase()))
+                        Ok(Expansion::from(expanded_parameter.to_lowercase()))
                     }
                 } else {
-                    Ok(ParameterExpansion::from(expanded_parameter.to_lowercase()))
+                    Ok(Expansion::from(expanded_parameter.to_lowercase()))
                 }
             }
             parser::word::ParameterExpr::ReplaceSubstring {
@@ -941,14 +938,14 @@ impl<'a> WordExpander<'a> {
                         .into_owned(),
                 };
 
-                Ok(ParameterExpansion::from(result))
+                Ok(Expansion::from(result))
             }
             parser::word::ParameterExpr::VariableNames {
                 prefix,
                 concatenate,
             } => {
                 if prefix.is_empty() {
-                    Ok(ParameterExpansion::empty_str())
+                    Ok(Expansion::empty_str())
                 } else {
                     let matching_names = self
                         .shell
@@ -963,10 +960,7 @@ impl<'a> WordExpander<'a> {
                         })
                         .sorted();
 
-                    Ok(ParameterExpansion::array(
-                        matching_names.collect(),
-                        *concatenate,
-                    ))
+                    Ok(Expansion::array(matching_names.collect(), *concatenate))
                 }
             }
             parser::word::ParameterExpr::MemberKeys {
@@ -979,7 +973,7 @@ impl<'a> WordExpander<'a> {
                     vec![]
                 };
 
-                Ok(ParameterExpansion::array(keys, *concatenate))
+                Ok(Expansion::array(keys, *concatenate))
             }
         }
     }
@@ -1041,7 +1035,7 @@ impl<'a> WordExpander<'a> {
         &mut self,
         parameter: &parser::word::Parameter,
         indirect: bool,
-    ) -> Result<ParameterExpansion, error::Error> {
+    ) -> Result<Expansion, error::Error> {
         let expansion = self.expand_parameter_without_indirect(parameter).await?;
         if !indirect {
             Ok(expansion)
@@ -1058,7 +1052,7 @@ impl<'a> WordExpander<'a> {
     async fn expand_parameter_without_indirect(
         &mut self,
         parameter: &parser::word::Parameter,
-    ) -> Result<ParameterExpansion, error::Error> {
+    ) -> Result<Expansion, error::Error> {
         match parameter {
             parser::word::Parameter::Positional(p) => {
                 if *p == 0 {
@@ -1066,9 +1060,9 @@ impl<'a> WordExpander<'a> {
                 } else if let Some(parameter) =
                     self.shell.positional_parameters.get((p - 1) as usize)
                 {
-                    Ok(ParameterExpansion::from(parameter.to_owned()))
+                    Ok(Expansion::from(parameter.to_owned()))
                 } else {
-                    Ok(ParameterExpansion::undefined())
+                    Ok(Expansion::undefined())
                 }
             }
             parser::word::Parameter::Special(s) => self.expand_special_parameter(s),
@@ -1077,14 +1071,12 @@ impl<'a> WordExpander<'a> {
                     Err(error::Error::BadSubstitution)
                 } else if let Some(var) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
-                        Ok(ParameterExpansion::undefined())
+                        Ok(Expansion::undefined())
                     } else {
-                        Ok(ParameterExpansion::from(
-                            var.value().to_cow_string().to_string(),
-                        ))
+                        Ok(Expansion::from(var.value().to_cow_string().to_string()))
                     }
                 } else {
-                    Ok(ParameterExpansion::undefined())
+                    Ok(Expansion::undefined())
                 }
             }
             parser::word::Parameter::NamedWithIndex { name, index } => {
@@ -1107,22 +1099,22 @@ impl<'a> WordExpander<'a> {
                 // Index into the array.
                 if let Some(var) = self.shell.env.get(name) {
                     if let Some(value) = var.value().get_at(index_to_use.as_str())? {
-                        Ok(ParameterExpansion::from(value.to_string()))
+                        Ok(Expansion::from(value.to_string()))
                     } else {
-                        Ok(ParameterExpansion::undefined())
+                        Ok(Expansion::undefined())
                     }
                 } else {
-                    Ok(ParameterExpansion::undefined())
+                    Ok(Expansion::undefined())
                 }
             }
             parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 if let Some(var) = self.shell.env.get(name) {
-                    Ok(ParameterExpansion::array(
+                    Ok(Expansion::array(
                         var.value().get_element_values(),
                         *concatenate,
                     ))
                 } else {
-                    Ok(ParameterExpansion::array(vec![], *concatenate))
+                    Ok(Expansion::array(vec![], *concatenate))
                 }
             }
         }
@@ -1148,27 +1140,27 @@ impl<'a> WordExpander<'a> {
     fn expand_special_parameter(
         &mut self,
         parameter: &parser::word::SpecialParameter,
-    ) -> Result<ParameterExpansion, error::Error> {
+    ) -> Result<Expansion, error::Error> {
         match parameter {
             parser::word::SpecialParameter::AllPositionalParameters { concatenate } => Ok(
-                ParameterExpansion::array(self.shell.positional_parameters.clone(), *concatenate),
+                Expansion::array(self.shell.positional_parameters.clone(), *concatenate),
             ),
-            parser::word::SpecialParameter::PositionalParameterCount => Ok(
-                ParameterExpansion::from(self.shell.positional_parameters.len().to_string()),
-            ),
-            parser::word::SpecialParameter::LastExitStatus => Ok(ParameterExpansion::from(
-                self.shell.last_exit_status.to_string(),
+            parser::word::SpecialParameter::PositionalParameterCount => Ok(Expansion::from(
+                self.shell.positional_parameters.len().to_string(),
             )),
+            parser::word::SpecialParameter::LastExitStatus => {
+                Ok(Expansion::from(self.shell.last_exit_status.to_string()))
+            }
             parser::word::SpecialParameter::CurrentOptionFlags => {
-                Ok(ParameterExpansion::from(self.shell.current_option_flags()))
+                Ok(Expansion::from(self.shell.current_option_flags()))
             }
             parser::word::SpecialParameter::ProcessId => {
-                Ok(ParameterExpansion::from(std::process::id().to_string()))
+                Ok(Expansion::from(std::process::id().to_string()))
             }
             parser::word::SpecialParameter::LastBackgroundProcessId => {
                 error::unimp("expansion: last background process id")
             }
-            parser::word::SpecialParameter::ShellName => Ok(ParameterExpansion::from(
+            parser::word::SpecialParameter::ShellName => Ok(Expansion::from(
                 self.shell
                     .shell_name
                     .as_ref()
@@ -1181,7 +1173,7 @@ impl<'a> WordExpander<'a> {
         &mut self,
         expr: &parser::ast::UnexpandedArithmeticExpr,
     ) -> Result<String, error::Error> {
-        let value = expr.eval(self.shell).await?;
+        let value = expr.eval(self.shell, false).await?;
         Ok(value.to_string())
     }
 }

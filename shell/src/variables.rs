@@ -1,7 +1,7 @@
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 
 use crate::error;
 
@@ -437,6 +437,28 @@ pub enum ShellValueUnsetType {
 pub enum ShellValueLiteral {
     Scalar(String),
     Array(ArrayLiteral),
+}
+
+impl Display for ShellValueLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // TODO: Decide if it needs to be quoted.
+            ShellValueLiteral::Scalar(s) => write!(f, "{s}"),
+            ShellValueLiteral::Array(elements) => {
+                write!(f, "(")?;
+                for (i, (key, value)) in elements.0.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
+                    }
+                    if let Some(key) = key {
+                        write!(f, "[{key}]=")?;
+                    }
+                    write!(f, "{value}")?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
 }
 
 impl From<&str> for ShellValueLiteral {

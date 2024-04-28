@@ -141,7 +141,7 @@ pub struct CompletionContext<'a> {
     /// The input.
     pub input_line: &'a str,
     pub cursor_index: usize,
-    pub tokens: &'a [parser::Token],
+    pub tokens: &'a [&'a parser::Token],
 }
 
 impl CompletionSpec {
@@ -354,12 +354,18 @@ impl CompletionConfig {
             let mut insertion_point = cursor;
             let mut completion_token_index = tokens.len();
 
+            // Copy a set of references to the tokens; we will adjust this list as
+            // we find we need to insert an empty token.
+            let mut adjusted_tokens: Vec<&parser::Token> = tokens.iter().collect();
+
             // Try to find which token we are in.
             for (i, token) in tokens.iter().enumerate() {
                 // If the cursor is before the start of the token, then it's between
                 // this token and the one that preceded it (or it's before the first
                 // token if this is the first token).
                 if cursor < token.location().start.index {
+                    // TODO: Should insert an empty token here; the position looks to have
+                    // been between this token and the preceding one.
                     completion_token_index = i;
                     break;
                 }
@@ -390,6 +396,11 @@ impl CompletionConfig {
                 preceding_token = Some(token);
             }
 
+            // If the position is after the last token, then we need to insert an empty
+            // token for the new token to be generated.
+            let empty_token = parser::Token::Word(String::new(), parser::TokenLocation::default());
+            adjusted_tokens.push(&empty_token);
+
             // Get the completions.
             let mut result = CompletionResult::RestartCompletionProcess;
             let mut restart_count = 0;
@@ -402,10 +413,10 @@ impl CompletionConfig {
                 let completion_context = CompletionContext {
                     token_to_complete: completion_prefix,
                     preceding_token: preceding_token.map(|t| t.to_str()),
-                    command_name: tokens.first().map(|token| token.to_str()),
+                    command_name: adjusted_tokens.first().map(|token| token.to_str()),
                     input_line: input,
                     token_index: completion_token_index,
-                    tokens: tokens.as_slice(),
+                    tokens: adjusted_tokens.as_slice(),
                     cursor_index: position,
                 };
 

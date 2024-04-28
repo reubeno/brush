@@ -4,6 +4,7 @@ use futures::future::BoxFuture;
 use crate::commands::CommandArg;
 use crate::context;
 use crate::error;
+use crate::ExecutionResult;
 
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
@@ -56,6 +57,24 @@ pub enum BuiltinExitCode {
     ReturnFromFunctionOrScript(u8),
     ContinueLoop(u8),
     BreakLoop(u8),
+}
+
+impl From<ExecutionResult> for BuiltinExitCode {
+    fn from(result: ExecutionResult) -> Self {
+        if let Some(count) = result.continue_loop {
+            BuiltinExitCode::ContinueLoop(count)
+        } else if let Some(count) = result.break_loop {
+            BuiltinExitCode::BreakLoop(count)
+        } else if result.return_from_function_or_script {
+            BuiltinExitCode::ReturnFromFunctionOrScript(result.exit_code)
+        } else if result.exit_shell {
+            BuiltinExitCode::ExitShell(result.exit_code)
+        } else if result.exit_code == 0 {
+            BuiltinExitCode::Success
+        } else {
+            BuiltinExitCode::Custom(result.exit_code)
+        }
+    }
 }
 
 #[allow(clippy::module_name_repetitions)]
