@@ -177,12 +177,12 @@ fn apply_binary_predicate(
         // for whether the lefthand operand (a string) is matched by the righthand
         // operand (treated as a shell pattern).
         // TODO: implement case-insensitive matching if relevant via shopt options (nocasematch).
-        ast::BinaryPredicate::StringMatchesPattern => {
+        ast::BinaryPredicate::StringExactlyMatchesPattern => {
             let s = left;
             let pattern = right;
             patterns::pattern_exactly_matches(pattern, s, shell.options.extended_globbing)
         }
-        ast::BinaryPredicate::StringDoesNotMatchPattern => {
+        ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
             let s = left;
             let pattern = right;
             let eq =
@@ -200,7 +200,10 @@ fn apply_binary_predicate(
                 };
 
             let captures_value = variables::ShellValueLiteral::Array(ArrayLiteral(
-                captures.into_iter().map(|c| (None, c)).collect(),
+                captures
+                    .into_iter()
+                    .map(|c| (None, c.unwrap_or_default()))
+                    .collect(),
             ));
 
             shell.env.update_or_add(
@@ -212,6 +215,15 @@ fn apply_binary_predicate(
             )?;
 
             Ok(matches)
+        }
+        ast::BinaryPredicate::StringContainsSubstring => {
+            let s = left;
+            let substring = right;
+
+            //
+            // TODO: Fill out BASH_REMATCH?
+            //
+            Ok(s.contains(substring))
         }
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
             error::unimp("extended test binary predicate FilesReferToSameDeviceAndInodeNumbers")

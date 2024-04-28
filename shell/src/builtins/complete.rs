@@ -426,7 +426,7 @@ impl BuiltinCommand for CompGenCommand {
             preceding_token: None,
             command_name: None,
             token_index: 0,
-            tokens: &[parser::Token::Word(
+            tokens: &[&parser::Token::Word(
                 token_to_complete.to_owned(),
                 parser::TokenLocation::default(),
             )],

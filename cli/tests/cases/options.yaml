@@ -13,3 +13,38 @@ cases:
       unexported=updated
       env | grep newvar
       env | grep unexported
+
+  - name: "set -x"
+    stdin: |
+      set -x
+
+      ls
+
+      for f in 1 2 3; do echo ${f}; done
+
+      case 1 in
+        1) echo "1";;
+        *) echo "not";;
+      esac
+
+      while false; do
+        echo body
+      done
+
+      newvar=$(echo "new")
+
+      x=$((3 + 7))
+
+      if [[ x == 10 && ! 0 ]]; then
+        echo "Math checks"
+      fi
+
+      # TODO: Re-enable these
+      # var=" "
+      # [[ ${var} && ! ${var//[[:space:]]/} ]]
+
+      for ((i = 0; i < 3; i++)); do
+        echo $i
+      done
+
+      ((x = 3)) || ((x = 4))

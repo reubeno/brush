@@ -35,6 +35,9 @@ pub struct Shell {
     //
     pub last_exit_status: u8,
 
+    // Track clone depth from main shell
+    pub depth: usize,
+
     // Positional parameters ($1 and beyond)
     pub positional_parameters: Vec<String>,
 
@@ -77,6 +80,7 @@ impl Clone for Shell {
             directory_stack: self.directory_stack.clone(),
             current_line_number: self.current_line_number,
             completion_config: self.completion_config.clone(),
+            depth: self.depth + 1,
         }
     }
 }
@@ -125,6 +129,7 @@ impl Shell {
             directory_stack: vec![],
             current_line_number: 0,
             completion_config: completion::CompletionConfig::default(),
+            depth: 0,
         };
 
         // TODO: Without this a script that sets extglob will fail because we
@@ -781,14 +786,14 @@ impl Shell {
         const DEFAULT_PREFIX: &str = "+ ";
 
         let mut prefix = DEFAULT_PREFIX.to_owned();
-        if !self.script_call_stack.is_empty() {
-            if let Some(c) = prefix.chars().next() {
-                for _ in 0..self.script_call_stack.len() {
-                    prefix.insert(0, c);
-                }
+
+        let additional_depth = self.script_call_stack.len() + self.depth;
+        if let Some(c) = prefix.chars().next() {
+            for _ in 0..additional_depth {
+                prefix.insert(0, c);
             }
         }
 
-        writeln!(self.stdout(), "{prefix}{}", command.as_ref())
+        writeln!(self.stderr(), "{prefix}{}", command.as_ref())
     }
 }

@@ -10,6 +10,7 @@ use crate::context;
 use crate::error;
 
 mod alias;
+mod bg;
 mod brea;
 mod cd;
 mod colon;
@@ -24,9 +25,11 @@ mod exec;
 mod exit;
 mod export;
 mod fals;
+mod fg;
 mod getopts;
 mod help;
 mod jobs;
+mod kill;
 mod popd;
 mod printf;
 mod pushd;
@@ -40,6 +43,7 @@ mod trap;
 mod tru;
 mod typ;
 mod umask;
+mod unalias;
 mod unimp;
 mod unset;
 
@@ -75,7 +79,6 @@ async fn exec_builtin_impl<T: BuiltinCommand + Send>(
     })
 }
 
-#[allow(dead_code)]
 fn exec_declaration_builtin<T: BuiltinDeclarationCommand + Send>(
     context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
@@ -168,17 +171,17 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
     let mut m = HashMap::<&'static str, BuiltinCommandExecuteFunc>::new();
 
     m.insert("alias", exec_builtin::<alias::AliasCommand>); // TODO: should be exec_declaration_builtin
-    m.insert("bg", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("bg", exec_builtin::<bg::BgCommand>);
     m.insert("cd", exec_builtin::<cd::CdCommand>);
     m.insert("command", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("false", exec_builtin::<fals::FalseCommand>);
     m.insert("fc", exec_builtin::<unimp::UnimplementedCommand>);
-    m.insert("fg", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("fg", exec_builtin::<fg::FgCommand>);
     m.insert("getopts", exec_builtin::<getopts::GetOptsCommand>);
     m.insert("hash", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("help", exec_builtin::<help::HelpCommand>);
     m.insert("jobs", exec_builtin::<jobs::JobsCommand>);
-    m.insert("kill", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("kill", exec_builtin::<kill::KillCommand>);
     m.insert("newgrp", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("pwd", exec_builtin::<pwd::PwdCommand>);
     m.insert("read", exec_builtin::<read::ReadCommand>);
@@ -186,7 +189,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
     m.insert("type", exec_builtin::<typ::TypeCommand>);
     m.insert("ulimit", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("umask", exec_builtin::<umask::UmaskCommand>);
-    m.insert("unalias", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("unalias", exec_builtin::<unalias::UnaliasCommand>);
     m.insert("wait", exec_builtin::<unimp::UnimplementedCommand>);
 
     // TODO: does this belong?

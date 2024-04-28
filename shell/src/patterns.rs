@@ -166,14 +166,14 @@ pub(crate) fn pattern_to_regex_str(
 pub(crate) fn regex_matches(
     regex_pattern: &str,
     value: &str,
-) -> Result<Option<Vec<String>>, error::Error> {
+) -> Result<Option<Vec<Option<String>>>, error::Error> {
     // TODO: Evaluate how compatible the `fancy_regex` crate is with POSIX EREs.
     let re = fancy_regex::Regex::new(regex_pattern)?;
 
     Ok(re.captures(value)?.map(|captures| {
         captures
             .iter()
-            .map(|c| c.unwrap().as_str().to_owned())
+            .map(|c| c.map(|m| m.as_str().to_owned()))
             .collect()
     }))
 }

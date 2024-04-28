@@ -22,16 +22,19 @@ pub enum EvalError {
 
     #[error("failed to parse expression: '{0}'")]
     ParseError(String),
+
+    #[error("failed tracing expression")]
+    TraceError,
 }
 
 #[async_trait::async_trait]
-pub trait Evaluatable {
-    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
+pub trait ExpandAndEvaluate {
+    async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError>;
 }
 
 #[async_trait::async_trait]
-impl Evaluatable for ast::UnexpandedArithmeticExpr {
-    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
+impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
+    async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError> {
         // Per documentation, first shell-expand it.
         let expanded_self = expansion::basic_expand_str_without_tilde(shell, self.value.as_str())
             .await
@@ -41,9 +44,21 @@ impl Evaluatable for ast::UnexpandedArithmeticExpr {
         let expr = parser::parse_arithmetic_expression(&expanded_self)
             .map_err(|_e| EvalError::ParseError(expanded_self))?;
 
+        // Trace if applicable.
+        if trace_if_needed && shell.options.print_commands_and_arguments {
+            shell
+                .trace_command(std::format!("(( {expr} ))"))
+                .map_err(|_err| EvalError::TraceError)?;
+        }
+
         // Now evaluate.
         expr.eval(shell).await
     }
+}
+
+#[async_trait::async_trait]
+pub trait Evaluatable {
+    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
 }
 
 #[async_trait::async_trait]

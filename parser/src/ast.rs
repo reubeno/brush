@@ -800,9 +800,10 @@ pub enum BinaryPredicate {
     FilesReferToSameDeviceAndInodeNumbers,
     LeftFileIsNewerOrExistsWhenRightDoesNot,
     LeftFileIsOlderOrDoesNotExistWhenRightDoes,
-    StringMatchesPattern,
-    StringDoesNotMatchPattern,
+    StringExactlyMatchesPattern,
+    StringDoesNotExactlyMatchPattern,
     StringMatchesRegex,
+    StringContainsSubstring,
     LeftSortsBeforeRight,
     LeftSortsAfterRight,
     ArithmeticEqualTo,
@@ -819,9 +820,10 @@ impl Display for BinaryPredicate {
             BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => write!(f, "-ef"),
             BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => write!(f, "-nt"),
             BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => write!(f, "-ot"),
-            BinaryPredicate::StringMatchesPattern => write!(f, "=="),
-            BinaryPredicate::StringDoesNotMatchPattern => write!(f, "!="),
+            BinaryPredicate::StringExactlyMatchesPattern => write!(f, "=="),
+            BinaryPredicate::StringDoesNotExactlyMatchPattern => write!(f, "!="),
             BinaryPredicate::StringMatchesRegex => write!(f, "=~"),
+            BinaryPredicate::StringContainsSubstring => write!(f, "=~"),
             BinaryPredicate::LeftSortsBeforeRight => write!(f, "<"),
             BinaryPredicate::LeftSortsAfterRight => write!(f, ">"),
             BinaryPredicate::ArithmeticEqualTo => write!(f, "-eq"),
@@ -895,6 +897,36 @@ pub enum ArithmeticExpr {
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
 
+impl Display for ArithmeticExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArithmeticExpr::Literal(literal) => write!(f, "{literal}"),
+            ArithmeticExpr::Reference(target) => write!(f, "{target}"),
+            ArithmeticExpr::UnaryOp(op, operand) => write!(f, "{op}{operand}"),
+            ArithmeticExpr::BinaryOp(op, left, right) => {
+                if matches!(op, BinaryOperator::Comma) {
+                    write!(f, "{left}{op} {right}")
+                } else {
+                    write!(f, "{left} {op} {right}")
+                }
+            }
+            ArithmeticExpr::Conditional(condition, if_branch, else_branch) => {
+                write!(f, "{condition} ? {if_branch} : {else_branch}")
+            }
+            ArithmeticExpr::Assignment(target, value) => write!(f, "{target} = {value}"),
+            ArithmeticExpr::BinaryAssignment(op, target, operand) => {
+                write!(f, "{target} {op}= {operand}")
+            }
+            ArithmeticExpr::UnaryAssignment(op, target) => match op {
+                UnaryAssignmentOperator::PrefixIncrement
+                | UnaryAssignmentOperator::PrefixDecrement => write!(f, "{op}{target}"),
+                UnaryAssignmentOperator::PostfixIncrement
+                | UnaryAssignmentOperator::PostfixDecrement => write!(f, "{target}{op}"),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum BinaryOperator {
     Power,
@@ -919,12 +951,50 @@ pub enum BinaryOperator {
     LogicalOr,
 }
 
+impl Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryOperator::Power => write!(f, "**"),
+            BinaryOperator::Multiply => write!(f, "*"),
+            BinaryOperator::Divide => write!(f, "/"),
+            BinaryOperator::Modulo => write!(f, "%"),
+            BinaryOperator::Comma => write!(f, ","),
+            BinaryOperator::Add => write!(f, "+"),
+            BinaryOperator::Subtract => write!(f, "-"),
+            BinaryOperator::ShiftLeft => write!(f, "<<"),
+            BinaryOperator::ShiftRight => write!(f, ">>"),
+            BinaryOperator::LessThan => write!(f, "<"),
+            BinaryOperator::LessThanOrEqualTo => write!(f, "<="),
+            BinaryOperator::GreaterThan => write!(f, ">"),
+            BinaryOperator::GreaterThanOrEqualTo => write!(f, ">="),
+            BinaryOperator::Equals => write!(f, "=="),
+            BinaryOperator::NotEquals => write!(f, "!="),
+            BinaryOperator::BitwiseAnd => write!(f, "&"),
+            BinaryOperator::BitwiseXor => write!(f, "^"),
+            BinaryOperator::BitwiseOr => write!(f, "|"),
+            BinaryOperator::LogicalAnd => write!(f, "&&"),
+            BinaryOperator::LogicalOr => write!(f, "||"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum UnaryOperator {
     UnaryPlus,
     UnaryMinus,
     BitwiseNot,
     LogicalNot,
+}
+
+impl Display for UnaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryOperator::UnaryPlus => write!(f, "+"),
+            UnaryOperator::UnaryMinus => write!(f, "-"),
+            UnaryOperator::BitwiseNot => write!(f, "~"),
+            UnaryOperator::LogicalNot => write!(f, "!"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -935,8 +1005,28 @@ pub enum UnaryAssignmentOperator {
     PostfixDecrement,
 }
 
+impl Display for UnaryAssignmentOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryAssignmentOperator::PrefixIncrement => write!(f, "++"),
+            UnaryAssignmentOperator::PrefixDecrement => write!(f, "--"),
+            UnaryAssignmentOperator::PostfixIncrement => write!(f, "++"),
+            UnaryAssignmentOperator::PostfixDecrement => write!(f, "--"),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ArithmeticTarget {
     Variable(String),
     ArrayElement(String, Box<ArithmeticExpr>),
+}
+
+impl Display for ArithmeticTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArithmeticTarget::Variable(name) => write!(f, "{name}"),
+            ArithmeticTarget::ArrayElement(name, index) => write!(f, "{}[{}]", name, index),
+        }
+    }
 }

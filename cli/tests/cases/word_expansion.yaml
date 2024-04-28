@@ -328,13 +328,33 @@ cases:
       echo "This should never execute"
 
   - name: "Parameter expression: complex cases"
+    known_failure: true
     stdin: |
-      declare -a var=("abc" "def" "ghi")
+      declare -a var=("abc" "def" "ghi" "")
+
+      for item in "${var[@]}"; do
+        echo "Item: '${item}'"
+      done
 
       echo "Expression 1: ${var+"${var[@]}"}"
+      for item in "${var+"${var[@]}"}"; do
+        echo "  -> '${item}'"
+      done
+
       echo "Expression 2: ${var+${var[@]}}"
+      for item in "${var+${var[@]}}"; do
+        echo "  -> '${item}'"
+      done
+
       echo "Expression 3: ${var+"${var[*]}"}"
+      for item in "${var+"${var[*]}"}"; do
+        echo "  -> '${item}'"
+      done
+
       echo "Expression 4: ${var+${var[*]}}"
+      for item in "${var+"${var[*]}"}"; do
+        echo "  -> '${item}'"
+      done
 
   - name: "Remove prefix/suffix"
     stdin: |

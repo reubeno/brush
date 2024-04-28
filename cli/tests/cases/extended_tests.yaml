@@ -14,6 +14,7 @@ cases:
   - name: "File regular tests"
     stdin: |
       [[ -f non-existent ]] || echo "-f correctly identified non-existent path"
+      [[ ! -f non-existent ]] && echo "! -f correctly identified non-existent path"
 
       touch test-file
       [[ -f test-file ]] && echo "-f correctly identified regular file"
@@ -158,6 +159,40 @@ cases:
       if [[ "Hello, world." =~ ${pattern} ]]; then
           echo "Match found!"
           for i in "${!BASH_REMATCH[@]}"; do
-              echo "$i: ${BASH_REMATCH[$i]}"
+              echo "$i: '${BASH_REMATCH[$i]}'"
           done
       fi
+
+  - name: "Regex with capture including optional matches"
+    stdin: |
+      pattern='(Hello)(,?) ([a-z]+)\.'
+      if [[ "Hello world." =~ ${pattern} ]]; then
+          echo "Match found!"
+          for i in "${!BASH_REMATCH[@]}"; do
+              echo "$i: '${BASH_REMATCH[$i]}'"
+          done
+      fi
+
+  - name: "Regex with quoting"
+    stdin: |
+      regex="^$"
+
+      [[ "" =~ ''         ]] && echo "1. Matched"
+      [[ "" =~ '^$'       ]] && echo "2. Matched"
+      [[ "" =~ ""         ]] && echo "3. Matched"
+      [[ "" =~ "^$"       ]] && echo "4. Matched"
+      [[ "" =~ ^$         ]] && echo "5. Matched"
+      [[ "" =~ ${regex}   ]] && echo "6. Matched"
+      [[ "" =~ "${regex}" ]] && echo "7. Matched"
+
+  - name: "Empty and space checks"
+    stdin: |
+      check() {
+        var="$1"
+        [[ ${var} && ! ${var//[[:space:]]/} ]]
+      }
+
+      check ""    && echo "1. Only space"
+      check " "   && echo "2. Only space"
+      check $'\t' && echo "3. Only space"
+      check " a " && echo "4. Only space"
