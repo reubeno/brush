@@ -1,6 +1,5 @@
 use itertools::Itertools;
 use parser::ast;
-use uzers::os::unix::UserExt;
 
 use crate::arithmetic::ExpandAndEvaluate;
 use crate::env;
@@ -501,20 +500,11 @@ impl<'a> WordExpander<'a> {
             return error::unimp("expansion: complex tilde expression");
         }
 
-        if let Some(home) = self.shell.env.get("HOME") {
-            return Ok(home.value().to_cow_string().to_string());
+        if let Some(home_dir) = self.shell.get_home_dir() {
+            Ok(home_dir.to_string_lossy().to_string())
         } else {
-            // HOME isn't set, so let's query passwd et al. to figure out the current
-            // user's home directory.
-            if let Some(username) = uzers::get_current_username() {
-                if let Some(user_info) = uzers::get_user_by_name(&username) {
-                    return Ok(user_info.home_dir().to_string_lossy().to_string());
-                }
-            }
+            Err(error::Error::TildeWithoutValidHome)
         }
-
-        // If we still can't figure it out, error out.
-        Err(error::Error::TildeWithoutValidHome)
     }
 
     #[allow(clippy::too_many_lines)]

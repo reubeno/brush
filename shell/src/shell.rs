@@ -1,11 +1,9 @@
 use faccess::PathExt;
-use log::debug;
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::completion;
 use crate::context;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::error;
@@ -17,6 +15,7 @@ use crate::options::RuntimeOptions;
 use crate::prompt::expand_prompt;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{commands, patterns};
+use crate::{completion, users};
 
 pub struct Shell {
     pub open_files: openfiles::OpenFiles,
@@ -155,12 +154,15 @@ impl Shell {
         }
 
         // Set some additional ones.
-        let mut euid_var = ShellVariable::new(ShellValue::String(format!(
-            "{}",
-            uzers::get_effective_uid()
-        )));
-        euid_var.set_readonly();
-        env.set_global("EUID", euid_var);
+        #[cfg(unix)]
+        {
+            let mut euid_var = ShellVariable::new(ShellValue::String(format!(
+                "{}",
+                uzers::get_effective_uid()
+            )));
+            euid_var.set_readonly();
+            env.set_global("EUID", euid_var);
+        }
 
         let mut random_var = ShellVariable::new(ShellValue::Random);
         random_var.hide_from_enumeration();
@@ -181,9 +183,7 @@ impl Shell {
 
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
-            if let Some(home_dir) = env.get("HOME") {
-                let home_dir: String = home_dir.value().to_cow_string().to_string();
-                let home_dir = PathBuf::from(home_dir);
+            if let Some(home_dir) = Self::get_home_dir_with_env(&env) {
                 let histfile = home_dir.join(".brush_history");
                 env.set_global(
                     "HISTFILE",
@@ -191,6 +191,7 @@ impl Shell {
                 );
             }
         }
+        #[cfg(unix)]
         if !env.is_set("PATH") {
             env.set_global(
                 "PATH",
@@ -236,30 +237,21 @@ impl Shell {
             //
             self.source_if_exists(Path::new("/etc/profile"), params)
                 .await?;
-            if let Ok(home_path) = std::env::var("HOME") {
+            if let Some(home_path) = self.get_home_dir() {
                 if options.sh_mode {
-                    self.source_if_exists(Path::new(&home_path).join(".profile").as_path(), params)
+                    self.source_if_exists(home_path.join(".profile").as_path(), params)
                         .await?;
                 } else {
                     if !self
-                        .source_if_exists(
-                            Path::new(&home_path).join(".bash_profile").as_path(),
-                            params,
-                        )
+                        .source_if_exists(home_path.join(".bash_profile").as_path(), params)
                         .await?
                     {
                         if !self
-                            .source_if_exists(
-                                Path::new(&home_path).join(".bash_login").as_path(),
-                                params,
-                            )
+                            .source_if_exists(home_path.join(".bash_login").as_path(), params)
                             .await?
                         {
-                            self.source_if_exists(
-                                Path::new(&home_path).join(".profile").as_path(),
-                                params,
-                            )
-                            .await?;
+                            self.source_if_exists(home_path.join(".profile").as_path(), params)
+                                .await?;
                         }
                     }
                 }
@@ -279,10 +271,10 @@ impl Shell {
                 //
                 self.source_if_exists(Path::new("/etc/bash.bashrc"), params)
                     .await?;
-                if let Ok(home_path) = std::env::var("HOME") {
-                    self.source_if_exists(Path::new(&home_path).join(".bashrc").as_path(), params)
+                if let Some(home_path) = self.get_home_dir() {
+                    self.source_if_exists(home_path.join(".bashrc").as_path(), params)
                         .await?;
-                    self.source_if_exists(Path::new(&home_path).join(".brushrc").as_path(), params)
+                    self.source_if_exists(home_path.join(".brushrc").as_path(), params)
                         .await?;
                 }
             } else {
@@ -312,7 +304,7 @@ impl Shell {
             self.source(path, &args, params).await?;
             Ok(true)
         } else {
-            debug!("skipping non-existent file: {}", path.display());
+            log::debug!("skipping non-existent file: {}", path.display());
             Ok(false)
         }
     }
@@ -764,13 +756,25 @@ impl Shell {
     }
 
     pub fn tilde_shorten(&self, s: String) -> String {
-        let home_dir_opt = self.env.get("HOME");
-        if let Some(home_dir) = home_dir_opt {
-            if let Some(stripped) = s.strip_prefix(home_dir.value().to_cow_string().as_ref()) {
+        if let Some(home_dir) = self.get_home_dir() {
+            if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
                 return format!("~{stripped}");
             }
         }
         s
+    }
+
+    pub fn get_home_dir(&self) -> Option<PathBuf> {
+        Self::get_home_dir_with_env(&self.env)
+    }
+
+    fn get_home_dir_with_env(env: &ShellEnvironment) -> Option<PathBuf> {
+        if let Some(home) = env.get("HOME") {
+            Some(PathBuf::from(home.value().to_cow_string().to_string()))
+        } else {
+            // HOME isn't set, so let's sort it out ourselves.
+            users::get_user_home_dir()
+        }
     }
 
     pub fn stdout(&self) -> openfiles::OpenFile {

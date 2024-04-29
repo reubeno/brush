@@ -21,6 +21,7 @@ mod dirs;
 mod dot;
 mod echo;
 mod eval;
+#[cfg(unix)]
 mod exec;
 mod exit;
 mod export;
@@ -29,6 +30,7 @@ mod fg;
 mod getopts;
 mod help;
 mod jobs;
+#[cfg(unix)]
 mod kill;
 mod popd;
 mod printf;
@@ -153,6 +155,7 @@ fn get_special_builtins() -> HashMap<&'static str, BuiltinCommandExecuteFunc> {
     m.insert("continue", exec_builtin::<continu::ContinueCommand>);
     m.insert(".", exec_builtin::<dot::DotCommand>);
     m.insert("eval", exec_builtin::<eval::EvalCommand>);
+    #[cfg(unix)]
     m.insert("exec", exec_builtin::<exec::ExecCommand>);
     m.insert("exit", exec_builtin::<exit::ExitCommand>);
     m.insert("export", exec_builtin::<export::ExportCommand>); // TODO: should be exec_declaration_builtin
@@ -181,6 +184,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
     m.insert("hash", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("help", exec_builtin::<help::HelpCommand>);
     m.insert("jobs", exec_builtin::<jobs::JobsCommand>);
+    #[cfg(unix)]
     m.insert("kill", exec_builtin::<kill::KillCommand>);
     m.insert("newgrp", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("pwd", exec_builtin::<pwd::PwdCommand>);

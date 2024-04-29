@@ -1,4 +1,4 @@
-use crate::{error, shell::Shell};
+use crate::{error, shell::Shell, users};
 use std::path::Path;
 
 const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -37,14 +37,14 @@ pub(crate) fn format_prompt_piece(
         parser::prompt::PromptPiece::CurrentHistoryNumber => {
             return error::unimp("prompt: current history number")
         }
-        parser::prompt::PromptPiece::CurrentUser => get_current_username()?,
+        parser::prompt::PromptPiece::CurrentUser => users::get_current_username()?,
         parser::prompt::PromptPiece::CurrentWorkingDirectory {
             tilde_replaced,
             basename,
         } => format_current_working_directory(shell, *tilde_replaced, *basename),
         parser::prompt::PromptPiece::Date(_) => return error::unimp("prompt: date"),
         parser::prompt::PromptPiece::DollarOrPound => {
-            if uzers::get_current_uid() == 0 {
+            if users::is_root() {
                 "#".to_owned()
             } else {
                 "$".to_owned()
@@ -96,11 +96,6 @@ pub(crate) fn format_prompt_piece(
     Ok(formatted)
 }
 
-fn get_current_username() -> Result<String, error::Error> {
-    let username = uzers::get_current_username().ok_or_else(|| error::Error::NoCurrentUser)?;
-    Ok(username.to_string_lossy().to_string())
-}
-
 fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basename: bool) -> String {
     let mut working_dir_str = shell.working_dir.to_string_lossy().to_string();
 
@@ -112,6 +107,10 @@ fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basenam
         if let Some(filename) = Path::new(&working_dir_str).file_name() {
             working_dir_str = filename.to_string_lossy().to_string();
         }
+    }
+
+    if cfg!(windows) {
+        working_dir_str = working_dir_str.replace('\\', "/");
     }
 
     working_dir_str

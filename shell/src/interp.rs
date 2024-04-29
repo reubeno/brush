@@ -2,10 +2,12 @@ use itertools::Itertools;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
 use std::collections::{HashSet, VecDeque};
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process;
+#[cfg(unix)]
 use tokio_command_fds::{CommandFdExt, FdMapping};
 
 use crate::arithmetic::ExpandAndEvaluate;
@@ -31,17 +33,19 @@ pub struct ExecutionResult {
 
 impl From<std::process::Output> for ExecutionResult {
     fn from(output: std::process::Output) -> ExecutionResult {
-        #[allow(clippy::cast_sign_loss)]
-        let exit_code = if let Some(code) = output.status.code() {
-            (code & 0xFF) as u8
-        } else if let Some(signal) = output.status.signal() {
-            (signal & 0xFF) as u8 + 128
-        } else {
-            log::error!("unhandled process exit");
-            127
-        };
+        if let Some(code) = output.status.code() {
+            #[allow(clippy::cast_sign_loss)]
+            return Self::new((code & 0xFF) as u8);
+        }
 
-        Self::new(exit_code)
+        #[cfg(unix)]
+        if let Some(signal) = output.status.signal() {
+            #[allow(clippy::cast_sign_loss)]
+            return Self::new((signal & 0xFF) as u8 + 128);
+        }
+
+        log::error!("unhandled process exit");
+        Self::new(127)
     }
 }
 
@@ -253,8 +257,12 @@ impl Execute for ast::Pipeline {
         let mut result = ExecutionResult::success();
 
         const SIGTSTP: std::os::raw::c_int = 20;
+
+        #[cfg(unix)]
         let mut sigtstp =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(SIGTSTP))?;
+        #[cfg(not(unix))]
+        let sigtstp = FakeSignal::new();
 
         let mut stopped: VecDeque<jobs::JobJoinHandle> = VecDeque::new();
         let mut pids = vec![];
@@ -1188,17 +1196,26 @@ async fn execute_external_command(
     }
 
     // Inject any other fds.
-    let fd_mappings = context
-        .open_files
-        .files
-        .iter()
-        .map(|(child_fd, open_file)| FdMapping {
-            child_fd: i32::try_from(*child_fd).unwrap(),
-            parent_fd: open_file.as_raw_fd().unwrap(),
-        })
-        .collect();
-    cmd.fd_mappings(fd_mappings)
-        .map_err(|_e| error::Error::ChildCreationFailure)?;
+    #[cfg(unix)]
+    {
+        let fd_mappings = context
+            .open_files
+            .files
+            .iter()
+            .map(|(child_fd, open_file)| FdMapping {
+                child_fd: i32::try_from(*child_fd).unwrap(),
+                parent_fd: open_file.as_raw_fd().unwrap(),
+            })
+            .collect();
+        cmd.fd_mappings(fd_mappings)
+            .map_err(|_e| error::Error::ChildCreationFailure)?;
+    }
+    #[cfg(not(unix))]
+    {
+        if !context.open_files.files.is_empty() {
+            return error::unimp("fd redirections on non-Unix platform");
+        }
+    }
 
     log::debug!(
         "Spawning: {} {}",
@@ -1551,5 +1568,19 @@ async fn setup_redirect<'a>(
                 .insert(fd_num, OpenFile::HereDocument(expanded_word));
             Ok(Some(fd_num))
         }
+    }
+}
+
+#[cfg(not(unix))]
+struct FakeSignal {}
+
+#[cfg(not(unix))]
+impl FakeSignal {
+    fn new() -> Self {
+        Self {}
+    }
+
+    async fn recv(&self) -> () {
+        futures::future::pending::<()>().await
     }
 }

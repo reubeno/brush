@@ -159,6 +159,11 @@ impl InteractiveShell {
     }
 }
 
+//
+// N.B. For now, we disable hinting on Windows because it sometimes results
+// in prompt/input rendering errors.
+//
+#[cfg(unix)]
 #[derive(rustyline::Helper, rustyline::Hinter)]
 pub(crate) struct EditorHelper {
     pub shell: shell::Shell,
@@ -167,11 +172,24 @@ pub(crate) struct EditorHelper {
     hinter: rustyline::hint::HistoryHinter,
 }
 
+#[cfg(windows)]
+#[derive(rustyline::Helper)]
+pub(crate) struct EditorHelper {
+    pub shell: shell::Shell,
+}
+
 impl EditorHelper {
+    #[cfg(unix)]
     pub(crate) fn new(shell: shell::Shell) -> Self {
-        // let completer = InteractiveShellCompleter::new(shell);
-        let hinter = rustyline::hint::HistoryHinter::new();
-        Self { shell, hinter }
+        Self {
+            shell,
+            hinter: rustyline::hint::HistoryHinter::new(),
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn new(shell: shell::Shell) -> Self {
+        Self { shell }
     }
 
     fn get_completion_candidate_display_str(s: &str) -> String {
@@ -279,4 +297,9 @@ impl rustyline::validate::Validator for EditorHelper {
 
         Ok(validation_result)
     }
+}
+
+#[cfg(windows)]
+impl rustyline::hint::Hinter for EditorHelper {
+    type Hint = String;
 }

@@ -53,7 +53,7 @@ pub(crate) fn pattern_expand(
         vec![PathBuf::new()]
     } else {
         let mut working_dir_str = working_dir.to_string_lossy().to_string();
-        working_dir_str.push('/');
+        working_dir_str.push(std::path::MAIN_SEPARATOR);
 
         prefix_to_remove = Some(working_dir_str);
         vec![working_dir.to_path_buf()]

@@ -2,12 +2,14 @@ use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
 use clap::Parser;
 use colored::Colorize;
+#[cfg(unix)]
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
-    os::unix::{fs::PermissionsExt, process::ExitStatusExt},
     path::{Path, PathBuf},
     process::ExitStatus,
 };
@@ -637,6 +639,7 @@ impl TestCase {
 
             test_file_path.write_str(test_file.contents.as_str())?;
 
+            #[cfg(unix)]
             if test_file.executable {
                 // chmod u+x
                 let mut perms = test_file_path.metadata()?.permissions();
@@ -725,11 +728,21 @@ impl TestCase {
     ) -> Result<RunResult> {
         let test_cmd = self.create_command_for_shell(shell_config, working_dir);
 
-        if self.pty {
-            self.run_command_with_pty(test_cmd).await
+        let result = if self.pty {
+            #[cfg(unix)]
+            {
+                self.run_command_with_pty(test_cmd).await?
+            }
+
+            #[cfg(not(unix))]
+            {
+                panic!("PTY tests are only supported on Unix-like systems");
+            }
         } else {
-            self.run_command_with_stdin(test_cmd).await
-        }
+            self.run_command_with_stdin(test_cmd).await?
+        };
+
+        Ok(result)
     }
 
     fn create_command_for_shell(
@@ -784,6 +797,7 @@ impl TestCase {
     }
 
     #[allow(clippy::unused_async)]
+    #[cfg(unix)]
     async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
         let mut log = Vec::new();
         let writer = std::io::Cursor::new(&mut log);
@@ -824,7 +838,14 @@ impl TestCase {
             }
         }
 
-        p.expect(expectrl::Eof)?;
+        if let Err(inner) = p.expect(expectrl::Eof) {
+            return Ok(RunResult {
+                exit_status: ExitStatus::from_raw(1),
+                stdout: String::new(),
+                stderr: std::format!("failed to expect EOF: {inner}"),
+                duration: start_time.elapsed(),
+            });
+        }
 
         let mut wait_status = p.get_process().status()?;
 
