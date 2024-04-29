@@ -548,6 +548,14 @@ impl CompletionConfig {
             }
         }
 
+        #[cfg(windows)]
+        {
+            candidates = candidates
+                .into_iter()
+                .map(|c| c.replace("\\", "/"))
+                .collect();
+        }
+
         CompletionResult::Candidates(candidates)
     }
 }

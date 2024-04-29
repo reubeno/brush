@@ -3,12 +3,17 @@ cases:
   - name: "Basic cd usage"
     ignore_stderr: true
     stdin: |
+      echo "cd /"
       cd /
       echo $?
       echo "pwd: $PWD"
+
+      echo "cd tmp"
       cd tmp
       echo $?
       echo "pwd: $PWD"
+
+      echo "cd"
       cd
       echo $?
       echo "pwd: $PWD"

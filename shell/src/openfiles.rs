@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::process::Stdio;
 
@@ -31,6 +32,7 @@ impl OpenFile {
         Ok(result)
     }
 
+    #[cfg(unix)]
     pub(crate) fn as_raw_fd(&self) -> Result<i32, error::Error> {
         match self {
             OpenFile::Stdin => Ok(std::io::stdin().as_raw_fd()),

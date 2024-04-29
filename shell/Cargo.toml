@@ -18,7 +18,6 @@ async-recursion = "1.1.0"
 async-trait = "0.1.80"
 brush-parser = { path = "../parser" }
 clap = { version = "4.5.4", features = ["derive"] }
-exec = "0.3.1"
 faccess = "0.2.4"
 fancy-regex = "0.13.0"
 futures = "0.3.30"
@@ -27,7 +26,6 @@ indexmap = "2.2.6"
 itertools = "0.12.1"
 lazy_static = "1.4.0"
 log = "0.4.21"
-nix = { version = "0.28.0", features = ["fs"] }
 os_pipe = "1.1.5"
 rand = "0.8.5"
 thiserror = "1.0.58"
@@ -40,11 +38,21 @@ tokio = { version = "1.37.0", features = [
     "signal",
 ] }
 tokio-macros = "2.2.0"
+
+[target.'cfg(windows)'.dependencies]
+homedir = "0.2.1"
+whoami = "1.5.1"
+
+[target.'cfg(unix)'.dependencies]
+exec = "0.3.1"
+nix = { version = "0.28.0", features = ["fs"] }
 tokio-command-fds = "0.2.1"
 uzers = "0.11.3"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
+
+[target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }
 
 [[bench]]

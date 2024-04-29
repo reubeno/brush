@@ -17,6 +17,7 @@ mod options;
 mod patterns;
 mod prompt;
 mod shell;
+mod users;
 mod variables;
 
 pub use completion::Completions;

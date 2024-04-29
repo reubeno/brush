@@ -64,6 +64,7 @@ enum JobAnnotation {
 
 pub struct Job {
     join_handles: VecDeque<JobJoinHandle>,
+    #[allow(dead_code)]
     pids: Vec<u32>,
     annotation: JobAnnotation,
 
@@ -112,6 +113,7 @@ impl Job {
         error::unimp("move job to background")
     }
 
+    #[cfg(unix)]
     pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
         if !matches!(self.state, JobState::Stopped) {
             return error::unimp("move job to foreground for not stopped job");
@@ -132,6 +134,12 @@ impl Job {
         }
     }
 
+    #[cfg(not(unix))]
+    pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
+        error::unimp("move job to foreground")
+    }
+
+    #[cfg(unix)]
     pub fn kill(&mut self) -> Result<(), error::Error> {
         if let Some(pid) = self.get_pid()? {
             #[allow(clippy::cast_possible_wrap)]
@@ -146,6 +154,12 @@ impl Job {
         }
     }
 
+    #[cfg(not(unix))]
+    pub fn kill(&mut self) -> Result<(), error::Error> {
+        error::unimp("kill job")
+    }
+
+    #[cfg(unix)]
     fn get_pid(&self) -> Result<Option<u32>, error::Error> {
         if self.pids.is_empty() {
             error::unimp("get pid for job")
