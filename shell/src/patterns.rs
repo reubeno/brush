@@ -1,7 +1,11 @@
 use crate::error;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::VecDeque,
+    path::{Path, PathBuf},
+};
 
-pub enum PatternPiece {
+#[derive(Clone)]
+pub(crate) enum PatternPiece {
     Pattern(String),
     Literal(String),
 }
@@ -22,90 +26,214 @@ impl PatternPiece {
     }
 }
 
-pub(crate) fn pattern_expand_ex(
-    pattern_pieces: &[PatternPiece],
-    working_dir: &Path,
-    enable_extended_globbing: bool,
-) -> Result<Vec<String>, error::Error> {
-    let concatenated: String = pattern_pieces.iter().map(|piece| piece.as_str()).collect();
+type PatternWord = Vec<PatternPiece>;
 
-    // FIXME: This doesn't honor quoting.
-    pattern_expand(concatenated.as_str(), working_dir, enable_extended_globbing)
+pub struct Pattern {
+    pieces: PatternWord,
 }
 
-pub(crate) fn pattern_expand(
-    pattern: &str,
-    working_dir: &Path,
-    enable_extended_globbing: bool,
-) -> Result<Vec<String>, error::Error> {
-    if pattern.is_empty() {
-        return Ok(vec![]);
-    } else if !requires_expansion(pattern) {
-        return Ok(vec![pattern.to_owned()]);
+impl From<PatternWord> for Pattern {
+    fn from(value: PatternWord) -> Self {
+        Self { pieces: value }
+    }
+}
+
+impl From<&PatternWord> for Pattern {
+    fn from(value: &PatternWord) -> Self {
+        Self {
+            pieces: value.clone(),
+        }
+    }
+}
+
+impl From<&str> for Pattern {
+    fn from(value: &str) -> Self {
+        Self {
+            pieces: vec![PatternPiece::Pattern(value.to_owned())],
+        }
+    }
+}
+
+impl From<String> for Pattern {
+    fn from(value: String) -> Self {
+        Self {
+            pieces: vec![PatternPiece::Pattern(value)],
+        }
+    }
+}
+
+impl Pattern {
+    pub fn is_empty(&self) -> bool {
+        self.pieces.iter().all(|p| p.as_str().is_empty())
     }
 
-    let pattern_as_path = Path::new(pattern);
-    let is_absolute = pattern_as_path.is_absolute();
-
-    let prefix_to_remove;
-    let mut paths_so_far = if is_absolute {
-        prefix_to_remove = None;
-        vec![PathBuf::new()]
-    } else {
-        let mut working_dir_str = working_dir.to_string_lossy().to_string();
-        working_dir_str.push(std::path::MAIN_SEPARATOR);
-
-        prefix_to_remove = Some(working_dir_str);
-        vec![working_dir.to_path_buf()]
-    };
-
-    for component in pattern_as_path {
-        let component_str = component.to_string_lossy();
-        if !requires_expansion(component_str.as_ref()) {
-            for p in &mut paths_so_far {
-                p.push(component);
-            }
-            continue;
+    pub(crate) fn expand(
+        &self,
+        working_dir: &Path,
+        enable_extended_globbing: bool,
+    ) -> Result<Vec<String>, error::Error> {
+        if self.pieces.iter().all(|p| p.as_str().is_empty()) {
+            return Ok(vec![]);
+        } else if !self.pieces.iter().any(|piece| {
+            matches!(piece, PatternPiece::Pattern(_)) && requires_expansion(piece.as_str())
+        }) {
+            let concatenated: String = self.pieces.iter().map(|piece| piece.as_str()).collect();
+            return Ok(vec![concatenated]);
         }
 
-        let current_paths = std::mem::take(&mut paths_so_far);
-        for current_path in current_paths {
-            let regex =
-                pattern_to_regex(component_str.as_ref(), true, true, enable_extended_globbing)?;
-            let mut matching_paths_in_dir: Vec<_> = current_path
-                .read_dir()
-                .map_or_else(|_| vec![], |dir| dir.into_iter().collect())
-                .into_iter()
-                .filter_map(|result| result.ok())
-                .filter(|entry| {
-                    regex
-                        .is_match(entry.file_name().to_string_lossy().as_ref())
-                        .unwrap_or(false)
+        let mut components: Vec<PatternWord> = vec![];
+        for piece in &self.pieces {
+            let mut split_result = piece
+                .as_str()
+                .split(std::path::MAIN_SEPARATOR)
+                .map(|s| match piece {
+                    PatternPiece::Pattern(_) => PatternPiece::Pattern(s.to_owned()),
+                    PatternPiece::Literal(_) => PatternPiece::Literal(s.to_owned()),
                 })
-                .map(|entry| entry.path())
-                .collect();
+                .collect::<VecDeque<_>>();
 
-            matching_paths_in_dir.sort();
-
-            paths_so_far.append(&mut matching_paths_in_dir);
-        }
-    }
-
-    let results: Vec<_> = paths_so_far
-        .into_iter()
-        .map(|path| {
-            let path_str = path.to_string_lossy();
-            let mut path_ref = path_str.as_ref();
-
-            if let Some(prefix_to_remove) = &prefix_to_remove {
-                path_ref = path_ref.strip_prefix(prefix_to_remove).unwrap();
+            if let Some(first_piece) = split_result.pop_front() {
+                if let Some(last_component) = components.last_mut() {
+                    last_component.push(first_piece);
+                } else {
+                    components.push(vec![first_piece]);
+                }
             }
 
-            path_ref.to_string()
-        })
-        .collect();
+            while let Some(piece) = split_result.pop_front() {
+                components.push(vec![piece]);
+            }
+        }
 
-    Ok(results)
+        let is_absolute = if let Some(first_component) = components.first() {
+            if let Some(first_piece) = first_component.first() {
+                first_piece.as_str().starts_with(std::path::MAIN_SEPARATOR)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let prefix_to_remove;
+        let mut paths_so_far = if is_absolute {
+            prefix_to_remove = None;
+            vec![PathBuf::new()]
+        } else {
+            let mut working_dir_str = working_dir.to_string_lossy().to_string();
+            working_dir_str.push(std::path::MAIN_SEPARATOR);
+
+            prefix_to_remove = Some(working_dir_str);
+            vec![working_dir.to_path_buf()]
+        };
+
+        for component in components {
+            if !component.iter().any(|piece| {
+                matches!(piece, PatternPiece::Pattern(_)) && requires_expansion(piece.as_str())
+            }) {
+                for p in &mut paths_so_far {
+                    let flattened = component
+                        .iter()
+                        .map(|piece| piece.as_str())
+                        .collect::<String>();
+                    p.push(flattened);
+                }
+                continue;
+            }
+
+            let current_paths = std::mem::take(&mut paths_so_far);
+            for current_path in current_paths {
+                let subpattern = Pattern::from(&component);
+                let regex = subpattern.to_regex(true, true, enable_extended_globbing)?;
+                let mut matching_paths_in_dir: Vec<_> = current_path
+                    .read_dir()
+                    .map_or_else(|_| vec![], |dir| dir.into_iter().collect())
+                    .into_iter()
+                    .filter_map(|result| result.ok())
+                    .filter(|entry| {
+                        regex
+                            .is_match(entry.file_name().to_string_lossy().as_ref())
+                            .unwrap_or(false)
+                    })
+                    .map(|entry| entry.path())
+                    .collect();
+
+                matching_paths_in_dir.sort();
+
+                paths_so_far.append(&mut matching_paths_in_dir);
+            }
+        }
+
+        let results: Vec<_> = paths_so_far
+            .into_iter()
+            .map(|path| {
+                let path_str = path.to_string_lossy();
+                let mut path_ref = path_str.as_ref();
+
+                if let Some(prefix_to_remove) = &prefix_to_remove {
+                    path_ref = path_ref.strip_prefix(prefix_to_remove).unwrap();
+                }
+
+                path_ref.to_string()
+            })
+            .collect();
+
+        Ok(results)
+    }
+
+    pub(crate) fn to_regex_str(
+        &self,
+        strict_prefix_match: bool,
+        strict_suffix_match: bool,
+        enable_extended_globbing: bool,
+    ) -> Result<String, error::Error> {
+        let mut regex_str = String::new();
+
+        if strict_prefix_match {
+            regex_str.push('^');
+        }
+
+        for piece in &self.pieces {
+            let next_part = match piece {
+                PatternPiece::Pattern(s) => {
+                    pattern_to_regex_str(s, false, false, enable_extended_globbing)?
+                }
+                PatternPiece::Literal(s) => escape_for_regex(s),
+            };
+
+            regex_str.push_str(next_part.as_str());
+        }
+
+        if strict_suffix_match {
+            regex_str.push('$');
+        }
+
+        Ok(regex_str)
+    }
+
+    pub(crate) fn to_regex(
+        &self,
+        strict_prefix_match: bool,
+        strict_suffix_match: bool,
+        enable_extended_globbing: bool,
+    ) -> Result<fancy_regex::Regex, error::Error> {
+        let regex_str = self.to_regex_str(
+            strict_prefix_match,
+            strict_suffix_match,
+            enable_extended_globbing,
+        )?;
+
+        Ok(fancy_regex::Regex::new(regex_str.as_str())?)
+    }
+
+    pub(crate) fn exactly_matches(
+        &self,
+        value: &str,
+        enable_extended_globbing: bool,
+    ) -> Result<bool, error::Error> {
+        let re = self.to_regex(true, true, enable_extended_globbing)?;
+        Ok(re.is_match(value)?)
+    }
 }
 
 fn requires_expansion(s: &str) -> bool {
@@ -113,13 +241,15 @@ fn requires_expansion(s: &str) -> bool {
     s.contains(|c| matches!(c, '*' | '?' | '[' | ']' | '(' | ')'))
 }
 
-pub(crate) fn pattern_exactly_matches(
-    pattern: &str,
-    value: &str,
-    enable_extended_globbing: bool,
-) -> Result<bool, error::Error> {
-    let re = pattern_to_regex(pattern, true, true, enable_extended_globbing)?;
-    Ok(re.is_match(value)?)
+fn escape_for_regex(s: &str) -> String {
+    let mut escaped = String::new();
+    for c in s.chars() {
+        if parser::pattern::regex_char_needs_escaping(c) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
 }
 
 pub(crate) fn pattern_to_regex(
@@ -139,7 +269,7 @@ pub(crate) fn pattern_to_regex(
     Ok(re)
 }
 
-pub(crate) fn pattern_to_regex_str(
+fn pattern_to_regex_str(
     pattern: &str,
     strict_prefix_match: bool,
     strict_suffix_match: bool,
@@ -180,12 +310,12 @@ pub(crate) fn regex_matches(
 
 pub(crate) fn remove_largest_matching_prefix<'a>(
     s: &'a str,
-    pattern: &str,
+    pattern: &Pattern,
     enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in (0..s.len()).rev() {
         let prefix = &s[0..=i];
-        if pattern_exactly_matches(pattern, prefix, enable_extended_globbing)? {
+        if pattern.exactly_matches(prefix, enable_extended_globbing)? {
             return Ok(&s[i + 1..]);
         }
     }
@@ -194,12 +324,12 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
 
 pub(crate) fn remove_smallest_matching_prefix<'a>(
     s: &'a str,
-    pattern: &str,
+    pattern: &Pattern,
     enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in 0..s.len() {
         let prefix = &s[0..=i];
-        if pattern_exactly_matches(pattern, prefix, enable_extended_globbing)? {
+        if pattern.exactly_matches(prefix, enable_extended_globbing)? {
             return Ok(&s[i + 1..]);
         }
     }
@@ -208,12 +338,12 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 
 pub(crate) fn remove_largest_matching_suffix<'a>(
     s: &'a str,
-    pattern: &str,
+    pattern: &Pattern,
     enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in 0..s.len() {
         let suffix = &s[i..];
-        if pattern_exactly_matches(pattern, suffix, enable_extended_globbing)? {
+        if pattern.exactly_matches(suffix, enable_extended_globbing)? {
             return Ok(&s[..i]);
         }
     }
@@ -222,12 +352,12 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
 
 pub(crate) fn remove_smallest_matching_suffix<'a>(
     s: &'a str,
-    pattern: &str,
+    pattern: &Pattern,
     enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     for i in (0..s.len()).rev() {
         let suffix = &s[i..];
-        if pattern_exactly_matches(pattern, suffix, enable_extended_globbing)? {
+        if pattern.exactly_matches(suffix, enable_extended_globbing)? {
             return Ok(&s[..i]);
         }
     }
@@ -241,6 +371,10 @@ mod tests {
 
     fn ext_pattern_to_exact_regex_str(pattern: &str) -> Result<String, error::Error> {
         pattern_to_regex_str(pattern, true, true, true)
+    }
+
+    fn ext_pattern_str_to_exact_regex_str(word: &PatternWord) -> Result<String, error::Error> {
+        Pattern::from(word).to_regex_str(true, true, true)
     }
 
     #[test]
@@ -272,44 +406,137 @@ mod tests {
     }
 
     #[test]
+    fn test_pattern_word_translation() -> Result<()> {
+        assert_eq!(
+            ext_pattern_str_to_exact_regex_str(&vec![PatternPiece::Pattern("a*".to_owned())])?
+                .as_str(),
+            "^a.*$"
+        );
+        assert_eq!(
+            ext_pattern_str_to_exact_regex_str(&vec![
+                PatternPiece::Pattern("a*".to_owned()),
+                PatternPiece::Literal("b".to_owned()),
+            ])?
+            .as_str(),
+            "^a.*b$"
+        );
+        assert_eq!(
+            ext_pattern_str_to_exact_regex_str(&vec![
+                PatternPiece::Literal("a*".to_owned()),
+                PatternPiece::Pattern("b".to_owned()),
+            ])?
+            .as_str(),
+            r"^a\*b$"
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_remove_largest_matching_prefix() -> Result<()> {
-        assert_eq!(remove_largest_matching_prefix("ooof", "", true)?, "ooof");
-        assert_eq!(remove_largest_matching_prefix("ooof", "x", true)?, "ooof");
-        assert_eq!(remove_largest_matching_prefix("ooof", "o", true)?, "oof");
-        assert_eq!(remove_largest_matching_prefix("ooof", "o*o", true)?, "f");
-        assert_eq!(remove_largest_matching_prefix("ooof", "o*", true)?, "");
+        assert_eq!(
+            remove_largest_matching_prefix("ooof", &Pattern::from(""), true)?,
+            "ooof"
+        );
+        assert_eq!(
+            remove_largest_matching_prefix("ooof", &Pattern::from("x"), true)?,
+            "ooof"
+        );
+        assert_eq!(
+            remove_largest_matching_prefix("ooof", &Pattern::from("o"), true)?,
+            "oof"
+        );
+        assert_eq!(
+            remove_largest_matching_prefix("ooof", &Pattern::from("o*o"), true)?,
+            "f"
+        );
+        assert_eq!(
+            remove_largest_matching_prefix("ooof", &Pattern::from("o*"), true)?,
+            ""
+        );
         Ok(())
     }
 
     #[test]
     fn test_remove_smallest_matching_prefix() -> Result<()> {
-        assert_eq!(remove_smallest_matching_prefix("ooof", "", true)?, "ooof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "x", true)?, "ooof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "o", true)?, "oof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "o*o", true)?, "of");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "o*", true)?, "oof");
-        assert_eq!(remove_smallest_matching_prefix("ooof", "ooof", true)?, "");
+        assert_eq!(
+            remove_smallest_matching_prefix("ooof", &Pattern::from(""), true)?,
+            "ooof"
+        );
+        assert_eq!(
+            remove_smallest_matching_prefix("ooof", &Pattern::from("x"), true)?,
+            "ooof"
+        );
+        assert_eq!(
+            remove_smallest_matching_prefix("ooof", &Pattern::from("o"), true)?,
+            "oof"
+        );
+        assert_eq!(
+            remove_smallest_matching_prefix("ooof", &Pattern::from("o*o"), true)?,
+            "of"
+        );
+        assert_eq!(
+            remove_smallest_matching_prefix("ooof", &Pattern::from("o*"), true)?,
+            "oof"
+        );
+        assert_eq!(
+            remove_smallest_matching_prefix("ooof", &Pattern::from("ooof"), true)?,
+            ""
+        );
         Ok(())
     }
 
     #[test]
     fn test_remove_largest_matching_suffix() -> Result<()> {
-        assert_eq!(remove_largest_matching_suffix("foo", "", true)?, "foo");
-        assert_eq!(remove_largest_matching_suffix("foo", "x", true)?, "foo");
-        assert_eq!(remove_largest_matching_suffix("foo", "o", true)?, "fo");
-        assert_eq!(remove_largest_matching_suffix("foo", "o*", true)?, "f");
-        assert_eq!(remove_largest_matching_suffix("foo", "foo", true)?, "");
+        assert_eq!(
+            remove_largest_matching_suffix("foo", &Pattern::from(""), true)?,
+            "foo"
+        );
+        assert_eq!(
+            remove_largest_matching_suffix("foo", &Pattern::from("x"), true)?,
+            "foo"
+        );
+        assert_eq!(
+            remove_largest_matching_suffix("foo", &Pattern::from("o"), true)?,
+            "fo"
+        );
+        assert_eq!(
+            remove_largest_matching_suffix("foo", &Pattern::from("o*"), true)?,
+            "f"
+        );
+        assert_eq!(
+            remove_largest_matching_suffix("foo", &Pattern::from("foo"), true)?,
+            ""
+        );
         Ok(())
     }
 
     #[test]
     fn test_remove_smallest_matching_suffix() -> Result<()> {
-        assert_eq!(remove_smallest_matching_suffix("fooo", "", true)?, "fooo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "x", true)?, "fooo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "o", true)?, "foo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "o*o", true)?, "fo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "o*", true)?, "foo");
-        assert_eq!(remove_smallest_matching_suffix("fooo", "fooo", true)?, "");
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", &Pattern::from(""), true)?,
+            "fooo"
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", &Pattern::from("x"), true)?,
+            "fooo"
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", &Pattern::from("o"), true)?,
+            "foo"
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", &Pattern::from("o*o"), true)?,
+            "fo"
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", &Pattern::from("o*"), true)?,
+            "foo"
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", &Pattern::from("fooo"), true)?,
+            ""
+        );
         Ok(())
     }
 }

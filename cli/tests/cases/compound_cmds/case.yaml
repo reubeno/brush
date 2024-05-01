@@ -21,7 +21,6 @@ cases:
       esac
 
   - name: "Interesting patterns in cases"
-    known_failure: true
     stdin: |
       for word in "-a" "!b" "*c" "(d" "{e" ":f" "'g"; do
         case "${word}" in

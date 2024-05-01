@@ -18,9 +18,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{
-    builtin, builtins, context, error, expansion, extendedtests, jobs, openfiles, patterns,
-};
+use crate::{builtin, builtins, context, error, expansion, extendedtests, jobs, openfiles};
 
 #[derive(Debug, Default)]
 pub struct ExecutionResult {
@@ -556,13 +554,10 @@ impl Execute for ast::CaseClauseCommand {
             let mut matches = false;
 
             for pattern in &case.patterns {
-                // TODO: Handle quoting's impact on pattern matching.
-                let expanded_pattern = expansion::basic_expand_word(shell, pattern).await?;
-                if patterns::pattern_exactly_matches(
-                    expanded_pattern.as_str(),
-                    expanded_value.as_str(),
-                    shell.options.extended_globbing,
-                )? {
+                let expanded_pattern = expansion::basic_expand_pattern(shell, pattern).await?;
+                if expanded_pattern
+                    .exactly_matches(expanded_value.as_str(), shell.options.extended_globbing)?
+                {
                     matches = true;
                     break;
                 }

@@ -500,7 +500,48 @@ impl TestCaseResult {
         }
 
         match &self.comparison.stdout {
-            StringComparison::Ignored => writeln!(writer, "    stdout {}", "ignored".cyan())?,
+            StringComparison::Ignored {
+                test_string,
+                oracle_string,
+            } => {
+                writeln!(writer, "    stdout {}", "ignored".cyan())?;
+
+                writeln!(
+                    writer,
+                    "        {}",
+                    "------ Oracle: stdout ---------------------------------".cyan()
+                )?;
+                writeln!(writer, "{}", indent::indent_all_by(8, oracle_string))?;
+
+                writeln!(
+                    writer,
+                    "        {}",
+                    "------ Oracle: stdout [cleaned]------------------------".cyan()
+                )?;
+                writeln!(
+                    writer,
+                    "{}",
+                    indent::indent_all_by(8, make_expectrl_output_readable(oracle_string))
+                )?;
+
+                writeln!(
+                    writer,
+                    "        {}",
+                    "------ Test: stdout ---------------------------------".cyan()
+                )?;
+                writeln!(writer, "{}", indent::indent_all_by(8, test_string))?;
+
+                writeln!(
+                    writer,
+                    "        {}",
+                    "------ Test: stdout [cleaned]------------------------".cyan()
+                )?;
+                writeln!(
+                    writer,
+                    "{}",
+                    indent::indent_all_by(8, make_expectrl_output_readable(test_string))
+                )?;
+            }
             StringComparison::Same(_) => writeln!(writer, "    stdout matches {}", "✔️".green())?,
             StringComparison::TestDiffers {
                 test_string: t,
@@ -532,7 +573,10 @@ impl TestCaseResult {
         }
 
         match &self.comparison.stderr {
-            StringComparison::Ignored => writeln!(writer, "    stderr {}", "ignored".cyan())?,
+            StringComparison::Ignored {
+                test_string: _,
+                oracle_string: _,
+            } => writeln!(writer, "    stderr {}", "ignored".cyan())?,
             StringComparison::Same(_) => writeln!(writer, "    stderr matches {}", "✔️".green())?,
             StringComparison::TestDiffers {
                 test_string: t,
@@ -670,8 +714,14 @@ impl TestCase {
 
         let mut comparison = RunComparison {
             exit_status: ExitStatusComparison::Ignored,
-            stdout: StringComparison::Ignored,
-            stderr: StringComparison::Ignored,
+            stdout: StringComparison::Ignored {
+                test_string: String::new(),
+                oracle_string: String::new(),
+            },
+            stderr: StringComparison::Ignored {
+                test_string: String::new(),
+                oracle_string: String::new(),
+            },
             temp_dir: DirComparison::Ignored,
             duration: DurationComparison {
                 oracle: oracle_result.duration,
@@ -693,7 +743,10 @@ impl TestCase {
 
         // Compare stdout
         if self.ignore_stdout {
-            comparison.stdout = StringComparison::Ignored;
+            comparison.stdout = StringComparison::Ignored {
+                test_string: test_result.stdout,
+                oracle_string: oracle_result.stdout,
+            };
         } else if self.output_matches(&oracle_result.stdout, &test_result.stdout) {
             comparison.stdout = StringComparison::Same(oracle_result.stdout);
         } else {
@@ -705,7 +758,10 @@ impl TestCase {
 
         // Compare stderr
         if self.ignore_stderr {
-            comparison.stderr = StringComparison::Ignored;
+            comparison.stderr = StringComparison::Ignored {
+                test_string: test_result.stderr,
+                oracle_string: oracle_result.stderr,
+            };
         } else if self.output_matches(&oracle_result.stderr, &test_result.stderr) {
             comparison.stderr = StringComparison::Same(oracle_result.stderr);
         } else {
@@ -811,7 +867,7 @@ impl TestCase {
                     if let Err(inner) = p.expect(expectation) {
                         return Ok(RunResult {
                             exit_status: ExitStatus::from_raw(1),
-                            stdout: String::new(),
+                            stdout: read_expectrl_log(log).unwrap_or_default(),
                             stderr: std::format!("failed to expect '{expectation}': {inner}"),
                             duration: start_time.elapsed(),
                         });
@@ -827,7 +883,7 @@ impl TestCase {
                     if let Err(inner) = p.expect("test$ ") {
                         return Ok(RunResult {
                             exit_status: ExitStatus::from_raw(1),
-                            stdout: String::new(),
+                            stdout: read_expectrl_log(log).unwrap_or_default(),
                             stderr: std::format!("failed to expect prompt: {inner}"),
                             duration: start_time.elapsed(),
                         });
@@ -841,7 +897,7 @@ impl TestCase {
         if let Err(inner) = p.expect(expectrl::Eof) {
             return Ok(RunResult {
                 exit_status: ExitStatus::from_raw(1),
-                stdout: String::new(),
+                stdout: read_expectrl_log(log).unwrap_or_default(),
                 stderr: std::format!("failed to expect EOF: {inner}"),
                 duration: start_time.elapsed(),
             });
@@ -856,25 +912,8 @@ impl TestCase {
         }
 
         let duration = start_time.elapsed();
-
-        let output_str = String::from_utf8(log)?;
-        let output: String = output_str
-            .lines()
-            .filter(|line| line.starts_with("read:"))
-            .map(|line| {
-                line.strip_prefix("read: \"")
-                    .unwrap()
-                    .strip_suffix('"')
-                    .unwrap()
-            })
-            .collect();
-
-        // Unescape the escaping done by expectrl's logging mechanism to get
-        // back to a real string.
-        let unescaped = output.to_unescaped().unwrap().to_string();
-
-        // And remove VT escape sequences.
-        let cleaned = strip_ansi_escapes::strip_str(unescaped);
+        let output = read_expectrl_log(log)?;
+        let cleaned = make_expectrl_output_readable(output);
 
         match wait_status {
             expectrl::WaitStatus::Exited(_, code) => Ok(RunResult {
@@ -974,9 +1013,12 @@ impl ExitStatusComparison {
     }
 }
 
+#[allow(dead_code)]
 enum StringComparison {
-    Ignored,
-    #[allow(dead_code)]
+    Ignored {
+        test_string: String,
+        oracle_string: String,
+    },
     Same(String),
     TestDiffers {
         test_string: String,
@@ -1145,6 +1187,31 @@ impl TestOptions {
                 .any(|filter| qualified_name.contains(filter))
         }
     }
+}
+
+fn read_expectrl_log(log: Vec<u8>) -> Result<String> {
+    let output_str = String::from_utf8(log)?;
+    let output: String = output_str
+        .lines()
+        .filter(|line| line.starts_with("read:"))
+        .map(|line| {
+            line.strip_prefix("read: \"")
+                .unwrap()
+                .strip_suffix('"')
+                .unwrap()
+        })
+        .collect();
+
+    Ok(output)
+}
+
+fn make_expectrl_output_readable<S: AsRef<str>>(output: S) -> String {
+    // Unescape the escaping done by expectrl's logging mechanism to get
+    // back to a real string.
+    let unescaped = output.as_ref().to_unescaped().unwrap().to_string();
+
+    // And remove VT escape sequences.
+    strip_ansi_escapes::strip_str(unescaped)
 }
 
 fn main() {

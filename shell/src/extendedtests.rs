@@ -28,13 +28,43 @@ pub(crate) async fn eval_expression(
         }
         ast::ExtendedTestExpr::BinaryTest(op, left, right) => {
             let expanded_left = expansion::basic_expand_word(shell, left).await?;
-            let expanded_right = expansion::basic_expand_word(shell, right).await?;
 
-            if shell.options.print_commands_and_arguments {
-                shell.trace_command(std::format!("[[ {expanded_left} {op} {expanded_right} ]]"))?;
+            match op {
+                ast::BinaryPredicate::StringExactlyMatchesPattern
+                | ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
+                    let expanded_right = expansion::basic_expand_pattern(shell, right).await?;
+
+                    if shell.options.print_commands_and_arguments {
+                        let expanded_right = expansion::basic_expand_word(shell, right).await?;
+                        shell.trace_command(std::format!(
+                            "[[ {expanded_left} {op} {expanded_right} ]]"
+                        ))?;
+                    }
+
+                    apply_binary_pattern_predicate(
+                        op,
+                        expanded_left.as_str(),
+                        &expanded_right,
+                        shell,
+                    )
+                }
+                _ => {
+                    let expanded_right = expansion::basic_expand_word(shell, right).await?;
+
+                    if shell.options.print_commands_and_arguments {
+                        shell.trace_command(std::format!(
+                            "[[ {expanded_left} {op} {expanded_right} ]]"
+                        ))?;
+                    }
+
+                    apply_binary_predicate(
+                        op,
+                        expanded_left.as_str(),
+                        expanded_right.as_str(),
+                        shell,
+                    )
+                }
             }
-
-            apply_binary_predicate(op, expanded_left.as_str(), expanded_right.as_str(), shell)
         }
         ast::ExtendedTestExpr::And(left, right) => {
             let result =
@@ -150,13 +180,12 @@ fn apply_unary_predicate(
     }
 }
 
-fn apply_binary_predicate(
+fn apply_binary_pattern_predicate(
     op: &ast::BinaryPredicate,
     left: &str,
-    right: &str,
+    right: &patterns::Pattern,
     shell: &mut Shell,
 ) -> Result<bool, error::Error> {
-    #[allow(clippy::single_match_else)]
     match op {
         // N.B. The "=", "==", and "!=" operators don't compare 2 strings; they check
         // for whether the lefthand operand (a string) is matched by the righthand
@@ -165,15 +194,26 @@ fn apply_binary_predicate(
         ast::BinaryPredicate::StringExactlyMatchesPattern => {
             let s = left;
             let pattern = right;
-            patterns::pattern_exactly_matches(pattern, s, shell.options.extended_globbing)
+            pattern.exactly_matches(s, shell.options.extended_globbing)
         }
         ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
             let s = left;
             let pattern = right;
-            let eq =
-                patterns::pattern_exactly_matches(pattern, s, shell.options.extended_globbing)?;
+            let eq = pattern.exactly_matches(s, shell.options.extended_globbing)?;
             Ok(!eq)
         }
+        _ => unreachable!(),
+    }
+}
+
+fn apply_binary_predicate(
+    op: &ast::BinaryPredicate,
+    left: &str,
+    right: &str,
+    shell: &mut Shell,
+) -> Result<bool, error::Error> {
+    #[allow(clippy::single_match_else)]
+    match op {
         ast::BinaryPredicate::StringMatchesRegex => {
             let s = left;
             let regex_pattern = right;
@@ -255,6 +295,8 @@ fn apply_binary_predicate(
         ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo => Ok(
             apply_binary_arithmetic_predicate(left, right, |left, right| left >= right),
         ),
+        ast::BinaryPredicate::StringExactlyMatchesPattern
+        | ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => unreachable!(),
     }
 }
 

@@ -12,6 +12,14 @@ use crate::shell::Shell;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::{self, ShellValue};
 
+pub(crate) async fn basic_expand_pattern(
+    shell: &mut Shell,
+    word: &ast::Word,
+) -> Result<patterns::Pattern, error::Error> {
+    let mut expander = WordExpander::new(shell);
+    expander.basic_expand_pattern(&word.flatten()).await
+}
+
 pub(crate) async fn basic_expand_word(
     shell: &mut Shell,
     word: &ast::Word,
@@ -232,6 +240,34 @@ impl<'a> WordExpander<'a> {
         Ok(expanded)
     }
 
+    async fn basic_expand_opt_pattern(
+        &mut self,
+        word: &Option<String>,
+    ) -> Result<patterns::Pattern, error::Error> {
+        if let Some(word) = word {
+            self.basic_expand_pattern(word).await
+        } else {
+            Ok(patterns::Pattern::from(""))
+        }
+    }
+
+    async fn basic_expand_pattern(
+        &mut self,
+        word: &str,
+    ) -> Result<patterns::Pattern, error::Error> {
+        let expanded_pieces = self.basic_expand_into_pieces(word).await?;
+        let pattern_pieces: Vec<patterns::PatternPiece> = expanded_pieces
+            .into_iter()
+            .map(|piece| match piece {
+                ExpandedWordPiece::Unsplittable(s) => patterns::PatternPiece::Literal(s),
+                ExpandedWordPiece::Splittable(s) => patterns::PatternPiece::Pattern(s),
+                ExpandedWordPiece::Separator => patterns::PatternPiece::Literal(" ".to_owned()),
+            })
+            .collect();
+
+        Ok(patterns::Pattern::from(pattern_pieces))
+    }
+
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// yield pieces that could be further processed.
     async fn basic_expand_into_pieces(
@@ -327,17 +363,6 @@ impl<'a> WordExpander<'a> {
         fields
     }
 
-    async fn basic_expand_opt_word_str(
-        &mut self,
-        word: &Option<String>,
-    ) -> Result<String, error::Error> {
-        if let Some(word) = word {
-            self.basic_expand(word).await
-        } else {
-            Ok(String::new())
-        }
-    }
-
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
         let pieces: Vec<_> = field
             .into_iter()
@@ -348,21 +373,21 @@ impl<'a> WordExpander<'a> {
             })
             .collect();
 
-        let expansions = patterns::pattern_expand_ex(
-            pieces.as_slice(),
-            self.shell.working_dir.as_path(),
-            self.parser_options.enable_extended_globbing,
-        )
-        .map_or_else(
-            |_err| vec![],
-            |expansions| {
-                if expansions.is_empty() {
-                    vec![]
-                } else {
-                    expansions
-                }
-            },
-        );
+        let expansions = patterns::Pattern::from(&pieces)
+            .expand(
+                self.shell.working_dir.as_path(),
+                self.parser_options.enable_extended_globbing,
+            )
+            .map_or_else(
+                |_err| vec![],
+                |expansions| {
+                    if expansions.is_empty() {
+                        vec![]
+                    } else {
+                        expansions
+                    }
+                },
+            );
 
         if expansions.is_empty() {
             vec![pieces.into_iter().map(|piece| piece.unwrap()).collect()]
@@ -625,10 +650,10 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter: String =
                     self.expand_parameter(parameter, *indirect).await?.into();
-                let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
                 let result = patterns::remove_smallest_matching_suffix(
                     expanded_parameter.as_str(),
-                    expanded_pattern.as_str(),
+                    &expanded_pattern,
                     self.parser_options.enable_extended_globbing,
                 )?;
                 Ok(Expansion::from(result.to_owned()))
@@ -640,10 +665,10 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter: String =
                     self.expand_parameter(parameter, *indirect).await?.into();
-                let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
                 let result = patterns::remove_largest_matching_suffix(
                     expanded_parameter.as_str(),
-                    expanded_pattern.as_str(),
+                    &expanded_pattern,
                     self.parser_options.enable_extended_globbing,
                 )?;
 
@@ -656,10 +681,10 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter: String =
                     self.expand_parameter(parameter, *indirect).await?.into();
-                let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
                 let result = patterns::remove_smallest_matching_prefix(
                     expanded_parameter.as_str(),
-                    expanded_pattern.as_str(),
+                    &expanded_pattern,
                     self.parser_options.enable_extended_globbing,
                 )?;
 
@@ -672,10 +697,10 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter: String =
                     self.expand_parameter(parameter, *indirect).await?.into();
-                let expanded_pattern = self.basic_expand_opt_word_str(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
                 let result = patterns::remove_largest_matching_prefix(
                     expanded_parameter.as_str(),
-                    expanded_pattern.as_str(),
+                    &expanded_pattern,
                     self.parser_options.enable_extended_globbing,
                 )?;
 
@@ -784,10 +809,9 @@ impl<'a> WordExpander<'a> {
                     self.expand_parameter(parameter, *indirect).await?.into();
                 if let Some(first_char) = expanded_parameter.chars().next() {
                     let applicable = if let Some(pattern) = pattern {
-                        let expanded_pattern = self.basic_expand(pattern).await?;
+                        let expanded_pattern = self.basic_expand_pattern(pattern).await?;
                         expanded_pattern.is_empty()
-                            || patterns::pattern_exactly_matches(
-                                expanded_pattern.as_str(),
+                            || expanded_pattern.exactly_matches(
                                 first_char.to_string().as_str(),
                                 self.shell.options.extended_globbing,
                             )?
@@ -845,10 +869,9 @@ impl<'a> WordExpander<'a> {
                     self.expand_parameter(parameter, *indirect).await?.into();
                 if let Some(first_char) = expanded_parameter.chars().next() {
                     let applicable = if let Some(pattern) = pattern {
-                        let expanded_pattern = self.basic_expand(pattern).await?;
+                        let expanded_pattern = self.basic_expand_pattern(pattern).await?;
                         expanded_pattern.is_empty()
-                            || patterns::pattern_exactly_matches(
-                                expanded_pattern.as_str(),
+                            || expanded_pattern.exactly_matches(
                                 first_char.to_string().as_str(),
                                 self.shell.options.extended_globbing,
                             )?

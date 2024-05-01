@@ -508,11 +508,10 @@ impl CompletionConfig {
     ) -> CompletionResult {
         // TODO: Contextually generate different completions.
         let glob = std::format!("{}*", context.token_to_complete);
-        let mut candidates = if let Ok(mut candidates) = patterns::pattern_expand(
-            glob.as_str(),
-            shell.working_dir.as_path(),
-            shell.options.extended_globbing,
-        ) {
+        // TODO: Pass through quoting.
+        let mut candidates = if let Ok(mut candidates) = patterns::Pattern::from(glob)
+            .expand(shell.working_dir.as_path(), shell.options.extended_globbing)
+        {
             for candidate in &mut candidates {
                 if Path::new(candidate.as_str()).is_dir() {
                     candidate.push('/');
