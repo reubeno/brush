@@ -29,7 +29,7 @@ peg::parser! {
             bracket_expression() /
             extglob_enabled() s:extended_glob_pattern() { s } /
             wildcard() /
-            [c if needs_escaping(c)] {
+            [c if regex_char_needs_escaping(c)] {
                 let mut s = '\\'.to_string();
                 s.push(c);
                 s
@@ -37,7 +37,7 @@ peg::parser! {
             [c] { c.to_string() }
 
         rule escape_sequence() -> String =
-            sequence:$(['\\'] [c if needs_escaping(c)]) { sequence.to_owned() } /
+            sequence:$(['\\'] [c if regex_char_needs_escaping(c)]) { sequence.to_owned() } /
             ['\\'] [c] { c.to_string() }
 
         rule bracket_expression() -> String =
@@ -120,7 +120,7 @@ peg::parser! {
     }
 }
 
-fn needs_escaping(c: char) -> bool {
+pub fn regex_char_needs_escaping(c: char) -> bool {
     matches!(
         c,
         '[' | ']' | '(' | ')' | '{' | '}' | '*' | '?' | '.' | '+' | '^' | '$' | '|' | '\\'
