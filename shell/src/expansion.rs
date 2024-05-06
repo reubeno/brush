@@ -1,3 +1,5 @@
+use std::cmp::min;
+
 use itertools::Itertools;
 use parser::ast;
 
@@ -12,12 +14,259 @@ use crate::shell::Shell;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::{self, ShellValue};
 
+#[derive(Debug)]
+struct Expansion {
+    fields: Vec<WordField>,
+    concatenate: bool,
+    undefined: bool,
+}
+
+impl Default for Expansion {
+    fn default() -> Self {
+        Self {
+            fields: vec![],
+            concatenate: true,
+            undefined: false,
+        }
+    }
+}
+
+impl From<Expansion> for String {
+    fn from(value: Expansion) -> Self {
+        // TODO: Use IFS instead for separator?
+        value.fields.into_iter().map(String::from).join(" ")
+    }
+}
+
+impl From<String> for Expansion {
+    fn from(value: String) -> Self {
+        Self {
+            fields: vec![WordField::from(value)],
+            ..Expansion::default()
+        }
+    }
+}
+
+impl From<ExpansionPiece> for Expansion {
+    fn from(piece: ExpansionPiece) -> Self {
+        Self {
+            fields: vec![WordField::from(piece)],
+            ..Expansion::default()
+        }
+    }
+}
+
+impl Expansion {
+    pub(crate) fn classify(&self) -> ParameterState {
+        let non_empty = self
+            .fields
+            .iter()
+            .any(|field| field.0.iter().any(|piece| !piece.as_str().is_empty()));
+
+        if self.undefined {
+            ParameterState::Undefined
+        } else if non_empty {
+            ParameterState::NonZeroLength
+        } else {
+            ParameterState::DefinedEmptyString
+        }
+    }
+
+    pub(crate) fn undefined() -> Self {
+        Self {
+            fields: vec![WordField::from(String::new())],
+            concatenate: true,
+            undefined: true,
+        }
+    }
+
+    pub(crate) fn polymorphic_len(&self) -> usize {
+        if self.fields.len() > 1 {
+            self.fields.len()
+        } else {
+            self.fields.iter().fold(0, |acc, field| acc + field.len())
+        }
+    }
+
+    pub(crate) fn polymorphic_subslice(&self, index: usize, end: usize) -> Self {
+        let len = end - index;
+
+        if self.fields.len() > 1 {
+            let actual_len = min(len, self.fields.len() - index);
+            let fields = self.fields[index..(index + actual_len)].to_vec();
+
+            Expansion {
+                fields,
+                concatenate: self.concatenate,
+                undefined: self.undefined,
+            }
+        } else {
+            let mut fields = vec![];
+
+            let mut offset = index;
+            let mut left = len;
+            for field in &self.fields {
+                let mut pieces = vec![];
+
+                for piece in &field.0 {
+                    if left == 0 {
+                        break;
+                    }
+
+                    let piece_str = piece.as_str();
+                    if offset < piece_str.len() {
+                        let len_from_this_piece = min(left, piece_str.len() - offset);
+
+                        let new_piece = match piece {
+                            ExpansionPiece::Unsplittable(s) => ExpansionPiece::Unsplittable(
+                                s[offset..(offset + len_from_this_piece)].to_owned(),
+                            ),
+                            ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
+                                s[offset..(offset + len_from_this_piece)].to_owned(),
+                            ),
+                        };
+
+                        pieces.push(new_piece);
+
+                        left -= len_from_this_piece;
+                    }
+
+                    offset += piece_str.len();
+                }
+
+                if !pieces.is_empty() {
+                    fields.push(WordField(pieces));
+                }
+            }
+
+            Expansion {
+                fields,
+                concatenate: self.concatenate,
+                undefined: self.undefined,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct WordField(Vec<ExpansionPiece>);
+
+impl WordField {
+    pub fn new() -> Self {
+        Self(vec![])
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.iter().fold(0, |acc, piece| acc + piece.len())
+    }
+}
+
+impl From<WordField> for String {
+    fn from(field: WordField) -> Self {
+        field.0.into_iter().map(String::from).collect()
+    }
+}
+
+impl From<WordField> for patterns::Pattern {
+    fn from(value: WordField) -> Self {
+        let pieces: Vec<_> = value
+            .0
+            .into_iter()
+            .map(patterns::PatternPiece::from)
+            .collect();
+
+        patterns::Pattern::from(pieces)
+    }
+}
+
+impl From<ExpansionPiece> for WordField {
+    fn from(piece: ExpansionPiece) -> Self {
+        Self(vec![piece])
+    }
+}
+
+impl From<String> for WordField {
+    fn from(value: String) -> Self {
+        Self(vec![ExpansionPiece::Splittable(value)])
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ExpansionPiece {
+    Unsplittable(String),
+    Splittable(String),
+}
+
+impl From<ExpansionPiece> for String {
+    fn from(piece: ExpansionPiece) -> Self {
+        match piece {
+            ExpansionPiece::Unsplittable(s) => s,
+            ExpansionPiece::Splittable(s) => s,
+        }
+    }
+}
+
+impl From<ExpansionPiece> for patterns::PatternPiece {
+    fn from(piece: ExpansionPiece) -> Self {
+        match piece {
+            ExpansionPiece::Unsplittable(s) => patterns::PatternPiece::Literal(s),
+            ExpansionPiece::Splittable(s) => patterns::PatternPiece::Pattern(s),
+        }
+    }
+}
+
+impl From<ExpansionPiece> for crate::regex::RegexPiece {
+    fn from(piece: ExpansionPiece) -> Self {
+        match piece {
+            ExpansionPiece::Unsplittable(s) => crate::regex::RegexPiece::Literal(s),
+            ExpansionPiece::Splittable(s) => crate::regex::RegexPiece::Pattern(s),
+        }
+    }
+}
+
+impl ExpansionPiece {
+    fn as_str(&self) -> &str {
+        match self {
+            ExpansionPiece::Unsplittable(s) => s.as_str(),
+            ExpansionPiece::Splittable(s) => s.as_str(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            ExpansionPiece::Unsplittable(s) => s.len(),
+            ExpansionPiece::Splittable(s) => s.len(),
+        }
+    }
+
+    fn make_unsplittable(self) -> ExpansionPiece {
+        match self {
+            ExpansionPiece::Unsplittable(_) => self,
+            ExpansionPiece::Splittable(s) => ExpansionPiece::Unsplittable(s),
+        }
+    }
+}
+
+enum ParameterState {
+    Undefined,
+    DefinedEmptyString,
+    NonZeroLength,
+}
+
 pub(crate) async fn basic_expand_pattern(
     shell: &mut Shell,
     word: &ast::Word,
 ) -> Result<patterns::Pattern, error::Error> {
     let mut expander = WordExpander::new(shell);
     expander.basic_expand_pattern(&word.flatten()).await
+}
+
+pub(crate) async fn basic_expand_regex(
+    shell: &mut Shell,
+    word: &ast::Word,
+) -> Result<crate::regex::Regex, error::Error> {
+    let mut expander = WordExpander::new(shell);
+    expander.basic_expand_regex(&word.flatten()).await
 }
 
 pub(crate) async fn basic_expand_word(
@@ -29,7 +278,7 @@ pub(crate) async fn basic_expand_word(
 
 pub(crate) async fn basic_expand_str(shell: &mut Shell, s: &str) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell);
-    expander.basic_expand(s).await
+    expander.basic_expand_to_str(s).await
 }
 
 pub(crate) async fn basic_expand_str_without_tilde(
@@ -38,7 +287,7 @@ pub(crate) async fn basic_expand_str_without_tilde(
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell);
     expander.parser_options.tilde_expansion = false;
-    expander.basic_expand(s).await
+    expander.basic_expand_to_str(s).await
 }
 
 pub(crate) async fn full_expand_and_split_word(
@@ -67,148 +316,6 @@ pub(crate) async fn assign_to_named_parameter(
     expander.assign_to_parameter(&parameter, value).await
 }
 
-#[derive(Clone, Debug)]
-enum ExpandedWordPiece {
-    Unsplittable(String),
-    Splittable(String),
-    Separator,
-}
-
-impl ExpandedWordPiece {
-    fn as_str(&self) -> &str {
-        match self {
-            ExpandedWordPiece::Unsplittable(s) => s.as_str(),
-            ExpandedWordPiece::Splittable(s) => s.as_str(),
-            ExpandedWordPiece::Separator => "",
-        }
-    }
-
-    fn unwrap(self) -> String {
-        match self {
-            ExpandedWordPiece::Unsplittable(s) => s,
-            ExpandedWordPiece::Splittable(s) => s,
-            ExpandedWordPiece::Separator => String::new(),
-        }
-    }
-}
-
-type WordField = Vec<ExpandedWordPiece>;
-
-#[derive(Debug)]
-enum Expansion {
-    Undefined,
-    String(String),
-    Array {
-        values: Vec<String>,
-        concatenate: bool,
-    },
-}
-
-impl Expansion {
-    pub fn len(&self) -> usize {
-        match self {
-            Expansion::Undefined => 0,
-            Expansion::String(s) => s.len(),
-            Expansion::Array {
-                values,
-                concatenate: _concatenate,
-            } => values.len(),
-        }
-    }
-
-    pub fn insert_at(&mut self, index: usize, s: String) -> Result<(), error::Error> {
-        match self {
-            Expansion::Array {
-                values,
-                concatenate: _,
-            } => {
-                values.insert(index, s);
-                Ok(())
-            }
-            _ => Err(error::Error::NotArray),
-        }
-    }
-
-    pub fn subslice(&self, starting_offset: usize, end_offset: usize) -> Expansion {
-        match self {
-            Expansion::Undefined => Expansion::Undefined,
-            Expansion::String(s) => Expansion::String(s[starting_offset..end_offset].to_owned()),
-            Expansion::Array {
-                values,
-                concatenate,
-            } => Expansion::Array {
-                values: values[starting_offset..end_offset].to_owned(),
-                concatenate: *concatenate,
-            },
-        }
-    }
-}
-
-enum ParameterState {
-    Undefined,
-    DefinedEmptyString,
-    NonZeroLength,
-}
-
-impl Expansion {
-    fn undefined() -> Self {
-        Self::Undefined
-    }
-
-    fn empty_str() -> Self {
-        Self::String(String::new())
-    }
-
-    fn array(values: Vec<String>, concatenate: bool) -> Self {
-        Self::Array {
-            values,
-            concatenate,
-        }
-    }
-
-    fn state(&self) -> ParameterState {
-        match self {
-            Self::Undefined => ParameterState::Undefined,
-            Self::String(s) => {
-                if s.is_empty() {
-                    ParameterState::DefinedEmptyString
-                } else {
-                    ParameterState::NonZeroLength
-                }
-            }
-            Self::Array {
-                values,
-                concatenate: _,
-            } => {
-                if values.is_empty() {
-                    ParameterState::DefinedEmptyString
-                } else {
-                    ParameterState::NonZeroLength
-                }
-            }
-        }
-    }
-}
-
-impl From<String> for Expansion {
-    fn from(s: String) -> Self {
-        Self::String(s)
-    }
-}
-
-impl From<Expansion> for String {
-    fn from(value: Expansion) -> Self {
-        match value {
-            Expansion::Undefined => String::new(),
-            Expansion::String(s) => s,
-            Expansion::Array {
-                values,
-                concatenate: _,
-            } => values.join(" "),
-        }
-    }
-}
-
 struct WordExpander<'a> {
     shell: &'a mut Shell,
     parser_options: parser::ParserOptions,
@@ -225,18 +332,8 @@ impl<'a> WordExpander<'a> {
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
-    pub async fn basic_expand(&mut self, word: &str) -> Result<String, error::Error> {
-        let expanded_pieces = self.basic_expand_into_pieces(word).await?;
-
-        let mut expanded = String::new();
-        for piece in expanded_pieces {
-            match piece {
-                ExpandedWordPiece::Unsplittable(s) => expanded.push_str(s.as_str()),
-                ExpandedWordPiece::Splittable(s) => expanded.push_str(s.as_str()),
-                ExpandedWordPiece::Separator => expanded.push(' '),
-            }
-        }
-
+    pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
+        let expanded = String::from(self.basic_expand(word).await?);
         Ok(expanded)
     }
 
@@ -255,37 +352,67 @@ impl<'a> WordExpander<'a> {
         &mut self,
         word: &str,
     ) -> Result<patterns::Pattern, error::Error> {
-        let expanded_pieces = self.basic_expand_into_pieces(word).await?;
-        let pattern_pieces: Vec<patterns::PatternPiece> = expanded_pieces
+        let expansion = self.basic_expand(word).await?;
+
+        // TODO: Use IFS instead for separator?
+        #[allow(unstable_name_collisions)]
+        let pattern_pieces: Vec<_> = expansion
+            .fields
             .into_iter()
-            .map(|piece| match piece {
-                ExpandedWordPiece::Unsplittable(s) => patterns::PatternPiece::Literal(s),
-                ExpandedWordPiece::Splittable(s) => patterns::PatternPiece::Pattern(s),
-                ExpandedWordPiece::Separator => patterns::PatternPiece::Literal(" ".to_owned()),
+            .map(|field| {
+                field
+                    .0
+                    .into_iter()
+                    .map(patterns::PatternPiece::from)
+                    .collect::<Vec<_>>()
             })
+            .intersperse(vec![patterns::PatternPiece::Literal(String::from(" "))])
+            .flatten()
             .collect();
 
         Ok(patterns::Pattern::from(pattern_pieces))
     }
 
-    /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
-    /// yield pieces that could be further processed.
-    async fn basic_expand_into_pieces(
+    async fn basic_expand_regex(
         &mut self,
         word: &str,
-    ) -> Result<Vec<ExpandedWordPiece>, error::Error> {
+    ) -> Result<crate::regex::Regex, error::Error> {
+        let expansion = self.basic_expand(word).await?;
+
+        // TODO: Use IFS instead for separator?
+        #[allow(unstable_name_collisions)]
+        let regex_pieces: Vec<_> = expansion
+            .fields
+            .into_iter()
+            .map(|field| {
+                field
+                    .0
+                    .into_iter()
+                    .map(crate::regex::RegexPiece::from)
+                    .collect::<Vec<_>>()
+            })
+            .intersperse(vec![crate::regex::RegexPiece::Literal(String::from(" "))])
+            .flatten()
+            .collect();
+
+        Ok(crate::regex::Regex::from(regex_pieces))
+    }
+
+    /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
+    /// yield pieces that could be further processed.
+    async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
         //
         // Expand: tildes, parameters, command substitutions, arithmetic.
         //
         let pieces = parser::parse_word_for_expansion(word, &self.parser_options)?;
 
-        let mut expanded_pieces = vec![];
+        let mut expansions = vec![];
         for piece in pieces {
-            let mut next_expanded_pieces = self.expand_word_piece(&piece).await?;
-            expanded_pieces.append(&mut next_expanded_pieces);
+            let piece_expansion = self.expand_word_piece(&piece).await?;
+            expansions.push(piece_expansion);
         }
 
-        Ok(coalesce_expanded_pieces(expanded_pieces))
+        Ok(coalesce_expansions(expansions))
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -295,85 +422,69 @@ impl<'a> WordExpander<'a> {
         word: &str,
     ) -> Result<Vec<String>, error::Error> {
         // Perform basic expansion first.
-        let expanded_pieces = self.basic_expand_into_pieces(word).await?;
+        let basic_expansion = self.basic_expand(word).await?;
 
         // Then split.
-        let fields: Vec<Vec<ExpandedWordPiece>> = self.split_fields(expanded_pieces);
+        let fields: Vec<WordField> = self.split_fields(basic_expansion);
 
         // Now expand pathnames if necessary. This also unquotes as a side effect.
         let result = fields
             .into_iter()
-            .map(|field| {
+            .flat_map(|field| {
                 if self.shell.options.disable_filename_globbing {
-                    self.unquote_field_as_vec(field)
+                    vec![String::from(field)]
                 } else {
-                    Ok(self.expand_pathnames_in_field(field))
+                    self.expand_pathnames_in_field(field)
                 }
             })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flat_map(|v| v.into_iter())
             .collect();
 
         Ok(result)
     }
 
-    fn split_fields(&self, pieces: Vec<ExpandedWordPiece>) -> Vec<WordField> {
+    fn split_fields(&self, expansion: Expansion) -> Vec<WordField> {
         let ifs = self.shell.get_ifs();
 
         let mut fields: Vec<WordField> = vec![];
-        let mut current_field: WordField = vec![];
+        let mut current_field = WordField::new();
 
-        // Go through all the already-expanded pieces in this word.
-        for piece in pieces {
-            match piece {
-                ExpandedWordPiece::Unsplittable(_) => current_field.push(piece),
-                ExpandedWordPiece::Separator => {
-                    if !current_field.is_empty() {
-                        fields.push(current_field);
-                        current_field = vec![];
-                    }
-                }
-                ExpandedWordPiece::Splittable(_) => {
-                    for c in piece.as_str().chars() {
-                        if ifs.contains(c) {
-                            if !current_field.is_empty() {
-                                fields.push(current_field);
-                                current_field = vec![];
-                            }
-                        } else {
-                            match current_field.last_mut() {
-                                Some(ExpandedWordPiece::Splittable(last)) => last.push(c),
-                                Some(ExpandedWordPiece::Unsplittable(_)) | None => {
-                                    current_field
-                                        .push(ExpandedWordPiece::Splittable(c.to_string()));
+        // Go through the fields we have so far.
+        for existing_field in expansion.fields {
+            for piece in existing_field.0 {
+                match piece {
+                    ExpansionPiece::Unsplittable(_) => current_field.0.push(piece),
+                    ExpansionPiece::Splittable(s) => {
+                        for c in s.chars() {
+                            if ifs.contains(c) {
+                                if !current_field.0.is_empty() {
+                                    fields.push(std::mem::take(&mut current_field));
                                 }
-                                _ => unreachable!(),
+                            } else {
+                                match current_field.0.last_mut() {
+                                    Some(ExpansionPiece::Splittable(last)) => last.push(c),
+                                    Some(ExpansionPiece::Unsplittable(_)) | None => {
+                                        current_field
+                                            .0
+                                            .push(ExpansionPiece::Splittable(c.to_string()));
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if !current_field.is_empty() {
-            fields.push(current_field);
+            if !current_field.0.is_empty() {
+                fields.push(std::mem::take(&mut current_field));
+            }
         }
 
         fields
     }
 
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
-        let pieces: Vec<_> = field
-            .into_iter()
-            .filter_map(|piece| match piece {
-                ExpandedWordPiece::Unsplittable(s) => Some(patterns::PatternPiece::Literal(s)),
-                ExpandedWordPiece::Splittable(s) => Some(patterns::PatternPiece::Pattern(s)),
-                ExpandedWordPiece::Separator => None,
-            })
-            .collect();
-
-        let expansions = patterns::Pattern::from(&pieces)
+        let pattern = patterns::Pattern::from(field.clone());
+        let expansions = pattern
             .expand(
                 self.shell.working_dir.as_path(),
                 self.parser_options.enable_extended_globbing,
@@ -390,93 +501,97 @@ impl<'a> WordExpander<'a> {
             );
 
         if expansions.is_empty() {
-            vec![pieces.into_iter().map(|piece| piece.unwrap()).collect()]
+            vec![String::from(field)]
         } else {
             expansions
         }
-    }
-
-    fn unquote_field_as_vec(&self, field: WordField) -> Result<Vec<String>, error::Error> {
-        Ok(vec![self.unquote_field(field)?])
-    }
-
-    #[allow(clippy::unused_self)]
-    #[allow(clippy::unnecessary_wraps)]
-    fn unquote_field(&self, field: WordField) -> Result<String, error::Error> {
-        Ok(field.into_iter().map(|piece| piece.unwrap()).collect())
     }
 
     #[async_recursion::async_recursion]
     async fn expand_word_piece(
         &mut self,
         word_piece: &parser::word::WordPiece,
-    ) -> Result<Vec<ExpandedWordPiece>, error::Error> {
-        let expansion = match word_piece {
-            parser::word::WordPiece::Text(t) => vec![ExpandedWordPiece::Splittable(t.clone())],
+    ) -> Result<Expansion, error::Error> {
+        let expansion: Expansion = match word_piece {
+            parser::word::WordPiece::Text(t) => {
+                Expansion::from(ExpansionPiece::Splittable(t.clone()))
+            }
             parser::word::WordPiece::SingleQuotedText(t) => {
-                vec![ExpandedWordPiece::Unsplittable(t.clone())]
+                Expansion::from(ExpansionPiece::Unsplittable(t.clone()))
             }
             parser::word::WordPiece::AnsiCQuotedText(t) => {
                 let (expanded, _) =
                     escape::expand_backslash_escapes(t.as_str(), escape::EscapeMode::AnsiCQuotes)?;
-                vec![ExpandedWordPiece::Unsplittable(expanded)]
+                Expansion::from(ExpansionPiece::Unsplittable(expanded))
             }
             parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
-                let mut results = vec![];
-
-                // Handle case of empty string.
-                if pieces.is_empty() {
-                    return Ok(vec![ExpandedWordPiece::Unsplittable(String::new())]);
-                }
+                let mut fields: Vec<WordField> = vec![];
 
                 for piece in pieces {
-                    // Expand the piece, and concatenate its raw string contents.
-                    let inner_expanded_pieces = self.expand_word_piece(piece).await?;
-                    for (i, expanded_piece) in inner_expanded_pieces.into_iter().enumerate() {
-                        if matches!(expanded_piece, ExpandedWordPiece::Separator) {
-                            results.push(ExpandedWordPiece::Separator);
-                        } else if i == 0 {
-                            let next_str = expanded_piece.as_str();
-                            match results.last_mut() {
-                                Some(ExpandedWordPiece::Unsplittable(s)) => s.push_str(next_str),
-                                None => results
-                                    .push(ExpandedWordPiece::Unsplittable(next_str.to_owned())),
-                                Some(_) => unreachable!(),
-                            }
-                        } else {
-                            let next_str = expanded_piece.as_str();
-                            results.push(ExpandedWordPiece::Unsplittable(next_str.to_owned()));
+                    let Expansion {
+                        fields: this_fields,
+                        concatenate,
+                        undefined: _undefined,
+                    } = self.expand_word_piece(piece).await?;
+
+                    let fields_to_append = if concatenate {
+                        #[allow(unstable_name_collisions)]
+                        let mut concatenated: Vec<ExpansionPiece> = this_fields
+                            .into_iter()
+                            .map(|WordField(pieces)| {
+                                pieces
+                                    .into_iter()
+                                    .map(|piece| piece.make_unsplittable())
+                                    .collect()
+                            })
+                            .intersperse(vec![ExpansionPiece::Unsplittable(String::from(" "))])
+                            .flatten()
+                            .collect();
+
+                        // If there were no pieces, make sure there's an empty string after concatenation.
+                        if concatenated.is_empty() {
+                            concatenated.push(ExpansionPiece::Splittable(String::new()));
                         }
+
+                        vec![WordField(concatenated)]
+                    } else {
+                        this_fields
+                    };
+
+                    for (i, WordField(next_pieces)) in fields_to_append.into_iter().enumerate() {
+                        // Flip to unsplittable.
+                        let mut next_pieces: Vec<_> = next_pieces
+                            .into_iter()
+                            .map(|piece| piece.make_unsplittable())
+                            .collect();
+
+                        if i == 0 {
+                            if let Some(WordField(last_pieces)) = fields.last_mut() {
+                                last_pieces.append(&mut next_pieces);
+                                continue;
+                            }
+                        }
+
+                        fields.push(WordField(next_pieces));
                     }
                 }
 
-                results
-            }
-            parser::word::WordPiece::TildePrefix(prefix) => {
-                vec![ExpandedWordPiece::Splittable(
-                    self.expand_tilde_expression(prefix)?,
-                )]
-            }
-            parser::word::WordPiece::ParameterExpansion(p) => {
-                let expansion = self.expand_parameter_expr(p).await?;
-                let (strs, concatenate) = match expansion {
-                    Expansion::Undefined => (vec![String::new()], false),
-                    Expansion::String(s) => (vec![s], false),
-                    Expansion::Array {
-                        values,
-                        concatenate,
-                    } => (values, concatenate),
-                };
+                // If there were no pieces, then make sure we yield a single field containing an empty,
+                // unsplittable string.
+                if pieces.is_empty() {
+                    fields.push(WordField::from(ExpansionPiece::Unsplittable(String::new())));
+                }
 
-                if concatenate {
-                    // TODO: This isn't supposed to be like this?
-                    vec![ExpandedWordPiece::Splittable(strs.join(" "))]
-                } else {
-                    let pieces = strs.into_iter().map(ExpandedWordPiece::Splittable);
-                    itertools::Itertools::intersperse(pieces, ExpandedWordPiece::Separator)
-                        .collect()
+                Expansion {
+                    fields,
+                    concatenate: false,
+                    undefined: false,
                 }
             }
+            parser::word::WordPiece::TildePrefix(prefix) => Expansion::from(
+                ExpansionPiece::Splittable(self.expand_tilde_expression(prefix)?),
+            ),
+            parser::word::WordPiece::ParameterExpansion(p) => self.expand_parameter_expr(p).await?,
             parser::word::WordPiece::CommandSubstitution(s) => {
                 // Insantiate a subshell to run the command in.
                 let mut subshell = self.shell.clone();
@@ -504,17 +619,15 @@ impl<'a> WordExpander<'a> {
                 // We trim trailing newlines, per spec.
                 let output_str = output_str.trim_end_matches('\n');
 
-                vec![ExpandedWordPiece::Splittable(output_str.to_owned())]
+                Expansion::from(ExpansionPiece::Splittable(output_str.to_owned()))
             }
             parser::word::WordPiece::EscapeSequence(s) => {
                 let expanded = s.strip_prefix('\\').unwrap();
-                vec![ExpandedWordPiece::Unsplittable(expanded.to_owned())]
+                Expansion::from(ExpansionPiece::Unsplittable(expanded.to_owned()))
             }
-            parser::word::WordPiece::ArithmeticExpression(e) => {
-                vec![ExpandedWordPiece::Splittable(
-                    self.expand_arithmetic_expr(e).await?,
-                )]
-            }
+            parser::word::WordPiece::ArithmeticExpression(e) => Expansion::from(
+                ExpansionPiece::Splittable(self.expand_arithmetic_expr(e).await?),
+            ),
         };
 
         Ok(expansion)
@@ -552,13 +665,15 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
                 let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
 
-                match (test_type, expanded_parameter.state()) {
+                match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Ok(Expansion::from(self.basic_expand(default_value).await?)),
+                    _ => Ok(Expansion::from(
+                        self.basic_expand_to_str(default_value).await?,
+                    )),
                 }
             }
             parser::word::ParameterExpr::AssignDefaultValues {
@@ -570,14 +685,15 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
                 let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
 
-                match (test_type, expanded_parameter.state()) {
+                match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
                     _ => {
-                        let expanded_default_value = self.basic_expand(default_value).await?;
+                        let expanded_default_value =
+                            self.basic_expand_to_str(default_value).await?;
                         self.assign_to_parameter(parameter, expanded_default_value.clone())
                             .await?;
                         Ok(Expansion::from(expanded_default_value))
@@ -593,14 +709,14 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(parameter, *indirect).await?;
                 let error_message = error_message.as_ref().map_or_else(|| "", |v| v.as_str());
 
-                match (test_type, expanded_parameter.state()) {
+                match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
                     _ => Err(error::Error::CheckedExpansionError(
-                        self.basic_expand(error_message).await?,
+                        self.basic_expand_to_str(error_message).await?,
                     )),
                 }
             }
@@ -615,33 +731,21 @@ impl<'a> WordExpander<'a> {
                     .as_ref()
                     .map_or_else(|| "", |v| v.as_str());
 
-                match (test_type, expanded_parameter.state()) {
+                match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
-                    ) => {
-                        // FIXME: This loses separation between array elements.
-                        let basic_expanded = self.basic_expand(alternative_value).await?;
-                        Ok(Expansion::from(basic_expanded))
-                    }
-                    _ => Ok(Expansion::empty_str()),
+                    ) => Ok(self.basic_expand(alternative_value).await?),
+                    _ => Ok(Expansion::from(String::new())),
                 }
             }
             parser::word::ParameterExpr::ParameterLength {
                 parameter,
                 indirect,
             } => {
-                let len = match self.expand_parameter(parameter, *indirect).await? {
-                    Expansion::String(s) => s.len(),
-                    Expansion::Array {
-                        values,
-                        concatenate: _,
-                    } => values.len(),
-                    Expansion::Undefined => 0,
-                };
-
-                Ok(Expansion::from(len.to_string()))
+                let expansion = self.expand_parameter(parameter, *indirect).await?;
+                Ok(Expansion::from(expansion.polymorphic_len().to_string()))
             }
             parser::word::ParameterExpr::RemoveSmallestSuffixPattern {
                 parameter,
@@ -727,34 +831,38 @@ impl<'a> WordExpander<'a> {
                         .as_ref()
                         .map_or_else(|| "", |name| name.as_str());
 
-                    expanded_parameter.insert_at(0, shell_name.to_owned())?;
+                    expanded_parameter.fields.insert(
+                        0,
+                        WordField::from(ExpansionPiece::Splittable(shell_name.to_owned())),
+                    );
                 }
 
                 let expanded_offset = offset.eval(self.shell, false).await?;
                 let expanded_offset = usize::try_from(expanded_offset)?;
 
-                if expanded_offset >= expanded_parameter.len() {
-                    return Ok(Expansion::empty_str());
+                let expanded_parameter_len = expanded_parameter.polymorphic_len();
+                if expanded_offset >= expanded_parameter_len {
+                    return Ok(Expansion::from(String::new()));
                 }
 
                 let end_offset = if let Some(length) = length {
                     let mut expanded_length = length.eval(self.shell, false).await?;
                     if expanded_length < 0 {
-                        let param_length: i64 = i64::try_from(expanded_parameter.len())?;
+                        let param_length: i64 = i64::try_from(expanded_parameter_len)?;
                         expanded_length += param_length;
                     }
 
                     let expanded_length = std::cmp::min(
                         usize::try_from(expanded_length)?,
-                        expanded_parameter.len() - expanded_offset,
+                        expanded_parameter_len - expanded_offset,
                     );
 
                     expanded_offset + expanded_length
                 } else {
-                    expanded_parameter.len()
+                    expanded_parameter_len
                 };
 
-                Ok(expanded_parameter.subslice(expanded_offset, end_offset))
+                Ok(expanded_parameter.polymorphic_subslice(expanded_offset, end_offset))
             }
             parser::word::ParameterExpr::Transform {
                 parameter,
@@ -840,7 +948,7 @@ impl<'a> WordExpander<'a> {
                     self.expand_parameter(parameter, *indirect).await?.into();
 
                 if let Some(pattern) = pattern {
-                    let expanded_pattern = self.basic_expand(pattern).await?;
+                    let expanded_pattern = self.basic_expand_to_str(pattern).await?;
                     if !expanded_pattern.is_empty() {
                         let regex = patterns::pattern_to_regex(
                             expanded_pattern.as_str(),
@@ -900,7 +1008,7 @@ impl<'a> WordExpander<'a> {
                     self.expand_parameter(parameter, *indirect).await?.into();
 
                 if let Some(pattern) = pattern {
-                    let expanded_pattern = self.basic_expand(pattern).await?;
+                    let expanded_pattern = self.basic_expand_to_str(pattern).await?;
                     if !expanded_pattern.is_empty() {
                         let regex = patterns::pattern_to_regex(
                             expanded_pattern.as_str(),
@@ -929,8 +1037,8 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter: String =
                     self.expand_parameter(parameter, *indirect).await?.into();
-                let expanded_pattern = self.basic_expand(pattern).await?;
-                let expanded_replacement = self.basic_expand(replacement).await?;
+                let expanded_pattern = self.basic_expand_to_str(pattern).await?;
+                let expanded_replacement = self.basic_expand_to_str(replacement).await?;
 
                 let regex = patterns::pattern_to_regex(
                     expanded_pattern.as_str(),
@@ -958,7 +1066,7 @@ impl<'a> WordExpander<'a> {
                 concatenate,
             } => {
                 if prefix.is_empty() {
-                    Ok(Expansion::empty_str())
+                    Ok(Expansion::from(String::new()))
                 } else {
                     let matching_names = self
                         .shell
@@ -973,7 +1081,14 @@ impl<'a> WordExpander<'a> {
                         })
                         .sorted();
 
-                    Ok(Expansion::array(matching_names.collect(), *concatenate))
+                    Ok(Expansion {
+                        fields: matching_names
+                            .into_iter()
+                            .map(|name| WordField(vec![ExpansionPiece::Splittable(name)]))
+                            .collect(),
+                        concatenate: *concatenate,
+                        undefined: false,
+                    })
                 }
             }
             parser::word::ParameterExpr::MemberKeys {
@@ -986,7 +1101,14 @@ impl<'a> WordExpander<'a> {
                     vec![]
                 };
 
-                Ok(Expansion::array(keys, *concatenate))
+                Ok(Expansion {
+                    fields: keys
+                        .into_iter()
+                        .map(|key| WordField(vec![ExpansionPiece::Splittable(key)]))
+                        .collect(),
+                    concatenate: *concatenate,
+                    undefined: false,
+                })
             }
         }
     }
@@ -1122,12 +1244,22 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 if let Some(var) = self.shell.env.get(name) {
-                    Ok(Expansion::array(
-                        var.value().get_element_values(),
-                        *concatenate,
-                    ))
+                    let values = var.value().get_element_values();
+
+                    Ok(Expansion {
+                        fields: values
+                            .into_iter()
+                            .map(|value| WordField(vec![ExpansionPiece::Splittable(value)]))
+                            .collect(),
+                        concatenate: *concatenate,
+                        undefined: false,
+                    })
                 } else {
-                    Ok(Expansion::array(vec![], *concatenate))
+                    Ok(Expansion {
+                        fields: vec![],
+                        concatenate: *concatenate,
+                        undefined: false,
+                    })
                 }
             }
         }
@@ -1139,7 +1271,7 @@ impl<'a> WordExpander<'a> {
         for_set_associative_array: bool,
     ) -> Result<String, error::Error> {
         let index_to_use = if for_set_associative_array {
-            self.basic_expand(index).await?
+            self.basic_expand_to_str(index).await?
         } else {
             let index_expr = ast::UnexpandedArithmeticExpr {
                 value: index.to_owned(),
@@ -1155,9 +1287,18 @@ impl<'a> WordExpander<'a> {
         parameter: &parser::word::SpecialParameter,
     ) -> Result<Expansion, error::Error> {
         match parameter {
-            parser::word::SpecialParameter::AllPositionalParameters { concatenate } => Ok(
-                Expansion::array(self.shell.positional_parameters.clone(), *concatenate),
-            ),
+            parser::word::SpecialParameter::AllPositionalParameters { concatenate } => {
+                let positional_params = self.shell.positional_parameters.iter();
+
+                Ok(Expansion {
+                    fields: positional_params
+                        .into_iter()
+                        .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
+                        .collect(),
+                    concatenate: *concatenate,
+                    undefined: false,
+                })
+            }
             parser::word::SpecialParameter::PositionalParameterCount => Ok(Expansion::from(
                 self.shell.positional_parameters.len().to_string(),
             )),
@@ -1191,29 +1332,24 @@ impl<'a> WordExpander<'a> {
     }
 }
 
-fn coalesce_expanded_pieces(pieces: Vec<ExpandedWordPiece>) -> Vec<ExpandedWordPiece> {
-    pieces.into_iter().fold(Vec::new(), |mut acc, piece| {
-        match piece {
-            ExpandedWordPiece::Unsplittable(s) => {
-                if let Some(ExpandedWordPiece::Unsplittable(last)) = acc.last_mut() {
-                    last.push_str(s.as_str());
-                } else {
-                    acc.push(ExpandedWordPiece::Unsplittable(s));
+fn coalesce_expansions(expansions: Vec<Expansion>) -> Expansion {
+    expansions
+        .into_iter()
+        .fold(Expansion::default(), |mut acc, expansion| {
+            for (i, mut field) in expansion.fields.into_iter().enumerate() {
+                match acc.fields.last_mut() {
+                    Some(last) if i == 0 => {
+                        last.0.append(&mut field.0);
+                    }
+                    _ => acc.fields.push(field),
                 }
             }
-            ExpandedWordPiece::Splittable(s) => {
-                if let Some(ExpandedWordPiece::Splittable(last)) = acc.last_mut() {
-                    last.push_str(s.as_str());
-                } else {
-                    acc.push(ExpandedWordPiece::Splittable(s));
-                }
-            }
-            ExpandedWordPiece::Separator => {
-                acc.push(ExpandedWordPiece::Separator);
-            }
-        }
-        acc
-    })
+
+            // TODO: What if expansions have different concatenation values?
+            acc.concatenate = expansion.concatenate;
+
+            acc
+        })
 }
 
 fn to_initial_capitals(s: &str) -> String {
@@ -1242,5 +1378,99 @@ fn valid_variable_name(s: &str) -> bool {
             cs.all(|c| c.is_ascii_alphanumeric() || c == '_')
         }
         Some(_) | None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+
+    #[tokio::test]
+    async fn test_full_expansion() -> Result<()> {
+        let options = crate::shell::CreateOptions::default();
+        let mut shell = crate::shell::Shell::new(&options).await?;
+
+        assert_eq!(
+            full_expand_and_split_str(&mut shell, "\"\"").await?,
+            vec![""]
+        );
+        assert_eq!(
+            full_expand_and_split_str(&mut shell, "a b").await?,
+            vec!["a", "b"]
+        );
+        assert_eq!(
+            full_expand_and_split_str(&mut shell, "ab").await?,
+            vec!["ab"]
+        );
+        assert_eq!(
+            full_expand_and_split_str(&mut shell, r#""a b""#).await?,
+            vec!["a b"]
+        );
+        assert_eq!(
+            full_expand_and_split_str(&mut shell, "").await?,
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            full_expand_and_split_str(&mut shell, "$@").await?,
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            full_expand_and_split_str(&mut shell, "$*").await?,
+            Vec::<String>::new()
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_field_splitting() -> Result<()> {
+        let options = crate::shell::CreateOptions::default();
+        let mut shell = crate::shell::Shell::new(&options).await?;
+        let expander = WordExpander::new(&mut shell);
+
+        let expansion = Expansion {
+            fields: vec![
+                WordField(vec![ExpansionPiece::Unsplittable("A".into())]),
+                WordField(vec![ExpansionPiece::Unsplittable(String::new())]),
+            ],
+            ..Expansion::default()
+        };
+
+        let fields = expander.split_fields(expansion);
+
+        assert_eq!(
+            fields,
+            vec![
+                WordField(vec![ExpansionPiece::Unsplittable(String::from("A"))]),
+                WordField(vec![ExpansionPiece::Unsplittable(String::new())])
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_initial_capitals() {
+        assert_eq!(to_initial_capitals("ab bc cd"), String::from("Ab Bc Cd"));
+        assert_eq!(to_initial_capitals(" a "), String::from(" A "));
+        assert_eq!(to_initial_capitals(""), String::new());
+    }
+
+    #[test]
+    fn test_valid_variable_name() {
+        assert!(!valid_variable_name(""));
+        assert!(!valid_variable_name("1"));
+        assert!(!valid_variable_name(" a"));
+        assert!(!valid_variable_name(" "));
+
+        assert!(valid_variable_name("_"));
+        assert!(valid_variable_name("_a"));
+        assert!(valid_variable_name("_1"));
+        assert!(valid_variable_name("_a1"));
+        assert!(valid_variable_name("a"));
+        assert!(valid_variable_name("A"));
+        assert!(valid_variable_name("a1"));
+        assert!(valid_variable_name("A1"));
     }
 }

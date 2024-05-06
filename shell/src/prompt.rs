@@ -55,13 +55,13 @@ pub(crate) fn format_prompt_piece(
         parser::prompt::PromptPiece::Hostname {
             only_up_to_first_dot,
         } => {
-            let mut hn = hostname::get()
+            let hn = hostname::get()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
             if *only_up_to_first_dot {
                 if let Some((first, _)) = hn.split_once('.') {
-                    hn = first.to_owned();
+                    return Ok(first.to_owned());
                 }
             }
             hn

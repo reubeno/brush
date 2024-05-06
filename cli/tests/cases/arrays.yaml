@@ -237,10 +237,17 @@ cases:
   - name: "Dump values from non-existent array"
     stdin: |
       for key in ${NONEXISTENT[@]}; do
-        echo "Key: ${key}"
+        echo "@-Key: ${key}"
       done
       for key in "${NONEXISTENT[@]}"; do
-        echo "Quoted Key: ${key}"
+        echo "@-Quoted Key: ${key}"
+      done
+
+      for key in ${NONEXISTENT[*]}; do
+        echo "*-Key: ${key}"
+      done
+      for key in "${NONEXISTENT[*]}"; do
+        echo "*-Quoted Key: ${key}"
       done
 
   - name: "Use non-existent var in indexed array index"

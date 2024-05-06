@@ -1,4 +1,5 @@
 use clap::{arg, Parser};
+use std::collections::HashMap;
 use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
@@ -446,6 +447,65 @@ impl BuiltinCommand for CompGenCommand {
             }
             completion::CompletionResult::RestartCompletionProcess => {
                 return error::unimp("restart completion")
+            }
+        }
+
+        Ok(BuiltinExitCode::Success)
+    }
+}
+
+#[derive(Parser)]
+pub(crate) struct CompOptCommand {
+    #[arg(short = 'D')]
+    update_default: bool,
+
+    #[arg(short = 'E')]
+    update_empty: bool,
+
+    #[arg(short = 'I')]
+    update_initial_word: bool,
+
+    #[arg(short = 'o')]
+    enabled_options: Vec<CompleteOption>,
+    #[arg(long = concat!("+o"), hide = true)]
+    disabled_options: Vec<CompleteOption>,
+
+    names: Vec<String>,
+}
+
+#[async_trait::async_trait]
+impl BuiltinCommand for CompOptCommand {
+    async fn execute(
+        &self,
+        _context: crate::context::CommandExecutionContext<'_>,
+    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        if self.update_default {
+            return error::unimp("compopt -D");
+        }
+        if self.update_empty {
+            return error::unimp("compopt -E");
+        }
+        if self.update_initial_word {
+            return error::unimp("compopt -I");
+        }
+        if !self.names.is_empty() {
+            return error::unimp("compopt with names");
+        }
+
+        let mut options = HashMap::new();
+        for option in &self.disabled_options {
+            options.insert(option.clone(), false);
+        }
+        for option in &self.enabled_options {
+            options.insert(option.clone(), true);
+        }
+
+        // TODO: implement options
+        for (option, value) in options {
+            if value {
+                log::debug!("compopt: enabling {option:?}");
+            } else {
+                log::debug!("compopt: disabling {option:?}");
             }
         }
 

@@ -4,20 +4,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum PatternPiece {
     Pattern(String),
     Literal(String),
 }
 
 impl PatternPiece {
-    pub fn unwrap(self) -> String {
-        match self {
-            PatternPiece::Pattern(s) => s,
-            PatternPiece::Literal(s) => s,
-        }
-    }
-
     pub fn as_str(&self) -> &str {
         match self {
             PatternPiece::Pattern(s) => s,
@@ -28,13 +21,14 @@ impl PatternPiece {
 
 type PatternWord = Vec<PatternPiece>;
 
+#[derive(Clone, Debug)]
 pub struct Pattern {
     pieces: PatternWord,
 }
 
 impl From<PatternWord> for Pattern {
-    fn from(value: PatternWord) -> Self {
-        Self { pieces: value }
+    fn from(pieces: PatternWord) -> Self {
+        Self { pieces }
     }
 }
 
@@ -291,21 +285,6 @@ fn pattern_to_regex_str(
     }
 
     Ok(regex_str)
-}
-
-pub(crate) fn regex_matches(
-    regex_pattern: &str,
-    value: &str,
-) -> Result<Option<Vec<Option<String>>>, error::Error> {
-    // TODO: Evaluate how compatible the `fancy_regex` crate is with POSIX EREs.
-    let re = fancy_regex::Regex::new(regex_pattern)?;
-
-    Ok(re.captures(value)?.map(|captures| {
-        captures
-            .iter()
-            .map(|c| c.map(|m| m.as_str().to_owned()))
-            .collect()
-    }))
 }
 
 pub(crate) fn remove_largest_matching_prefix<'a>(

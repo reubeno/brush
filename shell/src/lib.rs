@@ -16,6 +16,7 @@ mod openfiles;
 mod options;
 mod patterns;
 mod prompt;
+mod regex;
 mod shell;
 mod users;
 mod variables;

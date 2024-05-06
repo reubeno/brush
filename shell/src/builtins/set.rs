@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use clap::Parser;
 
 use crate::builtin::{self, BuiltinCommand, BuiltinExitCode};
-use crate::error;
+use crate::{error, namedoptions};
 
 builtin::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
@@ -67,6 +69,14 @@ builtin::minus_or_plus_flag_arg!(
     "Shell functions inherit DEBUG and RETURN traps"
 );
 
+#[derive(clap::Parser)]
+pub(crate) struct SetOption {
+    #[arg(short = 'o', name = "setopt_enable")]
+    enable: Vec<String>,
+    #[arg(long = concat!("+o"), name = "setopt_disable", hide = true)]
+    disable: Vec<String>,
+}
+
 #[derive(Parser)]
 #[clap(disable_help_flag = true)]
 pub(crate) struct SetCommand {
@@ -113,11 +123,9 @@ pub(crate) struct SetCommand {
     #[clap(flatten)]
     shell_functions_inherit_debug_and_return_traps: ShellFunctionsInheritDebugAndReturnTraps,
 
-    // TODO: implement: -o
-    // TODO: implement: +o
-    // TODO: implement: --
-    // TODO: implement: -
-    #[clap(allow_hyphen_values = true)]
+    #[clap(flatten)]
+    set_option: SetOption,
+
     positional_args: Vec<String>,
 }
 
@@ -127,10 +135,13 @@ impl BuiltinCommand for SetCommand {
         true
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<BuiltinExitCode, error::Error> {
+        let mut result = BuiltinExitCode::Success;
+
         if let Some(value) = self.print_commands_and_arguments.to_bool() {
             context.shell.options.print_commands_and_arguments = value;
         }
@@ -229,18 +240,34 @@ impl BuiltinCommand for SetCommand {
                 .shell_functions_inherit_debug_and_return_traps = value;
         }
 
+        let mut named_options: HashMap<String, bool> = HashMap::new();
+        for option_name in &self.set_option.disable {
+            named_options.insert(option_name.to_owned(), false);
+        }
+        for option_name in &self.set_option.enable {
+            named_options.insert(option_name.to_owned(), true);
+        }
+
+        for (option_name, value) in named_options {
+            if let Some(option_def) = namedoptions::SET_O_OPTIONS.get(option_name.as_str()) {
+                (option_def.setter)(context.shell, value);
+            } else {
+                result = BuiltinExitCode::InvalidUsage;
+            }
+        }
+
         for (i, arg) in self.positional_args.iter().enumerate() {
-            if arg == "-o" || arg == "--" || arg == "-" {
-                log::warn!("UNIMPLEMENTED: set -o / set -- / set -");
+            if arg == "-" && i == 0 {
+                continue;
             }
 
             if i < context.shell.positional_parameters.len() {
-                context.shell.positional_parameters[i] = arg.to_owned();
+                arg.clone_into(&mut context.shell.positional_parameters[i]);
             } else {
                 context.shell.positional_parameters.push(arg.to_owned());
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(result)
     }
 }
