@@ -58,7 +58,7 @@ pub enum CompleteAction {
     Variable,
 }
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
 pub enum CompleteOption {
     #[clap(name = "bashdefault")]
     BashDefault,

@@ -223,7 +223,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
         // Completion builtins
         m.insert("complete", exec_builtin::<complete::CompleteCommand>);
         m.insert("compgen", exec_builtin::<complete::CompGenCommand>);
-        m.insert("compopt", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("compopt", exec_builtin::<complete::CompOptCommand>);
 
         // Dir stack builtins
         m.insert("dirs", exec_builtin::<dirs::DirsCommand>);

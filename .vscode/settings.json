@@ -9,5 +9,6 @@
             "path": "/bin/zsh"
         }
     },
+    "rust-analyzer.check.command": "clippy",
     "rewrap.wrappingColumn": 90
 }

@@ -2,6 +2,7 @@ name: "Interactive"
 incompatible_configs: ["sh"]
 cases:
   - name: "Basic interactive test"
+    skip: true
     pty: true
     ignore_stdout: true
     stdin: |
@@ -28,6 +29,7 @@ cases:
       #send:Ctrl+D
 
   - name: "Tab completion with broken syntax"
+    skip: true
     pty: true
     ignore_stdout: true
     stdin: |

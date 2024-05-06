@@ -77,6 +77,7 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
     let mut success_count = 0;
+    let mut skip_count = 0;
     let mut known_failure_count = 0;
     let mut fail_count = 0;
     let mut join_handles = vec![];
@@ -139,6 +140,7 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
         let results = join_handle.await??;
 
         success_count += results.success_count;
+        skip_count += results.skip_count;
         known_failure_count += results.known_failure_count;
         fail_count += results.fail_count;
         success_duration_comparison.oracle += results.success_duration_comparison.oracle;
@@ -166,19 +168,30 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
             known_failure_count.to_string().green()
         };
 
-        eprintln!("==============================================================");
+        let formatted_skip_count = if skip_count > 0 {
+            skip_count.to_string().cyan()
+        } else {
+            skip_count.to_string().green()
+        };
+
         eprintln!(
-            "{} test case(s) ran: {} succeeded, {} failed, {} known to fail.",
+            "================================================================================"
+        );
+        eprintln!(
+            "{} test case(s) ran: {} succeeded, {} failed, {} known to fail, {} skipped.",
             success_count + fail_count + known_failure_count,
             success_count.to_string().green(),
             formatted_fail_count,
-            formatted_known_failure_count
+            formatted_known_failure_count,
+            formatted_skip_count,
         );
         eprintln!(
             "duration of successful tests: {:?} (oracle) vs. {:?} (test)",
             success_duration_comparison.oracle, success_duration_comparison.test,
         );
-        eprintln!("==============================================================");
+        eprintln!(
+            "================================================================================"
+        );
     }
 
     assert!(fail_count == 0);
@@ -263,6 +276,8 @@ struct TestCase {
     #[serde(default)]
     pub env: HashMap<String, String>,
     #[serde(default)]
+    pub skip: bool,
+    #[serde(default)]
     pub pty: bool,
     #[serde(default)]
     pub stdin: Option<String>,
@@ -280,6 +295,8 @@ struct TestCase {
     pub known_failure: bool,
     #[serde(default)]
     pub incompatible_configs: HashSet<String>,
+    #[serde(default)]
+    pub timeout_in_seconds: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -312,6 +329,7 @@ struct TestCaseSetResults {
     pub name: Option<String>,
     pub config_name: String,
     pub success_count: u32,
+    pub skip_count: u32,
     pub known_failure_count: u32,
     pub fail_count: u32,
     pub test_case_results: Vec<TestCaseResult>,
@@ -356,6 +374,7 @@ impl TestCaseSetResults {
 impl TestCaseSet {
     pub async fn run(&self, test_config: TestConfig) -> Result<TestCaseSetResults> {
         let mut success_count = 0;
+        let mut skip_count = 0;
         let mut known_failure_count = 0;
         let mut fail_count = 0;
         let mut success_duration_comparison = DurationComparison {
@@ -376,7 +395,9 @@ impl TestCaseSet {
 
             let test_case_result = test_case.run(self, &test_config).await?;
 
-            if test_case_result.success {
+            if test_case_result.skip {
+                skip_count += 1;
+            } else if test_case_result.success {
                 if test_case.known_failure {
                     fail_count += 1;
                 } else {
@@ -399,6 +420,7 @@ impl TestCaseSet {
             config_name: test_config.name.clone(),
             test_case_results,
             success_count,
+            skip_count,
             known_failure_count,
             fail_count,
             success_duration_comparison,
@@ -427,6 +449,7 @@ enum WhichShell {
 struct TestCaseResult {
     pub name: Option<String>,
     pub success: bool,
+    pub skip: bool,
     pub known_failure: bool,
     pub comparison: RunComparison,
 }
@@ -657,6 +680,16 @@ impl TestCase {
         test_case_set: &TestCaseSet,
         test_config: &TestConfig,
     ) -> Result<TestCaseResult> {
+        if self.skip {
+            return Ok(TestCaseResult {
+                success: true,
+                comparison: RunComparison::ignored(),
+                name: self.name.clone(),
+                skip: true,
+                known_failure: self.known_failure,
+            });
+        }
+
         let comparison = self
             .run_with_oracle_and_test(test_case_set, test_config)
             .await?;
@@ -665,6 +698,7 @@ impl TestCase {
             success,
             comparison,
             name: self.name.clone(),
+            skip: false,
             known_failure: self.known_failure,
         })
     }
@@ -932,7 +966,15 @@ impl TestCase {
 
     #[allow(clippy::unused_async)]
     async fn run_command_with_stdin(&self, cmd: std::process::Command) -> Result<RunResult> {
+        const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
+
         let mut test_cmd = assert_cmd::Command::from_std(cmd);
+
+        test_cmd.timeout(std::time::Duration::from_secs(
+            self.timeout_in_seconds
+                .unwrap_or(DEFAULT_TIMEOUT_IN_SECONDS),
+        ));
+
         if let Some(stdin) = &self.stdin {
             test_cmd.write_stdin(stdin.as_bytes());
         }
@@ -984,6 +1026,25 @@ impl RunComparison {
             || self.stdout.is_failure()
             || self.stderr.is_failure()
             || self.temp_dir.is_failure()
+    }
+
+    pub fn ignored() -> Self {
+        Self {
+            exit_status: ExitStatusComparison::Ignored,
+            stdout: StringComparison::Ignored {
+                test_string: String::new(),
+                oracle_string: String::new(),
+            },
+            stderr: StringComparison::Ignored {
+                test_string: String::new(),
+                oracle_string: String::new(),
+            },
+            temp_dir: DirComparison::Ignored,
+            duration: DurationComparison {
+                oracle: std::time::Duration::default(),
+                test: std::time::Duration::default(),
+            },
+        }
     }
 }
 
