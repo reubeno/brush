@@ -565,20 +565,20 @@ impl ShellValue {
         Ok(())
     }
 
-    pub fn format(&self, style: FormatStyle) -> Result<String, error::Error> {
+    pub fn format(&self, style: FormatStyle) -> Result<Cow<'_, str>, error::Error> {
         match self {
-            ShellValue::Unset(_) => Ok(String::new()),
+            ShellValue::Unset(_) => Ok("".into()),
             ShellValue::String(s) => {
                 // TODO: Handle embedded newlines and other special chars.
                 match style {
                     FormatStyle::Basic => {
                         if s.contains(' ') {
-                            Ok(format!("'{s}'"))
+                            Ok(format!("'{s}'").into())
                         } else {
-                            Ok(s.clone())
+                            Ok(s.into())
                         }
                     }
-                    FormatStyle::DeclarePrint => Ok(format!("\"{s}\"")),
+                    FormatStyle::DeclarePrint => Ok(format!("\"{s}\"").into()),
                 }
             }
             ShellValue::AssociativeArray(values) => {
@@ -590,7 +590,7 @@ impl ShellValue {
                 }
 
                 result.push(')');
-                Ok(result)
+                Ok(result.into())
             }
             ShellValue::IndexedArray(values) => {
                 let mut result = String::new();
@@ -604,7 +604,7 @@ impl ShellValue {
                 }
 
                 result.push(')');
-                Ok(result)
+                Ok(result.into())
             }
             ShellValue::Random => error::unimp("formatting RANDOM"),
         }

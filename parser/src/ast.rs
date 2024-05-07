@@ -700,6 +700,33 @@ pub struct IoHereDocument {
 }
 
 #[derive(Clone, Debug)]
+pub enum TestExpr {
+    False,
+    Literal(String),
+    And(Box<TestExpr>, Box<TestExpr>),
+    Or(Box<TestExpr>, Box<TestExpr>),
+    Not(Box<TestExpr>),
+    Parenthesized(Box<TestExpr>),
+    UnaryTest(UnaryPredicate, String),
+    BinaryTest(BinaryPredicate, String, String),
+}
+
+impl Display for TestExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TestExpr::False => Ok(()),
+            TestExpr::Literal(s) => write!(f, "{s}"),
+            TestExpr::And(left, right) => write!(f, "{left} -a {right}"),
+            TestExpr::Or(left, right) => write!(f, "{left} -o {right}"),
+            TestExpr::Not(expr) => write!(f, "! {}", expr),
+            TestExpr::Parenthesized(expr) => write!(f, "( {expr} )"),
+            TestExpr::UnaryTest(pred, word) => write!(f, "{pred} {word}"),
+            TestExpr::BinaryTest(left, op, right) => write!(f, "{left} {op} {right}"),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum ExtendedTestExpr {
     And(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
     Or(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
@@ -713,26 +740,24 @@ impl Display for ExtendedTestExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExtendedTestExpr::And(left, right) => {
-                write!(f, "{} && {}", left, right)?;
+                write!(f, "{} && {}", left, right)
             }
             ExtendedTestExpr::Or(left, right) => {
-                write!(f, "{} || {}", left, right)?;
+                write!(f, "{} || {}", left, right)
             }
             ExtendedTestExpr::Not(expr) => {
-                write!(f, "! {}", expr)?;
+                write!(f, "! {}", expr)
             }
             ExtendedTestExpr::Parenthesized(expr) => {
-                write!(f, "( {} )", expr)?;
+                write!(f, "( {} )", expr)
             }
             ExtendedTestExpr::UnaryTest(pred, word) => {
-                write!(f, "{} {}", pred, word)?;
+                write!(f, "{} {}", pred, word)
             }
             ExtendedTestExpr::BinaryTest(pred, left, right) => {
-                write!(f, "{} {} {}", left, pred, right)?;
+                write!(f, "{} {} {}", left, pred, right)
             }
         }
-
-        Ok(())
     }
 }
 
@@ -847,14 +872,8 @@ impl Display for Word {
     }
 }
 
-impl Word {
-    pub fn new(s: &str) -> Self {
-        Self {
-            value: s.to_owned(),
-        }
-    }
-
-    pub fn from(t: &tokenizer::Token) -> Word {
+impl From<&tokenizer::Token> for Word {
+    fn from(t: &tokenizer::Token) -> Word {
         match t {
             tokenizer::Token::Word(value, _) => Word {
                 value: value.clone(),
@@ -862,6 +881,14 @@ impl Word {
             tokenizer::Token::Operator(value, _) => Word {
                 value: value.clone(),
             },
+        }
+    }
+}
+
+impl Word {
+    pub fn new(s: &str) -> Self {
+        Self {
+            value: s.to_owned(),
         }
     }
 

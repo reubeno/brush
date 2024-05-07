@@ -88,35 +88,35 @@ impl ShellEnvironment {
         visible_vars.into_iter()
     }
 
-    pub fn get(&self, name: &str) -> Option<&ShellVariable> {
+    pub fn get<S: AsRef<str>>(&self, name: S) -> Option<&ShellVariable> {
         // First look through locals, from the top of the stack on down.
         for map in self.locals_stack.iter().rev() {
-            if let Some(var) = map.get(name) {
+            if let Some(var) = map.get(name.as_ref()) {
                 return Some(var);
             }
         }
 
         // If we didn't find it in locals, then look in globals.
-        return self.globals.get(name);
+        return self.globals.get(name.as_ref());
     }
 
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut ShellVariable> {
+    pub fn get_mut<S: AsRef<str>>(&mut self, name: S) -> Option<&mut ShellVariable> {
         // First look through locals, from the top of the stack on down.
         for map in self.locals_stack.iter_mut().rev() {
-            if let Some(var) = map.get_mut(name) {
+            if let Some(var) = map.get_mut(name.as_ref()) {
                 return Some(var);
             }
         }
 
         // If we didn't find it in locals, then look in globals.
-        return self.globals.get_mut(name);
+        return self.globals.get_mut(name.as_ref());
     }
 
-    pub fn get_str(&self, name: &str) -> Option<Cow<'_, str>> {
-        self.get(name).map(|v| v.value().to_cow_string())
+    pub fn get_str<S: AsRef<str>>(&self, name: S) -> Option<Cow<'_, str>> {
+        self.get(name.as_ref()).map(|v| v.value().to_cow_string())
     }
 
-    pub fn is_set(&self, name: &str) -> bool {
+    pub fn is_set<S: AsRef<str>>(&self, name: S) -> bool {
         if let Some(var) = self.get(name) {
             !matches!(var.value(), ShellValue::Unset(_))
         } else {

@@ -101,7 +101,7 @@ fn main() {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(run(&args));
+        .block_on(run(args));
 
     let exit_code = match result {
         Ok(code) => code,
@@ -115,8 +115,8 @@ fn main() {
     std::process::exit(exit_code as i32);
 }
 
-async fn run(cli_args: &[String]) -> Result<u8, interactive_shell::InteractiveShellError> {
-    let args = CommandLineArgs::parse_from(cli_args);
+async fn run(cli_args: Vec<String>) -> Result<u8, interactive_shell::InteractiveShellError> {
+    let args = CommandLineArgs::parse_from(&cli_args);
 
     let argv0 = if args.sh_mode {
         // Simulate having been run as "sh".
@@ -140,7 +140,7 @@ async fn run(cli_args: &[String]) -> Result<u8, interactive_shell::InteractiveSh
             posix: args.posix || args.sh_mode,
             print_commands_and_arguments: args.print_commands_and_arguments,
             read_commands_from_stdin,
-            shell_name: argv0.clone(),
+            shell_name: argv0,
             sh_mode: args.sh_mode,
             verbose: args.verbose,
         },

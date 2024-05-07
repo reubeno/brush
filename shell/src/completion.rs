@@ -459,34 +459,35 @@ impl CompletionConfig {
         context.token_to_complete = expanded_token_to_complete.as_str();
 
         // See if we can find a completion spec matching the current command.
-        let mut found_spec: Option<CompletionSpec> = None;
+        let mut found_spec: Option<&CompletionSpec> = None;
         if let Some(command_name) = context.command_name {
             if let Some(spec) = shell.completion_config.commands.get(command_name) {
-                found_spec = Some(spec.clone());
+                found_spec = Some(spec);
             } else if let Some(file_name) = PathBuf::from(command_name).file_name() {
                 if let Some(spec) = shell
                     .completion_config
                     .commands
                     .get(&file_name.to_string_lossy().to_string())
                 {
-                    found_spec = Some(spec.clone());
+                    found_spec = Some(spec);
                 }
             }
         } else {
             if let Some(spec) = &self.empty_line {
-                found_spec = Some(spec.clone());
+                found_spec = Some(spec);
             }
         }
 
         if found_spec.is_none() {
             if let Some(spec) = &self.default {
-                found_spec = Some(spec.clone());
+                found_spec = Some(spec);
             }
         }
 
         // Try to generate completions.
-        if let Some(spec) = &found_spec {
+        if let Some(spec) = found_spec {
             let result = spec
+                .to_owned()
                 .get_completions(shell, &context)
                 .await
                 .unwrap_or_else(|_err| CompletionResult::Candidates(vec![]));

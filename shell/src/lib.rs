@@ -18,6 +18,7 @@ mod patterns;
 mod prompt;
 mod regex;
 mod shell;
+mod tests;
 mod users;
 mod variables;
 

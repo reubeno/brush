@@ -1,5 +1,5 @@
-use std::io::Write;
 use std::path::PathBuf;
+use std::{io::Write, sync::Arc};
 
 use clap::Parser;
 use parser::ast;
@@ -32,7 +32,7 @@ pub(crate) struct TypeCommand {
 enum ResolvedType {
     Alias(String),
     Keyword,
-    Function(ast::FunctionDefinition),
+    Function(Arc<ast::FunctionDefinition>),
     Builtin,
     File(PathBuf),
 }
