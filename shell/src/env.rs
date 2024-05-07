@@ -12,16 +12,19 @@ pub enum EnvironmentLookup {
     OnlyInLocal,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EnvironmentScope {
+    /// Scope local to a function instance
     Local,
+    /// Globals
     Global,
+    /// Transient overrides for a command invocation
+    Command,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShellEnvironment {
-    globals: ShellVariableMap,
-    locals_stack: Vec<ShellVariableMap>,
+    pub(crate) scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
 }
 
 impl Default for ShellEnvironment {
@@ -33,17 +36,20 @@ impl Default for ShellEnvironment {
 impl ShellEnvironment {
     pub fn new() -> Self {
         Self {
-            globals: ShellVariableMap::new(),
-            locals_stack: vec![],
+            scopes: vec![(EnvironmentScope::Global, ShellVariableMap::new())],
         }
     }
 
-    pub fn push_locals(&mut self) {
-        self.locals_stack.push(ShellVariableMap::new());
+    pub fn push_scope(&mut self, scope_type: EnvironmentScope) {
+        self.scopes.push((scope_type, ShellVariableMap::new()));
     }
 
-    pub fn pop_locals(&mut self) {
-        self.locals_stack.pop();
+    pub fn pop_scope(&mut self, expected_scope_type: EnvironmentScope) -> Result<(), error::Error> {
+        // TODO: Should we panic instead on failure? It's effectively a broken invariant.
+        match self.scopes.pop() {
+            Some((actual_scope_type, _)) if actual_scope_type == expected_scope_type => Ok(()),
+            _ => Err(error::Error::MissingScope),
+        }
     }
 
     //
@@ -60,64 +66,79 @@ impl ShellEnvironment {
     ) -> impl Iterator<Item = (&String, &ShellVariable)> {
         let mut visible_vars: HashMap<&String, &ShellVariable> = HashMap::new();
 
-        if !matches!(lookup_policy, EnvironmentLookup::OnlyInGlobal) {
-            for var_map in self.locals_stack.iter().rev() {
-                for (name, var) in var_map.iter() {
-                    if !visible_vars.contains_key(name) {
-                        visible_vars.insert(name, var);
+        let mut local_count = 0;
+        for (scope_type, var_map) in self.scopes.iter().rev() {
+            if matches!(scope_type, EnvironmentScope::Local) {
+                local_count += 1;
+            }
+
+            match lookup_policy {
+                EnvironmentLookup::Anywhere => (),
+                EnvironmentLookup::OnlyInGlobal => {
+                    if !matches!(scope_type, EnvironmentScope::Global) {
+                        continue;
                     }
                 }
-
-                if matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal) {
-                    break;
+                EnvironmentLookup::OnlyInCurrentLocal => {
+                    if !(matches!(scope_type, EnvironmentScope::Local) && local_count == 1) {
+                        continue;
+                    }
+                }
+                EnvironmentLookup::OnlyInLocal => {
+                    if !matches!(scope_type, EnvironmentScope::Local) {
+                        continue;
+                    }
                 }
             }
-        }
 
-        if matches!(
-            lookup_policy,
-            EnvironmentLookup::Anywhere | EnvironmentLookup::OnlyInGlobal
-        ) {
-            for (name, var) in self.globals.iter() {
+            for (name, var) in var_map.iter() {
                 if !visible_vars.contains_key(name) {
                     visible_vars.insert(name, var);
                 }
+            }
+
+            if matches!(scope_type, EnvironmentScope::Local)
+                && matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal)
+            {
+                break;
             }
         }
 
         visible_vars.into_iter()
     }
 
-    pub fn get<S: AsRef<str>>(&self, name: S) -> Option<&ShellVariable> {
-        // First look through locals, from the top of the stack on down.
-        for map in self.locals_stack.iter().rev() {
+    pub fn get<S: AsRef<str>>(&self, name: S) -> Option<(EnvironmentScope, &ShellVariable)> {
+        // Look through scopes, from the top of the stack on down.
+        for (scope_type, map) in self.scopes.iter().rev() {
             if let Some(var) = map.get(name.as_ref()) {
-                return Some(var);
+                return Some((*scope_type, var));
             }
         }
 
-        // If we didn't find it in locals, then look in globals.
-        return self.globals.get(name.as_ref());
+        None
     }
 
-    pub fn get_mut<S: AsRef<str>>(&mut self, name: S) -> Option<&mut ShellVariable> {
-        // First look through locals, from the top of the stack on down.
-        for map in self.locals_stack.iter_mut().rev() {
+    pub fn get_mut<S: AsRef<str>>(
+        &mut self,
+        name: S,
+    ) -> Option<(EnvironmentScope, &mut ShellVariable)> {
+        // Look through scopes, from the top of the stack on down.
+        for (scope_type, map) in self.scopes.iter_mut().rev() {
             if let Some(var) = map.get_mut(name.as_ref()) {
-                return Some(var);
+                return Some((*scope_type, var));
             }
         }
 
-        // If we didn't find it in locals, then look in globals.
-        return self.globals.get_mut(name.as_ref());
+        None
     }
 
     pub fn get_str<S: AsRef<str>>(&self, name: S) -> Option<Cow<'_, str>> {
-        self.get(name.as_ref()).map(|v| v.value().to_cow_string())
+        self.get(name.as_ref())
+            .map(|(_, v)| v.value().to_cow_string())
     }
 
     pub fn is_set<S: AsRef<str>>(&self, name: S) -> bool {
-        if let Some(var) = self.get(name) {
+        if let Some((_, var)) = self.get(name) {
             !matches!(var.value(), ShellValue::Unset(_))
         } else {
             false
@@ -129,12 +150,16 @@ impl ShellEnvironment {
     //
 
     pub fn unset(&mut self, name: &str) -> Result<bool, error::Error> {
-        // First look through locals, from the top of the stack on down.
-        for (i, map) in self.locals_stack.iter_mut().rev().enumerate() {
+        let mut local_count = 0;
+        for (scope_type, map) in self.scopes.iter_mut().rev() {
+            if matches!(scope_type, EnvironmentScope::Local) {
+                local_count += 1;
+            }
+
             if Self::try_unset_in_map(map, name)? {
                 // If we end up finding a local in the top-most local frame, then we replace
                 // it with a placeholder.
-                if i == 0 {
+                if matches!(scope_type, EnvironmentScope::Local) && local_count == 1 {
                     map.set(
                         name,
                         ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped)),
@@ -145,12 +170,11 @@ impl ShellEnvironment {
             }
         }
 
-        // If we didn't find it in locals, then look in globals.
-        Self::try_unset_in_map(&mut self.globals, name)
+        Ok(false)
     }
 
     pub fn unset_index(&mut self, name: &str, index: &str) -> Result<bool, error::Error> {
-        if let Some(var) = self.get_mut(name) {
+        if let Some((_, var)) = self.get_mut(name) {
             var.unset_index(index)
         } else {
             Ok(false)
@@ -170,25 +194,43 @@ impl ShellEnvironment {
         name: N,
         lookup_policy: EnvironmentLookup,
     ) -> Option<&ShellVariable> {
-        match lookup_policy {
-            EnvironmentLookup::Anywhere => self.get(name.as_ref()),
-            EnvironmentLookup::OnlyInGlobal => self.globals.get(name.as_ref()),
-            EnvironmentLookup::OnlyInCurrentLocal => {
-                if let Some(map) = self.locals_stack.last() {
-                    map.get(name.as_ref())
-                } else {
-                    None
-                }
+        let mut local_count = 0;
+        for (scope_type, var_map) in self.scopes.iter().rev() {
+            if matches!(scope_type, EnvironmentScope::Local) {
+                local_count += 1;
             }
-            EnvironmentLookup::OnlyInLocal => {
-                for map in self.locals_stack.iter().rev() {
-                    if let Some(var) = map.get(name.as_ref()) {
-                        return Some(var);
+
+            match lookup_policy {
+                EnvironmentLookup::Anywhere => (),
+                EnvironmentLookup::OnlyInGlobal => {
+                    if !matches!(scope_type, EnvironmentScope::Global) {
+                        continue;
                     }
                 }
-                None
+                EnvironmentLookup::OnlyInCurrentLocal => {
+                    if !(matches!(scope_type, EnvironmentScope::Local) && local_count == 1) {
+                        continue;
+                    }
+                }
+                EnvironmentLookup::OnlyInLocal => {
+                    if !matches!(scope_type, EnvironmentScope::Local) {
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(var) = var_map.get(name.as_ref()) {
+                return Some(var);
+            }
+
+            if matches!(scope_type, EnvironmentScope::Local)
+                && matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal)
+            {
+                break;
             }
         }
+
+        None
     }
 
     pub fn get_mut_using_policy<N: AsRef<str>>(
@@ -196,25 +238,43 @@ impl ShellEnvironment {
         name: N,
         lookup_policy: EnvironmentLookup,
     ) -> Option<&mut ShellVariable> {
-        match lookup_policy {
-            EnvironmentLookup::Anywhere => self.get_mut(name.as_ref()),
-            EnvironmentLookup::OnlyInGlobal => self.globals.get_mut(name.as_ref()),
-            EnvironmentLookup::OnlyInCurrentLocal => {
-                if let Some(map) = self.locals_stack.last_mut() {
-                    map.get_mut(name.as_ref())
-                } else {
-                    None
-                }
+        let mut local_count = 0;
+        for (scope_type, var_map) in self.scopes.iter_mut().rev() {
+            if matches!(scope_type, EnvironmentScope::Local) {
+                local_count += 1;
             }
-            EnvironmentLookup::OnlyInLocal => {
-                for map in self.locals_stack.iter_mut().rev() {
-                    if let Some(var) = map.get_mut(name.as_ref()) {
-                        return Some(var);
+
+            match lookup_policy {
+                EnvironmentLookup::Anywhere => (),
+                EnvironmentLookup::OnlyInGlobal => {
+                    if !matches!(scope_type, EnvironmentScope::Global) {
+                        continue;
                     }
                 }
-                None
+                EnvironmentLookup::OnlyInCurrentLocal => {
+                    if !(matches!(scope_type, EnvironmentScope::Local) && local_count == 1) {
+                        continue;
+                    }
+                }
+                EnvironmentLookup::OnlyInLocal => {
+                    if !matches!(scope_type, EnvironmentScope::Local) {
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(var) = var_map.get_mut(name.as_ref()) {
+                return Some(var);
+            }
+
+            if matches!(scope_type, EnvironmentScope::Local)
+                && matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal)
+            {
+                break;
             }
         }
+
+        None
     }
 
     pub fn update_or_add<N: AsRef<str>>(
@@ -268,30 +328,28 @@ impl ShellEnvironment {
         &mut self,
         name: N,
         var: ShellVariable,
-        scope: EnvironmentScope,
+        target_scope: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        match scope {
-            EnvironmentScope::Local => {
-                if let Some(map) = self.locals_stack.last_mut() {
-                    map.set(name.as_ref(), var);
-                } else {
-                    return Err(error::Error::SetLocalVarOutsideFunction);
-                }
+        for (scope_type, map) in self.scopes.iter_mut().rev() {
+            if *scope_type == target_scope {
+                map.set(name.as_ref(), var);
+                return Ok(());
             }
-            EnvironmentScope::Global => {
-                self.set_global(name.as_ref(), var);
-            }
-        };
+        }
 
-        Ok(())
+        Err(error::Error::MissingScope)
     }
 
-    pub fn set_global<N: AsRef<str>>(&mut self, name: N, var: ShellVariable) {
-        self.globals.set(name, var);
+    pub fn set_global<N: AsRef<str>>(
+        &mut self,
+        name: N,
+        var: ShellVariable,
+    ) -> Result<(), error::Error> {
+        self.add(name, var, EnvironmentScope::Global)
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShellVariableMap {
     variables: HashMap<String, ShellVariable>,
 }

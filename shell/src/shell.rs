@@ -5,7 +5,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::context;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::error;
 use crate::expansion;
@@ -17,6 +16,7 @@ use crate::prompt::expand_prompt;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{commands, patterns};
 use crate::{completion, users};
+use crate::{context, env};
 
 pub struct Shell {
     pub open_files: openfiles::OpenFiles,
@@ -114,7 +114,7 @@ impl Shell {
             working_dir: std::env::current_dir()?,
             umask: Default::default(),           // TODO: populate umask
             file_size_limit: Default::default(), // TODO: populate file size limit
-            env: Self::initialize_vars(options),
+            env: Self::initialize_vars(options)?,
             funcs: HashMap::default(),
             options: RuntimeOptions::defaults_from(options),
             jobs: jobs::JobManager::new(),
@@ -142,14 +142,14 @@ impl Shell {
         Ok(shell)
     }
 
-    fn initialize_vars(options: &CreateOptions) -> ShellEnvironment {
+    fn initialize_vars(options: &CreateOptions) -> Result<ShellEnvironment, error::Error> {
         let mut env = ShellEnvironment::new();
 
         // Seed parameters from environment.
         for (k, v) in std::env::vars() {
             let mut var = ShellVariable::new(ShellValue::String(v));
             var.export();
-            env.set_global(k, var);
+            env.set_global(k, var)?;
         }
 
         // Set some additional ones.
@@ -160,25 +160,25 @@ impl Shell {
                 uzers::get_effective_uid()
             )));
             euid_var.set_readonly();
-            env.set_global("EUID", euid_var);
+            env.set_global("EUID", euid_var)?;
         }
 
         let mut random_var = ShellVariable::new(ShellValue::Random);
         random_var.hide_from_enumeration();
-        env.set_global("RANDOM", random_var);
+        env.set_global("RANDOM", random_var)?;
 
-        env.set_global("IFS", ShellVariable::new(" \t\n".into()));
+        env.set_global("IFS", ShellVariable::new(" \t\n".into()))?;
         env.set_global(
             "COMP_WORDBREAKS",
             ShellVariable::new(" \t\n\"\'><=;|&(:".into()),
-        );
+        )?;
 
         let os_type = match std::env::consts::OS {
             "linux" => "linux-gnu",
             "windows" => "windows",
             _ => "unknown",
         };
-        env.set_global("OSTYPE", ShellVariable::new(os_type.into()));
+        env.set_global("OSTYPE", ShellVariable::new(os_type.into()))?;
 
         // Set some defaults (if they're not already initialized).
         if !env.is_set("HISTFILE") {
@@ -187,7 +187,7 @@ impl Shell {
                 env.set_global(
                     "HISTFILE",
                     ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
-                );
+                )?;
             }
         }
         #[cfg(unix)]
@@ -197,22 +197,22 @@ impl Shell {
                 ShellVariable::new(
                     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
                 ),
-            );
+            )?;
         }
 
         if !options.sh_mode {
             if let Some(shell_name) = &options.shell_name {
-                env.set_global("BASH", ShellVariable::new(shell_name.into()));
+                env.set_global("BASH", ShellVariable::new(shell_name.into()))?;
             }
             env.set_global(
                 "BASH_VERSINFO",
                 ShellVariable::new(ShellValue::indexed_array_from_slice(
                     ["5", "1", "1", "1", "release", "unknown"].as_slice(),
                 )),
-            );
+            )?;
         }
 
-        env
+        Ok(env)
     }
 
     async fn load_config(
@@ -404,7 +404,7 @@ impl Shell {
             .map(|s| commands::CommandArg::String(String::from(*s)))
             .collect::<Vec<_>>();
 
-        match interp::invoke_shell_function(func, context, &command_args, vec![]).await? {
+        match interp::invoke_shell_function(func, context, &command_args).await? {
             interp::SpawnResult::SpawnedChild(_) => {
                 error::unimp("child spawned from function invocation")
             }
@@ -574,7 +574,7 @@ impl Shell {
     fn parameter_or_default(&self, name: &str, default: &str) -> String {
         self.env.get(name).map_or_else(
             || default.to_owned(),
-            |s| s.value().to_cow_string().to_string(),
+            |(_, s)| s.value().to_cow_string().to_string(),
         )
     }
 
@@ -612,13 +612,13 @@ impl Shell {
             function_name: name.to_owned(),
             function_definition: function_def.clone(),
         });
-        self.env.push_locals();
+        self.env.push_scope(env::EnvironmentScope::Local);
         self.update_funcname_var()?;
         Ok(())
     }
 
     pub fn leave_function(&mut self) -> Result<(), error::Error> {
-        self.env.pop_locals();
+        self.env.pop_scope(env::EnvironmentScope::Local)?;
         self.function_call_stack.pop_front();
         self.update_funcname_var()?;
         Ok(())
@@ -672,7 +672,7 @@ impl Shell {
     }
 
     pub fn get_history_file_path(&self) -> Option<PathBuf> {
-        self.env.get("HISTFILE").map(|var| {
+        self.env.get("HISTFILE").map(|(_, var)| {
             let histfile_str: String = var.value().to_cow_string().to_string();
             PathBuf::from(histfile_str)
         })
@@ -683,9 +683,10 @@ impl Shell {
     }
 
     pub fn get_ifs(&self) -> Cow<'_, str> {
-        self.env
-            .get("IFS")
-            .map_or_else(|| Cow::Borrowed(" \t\n"), |v| v.value().to_cow_string())
+        self.env.get("IFS").map_or_else(
+            || Cow::Borrowed(" \t\n"),
+            |(_, v)| v.value().to_cow_string(),
+        )
     }
 
     pub async fn get_completions(
@@ -773,7 +774,7 @@ impl Shell {
     }
 
     fn get_home_dir_with_env(env: &ShellEnvironment) -> Option<PathBuf> {
-        if let Some(home) = env.get("HOME") {
+        if let Some((_, home)) = env.get("HOME") {
             Some(PathBuf::from(home.value().to_cow_string().to_string()))
         } else {
             // HOME isn't set, so let's sort it out ourselves.

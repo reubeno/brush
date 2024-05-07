@@ -1095,7 +1095,7 @@ impl<'a> WordExpander<'a> {
                 variable_name,
                 concatenate,
             } => {
-                let keys = if let Some(var) = self.shell.env.get(variable_name) {
+                let keys = if let Some((_, var)) = self.shell.env.get(variable_name) {
                     var.value().get_element_keys()
                 } else {
                     vec![]
@@ -1121,7 +1121,7 @@ impl<'a> WordExpander<'a> {
         let (variable_name, index) = match parameter {
             parser::word::Parameter::Named(name) => (name, None),
             parser::word::Parameter::NamedWithIndex { name, index } => {
-                let is_set_assoc_array = if let Some(var) = self.shell.env.get(name.as_str()) {
+                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name.as_str()) {
                     matches!(
                         var.value(),
                         ShellValue::AssociativeArray(_)
@@ -1204,7 +1204,7 @@ impl<'a> WordExpander<'a> {
             parser::word::Parameter::Named(n) => {
                 if !valid_variable_name(n.as_str()) {
                     Err(error::Error::BadSubstitution)
-                } else if let Some(var) = self.shell.env.get(n) {
+                } else if let Some((_, var)) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         Ok(Expansion::undefined())
                     } else {
@@ -1216,7 +1216,7 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::Parameter::NamedWithIndex { name, index } => {
                 // First check to see if it's an associative array.
-                let is_set_assoc_array = if let Some(var) = self.shell.env.get(name.as_str()) {
+                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name.as_str()) {
                     matches!(
                         var.value(),
                         ShellValue::AssociativeArray(_)
@@ -1232,7 +1232,7 @@ impl<'a> WordExpander<'a> {
                     .await?;
 
                 // Index into the array.
-                if let Some(var) = self.shell.env.get(name.as_str()) {
+                if let Some((_, var)) = self.shell.env.get(name.as_str()) {
                     if let Some(value) = var.value().get_at(index_to_use.as_str())? {
                         Ok(Expansion::from(value.to_string()))
                     } else {
@@ -1243,7 +1243,7 @@ impl<'a> WordExpander<'a> {
                 }
             }
             parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
-                if let Some(var) = self.shell.env.get(name) {
+                if let Some((_, var)) = self.shell.env.get(name) {
                     let values = var.value().get_element_values();
 
                     Ok(Expansion {

@@ -35,6 +35,9 @@ pub enum Error {
     #[error("UNIMPLEMENTED: {0}")]
     Unimplemented(&'static str),
 
+    #[error("missing scope")]
+    MissingScope,
+
     #[error("not a directory: {0}")]
     NotADirectory(PathBuf),
 

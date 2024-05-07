@@ -111,14 +111,14 @@ async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Resu
         ast::ArithmeticTarget::Variable(name) => shell
             .env
             .get(name)
-            .map_or_else(|| Cow::Borrowed(""), |v| v.value().to_cow_string()),
+            .map_or_else(|| Cow::Borrowed(""), |(_, v)| v.value().to_cow_string()),
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = index_expr.eval(shell).await?.to_string();
 
             shell
                 .env
                 .get(name)
-                .map_or_else(|| Ok(None), |v| v.value().get_at(index_str.as_str()))
+                .map_or_else(|| Ok(None), |(_, v)| v.value().get_at(index_str.as_str()))
                 .map_err(|_err| EvalError::FailedToAccessArray)?
                 .unwrap_or(Cow::Borrowed(""))
         }

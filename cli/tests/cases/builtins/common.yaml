@@ -11,3 +11,10 @@ cases:
 
       echo "Dumping file contents..."
       cat out.txt
+
+  - name: "Overrides"
+    ignore_stderr: true
+    stdin: |
+      declare -p myvar
+      myvar=10 declare -p myvar
+      declare -p myvar

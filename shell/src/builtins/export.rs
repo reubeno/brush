@@ -47,7 +47,7 @@ impl BuiltinCommand for ExportCommand {
                 } else {
                     // Try to find the variable already present; if we find it, then mark it
                     // exported.
-                    if let Some(variable) = context.shell.env.get_mut(name) {
+                    if let Some((_, variable)) = context.shell.env.get_mut(name) {
                         variable.export();
                     }
                 }
