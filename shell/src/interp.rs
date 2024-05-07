@@ -5,6 +5,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::process;
 #[cfg(unix)]
@@ -425,11 +426,12 @@ impl ExecuteInPipeline for ast::Command {
                 Ok(SpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::ExtendedTest(e) => {
-                let result = if extendedtests::eval_expression(e, pipeline_context.shell).await? {
-                    0
-                } else {
-                    1
-                };
+                let result =
+                    if extendedtests::eval_extended_test_expr(e, pipeline_context.shell).await? {
+                        0
+                    } else {
+                        1
+                    };
                 Ok(SpawnResult::ImmediateExit(result))
             }
         }
@@ -729,7 +731,9 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell.funcs.insert(self.fname.clone(), self.clone());
+        shell
+            .funcs
+            .insert(self.fname.clone(), Arc::new(self.clone()));
 
         let result = ExecutionResult::success();
         shell.last_exit_status = result.exit_code;
@@ -905,13 +909,13 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     builtins::SPECIAL_BUILTINS.get(cmd_context.command_name.as_str())
                 {
                     execute_builtin_command(*builtin, cmd_context, args, env_vars).await
-                } else if cmd_context
+                } else if let Some(func_def) = cmd_context
                     .shell
                     .funcs
-                    .contains_key(cmd_context.command_name.as_str())
+                    .get(cmd_context.command_name.as_str())
                 {
                     // Strip the function name off args.
-                    invoke_shell_function(cmd_context, &args[1..], &env_vars).await
+                    invoke_shell_function(func_def.clone(), cmd_context, &args[1..], env_vars).await
                 } else if let Some(builtin) =
                     normal_builtin_lookup(cmd_context.command_name.as_str())
                 {
@@ -1132,7 +1136,7 @@ async fn execute_external_command(
     args: &[CommandArg],
     env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult, error::Error> {
-    let mut cmd = process::Command::new(context.command_name.clone());
+    let mut cmd = process::Command::new(context.command_name.as_str());
 
     // Pass through args.
     for arg in args {
@@ -1283,18 +1287,11 @@ async fn execute_builtin_command(
 }
 
 pub(crate) async fn invoke_shell_function(
+    function_definition: Arc<ast::FunctionDefinition>,
     mut context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
-    env_vars: &[(String, ShellValue)],
+    env_vars: Vec<(String, ShellValue)>,
 ) -> Result<SpawnResult, error::Error> {
-    // TODO: We should figure out how to avoid cloning.
-    let function_definition = context
-        .shell
-        .funcs
-        .get(context.command_name.as_str())
-        .unwrap()
-        .clone();
-
     let ast::FunctionBody(body, redirects) = &function_definition.body;
 
     // Apply any redirects specified at function definition-time.
@@ -1320,7 +1317,7 @@ pub(crate) async fn invoke_shell_function(
 
     // Update variables.
     for (name, value) in env_vars {
-        let mut var = ShellVariable::new(value.clone());
+        let mut var = ShellVariable::new(value);
         var.export();
         context.shell.env.add(name, var, EnvironmentScope::Local)?;
     }

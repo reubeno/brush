@@ -5,13 +5,13 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 
 use crate::{
-    env, error, expansion,
+    env, error, expansion, patterns,
     variables::{self, ArrayLiteral},
     Shell,
 };
 
 #[async_recursion::async_recursion]
-pub(crate) async fn eval_expression(
+pub(crate) async fn eval_extended_test_expr(
     expr: &ast::ExtendedTestExpr,
     shell: &mut Shell,
 ) -> Result<bool, error::Error> {
@@ -24,20 +24,20 @@ pub(crate) async fn eval_expression(
             apply_binary_predicate(op, left, right, shell).await
         }
         ast::ExtendedTestExpr::And(left, right) => {
-            let result =
-                eval_expression(left, shell).await? && eval_expression(right, shell).await?;
+            let result = eval_extended_test_expr(left, shell).await?
+                && eval_extended_test_expr(right, shell).await?;
             Ok(result)
         }
         ast::ExtendedTestExpr::Or(left, right) => {
-            let result =
-                eval_expression(left, shell).await? || eval_expression(right, shell).await?;
+            let result = eval_extended_test_expr(left, shell).await?
+                || eval_extended_test_expr(right, shell).await?;
             Ok(result)
         }
         ast::ExtendedTestExpr::Not(expr) => {
-            let result = !eval_expression(expr, shell).await?;
+            let result = !eval_extended_test_expr(expr, shell).await?;
             Ok(result)
         }
-        ast::ExtendedTestExpr::Parenthesized(expr) => eval_expression(expr, shell).await,
+        ast::ExtendedTestExpr::Parenthesized(expr) => eval_extended_test_expr(expr, shell).await,
     }
 }
 
@@ -52,52 +52,60 @@ async fn apply_unary_predicate(
         shell.trace_command(std::format!("[[ {op} {expanded_operand} ]]"))?;
     }
 
+    apply_unary_predicate_to_str(op, expanded_operand.as_str(), shell)
+}
+
+pub(crate) fn apply_unary_predicate_to_str(
+    op: &ast::UnaryPredicate,
+    operand: &str,
+    shell: &mut Shell,
+) -> Result<bool, error::Error> {
     #[allow(clippy::match_single_binding)]
     match op {
-        ast::UnaryPredicate::StringHasNonZeroLength => Ok(!expanded_operand.is_empty()),
-        ast::UnaryPredicate::StringHasZeroLength => Ok(expanded_operand.is_empty()),
+        ast::UnaryPredicate::StringHasNonZeroLength => Ok(!operand.is_empty()),
+        ast::UnaryPredicate::StringHasZeroLength => Ok(operand.is_empty()),
         ast::UnaryPredicate::FileExists => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path.exists())
         }
         ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path_exists_and_is_block_device(path))
         }
         ast::UnaryPredicate::FileExistsAndIsCharSpecialFile => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path_exists_and_is_char_device(path))
         }
         ast::UnaryPredicate::FileExistsAndIsDir => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path.is_dir())
         }
         ast::UnaryPredicate::FileExistsAndIsRegularFile => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path.is_file())
         }
         ast::UnaryPredicate::FileExistsAndIsSetgid => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path_exists_and_is_setgid(path))
         }
         ast::UnaryPredicate::FileExistsAndIsSymlink => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path.is_symlink())
         }
         ast::UnaryPredicate::FileExistsAndHasStickyBit => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path_exists_and_is_sticky_bit(path))
         }
         ast::UnaryPredicate::FileExistsAndIsFifo => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path_exists_and_is_fifo(path))
         }
         ast::UnaryPredicate::FileExistsAndIsReadable => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path.readable())
         }
         ast::UnaryPredicate::FileExistsAndIsNotZeroLength => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             if let Ok(metadata) = path.metadata() {
                 Ok(metadata.len() > 0)
             } else {
@@ -108,15 +116,15 @@ async fn apply_unary_predicate(
             error::unimp("unary extended test predicate: FdIsOpenTerminal")
         }
         ast::UnaryPredicate::FileExistsAndIsSetuid => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path_exists_and_is_setuid(path))
         }
         ast::UnaryPredicate::FileExistsAndIsWritable => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path.writable())
         }
         ast::UnaryPredicate::FileExistsAndIsExecutable => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path.executable())
         }
         ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => {
@@ -129,15 +137,13 @@ async fn apply_unary_predicate(
             error::unimp("unary extended test predicate: FileExistsAndOwnedByEffectiveUserId")
         }
         ast::UnaryPredicate::FileExistsAndIsSocket => {
-            let path = Path::new(expanded_operand.as_str());
+            let path = Path::new(operand);
             Ok(path_exists_and_is_socket(path))
         }
         ast::UnaryPredicate::ShellOptionEnabled => {
             error::unimp("unary extended test predicate: ShellOptionEnabled")
         }
-        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
-            Ok(shell.env.is_set(expanded_operand.as_str()))
-        }
+        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env.is_set(operand)),
         ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
             error::unimp("unary extended test predicate: ShellVariableIsSetAndNameRef")
         }
@@ -339,6 +345,71 @@ async fn apply_binary_predicate(
             let eq = pattern.exactly_matches(s.as_str(), shell.options.extended_globbing)?;
             Ok(!eq)
         }
+    }
+}
+
+pub(crate) fn apply_binary_predicate_to_strs(
+    op: &ast::BinaryPredicate,
+    left: &str,
+    right: &str,
+    shell: &mut Shell,
+) -> Result<bool, error::Error> {
+    match op {
+        ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
+            error::unimp("extended test binary predicate FilesReferToSameDeviceAndInodeNumbers")
+        }
+        ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
+            error::unimp("extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot")
+        }
+        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => error::unimp(
+            "extended test binary predicate LeftFileIsOlderOrDoesNotExistWhenRightDoes",
+        ),
+        ast::BinaryPredicate::LeftSortsBeforeRight => {
+            // TODO: According to docs, should be lexicographical order of the current locale.
+            Ok(left < right)
+        }
+        ast::BinaryPredicate::LeftSortsAfterRight => {
+            // TODO: According to docs, should be lexicographical order of the current locale.
+            Ok(left > right)
+        }
+        ast::BinaryPredicate::ArithmeticEqualTo => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left == right,
+        )),
+        ast::BinaryPredicate::ArithmeticNotEqualTo => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left != right,
+        )),
+        ast::BinaryPredicate::ArithmeticLessThan => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left < right,
+        )),
+        ast::BinaryPredicate::ArithmeticLessThanOrEqualTo => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left <= right,
+        )),
+        ast::BinaryPredicate::ArithmeticGreaterThan => Ok(apply_binary_arithmetic_predicate(
+            left,
+            right,
+            |left, right| left > right,
+        )),
+        ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo => Ok(
+            apply_binary_arithmetic_predicate(left, right, |left, right| left >= right),
+        ),
+        ast::BinaryPredicate::StringExactlyMatchesPattern => {
+            let pattern = patterns::Pattern::from(right);
+            pattern.exactly_matches(left, shell.options.extended_globbing)
+        }
+        ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
+            let pattern = patterns::Pattern::from(right);
+            let eq = pattern.exactly_matches(left, shell.options.extended_globbing)?;
+            Ok(!eq)
+        }
+        _ => error::unimp("unsupported test binary predicate"),
     }
 }
 

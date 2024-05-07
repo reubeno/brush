@@ -29,6 +29,12 @@ pub enum WordParseError {
     Word(String, peg::error::ParseError<peg::str::LineCol>),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum TestCommandParseError {
+    #[error("failed to parse test command")]
+    TestCommand(peg::error::ParseError<usize>),
+}
+
 pub(crate) fn convert_peg_parse_error(
     err: peg::error::ParseError<usize>,
     tokens: &[Token],

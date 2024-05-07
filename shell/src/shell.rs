@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::context;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
@@ -24,7 +25,7 @@ pub struct Shell {
     pub file_size_limit: u64,
     // TODO: traps
     pub env: ShellEnvironment,
-    pub funcs: HashMap<String, ShellFunction>,
+    pub funcs: HashMap<String, Arc<parser::ast::FunctionDefinition>>,
     pub options: RuntimeOptions,
     pub jobs: jobs::JobManager,
     pub aliases: HashMap<String, String>,
@@ -99,12 +100,10 @@ pub struct CreateOptions {
     pub verbose: bool,
 }
 
-type ShellFunction = parser::ast::FunctionDefinition;
-
 #[derive(Clone, Debug)]
 pub struct FunctionCall {
     function_name: String,
-    source: String,
+    function_definition: Arc<parser::ast::FunctionDefinition>,
 }
 
 impl Shell {
@@ -388,6 +387,12 @@ impl Shell {
         let open_files = self.open_files.clone();
         let command_name = String::from(name);
 
+        let func = self
+            .funcs
+            .get(name)
+            .ok_or_else(|| error::Error::FunctionNotFound(name.to_owned()))?
+            .to_owned();
+
         let context = context::CommandExecutionContext {
             shell: self,
             command_name,
@@ -399,7 +404,7 @@ impl Shell {
             .map(|s| commands::CommandArg::String(String::from(*s)))
             .collect::<Vec<_>>();
 
-        match interp::invoke_shell_function(context, &command_args, &[]).await? {
+        match interp::invoke_shell_function(func, context, &command_args, vec![]).await? {
             interp::SpawnResult::SpawnedChild(_) => {
                 error::unimp("child spawned from function invocation")
             }
@@ -601,11 +606,11 @@ impl Shell {
     pub fn enter_function(
         &mut self,
         name: &str,
-        function_def: &parser::ast::FunctionDefinition,
+        function_def: &Arc<parser::ast::FunctionDefinition>,
     ) -> Result<(), error::Error> {
         self.function_call_stack.push_front(FunctionCall {
             function_name: name.to_owned(),
-            source: function_def.source.clone(),
+            function_definition: function_def.clone(),
         });
         self.env.push_locals();
         self.update_funcname_var()?;
@@ -651,7 +656,7 @@ impl Shell {
         } else {
             self.function_call_stack
                 .iter()
-                .map(|s| (None, s.source.clone()))
+                .map(|s| (None, s.function_definition.source.clone()))
                 .collect::<Vec<_>>()
         };
 

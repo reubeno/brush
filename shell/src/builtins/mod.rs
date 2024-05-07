@@ -41,6 +41,7 @@ mod retur;
 mod set;
 mod shift;
 mod shopt;
+mod test;
 mod trap;
 mod tru;
 mod typ;
@@ -216,8 +217,8 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
         m.insert("readarray", exec_builtin::<unimp::UnimplementedCommand>);
         m.insert("shopt", exec_builtin::<shopt::ShoptCommand>);
         m.insert("source", exec_builtin::<dot::DotCommand>);
-        // m.insert("test", exec_builtin::<unimp::UnimplementedCommand>);
-        // m.insert("[", exec_builtin::<unimp::UnimplementedCommand>);
+        m.insert("test", exec_builtin::<test::TestCommand>);
+        m.insert("[", exec_builtin::<test::TestCommand>);
         m.insert("typeset", exec_builtin::<declare::DeclareCommand>);
 
         // Completion builtins

@@ -29,6 +29,9 @@ pub enum Error {
     #[error("expansion error: {0}")]
     CheckedExpansionError(String),
 
+    #[error("function not found: {0}")]
+    FunctionNotFound(String),
+
     #[error("UNIMPLEMENTED: {0}")]
     Unimplemented(&'static str),
 
@@ -88,6 +91,9 @@ pub enum Error {
 
     #[error("{0}")]
     WordParseError(#[from] parser::WordParseError),
+
+    #[error("{0}")]
+    TestCommandParseError(#[from] parser::TestCommandParseError),
 }
 
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {
