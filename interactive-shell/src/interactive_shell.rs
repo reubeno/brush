@@ -121,7 +121,7 @@ impl InteractiveShell {
         &mut self,
     ) -> Result<InteractiveExecutionResult, InteractiveShellError> {
         // If there's a variable called PROMPT_COMMAND, then run it first.
-        if let Some(prompt_cmd) = self.shell().env.get("PROMPT_COMMAND") {
+        if let Some((_, prompt_cmd)) = self.shell().env.get("PROMPT_COMMAND") {
             let prompt_cmd = prompt_cmd.value().to_cow_string().to_string();
 
             // Save (and later restore) the last exit status.

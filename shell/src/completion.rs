@@ -308,7 +308,7 @@ impl CompletionSpec {
         if result == 124 {
             Ok(CompletionResult::RestartCompletionProcess)
         } else {
-            if let Some(reply) = shell.env.get("COMPREPLY") {
+            if let Some((_, reply)) = shell.env.get("COMPREPLY") {
                 match reply.value() {
                     crate::variables::ShellValue::IndexedArray(values) => {
                         Ok(CompletionResult::Candidates(

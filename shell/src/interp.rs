@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use parser::ast::{self, CommandPrefixOrSuffixItem};
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
@@ -867,38 +867,29 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     .trace_command(args.iter().map(|arg| arg.to_string()).join(" "))?;
             }
 
-            // Apply all variable assignments in a child shell object, from which we'll harvest
-            // the values to pass through to the child.
-            let mut child_pseudo_shell = context.shell.clone();
-            let mut assigned_vars = HashSet::new();
-            for assignment in &assignments {
-                if let ast::AssignmentName::VariableName(name) = &assignment.name {
-                    assigned_vars.insert(name.clone());
-                }
-                child_pseudo_shell.options.print_commands_and_arguments = false;
-                apply_assignment(assignment, &mut child_pseudo_shell).await?;
-            }
-
-            // Extract assigned variables.
-            let env_vars = child_pseudo_shell
-                .env
-                .iter()
-                .filter_map(|(name, var)| {
-                    if assigned_vars.contains(name) {
-                        Some((name.clone(), var.value().clone()))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-
             let cmd_context = context::CommandExecutionContext {
                 shell: context.shell,
                 command_name: cmd_name,
                 open_files,
             };
 
-            if !cmd_context.command_name.contains('/') {
+            // Push a new ephemeral environment scope for the duration of the command. We'll
+            // set command-scoped variable assignments after doing so, and revert them before
+            // returning.
+            cmd_context.shell.env.push_scope(EnvironmentScope::Command);
+            for assignment in &assignments {
+                // Ensure it's tagged as exported and created in the command scope.
+                apply_assignment(
+                    assignment,
+                    cmd_context.shell,
+                    true,
+                    Some(EnvironmentScope::Command),
+                    EnvironmentScope::Command,
+                )
+                .await?;
+            }
+
+            let execution_result = if !cmd_context.command_name.contains('/') {
                 let normal_builtin_lookup = if cmd_context.shell.options.sh_mode {
                     |s: &str| builtins::POSIX_ONLY_BUILTINS.get(s)
                 } else {
@@ -908,30 +899,42 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 if let Some(builtin) =
                     builtins::SPECIAL_BUILTINS.get(cmd_context.command_name.as_str())
                 {
-                    execute_builtin_command(*builtin, cmd_context, args, env_vars).await
+                    execute_builtin_command(*builtin, cmd_context, args).await
                 } else if let Some(func_def) = cmd_context
                     .shell
                     .funcs
                     .get(cmd_context.command_name.as_str())
                 {
                     // Strip the function name off args.
-                    invoke_shell_function(func_def.clone(), cmd_context, &args[1..], env_vars).await
+                    invoke_shell_function(func_def.clone(), cmd_context, &args[1..]).await
                 } else if let Some(builtin) =
                     normal_builtin_lookup(cmd_context.command_name.as_str())
                 {
-                    execute_builtin_command(*builtin, cmd_context, args, env_vars).await
+                    execute_builtin_command(*builtin, cmd_context, args).await
                 } else {
                     // Strip the command name off args.
-                    execute_external_command(cmd_context, &args[1..], &env_vars).await
+                    execute_external_command(cmd_context, &args[1..]).await
                 }
             } else {
                 // Strip the command name off args.
-                execute_external_command(cmd_context, &args[1..], &env_vars).await
-            }
+                execute_external_command(cmd_context, &args[1..]).await
+            };
+
+            // Pop off that ephemeral environment scope.
+            context.shell.env.pop_scope(EnvironmentScope::Command)?;
+
+            execution_result
         } else {
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
-                apply_assignment(assignment, context.shell).await?;
+                apply_assignment(
+                    assignment,
+                    context.shell,
+                    false,
+                    None,
+                    EnvironmentScope::Global,
+                )
+                .await?;
             }
 
             Ok(SpawnResult::ImmediateExit(0))
@@ -1012,6 +1015,9 @@ async fn basic_expand_assignment_value(
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
+    export: bool,
+    required_scope: Option<EnvironmentScope>,
+    creation_scope: EnvironmentScope,
 ) -> Result<(), error::Error> {
     // Figure out if we are trying to assign to a variable or assign to an element of an existing array.
     let mut array_index;
@@ -1065,7 +1071,7 @@ async fn apply_assignment(
 
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
-        let will_be_indexed_array = if let Some(existing_value) =
+        let will_be_indexed_array = if let Some((_, existing_value)) =
             shell.env.get(variable_name.as_str())
         {
             matches!(
@@ -1087,54 +1093,61 @@ async fn apply_assignment(
     }
 
     // See if we can find an existing value associated with the variable.
-    if let Some(existing_value) = shell.env.get_mut(variable_name.as_str()) {
-        if let Some(array_index) = array_index {
-            match new_value {
-                ShellValueLiteral::Scalar(s) => {
-                    existing_value.assign_at_index(array_index, s, assignment.append)?;
+    if let Some((existing_value_scope, existing_value)) = shell.env.get_mut(variable_name.as_str())
+    {
+        if required_scope.is_none() || Some(existing_value_scope) == required_scope {
+            if let Some(array_index) = array_index {
+                match new_value {
+                    ShellValueLiteral::Scalar(s) => {
+                        existing_value.assign_at_index(array_index, s, assignment.append)?;
+                    }
+                    ShellValueLiteral::Array(_) => {
+                        return error::unimp("replacing an array item with an array");
+                    }
                 }
-                ShellValueLiteral::Array(_) => {
-                    return error::unimp("replacing an array item with an array");
-                }
+            } else {
+                existing_value.assign(new_value, assignment.append)?;
             }
-        } else {
-            existing_value.assign(new_value, assignment.append)?;
-        }
-    } else {
-        // If not, we need to add it.
-        let new_value = if let Some(array_index) = array_index {
-            match new_value {
-                ShellValueLiteral::Scalar(s) => ShellValue::indexed_array_from_literals(
-                    ArrayLiteral(vec![(Some(array_index), s)]),
-                )?,
-                ShellValueLiteral::Array(_) => {
-                    return error::unimp("cannot assign list to array member");
-                }
-            }
-        } else {
-            match new_value {
-                ShellValueLiteral::Scalar(s) => ShellValue::String(s),
-                ShellValueLiteral::Array(values) => {
-                    ShellValue::indexed_array_from_literals(values)?
-                }
-            }
-        };
 
-        shell.env.add(
-            variable_name,
-            ShellVariable::new(new_value),
-            EnvironmentScope::Global,
-        )?;
+            if export {
+                existing_value.export();
+            }
+
+            // That's it!
+            return Ok(());
+        }
     }
 
-    Ok(())
+    // If we fell down here, then we need to add it.
+    let new_value = if let Some(array_index) = array_index {
+        match new_value {
+            ShellValueLiteral::Scalar(s) => {
+                ShellValue::indexed_array_from_literals(ArrayLiteral(vec![(Some(array_index), s)]))?
+            }
+            ShellValueLiteral::Array(_) => {
+                return error::unimp("cannot assign list to array member");
+            }
+        }
+    } else {
+        match new_value {
+            ShellValueLiteral::Scalar(s) => ShellValue::String(s),
+            ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values)?,
+        }
+    };
+
+    let mut new_var = ShellVariable::new(new_value);
+
+    if export {
+        new_var.export();
+    }
+
+    shell.env.add(variable_name, new_var, creation_scope)
 }
 
 #[allow(clippy::too_many_lines)] // TODO: refactor this function
 async fn execute_external_command(
     mut context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
-    env_vars: &[(String, ShellValue)],
 ) -> Result<SpawnResult, error::Error> {
     let mut cmd = process::Command::new(context.command_name.as_str());
 
@@ -1157,12 +1170,6 @@ async fn execute_external_command(
             let value_as_str = var.value().to_cow_string();
             cmd.env(name, value_as_str.as_ref());
         }
-    }
-
-    // Overlay any variables explicitly provided as part of command execution.
-    for (name, value) in env_vars {
-        let value_as_str = value.to_cow_string();
-        cmd.env(name, value_as_str.as_ref());
     }
 
     // Redirect stdin, if applicable.
@@ -1260,7 +1267,6 @@ async fn execute_builtin_command(
     builtin: builtin::BuiltinCommandExecuteFunc,
     context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
-    _env_vars: Vec<(String, ShellValue)>,
 ) -> Result<SpawnResult, error::Error> {
     let exit_code = match builtin(context, args).await {
         Ok(builtin_result) => match builtin_result.exit_code {
@@ -1290,7 +1296,6 @@ pub(crate) async fn invoke_shell_function(
     function_definition: Arc<ast::FunctionDefinition>,
     mut context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
-    env_vars: Vec<(String, ShellValue)>,
 ) -> Result<SpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function_definition.body;
 
@@ -1305,22 +1310,16 @@ pub(crate) async fn invoke_shell_function(
     let prior_positional_params = std::mem::take(&mut context.shell.positional_parameters);
     context.shell.positional_parameters = args.iter().map(|a| a.to_string()).collect();
 
-    // Note that we're going deeper.
-    context
-        .shell
-        .enter_function(context.command_name.as_str(), &function_definition)?;
-
     // Pass through open files.
     let params = ExecutionParameters {
         open_files: context.open_files.clone(),
     };
 
-    // Update variables.
-    for (name, value) in env_vars {
-        let mut var = ShellVariable::new(value);
-        var.export();
-        context.shell.env.add(name, var, EnvironmentScope::Local)?;
-    }
+    // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
+    // before "exiting" the function.
+    context
+        .shell
+        .enter_function(context.command_name.as_str(), &function_definition)?;
 
     // Invoke the function.
     let result = body.execute(context.shell, &params).await;
