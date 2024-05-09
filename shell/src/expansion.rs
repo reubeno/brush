@@ -2,6 +2,8 @@ use std::cmp::min;
 
 use itertools::Itertools;
 use parser::ast;
+use parser::word::ParameterTransformOp;
+use parser::word::SubstringMatchKind;
 
 use crate::arithmetic::ExpandAndEvaluate;
 use crate::env;
@@ -340,11 +342,11 @@ impl<'a> WordExpander<'a> {
     async fn basic_expand_opt_pattern(
         &mut self,
         word: &Option<String>,
-    ) -> Result<patterns::Pattern, error::Error> {
+    ) -> Result<Option<patterns::Pattern>, error::Error> {
         if let Some(word) = word {
-            self.basic_expand_pattern(word).await
+            Ok(Some(self.basic_expand_pattern(word).await?))
         } else {
-            Ok(patterns::Pattern::from(""))
+            Ok(None)
         }
     }
 
@@ -868,165 +870,60 @@ impl<'a> WordExpander<'a> {
                 parameter,
                 indirect,
                 op,
-            } => match op {
-                parser::word::ParameterTransformOp::PromptExpand => {
-                    let expanded_parameter: String =
-                        self.expand_parameter(&parameter, indirect).await?.into();
-                    let result = prompt::expand_prompt(self.shell, expanded_parameter.as_str())?;
-                    Ok(Expansion::from(result))
-                }
-                parser::word::ParameterTransformOp::CapitalizeInitial => {
-                    let expanded_parameter: String =
-                        self.expand_parameter(&parameter, indirect).await?.into();
-                    Ok(Expansion::from(to_initial_capitals(
-                        expanded_parameter.as_str(),
-                    )))
-                }
-                parser::word::ParameterTransformOp::ExpandEscapeSequences => {
-                    error::unimp("parameter transformation: ExpandEscapeSequences")
-                }
-                parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
-                    separate_words: _,
-                } => error::unimp("parameter transformation: PossiblyQuoteWithArraysExpanded"),
-                parser::word::ParameterTransformOp::Quoted => {
-                    error::unimp("parameter transformation: Quoted")
-                }
-                parser::word::ParameterTransformOp::ToAssignmentLogic => {
-                    error::unimp("parameter transformation: ToAssignmentLogic")
-                }
-                parser::word::ParameterTransformOp::ToAttributeFlags => {
-                    error::unimp("parameter transformation: ToAttributeFlags")
-                }
-                parser::word::ParameterTransformOp::ToLowerCase => {
-                    let expanded_parameter: String =
-                        self.expand_parameter(&parameter, indirect).await?.into();
-                    Ok(Expansion::from(expanded_parameter.to_lowercase()))
-                }
-                parser::word::ParameterTransformOp::ToUpperCase => {
-                    let expanded_parameter: String =
-                        self.expand_parameter(&parameter, indirect).await?.into();
-                    Ok(Expansion::from(expanded_parameter.to_uppercase()))
-                }
-            },
+            } => {
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+
+                transform_expansion(expanded_parameter, |s| {
+                    self.apply_transform_to(&op, s.as_str())
+                })
+            }
             parser::word::ParameterExpr::UppercaseFirstChar {
                 parameter,
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
-                if let Some(first_char) = expanded_parameter.chars().next() {
-                    let applicable = if let Some(pattern) = pattern {
-                        let expanded_pattern = self.basic_expand_pattern(&pattern).await?;
-                        expanded_pattern.is_empty()
-                            || expanded_pattern.exactly_matches(
-                                first_char.to_string().as_str(),
-                                self.shell.options.extended_globbing,
-                            )?
-                    } else {
-                        true
-                    };
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                    if applicable {
-                        let mut result = String::new();
-                        result.push(first_char.to_uppercase().next().unwrap());
-                        result.push_str(expanded_parameter.get(1..).unwrap());
-                        Ok(Expansion::from(result))
-                    } else {
-                        Ok(Expansion::from(expanded_parameter))
-                    }
-                } else {
-                    Ok(Expansion::from(expanded_parameter))
-                }
+                transform_expansion(expanded_parameter, |s| {
+                    self.uppercase_first_char(s, &expanded_pattern)
+                })
             }
             parser::word::ParameterExpr::UppercasePattern {
                 parameter,
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                if let Some(pattern) = pattern {
-                    let expanded_pattern = self.basic_expand_to_str(&pattern).await?;
-                    if !expanded_pattern.is_empty() {
-                        let regex = patterns::pattern_to_regex(
-                            expanded_pattern.as_str(),
-                            false,
-                            false,
-                            self.parser_options.enable_extended_globbing,
-                        )?;
-                        let result = regex.replace_all(
-                            expanded_parameter.as_ref(),
-                            |caps: &fancy_regex::Captures| caps[0].to_uppercase(),
-                        );
-                        Ok(Expansion::from(result.into_owned()))
-                    } else {
-                        Ok(Expansion::from(expanded_parameter.to_uppercase()))
-                    }
-                } else {
-                    Ok(Expansion::from(expanded_parameter.to_uppercase()))
-                }
+                transform_expansion(expanded_parameter, |s| {
+                    self.uppercase_pattern(s.as_str(), &expanded_pattern)
+                })
             }
             parser::word::ParameterExpr::LowercaseFirstChar {
                 parameter,
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
-                if let Some(first_char) = expanded_parameter.chars().next() {
-                    let applicable = if let Some(pattern) = pattern {
-                        let expanded_pattern = self.basic_expand_pattern(&pattern).await?;
-                        expanded_pattern.is_empty()
-                            || expanded_pattern.exactly_matches(
-                                first_char.to_string().as_str(),
-                                self.shell.options.extended_globbing,
-                            )?
-                    } else {
-                        true
-                    };
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                    if applicable {
-                        let mut result = String::new();
-                        result.push(first_char.to_lowercase().next().unwrap());
-                        result.push_str(expanded_parameter.get(1..).unwrap());
-                        Ok(Expansion::from(result))
-                    } else {
-                        Ok(Expansion::from(expanded_parameter))
-                    }
-                } else {
-                    Ok(Expansion::from(expanded_parameter))
-                }
+                Ok(transform_expansion(expanded_parameter, |s| {
+                    self.lowercase_first_char(s, &expanded_pattern)
+                })?)
             }
             parser::word::ParameterExpr::LowercasePattern {
                 parameter,
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                if let Some(pattern) = pattern {
-                    let expanded_pattern = self.basic_expand_to_str(&pattern).await?;
-                    if !expanded_pattern.is_empty() {
-                        let regex = patterns::pattern_to_regex(
-                            expanded_pattern.as_str(),
-                            false,
-                            false,
-                            self.parser_options.enable_extended_globbing,
-                        )?;
-                        let result = regex.replace_all(
-                            expanded_parameter.as_ref(),
-                            |caps: &fancy_regex::Captures| caps[0].to_lowercase(),
-                        );
-                        Ok(Expansion::from(result.into_owned()))
-                    } else {
-                        Ok(Expansion::from(expanded_parameter.to_lowercase()))
-                    }
-                } else {
-                    Ok(Expansion::from(expanded_parameter.to_lowercase()))
-                }
+                Ok(transform_expansion(expanded_parameter, |s| {
+                    self.lowercase_pattern(s.as_str(), &expanded_pattern)
+                })?)
             }
             parser::word::ParameterExpr::ReplaceSubstring {
                 parameter,
@@ -1035,8 +932,7 @@ impl<'a> WordExpander<'a> {
                 replacement,
                 match_kind,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_to_str(&pattern).await?;
                 let expanded_replacement = self.basic_expand_to_str(&replacement).await?;
 
@@ -1047,19 +943,14 @@ impl<'a> WordExpander<'a> {
                     self.parser_options.enable_extended_globbing,
                 )?;
 
-                let result = match match_kind {
-                    parser::word::SubstringMatchKind::Prefix
-                    | parser::word::SubstringMatchKind::Suffix
-                    | parser::word::SubstringMatchKind::FirstOccurrence => regex
-                        .replace(expanded_parameter.as_ref(), expanded_replacement)
-                        .into_owned(),
-
-                    parser::word::SubstringMatchKind::Anywhere => regex
-                        .replace_all(expanded_parameter.as_ref(), expanded_replacement)
-                        .into_owned(),
-                };
-
-                Ok(Expansion::from(result))
+                transform_expansion(expanded_parameter, |s| {
+                    Self::replace_substring(
+                        s.as_str(),
+                        &regex,
+                        expanded_replacement.as_str(),
+                        &match_kind,
+                    )
+                })
             }
             parser::word::ParameterExpr::VariableNames {
                 prefix,
@@ -1330,6 +1221,156 @@ impl<'a> WordExpander<'a> {
         let value = expr.eval(self.shell, false).await?;
         Ok(value.to_string())
     }
+
+    fn uppercase_first_char(
+        &mut self,
+        s: String,
+        pattern: &Option<patterns::Pattern>,
+    ) -> Result<String, error::Error> {
+        if let Some(first_char) = s.chars().next() {
+            let applicable = if let Some(pattern) = pattern {
+                pattern.is_empty()
+                    || pattern.exactly_matches(
+                        first_char.to_string().as_str(),
+                        self.shell.options.extended_globbing,
+                    )?
+            } else {
+                true
+            };
+
+            if applicable {
+                let mut result = String::new();
+                result.push(first_char.to_uppercase().next().unwrap());
+                result.push_str(s.get(1..).unwrap());
+                Ok(result)
+            } else {
+                Ok(s)
+            }
+        } else {
+            Ok(s)
+        }
+    }
+
+    fn lowercase_first_char(
+        &mut self,
+        s: String,
+        pattern: &Option<patterns::Pattern>,
+    ) -> Result<String, error::Error> {
+        if let Some(first_char) = s.chars().next() {
+            let applicable = if let Some(pattern) = pattern {
+                pattern.is_empty()
+                    || pattern.exactly_matches(
+                        first_char.to_string().as_str(),
+                        self.shell.options.extended_globbing,
+                    )?
+            } else {
+                true
+            };
+
+            if applicable {
+                let mut result = String::new();
+                result.push(first_char.to_lowercase().next().unwrap());
+                result.push_str(s.get(1..).unwrap());
+                Ok(result)
+            } else {
+                Ok(s)
+            }
+        } else {
+            Ok(s)
+        }
+    }
+
+    fn uppercase_pattern(
+        &mut self,
+        s: &str,
+        pattern: &Option<patterns::Pattern>,
+    ) -> Result<String, error::Error> {
+        if let Some(pattern) = pattern {
+            if !pattern.is_empty() {
+                let regex =
+                    pattern.to_regex(false, false, self.parser_options.enable_extended_globbing)?;
+                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
+                    caps[0].to_uppercase()
+                });
+                Ok(result.into_owned())
+            } else {
+                Ok(s.to_uppercase())
+            }
+        } else {
+            Ok(s.to_uppercase())
+        }
+    }
+
+    fn lowercase_pattern(
+        &mut self,
+        s: &str,
+        pattern: &Option<patterns::Pattern>,
+    ) -> Result<String, error::Error> {
+        if let Some(pattern) = pattern {
+            if !pattern.is_empty() {
+                let regex =
+                    pattern.to_regex(false, false, self.parser_options.enable_extended_globbing)?;
+                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
+                    caps[0].to_lowercase()
+                });
+                Ok(result.into_owned())
+            } else {
+                Ok(s.to_lowercase())
+            }
+        } else {
+            Ok(s.to_lowercase())
+        }
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn replace_substring(
+        s: &str,
+        regex: &fancy_regex::Regex,
+        replacement: &str,
+        match_kind: &SubstringMatchKind,
+    ) -> Result<String, error::Error> {
+        match match_kind {
+            parser::word::SubstringMatchKind::Prefix
+            | parser::word::SubstringMatchKind::Suffix
+            | parser::word::SubstringMatchKind::FirstOccurrence => {
+                Ok(regex.replace(s, replacement).into_owned())
+            }
+
+            parser::word::SubstringMatchKind::Anywhere => {
+                Ok(regex.replace_all(s, replacement).into_owned())
+            }
+        }
+    }
+
+    fn apply_transform_to(
+        &self,
+        op: &ParameterTransformOp,
+        s: &str,
+    ) -> Result<String, error::Error> {
+        match op {
+            parser::word::ParameterTransformOp::PromptExpand => {
+                prompt::expand_prompt(self.shell, s)
+            }
+            parser::word::ParameterTransformOp::CapitalizeInitial => Ok(to_initial_capitals(s)),
+            parser::word::ParameterTransformOp::ExpandEscapeSequences => {
+                error::unimp("parameter transformation: ExpandEscapeSequences")
+            }
+            parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
+                separate_words: _,
+            } => error::unimp("parameter transformation: PossiblyQuoteWithArraysExpanded"),
+            parser::word::ParameterTransformOp::Quoted => {
+                error::unimp("parameter transformation: Quoted")
+            }
+            parser::word::ParameterTransformOp::ToAssignmentLogic => {
+                error::unimp("parameter transformation: ToAssignmentLogic")
+            }
+            parser::word::ParameterTransformOp::ToAttributeFlags => {
+                error::unimp("parameter transformation: ToAttributeFlags")
+            }
+            parser::word::ParameterTransformOp::ToLowerCase => Ok(s.to_lowercase()),
+            parser::word::ParameterTransformOp::ToUpperCase => Ok(s.to_uppercase()),
+        }
+    }
 }
 
 fn coalesce_expansions(expansions: Vec<Expansion>) -> Expansion {
@@ -1379,6 +1420,22 @@ fn valid_variable_name(s: &str) -> bool {
         }
         Some(_) | None => false,
     }
+}
+
+fn transform_expansion(
+    expansion: Expansion,
+    mut f: impl FnMut(String) -> Result<String, error::Error>,
+) -> Result<Expansion, error::Error> {
+    let mut transformed_fields = vec![];
+    for field in expansion.fields {
+        transformed_fields.push(WordField::from(f(String::from(field))?));
+    }
+
+    Ok(Expansion {
+        fields: transformed_fields,
+        concatenate: expansion.concatenate,
+        undefined: expansion.undefined,
+    })
 }
 
 #[cfg(test)]

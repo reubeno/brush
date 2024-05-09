@@ -24,6 +24,11 @@ cases:
       prompt='\W '
       echo "Prompt: '${prompt@P}'"
 
+      arr=("\w" "\w")
+      echo "Prompt: '${arr@P}'"
+      echo "Prompt: '${arr[@]@P}'"
+      echo "Prompt: '${arr[*]@P}'"
+
   - name: "Non-printing chars"
     stdin: |
       prompt='\[\]Prompt>\[\]'

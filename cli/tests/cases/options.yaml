@@ -48,3 +48,5 @@ cases:
       done
 
       ((x = 3)) || ((x = 4))
+
+      override=value echo some_output
