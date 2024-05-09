@@ -861,6 +861,22 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
+            // Push a new ephemeral environment scope for the duration of the command. We'll
+            // set command-scoped variable assignments after doing so, and revert them before
+            // returning.
+            context.shell.env.push_scope(EnvironmentScope::Command);
+            for assignment in &assignments {
+                // Ensure it's tagged as exported and created in the command scope.
+                apply_assignment(
+                    assignment,
+                    context.shell,
+                    true,
+                    Some(EnvironmentScope::Command),
+                    EnvironmentScope::Command,
+                )
+                .await?;
+            }
+
             if context.shell.options.print_commands_and_arguments {
                 context
                     .shell
@@ -872,22 +888,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 command_name: cmd_name,
                 open_files,
             };
-
-            // Push a new ephemeral environment scope for the duration of the command. We'll
-            // set command-scoped variable assignments after doing so, and revert them before
-            // returning.
-            cmd_context.shell.env.push_scope(EnvironmentScope::Command);
-            for assignment in &assignments {
-                // Ensure it's tagged as exported and created in the command scope.
-                apply_assignment(
-                    assignment,
-                    cmd_context.shell,
-                    true,
-                    Some(EnvironmentScope::Command),
-                    EnvironmentScope::Command,
-                )
-                .await?;
-            }
 
             let execution_result = if !cmd_context.command_name.contains('/') {
                 let normal_builtin_lookup = if cmd_context.shell.options.sh_mode {

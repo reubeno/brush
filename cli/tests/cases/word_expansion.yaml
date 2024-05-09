@@ -521,12 +521,22 @@ cases:
       echo "\${var^?}:  ${var^?}"
       echo "\${var^*}:  ${var^*}"
 
+      arr=("hello" "world")
+      echo "\${arr^}: ${arr^}"
+      echo "\${arr[@]^}: ${arr[@]^}"
+      echo "\${arr[*]^}: ${arr[*]^}"
+
   - name: "Uppercase matching pattern"
     stdin: |
       var="hello"
       echo "\${var^^}:  ${var^^}"
       echo "\${var^^l}: ${var^^l}"
       echo "\${var^^m}: ${var^^m}"
+
+      arr=("hello" "world")
+      echo "\${arr^^}: ${arr^^}"
+      echo "\${arr[@]^^}: ${arr[@]^^}"
+      echo "\${arr[*]^^}: ${arr[*]^^}"
 
   - name: "Lowercase first character"
     stdin: |
@@ -539,6 +549,11 @@ cases:
       echo "\${var,?}:  ${var,?}"
       echo "\${var,*}:  ${var,*}"
 
+      arr=("HELLO" "WORLD")
+      echo "\${arr,}: ${arr,}"
+      echo "\${arr[@],}: ${arr[@],}"
+      echo "\${arr[*],}: ${arr[*],}"
+
   - name: "Lowercase matching pattern"
     stdin: |
       var="HELLO"
@@ -546,10 +561,20 @@ cases:
       echo "\${var,,M}: ${var,,M}"
       echo "\${var,,L}: ${var,,L}"
 
+      arr=("HELLO" "WORLD")
+      echo "\${arr,,}: ${arr,,}"
+      echo "\${arr[@],,}: ${arr[@],,}"
+      echo "\${arr[*],,}: ${arr[*],,}"
+
   - name: "Substring replacement"
     stdin: |
       var="Hello, world!"
       echo "\${var/world/WORLD}: ${var/world/WORLD}"
+
+      arr=("world" "world")
+      echo "\${arr/world/WORLD}: ${arr/world/WORLD}"
+      echo "\${arr[@]/world/WORLD}: ${arr[@]/world/WORLD}"
+      echo "\${arr[*]/world/WORLD}: ${arr[*]/world/WORLD}"
 
   - name: "Prefix substring replacement"
     stdin: |
@@ -557,16 +582,31 @@ cases:
       echo "\${var/#world/WORLD}: ${var/#world/WORLD}"
       echo "\${var/#Hello/HELLO}: ${var/#Hello/HELLO}"
 
+      arr=("world" "world")
+      echo "\${arr/#world/WORLD}: ${arr/#world/WORLD}"
+      echo "\${arr[@]/#world/WORLD}: ${arr[@]/#world/WORLD}"
+      echo "\${arr[*]/#world/WORLD}: ${arr[*]/#world/WORLD}"
+
   - name: "Suffix substring replacement"
     stdin: |
       var="Hello, world!"
       echo "\${var/%Hello/HELLO}:   ${var/%Hello/HELLO}"
       echo "\${var/%world!/WORLD!}: ${var/%world!/WORLD!}"
 
+      arr=("world" "world")
+      echo "\${arr/%world/WORLD}: ${arr/%world/WORLD}"
+      echo "\${arr[@]/%world/WORLD}: ${arr[@]/%world/WORLD}"
+      echo "\${arr[*]/%world/WORLD}: ${arr[*]/%world/WORLD}"
+
   - name: "Global substring replacement"
     stdin: |
       var="Hello, world, world!"
       echo "\${var//world/WORLD}: ${var//world/WORLD}"
+
+      arr=("world world" "world world")
+      echo "\${arr//world/WORLD}: ${arr//world/WORLD}"
+      echo "\${arr[@]//world/WORLD}: ${arr[@]//world/WORLD}"
+      echo "\${arr[*]//world/WORLD}: ${arr[*]//world/WORLD}"
 
   - name: "Substring from offset"
     stdin: |
@@ -613,19 +653,46 @@ cases:
       echo "${var@u}"
       echo "${var@L}"
 
+      var=("hElLo WoRlD")
+      echo "${var@U}"
+      echo "${var@u}"
+      echo "${var@L}"
+      echo "${var[*]@U}"
+      echo "${var[*]@u}"
+      echo "${var[*]@L}"
+      echo "${var[@]@U}"
+      echo "${var[@]@u}"
+      echo "${var[@]@L}"
+
   - name: "Parameter quote transformations"
-    known_failure: true # Issue #155
+    known_failure: true
     stdin: |
+      var='""'
+      echo "\${var@Q}: ${var@Q}"
+      echo "\${var@K}: ${var@K}"
+      echo "\${var@k}: ${var@k}"
+
+      var="Hello"
+      echo "\${var@Q}: ${var@Q}"
+      echo "\${var@K}: ${var@K}"
+      echo "\${var@k}: ${var@k}"
+
       var="Hello, world!"
       echo "\${var@Q}: ${var@Q}"
       echo "\${var@K}: ${var@K}"
       echo "\${var@k}: ${var@k}"
 
-      declare -A arr=(["a"]=1 ["b"]=2)
-      declare -p arr
-      echo "\${arr@Q}: ${arr@Q}"
-      echo "\${arr@K}: ${arr@K}"
-      echo "\${arr@k}: ${arr@k}"
+      declare -a arr1=(a b c)
+      declare -p arr1
+      echo "\${arr1@Q}: ${arr1@Q}"
+      echo "\${arr1@K}: ${arr1@K}"
+      echo "\${arr1@k}: ${arr1@k}"
+
+      declare -A arr2=(["a"]=1 ["b"]=2)
+      declare -p arr2
+      echo "\${arr2@Q}: ${arr2@Q}"
+      echo "\${arr2@K}: ${arr2@K}"
+      echo "\${arr2@k}: ${arr2@k}"
 
   - name: "Parameter transformations: expand escapes"
     known_failure: true # Issue #155
@@ -636,11 +703,17 @@ cases:
   - name: "Parameter transformation: assignment"
     known_failure: true # Issue #155
     stdin: |
+      var="hello"
+      echo "\${var@A}: ${var@A}"
+
       declare -ia arr=(1 2 3)
       echo "\${arr@A}: ${arr@A}"
 
   - name: "Parameter transformation: attributes"
     known_failure: true # Issue #155
     stdin: |
+      var="hello"
+      echo "\${var@a}: ${var@a}"
+
       declare -ia arr=(1 2 3)
       echo "\${arr@a}: ${arr@a}"
