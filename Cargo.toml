@@ -30,23 +30,3 @@ result_large_err = "allow"
 opt-level = "z"
 lto = true
 codegen-units = 1
-
-[build-dependencies]
-cargo-patch = "0.3.2"
-
-[patch.crates-io]
-rustyline = { path = './target/patch/rustyline-14.0.0' }
-
-[package]
-name = "brush-root"
-version = "0.1.0"
-build = "build.rs"
-
-[lib]
-name = "root"
-
-[package.metadata.patch.rustyline]
-version = "14.0.0"
-patches = [
-    { path = "patches/rustyline.patch", source = "GithubPrDiff" }
-]
