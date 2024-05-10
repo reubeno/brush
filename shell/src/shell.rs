@@ -19,11 +19,14 @@ use crate::{completion, users};
 use crate::{context, env};
 
 pub struct Shell {
+    //
+    // Core state required by specification
+    //
+    // TODO: trap state
     pub open_files: openfiles::OpenFiles,
     pub working_dir: PathBuf,
     pub umask: u32,
     pub file_size_limit: u64,
-    // TODO: traps
     pub env: ShellEnvironment,
     pub funcs: HashMap<String, Arc<parser::ast::FunctionDefinition>>,
     pub options: RuntimeOptions,

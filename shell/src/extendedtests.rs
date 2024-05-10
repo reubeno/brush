@@ -198,9 +198,7 @@ async fn apply_binary_predicate(
                 shell.trace_command(std::format!("[[ {s} {op} {substring} ]]"))?;
             }
 
-            //
             // TODO: Fill out BASH_REMATCH?
-            //
             Ok(s.contains(substring.as_str()))
         }
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {

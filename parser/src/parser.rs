@@ -50,6 +50,7 @@ impl<R: std::io::BufRead> Parser<R> {
         //   * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
         //
 
+        // First we tokenize the input, according to the policy implied by provided options.
         let mut tokenizer = Tokenizer::new(
             &mut self.reader,
             &TokenizerOptions {
@@ -235,7 +236,6 @@ peg::parser! {
 
         // N.B. The arithmetic command is a non-sh extension.
         // N.B. The arithmetic for clause command is a non-sh extension.
-        //
         rule compound_command() -> ast::CompoundCommand =
             non_posix_extensions_enabled() a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
             b:brace_group() { ast::CompoundCommand::BraceGroup(b) } /
@@ -295,9 +295,7 @@ peg::parser! {
                 ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d }
             }
 
-        //
         // N.B. The arithmetic for loop is a non-sh extension.
-        //
         rule arithmetic_for_clause() -> ast::ArithmeticForClauseCommand =
             specific_word("for")
             specific_operator("(") specific_operator("(")
@@ -483,7 +481,7 @@ peg::parser! {
         rule until_clause() -> ast::WhileOrUntilClauseCommand =
             specific_word("until") c:compound_list() d:do_group() { ast::WhileOrUntilClauseCommand(c, d) }
 
-        // N.B. bash allows use of the 'function' word to indicate a function definition.
+        // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         // TODO: Validate usage of this keyword.
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function")? fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
