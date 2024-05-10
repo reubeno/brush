@@ -135,7 +135,7 @@ enum HereState {
     /// In this state, we expect that the *next line* will be the body of
     /// a here-document.
     NextLineIsHereDoc,
-    /// In this tate, we are in the set of lines that comprise 1 or more
+    /// In this state, we are in the set of lines that comprise 1 or more
     /// consecutive here-document bodies.
     InHereDocs,
 }
@@ -438,6 +438,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             let next = self.peek_char()?;
             let c = next.unwrap_or('\0');
 
+            // When we hit the end of the input, then we're done with the current token (if there is one).
             if next.is_none() {
                 // TODO: Verify we're not waiting on some terminating character?
                 // Verify we're out of all quotes.
@@ -510,6 +511,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     }
                 }
             } else if state.in_operator() {
+                //
+                // We're in an operator. See if this character continues an operator, or if it
+                // must be a separate token (because it wouldn't make a prefix of an operator).
+                //
+
                 let mut hypothetical_token = state.current_token().to_owned();
                 hypothetical_token.push(c);
 
@@ -538,6 +544,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     result = state
                         .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
                 }
+            //
+            // See if this is a character that changes the current escaping/quoting state.
+            //
             } else if does_char_newly_affect_quoting(&state, c) {
                 if c == '\\' {
                     // Consume the backslash ourselves so we can peek past it.
@@ -751,6 +760,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         ));
                     }
                 }
+            //
+            // If the character *can* start an operator, then it will.
+            //
             } else if state.unquoted() && self.can_start_operator(c) {
                 if state.started_token() {
                     result = state
@@ -760,6 +772,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     self.consume_char()?;
                     state.append_char(c);
                 }
+            //
+            // Whitespace gets discarded (and delimits tokens).
+            //
             } else if state.unquoted() && is_blank(c) {
                 if state.started_token() {
                     result = state.delimit_current_token(
@@ -803,10 +818,15 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                 // Re-start loop as if the comment never happened.
                 continue;
+            //
+            // In all other cases where we have an in-progress token, we delimit here.
+            //
             } else if state.started_token() {
                 result =
                     state.delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
             } else {
+                // If we got here, then we don't have a token in progress and we're not starting an operator.
+                // Add the character to a new token.
                 self.consume_char()?;
                 state.append_char(c);
             }
