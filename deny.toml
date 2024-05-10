@@ -23,11 +23,7 @@ feature-depth = 1
 version = 2
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = [
-    "RUSTSEC-2023-0064",
-    "RUSTSEC-2024-0013",
-    "RUSTSEC-2024-0335"
-]
+ignore = []
 #git-fetch-with-cli = true
 
 # This section is considered when running `cargo deny check licenses`
@@ -39,12 +35,7 @@ version = 2
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
 allow = [
-    "Apache-2.0",
-    "BSL-1.0",
     "MIT",
-    "Unicode-DFS-2016",
-    "BSD-3-Clause",
-    "MPL-2.0"
 ]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the
@@ -71,14 +62,7 @@ external-default-features = "allow"
 # List of crates that are allowed. Use with care!
 allow = []
 # List of crates to deny
-deny = [
-    # gix-transport has known issues (see ignored advisories below); for now we
-    # only allow it to be used in cargo-patch.
-    { crate = "gix-transport", wrappers = ["gix", "gix-protocol"] },
-    { crate = "gix-protocol", wrappers = ["gix"] },
-    { crate = "gix", wrappers = ["cargo"] },
-    { crate = "cargo", wrappers = ["cargo-patch"] }
-]
+deny = []
 
 # List of features to allow/deny
 # Each entry the name of a crate and a version range. If version is
@@ -94,10 +78,8 @@ deny = [
 #exact = true
 
 # Certain crates/versions that will be skipped when doing duplicate detection.
-# N.B. faccess depends on a 1.x version of bitflags
-skip = ["bitflags"]
-# Lots of conflicts with windows-specific crates
-skip-tree = ["windows-sys", "windows-targets"]
+skip = []
+skip-tree = []
 
 # This section is considered when running `cargo deny check sources`.
 # More documentation about the 'sources' section can be found here:
