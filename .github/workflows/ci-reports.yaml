@@ -1,0 +1,33 @@
+name: "PR Reports"
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+permissions:
+  actions: read
+
+jobs:
+  report:
+    name: "Report"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR issue number
+        id: get-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: octokit/request-action@v2.x
+        with:
+          route: GET /repos/${{ github.event.workflow_run.repository.full_name }}/actions/runs/${{ github.event.workflow_run.id }}
+      - name: Extract PR number
+        run: |
+          # Extract the PR number from the 'head_branch' field
+          pr_number=$(echo '${{ steps.get-pr.outputs.data }}' | jq -r '.head_branch' | grep -oP 'pull/\K\d+')
+
+          # Check if the workflow run was for a PR
+          if [ -z "$pr_number" ]; then
+            echo "This workflow run was not for a PR."
+          else
+            echo "This workflow run was for PR #$pr_number."
+          fi

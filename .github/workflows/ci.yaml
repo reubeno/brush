@@ -93,12 +93,12 @@ jobs:
 
           exit ${result}
 
-      - name: "Publish test results"
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
-        with:
-          files: |
-            test-results-*.xml
+      # - name: "Publish test results"
+      #   uses: EnricoMi/publish-unit-test-result-action@v2
+      #   if: always()
+      #   with:
+      #     files: |
+      #       test-results-*.xml
 
       - name: "Generate code coverage report"
         uses: clearlyip/code-coverage-report-action@v4
@@ -108,11 +108,23 @@ jobs:
           artifact_download_workflow_names: "CI"
           filename: "codecov.xml"
 
-      - name: "Publish code coverage data to PR"
-        uses: marocchino/sticky-pull-request-comment@v2
-        if: ${{ github.actor != 'dependabot[bot]' && steps.code_coverage_report.outputs.file != '' && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') }}
+      - name: "Upload code coverage report"
+        uses: actions/upload-artifact@v4
         with:
+          name: pr-reports
           path: code-coverage-results.md
+
+      - name: "Upload event file"
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-file
+          path: ${{ github.event_path }}
+
+      # - name: "Publish code coverage data to PR"
+      #   uses: marocchino/sticky-pull-request-comment@v2
+      #   if: ${{ github.actor != 'dependabot[bot]' && steps.code_coverage_report.outputs.file != '' && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') }}
+      #   with:
+      #     path: code-coverage-results.md
 
   check:
     name: "Source code checks"
@@ -189,17 +201,25 @@ jobs:
         run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt
         working-directory: main
 
-      - name: Compare benchmark results
-        uses: openpgpjs/github-action-pull-request-benchmark@v1
-        if: ${{ github.actor != 'dependabot[bot]' }}
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
         with:
-          name: "Time benchmark"
-          tool: "cargo"
-          pr-benchmark-file-path: pr/benchmarks.txt
-          base-benchmark-file-path: main/benchmarks.txt
-          comment-always: true
-          alert-threshold: "130%"
-          fail-on-alert: false
-          fail-threshold: "150%"
-          # A token is needed to leave commit comments
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: pr-reports
+          path: |
+            pr/benchmarks.txt
+            main/benchmarks.txt
+
+      # - name: Compare benchmark results
+      #   uses: openpgpjs/github-action-pull-request-benchmark@v1
+      #   if: ${{ github.actor != 'dependabot[bot]' }}
+      #   with:
+      #     name: "Time benchmark"
+      #     tool: "cargo"
+      #     pr-benchmark-file-path: pr/benchmarks.txt
+      #     base-benchmark-file-path: main/benchmarks.txt
+      #     comment-always: true
+      #     alert-threshold: "130%"
+      #     fail-on-alert: false
+      #     fail-threshold: "150%"
+      #     # A token is needed to leave commit comments
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
