@@ -47,7 +47,7 @@ whoami = "1.5.1"
 exec = "0.3.1"
 nix = { version = "0.28.0", features = ["fs", "process", "signal"] }
 tokio-command-fds = "0.2.1"
-uzers = "0.11.3"
+uzers = "0.12.0"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
