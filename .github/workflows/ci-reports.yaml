@@ -1,0 +1,113 @@
+name: "PR Reports"
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+permissions:
+  actions: read
+  checks: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  report:
+    name: "Report"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find workflow run
+        id: find-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: octokit/request-action@v2.x
+        with:
+          route: GET /repos/${{ github.event.workflow_run.repository.full_name }}/actions/runs/${{ github.event.workflow_run.id }}
+
+      - name: Extract PR number
+        id: get-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head_branch=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_branch')
+          head_sha=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_sha')
+          head_repo=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_repository.full_name')
+
+          if [[ "${head_branch}" != "" && "${head_repo}" != "" ]]; then
+            pr_number="$(gh pr view -R "${head_repo}" "${head_branch}" --json number -q '.number' || true)"
+          else
+            pr_number=""
+          fi
+
+          if [[ "${pr_number}" != "" ]]; then
+            echo "This workflow run was for PR #${pr_number}."
+          else
+            echo "This workflow run was not for a PR."
+          fi
+
+          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+          echo "head_branch=${head_branch}" >> "$GITHUB_OUTPUT"
+          echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
+          echo "head_repo=${head_repo}" >> "$GITHUB_OUTPUT"
+
+      - name: Download code coverage reports
+        if: steps.get-pr.outputs.pr_number != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: codecov-reports
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: reports/
+
+      - name: Download performance reports
+        if: steps.get-pr.outputs.pr_number != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-reports
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: reports/
+
+      - name: Download test results
+        if: steps.get-pr.outputs.pr_number != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: test-reports
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: reports/
+
+      - name: Show published reports
+        if: steps.get-pr.outputs.pr_number != ''
+        run: |
+          ls -lR reports/
+
+      - name: "Synthesize event file"
+        run: |
+          echo \
+            '{
+               "pull_request": {
+                 "head": {
+                   "sha": "${{ steps.get-pr.outputs.head_sha }}",
+                   "repo": {
+                     "full_name": "${{ steps.get-pr.outputs.head_repo }}"
+                   }
+                 }
+               }
+             }' >event-file.json
+
+      - name: "Publish test results"
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          commit: ${{ github.event.workflow_run.head_sha }}
+          event_file: event-file.json
+          event_name: ${{ github.event.workflow_run.event }}
+          files: reports/test-results-*.xml
+
+      - name: "Publish available .md reports to PR"
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: steps.get-pr.outputs.pr_number != ''
+        with:
+          path: reports/*.md
+          number: ${{ steps.get-pr.outputs.pr_number }}
