@@ -67,3 +67,10 @@ jobs:
         if: steps.get-pr.outputs.pr_number != ''
         run: |
           ls -lR reports/
+
+      - name: "Publish available .md reports to PR"
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: steps.get-pr.outputs.pr_number != ''
+        with:
+          path: reports/*.md
+          number: ${{ steps.get-pr.outputs.pr_number }}

@@ -124,12 +124,6 @@ jobs:
           name: event-file
           path: ${{ github.event_path }}
 
-      # - name: "Publish code coverage data to PR"
-      #   uses: marocchino/sticky-pull-request-comment@v2
-      #   if: ${{ github.actor != 'dependabot[bot]' && steps.code_coverage_report.outputs.file != '' && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') }}
-      #   with:
-      #     path: code-coverage-results.md
-
   check:
     name: "Source code checks"
     runs-on: ubuntu-latest
