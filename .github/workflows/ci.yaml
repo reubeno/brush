@@ -97,12 +97,11 @@ jobs:
 
           exit ${result}
 
-      # - name: "Publish test results"
-      #   uses: EnricoMi/publish-unit-test-result-action@v2
-      #   if: always()
-      #   with:
-      #     files: |
-      #       test-results-*.xml
+      - name: "Upload test results"
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: test-results-*.xml
 
       - name: "Generate code coverage report"
         uses: clearlyip/code-coverage-report-action@v4
