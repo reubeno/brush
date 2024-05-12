@@ -200,7 +200,7 @@ jobs:
 
       - name: Compare benchmark results
         run: |
-          ./scripts/compare-benchmark-results.py -b main/benchmarks.txt -t pr/benchmarks.txt >benchmark-results.md
+          ./pr/scripts/compare-benchmark-results.py -b main/benchmarks.txt -t pr/benchmarks.txt >benchmark-results.md
 
       - name: Upload performance results
         uses: actions/upload-artifact@v4
