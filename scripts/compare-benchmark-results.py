@@ -44,6 +44,8 @@ removed_from_base = base_test_names - test_test_names
 added_by_test = test_test_names - base_test_names
 common = base_test_names & test_test_names
 
+print("# Performance Benchmark Report")
+
 if common:
     print(f"| {'Benchmark name':36} | {'Baseline (ns)':>13} | {'Test/PR (ns)':>13} | {'Delta (ns)':>13} | {'Delta %'} |")
     print(f"| {'-' * 36} | {'-' * 13} | {'-' * 13} | {'-' * 13} | {'-' * 7}")
@@ -58,10 +60,14 @@ if common:
 
         delta_percentage = (100.0 * delta_duration) / base_duration
         delta_percentage_str = f"{delta_percentage:.2f}%"
-        if delta_percentage > 0:
-            delta_percentage_str = "+" + delta_percentage_str
+        if delta_percentage < 0:
+            delta_percentage_str = "🟢 " + delta_percentage_str
+        elif delta_percentage > 0:
+            delta_percentage_str = "🟠 +" + delta_percentage_str
+        else:
+            delta_percentage_str = "⚪  " + delta_percentage_str
 
-        print(f"| {name:36} | {base_duration:10} ns | {test_duration:10} ns | {delta_str:>10} ns | {delta_percentage_str:>7} |")
+        print(f"| `{name:36}` | `{base_duration:10} ns` | `{test_duration:10} ns` | `{delta_str:>10} ns` | `{delta_percentage_str:>7}` |")
 
 if removed_from_base:
     print("Benchmarks removed:")
