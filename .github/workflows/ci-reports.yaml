@@ -84,15 +84,15 @@ jobs:
       - name: "Synthesize event file"
         run: |
           echo \
-            '{                                                            \
-               "pull_request": {                                          \
-                 "head": {                                                \
-                   "sha": "${{ steps.get-pr.outputs.head_sha }}",         \
-                   "repo": {                                              \
-                     "full_name": "${{ steps.get-pr.outputs.head_repo }}" \
-                   }                                                      \
-                 }                                                        \
-               }                                                          \
+            '{
+               "pull_request": {
+                 "head": {
+                   "sha": "${{ steps.get-pr.outputs.head_sha }}",
+                   "repo": {
+                     "full_name": "${{ steps.get-pr.outputs.head_repo }}"
+                   }
+                 }
+               }
              }' >event-file.json
 
       - name: "Publish test results"
