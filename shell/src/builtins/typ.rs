@@ -184,7 +184,7 @@ fn is_keyword(shell: &Shell, name: &str) -> bool {
         "then" => true,
         "until" => true,
         "while" => true,
-        // N.B. bash also treats the following as reserved.
+        // N.B. Some shells also treat the following as reserved.
         "[[" if !shell.options.sh_mode => true,
         "]]" if !shell.options.sh_mode => true,
         "function" if !shell.options.sh_mode => true,
