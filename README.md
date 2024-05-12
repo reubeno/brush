@@ -1,17 +1,13 @@
 # brush
 
-![CI workflow badge](https://github.com/reubeno/brush/actions/workflows/ci.yaml/badge.svg)
-![Devcontainer workflow badge](https://github.com/reubeno/brush/actions/workflows/devcontainer.yaml/badge.svg)
+[![CI workflow badge](https://github.com/reubeno/brush/actions/workflows/ci.yaml/badge.svg)](https://github.com/reubeno/brush/actions/workflows/ci.yaml)
+[![Devcontainer workflow badge](https://github.com/reubeno/brush/actions/workflows/devcontainer.yaml/badge.svg)](https://github.com/reubeno/brush/actions/workflows/devcontainer.yaml)
 
 ## About
 
-`brush` (Born RUsty SHell) is a shell implementation with
-aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as well as with [bash](https://www.gnu.org/software/bash/).
-It's generally functional for interactive use and can
-execute many simple to medium complexity scripts, but it's
-still very much an incomplete work in progress. 
+`brush` (**B**orn **RU**sty **SH**ell) is a shell implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as well as with [bash](https://www.gnu.org/software/bash/). It's generally functional for interactive use and can execute many scripts, but it's still very much a work in progress. 
 
-This project was primarily borne out of curiosity.
+This project was primarily borne out of curiosity and a desire to learn. If it proves to be sufficiently interesting and/or useful, then that's a bonus :).
 
 ### License
 
@@ -38,13 +34,9 @@ repo include a few hundred test cases run on both this
 shell and an oracle, comparing standard output and exit
 codes.
 
-## References
+## Links: other shell implementations
 
-The POSIX Shell specification was the first resource we
-consulted.
-
-Other non-C/C++ implementations of an `sh`/`bash` shell
-provided inspiration through their existence and progress:
+This is certainly not the first attempt to implement a feature-rich POSIX-ish shell in a non-C/C++ implementation language. Some examples include:
 
 * https://github.com/shellgei/rusty_bash
 * https://github.com/mvdan/sh
