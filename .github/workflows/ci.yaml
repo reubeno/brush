@@ -198,6 +198,10 @@ jobs:
         run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt
         working-directory: main
 
+      - name: Compare benchmark results
+        run: |
+          ./scripts/compare-benchmark-results.py -b main/benchmarks.txt -t pr/benchmarks.txt >benchmark-results.md
+
       - name: Upload performance results
         uses: actions/upload-artifact@v4
         with:
@@ -205,6 +209,7 @@ jobs:
           path: |
             pr/benchmarks.txt
             main/benchmarks.txt
+            benchmark-results.md
 
       # - name: Compare benchmark results
       #   uses: openpgpjs/github-action-pull-request-benchmark@v1
