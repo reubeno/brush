@@ -20,7 +20,7 @@ impl BuiltinCommand for HelpCommand {
             "The following commands are implemented as shell built-ins:"
         )?;
 
-        let builtin_names: Vec<_> = crate::builtins::get_all_builtin_names();
+        let builtin_names = context.shell.get_builtin_names();
 
         const COLUMN_COUNT: usize = 3;
 
