@@ -1,8 +1,6 @@
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use clap::Parser;
-use itertools::Itertools;
 use std::io::Write;
-use std::iter::Iterator;
 
 #[derive(Parser)]
 pub(crate) struct HelpCommand {}
@@ -22,12 +20,7 @@ impl BuiltinCommand for HelpCommand {
             "The following commands are implemented as shell built-ins:"
         )?;
 
-        let builtin_names: Vec<_> = super::SPECIAL_BUILTINS
-            .iter()
-            .chain(super::BUILTINS.iter())
-            .map(|(name, _)| *name)
-            .sorted()
-            .collect();
+        let builtin_names: Vec<_> = crate::builtins::get_all_builtin_names();
 
         const COLUMN_COUNT: usize = 3;
 

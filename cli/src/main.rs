@@ -82,6 +82,8 @@ enum TraceEvent {
     Expand,
     #[clap(name = "parse")]
     Parse,
+    #[clap(name = "pattern")]
+    Pattern,
     #[clap(name = "tokenize")]
     Tokenize,
 }
@@ -125,6 +127,7 @@ fn main() {
             TraceEvent::Complete => vec!["shell::completion", "shell::builtins::complete"],
             TraceEvent::Expand => vec![],
             TraceEvent::Parse => vec!["parse"],
+            TraceEvent::Pattern => vec!["shell::pattern"],
             TraceEvent::Tokenize => vec!["tokenize"],
         };
 

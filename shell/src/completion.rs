@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{env, error, patterns, variables::ShellValueLiteral, Shell};
+use crate::{builtins, env, error, patterns, variables::ShellValueLiteral, Shell};
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum CompleteAction {
@@ -145,6 +145,7 @@ pub struct CompletionContext<'a> {
 }
 
 impl CompletionSpec {
+    #[allow(clippy::too_many_lines)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell,
@@ -177,19 +178,39 @@ impl CompletionSpec {
 
         for action in &self.actions {
             match action {
-                CompleteAction::Alias => tracing::debug!("UNIMPLEMENTED: complete -A alias"),
+                CompleteAction::Alias => {
+                    for name in shell.aliases.keys() {
+                        candidates.push(name.to_string());
+                    }
+                }
                 CompleteAction::ArrayVar => tracing::debug!("UNIMPLEMENTED: complete -A arrayvar"),
                 CompleteAction::Binding => tracing::debug!("UNIMPLEMENTED: complete -A binding"),
-                CompleteAction::Builtin => tracing::debug!("UNIMPLEMENTED: complete -A builtin"),
+                CompleteAction::Builtin => {
+                    let mut builtin_names = builtins::get_all_builtin_names();
+                    candidates.append(&mut builtin_names);
+                }
                 CompleteAction::Command => tracing::debug!("UNIMPLEMENTED: complete -A command"),
                 CompleteAction::Directory => {
                     tracing::debug!("UNIMPLEMENTED: complete -A directory");
                 }
                 CompleteAction::Disabled => tracing::debug!("UNIMPLEMENTED: complete -A disabled"),
                 CompleteAction::Enabled => tracing::debug!("UNIMPLEMENTED: complete -A enabled"),
-                CompleteAction::Export => tracing::debug!("UNIMPLEMENTED: complete -A export"),
-                CompleteAction::File => tracing::debug!("UNIMPLEMENTED: complete -A file"),
-                CompleteAction::Function => tracing::debug!("UNIMPLEMENTED: complete -A function"),
+                CompleteAction::Export => {
+                    for (key, value) in shell.env.iter() {
+                        if value.is_exported() {
+                            candidates.push(key.to_owned());
+                        }
+                    }
+                }
+                CompleteAction::File => {
+                    let mut file_completions = get_file_completions(shell, context);
+                    candidates.append(&mut file_completions);
+                }
+                CompleteAction::Function => {
+                    for name in shell.funcs.keys() {
+                        candidates.push(name.to_owned());
+                    }
+                }
                 CompleteAction::Group => tracing::debug!("UNIMPLEMENTED: complete -A group"),
                 CompleteAction::HelpTopic => {
                     tracing::debug!("UNIMPLEMENTED: complete -A helptopic");
@@ -205,9 +226,9 @@ impl CompletionSpec {
                 CompleteAction::Stopped => tracing::debug!("UNIMPLEMENTED: complete -A stopped"),
                 CompleteAction::User => tracing::debug!("UNIMPLEMENTED: complete -A user"),
                 CompleteAction::Variable => {
-                    shell.env.iter().for_each(|(key, _value)| {
-                        candidates.push(key.to_string());
-                    });
+                    for (key, _) in shell.env.iter() {
+                        candidates.push(key.to_owned());
+                    }
                 }
             }
         }
@@ -502,64 +523,67 @@ impl CompletionConfig {
             }
         }
 
-        self.get_completions_using_basic_lookup(shell, &context)
+        get_completions_using_basic_lookup(shell, &context)
+    }
+}
+
+fn get_file_completions(shell: &Shell, context: &CompletionContext) -> Vec<String> {
+    let glob = std::format!("{}*", context.token_to_complete);
+
+    // TODO: Pass through quoting.
+    if let Ok(mut candidates) = patterns::Pattern::from(glob)
+        .expand(shell.working_dir.as_path(), shell.options.extended_globbing)
+    {
+        for candidate in &mut candidates {
+            if Path::new(candidate.as_str()).is_dir() {
+                candidate.push('/');
+            }
+        }
+        candidates
+    } else {
+        vec![]
+    }
+}
+
+fn get_completions_using_basic_lookup(
+    shell: &Shell,
+    context: &CompletionContext,
+) -> CompletionResult {
+    let mut candidates = get_file_completions(shell, context);
+
+    // TODO: Contextually generate different completions.
+    // If this appears to be the command token (and if there's *some* prefix without
+    // a path separator) then also consider whether we should search the path for
+    // completions too.
+    // TODO: Do a better job than just checking if index == 0.
+    if context.token_index == 0
+        && !context.token_to_complete.is_empty()
+        && !context.token_to_complete.contains('/')
+    {
+        let glob_pattern = std::format!("{}*", context.token_to_complete);
+
+        for path in shell.find_executables_in_path(&glob_pattern) {
+            if let Some(file_name) = path.file_name() {
+                candidates.push(file_name.to_string_lossy().to_string());
+            }
+        }
     }
 
-    #[allow(clippy::unused_self)]
-    fn get_completions_using_basic_lookup(
-        &self,
-        shell: &Shell,
-        context: &CompletionContext,
-    ) -> CompletionResult {
-        // TODO: Contextually generate different completions.
-        let glob = std::format!("{}*", context.token_to_complete);
-        // TODO: Pass through quoting.
-        let mut candidates = if let Ok(mut candidates) = patterns::Pattern::from(glob)
-            .expand(shell.working_dir.as_path(), shell.options.extended_globbing)
-        {
-            for candidate in &mut candidates {
-                if Path::new(candidate.as_str()).is_dir() {
-                    candidate.push('/');
-                }
-            }
-            candidates
-        } else {
-            vec![]
-        };
-
-        // If this appears to be the command token (and if there's *some* prefix without
-        // a path separator) then also consider whether we should search the path for
-        // completions too.
-        // TODO: Do a better job than just checking if index == 0.
-        if context.token_index == 0
-            && !context.token_to_complete.is_empty()
-            && !context.token_to_complete.contains('/')
-        {
-            let glob_pattern = std::format!("{}*", context.token_to_complete);
-
-            for path in shell.find_executables_in_path(&glob_pattern) {
-                if let Some(file_name) = path.file_name() {
-                    candidates.push(file_name.to_string_lossy().to_string());
-                }
+    if context.token_index + 1 >= context.tokens.len() {
+        for candidate in &mut candidates {
+            if !candidate.ends_with('/') {
+                candidate.push(' ');
             }
         }
-
-        if context.token_index + 1 >= context.tokens.len() {
-            for candidate in &mut candidates {
-                if !candidate.ends_with('/') {
-                    candidate.push(' ');
-                }
-            }
-        }
-
-        #[cfg(windows)]
-        {
-            candidates = candidates
-                .into_iter()
-                .map(|c| c.replace("\\", "/"))
-                .collect();
-        }
-
-        CompletionResult::Candidates(candidates)
     }
+
+    #[cfg(windows)]
+    {
+        candidates = candidates
+            .into_iter()
+            .map(|c| c.replace("\\", "/"))
+            .collect();
+    }
+
+    CompletionResult::Candidates(candidates)
 }

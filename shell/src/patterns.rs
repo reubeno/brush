@@ -75,6 +75,8 @@ impl Pattern {
             return Ok(vec![concatenated]);
         }
 
+        tracing::debug!("expanding pattern: {self:?}");
+
         let mut components: Vec<PatternWord> = vec![];
         for piece in &self.pieces {
             let mut split_result = piece
@@ -100,11 +102,9 @@ impl Pattern {
         }
 
         let is_absolute = if let Some(first_component) = components.first() {
-            if let Some(first_piece) = first_component.first() {
-                first_piece.as_str().starts_with(std::path::MAIN_SEPARATOR)
-            } else {
-                false
-            }
+            first_component
+                .iter()
+                .all(|piece| piece.as_str().is_empty())
         } else {
             false
         };
@@ -112,7 +112,8 @@ impl Pattern {
         let prefix_to_remove;
         let mut paths_so_far = if is_absolute {
             prefix_to_remove = None;
-            vec![PathBuf::new()]
+            // TODO: Figure out appropriate thing to do on non-Unix platforms.
+            vec![PathBuf::from("/")]
         } else {
             let mut working_dir_str = working_dir.to_string_lossy().to_string();
             working_dir_str.push(std::path::MAIN_SEPARATOR);
@@ -171,6 +172,8 @@ impl Pattern {
                 path_ref.to_string()
             })
             .collect();
+
+        tracing::debug!("  => results: {results:?}");
 
         Ok(results)
     }
