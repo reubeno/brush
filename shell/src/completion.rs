@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{builtins, env, error, patterns, variables::ShellValueLiteral, Shell};
+use crate::{env, error, patterns, variables::ShellValueLiteral, Shell};
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum CompleteAction {
@@ -186,12 +186,13 @@ impl CompletionSpec {
                 CompleteAction::ArrayVar => tracing::debug!("UNIMPLEMENTED: complete -A arrayvar"),
                 CompleteAction::Binding => tracing::debug!("UNIMPLEMENTED: complete -A binding"),
                 CompleteAction::Builtin => {
-                    let mut builtin_names = builtins::get_all_builtin_names();
+                    let mut builtin_names = shell.get_builtin_names();
                     candidates.append(&mut builtin_names);
                 }
                 CompleteAction::Command => tracing::debug!("UNIMPLEMENTED: complete -A command"),
                 CompleteAction::Directory => {
-                    tracing::debug!("UNIMPLEMENTED: complete -A directory");
+                    let mut file_completions = get_file_completions(shell, context, true);
+                    candidates.append(&mut file_completions);
                 }
                 CompleteAction::Disabled => tracing::debug!("UNIMPLEMENTED: complete -A disabled"),
                 CompleteAction::Enabled => tracing::debug!("UNIMPLEMENTED: complete -A enabled"),
@@ -203,7 +204,7 @@ impl CompletionSpec {
                     }
                 }
                 CompleteAction::File => {
-                    let mut file_completions = get_file_completions(shell, context);
+                    let mut file_completions = get_file_completions(shell, context, false);
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Function => {
@@ -527,13 +528,23 @@ impl CompletionConfig {
     }
 }
 
-fn get_file_completions(shell: &Shell, context: &CompletionContext) -> Vec<String> {
+fn get_file_completions(
+    shell: &Shell,
+    context: &CompletionContext,
+    must_be_dir: bool,
+) -> Vec<String> {
     let glob = std::format!("{}*", context.token_to_complete);
 
+    let metadata_filter = |metadata: Option<&std::fs::Metadata>| {
+        !must_be_dir || metadata.is_some_and(|md| md.is_dir())
+    };
+
     // TODO: Pass through quoting.
-    if let Ok(mut candidates) = patterns::Pattern::from(glob)
-        .expand(shell.working_dir.as_path(), shell.options.extended_globbing)
-    {
+    if let Ok(mut candidates) = patterns::Pattern::from(glob).expand(
+        shell.working_dir.as_path(),
+        shell.options.extended_globbing,
+        Some(&metadata_filter),
+    ) {
         for candidate in &mut candidates {
             if Path::new(candidate.as_str()).is_dir() {
                 candidate.push('/');
@@ -549,7 +560,7 @@ fn get_completions_using_basic_lookup(
     shell: &Shell,
     context: &CompletionContext,
 ) -> CompletionResult {
-    let mut candidates = get_file_completions(shell, context);
+    let mut candidates = get_file_completions(shell, context, false);
 
     // TODO: Contextually generate different completions.
     // If this appears to be the command token (and if there's *some* prefix without

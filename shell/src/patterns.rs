@@ -61,11 +61,20 @@ impl Pattern {
         self.pieces.iter().all(|p| p.as_str().is_empty())
     }
 
-    pub(crate) fn expand(
+    pub(crate) fn accept_all_expand_filter(_metadata: Option<&std::fs::Metadata>) -> bool {
+        true
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn expand<MF>(
         &self,
         working_dir: &Path,
         enable_extended_globbing: bool,
-    ) -> Result<Vec<String>, error::Error> {
+        metadata_filter: Option<&MF>,
+    ) -> Result<Vec<String>, error::Error>
+    where
+        MF: Fn(Option<&std::fs::Metadata>) -> bool,
+    {
         if self.is_empty() {
             return Ok(vec![]);
         } else if !self.pieces.iter().any(|piece| {
@@ -140,16 +149,31 @@ impl Pattern {
             for current_path in current_paths {
                 let subpattern = Pattern::from(&component);
                 let regex = subpattern.to_regex(true, true, enable_extended_globbing)?;
+
+                let matches_criteria = |dir_entry: &std::fs::DirEntry| {
+                    if !regex
+                        .is_match(dir_entry.file_name().to_string_lossy().as_ref())
+                        .unwrap_or(false)
+                    {
+                        return false;
+                    }
+
+                    if let Some(filter) = &metadata_filter {
+                        let metadata_result = dir_entry.metadata();
+                        if !filter(metadata_result.as_ref().ok()) {
+                            return false;
+                        }
+                    }
+
+                    true
+                };
+
                 let mut matching_paths_in_dir: Vec<_> = current_path
                     .read_dir()
                     .map_or_else(|_| vec![], |dir| dir.into_iter().collect())
                     .into_iter()
                     .filter_map(|result| result.ok())
-                    .filter(|entry| {
-                        regex
-                            .is_match(entry.file_name().to_string_lossy().as_ref())
-                            .unwrap_or(false)
-                    })
+                    .filter(matches_criteria)
                     .map(|entry| entry.path())
                     .collect();
 

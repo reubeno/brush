@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
-use crate::error;
 use crate::expansion;
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::jobs;
@@ -14,6 +13,7 @@ use crate::openfiles;
 use crate::options::RuntimeOptions;
 use crate::prompt::expand_prompt;
 use crate::variables::{self, ShellValue, ShellVariable};
+use crate::{builtins, error};
 use crate::{commands, patterns};
 use crate::{completion, users};
 use crate::{context, env};
@@ -709,9 +709,11 @@ impl Shell {
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
             let pattern = std::format!("{dir_str}/{required_glob_pattern}");
             // TODO: Pass through quoting.
-            if let Ok(entries) = patterns::Pattern::from(pattern)
-                .expand(&self.working_dir, self.options.extended_globbing)
-            {
+            if let Ok(entries) = patterns::Pattern::from(pattern).expand(
+                &self.working_dir,
+                self.options.extended_globbing,
+                Some(&patterns::Pattern::accept_all_expand_filter),
+            ) {
                 for entry in entries {
                     let path = Path::new(&entry);
                     if path.executable() {
@@ -807,5 +809,10 @@ impl Shell {
         }
 
         writeln!(self.stderr(), "{prefix}{}", command.as_ref())
+    }
+
+    #[allow(clippy::unused_self)]
+    pub fn get_builtin_names(&self) -> Vec<String> {
+        builtins::get_all_builtin_names()
     }
 }

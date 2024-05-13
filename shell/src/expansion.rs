@@ -490,6 +490,7 @@ impl<'a> WordExpander<'a> {
             .expand(
                 self.shell.working_dir.as_path(),
                 self.parser_options.enable_extended_globbing,
+                Some(&patterns::Pattern::accept_all_expand_filter),
             )
             .map_or_else(
                 |_err| vec![],
