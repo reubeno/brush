@@ -92,12 +92,12 @@ impl InteractiveShell {
                     }
 
                     if return_from_function_or_script {
-                        log::error!("return from non-function/script");
+                        tracing::error!("return from non-function/script");
                     }
                 }
                 InteractiveExecutionResult::Failed(e) => {
                     // Report the error, but continue to execute.
-                    log::error!("error: {:#}", e);
+                    tracing::error!("error: {:#}", e);
                 }
                 InteractiveExecutionResult::Eof => {
                     break;

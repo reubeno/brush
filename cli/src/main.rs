@@ -1,7 +1,6 @@
-use std::{io::IsTerminal, io::Write, path::Path};
+use std::{io::IsTerminal, path::Path};
 
 use clap::Parser;
-use log::error;
 
 #[derive(Parser)]
 #[clap(version, about, disable_help_flag = true, disable_version_flag = true)]
@@ -88,15 +87,22 @@ impl CommandLineArgs {
 }
 
 fn main() {
-    // Initialize logging. Default log level to INFO if not explicitly specified by the env.
-    // Keep verbosity on rustyline no more than WARNING, since it otherwise gets quite noisy.
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .filter_module("rustyline", log::LevelFilter::Warn)
-        .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .init();
+    //
+    // Initializing tracing.
+    //
+    let subscriber = tracing_subscriber::FmtSubscriber::builder()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stderr)
+        .without_time()
+        .with_target(false)
+        .finish();
 
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to initialize tracing.");
+
+    //
+    // Run.
+    //
     let args: Vec<_> = std::env::args().collect();
-
     let result = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -106,7 +112,7 @@ fn main() {
     let exit_code = match result {
         Ok(code) => code,
         Err(e) => {
-            error!("error: {:#}", e);
+            tracing::error!("error: {:#}", e);
             1
         }
     };

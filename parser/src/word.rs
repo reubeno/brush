@@ -168,12 +168,12 @@ pub fn parse_word_for_expansion(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPiece>, error::WordParseError> {
-    log::debug!("Parsing word '{}'", word);
+    tracing::debug!("Parsing word '{}'", word);
 
     let pieces = expansion_parser::unexpanded_word(word, options)
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
 
-    log::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
+    tracing::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
 
     Ok(pieces)
 }

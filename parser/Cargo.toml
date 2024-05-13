@@ -18,9 +18,9 @@ if_same_then_else = "allow"
 
 [dependencies]
 indenter = "0.3.3"
-log = "0.4.21"
 peg = "0.8.3"
 thiserror = "1.0.58"
+tracing = "0.1.40"
 utf8-chars = "3.0.2"
 
 [dev-dependencies]

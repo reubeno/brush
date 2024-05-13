@@ -306,7 +306,7 @@ impl Shell {
             self.source(path, &args, params).await?;
             Ok(true)
         } else {
-            log::debug!("skipping non-existent file: {}", path.display());
+            tracing::debug!("skipping non-existent file: {}", path.display());
             Ok(false)
         }
     }
@@ -317,7 +317,7 @@ impl Shell {
         args: &[S],
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        log::debug!("sourcing: {}", path.display());
+        tracing::debug!("sourcing: {}", path.display());
 
         let opened_file = std::fs::File::open(path)
             .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e))?;
@@ -497,7 +497,7 @@ impl Shell {
             Ok(prog) => match self.run_program(prog, params).await {
                 Ok(result) => result,
                 Err(e) => {
-                    log::error!("error: {:#}", e);
+                    tracing::error!("error: {:#}", e);
                     self.last_exit_status = 1;
                     ExecutionResult::new(1)
                 }
@@ -505,7 +505,7 @@ impl Shell {
             Err(parser::ParseError::ParsingNearToken(token_near_error)) => {
                 let error_loc = &token_near_error.location().start;
 
-                log::error!(
+                tracing::error!(
                     "{}syntax error near token `{}' (line {} col {})",
                     error_prefix,
                     token_near_error.to_str(),
@@ -516,7 +516,7 @@ impl Shell {
                 ExecutionResult::new(2)
             }
             Err(parser::ParseError::ParsingAtEndOfInput) => {
-                log::error!("{}syntax error at end of input", error_prefix);
+                tracing::error!("{}syntax error at end of input", error_prefix);
 
                 self.last_exit_status = 2;
                 ExecutionResult::new(2)
@@ -532,7 +532,7 @@ impl Shell {
                     ));
                 }
 
-                log::error!("{}", error_message);
+                tracing::error!("{}", error_message);
 
                 self.last_exit_status = 2;
                 ExecutionResult::new(2)
