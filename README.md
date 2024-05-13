@@ -13,6 +13,10 @@ This project was primarily borne out of curiosity and a desire to learn. If it p
 
 Available for use and distribution under the [MIT license](LICENSE).
 
+### What's working?
+
+In short, quite a lot. Standard and extended control flow, word expansion, most frequently used builtin commands, pipelines, redirection, variables, etc. The plumbing for completion is present, along with support for common cases (e.g. file/dir completion, basic support for programmable completion such as used with git and other tools). 
+
 ### Known limitations
 
 There's a lot that *is* working, but also non-trivial gaps in compatibility. Most notably:
@@ -21,10 +25,12 @@ There's a lot that *is* working, but also non-trivial gaps in compatibility. Mos
   You can run `some-command &` but it's proof-of-concept quality at best. Standard job management via `fg`, `bg`, and `jobs` is not fully implemented. This would be a great area for enthusiastic contributors to dive in :).
 * **Honoring `set` options (e.g., `set -e`).**
   The `set` builtin is implemented, as is `set -x` and a few other options, but most of the behaviors aren't there. `set -e`, for example, will execute but its semantics aren't applied across execution.
+* **Backtick (`) expansions**
+  Modern command expansions (e.g. `$(command)`) work fine. It's just the tokenizing and parsing of backtick syntax that isn't there. 
 
 Shell built-ins are a mixed bag. Some are completely and fully implemented (e.g. echo), while some only support their most commonly used options. Some aren't implemented at all.
 
-There's certainly more gaps; with time we'll find a way to represent the gaps in some understandable way.
+There's certainly more gaps; with time we'll find a way to represent the gaps in some understandable way. Ideally, we'd like to evolve the test suites to add tests for all known missing pieces. That will let us focus on just "fixing the tests". 
 
 ## Testing strategy
 
