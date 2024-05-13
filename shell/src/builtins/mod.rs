@@ -1,4 +1,5 @@
 use futures::future::BoxFuture;
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
@@ -128,6 +129,15 @@ lazy_static::lazy_static! {
     pub(crate) static ref BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_builtins(true);
     pub(crate) static ref POSIX_ONLY_BUILTINS: HashMap<&'static str, BuiltinCommandExecuteFunc> = get_builtins(false);
     pub(crate) static ref DECLARATION_BUILTINS: HashSet<&'static str> = get_declaration_builtin_names();
+}
+
+pub(crate) fn get_all_builtin_names() -> Vec<String> {
+    SPECIAL_BUILTINS
+        .iter()
+        .chain(BUILTINS.iter())
+        .map(|(name, _)| (*name).to_owned())
+        .sorted()
+        .collect::<Vec<_>>()
 }
 
 fn get_declaration_builtin_names() -> HashSet<&'static str> {
