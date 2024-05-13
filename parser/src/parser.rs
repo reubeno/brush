@@ -70,7 +70,7 @@ impl<R: std::io::BufRead> Parser<R> {
             };
 
             if let Some(token) = result.token {
-                tracing::debug!("TOKEN {}: {:?}", tokens.len(), token);
+                tracing::debug!(target: "tokenize", "TOKEN {}: {:?}", tokens.len(), token);
                 tokens.push(token);
             }
 
@@ -107,7 +107,7 @@ pub fn parse_tokens(
 
     if tracing::enabled!(tracing::Level::DEBUG) {
         if let Ok(program) = &result {
-            tracing::debug!("PROG: {:?}", program);
+            tracing::debug!(target: "parse", "PROG: {:?}", program);
         }
     }
 

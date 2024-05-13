@@ -183,7 +183,7 @@ impl CompletionSpec {
                 CompleteAction::Builtin => tracing::debug!("UNIMPLEMENTED: complete -A builtin"),
                 CompleteAction::Command => tracing::debug!("UNIMPLEMENTED: complete -A command"),
                 CompleteAction::Directory => {
-                    tracing::debug!("UNIMPLEMENTED: complete -A directory")
+                    tracing::debug!("UNIMPLEMENTED: complete -A directory");
                 }
                 CompleteAction::Disabled => tracing::debug!("UNIMPLEMENTED: complete -A disabled"),
                 CompleteAction::Enabled => tracing::debug!("UNIMPLEMENTED: complete -A enabled"),
@@ -192,7 +192,7 @@ impl CompletionSpec {
                 CompleteAction::Function => tracing::debug!("UNIMPLEMENTED: complete -A function"),
                 CompleteAction::Group => tracing::debug!("UNIMPLEMENTED: complete -A group"),
                 CompleteAction::HelpTopic => {
-                    tracing::debug!("UNIMPLEMENTED: complete -A helptopic")
+                    tracing::debug!("UNIMPLEMENTED: complete -A helptopic");
                 }
                 CompleteAction::HostName => tracing::debug!("UNIMPLEMENTED: complete -A hostname"),
                 CompleteAction::Job => tracing::debug!("UNIMPLEMENTED: complete -A job"),
