@@ -503,9 +503,9 @@ impl BuiltinCommand for CompOptCommand {
         // TODO: implement options
         for (option, value) in options {
             if value {
-                log::debug!("compopt: enabling {option:?}");
+                tracing::debug!("compopt: enabling {option:?}");
             } else {
-                log::debug!("compopt: disabling {option:?}");
+                tracing::debug!("compopt: disabling {option:?}");
             }
         }
 

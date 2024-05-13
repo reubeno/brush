@@ -16,10 +16,10 @@ workspace = true
 anyhow = "1.0.83"
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
-log = "0.4.21"
 rustyline = { git = "https://github.com/reubeno/rustyline", rev = "023a08093e9b8ff81f9d8e096e00a23e6e83167a", features = ["derive"] }
 thiserror = "1.0.58"
 tokio = { version = "1.37.0", features = [
     "macros",
     "signal",
 ] }
+tracing = "0.1.40"

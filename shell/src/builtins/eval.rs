@@ -19,7 +19,7 @@ impl BuiltinCommand for EvalCommand {
         if !self.args.is_empty() {
             let args_concatenated = self.args.join(" ");
 
-            log::debug!("Applying eval to: {:?}", args_concatenated);
+            tracing::debug!("Applying eval to: {:?}", args_concatenated);
 
             let exec_result = context
                 .shell

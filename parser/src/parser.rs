@@ -1,5 +1,3 @@
-use log::debug;
-
 use crate::ast::{self, SeparatorOperator};
 use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
@@ -72,10 +70,7 @@ impl<R: std::io::BufRead> Parser<R> {
             };
 
             if let Some(token) = result.token {
-                if log::log_enabled!(log::Level::Debug) {
-                    debug!("TOKEN {}: {:?}", tokens.len(), token);
-                }
-
+                tracing::debug!(target: "tokenize", "TOKEN {}: {:?}", tokens.len(), token);
                 tokens.push(token);
             }
 
@@ -102,7 +97,7 @@ pub fn parse_tokens(
     let result = match parse_result {
         Ok(program) => Ok(program),
         Err(parse_error) => {
-            debug!("Parse error: {:?}", parse_error);
+            tracing::debug!("Parse error: {:?}", parse_error);
             Err(error::convert_peg_parse_error(
                 parse_error,
                 tokens.as_slice(),
@@ -110,9 +105,9 @@ pub fn parse_tokens(
         }
     };
 
-    if log::log_enabled!(log::Level::Debug) {
+    if tracing::enabled!(tracing::Level::DEBUG) {
         if let Ok(program) = &result {
-            debug!("PROG: {:?}", program);
+            tracing::debug!(target: "parse", "PROG: {:?}", program);
         }
     }
 

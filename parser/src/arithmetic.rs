@@ -4,7 +4,7 @@ use crate::error;
 pub fn parse_arithmetic_expression(
     input: &str,
 ) -> Result<ast::ArithmeticExpr, crate::error::WordParseError> {
-    log::debug!("parsing arithmetic expression: '{input}'");
+    tracing::debug!("parsing arithmetic expression: '{input}'");
 
     // Special-case the empty string.
 

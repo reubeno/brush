@@ -1,7 +1,7 @@
-use std::{io::IsTerminal, io::Write, path::Path};
+use std::{collections::HashSet, io::IsTerminal, path::Path};
 
 use clap::Parser;
-use log::error;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 #[derive(Parser)]
 #[clap(version, about, disable_help_flag = true, disable_version_flag = true)]
@@ -62,11 +62,28 @@ struct CommandLineArgs {
     #[clap(long = "disable-bracketed-paste", help = "Disable bracketed paste.")]
     disable_bracketed_paste: bool,
 
+    #[clap(long = "log-enable")]
+    enabled_log_events: Vec<TraceEvent>,
+
     #[clap(help = "Path to script to execute")]
     script_path: Option<String>,
 
     #[clap(help = "Arguments for script")]
     script_args: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
+enum TraceEvent {
+    #[clap(name = "arithmetic")]
+    Arithmetic,
+    #[clap(name = "complete")]
+    Complete,
+    #[clap(name = "expand")]
+    Expand,
+    #[clap(name = "parse")]
+    Parse,
+    #[clap(name = "tokenize")]
+    Tokenize,
 }
 
 impl CommandLineArgs {
@@ -88,25 +105,59 @@ impl CommandLineArgs {
 }
 
 fn main() {
-    // Initialize logging. Default log level to INFO if not explicitly specified by the env.
-    // Keep verbosity on rustyline no more than WARNING, since it otherwise gets quite noisy.
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .filter_module("rustyline", log::LevelFilter::Warn)
-        .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .init();
-
+    //
+    // Parse args.
+    //
     let args: Vec<_> = std::env::args().collect();
+    let parsed_args = CommandLineArgs::parse_from(&args);
 
+    //
+    // Initializing tracing.
+    //
+    let mut filter = tracing_subscriber::filter::Targets::new()
+        .with_default(tracing_subscriber::filter::LevelFilter::INFO);
+
+    let enabled_trace_events: HashSet<TraceEvent> =
+        parsed_args.enabled_log_events.iter().cloned().collect();
+    for event in enabled_trace_events {
+        let targets = match event {
+            TraceEvent::Arithmetic => vec!["parser::arithmetic"],
+            TraceEvent::Complete => vec!["shell::completion", "shell::builtins::complete"],
+            TraceEvent::Expand => vec![],
+            TraceEvent::Parse => vec!["parse"],
+            TraceEvent::Tokenize => vec!["tokenize"],
+        };
+
+        filter = filter.with_targets(
+            targets
+                .into_iter()
+                .map(|target| (target, tracing::Level::DEBUG)),
+        );
+    }
+
+    let stderr_log_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .without_time()
+        .with_filter(filter);
+
+    tracing_subscriber::registry()
+        .with(stderr_log_layer)
+        .try_init()
+        .expect("Failed to initialize tracing.");
+
+    //
+    // Run.
+    //
     let result = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(run(args));
+        .block_on(run(args, parsed_args));
 
     let exit_code = match result {
         Ok(code) => code,
         Err(e) => {
-            error!("error: {:#}", e);
+            tracing::error!("error: {:#}", e);
             1
         }
     };
@@ -115,9 +166,10 @@ fn main() {
     std::process::exit(exit_code as i32);
 }
 
-async fn run(cli_args: Vec<String>) -> Result<u8, interactive_shell::InteractiveShellError> {
-    let args = CommandLineArgs::parse_from(&cli_args);
-
+async fn run(
+    cli_args: Vec<String>,
+    args: CommandLineArgs,
+) -> Result<u8, interactive_shell::InteractiveShellError> {
     let argv0 = if args.sh_mode {
         // Simulate having been run as "sh".
         Some(String::from("sh"))

@@ -69,7 +69,7 @@ impl BuiltinCommand for ReadCommand {
             return error::unimp("read -p");
         }
         if self.raw_mode {
-            log::debug!("read -r is not implemented");
+            tracing::debug!("read -r is not implemented");
         }
         if self.silent {
             return error::unimp("read -s");

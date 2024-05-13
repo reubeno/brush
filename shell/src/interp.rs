@@ -43,7 +43,7 @@ impl From<std::process::Output> for ExecutionResult {
             return Self::new((signal & 0xFF) as u8 + 128);
         }
 
-        log::error!("unhandled process exit");
+        tracing::error!("unhandled process exit");
         Self::new(127)
     }
 }
@@ -1223,7 +1223,7 @@ async fn execute_external_command(
         }
     }
 
-    log::debug!(
+    tracing::debug!(
         "Spawning: {} {}",
         cmd.as_std().get_program().to_string_lossy().to_string(),
         cmd.as_std()
@@ -1245,19 +1245,19 @@ async fn execute_external_command(
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if context.shell.options.sh_mode {
-                log::error!(
+                tracing::error!(
                     "{}: {}: {}: not found",
                     context.shell.shell_name.as_ref().unwrap_or(&String::new()),
                     context.shell.get_current_input_line_number(),
                     context.command_name
                 );
             } else {
-                log::error!("{}: not found", context.command_name);
+                tracing::error!("{}: not found", context.command_name);
             }
             Ok(SpawnResult::ImmediateExit(127))
         }
         Err(e) => {
-            log::error!("error: {}", e);
+            tracing::error!("error: {}", e);
             Ok(SpawnResult::ImmediateExit(126))
         }
     }
@@ -1284,7 +1284,7 @@ async fn execute_builtin_command(
             }
         },
         Err(e) => {
-            log::error!("error: {}", e);
+            tracing::error!("error: {}", e);
             1
         }
     };
@@ -1472,7 +1472,7 @@ async fn setup_redirect<'a>(
                     if let Some(f) = open_files.files.get(fd) {
                         target_file = f.try_dup()?;
                     } else {
-                        log::error!("{}: Bad file descriptor", fd);
+                        tracing::error!("{}: Bad file descriptor", fd);
                         return Ok(None);
                     }
                 }

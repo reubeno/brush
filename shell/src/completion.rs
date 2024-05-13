@@ -154,52 +154,56 @@ impl CompletionSpec {
 
         // Apply options
         if self.bash_default {
-            log::debug!("UNIMPLEMENTED: complete -o bashdefault");
+            tracing::debug!("UNIMPLEMENTED: complete -o bashdefault");
         }
         if self.default {
-            log::debug!("UNIMPLEMENTED: complete -o default");
+            tracing::debug!("UNIMPLEMENTED: complete -o default");
         }
         if self.dir_names {
-            log::debug!("UNIMPLEMENTED: complete -o dirnames");
+            tracing::debug!("UNIMPLEMENTED: complete -o dirnames");
         }
         if self.file_names {
-            log::debug!("UNIMPLEMENTED: complete -o filenames");
+            tracing::debug!("UNIMPLEMENTED: complete -o filenames");
         }
         if self.no_quote {
-            log::debug!("UNIMPLEMENTED: complete -o noquote");
+            tracing::debug!("UNIMPLEMENTED: complete -o noquote");
         }
         if self.no_space {
-            log::debug!("UNIMPLEMENTED: complete -o nospace");
+            tracing::debug!("UNIMPLEMENTED: complete -o nospace");
         }
         if self.plus_dirs {
-            log::debug!("UNIMPLEMENTED: complete -o plusdirs");
+            tracing::debug!("UNIMPLEMENTED: complete -o plusdirs");
         }
 
         for action in &self.actions {
             match action {
-                CompleteAction::Alias => log::debug!("UNIMPLEMENTED: complete -A alias"),
-                CompleteAction::ArrayVar => log::debug!("UNIMPLEMENTED: complete -A arrayvar"),
-                CompleteAction::Binding => log::debug!("UNIMPLEMENTED: complete -A binding"),
-                CompleteAction::Builtin => log::debug!("UNIMPLEMENTED: complete -A builtin"),
-                CompleteAction::Command => log::debug!("UNIMPLEMENTED: complete -A command"),
-                CompleteAction::Directory => log::debug!("UNIMPLEMENTED: complete -A directory"),
-                CompleteAction::Disabled => log::debug!("UNIMPLEMENTED: complete -A disabled"),
-                CompleteAction::Enabled => log::debug!("UNIMPLEMENTED: complete -A enabled"),
-                CompleteAction::Export => log::debug!("UNIMPLEMENTED: complete -A export"),
-                CompleteAction::File => log::debug!("UNIMPLEMENTED: complete -A file"),
-                CompleteAction::Function => log::debug!("UNIMPLEMENTED: complete -A function"),
-                CompleteAction::Group => log::debug!("UNIMPLEMENTED: complete -A group"),
-                CompleteAction::HelpTopic => log::debug!("UNIMPLEMENTED: complete -A helptopic"),
-                CompleteAction::HostName => log::debug!("UNIMPLEMENTED: complete -A hostname"),
-                CompleteAction::Job => log::debug!("UNIMPLEMENTED: complete -A job"),
-                CompleteAction::Keyword => log::debug!("UNIMPLEMENTED: complete -A keyword"),
-                CompleteAction::Running => log::debug!("UNIMPLEMENTED: complete -A running"),
-                CompleteAction::Service => log::debug!("UNIMPLEMENTED: complete -A service"),
-                CompleteAction::SetOpt => log::debug!("UNIMPLEMENTED: complete -A setopt"),
-                CompleteAction::ShOpt => log::debug!("UNIMPLEMENTED: complete -A shopt"),
-                CompleteAction::Signal => log::debug!("UNIMPLEMENTED: complete -A signal"),
-                CompleteAction::Stopped => log::debug!("UNIMPLEMENTED: complete -A stopped"),
-                CompleteAction::User => log::debug!("UNIMPLEMENTED: complete -A user"),
+                CompleteAction::Alias => tracing::debug!("UNIMPLEMENTED: complete -A alias"),
+                CompleteAction::ArrayVar => tracing::debug!("UNIMPLEMENTED: complete -A arrayvar"),
+                CompleteAction::Binding => tracing::debug!("UNIMPLEMENTED: complete -A binding"),
+                CompleteAction::Builtin => tracing::debug!("UNIMPLEMENTED: complete -A builtin"),
+                CompleteAction::Command => tracing::debug!("UNIMPLEMENTED: complete -A command"),
+                CompleteAction::Directory => {
+                    tracing::debug!("UNIMPLEMENTED: complete -A directory");
+                }
+                CompleteAction::Disabled => tracing::debug!("UNIMPLEMENTED: complete -A disabled"),
+                CompleteAction::Enabled => tracing::debug!("UNIMPLEMENTED: complete -A enabled"),
+                CompleteAction::Export => tracing::debug!("UNIMPLEMENTED: complete -A export"),
+                CompleteAction::File => tracing::debug!("UNIMPLEMENTED: complete -A file"),
+                CompleteAction::Function => tracing::debug!("UNIMPLEMENTED: complete -A function"),
+                CompleteAction::Group => tracing::debug!("UNIMPLEMENTED: complete -A group"),
+                CompleteAction::HelpTopic => {
+                    tracing::debug!("UNIMPLEMENTED: complete -A helptopic");
+                }
+                CompleteAction::HostName => tracing::debug!("UNIMPLEMENTED: complete -A hostname"),
+                CompleteAction::Job => tracing::debug!("UNIMPLEMENTED: complete -A job"),
+                CompleteAction::Keyword => tracing::debug!("UNIMPLEMENTED: complete -A keyword"),
+                CompleteAction::Running => tracing::debug!("UNIMPLEMENTED: complete -A running"),
+                CompleteAction::Service => tracing::debug!("UNIMPLEMENTED: complete -A service"),
+                CompleteAction::SetOpt => tracing::debug!("UNIMPLEMENTED: complete -A setopt"),
+                CompleteAction::ShOpt => tracing::debug!("UNIMPLEMENTED: complete -A shopt"),
+                CompleteAction::Signal => tracing::debug!("UNIMPLEMENTED: complete -A signal"),
+                CompleteAction::Stopped => tracing::debug!("UNIMPLEMENTED: complete -A stopped"),
+                CompleteAction::User => tracing::debug!("UNIMPLEMENTED: complete -A user"),
                 CompleteAction::Variable => {
                     shell.env.iter().for_each(|(key, _value)| {
                         candidates.push(key.to_string());
@@ -209,10 +213,10 @@ impl CompletionSpec {
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
-            log::debug!("UNIMPLEMENTED: complete -G({glob_pattern})");
+            tracing::debug!("UNIMPLEMENTED: complete -G({glob_pattern})");
         }
         if let Some(word_list) = &self.word_list {
-            log::debug!("UNIMPLEMENTED: complete -W({word_list})");
+            tracing::debug!("UNIMPLEMENTED: complete -W({word_list})");
         }
         if let Some(function_name) = &self.function_name {
             let call_result = self
@@ -226,7 +230,7 @@ impl CompletionSpec {
             }
         }
         if let Some(command) = &self.command {
-            log::debug!("UNIMPLEMENTED: complete -C({command})");
+            tracing::debug!("UNIMPLEMENTED: complete -C({command})");
         }
 
         // Make sure the token we have (if non-empty) is a prefix.
@@ -236,7 +240,7 @@ impl CompletionSpec {
 
         // Apply filter pattern, if present.
         if let Some(filter_pattern) = &self.filter_pattern {
-            log::debug!("UNIMPLEMENTED: complete -X (filter pattern): {filter_pattern}");
+            tracing::debug!("UNIMPLEMENTED: complete -X (filter pattern): {filter_pattern}");
         }
 
         // Add prefix and/or suffix, if present.
@@ -406,7 +410,7 @@ impl CompletionConfig {
             let mut restart_count = 0;
             while matches!(result, CompletionResult::RestartCompletionProcess) {
                 if restart_count > MAX_RESTARTS {
-                    log::error!("possible infinite loop detected in completion process");
+                    tracing::error!("possible infinite loop detected in completion process");
                     break;
                 }
 
