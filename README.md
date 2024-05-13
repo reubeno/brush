@@ -25,7 +25,7 @@ There's a lot that *is* working, but also non-trivial gaps in compatibility. Mos
   You can run `some-command &` but it's proof-of-concept quality at best. Standard job management via `fg`, `bg`, and `jobs` is not fully implemented. This would be a great area for enthusiastic contributors to dive in :).
 * **Honoring `set` options (e.g., `set -e`).**
   The `set` builtin is implemented, as is `set -x` and a few other options, but most of the behaviors aren't there. `set -e`, for example, will execute but its semantics aren't applied across execution.
-* **Backtick (`) expansions**
+* **Backtick (`` ` ``) expansions**
   Modern command expansions (e.g. `$(command)`) work fine. It's just the tokenizing and parsing of backtick syntax that isn't there. 
 
 Shell built-ins are a mixed bag. Some are completely and fully implemented (e.g. echo), while some only support their most commonly used options. Some aren't implemented at all.
