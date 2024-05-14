@@ -1,0 +1,53 @@
+name: "Builtins: compgen"
+cases:
+  - name: "compgen -A alias"
+    stdin: |
+      alias myalias="ls"
+      alias myalias2="echo hi"
+
+      compgen -A alias myalias
+
+  - name: "compgen -A builtin"
+    stdin: |
+      compgen -A builtin cd
+
+  - name: "compgen -A directory"
+    known_failure: true
+    stdin: |
+      touch somefile
+      mkdir somedir
+      mkdir somedir2
+
+      compgen -A directory some
+
+  - name: "compgen -A file"
+    known_failure: true
+    stdin: |
+      touch somefile
+      mkdir somedir
+      mkdir somedir2
+
+      compgen -A file some
+
+  - name: "compgen -A function"
+    stdin: |
+      myfunc() {
+        echo hi
+      }
+
+      myfunc2() {
+        echo hello
+      }
+
+      compgen -A function myfunc
+
+  - name: "compgen -A keyword"
+    stdin: |
+      compgen -A keyword esa
+
+  - name: "compgen -A variable"
+    stdin: |
+      declare myvar=10
+      declare myvar2=11
+
+      compgen -A variable myvar

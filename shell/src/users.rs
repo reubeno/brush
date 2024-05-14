@@ -26,6 +26,22 @@ pub(crate) fn get_current_username() -> Result<String, error::Error> {
     Ok(username.to_string_lossy().to_string())
 }
 
+#[allow(clippy::unnecessary_wraps)]
+#[cfg(unix)]
+pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
+    // TODO: implement this
+    tracing::debug!("UNIMPLEMENTED: get_all_users");
+    Ok(vec![])
+}
+
+#[allow(clippy::unnecessary_wraps)]
+#[cfg(unix)]
+pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
+    // TODO: implement this
+    tracing::debug!("UNIMPLEMENTED: get_all_groups");
+    Ok(vec![])
+}
+
 #[cfg(windows)]
 pub(crate) fn get_user_home_dir() -> Option<PathBuf> {
     homedir::get_my_home().unwrap_or_default()
@@ -40,4 +56,16 @@ pub(crate) fn is_root() -> bool {
 #[cfg(windows)]
 pub(crate) fn get_current_username() -> Result<String, error::Error> {
     Ok(whoami::username())
+}
+
+#[cfg(windows)]
+pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
+    // TODO: implement some version of this for Windows
+    Ok(vec![])
+}
+
+#[cfg(windows)]
+pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
+    // TODO: implement some version of this for Windows
+    Ok(vec![])
 }

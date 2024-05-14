@@ -11,6 +11,7 @@ mod expansion;
 mod extendedtests;
 mod interp;
 mod jobs;
+mod keywords;
 mod namedoptions;
 mod openfiles;
 mod options;
