@@ -4,6 +4,7 @@ use std::{io::Write, sync::Arc};
 use clap::Parser;
 use parser::ast;
 
+use crate::keywords;
 use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},
     Shell,
@@ -134,7 +135,7 @@ impl TypeCommand {
             }
 
             // Check for keywords.
-            if is_keyword(shell, name) {
+            if keywords::is_keyword(shell, name) {
                 types.push(ResolvedType::Keyword);
             }
 
@@ -163,32 +164,5 @@ impl TypeCommand {
         }
 
         types
-    }
-}
-
-fn is_keyword(shell: &Shell, name: &str) -> bool {
-    match name {
-        "!" => true,
-        "{" => true,
-        "}" => true,
-        "case" => true,
-        "do" => true,
-        "done" => true,
-        "elif" => true,
-        "else" => true,
-        "esac" => true,
-        "fi" => true,
-        "for" => true,
-        "if" => true,
-        "in" => true,
-        "then" => true,
-        "until" => true,
-        "while" => true,
-        // N.B. Some shells also treat the following as reserved.
-        "[[" if !shell.options.sh_mode => true,
-        "]]" if !shell.options.sh_mode => true,
-        "function" if !shell.options.sh_mode => true,
-        "select" if !shell.options.sh_mode => true,
-        _ => false,
     }
 }

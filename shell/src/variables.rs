@@ -491,6 +491,17 @@ pub enum FormatStyle {
 }
 
 impl ShellValue {
+    pub fn is_array(&self) -> bool {
+        matches!(
+            self,
+            ShellValue::IndexedArray(_)
+                | ShellValue::AssociativeArray(_)
+                | ShellValue::Unset(
+                    ShellValueUnsetType::IndexedArray | ShellValueUnsetType::AssociativeArray
+                )
+        )
+    }
+
     pub fn indexed_array_from_slice(values: &[&str]) -> Self {
         let mut owned_values = BTreeMap::new();
         for (i, value) in values.iter().enumerate() {

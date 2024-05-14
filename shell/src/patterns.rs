@@ -61,19 +61,19 @@ impl Pattern {
         self.pieces.iter().all(|p| p.as_str().is_empty())
     }
 
-    pub(crate) fn accept_all_expand_filter(_metadata: Option<&std::fs::Metadata>) -> bool {
+    pub(crate) fn accept_all_expand_filter(_path: &Path) -> bool {
         true
     }
 
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn expand<MF>(
+    pub(crate) fn expand<PF>(
         &self,
         working_dir: &Path,
         enable_extended_globbing: bool,
-        metadata_filter: Option<&MF>,
+        path_filter: Option<&PF>,
     ) -> Result<Vec<String>, error::Error>
     where
-        MF: Fn(Option<&std::fs::Metadata>) -> bool,
+        PF: Fn(&Path) -> bool,
     {
         if self.is_empty() {
             return Ok(vec![]);
@@ -81,6 +81,13 @@ impl Pattern {
             matches!(piece, PatternPiece::Pattern(_)) && requires_expansion(piece.as_str())
         }) {
             let concatenated: String = self.pieces.iter().map(|piece| piece.as_str()).collect();
+
+            if let Some(filter) = path_filter {
+                if !filter(Path::new(&concatenated)) {
+                    return Ok(vec![]);
+                }
+            }
+
             return Ok(vec![concatenated]);
         }
 
@@ -150,22 +157,10 @@ impl Pattern {
                 let subpattern = Pattern::from(&component);
                 let regex = subpattern.to_regex(true, true, enable_extended_globbing)?;
 
-                let matches_criteria = |dir_entry: &std::fs::DirEntry| {
-                    if !regex
+                let matches_regex = |dir_entry: &std::fs::DirEntry| {
+                    regex
                         .is_match(dir_entry.file_name().to_string_lossy().as_ref())
                         .unwrap_or(false)
-                    {
-                        return false;
-                    }
-
-                    if let Some(filter) = &metadata_filter {
-                        let metadata_result = dir_entry.metadata();
-                        if !filter(metadata_result.as_ref().ok()) {
-                            return false;
-                        }
-                    }
-
-                    true
                 };
 
                 let mut matching_paths_in_dir: Vec<_> = current_path
@@ -173,7 +168,7 @@ impl Pattern {
                     .map_or_else(|_| vec![], |dir| dir.into_iter().collect())
                     .into_iter()
                     .filter_map(|result| result.ok())
-                    .filter(matches_criteria)
+                    .filter(matches_regex)
                     .map(|entry| entry.path())
                     .collect();
 
@@ -185,7 +180,13 @@ impl Pattern {
 
         let results: Vec<_> = paths_so_far
             .into_iter()
-            .map(|path| {
+            .filter_map(|path| {
+                if let Some(filter) = path_filter {
+                    if !filter(path.as_path()) {
+                        return None;
+                    }
+                }
+
                 let path_str = path.to_string_lossy();
                 let mut path_ref = path_str.as_ref();
 
@@ -193,7 +194,7 @@ impl Pattern {
                     path_ref = path_ref.strip_prefix(prefix_to_remove).unwrap();
                 }
 
-                path_ref.to_string()
+                Some(path_ref.to_string())
             })
             .collect();
 

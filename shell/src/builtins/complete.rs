@@ -477,20 +477,22 @@ pub(crate) struct CompOptCommand {
 impl BuiltinCommand for CompOptCommand {
     async fn execute(
         &self,
-        _context: crate::context::CommandExecutionContext<'_>,
+        context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        if self.update_default {
-            return error::unimp("compopt -D");
-        }
-        if self.update_empty {
-            return error::unimp("compopt -E");
-        }
-        if self.update_initial_word {
-            return error::unimp("compopt -I");
-        }
         if !self.names.is_empty() {
+            tracing::debug!("UNIMPLEMENTED: compopt with names");
             return error::unimp("compopt with names");
         }
+
+        let target_spec = if self.update_default {
+            Some(&mut context.shell.completion_config.default)
+        } else if self.update_empty {
+            Some(&mut context.shell.completion_config.empty_line)
+        } else if self.update_initial_word {
+            Some(&mut context.shell.completion_config.initial_word)
+        } else {
+            None
+        };
 
         let mut options = HashMap::new();
         for option in &self.disabled_options {
@@ -500,12 +502,18 @@ impl BuiltinCommand for CompOptCommand {
             options.insert(option.clone(), true);
         }
 
-        // TODO: implement options
-        for (option, value) in options {
-            if value {
-                tracing::debug!("compopt: enabling {option:?}");
-            } else {
-                tracing::debug!("compopt: disabling {option:?}");
+        if let Some(Some(target_spec)) = target_spec {
+            for (option, value) in options {
+                match option {
+                    CompleteOption::BashDefault => target_spec.bash_default = value,
+                    CompleteOption::Default => target_spec.default = value,
+                    CompleteOption::DirNames => target_spec.dir_names = value,
+                    CompleteOption::FileNames => target_spec.file_names = value,
+                    CompleteOption::NoQuote => target_spec.no_quote = value,
+                    CompleteOption::NoSort => target_spec.no_sort = value,
+                    CompleteOption::NoSpace => target_spec.no_space = value,
+                    CompleteOption::PlusDirs => target_spec.plus_dirs = value,
+                }
             }
         }
 

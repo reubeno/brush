@@ -1,12 +1,11 @@
-use faccess::PathExt;
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
-use crate::expansion;
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::jobs;
 use crate::openfiles;
@@ -17,6 +16,7 @@ use crate::{builtins, error};
 use crate::{commands, patterns};
 use crate::{completion, users};
 use crate::{context, env};
+use crate::{expansion, keywords};
 
 pub struct Shell {
     //
@@ -705,6 +705,11 @@ impl Shell {
 
     #[allow(clippy::manual_flatten)]
     pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
+        let is_executable = |path: &Path| {
+            path.metadata()
+                .is_ok_and(|md| md.permissions().mode() & 0o111 != 0)
+        };
+
         let mut executables = vec![];
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
             let pattern = std::format!("{dir_str}/{required_glob_pattern}");
@@ -712,13 +717,10 @@ impl Shell {
             if let Ok(entries) = patterns::Pattern::from(pattern).expand(
                 &self.working_dir,
                 self.options.extended_globbing,
-                Some(&patterns::Pattern::accept_all_expand_filter),
+                Some(&is_executable),
             ) {
                 for entry in entries {
-                    let path = Path::new(&entry);
-                    if path.executable() {
-                        executables.push(path.to_path_buf());
-                    }
+                    executables.push(PathBuf::from(entry));
                 }
             }
         }
@@ -814,5 +816,13 @@ impl Shell {
     #[allow(clippy::unused_self)]
     pub fn get_builtin_names(&self) -> Vec<String> {
         builtins::get_all_builtin_names()
+    }
+
+    pub fn get_keywords(&self) -> Vec<String> {
+        if self.options.sh_mode {
+            keywords::SH_MODE_KEYWORDS.iter().cloned().collect()
+        } else {
+            keywords::KEYWORDS.iter().cloned().collect()
+        }
     }
 }

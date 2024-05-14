@@ -1,10 +1,10 @@
 use clap::ValueEnum;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
-use crate::{env, error, patterns, variables::ShellValueLiteral, Shell};
+use crate::{env, error, namedoptions, patterns, users, variables::ShellValueLiteral, Shell};
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum CompleteAction {
@@ -183,19 +183,36 @@ impl CompletionSpec {
                         candidates.push(name.to_string());
                     }
                 }
-                CompleteAction::ArrayVar => tracing::debug!("UNIMPLEMENTED: complete -A arrayvar"),
+                CompleteAction::ArrayVar => {
+                    for (name, var) in shell.env.iter() {
+                        if var.value().is_array() {
+                            candidates.push(name.to_owned());
+                        }
+                    }
+                }
                 CompleteAction::Binding => tracing::debug!("UNIMPLEMENTED: complete -A binding"),
                 CompleteAction::Builtin => {
                     let mut builtin_names = shell.get_builtin_names();
                     candidates.append(&mut builtin_names);
                 }
-                CompleteAction::Command => tracing::debug!("UNIMPLEMENTED: complete -A command"),
+                CompleteAction::Command => {
+                    let mut command_completions = get_command_completions(shell, context);
+                    candidates.append(&mut command_completions);
+                }
                 CompleteAction::Directory => {
                     let mut file_completions = get_file_completions(shell, context, true);
                     candidates.append(&mut file_completions);
                 }
-                CompleteAction::Disabled => tracing::debug!("UNIMPLEMENTED: complete -A disabled"),
-                CompleteAction::Enabled => tracing::debug!("UNIMPLEMENTED: complete -A enabled"),
+                CompleteAction::Disabled => {
+                    // For now, no builtins are disabled.
+                    tracing::debug!("UNIMPLEMENTED: complete -A disabled");
+                }
+                CompleteAction::Enabled => {
+                    // For now, all builtins are enabled
+                    tracing::debug!("UNIMPLEMENTED: complete -A enabled");
+                    let mut builtin_names = shell.get_builtin_names();
+                    candidates.append(&mut builtin_names);
+                }
                 CompleteAction::Export => {
                     for (key, value) in shell.env.iter() {
                         if value.is_exported() {
@@ -212,20 +229,43 @@ impl CompletionSpec {
                         candidates.push(name.to_owned());
                     }
                 }
-                CompleteAction::Group => tracing::debug!("UNIMPLEMENTED: complete -A group"),
+                CompleteAction::Group => {
+                    let mut names = users::get_all_groups()?;
+                    candidates.append(&mut names);
+                }
                 CompleteAction::HelpTopic => {
                     tracing::debug!("UNIMPLEMENTED: complete -A helptopic");
                 }
-                CompleteAction::HostName => tracing::debug!("UNIMPLEMENTED: complete -A hostname"),
+                CompleteAction::HostName => {
+                    // N.B. We only retrieve one hostname.
+                    if let Ok(name) = hostname::get() {
+                        candidates.push(name.to_string_lossy().to_string());
+                    }
+                }
                 CompleteAction::Job => tracing::debug!("UNIMPLEMENTED: complete -A job"),
-                CompleteAction::Keyword => tracing::debug!("UNIMPLEMENTED: complete -A keyword"),
+                CompleteAction::Keyword => {
+                    for keyword in shell.get_keywords() {
+                        candidates.push(keyword.clone());
+                    }
+                }
                 CompleteAction::Running => tracing::debug!("UNIMPLEMENTED: complete -A running"),
                 CompleteAction::Service => tracing::debug!("UNIMPLEMENTED: complete -A service"),
-                CompleteAction::SetOpt => tracing::debug!("UNIMPLEMENTED: complete -A setopt"),
-                CompleteAction::ShOpt => tracing::debug!("UNIMPLEMENTED: complete -A shopt"),
+                CompleteAction::SetOpt => {
+                    for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
+                        candidates.push((*name).to_owned());
+                    }
+                }
+                CompleteAction::ShOpt => {
+                    for (name, _) in namedoptions::SHOPT_OPTIONS.iter() {
+                        candidates.push((*name).to_owned());
+                    }
+                }
                 CompleteAction::Signal => tracing::debug!("UNIMPLEMENTED: complete -A signal"),
                 CompleteAction::Stopped => tracing::debug!("UNIMPLEMENTED: complete -A stopped"),
-                CompleteAction::User => tracing::debug!("UNIMPLEMENTED: complete -A user"),
+                CompleteAction::User => {
+                    let mut names = users::get_all_users()?;
+                    candidates.append(&mut names);
+                }
                 CompleteAction::Variable => {
                     for (key, _) in shell.env.iter() {
                         candidates.push(key.to_owned());
@@ -235,10 +275,18 @@ impl CompletionSpec {
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
-            tracing::debug!("UNIMPLEMENTED: complete -G({glob_pattern})");
+            let pattern = patterns::Pattern::from(glob_pattern.as_str());
+            let mut expansions = pattern.expand(
+                shell.working_dir.as_path(),
+                shell.parser_options().enable_extended_globbing,
+                Some(&patterns::Pattern::accept_all_expand_filter),
+            )?;
+
+            candidates.append(&mut expansions);
         }
         if let Some(word_list) = &self.word_list {
-            tracing::debug!("UNIMPLEMENTED: complete -W({word_list})");
+            let mut words = split_string_using_ifs(word_list, shell);
+            candidates.append(&mut words);
         }
         if let Some(function_name) = &self.function_name {
             let call_result = self
@@ -262,7 +310,9 @@ impl CompletionSpec {
 
         // Apply filter pattern, if present.
         if let Some(filter_pattern) = &self.filter_pattern {
-            tracing::debug!("UNIMPLEMENTED: complete -X (filter pattern): {filter_pattern}");
+            if !filter_pattern.is_empty() {
+                tracing::debug!("UNIMPLEMENTED: complete -X (filter pattern): '{filter_pattern}'");
+            }
         }
 
         // Add prefix and/or suffix, if present.
@@ -535,15 +585,13 @@ fn get_file_completions(
 ) -> Vec<String> {
     let glob = std::format!("{}*", context.token_to_complete);
 
-    let metadata_filter = |metadata: Option<&std::fs::Metadata>| {
-        !must_be_dir || metadata.is_some_and(|md| md.is_dir())
-    };
+    let path_filter = |path: &Path| !must_be_dir || path.is_dir();
 
     // TODO: Pass through quoting.
     if let Ok(mut candidates) = patterns::Pattern::from(glob).expand(
         shell.working_dir.as_path(),
         shell.options.extended_globbing,
-        Some(&metadata_filter),
+        Some(&path_filter),
     ) {
         for candidate in &mut candidates {
             if Path::new(candidate.as_str()).is_dir() {
@@ -554,6 +602,19 @@ fn get_file_completions(
     } else {
         vec![]
     }
+}
+
+fn get_command_completions(shell: &Shell, context: &CompletionContext) -> Vec<String> {
+    let mut candidates = HashSet::new();
+    let glob_pattern = std::format!("{}*", context.token_to_complete);
+
+    for path in shell.find_executables_in_path(&glob_pattern) {
+        if let Some(file_name) = path.file_name() {
+            candidates.insert(file_name.to_string_lossy().to_string());
+        }
+    }
+
+    candidates.into_iter().collect()
 }
 
 fn get_completions_using_basic_lookup(
@@ -571,21 +632,8 @@ fn get_completions_using_basic_lookup(
         && !context.token_to_complete.is_empty()
         && !context.token_to_complete.contains('/')
     {
-        let glob_pattern = std::format!("{}*", context.token_to_complete);
-
-        for path in shell.find_executables_in_path(&glob_pattern) {
-            if let Some(file_name) = path.file_name() {
-                candidates.push(file_name.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    if context.token_index + 1 >= context.tokens.len() {
-        for candidate in &mut candidates {
-            if !candidate.ends_with('/') {
-                candidate.push(' ');
-            }
-        }
+        let mut command_completions = get_command_completions(shell, context);
+        candidates.append(&mut command_completions);
     }
 
     #[cfg(windows)]
@@ -597,4 +645,12 @@ fn get_completions_using_basic_lookup(
     }
 
     CompletionResult::Candidates(candidates)
+}
+
+fn split_string_using_ifs<S: AsRef<str>>(s: S, shell: &Shell) -> Vec<String> {
+    let ifs_chars: Vec<char> = shell.get_ifs().chars().collect();
+    s.as_ref()
+        .split(ifs_chars.as_slice())
+        .map(|s| s.to_owned())
+        .collect()
 }
