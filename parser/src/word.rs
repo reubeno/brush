@@ -412,7 +412,7 @@ peg::parser! {
 
         pub(crate) rule command_substitution() -> WordPiece =
             "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
-            "`" backquoted_command() "`" { todo!("UNIMPLEMENTED: backquoted command substitution") }
+            "`" c:backquoted_command() "`" { WordPiece::CommandSubstitution(c) }
 
         pub(crate) rule command() -> &'input str =
             $(command_piece()*)
@@ -421,8 +421,12 @@ peg::parser! {
             word_piece(<![')']>) {} /
             ([' ' | '\t'])+ {}
 
-        rule backquoted_command() -> () =
-            "<BACKQUOTES UNIMPLEMENTED>" {}
+        rule backquoted_command() -> String =
+            chars:(backquoted_char()*) { chars.into_iter().collect() }
+
+        rule backquoted_char() -> char =
+            "\\`" { '`' } /
+            [^'`']
 
         rule arithmetic_expansion() -> WordPiece =
             "$((" e:$(arithmetic_word(<!"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }

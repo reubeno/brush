@@ -154,8 +154,14 @@ impl Execute for ast::CompoundList {
                     jobs::JobState::Running,
                 ));
                 let job_id = job.id;
+                let job_annotation = job.get_annotation();
+                let job_pid = job
+                    .get_pid()?
+                    .map_or_else(|| String::from("<pid unknown>"), |pid| pid.to_string());
 
-                writeln!(shell.stderr(), "[{job_id}]+\t<pid unknown>")?;
+                if shell.options.interactive {
+                    writeln!(shell.stderr(), "[{job_id}]{job_annotation}\t{job_pid}")?;
+                }
             } else {
                 result = ao_list.execute(shell, params).await?;
             }

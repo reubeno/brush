@@ -50,6 +50,7 @@ mod umask;
 mod unalias;
 mod unimp;
 mod unset;
+mod wait;
 
 fn exec_builtin<T: BuiltinCommand + Send>(
     context: context::CommandExecutionContext<'_>,
@@ -205,7 +206,7 @@ fn get_builtins(include_extended: bool) -> HashMap<&'static str, BuiltinCommandE
     m.insert("ulimit", exec_builtin::<unimp::UnimplementedCommand>);
     m.insert("umask", exec_builtin::<umask::UmaskCommand>);
     m.insert("unalias", exec_builtin::<unalias::UnaliasCommand>);
-    m.insert("wait", exec_builtin::<unimp::UnimplementedCommand>);
+    m.insert("wait", exec_builtin::<wait::WaitCommand>);
 
     // TODO: does this belong?
     m.insert("local", exec_declaration_builtin::<declare::DeclareCommand>);

@@ -51,22 +51,7 @@ impl BuiltinCommand for JobsCommand {
         }
 
         for job in &context.shell.jobs.background_jobs {
-            let annotation = if job.is_current() {
-                "+"
-            } else if job.is_prev() {
-                "-"
-            } else {
-                ""
-            };
-
-            writeln!(
-                context.stdout(),
-                "[{}]{:3}{:24}{}",
-                job.id,
-                annotation,
-                job.state.to_string(),
-                job.command_line
-            )?;
+            writeln!(context.stdout(), "{job}")?;
         }
 
         Ok(BuiltinExitCode::Success)

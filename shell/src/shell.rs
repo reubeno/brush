@@ -825,4 +825,14 @@ impl Shell {
             keywords::KEYWORDS.iter().cloned().collect()
         }
     }
+
+    pub fn check_for_completed_jobs(&mut self) -> Result<(), error::Error> {
+        let results = self.jobs.poll()?;
+
+        for (job, _result) in results {
+            writeln!(self.stderr(), "{job}")?;
+        }
+
+        Ok(())
+    }
 }

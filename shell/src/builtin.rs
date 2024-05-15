@@ -115,6 +115,11 @@ pub trait BuiltinCommand: Parser {
         &self,
         context: context::CommandExecutionContext<'_>,
     ) -> Result<BuiltinExitCode, error::Error>;
+
+    #[allow(dead_code)]
+    fn get_long_help(&self) -> String {
+        Self::command().render_long_help().to_string()
+    }
 }
 
 #[allow(clippy::module_name_repetitions)]
