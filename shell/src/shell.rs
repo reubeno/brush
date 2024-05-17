@@ -7,16 +7,12 @@ use std::sync::Arc;
 
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
-use crate::jobs;
-use crate::openfiles;
 use crate::options::RuntimeOptions;
-use crate::prompt::expand_prompt;
 use crate::variables::{self, ShellValue, ShellVariable};
-use crate::{builtins, error};
-use crate::{commands, patterns};
-use crate::{completion, users};
-use crate::{context, env};
-use crate::{expansion, keywords};
+use crate::{
+    builtin, builtins, commands, completion, context, env, error, expansion, jobs, keywords,
+    openfiles, patterns, prompt, users,
+};
 
 pub struct Shell {
     //
@@ -61,6 +57,9 @@ pub struct Shell {
 
     // Completion configuration.
     pub completion_config: completion::CompletionConfig,
+
+    // Builtins.
+    pub builtins: HashMap<String, builtin::BuiltinRegistration>,
 }
 
 impl Clone for Shell {
@@ -83,6 +82,7 @@ impl Clone for Shell {
             directory_stack: self.directory_stack.clone(),
             current_line_number: self.current_line_number,
             completion_config: self.completion_config.clone(),
+            builtins: self.builtins.clone(),
             depth: self.depth + 1,
         }
     }
@@ -130,6 +130,7 @@ impl Shell {
             directory_stack: vec![],
             current_line_number: 0,
             completion_config: completion::CompletionConfig::default(),
+            builtins: builtins::get_default_builtins(options),
             depth: 0,
         };
 
@@ -557,7 +558,7 @@ impl Shell {
         let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
 
         // Expand it.
-        let formatted_prompt = expand_prompt(self, ps1.as_ref())?;
+        let formatted_prompt = prompt::expand_prompt(self, ps1.as_ref())?;
 
         // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
         // so we strip them here.
@@ -813,11 +814,6 @@ impl Shell {
         writeln!(self.stderr(), "{prefix}{}", command.as_ref())
     }
 
-    #[allow(clippy::unused_self)]
-    pub fn get_builtin_names(&self) -> Vec<String> {
-        builtins::get_all_builtin_names()
-    }
-
     pub fn get_keywords(&self) -> Vec<String> {
         if self.options.sh_mode {
             keywords::SH_MODE_KEYWORDS.iter().cloned().collect()
@@ -829,8 +825,10 @@ impl Shell {
     pub fn check_for_completed_jobs(&mut self) -> Result<(), error::Error> {
         let results = self.jobs.poll()?;
 
-        for (job, _result) in results {
-            writeln!(self.stderr(), "{job}")?;
+        if self.options.interactive {
+            for (job, _result) in results {
+                writeln!(self.stderr(), "{job}")?;
+            }
         }
 
         Ok(())

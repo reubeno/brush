@@ -1,5 +1,6 @@
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::builtin::{BuiltinCommand, BuiltinExitCode, BuiltinRegistration};
 use clap::Parser;
+use itertools::Itertools;
 use std::io::Write;
 
 #[derive(Parser)]
@@ -49,13 +50,19 @@ impl HelpCommand {
             "The following commands are implemented as shell built-ins:"
         )?;
 
-        let builtin_names = context.shell.get_builtin_names();
-        let items_per_column = (builtin_names.len() + COLUMN_COUNT - 1) / COLUMN_COUNT;
+        let builtins: Vec<(&String, &BuiltinRegistration)> = context
+            .shell
+            .builtins
+            .iter()
+            .sorted_by_key(|(name, _)| *name)
+            .collect();
+        let items_per_column = (builtins.len() + COLUMN_COUNT - 1) / COLUMN_COUNT;
 
         for i in 0..items_per_column {
             for j in 0..COLUMN_COUNT {
-                if let Some(name) = builtin_names.get(i + j * items_per_column) {
-                    write!(context.stdout(), "  {name:<20}")?; // adjust 20 to the desired column width
+                if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
+                    let prefix = if builtin.disabled { "*" } else { " " };
+                    write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired column width
                 }
             }
             writeln!(context.stdout())?;
@@ -72,9 +79,9 @@ impl HelpCommand {
         let pattern = crate::patterns::Pattern::from(topic_pattern);
 
         let mut found_count = 0;
-        for builtin_name in context.shell.get_builtin_names() {
+        for (builtin_name, builtin_registration) in &context.shell.builtins {
             if pattern.exactly_matches(builtin_name.as_str(), false)? {
-                self.display_help_for_builtin(context, builtin_name.as_str())?;
+                self.display_help_for_builtin(context, builtin_registration)?;
                 found_count += 1;
             }
         }
@@ -90,10 +97,9 @@ impl HelpCommand {
     fn display_help_for_builtin(
         &self,
         context: &crate::context::CommandExecutionContext<'_>,
-        builtin_name: &str,
+        registration: &BuiltinRegistration,
     ) -> Result<(), crate::error::Error> {
-        // TODO: implement the rest of this
-        writeln!(context.stdout(), "Help for '{builtin_name}'")?;
+        writeln!(context.stdout(), "{}", (registration.help_func)())?;
         Ok(())
     }
 }

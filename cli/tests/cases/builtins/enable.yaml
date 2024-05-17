@@ -1,0 +1,24 @@
+name: "Builtins: enable"
+cases:
+  - name: "List special builtins"
+    stdin: enable -s
+
+  - name: "Disable builtins"
+    ignore_stderr: true
+    stdin: |
+      type printf
+
+      # Disable the builtin
+      PATH=
+      enable -n printf
+
+      # Check
+      type printf
+      print "Gone\n"
+
+      # Re-enable
+      enable printf
+
+      # Re-check
+      type printf
+      printf "Back\n"

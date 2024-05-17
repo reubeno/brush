@@ -19,7 +19,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{builtin, builtins, context, error, expansion, extendedtests, jobs, openfiles};
+use crate::{builtin, context, error, expansion, extendedtests, jobs, openfiles};
 
 #[derive(Debug, Default)]
 pub struct ExecutionResult {
@@ -853,7 +853,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                             // Check if we're going to be invoking a special declaration builtin. That will
                             // change how we parse and process args.
-                            if builtins::DECLARATION_BUILTINS.contains(next_args[0].as_str()) {
+                            if context
+                                .shell
+                                .builtins
+                                .get(next_args[0].as_str())
+                                .is_some_and(|r| r.declaration_builtin)
+                            {
                                 invoking_declaration_builtin = true;
                             }
                         }
@@ -896,16 +901,22 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             };
 
             let execution_result = if !cmd_context.command_name.contains('/') {
-                let normal_builtin_lookup = if cmd_context.shell.options.sh_mode {
-                    |s: &str| builtins::POSIX_ONLY_BUILTINS.get(s)
-                } else {
-                    |s: &str| builtins::BUILTINS.get(s)
-                };
+                let mut builtin = cmd_context
+                    .shell
+                    .builtins
+                    .get(&cmd_context.command_name)
+                    .cloned();
 
-                if let Some(builtin) =
-                    builtins::SPECIAL_BUILTINS.get(cmd_context.command_name.as_str())
+                // Ignore the builtin if it's marked as disabled.
+                if builtin.as_ref().is_some_and(|b| b.disabled) {
+                    builtin = None;
+                }
+
+                if builtin
+                    .as_ref()
+                    .is_some_and(|r| !r.disabled && r.special_builtin)
                 {
-                    execute_builtin_command(*builtin, cmd_context, args).await
+                    execute_builtin_command(&builtin.unwrap(), cmd_context, args).await
                 } else if let Some(func_def) = cmd_context
                     .shell
                     .funcs
@@ -913,10 +924,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 {
                     // Strip the function name off args.
                     invoke_shell_function(func_def.clone(), cmd_context, &args[1..]).await
-                } else if let Some(builtin) =
-                    normal_builtin_lookup(cmd_context.command_name.as_str())
-                {
-                    execute_builtin_command(*builtin, cmd_context, args).await
+                } else if let Some(builtin) = builtin {
+                    execute_builtin_command(&builtin, cmd_context, args).await
                 } else {
                     // Strip the command name off args.
                     execute_external_command(cmd_context, &args[1..]).await
@@ -1270,11 +1279,11 @@ async fn execute_external_command(
 }
 
 async fn execute_builtin_command(
-    builtin: builtin::BuiltinCommandExecuteFunc,
+    builtin: &builtin::BuiltinRegistration,
     context: context::CommandExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<SpawnResult, error::Error> {
-    let exit_code = match builtin(context, args).await {
+    let exit_code = match (builtin.execute_func)(context, args).await {
         Ok(builtin_result) => match builtin_result.exit_code {
             builtin::BuiltinExitCode::Success => 0,
             builtin::BuiltinExitCode::InvalidUsage => 2,
