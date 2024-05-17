@@ -11,14 +11,14 @@ use crate::options::RuntimeOptions;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
     builtin, builtins, commands, completion, context, env, error, expansion, jobs, keywords,
-    openfiles, patterns, prompt, users,
+    openfiles, patterns, prompt, traps, users,
 };
 
 pub struct Shell {
     //
     // Core state required by specification
     //
-    // TODO: trap state
+    pub traps: traps::TrapHandlerConfig,
     pub open_files: openfiles::OpenFiles,
     pub working_dir: PathBuf,
     pub umask: u32,
@@ -65,6 +65,7 @@ pub struct Shell {
 impl Clone for Shell {
     fn clone(&self) -> Self {
         Self {
+            traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
             umask: self.umask,
@@ -113,6 +114,7 @@ impl Shell {
     pub async fn new(options: &CreateOptions) -> Result<Shell, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
+            traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: std::env::current_dir()?,
             umask: Default::default(),           // TODO: populate umask

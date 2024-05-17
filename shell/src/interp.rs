@@ -1240,6 +1240,7 @@ async fn execute_external_command(
     }
 
     tracing::debug!(
+        target: "commands",
         "Spawning: {} {}",
         cmd.as_std().get_program().to_string_lossy().to_string(),
         cmd.as_std()

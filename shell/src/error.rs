@@ -100,6 +100,9 @@ pub enum Error {
 
     #[error("threading error")]
     ThreadingError(#[from] tokio::task::JoinError),
+
+    #[error("invalid signal")]
+    InvalidSignal,
 }
 
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {
