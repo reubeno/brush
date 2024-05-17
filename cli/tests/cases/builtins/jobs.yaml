@@ -1,0 +1,7 @@
+name: "Builtins: job-related builtins"
+cases:
+  - name: "Basic async job"
+    stdin: |
+      echo hi &
+      wait
+      jobs

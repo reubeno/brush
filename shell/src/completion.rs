@@ -192,8 +192,9 @@ impl CompletionSpec {
                 }
                 CompleteAction::Binding => tracing::debug!("UNIMPLEMENTED: complete -A binding"),
                 CompleteAction::Builtin => {
-                    let mut builtin_names = shell.get_builtin_names();
-                    candidates.append(&mut builtin_names);
+                    for name in shell.builtins.keys() {
+                        candidates.push(name.to_owned());
+                    }
                 }
                 CompleteAction::Command => {
                     let mut command_completions = get_command_completions(shell, context);
@@ -208,10 +209,11 @@ impl CompletionSpec {
                     tracing::debug!("UNIMPLEMENTED: complete -A disabled");
                 }
                 CompleteAction::Enabled => {
-                    // For now, all builtins are enabled
-                    tracing::debug!("UNIMPLEMENTED: complete -A enabled");
-                    let mut builtin_names = shell.get_builtin_names();
-                    candidates.append(&mut builtin_names);
+                    for (name, registration) in &shell.builtins {
+                        if !registration.disabled {
+                            candidates.push(name.to_owned());
+                        }
+                    }
                 }
                 CompleteAction::Export => {
                     for (key, value) in shell.env.iter() {

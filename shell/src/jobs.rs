@@ -1,10 +1,13 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
 
+use futures::FutureExt;
+
 use crate::error;
 use crate::ExecutionResult;
 
 pub(crate) type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>;
+pub(crate) type JobResult = (Job, Result<ExecutionResult, error::Error>);
 
 #[derive(Default)]
 pub struct JobManager {
@@ -33,8 +36,49 @@ impl JobManager {
         self.background_jobs.last_mut()
     }
 
+    #[allow(clippy::unused_self)]
     pub fn resolve_job_spec(&self, _job_spec: &str) -> Option<&mut Job> {
-        todo!("resolve_job_spec")
+        tracing::warn!("resolve_job_spec is not implemented");
+        None
+    }
+
+    pub async fn wait_all(&mut self) -> Result<Vec<Job>, error::Error> {
+        for job in &mut self.background_jobs {
+            job.wait().await?;
+        }
+
+        Ok(self.sweep_completed_jobs())
+    }
+
+    pub fn poll(&mut self) -> Result<Vec<JobResult>, error::Error> {
+        let mut results = vec![];
+
+        let mut i = 0;
+        while i != self.background_jobs.len() {
+            if let Some(result) = self.background_jobs[i].poll_done()? {
+                let job = self.background_jobs.remove(i);
+                results.push((job, result));
+            } else {
+                i += 1;
+            }
+        }
+
+        Ok(results)
+    }
+
+    fn sweep_completed_jobs(&mut self) -> Vec<Job> {
+        let mut completed_jobs = vec![];
+
+        let mut i = 0;
+        while i != self.background_jobs.len() {
+            if self.background_jobs[i].join_handles.is_empty() {
+                completed_jobs.push(self.background_jobs.remove(i));
+            } else {
+                i += 1;
+            }
+        }
+
+        completed_jobs
     }
 }
 
@@ -43,6 +87,7 @@ pub enum JobState {
     Unknown,
     Running,
     Stopped,
+    Done,
 }
 
 impl Display for JobState {
@@ -51,15 +96,26 @@ impl Display for JobState {
             JobState::Unknown => write!(f, "Unknown"),
             JobState::Running => write!(f, "Running"),
             JobState::Stopped => write!(f, "Stopped"),
+            JobState::Done => write!(f, "Done"),
         }
     }
 }
 
-#[allow(dead_code)]
-enum JobAnnotation {
+#[derive(Clone)]
+pub enum JobAnnotation {
     None,
     Current,
     Previous,
+}
+
+impl Display for JobAnnotation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JobAnnotation::None => write!(f, ""),
+            JobAnnotation::Current => write!(f, "+"),
+            JobAnnotation::Previous => write!(f, "-"),
+        }
+    }
 }
 
 pub struct Job {
@@ -71,6 +127,19 @@ pub struct Job {
     pub id: usize,
     pub command_line: String,
     pub state: JobState,
+}
+
+impl Display for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}]{:3}{}\t{}",
+            self.id,
+            self.annotation.to_string(),
+            self.state,
+            self.command_line
+        )
+    }
 }
 
 impl Job {
@@ -90,12 +159,41 @@ impl Job {
         }
     }
 
+    pub fn get_annotation(&self) -> JobAnnotation {
+        self.annotation.clone()
+    }
+
     pub fn is_current(&self) -> bool {
         matches!(self.annotation, JobAnnotation::Current)
     }
 
     pub fn is_prev(&self) -> bool {
         matches!(self.annotation, JobAnnotation::Previous)
+    }
+
+    pub fn poll_done(
+        &mut self,
+    ) -> Result<Option<Result<ExecutionResult, error::Error>>, error::Error> {
+        let mut result: Option<Result<ExecutionResult, error::Error>> = None;
+
+        while !self.join_handles.is_empty() {
+            let join_handle = &mut self.join_handles[0];
+            match join_handle.now_or_never() {
+                Some(Ok(r)) => {
+                    self.join_handles.remove(0);
+                    result = Some(r);
+                }
+                Some(Err(e)) => {
+                    self.join_handles.remove(0);
+                    return Err(error::Error::ThreadingError(e));
+                }
+                None => return Ok(None),
+            }
+        }
+
+        self.state = JobState::Done;
+
+        Ok(result)
     }
 
     pub async fn wait(&mut self) -> Result<ExecutionResult, error::Error> {
@@ -159,12 +257,11 @@ impl Job {
         error::unimp("kill job")
     }
 
-    #[cfg(unix)]
-    fn get_pid(&self) -> Result<Option<u32>, error::Error> {
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn get_pid(&self) -> Result<Option<u32>, error::Error> {
         if self.pids.is_empty() {
-            error::unimp("get pid for job")
-        } else if self.pids.len() > 1 {
-            error::unimp("get pid for job with multiple pids")
+            tracing::debug!("UNIMPLEMENTED: get pid for job");
+            Ok(None)
         } else {
             Ok(Some(self.pids[0]))
         }

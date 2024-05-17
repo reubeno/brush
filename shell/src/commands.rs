@@ -3,7 +3,7 @@ use std::fmt::Display;
 use parser::ast;
 
 #[derive(Clone, Debug)]
-pub(crate) enum CommandArg {
+pub enum CommandArg {
     String(String),
     Assignment(ast::Assignment),
 }

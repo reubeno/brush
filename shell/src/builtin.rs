@@ -115,10 +115,34 @@ pub trait BuiltinCommand: Parser {
         &self,
         context: context::CommandExecutionContext<'_>,
     ) -> Result<BuiltinExitCode, error::Error>;
+
+    #[allow(dead_code)]
+    fn get_long_help() -> String {
+        Self::command().render_long_help().to_string()
+    }
 }
 
 #[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
 pub trait BuiltinDeclarationCommand: BuiltinCommand {
     fn set_declarations(&mut self, declarations: Vec<CommandArg>);
+}
+
+#[allow(clippy::module_name_repetitions)]
+#[derive(Clone)]
+pub struct BuiltinRegistration {
+    /// Function to execute the builtin.
+    pub execute_func: BuiltinCommandExecuteFunc,
+
+    /// Function to retrieve the builtin's detailed help text.
+    pub help_func: fn() -> String,
+
+    /// Has this registration been disabled?
+    pub disabled: bool,
+
+    /// Is the builtin classified as "special" by specification?
+    pub special_builtin: bool,
+
+    /// Is this builtin one that takes specially handled declarations?
+    pub declaration_builtin: bool,
 }

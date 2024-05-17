@@ -97,6 +97,9 @@ pub enum Error {
 
     #[error("{0}")]
     TestCommandParseError(#[from] parser::TestCommandParseError),
+
+    #[error("threading error")]
+    ThreadingError(#[from] tokio::task::JoinError),
 }
 
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {

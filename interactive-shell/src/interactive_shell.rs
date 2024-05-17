@@ -80,6 +80,9 @@ impl InteractiveShell {
 
     pub async fn run_interactively(&mut self) -> Result<(), InteractiveShellError> {
         loop {
+            // Check for any completed jobs.
+            self.shell_mut().check_for_completed_jobs()?;
+
             let result = self.run_interactively_once().await?;
             match result {
                 InteractiveExecutionResult::Executed(shell::ExecutionResult {

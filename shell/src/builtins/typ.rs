@@ -147,9 +147,7 @@ impl TypeCommand {
             }
 
             // Check for builtins.
-            if crate::builtins::SPECIAL_BUILTINS.contains_key(name)
-                || crate::builtins::BUILTINS.contains_key(name)
-            {
+            if shell.builtins.get(name).is_some_and(|b| !b.disabled) {
                 types.push(ResolvedType::Builtin);
             }
         }

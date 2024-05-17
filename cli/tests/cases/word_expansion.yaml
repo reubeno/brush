@@ -56,6 +56,14 @@ cases:
       echo "$(var="updated"; echo ${var})"
       echo "var=${var}"
 
+  - name: "Backtick command substitution"
+    stdin: |
+      echo `echo hi`
+
+  - name: "Backtick command substitution with escaping"
+    stdin: |
+      echo `echo \`echo hi\``
+
   - name: "String length"
     stdin: |
       x="abc"
