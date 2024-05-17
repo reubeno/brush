@@ -11,7 +11,7 @@ use crate::{
 pub(crate) struct DotCommand {
     pub script_path: String,
 
-    #[arg(trailing_var_arg = true)]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub script_args: Vec<String>,
 }
 

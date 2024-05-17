@@ -1,0 +1,16 @@
+name: "Builtins: let"
+cases:
+  - name: "Basic let usage"
+    stdin: |
+      let 0; echo "0 => $?"
+      let 1; echo "1 => $?"
+
+      let 0==0; echo "0==0 => $?"
+      let 0!=0; echo "0!=0 => $?"
+
+      let 1 0; echo "1 0 => $?"
+      let 0 1; echo "0 1 => $?"
+
+  - name: "let with assignment"
+    stdin: |
+      let x=10; echo "x=10 => $?; x==${x}"

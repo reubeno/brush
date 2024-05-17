@@ -12,6 +12,7 @@ use crate::error;
 mod alias;
 mod bg;
 mod brea;
+mod builtin_;
 mod cd;
 mod colon;
 mod complete;
@@ -26,13 +27,14 @@ mod eval;
 mod exec;
 mod exit;
 mod export;
-mod fals;
+mod false_;
 mod fg;
 mod getopts;
 mod help;
 mod jobs;
 #[cfg(unix)]
 mod kill;
+mod let_;
 mod popd;
 mod printf;
 mod pushd;
@@ -44,8 +46,8 @@ mod shift;
 mod shopt;
 mod test;
 mod trap;
-mod tru;
-mod typ;
+mod true_;
+mod type_;
 mod umask;
 mod unalias;
 mod unimp;
@@ -194,18 +196,20 @@ pub(crate) fn get_default_builtins(
     #[cfg(unix)]
     m.insert("exec".into(), special_builtin::<exec::ExecCommand>());
     m.insert("exit".into(), special_builtin::<exit::ExitCommand>());
-    m.insert("export".into(), special_builtin::<export::ExportCommand>()); // TODO: should be exec_declaration_builtin
+    m.insert(
+        "export".into(),
+        special_decl_builtin::<export::ExportCommand>(),
+    );
     m.insert("return".into(), special_builtin::<retur::ReturnCommand>());
     m.insert("set".into(), special_builtin::<set::SetCommand>());
     m.insert("shift".into(), special_builtin::<shift::ShiftCommand>());
     m.insert("trap".into(), special_builtin::<trap::TrapCommand>());
     m.insert("unset".into(), special_builtin::<unset::UnsetCommand>());
 
-    // TODO: Unimplemented special builtins
     m.insert(
         "readonly".into(),
-        special_builtin::<unimp::UnimplementedCommand>(),
-    ); // TODO: should be exec_declaration_builtin
+        special_decl_builtin::<declare::DeclareCommand>(),
+    );
     m.insert(
         "times".into(),
         special_builtin::<unimp::UnimplementedCommand>(),
@@ -218,17 +222,18 @@ pub(crate) fn get_default_builtins(
     m.insert("alias".into(), builtin::<alias::AliasCommand>()); // TODO: should be exec_declaration_builtin
     m.insert("bg".into(), builtin::<bg::BgCommand>());
     m.insert("cd".into(), builtin::<cd::CdCommand>());
-    m.insert("false".into(), builtin::<fals::FalseCommand>());
+    m.insert("false".into(), builtin::<false_::FalseCommand>());
     m.insert("fg".into(), builtin::<fg::FgCommand>());
     m.insert("getopts".into(), builtin::<getopts::GetOptsCommand>());
     m.insert("help".into(), builtin::<help::HelpCommand>());
     m.insert("jobs".into(), builtin::<jobs::JobsCommand>());
     #[cfg(unix)]
     m.insert("kill".into(), builtin::<kill::KillCommand>());
+    m.insert("local".into(), decl_builtin::<declare::DeclareCommand>());
     m.insert("pwd".into(), builtin::<pwd::PwdCommand>());
     m.insert("read".into(), builtin::<read::ReadCommand>());
-    m.insert("true".into(), builtin::<tru::TrueCommand>());
-    m.insert("type".into(), builtin::<typ::TypeCommand>());
+    m.insert("true".into(), builtin::<true_::TrueCommand>());
+    m.insert("type".into(), builtin::<type_::TypeCommand>());
     m.insert("umask".into(), builtin::<umask::UmaskCommand>());
     m.insert("unalias".into(), builtin::<unalias::UnaliasCommand>());
     m.insert("wait".into(), builtin::<wait::WaitCommand>());
@@ -239,13 +244,12 @@ pub(crate) fn get_default_builtins(
     m.insert("hash".into(), builtin::<unimp::UnimplementedCommand>());
     m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
 
-    // TODO: does this belong?
-    m.insert("local".into(), decl_builtin::<declare::DeclareCommand>());
-
     if !options.sh_mode {
+        m.insert("builtin".into(), builtin::<builtin_::BuiltiCommand>());
         m.insert("declare".into(), decl_builtin::<declare::DeclareCommand>());
         m.insert("echo".into(), builtin::<echo::EchoCommand>());
         m.insert("enable".into(), builtin::<enable::EnableCommand>());
+        m.insert("let".into(), builtin::<let_::LetCommand>());
         m.insert("printf".into(), builtin::<printf::PrintfCommand>());
         m.insert("shopt".into(), builtin::<shopt::ShoptCommand>());
         m.insert("source".into(), special_builtin::<dot::DotCommand>());
@@ -265,11 +269,9 @@ pub(crate) fn get_default_builtins(
 
         // TODO: Unimplemented builtins
         m.insert("bind".into(), builtin::<unimp::UnimplementedCommand>());
-        m.insert("builtin".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("history".into(), builtin::<unimp::UnimplementedCommand>());
-        m.insert("let".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("mapfile".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("readarray".into(), builtin::<unimp::UnimplementedCommand>());

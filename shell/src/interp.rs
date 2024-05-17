@@ -281,6 +281,7 @@ impl Execute for ast::Pipeline {
                     let mut child_future = Box::pin(child.wait_with_output());
 
                     // Wait for the process to exit or for a relevant signal, whichever happens first.
+                    // TODO: Figure out how to detect a SIGSTOP'd process.
                     let wait_result = if stopped.is_empty() {
                         loop {
                             tokio::select! {

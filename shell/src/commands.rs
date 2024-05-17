@@ -16,3 +16,15 @@ impl Display for CommandArg {
         }
     }
 }
+
+impl From<String> for CommandArg {
+    fn from(s: String) -> Self {
+        CommandArg::String(s)
+    }
+}
+
+impl From<&String> for CommandArg {
+    fn from(value: &String) -> Self {
+        CommandArg::String(value.clone())
+    }
+}
