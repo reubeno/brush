@@ -3,6 +3,12 @@ cases:
   - name: "List special builtins"
     stdin: enable -s
 
+  - name: "List default-disabled builtins"
+    stdin: enable -n
+
+  - name: "List all builtins"
+    stdin: enable
+
   - name: "Disable builtins"
     ignore_stderr: true
     stdin: |
