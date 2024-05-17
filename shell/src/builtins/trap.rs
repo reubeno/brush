@@ -3,7 +3,7 @@ use std::{io::Write, str::FromStr};
 
 use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},
-    error,
+    error, traps,
 };
 
 #[derive(Parser)]
@@ -77,12 +77,10 @@ impl TrapCommand {
 
     fn display_handlers_for(
         context: &crate::context::CommandExecutionContext<'_>,
-        signal_type: nix::sys::signal::Signal,
+        signal_type: traps::TrapSignal,
     ) -> Result<(), error::Error> {
-        if let Some(handlers) = context.shell.traps.handlers.get(&signal_type) {
-            for handler in handlers {
-                writeln!(context.stdout(), "trap -- '{handler}' {signal_type}")?;
-            }
+        if let Some(handler) = context.shell.traps.handlers.get(&signal_type) {
+            writeln!(context.stdout(), "trap -- '{handler}' {signal_type}")?;
         }
         Ok(())
     }
@@ -90,7 +88,7 @@ impl TrapCommand {
     #[allow(clippy::unnecessary_wraps)]
     fn remove_all_handlers(
         context: &mut crate::context::CommandExecutionContext<'_>,
-        signal: nix::sys::signal::Signal,
+        signal: traps::TrapSignal,
     ) -> Result<(), error::Error> {
         context.shell.traps.remove_handlers(signal);
         Ok(())
@@ -99,7 +97,7 @@ impl TrapCommand {
     #[allow(clippy::unnecessary_wraps)]
     fn register_handler(
         context: &mut crate::context::CommandExecutionContext<'_>,
-        signals: Vec<nix::sys::signal::Signal>,
+        signals: Vec<traps::TrapSignal>,
         handler: &str,
     ) -> Result<(), error::Error> {
         for signal in signals {
@@ -113,13 +111,15 @@ impl TrapCommand {
     }
 }
 
-fn parse_signal(signal: &str) -> Result<nix::sys::signal::Signal, error::Error> {
+fn parse_signal(signal: &str) -> Result<traps::TrapSignal, error::Error> {
     if signal.chars().all(|c| c.is_ascii_digit()) {
         let digits = signal
             .parse::<i32>()
             .map_err(|_| error::Error::InvalidSignal)?;
 
-        nix::sys::signal::Signal::try_from(digits).map_err(|_| error::Error::InvalidSignal)
+        Ok(traps::TrapSignal::Signal(
+            nix::sys::signal::Signal::try_from(digits).map_err(|_| error::Error::InvalidSignal)?,
+        ))
     } else {
         let mut signal_to_parse = signal.to_ascii_uppercase();
 
@@ -127,7 +127,14 @@ fn parse_signal(signal: &str) -> Result<nix::sys::signal::Signal, error::Error> 
             signal_to_parse.insert_str(0, "SIG");
         }
 
-        nix::sys::signal::Signal::from_str(signal_to_parse.as_str())
-            .map_err(|_| error::Error::InvalidSignal)
+        match signal_to_parse {
+            s if s == "SIGDEBUG" => Ok(traps::TrapSignal::Debug),
+            s if s == "SIGERR" => Ok(traps::TrapSignal::Err),
+            s if s == "SIGEXIT" => Ok(traps::TrapSignal::Exit),
+            _ => Ok(traps::TrapSignal::Signal(
+                nix::sys::signal::Signal::from_str(signal_to_parse.as_str())
+                    .map_err(|_| error::Error::InvalidSignal)?,
+            )),
+        }
     }
 }

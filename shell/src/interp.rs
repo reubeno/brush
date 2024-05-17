@@ -19,7 +19,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{builtin, context, error, expansion, extendedtests, jobs, openfiles};
+use crate::{builtin, context, error, expansion, extendedtests, jobs, openfiles, traps};
 
 #[derive(Debug, Default)]
 pub struct ExecutionResult {
@@ -893,6 +893,43 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 context
                     .shell
                     .trace_command(args.iter().map(|arg| arg.to_string()).join(" "))?;
+            }
+
+            // TODO: This is adding more complexity here; should be factored out into an appropriate
+            // helper.
+            if context.shell.traps.handler_depth == 0 {
+                let debug_trap_handler = context
+                    .shell
+                    .traps
+                    .handlers
+                    .get(&traps::TrapSignal::Debug)
+                    .cloned();
+                if let Some(debug_trap_handler) = debug_trap_handler {
+                    let params = ExecutionParameters {
+                        open_files: open_files.clone(),
+                    };
+
+                    let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
+
+                    // TODO: This shouldn't *just* be set in a trap situation.
+                    context.shell.env.update_or_add(
+                        "BASH_COMMAND",
+                        ShellValueLiteral::Scalar(full_cmd),
+                        |_| Ok(()),
+                        EnvironmentLookup::Anywhere,
+                        EnvironmentScope::Global,
+                    )?;
+
+                    context.shell.traps.handler_depth += 1;
+
+                    // TODO: Discard result?
+                    let _ = context
+                        .shell
+                        .run_string(debug_trap_handler.as_str(), &params)
+                        .await?;
+
+                    context.shell.traps.handler_depth -= 1;
+                }
             }
 
             let cmd_context = context::CommandExecutionContext {

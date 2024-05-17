@@ -1,0 +1,29 @@
+name: "Builtins: trap"
+cases:
+  - name: "trap registration"
+    stdin: |
+      trap "echo 1" SIGINT
+      trap "echo 2" SIGINT
+      trap
+
+      trap "echo 3" int
+      trap
+
+      trap "echo 4" 2
+      trap
+
+  - name: "trap EXIT"
+    known_failure: true
+    stdin: |
+      trap "echo [exit]" EXIT
+      trap
+
+  - name: "trap DEBUG"
+    stdin: |
+      trap 'echo [command: ${BASH_COMMAND}]' DEBUG
+      trap
+
+  - name: "trap ERR"
+    stdin: |
+      trap "echo [err]" ERR
+      trap

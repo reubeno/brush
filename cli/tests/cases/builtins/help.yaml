@@ -5,3 +5,9 @@ cases:
     ignore_stderr: true
     stdin: |
       help
+
+  - name: "Topic-specific help"
+    ignore_stdout: true
+    ignore_stderr: true
+    stdin: |
+      help echo
