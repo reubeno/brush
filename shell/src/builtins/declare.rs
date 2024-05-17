@@ -75,6 +75,13 @@ pub(crate) struct DeclareCommand {
     declarations: Vec<CommandArg>,
 }
 
+#[derive(Clone, Copy)]
+enum DeclareVerb {
+    Declare,
+    Local,
+    Readonly,
+}
+
 impl BuiltinDeclarationCommand for DeclareCommand {
     fn set_declarations(&mut self, declarations: Vec<CommandArg>) {
         self.declarations = declarations;
@@ -92,7 +99,11 @@ impl BuiltinCommand for DeclareCommand {
         &self,
         mut context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        let called_as_local = context.command_name == "local";
+        let verb = match context.command_name.as_str() {
+            "local" => DeclareVerb::Local,
+            "readonly" => DeclareVerb::Readonly,
+            _ => DeclareVerb::Declare,
+        };
 
         // TODO: implement declare -I
         if self.locals_inherit_from_prev_scope {
@@ -106,12 +117,12 @@ impl BuiltinCommand for DeclareCommand {
         let mut result = BuiltinExitCode::Success;
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
-                if self.print {
-                    if !self.try_display_declaration(&mut context, declaration, called_as_local)? {
+                if self.print && !matches!(verb, DeclareVerb::Readonly) {
+                    if !self.try_display_declaration(&mut context, declaration, verb)? {
                         result = BuiltinExitCode::Custom(1);
                     }
                 } else {
-                    if !self.process_declaration(&mut context, declaration, called_as_local)? {
+                    if !self.process_declaration(&mut context, declaration, verb)? {
                         result = BuiltinExitCode::Custom(1);
                     }
                 }
@@ -119,11 +130,11 @@ impl BuiltinCommand for DeclareCommand {
         } else {
             // Display matching declarations from the variable environment.
             if !self.function_names_only && !self.function_names_or_defs_only {
-                self.display_matching_env_declarations(&mut context, called_as_local)?;
+                self.display_matching_env_declarations(&mut context, verb)?;
             }
 
             // Do the same for functions.
-            if !called_as_local
+            if !matches!(verb, DeclareVerb::Local | DeclareVerb::Readonly)
                 && (!self.print || self.function_names_only || self.function_names_or_defs_only)
             {
                 self.display_matching_functions(&mut context)?;
@@ -139,7 +150,7 @@ impl DeclareCommand {
         &self,
         context: &mut crate::context::CommandExecutionContext<'_>,
         declaration: &CommandArg,
-        called_as_local: bool,
+        verb: DeclareVerb,
     ) -> Result<bool, error::Error> {
         let name = match declaration {
             CommandArg::String(s) => s,
@@ -149,7 +160,7 @@ impl DeclareCommand {
             }
         };
 
-        let lookup = if called_as_local {
+        let lookup = if matches!(verb, DeclareVerb::Local) {
             EnvironmentLookup::OnlyInCurrentLocal
         } else {
             EnvironmentLookup::Anywhere
@@ -198,13 +209,13 @@ impl DeclareCommand {
         &self,
         context: &mut crate::context::CommandExecutionContext<'_>,
         declaration: &CommandArg,
-        called_as_local: bool,
+        verb: DeclareVerb,
     ) -> Result<bool, error::Error> {
-        let create_var_local =
-            called_as_local || (context.shell.in_function() && !self.create_global);
+        let create_var_local = matches!(verb, DeclareVerb::Local)
+            || (context.shell.in_function() && !self.create_global);
 
         if self.function_names_or_defs_only || self.function_names_only {
-            return self.try_display_declaration(context, declaration, called_as_local);
+            return self.try_display_declaration(context, declaration, verb);
         }
 
         // Extract the variable name and the initial value being assigned (if any).
@@ -238,7 +249,7 @@ impl DeclareCommand {
                 var.assign(initial_value, assigned_index.is_some())?;
             }
 
-            self.apply_attributes_after_update(var)?;
+            self.apply_attributes_after_update(var, verb)?;
         } else {
             let unset_type = if self.make_indexed_array.is_some() {
                 ShellValueUnsetType::IndexedArray
@@ -258,7 +269,7 @@ impl DeclareCommand {
                 var.assign(initial_value, false)?;
             }
 
-            self.apply_attributes_after_update(&mut var)?;
+            self.apply_attributes_after_update(&mut var, verb)?;
 
             let scope = if create_var_local {
                 EnvironmentScope::Local
@@ -351,7 +362,7 @@ impl DeclareCommand {
     fn display_matching_env_declarations(
         &self,
         context: &mut crate::context::CommandExecutionContext<'_>,
-        called_as_local: bool,
+        verb: DeclareVerb,
     ) -> Result<(), error::Error> {
         //
         // Dump all declarations. Use attribute flags to filter which variables are dumped.
@@ -361,6 +372,11 @@ impl DeclareCommand {
         #[allow(clippy::type_complexity)]
         let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool>> =
             vec![Box::new(|(_, v)| v.is_enumerable())];
+
+        // Add filters depending on verb.
+        if matches!(verb, DeclareVerb::Readonly) {
+            filters.push(Box::new(|(_, v)| v.is_readonly()));
+        }
 
         // Add filters depending on attribute flags.
         if let Some(value) = self.make_indexed_array.to_bool() {
@@ -405,7 +421,7 @@ impl DeclareCommand {
             filters.push(Box::new(move |(_, v)| v.is_exported() == value));
         }
 
-        let iter_policy = if called_as_local {
+        let iter_policy = if matches!(verb, DeclareVerb::Local) {
             EnvironmentLookup::OnlyInCurrentLocal
         } else {
             EnvironmentLookup::Anywhere
@@ -517,8 +533,14 @@ impl DeclareCommand {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn apply_attributes_after_update(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
-        if let Some(value) = self.make_readonly.to_bool() {
+    fn apply_attributes_after_update(
+        &self,
+        var: &mut ShellVariable,
+        verb: DeclareVerb,
+    ) -> Result<(), error::Error> {
+        if matches!(verb, DeclareVerb::Readonly) {
+            var.set_readonly();
+        } else if let Some(value) = self.make_readonly.to_bool() {
             if value {
                 var.set_readonly();
             } else {

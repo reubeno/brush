@@ -16,8 +16,7 @@ pub(crate) struct GetOptsCommand {
     variable_name: String,
 
     /// Arguments to parse
-    #[clap(allow_hyphen_values = true)]
-    #[arg(trailing_var_arg = true)]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }
 

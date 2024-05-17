@@ -17,8 +17,7 @@ pub(crate) struct EchoCommand {
     no_interpret_backslash_escapes: bool,
 
     /// Command and args.
-    #[clap(allow_hyphen_values = true)]
-    #[arg(trailing_var_arg = true)]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }
 

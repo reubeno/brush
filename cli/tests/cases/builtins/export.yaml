@@ -13,3 +13,8 @@ cases:
       echo "Exporting with new value..."
       export MY_TEST_VAR="changed value"
       env | grep MY_TEST_VAR
+
+  - name: "Exporting array"
+    stdin: |
+      export arr=(a 1 2)
+      declare -p arr

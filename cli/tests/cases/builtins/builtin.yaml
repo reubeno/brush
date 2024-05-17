@@ -1,0 +1,14 @@
+name: "Builtins: builtin"
+cases:
+  - name: "builtin with no builtin"
+    stdin: builtin
+
+  - name: "builtin with unknown builtin"
+    ignore_stderr: true
+    stdin: builtin not-a-builtin args
+
+  - name: "valid builtin"
+    stdin: builtin echo "Hello world"
+
+  - name: "valid builtin with hyphen args"
+    stdin: builtin echo -e "Hello\nWorld"

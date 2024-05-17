@@ -3,7 +3,8 @@ use itertools::Itertools;
 use std::io::Write;
 
 use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
+    builtin::{BuiltinCommand, BuiltinDeclarationCommand, BuiltinExitCode},
+    commands,
     env::{EnvironmentLookup, EnvironmentScope},
     variables,
 };
@@ -19,8 +20,19 @@ pub(crate) struct ExportCommand {
     #[arg(short = 'p')]
     display_exported_names: bool,
 
-    #[arg(name = "name[=value]")]
-    names: Vec<String>,
+    //
+    // Declarations
+    //
+    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
+    //
+    #[clap(skip)]
+    declarations: Vec<commands::CommandArg>,
+}
+
+impl BuiltinDeclarationCommand for ExportCommand {
+    fn set_declarations(&mut self, declarations: Vec<commands::CommandArg>) {
+        self.declarations = declarations;
+    }
 }
 
 #[async_trait::async_trait]
@@ -29,26 +41,51 @@ impl BuiltinCommand for ExportCommand {
         &self,
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        if !self.names.is_empty() {
-            for name in &self.names {
-                // See if we have a name=value pair; if so, then update the variable
-                // with the provided value and then mark it exported.
-                if let Some((name, value)) = name.split_once('=') {
-                    context.shell.env.update_or_add(
-                        name,
-                        variables::ShellValueLiteral::Scalar(value.to_owned()),
-                        |var| {
-                            var.export();
-                            Ok(())
-                        },
-                        EnvironmentLookup::Anywhere,
-                        EnvironmentScope::Global,
-                    )?;
-                } else {
-                    // Try to find the variable already present; if we find it, then mark it
-                    // exported.
-                    if let Some((_, variable)) = context.shell.env.get_mut(name) {
-                        variable.export();
+        if !self.declarations.is_empty() {
+            for decl in &self.declarations {
+                match decl {
+                    commands::CommandArg::String(s) => {
+                        // Try to find the variable already present; if we find it, then mark it
+                        // exported.
+                        if let Some((_, variable)) = context.shell.env.get_mut(s) {
+                            variable.export();
+                        }
+                    }
+                    commands::CommandArg::Assignment(assignment) => {
+                        let name = match &assignment.name {
+                            parser::ast::AssignmentName::VariableName(name) => name,
+                            parser::ast::AssignmentName::ArrayElementName(_, _) => {
+                                writeln!(context.stderr(), "not a valid variable name")?;
+                                return Ok(BuiltinExitCode::InvalidUsage);
+                            }
+                        };
+
+                        let value = match &assignment.value {
+                            parser::ast::AssignmentValue::Scalar(s) => {
+                                variables::ShellValueLiteral::Scalar(s.flatten())
+                            }
+                            parser::ast::AssignmentValue::Array(a) => {
+                                variables::ShellValueLiteral::Array(variables::ArrayLiteral(
+                                    a.iter()
+                                        .map(|(k, v)| {
+                                            (k.as_ref().map(|k| k.flatten()), v.flatten())
+                                        })
+                                        .collect(),
+                                ))
+                            }
+                        };
+
+                        // Update the variable with the provided value and then mark it exported.
+                        context.shell.env.update_or_add(
+                            name,
+                            value,
+                            |var| {
+                                var.export();
+                                Ok(())
+                            },
+                            EnvironmentLookup::Anywhere,
+                            EnvironmentScope::Global,
+                        )?;
                     }
                 }
             }
