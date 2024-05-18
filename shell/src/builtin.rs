@@ -116,9 +116,14 @@ pub trait BuiltinCommand: Parser {
         context: context::CommandExecutionContext<'_>,
     ) -> Result<BuiltinExitCode, error::Error>;
 
-    #[allow(dead_code)]
-    fn get_long_help() -> String {
-        Self::command().render_long_help().to_string()
+    fn get_content(name: &str, content_type: BuiltinContentType) -> String {
+        match content_type {
+            BuiltinContentType::DetailedHelp => Self::command().render_help().to_string(),
+            BuiltinContentType::ShortUsage => get_builtin_short_usage(name, &Self::command()),
+            BuiltinContentType::ShortDescription => {
+                get_builtin_short_description(name, &Self::command())
+            }
+        }
     }
 }
 
@@ -129,13 +134,20 @@ pub trait BuiltinDeclarationCommand: BuiltinCommand {
 }
 
 #[allow(clippy::module_name_repetitions)]
+pub enum BuiltinContentType {
+    DetailedHelp,
+    ShortUsage,
+    ShortDescription,
+}
+
+#[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
 pub struct BuiltinRegistration {
     /// Function to execute the builtin.
     pub execute_func: BuiltinCommandExecuteFunc,
 
-    /// Function to retrieve the builtin's detailed help text.
-    pub help_func: fn() -> String,
+    /// Function to retrieve the builtin's content/help text.
+    pub content_func: fn(&str, BuiltinContentType) -> String,
 
     /// Has this registration been disabled?
     pub disabled: bool,
@@ -145,4 +157,95 @@ pub struct BuiltinRegistration {
 
     /// Is this builtin one that takes specially handled declarations?
     pub declaration_builtin: bool,
+}
+
+fn get_builtin_short_description(name: &str, command: &clap::Command) -> String {
+    let about = command
+        .get_about()
+        .map_or_else(String::new, |s| s.to_string());
+
+    std::format!("{name} - {about}\n")
+}
+
+fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
+    let mut usage = String::new();
+
+    let mut needs_space = false;
+
+    let mut optional_short_opts = vec![];
+    let mut required_short_opts = vec![];
+    for opt in command.get_opts() {
+        if opt.is_hide_set() {
+            continue;
+        }
+
+        if let Some(c) = opt.get_short() {
+            if !opt.is_required_set() {
+                optional_short_opts.push(c);
+            } else {
+                required_short_opts.push(c);
+            }
+        }
+    }
+
+    if !optional_short_opts.is_empty() {
+        if needs_space {
+            usage.push(' ');
+        }
+
+        usage.push('[');
+        usage.push('-');
+        for c in optional_short_opts {
+            usage.push(c);
+        }
+
+        usage.push(']');
+        needs_space = true;
+    }
+
+    if !required_short_opts.is_empty() {
+        if needs_space {
+            usage.push(' ');
+        }
+
+        usage.push('-');
+        for c in required_short_opts {
+            usage.push(c);
+        }
+
+        needs_space = true;
+    }
+
+    for pos in command.get_positionals() {
+        if pos.is_hide_set() {
+            continue;
+        }
+
+        if !pos.is_required_set() {
+            if needs_space {
+                usage.push(' ');
+            }
+
+            usage.push('[');
+            needs_space = false;
+        }
+
+        if let Some(names) = pos.get_value_names() {
+            for name in names {
+                if needs_space {
+                    usage.push(' ');
+                }
+
+                usage.push_str(name);
+                needs_space = true;
+            }
+        }
+
+        if !pos.is_required_set() {
+            usage.push(']');
+            needs_space = true;
+        }
+    }
+
+    std::format!("{name}: {name} {usage}\n")
 }

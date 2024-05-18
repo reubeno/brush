@@ -76,6 +76,8 @@ struct CommandLineArgs {
 enum TraceEvent {
     #[clap(name = "arithmetic")]
     Arithmetic,
+    #[clap(name = "commands")]
+    Commands,
     #[clap(name = "complete")]
     Complete,
     #[clap(name = "expand")]
@@ -124,6 +126,7 @@ fn main() {
     for event in enabled_trace_events {
         let targets = match event {
             TraceEvent::Arithmetic => vec!["parser::arithmetic"],
+            TraceEvent::Commands => vec!["commands"],
             TraceEvent::Complete => vec!["shell::completion", "shell::builtins::complete"],
             TraceEvent::Expand => vec![],
             TraceEvent::Parse => vec!["parse"],

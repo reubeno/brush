@@ -522,7 +522,6 @@ impl CompletionConfig {
         }
     }
 
-    #[allow(clippy::unused_self)]
     async fn get_completions_for_token<'a>(
         &self,
         shell: &mut Shell,

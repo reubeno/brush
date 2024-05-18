@@ -6,6 +6,7 @@ use crate::{
     expansion,
 };
 
+/// Format a string.
 #[derive(Parser)]
 #[clap(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct PrintfCommand {

@@ -20,6 +20,7 @@ mod prompt;
 mod regex;
 mod shell;
 mod tests;
+mod traps;
 mod users;
 mod variables;
 

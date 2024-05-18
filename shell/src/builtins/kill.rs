@@ -6,6 +6,7 @@ use crate::{
     error,
 };
 
+/// Signal a job or process.
 #[derive(Parser)]
 pub(crate) struct KillCommand {
     #[arg(short = 's')]

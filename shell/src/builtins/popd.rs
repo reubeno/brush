@@ -3,6 +3,7 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Pop a path from the current directory stack.
 #[derive(Parser)]
 pub(crate) struct PopdCommand {
     #[clap(short = 'n')]

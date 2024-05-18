@@ -281,7 +281,6 @@ impl ShellVariable {
         }
     }
 
-    #[allow(clippy::unused_self)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn assign_at_index(
         &mut self,

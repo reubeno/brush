@@ -4,6 +4,7 @@ use std::io::Write;
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use crate::escape;
 
+/// Echo text to standard output.
 #[derive(Parser)]
 #[clap(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct EchoCommand {

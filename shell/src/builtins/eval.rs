@@ -4,6 +4,7 @@ use crate::{
 };
 use clap::Parser;
 
+/// Evalute the given string as script.
 #[derive(Parser)]
 pub(crate) struct EvalCommand {
     #[clap(allow_hyphen_values = true)]

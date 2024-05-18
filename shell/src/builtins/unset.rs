@@ -2,6 +2,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Unset a variable.
 #[derive(Parser)]
 pub(crate) struct UnsetCommand {
     #[clap(flatten)]

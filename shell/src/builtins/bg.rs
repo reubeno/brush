@@ -3,8 +3,10 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Moves a job to run in the background.
 #[derive(Parser)]
 pub(crate) struct BgCommand {
+    /// List of job specs to move to background.
     job_specs: Vec<String>,
 }
 

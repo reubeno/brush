@@ -3,6 +3,7 @@ use clap::Parser;
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use crate::error;
 
+/// Wait for jobs to terminate.
 #[derive(Parser)]
 pub(crate) struct WaitCommand {
     #[arg(short = 'f')]

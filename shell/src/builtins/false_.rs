@@ -2,6 +2,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Return a non-zero exit code.
 #[derive(Parser)]
 pub(crate) struct FalseCommand {}
 

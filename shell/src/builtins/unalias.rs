@@ -3,6 +3,7 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Unset a shell alias.
 #[derive(Parser)]
 pub(crate) struct UnaliasCommand {
     #[arg(short = 'a')]

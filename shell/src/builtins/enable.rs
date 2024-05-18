@@ -5,6 +5,7 @@ use std::io::Write;
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use crate::error;
 
+/// Enable, disable, or display built-in commands.
 #[derive(Parser)]
 pub(crate) struct EnableCommand {
     #[arg(short = 'a')]

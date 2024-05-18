@@ -77,6 +77,7 @@ pub(crate) struct SetOption {
     disable: Vec<String>,
 }
 
+/// Manage set-based shell options.
 #[derive(Parser)]
 #[clap(disable_help_flag = true)]
 pub(crate) struct SetCommand {

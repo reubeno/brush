@@ -6,6 +6,7 @@ use std::io::Write;
 
 use clap::Parser;
 
+/// (UNIMPLEMENTED COMMAND)
 #[derive(Parser)]
 pub(crate) struct UnimplementedCommand {
     #[clap(allow_hyphen_values = true)]

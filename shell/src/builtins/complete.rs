@@ -168,6 +168,7 @@ impl CommonCompleteCommandArgs {
     }
 }
 
+/// Configure programmable command completion.
 #[derive(Parser)]
 pub(crate) struct CompleteCommand {
     #[arg(short = 'p')]
@@ -404,6 +405,7 @@ impl CompleteCommand {
     }
 }
 
+/// Generate command completions.
 #[derive(Parser)]
 pub(crate) struct CompGenCommand {
     #[clap(flatten)]
@@ -454,6 +456,7 @@ impl BuiltinCommand for CompGenCommand {
     }
 }
 
+/// Set programmable command completion options.
 #[derive(Parser)]
 pub(crate) struct CompOptCommand {
     #[arg(short = 'D')]

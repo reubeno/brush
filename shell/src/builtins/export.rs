@@ -9,6 +9,7 @@ use crate::{
     variables,
 };
 
+/// Add or update exported shell variables.
 #[derive(Parser)]
 pub(crate) struct ExportCommand {
     #[arg(short = 'f')]

@@ -4,6 +4,7 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Manage shopt-style options.
 #[derive(Parser)]
 pub(crate) struct ShoptCommand {
     #[arg(short = 'o')]
