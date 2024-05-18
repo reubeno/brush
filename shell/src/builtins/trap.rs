@@ -6,6 +6,7 @@ use crate::{
     error, traps,
 };
 
+/// Manage signal traps.
 #[derive(Parser)]
 pub(crate) struct TrapCommand {
     #[arg(short = 'l')]

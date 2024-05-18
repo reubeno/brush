@@ -3,6 +3,7 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Exec the provided command.
 #[derive(Parser)]
 pub(crate) struct ExecCommand {
     /// Pass given name as zeroth argument to command.

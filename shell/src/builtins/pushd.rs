@@ -3,6 +3,7 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Push a path onto the current directory stack.
 #[derive(Parser)]
 pub(crate) struct PushdCommand {
     #[clap(short = 'n')]

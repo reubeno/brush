@@ -11,12 +11,12 @@ use crate::error;
 
 mod alias;
 mod bg;
-mod brea;
+mod break_;
 mod builtin_;
 mod cd;
 mod colon;
 mod complete;
-mod continu;
+mod continue_;
 mod declare;
 mod dirs;
 mod dot;
@@ -40,7 +40,7 @@ mod printf;
 mod pushd;
 mod pwd;
 mod read;
-mod retur;
+mod return_;
 mod set;
 mod shift;
 mod shopt;
@@ -57,7 +57,7 @@ mod wait;
 fn builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
     BuiltinRegistration {
         execute_func: exec_builtin::<B>,
-        help_func: get_builtin_help::<B>,
+        content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
         declaration_builtin: false,
@@ -67,7 +67,7 @@ fn builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
 fn special_builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
     BuiltinRegistration {
         execute_func: exec_builtin::<B>,
-        help_func: get_builtin_help::<B>,
+        content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: true,
         declaration_builtin: false,
@@ -77,7 +77,7 @@ fn special_builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
 fn decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
     BuiltinRegistration {
         execute_func: exec_declaration_builtin::<B>,
-        help_func: get_builtin_help::<B>,
+        content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
         declaration_builtin: true,
@@ -88,15 +88,18 @@ fn decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
 fn special_decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
     BuiltinRegistration {
         execute_func: exec_declaration_builtin::<B>,
-        help_func: get_builtin_help::<B>,
+        content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: true,
         declaration_builtin: true,
     }
 }
 
-fn get_builtin_help<T: BuiltinCommand + Send>() -> String {
-    T::get_long_help()
+fn get_builtin_content<T: BuiltinCommand + Send>(
+    name: &str,
+    content_type: builtin::BuiltinContentType,
+) -> String {
+    T::get_content(name, content_type)
 }
 
 fn exec_builtin<T: BuiltinCommand + Send>(
@@ -185,11 +188,11 @@ pub(crate) fn get_default_builtins(
     // should be a special built-in.
     //
 
-    m.insert("break".into(), special_builtin::<brea::BreakCommand>());
+    m.insert("break".into(), special_builtin::<break_::BreakCommand>());
     m.insert(":".into(), special_builtin::<colon::ColonCommand>());
     m.insert(
         "continue".into(),
-        special_builtin::<continu::ContinueCommand>(),
+        special_builtin::<continue_::ContinueCommand>(),
     );
     m.insert(".".into(), special_builtin::<dot::DotCommand>());
     m.insert("eval".into(), special_builtin::<eval::EvalCommand>());
@@ -200,7 +203,7 @@ pub(crate) fn get_default_builtins(
         "export".into(),
         special_decl_builtin::<export::ExportCommand>(),
     );
-    m.insert("return".into(), special_builtin::<retur::ReturnCommand>());
+    m.insert("return".into(), special_builtin::<return_::ReturnCommand>());
     m.insert("set".into(), special_builtin::<set::SetCommand>());
     m.insert("shift".into(), special_builtin::<shift::ShiftCommand>());
     m.insert("trap".into(), special_builtin::<trap::TrapCommand>());

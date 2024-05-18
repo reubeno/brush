@@ -2,6 +2,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Shift positional arguments.
 #[derive(Parser)]
 pub(crate) struct ShiftCommand {
     n: Option<i32>,

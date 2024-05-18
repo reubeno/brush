@@ -2,6 +2,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Return from the current function.
 #[derive(Parser)]
 pub(crate) struct ReturnCommand {
     code: Option<i32>,

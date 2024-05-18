@@ -3,6 +3,7 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Manage the current directory stack.
 #[derive(Parser, Debug, Default)]
 pub(crate) struct DirsCommand {
     #[arg(short = 'c')]

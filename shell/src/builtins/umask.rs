@@ -2,6 +2,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use clap::Parser;
 use std::io::Write;
 
+/// Manage the process umask.
 #[derive(Parser)]
 pub(crate) struct UmaskCommand {
     #[arg(

@@ -3,6 +3,7 @@ use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Move a specified job to the foreground.
 #[derive(Parser)]
 pub(crate) struct FgCommand {
     job_spec: Option<String>,

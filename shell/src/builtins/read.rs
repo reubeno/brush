@@ -3,6 +3,7 @@ use std::{collections::VecDeque, io::Read};
 
 use crate::{builtin::BuiltinCommand, env, error, openfiles, variables};
 
+/// Parse standard input.
 #[derive(Parser)]
 pub(crate) struct ReadCommand {
     #[clap(short = 'a')]

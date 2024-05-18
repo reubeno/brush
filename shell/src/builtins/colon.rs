@@ -2,6 +2,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// No-op command.
 #[derive(Parser)]
 #[clap(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct ColonCommand {

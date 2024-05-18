@@ -2,6 +2,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use clap::Parser;
 use std::io::Write;
 
+/// Display the current working directory.
 #[derive(Parser)]
 pub(crate) struct PwdCommand {
     #[arg(

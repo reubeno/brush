@@ -6,6 +6,7 @@ use crate::{
     error, tests, Shell,
 };
 
+/// Evaluate test expression.
 #[derive(Parser)]
 #[clap(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct TestCommand {

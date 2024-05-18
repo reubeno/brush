@@ -6,10 +6,13 @@ use crate::{
     commands,
 };
 
+/// Directly invokes a built-in, without going through typical search order.
 #[derive(Parser)]
 pub(crate) struct BuiltiCommand {
+    /// Name of built-in to invoke.
     builtin_name: Option<String>,
 
+    /// Arguments for the built-in.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }

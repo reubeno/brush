@@ -2,6 +2,7 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Exit the shell.
 #[derive(Parser)]
 pub(crate) struct ExitCommand {
     code: Option<i32>,

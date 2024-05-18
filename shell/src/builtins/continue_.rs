@@ -2,14 +2,15 @@ use clap::Parser;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
+/// Continue to the next iteration of a control-flow loop.
 #[derive(Parser)]
-pub(crate) struct BreakCommand {
+pub(crate) struct ContinueCommand {
     #[clap(default_value = "1")]
     which_loop: i8,
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for BreakCommand {
+impl BuiltinCommand for ContinueCommand {
     async fn execute(
         &self,
         _context: crate::context::CommandExecutionContext<'_>,
@@ -20,6 +21,6 @@ impl BuiltinCommand for BreakCommand {
         }
 
         #[allow(clippy::cast_sign_loss)]
-        Ok(BuiltinExitCode::BreakLoop((self.which_loop - 1) as u8))
+        Ok(BuiltinExitCode::ContinueLoop((self.which_loop - 1) as u8))
     }
 }

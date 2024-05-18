@@ -10,6 +10,7 @@ pub(crate) struct AliasCommand {
     #[arg(short = 'p')]
     print: bool,
 
+    /// List of aliases to display or update.
     #[arg(name = "name[=value]")]
     aliases: Vec<String>,
 }

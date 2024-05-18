@@ -10,6 +10,7 @@ use crate::{
     Shell,
 };
 
+/// Inspect the type of a named shell item.
 #[derive(Parser)]
 pub(crate) struct TypeCommand {
     #[arg(short = 'a')]

@@ -4,6 +4,7 @@ use std::io::Write;
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 use crate::error;
 
+/// Manage jobs.
 #[derive(Parser)]
 pub(crate) struct JobsCommand {
     #[arg(short = 'l')]

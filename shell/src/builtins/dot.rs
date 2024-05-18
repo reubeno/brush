@@ -7,6 +7,7 @@ use crate::{
     interp::ExecutionParameters,
 };
 
+/// Evalute the provided script in the current shell environment.
 #[derive(Debug, Parser)]
 pub(crate) struct DotCommand {
     pub script_path: String,

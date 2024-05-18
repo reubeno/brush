@@ -23,6 +23,7 @@ builtin::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "");
 builtin::minus_or_plus_flag_arg!(UppercaseValueOnAssignmentFlag, 'u', "");
 builtin::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "");
 
+/// Display or update variables and their attributes.
 #[derive(Parser)]
 pub(crate) struct DeclareCommand {
     /// Constrain to function names or definitions.
@@ -220,7 +221,7 @@ impl DeclareCommand {
 
         // Extract the variable name and the initial value being assigned (if any).
         let (name, assigned_index, initial_value, name_is_array) =
-            self.declaration_to_name_and_value(declaration)?;
+            Self::declaration_to_name_and_value(declaration)?;
 
         // Figure out where we should look.
         let lookup = if create_var_local {
@@ -283,9 +284,7 @@ impl DeclareCommand {
         Ok(true)
     }
 
-    #[allow(clippy::unused_self)]
     fn declaration_to_name_and_value(
-        &self,
         declaration: &CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), error::Error> {
         let name;

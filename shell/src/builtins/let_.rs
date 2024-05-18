@@ -6,6 +6,7 @@ use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},
 };
 
+/// Evalute arithmetic expressions.
 #[derive(Parser)]
 pub(crate) struct LetCommand {
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

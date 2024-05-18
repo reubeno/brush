@@ -7,6 +7,7 @@ use crate::{
     variables,
 };
 
+/// Parse command options.
 #[derive(Parser)]
 pub(crate) struct GetOptsCommand {
     /// Specification for options

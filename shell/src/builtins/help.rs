@@ -1,8 +1,12 @@
-use crate::builtin::{BuiltinCommand, BuiltinExitCode, BuiltinRegistration};
+use crate::{
+    builtin::{self, BuiltinCommand, BuiltinExitCode, BuiltinRegistration},
+    context,
+};
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
+/// Display command help.
 #[derive(Parser)]
 pub(crate) struct HelpCommand {
     #[arg(short = 'd')]
@@ -50,12 +54,7 @@ impl HelpCommand {
             "The following commands are implemented as shell built-ins:"
         )?;
 
-        let builtins: Vec<(&String, &BuiltinRegistration)> = context
-            .shell
-            .builtins
-            .iter()
-            .sorted_by_key(|(name, _)| *name)
-            .collect();
+        let builtins = get_builtins_sorted_by_name(context);
         let items_per_column = (builtins.len() + COLUMN_COUNT - 1) / COLUMN_COUNT;
 
         for i in 0..items_per_column {
@@ -79,9 +78,13 @@ impl HelpCommand {
         let pattern = crate::patterns::Pattern::from(topic_pattern);
 
         let mut found_count = 0;
-        for (builtin_name, builtin_registration) in &context.shell.builtins {
+        for (builtin_name, builtin_registration) in get_builtins_sorted_by_name(context) {
             if pattern.exactly_matches(builtin_name.as_str(), false)? {
-                self.display_help_for_builtin(context, builtin_registration)?;
+                self.display_help_for_builtin(
+                    context,
+                    builtin_name.as_str(),
+                    builtin_registration,
+                )?;
                 found_count += 1;
             }
         }
@@ -93,13 +96,34 @@ impl HelpCommand {
         Ok(())
     }
 
-    #[allow(clippy::unused_self)]
     fn display_help_for_builtin(
         &self,
         context: &crate::context::CommandExecutionContext<'_>,
+        name: &str,
         registration: &BuiltinRegistration,
     ) -> Result<(), crate::error::Error> {
-        writeln!(context.stdout(), "{}", (registration.help_func)())?;
+        let content_type = if self.short_description {
+            builtin::BuiltinContentType::ShortDescription
+        } else if self.short_usage {
+            builtin::BuiltinContentType::ShortUsage
+        } else {
+            builtin::BuiltinContentType::DetailedHelp
+        };
+
+        let content = (registration.content_func)(name, content_type);
+
+        write!(context.stdout(), "{content}")?;
         Ok(())
     }
+}
+
+fn get_builtins_sorted_by_name<'a>(
+    context: &'a context::CommandExecutionContext<'_>,
+) -> Vec<(&'a String, &'a BuiltinRegistration)> {
+    context
+        .shell
+        .builtins
+        .iter()
+        .sorted_by_key(|(name, _)| *name)
+        .collect()
 }
