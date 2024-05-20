@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
+use std::fmt::Write as _;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -529,10 +530,11 @@ impl Shell {
                 error_message.push_str(inner.to_string().as_str());
 
                 if let Some(position) = position {
-                    error_message.push_str(&format!(
+                    write!(
+                        error_message,
                         " (detected near line {} column {})",
                         position.line, position.column
-                    ));
+                    )?;
                 }
 
                 tracing::error!("{}", error_message);

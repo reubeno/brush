@@ -84,7 +84,6 @@ fn decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
     }
 }
 
-#[allow(dead_code)]
 fn special_decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
     BuiltinRegistration {
         execute_func: exec_declaration_builtin::<B>,

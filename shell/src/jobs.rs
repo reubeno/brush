@@ -120,7 +120,6 @@ impl Display for JobAnnotation {
 
 pub struct Job {
     join_handles: VecDeque<JobJoinHandle>,
-    #[allow(dead_code)]
     pids: Vec<u32>,
     annotation: JobAnnotation,
 

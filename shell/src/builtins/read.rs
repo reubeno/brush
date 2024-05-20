@@ -82,7 +82,7 @@ impl BuiltinCommand for ReadCommand {
             return error::unimp("read -u");
         }
 
-        let input_line = read_line(context.stdin())?;
+        let input_line = read_line(context.stdin());
         if let Some(input_line) = input_line {
             let mut variable_names: VecDeque<String> = self.variable_names.clone().into();
             for field in input_line.split_ascii_whitespace() {
@@ -105,8 +105,7 @@ impl BuiltinCommand for ReadCommand {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn read_line(mut file: openfiles::OpenFile) -> Result<Option<String>, crate::error::Error> {
+fn read_line(mut file: openfiles::OpenFile) -> Option<String> {
     let mut line = String::new();
     let mut buffer = [0; 1]; // 1-byte buffer
 
@@ -124,8 +123,8 @@ fn read_line(mut file: openfiles::OpenFile) -> Result<Option<String>, crate::err
     }
 
     if line.is_empty() {
-        Ok(None)
+        None
     } else {
-        Ok(Some(line))
+        Some(line)
     }
 }
