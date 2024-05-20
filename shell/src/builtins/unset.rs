@@ -13,35 +13,32 @@ pub(crate) struct UnsetCommand {
 
 #[derive(Parser)]
 #[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
-#[allow(clippy::struct_field_names)]
 pub(crate) struct UnsetNameInterpretation {
     #[arg(
         short = 'f',
         group = "name-interpretation",
         help = "treat each name as a shell function"
     )]
-    names_are_shell_functions: bool,
+    shell_functions: bool,
 
     #[arg(
         short = 'v',
         group = "name-interpretation",
         help = "treat each name as a shell variable"
     )]
-    names_are_shell_variables: bool,
+    shell_variables: bool,
 
     #[arg(
         short = 'n',
         group = "name-interpretation",
         help = "treat each name as a name reference"
     )]
-    names_are_name_references: bool,
+    name_references: bool,
 }
 
 impl UnsetNameInterpretation {
     pub fn unspecified(&self) -> bool {
-        !self.names_are_shell_functions
-            && !self.names_are_shell_variables
-            && !self.names_are_name_references
+        !self.shell_functions && !self.shell_variables && !self.name_references
     }
 }
 
@@ -54,14 +51,14 @@ impl BuiltinCommand for UnsetCommand {
         //
         // TODO: implement nameref
         //
-        if self.name_interpretation.names_are_name_references {
+        if self.name_interpretation.name_references {
             return crate::error::unimp("unset: name references are not yet implemented");
         }
 
         let unspecified = self.name_interpretation.unspecified();
 
         for name in &self.names {
-            if unspecified || self.name_interpretation.names_are_shell_variables {
+            if unspecified || self.name_interpretation.shell_variables {
                 let parameter =
                     parser::word::parse_parameter(name, &context.shell.parser_options())?;
 
@@ -90,7 +87,7 @@ impl BuiltinCommand for UnsetCommand {
             }
 
             // TODO: Check if functions can be readonly.
-            if unspecified || self.name_interpretation.names_are_shell_functions {
+            if unspecified || self.name_interpretation.shell_functions {
                 if context.shell.funcs.remove(name).is_some() {
                     continue;
                 }

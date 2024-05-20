@@ -1,8 +1,12 @@
 [package]
 name = "brush-interactive-shell"
-description = "Shell"
+description = "Interactive shell for brush"
+categories.workspace = true
 edition.workspace = true
+keywords.workspace = true
 license.workspace = true
+readme.workspace = true
+repository.workspace = true
 version.workspace = true
 
 [lib]
@@ -15,10 +19,9 @@ workspace = true
 [dependencies]
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
-rustyline = { git = "https://github.com/reubeno/rustyline", rev = "023a08093e9b8ff81f9d8e096e00a23e6e83167a", features = ["derive"] }
-thiserror = "1.0.61"
-tokio = { version = "1.37.0", features = [
-    "macros",
-    "signal",
+rustyline = { git = "https://github.com/reubeno/rustyline", rev = "023a08093e9b8ff81f9d8e096e00a23e6e83167a", features = [
+    "derive",
 ] }
+thiserror = "1.0.61"
+tokio = { version = "1.37.0", features = ["macros", "signal"] }
 tracing = "0.1.40"

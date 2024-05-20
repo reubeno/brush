@@ -40,7 +40,7 @@ impl BuiltinCommand for TrapCommand {
         } else if self.args.len() == 1 {
             let signal = self.args[0].as_str();
             let signal_type = parse_signal(signal)?;
-            Self::remove_all_handlers(&mut context, signal_type)?;
+            Self::remove_all_handlers(&mut context, signal_type);
             Ok(BuiltinExitCode::Success)
         } else {
             let handler = &self.args[0];
@@ -50,7 +50,7 @@ impl BuiltinCommand for TrapCommand {
                 signal_types.push(parse_signal(signal)?);
             }
 
-            Self::register_handler(&mut context, signal_types, handler.as_str())?;
+            Self::register_handler(&mut context, signal_types, handler.as_str());
             Ok(BuiltinExitCode::Success)
         }
     }
@@ -86,29 +86,24 @@ impl TrapCommand {
         Ok(())
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn remove_all_handlers(
         context: &mut crate::context::CommandExecutionContext<'_>,
         signal: traps::TrapSignal,
-    ) -> Result<(), error::Error> {
+    ) {
         context.shell.traps.remove_handlers(signal);
-        Ok(())
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn register_handler(
         context: &mut crate::context::CommandExecutionContext<'_>,
         signals: Vec<traps::TrapSignal>,
         handler: &str,
-    ) -> Result<(), error::Error> {
+    ) {
         for signal in signals {
             context
                 .shell
                 .traps
                 .register_handler(signal, handler.to_owned());
         }
-
-        Ok(())
     }
 }
 

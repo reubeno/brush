@@ -1223,6 +1223,7 @@ impl<'a> WordExpander<'a> {
         Ok(value.to_string())
     }
 
+    #[allow(clippy::unwrap_in_result)]
     fn uppercase_first_char(
         &mut self,
         s: String,
@@ -1252,6 +1253,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
+    #[allow(clippy::unwrap_in_result)]
     fn lowercase_first_char(
         &mut self,
         s: String,

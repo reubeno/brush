@@ -380,6 +380,7 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
 }
 
 #[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;

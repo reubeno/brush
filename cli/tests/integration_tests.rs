@@ -855,7 +855,7 @@ impl TestCase {
                 }
                 WhichShell::NamedShell(name) => (std::process::Command::new(name), None),
             },
-            ShellInvocation::ExecScript(_) => todo!("UNIMPLEMENTED: exec script test"),
+            ShellInvocation::ExecScript(_) => unimplemented!("exec script test"),
         };
 
         for arg in &shell_config.default_args {

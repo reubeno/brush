@@ -1,5 +1,6 @@
 use clap::{arg, Parser};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
@@ -350,25 +351,25 @@ impl CompleteCommand {
         }
 
         if let Some(glob_pattern) = &spec.glob_pattern {
-            s.push_str(&std::format!(" -G {glob_pattern}"));
+            write!(s, " -G {glob_pattern}")?;
         }
         if let Some(word_list) = &spec.word_list {
-            s.push_str(&std::format!(" -W {word_list}"));
+            write!(s, " -W {word_list}")?;
         }
         if let Some(function_name) = &spec.function_name {
-            s.push_str(&std::format!(" -F {function_name}"));
+            write!(s, " -F {function_name}")?;
         }
         if let Some(command) = &spec.command {
-            s.push_str(&std::format!(" -C {command}"));
+            write!(s, " -C {command}")?;
         }
         if let Some(filter_pattern) = &spec.filter_pattern {
-            s.push_str(&std::format!(" -X {filter_pattern}"));
+            write!(s, " -X {filter_pattern}")?;
         }
         if let Some(prefix) = &spec.prefix {
-            s.push_str(&std::format!(" -P {prefix}"));
+            write!(s, " -P {prefix}")?;
         }
         if let Some(suffix) = &spec.suffix {
-            s.push_str(&std::format!(" -S {suffix}"));
+            write!(s, " -S {suffix}")?;
         }
 
         if let Some(command_name) = command_name {

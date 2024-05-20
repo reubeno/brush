@@ -284,6 +284,7 @@ impl DeclareCommand {
         Ok(true)
     }
 
+    #[allow(clippy::unwrap_in_result)]
     fn declaration_to_name_and_value(
         declaration: &CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), error::Error> {

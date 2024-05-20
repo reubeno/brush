@@ -146,10 +146,14 @@ fn main() {
         .without_time()
         .with_filter(filter);
 
-    tracing_subscriber::registry()
+    if tracing_subscriber::registry()
         .with(stderr_log_layer)
         .try_init()
-        .expect("Failed to initialize tracing.");
+        .is_err()
+    {
+        // Something went wrong; proceed on anyway but complain audibly.
+        eprintln!("warning: failed to initialize tracing.");
+    }
 
     //
     // Run.
