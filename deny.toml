@@ -21,13 +21,10 @@ feature-depth = 1
 # https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
 [advisories]
 version = 2
+yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = [
-    # We only use ansi_term via dev dependency; we somewhat make sure that
-    # doesn't widen through bans.
-    { id = "RUSTSEC-2021-0139", reason = "ansi_term" }
-]
+ignore = []
 #git-fetch-with-cli = true
 
 # This section is considered when running `cargo deny check licenses`
