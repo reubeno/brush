@@ -13,11 +13,11 @@ bench = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.83"
+anyhow = "1.0.86"
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
 rustyline = { git = "https://github.com/reubeno/rustyline", rev = "023a08093e9b8ff81f9d8e096e00a23e6e83167a", features = ["derive"] }
-thiserror = "1.0.58"
+thiserror = "1.0.61"
 tokio = { version = "1.37.0", features = [
     "macros",
     "signal",

@@ -13,7 +13,7 @@ bench = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.82"
+anyhow = "1.0.86"
 async-recursion = "1.1.0"
 async-trait = "0.1.80"
 brush-parser = { path = "../parser" }
@@ -23,11 +23,11 @@ fancy-regex = "0.13.0"
 futures = "0.3.30"
 hostname = "0.4.0"
 indexmap = "2.2.6"
-itertools = "0.12.1"
+itertools = "0.13.0"
 lazy_static = "1.4.0"
 os_pipe = "1.1.5"
 rand = "0.8.5"
-thiserror = "1.0.58"
+thiserror = "1.0.61"
 tokio = { version = "1.37.0", features = [
     "io-util",
     "macros",
