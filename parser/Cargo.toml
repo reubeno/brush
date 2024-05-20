@@ -21,7 +21,7 @@ indenter = "0.3.3"
 peg = "0.8.3"
 thiserror = "1.0.58"
 tracing = "0.1.40"
-utf8-chars = "3.0.2"
+utf8-chars = "3.0.3"
 
 [dev-dependencies]
 anyhow = "1.0.82"
