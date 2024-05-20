@@ -19,7 +19,6 @@ harness = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.86"
 brush-interactive-shell = { path = "../interactive-shell" }
 brush-parser = { path = "../parser" }
 brush-shell = { path = "../shell" }
