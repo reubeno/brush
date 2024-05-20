@@ -102,7 +102,6 @@ jobs:
       - name: "Generate code coverage report"
         uses: clearlyip/code-coverage-report-action@v4
         id: "code_coverage_report"
-        if: ${{ github.actor != 'dependabot[bot]' }}
         with:
           artifact_download_workflow_names: "CI"
           filename: "codecov.xml"
