@@ -52,6 +52,7 @@ jobs:
 
       - name: Download code coverage reports
         if: steps.get-pr.outputs.pr_number != ''
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: codecov-reports
@@ -61,6 +62,7 @@ jobs:
 
       - name: Download performance reports
         if: steps.get-pr.outputs.pr_number != ''
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: perf-reports
@@ -70,6 +72,7 @@ jobs:
 
       - name: Download test results
         if: steps.get-pr.outputs.pr_number != ''
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: test-reports
@@ -78,11 +81,13 @@ jobs:
           path: reports/
 
       - name: Show published reports
+        continue-on-error: true
         if: steps.get-pr.outputs.pr_number != ''
         run: |
           ls -lR reports/
 
       - name: "Synthesize event file"
+        if: steps.get-pr.outputs.pr_number != ''
         run: |
           echo \
             '{
@@ -98,7 +103,8 @@ jobs:
 
       - name: "Publish test results"
         uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
+        if: steps.get-pr.outputs.pr_number != ''
+        continue-on-error: true
         with:
           commit: ${{ github.event.workflow_run.head_sha }}
           event_file: event-file.json
