@@ -436,7 +436,11 @@ impl BuiltinCommand for CompGenCommand {
             .await?;
 
         match result {
-            completion::CompletionResult::Candidates(candidates, _options) => {
+            completion::CompletionResult::Candidates(mut candidates, _options) => {
+                // First sort.
+                candidates.sort();
+
+                // Now list.
                 for candidate in candidates {
                     writeln!(context.stdout(), "{candidate}")?;
                 }
