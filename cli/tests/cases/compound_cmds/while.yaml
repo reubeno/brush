@@ -4,12 +4,12 @@ cases:
     stdin: |
       while false; do echo 'In loop'; done
 
-  # - name: "break in while loop"
-  #   stdin: |
-  #     while true; do
-  #       echo 'In loop'
-  #       break
-  #     done
+  - name: "break in while loop"
+    stdin: |
+      while true; do
+        echo 'In loop'
+        break
+      done
 
   - name: "Arithmetic in while loop"
     stdin: |

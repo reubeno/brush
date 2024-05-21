@@ -32,11 +32,11 @@ cases:
     stdin: |
       shopt extglob
 
-  # - name: "shopt -o interactive monitor default"
-  #   args: ["-i"]
-  #   ignore_stderr: true
-  #   stdin: |
-  #     shopt -o monitor
+  - name: "shopt -o interactive monitor default"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      shopt -o monitor
 
   - name: "shopt toggle"
     stdin: |
