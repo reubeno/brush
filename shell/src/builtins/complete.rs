@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::builtin::{self, BuiltinCommand, BuiltinExitCode};
 use crate::completion::{self, CompleteAction, CompleteOption, CompletionSpec};
 use crate::error;
 
@@ -90,14 +90,7 @@ impl CommonCompleteCommandArgs {
         };
 
         let mut spec = completion::CompletionSpec {
-            bash_default: false,
-            default: false,
-            dir_names: false,
-            file_names: false,
-            no_quote: false,
-            no_sort: false,
-            no_space: false,
-            plus_dirs: false,
+            options: completion::CompletionOptions::default(),
             actions: self.resolve_actions(),
             glob_pattern: self.glob_pattern.clone(),
             word_list: self.word_list.clone(),
@@ -111,14 +104,14 @@ impl CommonCompleteCommandArgs {
 
         for option in &self.options {
             match option {
-                CompleteOption::BashDefault => spec.bash_default = true,
-                CompleteOption::Default => spec.default = true,
-                CompleteOption::DirNames => spec.dir_names = true,
-                CompleteOption::FileNames => spec.file_names = true,
-                CompleteOption::NoQuote => spec.no_quote = true,
-                CompleteOption::NoSort => spec.no_sort = true,
-                CompleteOption::NoSpace => spec.no_space = true,
-                CompleteOption::PlusDirs => spec.plus_dirs = true,
+                CompleteOption::BashDefault => spec.options.bash_default = true,
+                CompleteOption::Default => spec.options.default = true,
+                CompleteOption::DirNames => spec.options.dir_names = true,
+                CompleteOption::FileNames => spec.options.file_names = true,
+                CompleteOption::NoQuote => spec.options.no_quote = true,
+                CompleteOption::NoSort => spec.options.no_sort = true,
+                CompleteOption::NoSpace => spec.options.no_space = true,
+                CompleteOption::PlusDirs => spec.options.plus_dirs = true,
             }
         }
 
@@ -325,28 +318,28 @@ impl CompleteCommand {
             s.push_str(&piece);
         }
 
-        if spec.bash_default {
+        if spec.options.bash_default {
             s.push_str(" -o bashdefault");
         }
-        if spec.default {
+        if spec.options.default {
             s.push_str(" -o default");
         }
-        if spec.dir_names {
+        if spec.options.dir_names {
             s.push_str(" -o dirnames");
         }
-        if spec.file_names {
+        if spec.options.file_names {
             s.push_str(" -o filenames");
         }
-        if spec.no_quote {
+        if spec.options.no_quote {
             s.push_str(" -o noquote");
         }
-        if spec.no_sort {
+        if spec.options.no_sort {
             s.push_str(" -o nosort");
         }
-        if spec.no_space {
+        if spec.options.no_space {
             s.push_str(" -o nospace");
         }
-        if spec.plus_dirs {
+        if spec.options.plus_dirs {
             s.push_str(" -o plusdirs");
         }
 
@@ -443,7 +436,7 @@ impl BuiltinCommand for CompGenCommand {
             .await?;
 
         match result {
-            completion::CompletionResult::Candidates(candidates) => {
+            completion::CompletionResult::Candidates(mut candidates, _options) => {
                 for candidate in candidates {
                     writeln!(context.stdout(), "{candidate}")?;
                 }
@@ -483,21 +476,6 @@ impl BuiltinCommand for CompOptCommand {
         &self,
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        if !self.names.is_empty() {
-            tracing::debug!("UNIMPLEMENTED: compopt with names");
-            return error::unimp("compopt with names");
-        }
-
-        let target_spec = if self.update_default {
-            Some(&mut context.shell.completion_config.default)
-        } else if self.update_empty {
-            Some(&mut context.shell.completion_config.empty_line)
-        } else if self.update_initial_word {
-            Some(&mut context.shell.completion_config.initial_word)
-        } else {
-            None
-        };
-
         let mut options = HashMap::new();
         for option in &self.disabled_options {
             options.insert(option.clone(), false);
@@ -506,21 +484,97 @@ impl BuiltinCommand for CompOptCommand {
             options.insert(option.clone(), true);
         }
 
-        if let Some(Some(target_spec)) = target_spec {
-            for (option, value) in options {
-                match option {
-                    CompleteOption::BashDefault => target_spec.bash_default = value,
-                    CompleteOption::Default => target_spec.default = value,
-                    CompleteOption::DirNames => target_spec.dir_names = value,
-                    CompleteOption::FileNames => target_spec.file_names = value,
-                    CompleteOption::NoQuote => target_spec.no_quote = value,
-                    CompleteOption::NoSort => target_spec.no_sort = value,
-                    CompleteOption::NoSpace => target_spec.no_space = value,
-                    CompleteOption::PlusDirs => target_spec.plus_dirs = value,
+        if !self.names.is_empty() {
+            if self.update_default || self.update_empty || self.update_initial_word {
+                writeln!(
+                    context.stderr(),
+                    "compopt: cannot specify names with -D, -E, or -I"
+                )?;
+                return Ok(builtin::BuiltinExitCode::InvalidUsage);
+            }
+
+            for name in &self.names {
+                if let Some(spec) = context.shell.completion_config.commands.get_mut(name) {
+                    Self::set_options_for_spec(spec, &options);
+                } else {
+                    let mut spec = CompletionSpec::default();
+                    Self::set_options_for_spec(&mut spec, &options);
+                    context
+                        .shell
+                        .completion_config
+                        .commands
+                        .insert(name.to_owned(), spec);
                 }
+            }
+        } else if self.update_default {
+            if let Some(spec) = &mut context.shell.completion_config.default {
+                Self::set_options_for_spec(spec, &options);
+            } else {
+                let mut spec = CompletionSpec::default();
+                Self::set_options_for_spec(&mut spec, &options);
+                std::mem::swap(
+                    &mut context.shell.completion_config.default,
+                    &mut Some(spec),
+                );
+            }
+        } else if self.update_empty {
+            if let Some(spec) = &mut context.shell.completion_config.empty_line {
+                Self::set_options_for_spec(spec, &options);
+            } else {
+                let mut spec = CompletionSpec::default();
+                Self::set_options_for_spec(&mut spec, &options);
+                std::mem::swap(
+                    &mut context.shell.completion_config.empty_line,
+                    &mut Some(spec),
+                );
+            }
+        } else if self.update_initial_word {
+            if let Some(spec) = &mut context.shell.completion_config.initial_word {
+                Self::set_options_for_spec(spec, &options);
+            } else {
+                let mut spec = CompletionSpec::default();
+                Self::set_options_for_spec(&mut spec, &options);
+                std::mem::swap(
+                    &mut context.shell.completion_config.initial_word,
+                    &mut Some(spec),
+                );
+            }
+        } else {
+            // If we got here, then we need to apply to any completion actively in-flight.
+            if let Some(in_flight_options) = context
+                .shell
+                .completion_config
+                .current_completion_options
+                .as_mut()
+            {
+                Self::set_options(in_flight_options, &options);
             }
         }
 
         Ok(BuiltinExitCode::Success)
+    }
+}
+
+impl CompOptCommand {
+    fn set_options_for_spec(spec: &mut CompletionSpec, options: &HashMap<CompleteOption, bool>) {
+        Self::set_options(&mut spec.options, options);
+    }
+
+    fn set_options(
+        target_options: &mut completion::CompletionOptions,
+        options: &HashMap<CompleteOption, bool>,
+    ) {
+        for (option, value) in options {
+            match option {
+                CompleteOption::BashDefault => target_options.bash_default = *value,
+                CompleteOption::Default => target_options.default = *value,
+                CompleteOption::DirNames => target_options.dir_names = *value,
+                CompleteOption::FileNames => target_options.file_names = *value,
+                CompleteOption::NoQuote => target_options.no_quote = *value,
+                CompleteOption::NoSort => target_options.no_sort = *value,
+                CompleteOption::NoSpace => target_options.no_space = *value,
+                CompleteOption::PlusDirs => target_options.plus_dirs = *value,
+            }
+        }
     }
 }

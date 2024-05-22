@@ -86,11 +86,13 @@ pub struct CompletionConfig {
     pub default: Option<CompletionSpec>,
     pub empty_line: Option<CompletionSpec>,
     pub initial_word: Option<CompletionSpec>,
+
+    pub current_completion_options: Option<CompletionOptions>,
 }
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Default)]
-pub struct CompletionSpec {
+pub struct CompletionOptions {
     //
     // Options
     //
@@ -102,6 +104,15 @@ pub struct CompletionSpec {
     pub no_sort: bool,
     pub no_space: bool,
     pub plus_dirs: bool,
+}
+
+#[allow(clippy::module_name_repetitions)]
+#[derive(Clone, Debug, Default)]
+pub struct CompletionSpec {
+    //
+    // Options
+    //
+    pub options: CompletionOptions,
 
     //
     // Generators
@@ -153,28 +164,10 @@ impl CompletionSpec {
     ) -> Result<CompletionResult, crate::error::Error> {
         let mut candidates: Vec<String> = vec![];
 
-        // Apply options
-        if self.bash_default {
-            tracing::debug!("UNIMPLEMENTED: complete -o bashdefault");
-        }
-        if self.default {
-            tracing::debug!("UNIMPLEMENTED: complete -o default");
-        }
-        if self.dir_names {
-            tracing::debug!("UNIMPLEMENTED: complete -o dirnames");
-        }
-        if self.file_names {
-            tracing::debug!("UNIMPLEMENTED: complete -o filenames");
-        }
-        if self.no_quote {
-            tracing::debug!("UNIMPLEMENTED: complete -o noquote");
-        }
-        if self.no_space {
-            tracing::debug!("UNIMPLEMENTED: complete -o nospace");
-        }
-        if self.plus_dirs {
-            tracing::debug!("UNIMPLEMENTED: complete -o plusdirs");
-        }
+        // Store the current options in the shell; this is needed since the compopt
+        // built-in has the ability of modifying the options for an in-flight
+        // completion process.
+        shell.completion_config.current_completion_options = Some(self.options.clone());
 
         for action in &self.actions {
             match action {
@@ -296,7 +289,7 @@ impl CompletionSpec {
                 .await?;
             match call_result {
                 CompletionResult::RestartCompletionProcess => return Ok(call_result),
-                CompletionResult::Candidates(mut new_candidates) => {
+                CompletionResult::Candidates(mut new_candidates, _options) => {
                     candidates.append(&mut new_candidates);
                 }
             }
@@ -329,12 +322,47 @@ impl CompletionSpec {
             }
         }
 
-        // Sort, if desired.
-        if !self.no_sort {
+        //
+        // Now apply options
+        //
+
+        let options = if let Some(options) = &shell.completion_config.current_completion_options {
+            options
+        } else {
+            &self.options
+        };
+
+        let processing_options = CandidateProcessingOptions {
+            treat_as_filenames: options.file_names,
+            no_autoquote_filenames: options.no_quote,
+            no_trailing_space_at_end_of_line: options.no_space,
+        };
+
+        if candidates.is_empty() {
+            if options.bash_default {
+                // TODO: if we have no completions, then fall back to default "bash" completion
+                tracing::debug!("UNIMPLEMENTED: complete -o bashdefault");
+            }
+            if options.default {
+                // TODO: if we have no completions, then fall back to default file name completion
+                tracing::debug!("UNIMPLEMENTED: complete -o default");
+            }
+            if options.dir_names {
+                // TODO: if we have no completions, then fall back to performing dir name completion
+                tracing::debug!("UNIMPLEMENTED: complete -o dirnames");
+            }
+        }
+        if options.plus_dirs {
+            // Also add dir name completion.
+            tracing::debug!("UNIMPLEMENTED: complete -o plusdirs");
+        }
+
+        // Sort, unless blocked by options.
+        if !self.options.no_sort {
             candidates.sort();
         }
 
-        Ok(CompletionResult::Candidates(candidates))
+        Ok(CompletionResult::Candidates(candidates, processing_options))
     }
 
     async fn call_completion_function(
@@ -391,12 +419,16 @@ impl CompletionSpec {
                     crate::variables::ShellValue::IndexedArray(values) => {
                         Ok(CompletionResult::Candidates(
                             values.values().map(|v| v.to_owned()).collect(),
+                            CandidateProcessingOptions::default(),
                         ))
                     }
                     _ => error::unimp("unexpected COMPREPLY value type"),
                 }
             } else {
-                Ok(CompletionResult::Candidates(vec![]))
+                Ok(CompletionResult::Candidates(
+                    vec![],
+                    CandidateProcessingOptions::default(),
+                ))
             }
         }
     }
@@ -406,11 +438,22 @@ impl CompletionSpec {
 pub struct Completions {
     pub start: usize,
     pub candidates: Vec<String>,
+    pub options: CandidateProcessingOptions,
+}
+
+#[derive(Debug, Default)]
+pub struct CandidateProcessingOptions {
+    /// Treat completions as file names
+    pub treat_as_filenames: bool,
+    /// Don't auto-quote completions that are file names.
+    pub no_autoquote_filenames: bool,
+    /// Don't append a trailing space to completions at the end of the input line.
+    pub no_trailing_space_at_end_of_line: bool,
 }
 
 #[allow(clippy::module_name_repetitions)]
 pub enum CompletionResult {
-    Candidates(Vec<String>),
+    Candidates(Vec<String>, CandidateProcessingOptions),
     RestartCompletionProcess,
 }
 
@@ -505,19 +548,23 @@ impl CompletionConfig {
                 restart_count += 1;
             }
 
-            let candidates = match result {
-                CompletionResult::Candidates(candidates) => candidates,
-                CompletionResult::RestartCompletionProcess => vec![],
-            };
-
-            Ok(Completions {
-                start: insertion_point as usize,
-                candidates,
-            })
+            match result {
+                CompletionResult::Candidates(candidates, options) => Ok(Completions {
+                    start: insertion_point as usize,
+                    candidates,
+                    options,
+                }),
+                CompletionResult::RestartCompletionProcess => Ok(Completions {
+                    start: insertion_point as usize,
+                    candidates: vec![],
+                    options: CandidateProcessingOptions::default(),
+                }),
+            }
         } else {
             Ok(Completions {
                 start: position,
                 candidates: vec![],
+                options: CandidateProcessingOptions::default(),
             })
         }
     }
@@ -567,9 +614,11 @@ impl CompletionConfig {
                 .to_owned()
                 .get_completions(shell, &context)
                 .await
-                .unwrap_or_else(|_err| CompletionResult::Candidates(vec![]));
+                .unwrap_or_else(|_err| {
+                    CompletionResult::Candidates(vec![], CandidateProcessingOptions::default())
+                });
 
-            if !matches!(&result, CompletionResult::Candidates(candidates) if candidates.is_empty())
+            if !matches!(&result, CompletionResult::Candidates(candidates, _) if candidates.is_empty())
             {
                 return result;
             }
@@ -589,16 +638,11 @@ fn get_file_completions(
     let path_filter = |path: &Path| !must_be_dir || path.is_dir();
 
     // TODO: Pass through quoting.
-    if let Ok(mut candidates) = patterns::Pattern::from(glob).expand(
+    if let Ok(candidates) = patterns::Pattern::from(glob).expand(
         shell.working_dir.as_path(),
         shell.options.extended_globbing,
         Some(&path_filter),
     ) {
-        for candidate in &mut candidates {
-            if Path::new(candidate.as_str()).is_dir() {
-                candidate.push('/');
-            }
-        }
         candidates
     } else {
         vec![]
@@ -645,7 +689,7 @@ fn get_completions_using_basic_lookup(
             .collect();
     }
 
-    CompletionResult::Candidates(candidates)
+    CompletionResult::Candidates(candidates, CandidateProcessingOptions::default())
 }
 
 fn split_string_using_ifs<S: AsRef<str>>(s: S, shell: &Shell) -> Vec<String> {

@@ -1,5 +1,9 @@
 use rustyline::validate::ValidationResult;
-use std::{borrow::Cow, io::Write, path::PathBuf};
+use std::{
+    borrow::Cow,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
@@ -228,10 +232,32 @@ impl EditorHelper {
             }
         };
 
-        let completions = result.unwrap_or_else(|_| shell::Completions {
+        let mut completions = result.unwrap_or_else(|_| shell::Completions {
             start: pos,
             candidates: vec![],
+            options: shell::CandidateProcessingOptions::default(),
         });
+
+        // TODO: implement completion postprocessing
+        let completing_end_of_line = pos == line.len();
+        if completions.options.treat_as_filenames {
+            for candidate in &mut completions.candidates {
+                // Check if it's a directory.
+                if !candidate.ends_with('/') && Path::new(candidate).is_dir() {
+                    candidate.push('/');
+                }
+            }
+        }
+        if completions.options.no_autoquote_filenames {
+            tracing::debug!(target: "completion", "don't autoquote filenames");
+        }
+        if completing_end_of_line && !completions.options.no_trailing_space_at_end_of_line {
+            for candidate in &mut completions.candidates {
+                if !completions.options.treat_as_filenames || !candidate.ends_with('/') {
+                    candidate.push(' ');
+                }
+            }
+        }
 
         let candidates = completions
             .candidates

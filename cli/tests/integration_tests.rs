@@ -559,6 +559,7 @@ impl TestCaseResult {
                     "        {}",
                     "------ Test: stdout [cleaned]------------------------".cyan()
                 )?;
+
                 writeln!(
                     writer,
                     "{}",
@@ -578,14 +579,7 @@ impl TestCaseResult {
                     "------ Oracle <> Test: stdout ---------------------------------".cyan()
                 )?;
 
-                writeln!(
-                    writer,
-                    "{}",
-                    indent::indent_all_by(
-                        8,
-                        prettydiff::diff_lines(o.as_str(), t.as_str()).format()
-                    )
-                )?;
+                write_diff(&mut writer, 8, o.as_str(), t.as_str())?;
 
                 writeln!(
                     writer,
@@ -613,14 +607,7 @@ impl TestCaseResult {
                     "------ Oracle <> Test: stderr ---------------------------------".cyan()
                 )?;
 
-                writeln!(
-                    writer,
-                    "{}",
-                    indent::indent_all_by(
-                        8,
-                        prettydiff::diff_lines(o.as_str(), t.as_str()).format()
-                    )
-                )?;
+                write_diff(&mut writer, 8, o.as_str(), t.as_str())?;
 
                 writeln!(
                     writer,
@@ -1273,6 +1260,28 @@ fn make_expectrl_output_readable<S: AsRef<str>>(output: S) -> String {
 
     // And remove VT escape sequences.
     strip_ansi_escapes::strip_str(unescaped)
+}
+
+fn write_diff(
+    writer: &mut impl std::io::Write,
+    indent: usize,
+    left: &str,
+    right: &str,
+) -> Result<()> {
+    let indent_str = " ".repeat(indent);
+
+    let diff = diff::lines(left, right);
+    for d in diff {
+        let formatted = match d {
+            diff::Result::Left(l) => std::format!("{indent_str}- {l}").red(),
+            diff::Result::Both(l, _) => std::format!("{indent_str}  {l}").bright_black(),
+            diff::Result::Right(r) => std::format!("{indent_str}+ {r}").green(),
+        };
+
+        writeln!(writer, "{formatted}")?;
+    }
+
+    Ok(())
 }
 
 fn main() {

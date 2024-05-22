@@ -95,12 +95,14 @@ jobs:
 
       - name: "Upload test results"
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: test-reports
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
         uses: clearlyip/code-coverage-report-action@v5
+        if: always()
         id: "code_coverage_report"
         with:
           artifact_download_workflow_names: "CI"
@@ -108,6 +110,7 @@ jobs:
 
       - name: "Upload code coverage report"
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: codecov-reports
           path: code-coverage-results.md

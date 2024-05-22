@@ -24,7 +24,7 @@ mod traps;
 mod users;
 mod variables;
 
-pub use completion::Completions;
+pub use completion::{CandidateProcessingOptions, Completions};
 pub use error::Error;
 pub use interp::ExecutionResult;
 pub use shell::{CreateOptions, Shell};

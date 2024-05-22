@@ -127,7 +127,11 @@ fn main() {
         let targets = match event {
             TraceEvent::Arithmetic => vec!["parser::arithmetic"],
             TraceEvent::Commands => vec!["commands"],
-            TraceEvent::Complete => vec!["shell::completion", "shell::builtins::complete"],
+            TraceEvent::Complete => vec![
+                "completion",
+                "shell::completion",
+                "shell::builtins::complete",
+            ],
             TraceEvent::Expand => vec![],
             TraceEvent::Parse => vec!["parse"],
             TraceEvent::Pattern => vec!["shell::pattern"],
