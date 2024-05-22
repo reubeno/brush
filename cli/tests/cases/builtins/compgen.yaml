@@ -5,11 +5,11 @@ cases:
       alias myalias="ls"
       alias myalias2="echo hi"
 
-      compgen -A alias myalias
+      compgen -A alias myalias | sort
 
   - name: "compgen -A builtin"
     stdin: |
-      compgen -A builtin cd
+      compgen -A builtin cd | sort
 
   - name: "compgen -A directory"
     stdin: |
@@ -17,7 +17,7 @@ cases:
       mkdir somedir
       mkdir somedir2
 
-      compgen -A directory some
+      compgen -A directory some | sort
 
   - name: "compgen -A file"
     stdin: |
@@ -25,7 +25,7 @@ cases:
       mkdir somedir
       mkdir somedir2
 
-      compgen -A file some
+      compgen -A file some | sort
 
   - name: "compgen -A function"
     stdin: |
@@ -37,15 +37,15 @@ cases:
         echo hello
       }
 
-      compgen -A function myfunc
+      compgen -A function myfunc | sort
 
   - name: "compgen -A keyword"
     stdin: |
-      compgen -A keyword esa
+      compgen -A keyword esa | sort
 
   - name: "compgen -A variable"
     stdin: |
       declare myvar=10
       declare myvar2=11
 
-      compgen -A variable myvar
+      compgen -A variable myvar | sort
