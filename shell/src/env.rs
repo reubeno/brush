@@ -277,7 +277,7 @@ impl ShellEnvironment {
         None
     }
 
-    pub fn update_or_add<N: AsRef<str>>(
+    pub fn update_or_add<N: Into<String>>(
         &mut self,
         name: N,
         value: variables::ShellValueLiteral,
@@ -285,7 +285,9 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        if let Some(var) = self.get_mut_using_policy(name.as_ref(), lookup_policy) {
+        let name = name.into();
+
+        if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
             var.assign(value, false)?;
             updater(var)
         } else {
@@ -297,7 +299,7 @@ impl ShellEnvironment {
         }
     }
 
-    pub fn update_or_add_array_element<N: AsRef<str>>(
+    pub fn update_or_add_array_element<N: Into<String>>(
         &mut self,
         name: N,
         index: String,
@@ -306,7 +308,9 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        if let Some(var) = self.get_mut_using_policy(name.as_ref(), lookup_policy) {
+        let name = name.into();
+
+        if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
             var.assign_at_index(index, value, false)?;
             updater(var)
         } else {
@@ -324,7 +328,7 @@ impl ShellEnvironment {
         }
     }
 
-    pub fn add<N: AsRef<str>>(
+    pub fn add<N: Into<String>>(
         &mut self,
         name: N,
         var: ShellVariable,
@@ -332,7 +336,7 @@ impl ShellEnvironment {
     ) -> Result<(), error::Error> {
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if *scope_type == target_scope {
-                map.set(name.as_ref(), var);
+                map.set(name, var);
                 return Ok(());
             }
         }
@@ -340,7 +344,7 @@ impl ShellEnvironment {
         Err(error::Error::MissingScope)
     }
 
-    pub fn set_global<N: AsRef<str>>(
+    pub fn set_global<N: Into<String>>(
         &mut self,
         name: N,
         var: ShellVariable,
@@ -385,7 +389,7 @@ impl ShellVariableMap {
         self.variables.remove(name).is_some()
     }
 
-    pub fn set<N: AsRef<str>>(&mut self, name: N, var: ShellVariable) {
-        self.variables.insert(name.as_ref().to_owned(), var);
+    pub fn set<N: Into<String>>(&mut self, name: N, var: ShellVariable) {
+        self.variables.insert(name.into(), var);
     }
 }

@@ -21,6 +21,7 @@ anyhow = "1.0.86"
 async-recursion = "1.1.0"
 async-trait = "0.1.80"
 brush-parser = { path = "../parser" }
+cached = "0.51.3"
 clap = { version = "4.5.4", features = ["derive"] }
 faccess = "0.2.4"
 fancy-regex = "0.13.0"

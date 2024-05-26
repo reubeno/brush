@@ -1,7 +1,8 @@
 use std::fmt::Display;
 use utf8_chars::BufReadCharsExt;
 
-#[derive(Clone, Debug, PartialEq)]
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
 pub(crate) enum TokenEndReason {
     /// End of input was reached.
     EndOfInput,
@@ -124,7 +125,7 @@ enum QuoteMode {
     Double(SourcePosition),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 enum HereState {
     /// In this state, we are not currently tracking any here-documents.
     None,
@@ -456,7 +457,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 }
 
                 // Verify we're not in a here document.
-                if self.cross_state.here_state != HereState::None {
+                if !matches!(self.cross_state.here_state, HereState::None) {
                     let tag_positions = self
                         .cross_state
                         .current_here_tags
@@ -480,7 +481,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             // Handle being in a here document.
             //
-            } else if self.cross_state.here_state == HereState::InHereDocs {
+            } else if matches!(self.cross_state.here_state, HereState::InHereDocs) {
                 //
                 // For now, just include the character in the current token. We also check
                 // if there are leading tabs to be removed.
@@ -552,7 +553,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // Consume the backslash ourselves so we can peek past it.
                     self.consume_char()?;
 
-                    if self.peek_char()? == Some('\n') {
+                    if matches!(self.peek_char()?, Some('\n')) {
                         // Make sure the newline char gets consumed too.
                         self.consume_char()?;
 
@@ -672,11 +673,14 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     state.append_str(cur_token_value.to_str())
                                 }
 
-                                if cur_token.reason == TokenEndReason::NonNewLineBlank {
+                                if matches!(cur_token.reason, TokenEndReason::NonNewLineBlank) {
                                     state.append_char(' ');
                                 }
 
-                                if cur_token.reason == TokenEndReason::SpecifiedTerminatingChar {
+                                if matches!(
+                                    cur_token.reason,
+                                    TokenEndReason::SpecifiedTerminatingChar
+                                ) {
                                     // We hit the end brace we were looking for but did not
                                     // yet consume it. Do so now.
                                     state.append_char(self.next_char()?.unwrap());

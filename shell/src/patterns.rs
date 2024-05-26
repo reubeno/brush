@@ -245,7 +245,10 @@ impl Pattern {
             enable_extended_globbing,
         )?;
 
-        Ok(fancy_regex::Regex::new(regex_str.as_str())?)
+        tracing::debug!("pattern: '{self:?}' => regex: '{regex_str}'");
+
+        let re = compile_regex(regex_str)?;
+        Ok(re)
     }
 
     pub(crate) fn exactly_matches(
@@ -377,6 +380,11 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
         }
     }
     Ok(s)
+}
+
+#[cached::proc_macro::cached(size = 64, result = true)]
+fn compile_regex(regex_str: String) -> fancy_regex::Result<fancy_regex::Regex> {
+    fancy_regex::Regex::new(regex_str.as_str())
 }
 
 #[cfg(test)]

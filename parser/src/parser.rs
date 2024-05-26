@@ -74,11 +74,13 @@ impl<R: std::io::BufRead> Parser<R> {
                 tokens.push(token);
             }
 
-            if result.reason == TokenEndReason::EndOfInput {
+            if matches!(result.reason, TokenEndReason::EndOfInput) {
                 break;
             }
 
-            if stop_on_unescaped_newline && result.reason == TokenEndReason::UnescapedNewLine {
+            if stop_on_unescaped_newline
+                && matches!(result.reason, TokenEndReason::UnescapedNewLine)
+            {
                 break;
             }
         }
@@ -746,10 +748,7 @@ peg::parser! {
 
 fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
     let parse_result = assignments::name_and_scalar_value(word);
-    match parse_result {
-        Ok(assignment) => Ok(assignment),
-        Err(_) => Err("not assignment word"),
-    }
+    parse_result.map_err(|_| "not assignment word")
 }
 
 fn parse_array_assignment(
