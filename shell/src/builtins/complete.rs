@@ -436,7 +436,7 @@ impl BuiltinCommand for CompGenCommand {
             .await?;
 
         match result {
-            completion::CompletionResult::Candidates(mut candidates, _options) => {
+            completion::CompletionResult::Candidates(candidates, _options) => {
                 for candidate in candidates {
                     writeln!(context.stdout(), "{candidate}")?;
                 }
