@@ -7,7 +7,7 @@ const VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
 pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String, error::Error> {
     // Now parse.
-    let prompt_pieces = parser::prompt::parse_prompt(spec)?;
+    let prompt_pieces = parse_prompt(spec.to_owned())?;
 
     // Now render.
     let formatted_prompt = prompt_pieces
@@ -17,6 +17,11 @@ pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String, error::
         .join("");
 
     Ok(formatted_prompt)
+}
+
+#[cached::proc_macro::cached(size = 64, result = true)]
+fn parse_prompt(spec: String) -> Result<Vec<parser::prompt::PromptPiece>, parser::WordParseError> {
+    parser::prompt::parse_prompt(spec.as_str())
 }
 
 pub(crate) fn format_prompt_piece(
