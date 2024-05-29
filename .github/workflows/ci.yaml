@@ -36,7 +36,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.6.7
+        uses: cargo-bins/cargo-binstall@v1.6.8
 
       - name: Build
         run: cargo build --release
@@ -61,7 +61,7 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.6.7
+        uses: cargo-bins/cargo-binstall@v1.6.8
 
       - name: Install cargo-llvm-cov
         run: cargo binstall --no-confirm --force cargo-llvm-cov
@@ -140,7 +140,7 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.6.7
+        uses: cargo-bins/cargo-binstall@v1.6.8
 
       - name: Format check
         run: cargo fmt --check --all
@@ -186,7 +186,7 @@ jobs:
             ./main
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.6.7
+        uses: cargo-bins/cargo-binstall@v1.6.8
 
       - name: Performance analysis on PR
         run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt
