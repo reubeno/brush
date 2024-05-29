@@ -1,5 +1,6 @@
 use crate::error;
 
+#[derive(Clone)]
 pub enum PromptPiece {
     AsciiCharacter(u32),
     Backslash,
@@ -30,11 +31,13 @@ pub enum PromptPiece {
     Time(PromptTimeFormat),
 }
 
+#[derive(Clone)]
 pub enum PromptDateFormat {
     WeekdayMonthDate,
     Custom(String),
 }
 
+#[derive(Clone)]
 pub enum PromptTimeFormat {
     TwelveHourAM,
     TwelveHourHHMMSS,

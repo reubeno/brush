@@ -492,16 +492,7 @@ impl<'a> WordExpander<'a> {
                 self.parser_options.enable_extended_globbing,
                 Some(&patterns::Pattern::accept_all_expand_filter),
             )
-            .map_or_else(
-                |_err| vec![],
-                |expansions| {
-                    if expansions.is_empty() {
-                        vec![]
-                    } else {
-                        expansions
-                    }
-                },
-            );
+            .unwrap_or_default();
 
         if expansions.is_empty() {
             vec![String::from(field)]
