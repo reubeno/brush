@@ -119,14 +119,17 @@ pub fn parse_tokens(
 impl<'a> peg::Parse for Tokens<'a> {
     type PositionRepr = usize;
 
+    #[inline]
     fn start(&self) -> usize {
         0
     }
 
+    #[inline]
     fn is_eof(&self, p: usize) -> bool {
         p >= self.tokens.len()
     }
 
+    #[inline]
     fn position_repr(&self, p: usize) -> Self::PositionRepr {
         p
     }
@@ -135,6 +138,7 @@ impl<'a> peg::Parse for Tokens<'a> {
 impl<'a> peg::ParseElem<'a> for Tokens<'a> {
     type Element = &'a Token;
 
+    #[inline]
     fn parse_elem(&'a self, pos: usize) -> peg::RuleResult<Self::Element> {
         match self.tokens.get(pos) {
             Some(c) => peg::RuleResult::Matched(pos + 1, c),
@@ -211,9 +215,11 @@ peg::parser! {
             first:pipeline() additional:_and_or_item()* { ast::AndOrList { first, additional } }
 
         rule _and_or_item() -> ast::AndOr =
-            specific_operator("&&") linebreak() p:pipeline() { ast::AndOr::And(p) } /
-            specific_operator("||") linebreak() p:pipeline() { ast::AndOr::Or(p) }
+            op:_and_or_op() linebreak() p:pipeline() { op(p) }
 
+        rule _and_or_op() -> fn(ast::Pipeline) -> ast::AndOr =
+            specific_operator("&&") { ast::AndOr::And } /
+            specific_operator("||") { ast::AndOr::Or }
 
         rule pipeline() -> ast::Pipeline =
             bang:bang()? seq:pipe_sequence() { ast::Pipeline { bang: bang.is_some(), seq } }
@@ -252,7 +258,7 @@ peg::parser! {
             }
 
         rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
-            raw_expr:$((!arithmetic_end() [_])*) { ast::UnexpandedArithmeticExpr { value: raw_expr.to_owned() } }
+            raw_expr:$((!arithmetic_end() [_])*) { ast::UnexpandedArithmeticExpr { value: raw_expr } }
 
         // TODO: evaluate arithmetic end; the semicolon is used in arithmetic for loops.
         rule arithmetic_end() -> () =
@@ -339,35 +345,38 @@ peg::parser! {
             left:word() specific_operator("<") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsBeforeRight, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_operator(">") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsAfterRight, ast::Word::from(left), ast::Word::from(right)) }
             --
-            specific_word("-a") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExists, ast::Word::from(f)) }
-            specific_word("-b") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile, ast::Word::from(f)) }
-            specific_word("-c") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsCharSpecialFile, ast::Word::from(f)) }
-            specific_word("-d") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsDir, ast::Word::from(f)) }
-            specific_word("-e") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExists, ast::Word::from(f)) }
-            specific_word("-f") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsRegularFile, ast::Word::from(f)) }
-            specific_word("-g") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSetgid, ast::Word::from(f)) }
-            specific_word("-h") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSymlink, ast::Word::from(f)) }
-            specific_word("-k") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndHasStickyBit, ast::Word::from(f)) }
-            specific_word("-n") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(f)) }
-            specific_word("-o") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::ShellOptionEnabled, ast::Word::from(f)) }
-            specific_word("-p") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsFifo, ast::Word::from(f)) }
-            specific_word("-r") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsReadable, ast::Word::from(f)) }
-            specific_word("-s") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsNotZeroLength, ast::Word::from(f)) }
-            specific_word("-t") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FdIsOpenTerminal, ast::Word::from(f)) }
-            specific_word("-u") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSetuid, ast::Word::from(f)) }
-            specific_word("-v") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::ShellVariableIsSetAndAssigned, ast::Word::from(f)) }
-            specific_word("-w") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsWritable, ast::Word::from(f)) }
-            specific_word("-x") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsExecutable, ast::Word::from(f)) }
-            specific_word("-z") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasZeroLength, ast::Word::from(f)) }
-            specific_word("-G") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId, ast::Word::from(f)) }
-            specific_word("-L") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSymlink, ast::Word::from(f)) }
-            specific_word("-N") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndModifiedSinceLastRead, ast::Word::from(f)) }
-            specific_word("-O") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId, ast::Word::from(f)) }
-            specific_word("-R") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::ShellVariableIsSetAndNameRef, ast::Word::from(f)) }
-            specific_word("-S") f:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::FileExistsAndIsSocket, ast::Word::from(f)) }
+            p:extended_unary_predicate() f:word() { ast::ExtendedTestExpr::UnaryTest(p, ast::Word::from(f)) }
             --
             w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
         }
+
+        rule extended_unary_predicate() -> ast::UnaryPredicate =
+            specific_word("-a") { ast::UnaryPredicate::FileExists } /
+            specific_word("-b") { ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile } /
+            specific_word("-c") { ast::UnaryPredicate::FileExistsAndIsCharSpecialFile } /
+            specific_word("-d") { ast::UnaryPredicate::FileExistsAndIsDir } /
+            specific_word("-e") { ast::UnaryPredicate::FileExists } /
+            specific_word("-f") { ast::UnaryPredicate::FileExistsAndIsRegularFile } /
+            specific_word("-g") { ast::UnaryPredicate::FileExistsAndIsSetgid } /
+            specific_word("-h") { ast::UnaryPredicate::FileExistsAndIsSymlink } /
+            specific_word("-k") { ast::UnaryPredicate::FileExistsAndHasStickyBit } /
+            specific_word("-n") { ast::UnaryPredicate::StringHasNonZeroLength } /
+            specific_word("-o") { ast::UnaryPredicate::ShellOptionEnabled } /
+            specific_word("-p") { ast::UnaryPredicate::FileExistsAndIsFifo } /
+            specific_word("-r") { ast::UnaryPredicate::FileExistsAndIsReadable } /
+            specific_word("-s") { ast::UnaryPredicate::FileExistsAndIsNotZeroLength } /
+            specific_word("-t") { ast::UnaryPredicate::FdIsOpenTerminal } /
+            specific_word("-u") { ast::UnaryPredicate::FileExistsAndIsSetuid } /
+            specific_word("-v") { ast::UnaryPredicate::ShellVariableIsSetAndAssigned } /
+            specific_word("-w") { ast::UnaryPredicate::FileExistsAndIsWritable } /
+            specific_word("-x") { ast::UnaryPredicate::FileExistsAndIsExecutable } /
+            specific_word("-z") { ast::UnaryPredicate::StringHasZeroLength } /
+            specific_word("-G") { ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId } /
+            specific_word("-L") { ast::UnaryPredicate::FileExistsAndIsSymlink } /
+            specific_word("-N") { ast::UnaryPredicate::FileExistsAndModifiedSinceLastRead } /
+            specific_word("-O") { ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId } /
+            specific_word("-R") { ast::UnaryPredicate::ShellVariableIsSetAndNameRef } /
+            specific_word("-S") { ast::UnaryPredicate::FileExistsAndIsSocket }
 
         // N.B. For some reason we seem to need to allow a select subset
         // of unescaped operators in regex words.
@@ -393,10 +402,7 @@ peg::parser! {
 
         // TODO: validate if this should call non_reserved_word() or word()
         pub(crate) rule case_clause() -> ast::CaseClauseCommand =
-            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() c:case_list() specific_word("esac") {
-                ast::CaseClauseCommand { value: ast::Word::from(w), cases: c }
-            } /
-            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() c:case_list_ns() specific_word("esac") {
+            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() c:(case_list() / case_list_ns()) specific_word("esac") {
                 ast::CaseClauseCommand { value: ast::Word::from(w), cases: c }
             } /
             specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() specific_word("esac") {
@@ -479,7 +485,6 @@ peg::parser! {
             specific_word("until") c:compound_list() d:do_group() { ast::WhileOrUntilClauseCommand(c, d) }
 
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
-        // TODO: Validate usage of this keyword.
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function")? fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
@@ -502,9 +507,18 @@ peg::parser! {
             specific_word("do") c:compound_list() specific_word("done") { ast::DoGroupCommand(c) }
 
         rule simple_command() -> ast::SimpleCommand =
-            prefix:cmd_prefix() word_or_name:cmd_word() suffix:cmd_suffix()? { ast::SimpleCommand { prefix: Some(prefix), word_or_name: Some(ast::Word::from(word_or_name)), suffix } } /
-            prefix:cmd_prefix() { ast::SimpleCommand { prefix: Some(prefix), word_or_name: None, suffix: None } } /
-            word_or_name:cmd_name() suffix:cmd_suffix()? { ast::SimpleCommand { prefix: None, word_or_name: Some(ast::Word::from(word_or_name)), suffix } } /
+            prefix:cmd_prefix() word_and_suffix:(word_or_name:cmd_word() suffix:cmd_suffix()? { (word_or_name, suffix) })? {
+                match word_and_suffix {
+                    Some((word_or_name, suffix)) => {
+                        ast::SimpleCommand { prefix: Some(prefix), word_or_name: Some(ast::Word::from(word_or_name)), suffix }
+                    }
+                    None => {
+                        ast::SimpleCommand { prefix: Some(prefix), word_or_name: None, suffix: None }
+                    }
+                }
+            } /
+            word_or_name:cmd_name() suffix:cmd_suffix()? {
+                ast::SimpleCommand { prefix: None, word_or_name: Some(ast::Word::from(word_or_name)), suffix } } /
             expected!("simple command")
 
         rule cmd_name() -> &'input Token =
@@ -527,8 +541,6 @@ peg::parser! {
                 i:io_redirect() {
                     ast::CommandPrefixOrSuffixItem::IoRedirect(i)
                 } /
-                // TODO: this is a hack; we don't yet understand how other shells manage to parse command invocations
-                // like `local var=()`
                 assignment_and_word:assignment_word() {
                     let (assignment, word) = assignment_and_word;
                     ast::CommandPrefixOrSuffixItem::AssignmentWord(assignment, word)
@@ -617,26 +629,25 @@ peg::parser! {
         rule word() -> &'input Token =
             [Token::Word(_, _)]
 
-        rule reserved_word() -> &'input str =
-            t:reserved_word_token() { t.to_str() }
-
-        rule reserved_word_token() -> &'input Token =
-            specific_word("!") /
-            specific_word("{") /
-            specific_word("}") /
-            specific_word("case") /
-            specific_word("do") /
-            specific_word("done") /
-            specific_word("elif") /
-            specific_word("else") /
-            specific_word("esac") /
-            specific_word("fi") /
-            specific_word("for") /
-            specific_word("if") /
-            specific_word("in") /
-            specific_word("then") /
-            specific_word("until") /
-            specific_word("while") /
+        rule reserved_word() -> &'input Token =
+            [Token::Word(w, _) if matches!(w.as_str(),
+                "!" |
+                "{" |
+                "}" |
+                "case" |
+                "do" |
+                "done" |
+                "elif" |
+                "else" |
+                "esac" |
+                "fi" |
+                "for" |
+                "if" |
+                "in" |
+                "then" |
+                "until" |
+                "while"
+            )] /
 
             // N.B. bash also treats the following as reserved.
             non_posix_extensions_enabled() token:non_posix_reserved_word_token() { token }
@@ -756,7 +767,7 @@ fn parse_array_assignment(
     elements: &[&String],
 ) -> Result<ast::Assignment, &'static str> {
     let (assignment_name, append) =
-        assignments::name_and_equals(word).map_err(|_| "not assignment word")?;
+        assignments::name_and_equals(word).map_err(|_| "not array assignment word")?;
 
     let elements = elements
         .iter()
