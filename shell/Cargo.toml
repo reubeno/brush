@@ -49,7 +49,7 @@ whoami = "1.5.1"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3.1"
-nix = { version = "0.28.0", features = ["fs", "process", "signal", "user"] }
+nix = { version = "0.29.0", features = ["fs", "process", "signal", "user"] }
 tokio-command-fds = "0.2.1"
 uzers = "0.12.0"
 
