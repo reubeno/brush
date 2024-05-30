@@ -402,27 +402,15 @@ peg::parser! {
 
         // TODO: validate if this should call non_reserved_word() or word()
         pub(crate) rule case_clause() -> ast::CaseClauseCommand =
-            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() c:(case_list() / case_list_ns()) specific_word("esac") {
-                ast::CaseClauseCommand { value: ast::Word::from(w), cases: c }
-            } /
-            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() specific_word("esac") {
-                ast::CaseClauseCommand{ value: ast::Word::from(w), cases: vec![] }
-            }
+            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() first_items:case_item()* last_item:case_item_ns()? specific_word("esac") {
+                let mut cases = first_items;
 
-        rule case_list_ns() -> Vec<ast::CaseItem> =
-            first:case_list()? last:case_item_ns() {
-                let mut items = vec![];
-                if let Some(mut first) = first {
-                    for item in first.into_iter() {
-                        items.push(item);
-                    }
+                if let Some(last_item) = last_item {
+                    cases.push(last_item);
                 }
-                items.push(last);
-                items
-            }
 
-        rule case_list() -> Vec<ast::CaseItem> =
-            c:case_item()+
+                ast::CaseClauseCommand { value: ast::Word::from(w), cases }
+            }
 
         pub(crate) rule case_item_ns() -> ast::CaseItem =
             specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
