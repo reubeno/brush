@@ -81,7 +81,7 @@ pub enum CompleteOption {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Default)]
 pub struct CompletionConfig {
-    pub commands: HashMap<String, CompletionSpec>,
+    commands: HashMap<String, CompletionSpec>,
 
     pub default: Option<CompletionSpec>,
     pub empty_line: Option<CompletionSpec>,
@@ -409,6 +409,8 @@ impl CompletionSpec {
 
         let result = shell.invoke_function(function_name, &args).await?;
 
+        tracing::debug!("[called completion func '{function_name}' => {result}]");
+
         // When the function returns the special value 124, then it's a request
         // for us to restart the completion process.
         if result == 124 {
@@ -441,7 +443,7 @@ pub struct Completions {
     pub options: CandidateProcessingOptions,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CandidateProcessingOptions {
     /// Treat completions as file names
     pub treat_as_filenames: bool,
@@ -451,13 +453,98 @@ pub struct CandidateProcessingOptions {
     pub no_trailing_space_at_end_of_line: bool,
 }
 
+impl Default for CandidateProcessingOptions {
+    fn default() -> Self {
+        Self {
+            treat_as_filenames: true,
+            no_autoquote_filenames: false,
+            no_trailing_space_at_end_of_line: false,
+        }
+    }
+}
+
 #[allow(clippy::module_name_repetitions)]
 pub enum CompletionResult {
     Candidates(Vec<String>, CandidateProcessingOptions),
     RestartCompletionProcess,
 }
 
+const EMPTY_COMMAND: &str = "_EmptycmD_";
+const DEFAULT_COMMAND: &str = "_DefaultCmD_";
+const INITIAL_WORD: &str = "_InitialWorD_";
+
 impl CompletionConfig {
+    pub fn remove(&mut self, name: &str) {
+        match name {
+            EMPTY_COMMAND => {
+                self.empty_line = None;
+            }
+            DEFAULT_COMMAND => {
+                self.default = None;
+            }
+            INITIAL_WORD => {
+                self.initial_word = None;
+            }
+            _ => {
+                self.commands.remove(name);
+            }
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &CompletionSpec)> {
+        self.commands.iter()
+    }
+
+    pub fn get(&self, name: &str) -> Option<&CompletionSpec> {
+        match name {
+            EMPTY_COMMAND => self.empty_line.as_ref(),
+            DEFAULT_COMMAND => self.default.as_ref(),
+            INITIAL_WORD => self.initial_word.as_ref(),
+            _ => self.commands.get(name),
+        }
+    }
+
+    pub fn set(&mut self, name: &str, spec: CompletionSpec) {
+        match name {
+            EMPTY_COMMAND => {
+                self.empty_line = Some(spec);
+            }
+            DEFAULT_COMMAND => {
+                self.default = Some(spec);
+            }
+            INITIAL_WORD => {
+                self.initial_word = Some(spec);
+            }
+            _ => {
+                self.commands.insert(name.to_owned(), spec);
+            }
+        }
+    }
+
+    pub fn get_or_add_mut(&mut self, name: &str) -> &mut CompletionSpec {
+        match name {
+            EMPTY_COMMAND => {
+                if self.empty_line.is_none() {
+                    self.empty_line = Some(CompletionSpec::default());
+                }
+                self.empty_line.as_mut().unwrap()
+            }
+            DEFAULT_COMMAND => {
+                if self.default.is_none() {
+                    self.default = Some(CompletionSpec::default());
+                }
+                self.default.as_mut().unwrap()
+            }
+            INITIAL_WORD => {
+                if self.initial_word.is_none() {
+                    self.initial_word = Some(CompletionSpec::default());
+                }
+                self.initial_word.as_mut().unwrap()
+            }
+            _ => self.commands.entry(name.to_owned()).or_default(),
+        }
+    }
+
     #[allow(clippy::cast_sign_loss)]
     pub async fn get_completions(
         &self,
@@ -584,26 +671,33 @@ impl CompletionConfig {
 
         // See if we can find a completion spec matching the current command.
         let mut found_spec: Option<&CompletionSpec> = None;
+
         if let Some(command_name) = context.command_name {
-            if let Some(spec) = shell.completion_config.commands.get(command_name) {
-                found_spec = Some(spec);
-            } else if let Some(file_name) = PathBuf::from(command_name).file_name() {
-                if let Some(spec) = shell
-                    .completion_config
-                    .commands
-                    .get(&file_name.to_string_lossy().to_string())
-                {
+            if context.token_index == 0 {
+                if let Some(spec) = &self.initial_word {
                     found_spec = Some(spec);
+                }
+            } else {
+                if let Some(spec) = shell.completion_config.commands.get(command_name) {
+                    found_spec = Some(spec);
+                } else if let Some(file_name) = PathBuf::from(command_name).file_name() {
+                    if let Some(spec) = shell
+                        .completion_config
+                        .commands
+                        .get(&file_name.to_string_lossy().to_string())
+                    {
+                        found_spec = Some(spec);
+                    }
+                }
+
+                if found_spec.is_none() {
+                    if let Some(spec) = &self.default {
+                        found_spec = Some(spec);
+                    }
                 }
             }
         } else {
             if let Some(spec) = &self.empty_line {
-                found_spec = Some(spec);
-            }
-        }
-
-        if found_spec.is_none() {
-            if let Some(spec) = &self.default {
                 found_spec = Some(spec);
             }
         }
@@ -638,15 +732,13 @@ fn get_file_completions(
     let path_filter = |path: &Path| !must_be_dir || path.is_dir();
 
     // TODO: Pass through quoting.
-    if let Ok(candidates) = patterns::Pattern::from(glob).expand(
-        shell.working_dir.as_path(),
-        shell.options.extended_globbing,
-        Some(&path_filter),
-    ) {
-        candidates
-    } else {
-        vec![]
-    }
+    patterns::Pattern::from(glob)
+        .expand(
+            shell.working_dir.as_path(),
+            shell.options.extended_globbing,
+            Some(&path_filter),
+        )
+        .unwrap_or_default()
 }
 
 fn get_command_completions(shell: &Shell, context: &CompletionContext) -> Vec<String> {

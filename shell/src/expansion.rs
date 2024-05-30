@@ -403,6 +403,8 @@ impl<'a> WordExpander<'a> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// yield pieces that could be further processed.
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
+        tracing::debug!("Basic expanding: '{word}'");
+
         //
         // Expand: tildes, parameters, command substitutions, arithmetic.
         //

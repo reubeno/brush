@@ -188,6 +188,12 @@ cases:
     stdin: |
       [[ '' =~ ^\$$ ]] && echo "1. Matched"
 
+  - name: "Regex with double parens"
+    stdin: |
+      if [[ xy =~ x+((y)) ]]; then
+        echo "Matches"
+      fi
+
   - name: "Empty and space checks"
     stdin: |
       check() {
