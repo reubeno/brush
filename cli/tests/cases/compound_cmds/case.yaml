@@ -47,3 +47,10 @@ cases:
       }
 
       myfunc
+
+  - name: "Case with non-dsemi"
+    stdin: |
+      case "b" in
+      a) echo "a";;
+      b) echo "b"
+      esac
