@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
-use crate::{builtins, commands, error, shell, sys::fs::PathExt};
+use crate::{builtins, commands, error, shell, sys::fs::PathExt, ExecutionResult};
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Parser)]
@@ -124,19 +124,25 @@ impl CommandCommand {
         // We can reuse the context, but need to update the name.
         context.command_name.clone_from(&self.command_name);
 
+        // We do not have an existing process group to place this into.
+        let mut pgid = None;
+
         #[allow(clippy::cast_possible_truncation)]
         #[allow(clippy::cast_sign_loss)]
-        match commands::execute(context, args, false /* use functions? */).await? {
-            commands::SpawnResult::SpawnedChild(mut child) => {
-                let real_result = child.wait().await?;
-                let exit_code = real_result.code().unwrap_or(1);
-                Ok(builtins::ExitCode::Custom(exit_code as u8))
+        match commands::execute(context, &mut pgid, args, false /* use functions? */).await? {
+            commands::CommandSpawnResult::SpawnedProcess(mut child) => {
+                // TODO: jobs: review this logic
+                let wait_result = child.wait().await?;
+                let exec_result = ExecutionResult::from(wait_result);
+                Ok(builtins::ExitCode::Custom(exec_result.exit_code))
             }
-            commands::SpawnResult::ImmediateExit(code) => Ok(builtins::ExitCode::Custom(code)),
-            commands::SpawnResult::ExitShell(_)
-            | commands::SpawnResult::ReturnFromFunctionOrScript(_)
-            | commands::SpawnResult::BreakLoop(_)
-            | commands::SpawnResult::ContinueLoop(_) => {
+            commands::CommandSpawnResult::ImmediateExit(code) => {
+                Ok(builtins::ExitCode::Custom(code))
+            }
+            commands::CommandSpawnResult::ExitShell(_)
+            | commands::CommandSpawnResult::ReturnFromFunctionOrScript(_)
+            | commands::CommandSpawnResult::BreakLoop(_)
+            | commands::CommandSpawnResult::ContinueLoop(_) => {
                 unreachable!("external command cannot return this spawn result")
             }
         }

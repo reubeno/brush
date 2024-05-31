@@ -20,6 +20,9 @@ pub enum TraceEvent {
     /// Traces word expansion.
     #[clap(name = "expand")]
     Expand,
+    /// Traces job management.
+    #[clap(name = "jobs")]
+    Jobs,
     /// Traces the process of parsing tokens into an abstract syntax tree.
     #[clap(name = "parse")]
     Parse,
@@ -38,6 +41,7 @@ impl Display for TraceEvent {
             TraceEvent::Commands => write!(f, "commands"),
             TraceEvent::Complete => write!(f, "complete"),
             TraceEvent::Expand => write!(f, "expand"),
+            TraceEvent::Jobs => write!(f, "jobs"),
             TraceEvent::Parse => write!(f, "parse"),
             TraceEvent::Pattern => write!(f, "pattern"),
             TraceEvent::Tokenize => write!(f, "tokenize"),
@@ -100,6 +104,7 @@ impl TraceEventConfig {
                     "shell::builtins::complete",
                 ],
                 TraceEvent::Expand => vec!["parser::word", "shell::expansion"],
+                TraceEvent::Jobs => vec!["jobs"],
                 TraceEvent::Parse => vec!["parse"],
                 TraceEvent::Pattern => vec!["shell::pattern"],
                 TraceEvent::Tokenize => vec!["tokenize"],

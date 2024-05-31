@@ -75,6 +75,7 @@ impl TestConfig {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 async fn cli_integration_tests(options: TestOptions) -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
@@ -103,8 +104,10 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
         let entry = entry.unwrap();
 
         let yaml_file = std::fs::File::open(entry.as_path())?;
-        let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
+        let mut test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
             .context(format!("parsing {}", entry.to_string_lossy()))?;
+
+        test_case_set.source_dir = entry.parent().unwrap().to_path_buf();
 
         for test_config in &test_configs {
             // Make sure it's compatible.
@@ -312,6 +315,9 @@ struct TestFile {
     /// Contents to seed the file with
     #[serde(default)]
     pub contents: String,
+    /// Optionally provides relative path to the source file
+    /// that should be used to populate this file.
+    pub source_path: Option<PathBuf>,
     /// Executable?
     #[serde(default)]
     pub executable: bool,
@@ -328,6 +334,9 @@ struct TestCaseSet {
     pub common_test_files: Vec<TestFile>,
     #[serde(default)]
     pub incompatible_configs: HashSet<String>,
+
+    #[serde(skip)]
+    pub source_dir: PathBuf,
 }
 
 #[allow(clippy::struct_field_names)]
@@ -708,7 +717,30 @@ impl TestCase {
         {
             let test_file_path = temp_dir.child(test_file.path.as_path());
 
-            test_file_path.write_str(test_file.contents.as_str())?;
+            if let Some(source_path) = &test_file.source_path {
+                if !test_file.contents.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "test file {} has both contents and source_path",
+                        test_file_path.to_string_lossy()
+                    ));
+                }
+
+                if source_path.is_absolute() {
+                    return Err(anyhow::anyhow!(
+                        "source_path {} is not a relative path",
+                        source_path.to_string_lossy()
+                    ));
+                }
+
+                let abs_source_path = test_case_set.source_dir.join(source_path);
+
+                let source_contents = std::fs::read_to_string(&abs_source_path)
+                    .with_context(|| format!("reading {}", abs_source_path.to_string_lossy()))?;
+
+                test_file_path.write_str(source_contents.as_str())?;
+            } else {
+                test_file_path.write_str(test_file.contents.as_str())?;
+            }
 
             #[cfg(unix)]
             if test_file.executable {
@@ -860,6 +892,7 @@ impl TestCase {
 
         // Hard-code a well known prompt for PS1.
         test_cmd.env("PS1", "test$ ");
+        test_cmd.env("RUST_BACKTRACE", "1");
 
         // Set up any env vars needed for collecting coverage data.
         if let Some(coverage_target_dir) = &coverage_target_dir {

@@ -35,6 +35,11 @@ pub(crate) fn kill_process(pid: u32) -> Result<(), error::Error> {
     Ok(())
 }
 
+pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
+    nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))?;
+    Ok(())
+}
+
 pub(crate) fn tstp_signal_listener() -> Result<tokio::signal::unix::Signal, error::Error> {
     let signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(
         nix::libc::SIGTSTP,
@@ -42,4 +47,20 @@ pub(crate) fn tstp_signal_listener() -> Result<tokio::signal::unix::Signal, erro
     Ok(signal)
 }
 
+pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, error::Error> {
+    let signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::child())?;
+    Ok(signal)
+}
+
+#[allow(unused)]
 pub(crate) use tokio::signal::ctrl_c as await_ctrl_c;
+
+pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
+    let ignore = nix::sys::signal::SigAction::new(
+        nix::sys::signal::SigHandler::SigIgn,
+        nix::sys::signal::SaFlags::empty(),
+        nix::sys::signal::SigSet::empty(),
+    );
+    unsafe { nix::sys::signal::sigaction(nix::sys::signal::Signal::SIGTTOU, &ignore) }?;
+    Ok(())
+}

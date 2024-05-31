@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
-use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
+use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::sys::fs::PathExt;
+use crate::trace_categories;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -196,9 +197,7 @@ impl Shell {
         shell.options.extended_globbing = true;
 
         // Load profiles/configuration.
-        shell
-            .load_config(options, &shell.default_exec_params())
-            .await?;
+        shell.load_config(options).await?;
 
         Ok(shell)
     }
@@ -277,11 +276,10 @@ impl Shell {
         Ok(env)
     }
 
-    async fn load_config(
-        &mut self,
-        options: &CreateOptions,
-        params: &ExecutionParameters,
-    ) -> Result<(), error::Error> {
+    async fn load_config(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
+        let mut params = self.default_exec_params();
+        params.process_group_policy = interp::ProcessGroupPolicy::SameProcessGroup;
+
         if options.login {
             // --noprofile means skip this.
             if options.no_profile {
@@ -296,22 +294,22 @@ impl Shell {
             //     * ~/.bash_login
             //     * ~/.profile
             //
-            self.source_if_exists(Path::new("/etc/profile"), params)
+            self.source_if_exists(Path::new("/etc/profile"), &params)
                 .await?;
             if let Some(home_path) = self.get_home_dir() {
                 if options.sh_mode {
-                    self.source_if_exists(home_path.join(".profile").as_path(), params)
+                    self.source_if_exists(home_path.join(".profile").as_path(), &params)
                         .await?;
                 } else {
                     if !self
-                        .source_if_exists(home_path.join(".bash_profile").as_path(), params)
+                        .source_if_exists(home_path.join(".bash_profile").as_path(), &params)
                         .await?
                     {
                         if !self
-                            .source_if_exists(home_path.join(".bash_login").as_path(), params)
+                            .source_if_exists(home_path.join(".bash_login").as_path(), &params)
                             .await?
                         {
-                            self.source_if_exists(home_path.join(".profile").as_path(), params)
+                            self.source_if_exists(home_path.join(".profile").as_path(), &params)
                                 .await?;
                         }
                     }
@@ -330,12 +328,12 @@ impl Shell {
                 //     /etc/bash.bashrc
                 //     ~/.bashrc
                 //
-                self.source_if_exists(Path::new("/etc/bash.bashrc"), params)
+                self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
                     .await?;
                 if let Some(home_path) = self.get_home_dir() {
-                    self.source_if_exists(home_path.join(".bashrc").as_path(), params)
+                    self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
                         .await?;
-                    self.source_if_exists(home_path.join(".brushrc").as_path(), params)
+                    self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
                         .await?;
                 }
             } else {
@@ -428,7 +426,7 @@ impl Shell {
         let mut parser =
             brush_parser::Parser::new(&mut reader, &self.parser_options(), source_info);
 
-        tracing::debug!(target: "parse", "Parsing sourced file: {}", source_info.source);
+        tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse(false);
 
         let mut other_positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
@@ -469,7 +467,9 @@ impl Shell {
     /// * `name` - The name of the function to invoke.
     /// * `args` - The arguments to pass to the function.
     pub async fn invoke_function(&mut self, name: &str, args: &[&str]) -> Result<u8, error::Error> {
-        let open_files = self.open_files.clone();
+        // TODO: Figure out if *all* callers have the same process group policy.
+        let params = self.default_exec_params();
+
         let command_name = String::from(name);
 
         let func_registration = self
@@ -482,7 +482,7 @@ impl Shell {
         let context = commands::ExecutionContext {
             shell: self,
             command_name,
-            open_files,
+            params,
         };
 
         let command_args = args
@@ -491,13 +491,14 @@ impl Shell {
             .collect::<Vec<_>>();
 
         match commands::invoke_shell_function(func, context, &command_args).await? {
-            commands::SpawnResult::SpawnedChild(_) => {
+            commands::CommandSpawnResult::SpawnedProcess(_) => {
                 error::unimp("child spawned from function invocation")
             }
-            commands::SpawnResult::ImmediateExit(code) => Ok(code),
-            commands::SpawnResult::ExitShell(code) => Ok(code),
-            commands::SpawnResult::ReturnFromFunctionOrScript(code) => Ok(code),
-            commands::SpawnResult::BreakLoop(_) | commands::SpawnResult::ContinueLoop(_) => {
+            commands::CommandSpawnResult::ImmediateExit(code) => Ok(code),
+            commands::CommandSpawnResult::ExitShell(code) => Ok(code),
+            commands::CommandSpawnResult::ReturnFromFunctionOrScript(code) => Ok(code),
+            commands::CommandSpawnResult::BreakLoop(_)
+            | commands::CommandSpawnResult::ContinueLoop(_) => {
                 error::unimp("break or continue returned from function invocation")
             }
         }
@@ -571,6 +572,7 @@ impl Shell {
     pub fn default_exec_params(&self) -> ExecutionParameters {
         ExecutionParameters {
             open_files: self.open_files.clone(),
+            ..Default::default()
         }
     }
 
@@ -1051,6 +1053,6 @@ fn parse_string_impl(
     let mut parser: brush_parser::Parser<&mut std::io::BufReader<&[u8]>> =
         brush_parser::Parser::new(&mut reader, &parser_options, &source_info);
 
-    tracing::debug!(target: "parse", "Parsing string as program...");
+    tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse(true)
 }

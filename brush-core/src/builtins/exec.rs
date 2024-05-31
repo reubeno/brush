@@ -44,7 +44,7 @@ impl builtins::Command for ExecCommand {
             &self.args[0],
             argv0.as_str(),
             &self.args[1..],
-            context.open_files.clone(),
+            context.params.open_files.clone(),
             self.empty_environment,
         )?;
 

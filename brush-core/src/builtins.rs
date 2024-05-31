@@ -11,6 +11,7 @@ use crate::ExecutionResult;
 mod alias;
 mod bg;
 mod break_;
+mod brushinfo;
 mod builtin_;
 mod cd;
 mod colon;

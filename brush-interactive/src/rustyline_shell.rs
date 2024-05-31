@@ -7,6 +7,7 @@ use std::{
 use crate::{
     error::ShellError,
     interactive_shell::{InteractiveShell, ReadResult},
+    trace_categories,
 };
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
@@ -202,7 +203,7 @@ impl EditorHelper {
             }
         }
         if completions.options.no_autoquote_filenames {
-            tracing::debug!(target: "completion", "don't autoquote filenames");
+            tracing::debug!(target: trace_categories::COMPLETION, "don't autoquote filenames");
         }
         if completing_end_of_line && !completions.options.no_trailing_space_at_end_of_line {
             for candidate in &mut completions.candidates {

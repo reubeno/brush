@@ -1,4 +1,4 @@
-use crate::{builtins, commands, interp::ExecutionParameters};
+use crate::{builtins, commands};
 use clap::Parser;
 
 /// Evalute the given string as script.
@@ -20,15 +20,8 @@ impl builtins::Command for EvalCommand {
 
             tracing::debug!("Applying eval to: {:?}", args_concatenated);
 
-            let exec_result = context
-                .shell
-                .run_string(
-                    args_concatenated,
-                    &ExecutionParameters {
-                        open_files: context.open_files.clone(),
-                    },
-                )
-                .await?;
+            let params = context.params.clone();
+            let exec_result = context.shell.run_string(args_concatenated, &params).await?;
 
             Ok(builtins::ExitCode::Custom(exec_result.exit_code))
         } else {

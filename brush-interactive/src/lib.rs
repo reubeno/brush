@@ -22,3 +22,5 @@ pub use rustyline_shell::RustylineShell;
 mod basic_shell;
 #[cfg(feature = "basic")]
 pub use basic_shell::BasicShell;
+
+mod trace_categories;

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtins, commands};
+use crate::{builtins, commands, jobs, sys};
 
 /// Move a specified job to the foreground.
 #[derive(Parser)]
@@ -24,6 +24,16 @@ impl builtins::Command for FgCommand {
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
+                if context.shell.options.interactive {
+                    sys::terminal::move_self_to_foreground()?;
+                }
+
+                if matches!(job.state, jobs::JobState::Stopped) {
+                    // N.B. We use the '\r' to overwrite any ^Z output.
+                    let formatted = job.to_string();
+                    writeln!(context.stderr(), "\r{formatted}")?;
+                }
+
                 Ok(builtins::ExitCode::from(result))
             } else {
                 writeln!(
@@ -39,6 +49,16 @@ impl builtins::Command for FgCommand {
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
+                if context.shell.options.interactive {
+                    sys::terminal::move_self_to_foreground()?;
+                }
+
+                if matches!(job.state, jobs::JobState::Stopped) {
+                    // N.B. We use the '\r' to overwrite any ^Z output.
+                    let formatted = job.to_string();
+                    writeln!(context.stderr(), "\r{formatted}")?;
+                }
+
                 Ok(builtins::ExitCode::from(result))
             } else {
                 writeln!(stderr, "{}: no current job", context.command_name)?;

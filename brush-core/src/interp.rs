@@ -10,14 +10,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::arithmetic::ExpandAndEvaluate;
-use crate::commands::{self, CommandArg, SpawnResult};
+use crate::commands::{self, CommandArg, CommandSpawnResult};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{error, expansion, extendedtests, jobs, openfiles, sys, traps};
+use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, traps};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -32,6 +32,15 @@ pub struct ExecutionResult {
     pub break_loop: Option<u8>,
     /// If the command was executed in a loop, this is the number of levels to continue.
     pub continue_loop: Option<u8>,
+}
+
+impl From<processes::ProcessWaitResult> for ExecutionResult {
+    fn from(wait_result: processes::ProcessWaitResult) -> Self {
+        match wait_result {
+            processes::ProcessWaitResult::Completed(output) => output.into(),
+            processes::ProcessWaitResult::Stopped => Self::stopped(),
+        }
+    }
 }
 
 impl From<std::process::Output> for ExecutionResult {
@@ -73,6 +82,14 @@ impl ExecutionResult {
     pub fn is_success(&self) -> bool {
         self.exit_code == 0
     }
+
+    /// Returns a new `ExecutionResult` reflecting a process that was stopped.
+    pub fn stopped() -> ExecutionResult {
+        const SIGTSTP: std::os::raw::c_int = 20;
+
+        #[allow(clippy::cast_possible_truncation)]
+        Self::new(128 + SIGTSTP as u8)
+    }
 }
 
 /// Encapsulates the context of execution in a command pipeline.
@@ -84,6 +101,8 @@ struct PipelineExecutionContext<'a> {
     pipeline_len: usize,
     output_pipes: &'a mut Vec<sys::pipes::PipeReader>,
 
+    process_group_id: Option<i32>,
+
     params: ExecutionParameters,
 }
 
@@ -92,6 +111,18 @@ struct PipelineExecutionContext<'a> {
 pub struct ExecutionParameters {
     /// The open files tracked by the current context.
     pub open_files: openfiles::OpenFiles,
+    /// Policy for how to manage spawned external processes.
+    pub process_group_policy: ProcessGroupPolicy,
+}
+
+#[derive(Clone, Default)]
+/// Policy for how to manage spawned external processes.
+pub enum ProcessGroupPolicy {
+    /// Place the process in a new process group.
+    #[default]
+    NewProcessGroup,
+    /// Place the process in the same process group as its parent.
+    SameProcessGroup,
 }
 
 #[async_trait::async_trait]
@@ -108,7 +139,7 @@ trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext,
-    ) -> Result<SpawnResult, error::Error>;
+    ) -> Result<CommandSpawnResult, error::Error>;
 }
 
 #[async_trait::async_trait]
@@ -196,61 +227,13 @@ fn spawn_ao_list_in_task<'a>(
     });
 
     let job = shell.jobs.add_as_current(jobs::Job::new(
-        VecDeque::from([join_handle]),
-        vec![],
+        [jobs::JobTask::Internal(join_handle)],
         ao_list.to_string(),
         jobs::JobState::Running,
     ));
 
     job
 }
-
-// async fn spawn_ao_list_in_child<'a>(
-//     ao_list: &ast::AndOrList,
-//     shell: &'a mut Shell,
-//     params: &ExecutionParameters,
-// ) -> Result<&'a jobs::Job, error::Error> {
-//     let fork_result = unsafe { nix::unistd::fork() }?;
-
-//     #[allow(clippy::cast_lossless)]
-//     #[allow(clippy::cast_sign_loss)]
-//     match fork_result {
-//         nix::unistd::ForkResult::Parent { child } => {
-//             let join_handle = tokio::spawn(async move {
-//                 let wait_status = nix::sys::wait::waitid(
-//                     nix::sys::wait::Id::Pid(child),
-//                     nix::sys::wait::WaitPidFlag::WEXITED,
-//                 )?;
-
-//                 #[allow(clippy::cast_possible_truncation)]
-//                 if let nix::sys::wait::WaitStatus::Exited(_, code) = wait_status {
-//                     Ok(ExecutionResult::new(code as u8))
-//                 } else {
-//                     Ok(ExecutionResult::new(1))
-//                 }
-//             });
-
-//             let job = shell.jobs.add_as_current(jobs::Job::new(
-//                 VecDeque::from([join_handle]),
-//                 vec![child.as_raw() as u32],
-//                 ao_list.to_string(),
-//                 jobs::JobState::Running,
-//             ));
-
-//             Ok(job)
-//         }
-//         nix::unistd::ForkResult::Child => {
-//             if nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
-//                 .is_err()
-//             {
-//                 std::process::exit(1);
-//             }
-
-//             let result = ao_list.execute(shell, params).await?;
-//             std::process::exit(result.exit_code as i32);
-//         }
-//     }
-// }
 
 #[async_trait::async_trait]
 impl Execute for ast::AndOrList {
@@ -291,12 +274,6 @@ impl Execute for ast::AndOrList {
     }
 }
 
-enum ExecuteWaitResult {
-    WaitCompleted(std::process::Output),
-    Sigtstp,
-}
-
-#[allow(clippy::too_many_lines)] // TODO: refactor this function
 #[async_trait::async_trait]
 impl Execute for ast::Pipeline {
     async fn execute(
@@ -304,147 +281,14 @@ impl Execute for ast::Pipeline {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let pipeline_len = self.seq.len();
-        let mut output_pipes = vec![];
-        let mut spawn_results = VecDeque::new();
+        // Spawn all the processes required for the pipeline, connecting outputs/inputs with pipes
+        // as needed.
+        let spawn_results = spawn_pipeline_processes(self, shell, params).await?;
 
-        for (current_pipeline_index, command) in self.seq.iter().enumerate() {
-            // If there's only one command in the pipeline, then we run directly in the current
-            // shell. Otherwise, we spawn a separate subshell for each command in the
-            // pipeline.
-            let spawn_result = if pipeline_len > 1 {
-                let mut subshell = shell.clone();
-                let mut pipeline_context = PipelineExecutionContext {
-                    shell: &mut subshell,
-                    current_pipeline_index,
-                    pipeline_len,
-                    output_pipes: &mut output_pipes,
-                    params: params.clone(),
-                };
-                command.execute_in_pipeline(&mut pipeline_context).await?
-            } else {
-                let mut pipeline_context = PipelineExecutionContext {
-                    shell,
-                    current_pipeline_index,
-                    pipeline_len,
-                    output_pipes: &mut output_pipes,
-                    params: params.clone(),
-                };
-                command.execute_in_pipeline(&mut pipeline_context).await?
-            };
+        // Wait for the processes.
+        let mut result = wait_for_pipeline_processes(self, spawn_results, shell).await?;
 
-            spawn_results.push_back(spawn_result);
-        }
-
-        const SIGTSTP: std::os::raw::c_int = 20;
-
-        #[allow(unused_mut)]
-        let mut sigtstp = sys::signal::tstp_signal_listener()?;
-
-        let mut result = ExecutionResult::success();
-        let mut stopped: VecDeque<jobs::JobJoinHandle> = VecDeque::new();
-        let mut pids = vec![];
-
-        while let Some(child) = spawn_results.pop_front() {
-            #[allow(clippy::ignored_unit_patterns)]
-            match child {
-                SpawnResult::SpawnedChild(child) => {
-                    if let Some(pid) = child.id() {
-                        pids.push(pid);
-                    }
-
-                    let mut child_future = Box::pin(child.wait_with_output());
-
-                    // Wait for the process to exit or for a relevant signal, whichever happens
-                    // first. TODO: Figure out how to detect a SIGSTOP'd
-                    // process.
-                    let wait_result = if stopped.is_empty() {
-                        loop {
-                            tokio::select! {
-                                output = &mut child_future => {
-                                    break ExecuteWaitResult::WaitCompleted(output?)
-                                },
-                                _ = sigtstp.recv() => {
-                                    break ExecuteWaitResult::Sigtstp
-                                },
-                                _ = sys::signal::await_ctrl_c() => {
-                                    // SIGINT got thrown. Handle it and continue looping. The child should
-                                    // have received it as well, and either handled it or ended up getting
-                                    // terminated (in which case we'll see the child exit).
-                                },
-                            }
-                        }
-                    } else {
-                        ExecuteWaitResult::Sigtstp
-                    };
-
-                    match wait_result {
-                        ExecuteWaitResult::WaitCompleted(output) => {
-                            result = ExecutionResult::from(output);
-                        }
-                        #[allow(clippy::cast_possible_truncation)]
-                        ExecuteWaitResult::Sigtstp => {
-                            stopped.push_back(tokio::spawn(async move {
-                                child_future
-                                    .await
-                                    .map(ExecutionResult::from)
-                                    .map_err(|err| err.into())
-                            }));
-
-                            result = ExecutionResult::new(128 + SIGTSTP as u8);
-                        }
-                    }
-                }
-                SpawnResult::ImmediateExit(exit_code) => {
-                    result = ExecutionResult::new(exit_code);
-                }
-                SpawnResult::ExitShell(exit_code) => {
-                    result = ExecutionResult {
-                        exit_code,
-                        exit_shell: true,
-                        ..ExecutionResult::default()
-                    };
-                }
-                SpawnResult::ReturnFromFunctionOrScript(exit_code) => {
-                    result = ExecutionResult {
-                        exit_code,
-                        return_from_function_or_script: true,
-                        ..ExecutionResult::default()
-                    }
-                }
-                SpawnResult::BreakLoop(count) => {
-                    result = ExecutionResult {
-                        exit_code: 0,
-                        break_loop: Some(count),
-                        ..ExecutionResult::default()
-                    }
-                }
-                SpawnResult::ContinueLoop(count) => {
-                    result = ExecutionResult {
-                        exit_code: 0,
-                        continue_loop: Some(count),
-                        ..ExecutionResult::default()
-                    }
-                }
-            }
-
-            shell.last_exit_status = result.exit_code;
-        }
-
-        if !stopped.is_empty() {
-            let job = shell.jobs.add_as_current(jobs::Job::new(
-                stopped,
-                pids,
-                self.to_string(),
-                jobs::JobState::Stopped,
-            ));
-
-            let formatted = job.to_string();
-
-            // N.B. We use the '\r' to overwrite any ^Z output.
-            writeln!(shell.stderr(), "\r{formatted}")?;
-        }
-
+        // Invert the exit code if requested.
         if self.bang {
             result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
         }
@@ -455,14 +299,98 @@ impl Execute for ast::Pipeline {
     }
 }
 
+async fn spawn_pipeline_processes(
+    pipeline: &ast::Pipeline,
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+) -> Result<VecDeque<CommandSpawnResult>, error::Error> {
+    let pipeline_len = pipeline.seq.len();
+    let mut output_pipes = vec![];
+    let mut spawn_results = VecDeque::new();
+    let mut process_group_id: Option<i32> = None;
+
+    for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
+        // If there's only one command in the pipeline, then we run directly in the current
+        // shell. Otherwise, we spawn a separate subshell for each command in the
+        // pipeline.
+        if pipeline_len > 1 {
+            let mut subshell = shell.clone();
+            let mut pipeline_context = PipelineExecutionContext {
+                shell: &mut subshell,
+                current_pipeline_index,
+                pipeline_len,
+                output_pipes: &mut output_pipes,
+                process_group_id,
+                params: params.clone(),
+            };
+            spawn_results.push_back(command.execute_in_pipeline(&mut pipeline_context).await?);
+            process_group_id = pipeline_context.process_group_id;
+        } else {
+            let mut pipeline_context = PipelineExecutionContext {
+                shell,
+                current_pipeline_index,
+                pipeline_len,
+                output_pipes: &mut output_pipes,
+                process_group_id,
+                params: params.clone(),
+            };
+            spawn_results.push_back(command.execute_in_pipeline(&mut pipeline_context).await?);
+            process_group_id = pipeline_context.process_group_id;
+        }
+    }
+
+    Ok(spawn_results)
+}
+
+async fn wait_for_pipeline_processes(
+    pipeline: &ast::Pipeline,
+    mut process_spawn_results: VecDeque<CommandSpawnResult>,
+    shell: &mut Shell,
+) -> Result<ExecutionResult, error::Error> {
+    let mut result = ExecutionResult::success();
+    let mut stopped_children = vec![];
+
+    while let Some(child) = process_spawn_results.pop_front() {
+        match child.wait(shell, !stopped_children.is_empty()).await? {
+            commands::CommandWaitResult::CommandCompleted(current_result) => {
+                result = current_result;
+                shell.last_exit_status = result.exit_code;
+            }
+            commands::CommandWaitResult::CommandStopped(current_result, child) => {
+                result = current_result;
+                shell.last_exit_status = result.exit_code;
+
+                stopped_children.push(jobs::JobTask::External(child));
+            }
+        }
+    }
+
+    // If there were stopped jobs, then encapsulate the pipeline as a managed job and hand it
+    // off to the job manager.
+    if !stopped_children.is_empty() {
+        let job = shell.jobs.add_as_current(jobs::Job::new(
+            stopped_children,
+            pipeline.to_string(),
+            jobs::JobState::Stopped,
+        ));
+
+        let formatted = job.to_string();
+
+        // N.B. We use the '\r' to overwrite any ^Z output.
+        writeln!(shell.stderr(), "\r{formatted}")?;
+    }
+
+    Ok(result)
+}
+
 #[async_trait::async_trait]
 impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
         pipeline_context: &mut PipelineExecutionContext,
-    ) -> Result<SpawnResult, error::Error> {
+    ) -> Result<CommandSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
-            return Ok(SpawnResult::ImmediateExit(0));
+            return Ok(CommandSpawnResult::ImmediateExit(0));
         }
 
         match self {
@@ -483,22 +411,24 @@ impl ExecuteInPipeline for ast::Command {
 
                 let result = compound.execute(pipeline_context.shell, &params).await?;
                 if result.exit_shell {
-                    Ok(SpawnResult::ExitShell(result.exit_code))
+                    Ok(CommandSpawnResult::ExitShell(result.exit_code))
                 } else if result.return_from_function_or_script {
-                    Ok(SpawnResult::ReturnFromFunctionOrScript(result.exit_code))
+                    Ok(CommandSpawnResult::ReturnFromFunctionOrScript(
+                        result.exit_code,
+                    ))
                 } else if let Some(count) = result.break_loop {
-                    Ok(SpawnResult::BreakLoop(count))
+                    Ok(CommandSpawnResult::BreakLoop(count))
                 } else if let Some(count) = result.continue_loop {
-                    Ok(SpawnResult::ContinueLoop(count))
+                    Ok(CommandSpawnResult::ContinueLoop(count))
                 } else {
-                    Ok(SpawnResult::ImmediateExit(result.exit_code))
+                    Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
                 }
             }
             ast::Command::Function(func) => {
                 let result = func
                     .execute(pipeline_context.shell, &pipeline_context.params)
                     .await?;
-                Ok(SpawnResult::ImmediateExit(result.exit_code))
+                Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::ExtendedTest(e) => {
                 let result =
@@ -507,7 +437,7 @@ impl ExecuteInPipeline for ast::Command {
                     } else {
                         1
                     };
-                Ok(SpawnResult::ImmediateExit(result))
+                Ok(CommandSpawnResult::ImmediateExit(result))
             }
         }
     }
@@ -823,7 +753,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext,
-    ) -> Result<SpawnResult, error::Error> {
+    ) -> Result<CommandSpawnResult, error::Error> {
         let default_prefix = ast::CommandPrefix::default();
         let prefix_items = self.prefix.as_ref().unwrap_or(&default_prefix);
 
@@ -835,13 +765,13 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
         }
 
-        let mut open_files = context.params.open_files.clone();
+        let mut params = context.params.clone();
         let mut assignments = vec![];
         let mut args: Vec<CommandArg> = vec![];
         let mut invoking_declaration_builtin = false;
 
         // Set up pipelining.
-        setup_pipeline_redirection(&mut open_files, context)?;
+        setup_pipeline_redirection(&mut params.open_files, context)?;
 
         for item in prefix_items
             .0
@@ -851,23 +781,26 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if setup_redirect(&mut open_files, context.shell, redirect)
+                    if setup_redirect(&mut params.open_files, context.shell, redirect)
                         .await?
                         .is_none()
                     {
                         // Something went wrong.
-                        return Ok(SpawnResult::ImmediateExit(1));
+                        return Ok(CommandSpawnResult::ImmediateExit(1));
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
                     let (installed_fd_num, substitution_file) = setup_process_substitution(
-                        &mut open_files,
+                        &mut params.open_files,
                         context.shell,
                         kind,
                         subshell_command,
                     )?;
 
-                    open_files.files.insert(installed_fd_num, substitution_file);
+                    params
+                        .open_files
+                        .files
+                        .insert(installed_fd_num, substitution_file);
 
                     args.push(CommandArg::String(std::format!(
                         "/dev/fd/{installed_fd_num}"
@@ -977,8 +910,11 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     .get(&traps::TrapSignal::Debug)
                     .cloned();
                 if let Some(debug_trap_handler) = debug_trap_handler {
-                    let params = ExecutionParameters {
-                        open_files: open_files.clone(),
+                    // TODO: Confirm whether trap handlers should be executed in the same process
+                    // group.
+                    let handler_params = ExecutionParameters {
+                        open_files: params.open_files.clone(),
+                        process_group_policy: ProcessGroupPolicy::SameProcessGroup,
                     };
 
                     let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
@@ -997,7 +933,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     // TODO: Discard result?
                     let _ = context
                         .shell
-                        .run_string(debug_trap_handler, &params)
+                        .run_string(debug_trap_handler, &handler_params)
                         .await?;
 
                     context.shell.traps.handler_depth -= 1;
@@ -1007,12 +943,17 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             let cmd_context = commands::ExecutionContext {
                 shell: context.shell,
                 command_name: cmd_name,
-                open_files,
+                params,
             };
 
             // Execute.
-            let execution_result =
-                commands::execute(cmd_context, args, true /* use functions? */).await;
+            let execution_result = commands::execute(
+                cmd_context,
+                &mut context.process_group_id,
+                args,
+                true, /* use functions? */
+            )
+            .await;
 
             // Pop off that ephemeral environment scope.
             context.shell.env.pop_scope(EnvironmentScope::Command)?;
@@ -1031,7 +972,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 .await?;
             }
 
-            Ok(SpawnResult::ImmediateExit(0))
+            Ok(CommandSpawnResult::ImmediateExit(0))
         }
     }
 }
@@ -1483,6 +1424,7 @@ fn setup_process_substitution(
 
     let exec_params = ExecutionParameters {
         open_files: subshell.open_files.clone(),
+        process_group_policy: ProcessGroupPolicy::SameProcessGroup,
     };
 
     // Asynchronously spawn off the subshell; we intentionally don't block on its
