@@ -1304,7 +1304,7 @@ async fn apply_assignment(
 
 #[allow(clippy::too_many_lines)]
 async fn execute_external_command(
-    mut context: commands::ExecutionContext<'_>,
+    context: commands::ExecutionContext<'_>,
     process_group_id: &mut Option<i32>,
     args: &[CommandArg],
 ) -> Result<SpawnResult, error::Error> {
@@ -1317,7 +1317,7 @@ async fn execute_external_command(
     }
 
     // Compose the std::process::Command that encapsulates what we want to launch.
-    let (cmd, stdin_here_doc) = commands::compose_std_command(
+    let (mut cmd, stdin_here_doc) = commands::compose_std_command(
         context.shell,
         context.command_name.as_str(),
         context.command_name.as_str(),

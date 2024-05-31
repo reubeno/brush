@@ -173,18 +173,6 @@ fn main() {
     }
 
     //
-    // Default signal handling. For now, ignore SIGTTOU.
-    //
-    let ignore_action = nix::sys::signal::SigAction::new(
-        nix::sys::signal::SigHandler::SigIgn,
-        nix::sys::signal::SaFlags::empty(),
-        nix::sys::signal::SigSet::empty(),
-    );
-    unsafe {
-        let _ = nix::sys::signal::sigaction(nix::sys::signal::SIGTTOU, &ignore_action);
-    }
-
-    //
     // Run.
     //
     let result = tokio::runtime::Builder::new_multi_thread()

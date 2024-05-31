@@ -46,7 +46,7 @@ impl builtin::Command for FgCommand {
                     jobs::Job::move_self_to_foreground()?;
                 }
 
-                Ok(BuiltinExitCode::from(result))
+                Ok(builtin::ExitCode::from(result))
             } else {
                 writeln!(stderr, "{}: no current job", context.command_name)?;
                 Ok(builtin::ExitCode::Custom(1))
