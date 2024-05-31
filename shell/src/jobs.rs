@@ -161,9 +161,6 @@ pub struct Job {
     /// If available, the process IDs of the job's processes.
     pids: Vec<u32>,
 
-    /// If available, the process group ID of the job's processes.
-    pgid: Option<u32>,
-
     /// The annotation of the job (e.g., current, previous).
     annotation: JobAnnotation,
 
@@ -201,7 +198,6 @@ impl Job {
             id: 0,
             join_handles,
             pids,
-            pgid: None,
             annotation: JobAnnotation::None,
             command_line,
             state,
@@ -281,7 +277,7 @@ impl Job {
         }
 
         #[allow(clippy::cast_possible_wrap)]
-        if let Some(pid) = self.get_pid()? {
+        if let Some(pid) = self.get_representative_pid() {
             nix::sys::signal::kill(
                 nix::unistd::Pid::from_raw(pid as i32),
                 nix::sys::signal::SIGCONT,
@@ -302,7 +298,7 @@ impl Job {
 
     #[cfg(unix)]
     pub fn kill(&mut self) -> Result<(), error::Error> {
-        if let Some(pid) = self.get_pid()? {
+        if let Some(pid) = self.get_representative_pid() {
             #[allow(clippy::cast_possible_wrap)]
             nix::sys::signal::kill(
                 nix::unistd::Pid::from_raw(pid as i32),
@@ -320,13 +316,7 @@ impl Job {
         error::unimp("kill job")
     }
 
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn get_pid(&self) -> Result<Option<u32>, error::Error> {
-        if self.pids.is_empty() {
-            tracing::debug!("UNIMPLEMENTED: get pid for job");
-            Ok(None)
-        } else {
-            Ok(Some(self.pids[0]))
-        }
+    pub fn get_representative_pid(&self) -> Option<u32> {
+        self.pids.first().copied()
     }
 }
