@@ -36,39 +36,51 @@ pub(crate) struct CommonCompleteCommandArgs {
     #[arg(short = 'S')]
     suffix: Option<String>,
 
+    /// Complete with valid aliases.
     #[arg(short = 'a')]
     action_alias: bool,
 
+    /// Complete with names of shell builtins.
     #[arg(short = 'b')]
     action_builtin: bool,
 
+    /// Complete with names of executable commands.
     #[arg(short = 'c')]
     action_command: bool,
 
+    /// Complete with directory names.
     #[arg(short = 'd')]
     action_directory: bool,
 
+    /// Complete with names of exported shell variables.
     #[arg(short = 'e')]
     action_exported: bool,
 
+    /// Complete with filenames.
     #[arg(short = 'f')]
     action_file: bool,
 
+    /// Complete with valid user groups.
     #[arg(short = 'g')]
     action_group: bool,
 
+    /// Complete with job specs.
     #[arg(short = 'j')]
     action_job: bool,
 
+    /// Complete with keywords.
     #[arg(short = 'k')]
     action_keyword: bool,
 
+    /// Complete with names of system services.
     #[arg(short = 's')]
     action_service: bool,
 
+    /// Complete with valid usernames.
     #[arg(short = 'u')]
     action_user: bool,
 
+    /// Complete with names of shell variables.
     #[arg(short = 'v')]
     action_variable: bool,
 }
@@ -165,6 +177,7 @@ impl CommonCompleteCommandArgs {
 /// Configure programmable command completion.
 #[derive(Parser)]
 pub(crate) struct CompleteCommand {
+    /// Display registered completion settings.
     #[arg(short = 'p')]
     print: bool,
 
@@ -239,7 +252,7 @@ impl CompleteCommand {
                     return error::unimp("special spec not found");
                 }
             } else {
-                for (command_name, spec) in &context.shell.completion_config.commands {
+                for (command_name, spec) in context.shell.completion_config.iter() {
                     Self::display_spec(context, None, Some(command_name.as_str()), spec)?;
                 }
             }
@@ -266,7 +279,7 @@ impl CompleteCommand {
         context: &mut crate::context::CommandExecutionContext<'_>,
         name: &str,
     ) -> Result<(), error::Error> {
-        if let Some(spec) = context.shell.completion_config.commands.get(name) {
+        if let Some(spec) = context.shell.completion_config.get(name) {
             Self::display_spec(context, None, Some(name), spec)
         } else {
             error::unimp("no completion found for command")
@@ -383,17 +396,13 @@ impl CompleteCommand {
         if self.print {
             return Self::display_spec_for_command(context, name);
         } else if self.remove {
-            context.shell.completion_config.commands.remove(name);
+            context.shell.completion_config.remove(name);
             return Ok(());
         }
 
         let config = self.common_args.create_spec();
 
-        context
-            .shell
-            .completion_config
-            .commands
-            .insert(name.to_owned(), config);
+        context.shell.completion_config.set(name, config);
 
         Ok(())
     }
@@ -494,17 +503,8 @@ impl BuiltinCommand for CompOptCommand {
             }
 
             for name in &self.names {
-                if let Some(spec) = context.shell.completion_config.commands.get_mut(name) {
-                    Self::set_options_for_spec(spec, &options);
-                } else {
-                    let mut spec = CompletionSpec::default();
-                    Self::set_options_for_spec(&mut spec, &options);
-                    context
-                        .shell
-                        .completion_config
-                        .commands
-                        .insert(name.to_owned(), spec);
-                }
+                let spec = context.shell.completion_config.get_or_add_mut(name);
+                Self::set_options_for_spec(spec, &options);
             }
         } else if self.update_default {
             if let Some(spec) = &mut context.shell.completion_config.default {

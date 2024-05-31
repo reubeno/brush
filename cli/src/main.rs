@@ -132,7 +132,7 @@ fn main() {
                 "shell::completion",
                 "shell::builtins::complete",
             ],
-            TraceEvent::Expand => vec![],
+            TraceEvent::Expand => vec!["parser::word", "shell::expansion"],
             TraceEvent::Parse => vec!["parse"],
             TraceEvent::Pattern => vec!["shell::pattern"],
             TraceEvent::Tokenize => vec!["tokenize"],
