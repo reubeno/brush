@@ -45,7 +45,7 @@ whoami = "1.5.1"
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.0"
-nix = { version = "0.29.0", features = ["fs", "process", "signal", "user"] }
+nix = { version = "0.29.0", features = ["fs", "process", "signal", "term", "user"] }
 procfs = "0.16.0"
 uzers = "0.12.0"
 

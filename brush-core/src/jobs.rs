@@ -190,6 +190,9 @@ pub struct Job {
     /// If available, the process IDs of the job's processes.
     pids: Vec<u32>,
 
+    /// If available, the process group ID of the job's processes.
+    pgid: Option<u32>,
+
     /// The annotation of the job (e.g., current, previous).
     annotation: JobAnnotation,
 
@@ -235,6 +238,7 @@ impl Job {
             id: 0,
             join_handles,
             pids,
+            pgid: None,
             annotation: JobAnnotation::None,
             command_line,
             state,
@@ -312,29 +316,49 @@ impl Job {
     /// Moves the job to execute in the background.
     #[allow(clippy::unused_self)]
     pub fn move_to_background(&mut self) -> Result<(), error::Error> {
-        error::unimp("move job to background")
+        if matches!(self.state, JobState::Stopped) {
+            #[allow(clippy::cast_possible_wrap)]
+            if let Some(pgid) = self.get_process_group_id() {
+                nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(pgid as i32),
+                    nix::sys::signal::SIGCONT,
+                )
+                .map_err(|_errno: nix::errno::Errno| error::Error::FailedToSendSignal)?;
+
+                self.state = JobState::Running;
+                Ok(())
+            } else {
+                Err(error::Error::FailedToSendSignal)
+            }
+        } else {
+            error::unimp("move job to background")
+        }
     }
 
     /// Moves the job to execute in the foreground.
     #[cfg(unix)]
     pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
-        if !matches!(self.state, JobState::Stopped) {
-            return error::unimp("move job to foreground for not stopped job");
+        if matches!(self.state, JobState::Stopped) {
+            #[allow(clippy::cast_possible_wrap)]
+            if let Some(pgid) = self.get_process_group_id() {
+                nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(pgid as i32),
+                    nix::sys::signal::SIGCONT,
+                )
+                .map_err(|_errno: nix::errno::Errno| error::Error::FailedToSendSignal)?;
+
+                self.state = JobState::Running;
+            } else {
+                return Err(error::Error::FailedToSendSignal);
+            }
         }
 
         #[allow(clippy::cast_possible_wrap)]
-        if let Some(pid) = self.get_representative_pid() {
-            nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid as i32),
-                nix::sys::signal::SIGCONT,
-            )
-            .map_err(|_errno| error::Error::FailedToSendSignal)?;
-
-            self.state = JobState::Running;
-            Ok(())
-        } else {
-            Err(error::Error::FailedToSendSignal)
+        if let Some(pgid) = self.get_process_group_id() {
+            nix::unistd::tcsetpgrp(std::io::stdin(), nix::unistd::Pid::from_raw(pgid as i32))?;
         }
+
+        Ok(())
     }
 
     /// Moves the job to execute in the foreground.
@@ -346,7 +370,7 @@ impl Job {
     /// Kills the job.
     #[cfg(unix)]
     pub fn kill(&mut self) -> Result<(), error::Error> {
-        if let Some(pid) = self.get_representative_pid() {
+        if let Some(pid) = self.get_process_group_id() {
             #[allow(clippy::cast_possible_wrap)]
             nix::sys::signal::kill(
                 nix::unistd::Pid::from_raw(pid as i32),
@@ -368,5 +392,10 @@ impl Job {
     /// Tries to retrieve a "representative" pid for the job.
     pub fn get_representative_pid(&self) -> Option<u32> {
         self.pids.first().copied()
+    }
+
+    pub fn get_process_group_id(&self) -> Option<u32> {
+        // TODO: Don't assume that the first PID is the PGID.
+        self.pgid.or_else(|| self.get_representative_pid())
     }
 }

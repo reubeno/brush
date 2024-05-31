@@ -3,6 +3,8 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
 #[cfg(unix)]
+use std::os::unix::process::CommandExt;
+#[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -98,6 +100,8 @@ struct PipelineExecutionContext<'a> {
     current_pipeline_index: usize,
     pipeline_len: usize,
     output_pipes: Vec<os_pipe::PipeReader>,
+
+    process_group_id: Option<i32>,
 
     params: ExecutionParameters,
 }
@@ -324,6 +328,7 @@ impl Execute for ast::Pipeline {
             current_pipeline_index: 0,
             pipeline_len: self.seq.len(),
             output_pipes: vec![],
+            process_group_id: None,
             params: params.clone(),
         };
 
@@ -342,8 +347,13 @@ impl Execute for ast::Pipeline {
         #[cfg(unix)]
         let mut sigtstp =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(SIGTSTP))?;
+        #[cfg(unix)]
+        let mut sigchld = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::child())?;
+
         #[cfg(not(unix))]
         let sigtstp = FakeSignal::new();
+        #[cfg(not(unix))]
+        let sigchild = FakeSignal::new();
 
         let mut stopped: VecDeque<jobs::JobJoinHandle> = VecDeque::new();
         let mut pids = vec![];
@@ -357,7 +367,6 @@ impl Execute for ast::Pipeline {
                     let mut child_future = Box::pin(child.wait_with_output());
 
                     // Wait for the process to exit or for a relevant signal, whichever happens first.
-                    // TODO: Figure out how to detect a SIGSTOP'd process.
                     let wait_result = if stopped.is_empty() {
                         loop {
                             tokio::select! {
@@ -366,6 +375,28 @@ impl Execute for ast::Pipeline {
                                 },
                                 _ = sigtstp.recv() => {
                                     break ExecuteWaitResult::Sigtstp
+                                },
+                                _ = sigchld.recv() => {
+                                    let mut found_stopped = false;
+                                    loop {
+                                        let wait_status = nix::sys::wait::waitid(
+                                            nix::sys::wait::Id::All,
+                                            nix::sys::wait::WaitPidFlag::WUNTRACED | nix::sys::wait::WaitPidFlag::WNOHANG);
+                                        match wait_status {
+                                            Ok(nix::sys::wait::WaitStatus::Stopped(_stopped_pid, _signal)) => {
+                                                found_stopped = true;
+                                            },
+                                            Ok(_) => break,
+                                            Err(nix::errno::Errno::ECHILD) => break,
+                                            Err(e) => {
+                                                return Err(e.into())
+                                            },
+                                        }
+                                    }
+
+                                    if found_stopped {
+                                        break ExecuteWaitResult::Sigtstp;
+                                    }
                                 },
                                 _ = tokio::signal::ctrl_c() => {
                                     // SIGINT got thrown. Handle it and continue looping. The child should
@@ -393,6 +424,12 @@ impl Execute for ast::Pipeline {
 
                             result = ExecutionResult::new(128 + SIGTSTP as u8);
                         }
+                    }
+
+                    if shell.options.interactive
+                        && nix::unistd::isatty(nix::libc::STDIN_FILENO).unwrap_or_default()
+                    {
+                        move_self_to_foreground()?;
                     }
                 }
                 SpawnResult::ImmediateExit(exit_code) => {
@@ -1032,11 +1069,13 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     execute_builtin_command(&builtin, cmd_context, args).await
                 } else {
                     // Strip the command name off args.
-                    execute_external_command(cmd_context, &args[1..]).await
+                    execute_external_command(cmd_context, &mut context.process_group_id, &args[1..])
+                        .await
                 }
             } else {
                 // Strip the command name off args.
-                execute_external_command(cmd_context, &args[1..]).await
+                execute_external_command(cmd_context, &mut context.process_group_id, &args[1..])
+                    .await
             };
 
             // Pop off that ephemeral environment scope.
@@ -1265,7 +1304,8 @@ async fn apply_assignment(
 
 #[allow(clippy::too_many_lines)]
 async fn execute_external_command(
-    context: commands::ExecutionContext<'_>,
+    mut context: commands::ExecutionContext<'_>,
+    process_group_id: &mut Option<i32>,
     args: &[CommandArg],
 ) -> Result<SpawnResult, error::Error> {
     // Filter out the args; we only want strings.
@@ -1286,6 +1326,20 @@ async fn execute_external_command(
         false, /* empty environment? */
     )?;
 
+    // Set up process group state.
+    let required_pgid = process_group_id.unwrap_or(0);
+    cmd.process_group(required_pgid);
+
+    // Register some code to run in the forked child process before it execs
+    // the target command.
+    if context.shell.options.interactive
+        && nix::unistd::isatty(nix::libc::STDIN_FILENO).unwrap_or_default()
+    {
+        unsafe {
+            cmd.pre_exec(setup_process_before_exec);
+        }
+    }
+
     // When tracing is enabled, report.
     tracing::debug!(
         target: "commands",
@@ -1301,6 +1355,16 @@ async fn execute_external_command(
 
     match cmd.spawn() {
         Ok(mut child) => {
+            // Retrieve the pid.
+            if let Some(pid) = child.id() {
+                #[allow(clippy::cast_possible_wrap)]
+                if required_pgid == 0 {
+                    *process_group_id = Some(pid as i32);
+                }
+            } else {
+                tracing::warn!("could not retrieve pid for child process");
+            }
+
             // Special case: handle writing here document, if needed.
             if let Some(doc) = stdin_here_doc {
                 if let Some(mut child_stdin) = child.stdin.take() {
@@ -1328,6 +1392,20 @@ async fn execute_external_command(
             Ok(SpawnResult::ImmediateExit(126))
         }
     }
+}
+
+#[allow(clippy::unnecessary_wraps)]
+#[allow(dead_code)]
+fn setup_process_before_exec() -> Result<(), std::io::Error> {
+    move_self_to_foreground().map_err(std::io::Error::other)
+}
+
+fn move_self_to_foreground() -> Result<(), error::Error> {
+    let pgid = nix::unistd::getpgid(None)?;
+
+    nix::unistd::tcsetpgrp(std::io::stdin(), pgid)?;
+
+    Ok(())
 }
 
 async fn execute_builtin_command(
