@@ -103,6 +103,9 @@ pub enum Error {
 
     #[error("invalid signal")]
     InvalidSignal,
+
+    #[error("system error: {0}")]
+    ErrnoError(#[from] nix::errno::Errno),
 }
 
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {

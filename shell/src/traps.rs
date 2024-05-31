@@ -19,6 +19,18 @@ impl Display for TrapSignal {
     }
 }
 
+impl TrapSignal {
+    pub fn all_values() -> Vec<TrapSignal> {
+        let mut signals = vec![TrapSignal::Debug, TrapSignal::Err, TrapSignal::Exit];
+
+        for signal in nix::sys::signal::Signal::iterator() {
+            signals.push(TrapSignal::Signal(signal));
+        }
+
+        signals
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct TrapHandlerConfig {
     pub handlers: HashMap<TrapSignal, String>,

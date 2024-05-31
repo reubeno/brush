@@ -11,7 +11,7 @@ pub(crate) type JobResult = (Job, Result<ExecutionResult, error::Error>);
 
 #[derive(Default)]
 pub struct JobManager {
-    pub background_jobs: Vec<Job>,
+    pub jobs: Vec<Job>,
 }
 
 impl JobManager {
@@ -19,31 +19,66 @@ impl JobManager {
         Self::default()
     }
 
-    pub fn add(&mut self, mut job: Job) -> &Job {
-        let id = self.background_jobs.len() + 1;
+    pub fn add_as_current(&mut self, mut job: Job) -> &Job {
+        for j in &mut self.jobs {
+            if matches!(j.annotation, JobAnnotation::Current) {
+                j.annotation = JobAnnotation::Previous;
+                break;
+            }
+        }
+
+        let id = self.jobs.len() + 1;
         job.id = id;
-        self.background_jobs.push(job);
-        self.background_jobs.last().unwrap()
+        job.annotation = JobAnnotation::Current;
+        self.jobs.push(job);
+        self.jobs.last().unwrap()
     }
 
     pub fn current_job(&self) -> Option<&Job> {
-        // TODO: Properly track current.
-        self.background_jobs.last()
+        self.jobs
+            .iter()
+            .find(|j| matches!(j.annotation, JobAnnotation::Current))
     }
 
     pub fn current_job_mut(&mut self) -> Option<&mut Job> {
-        // TODO: Properly track current.
-        self.background_jobs.last_mut()
+        self.jobs
+            .iter_mut()
+            .find(|j| matches!(j.annotation, JobAnnotation::Current))
     }
 
-    #[allow(clippy::unused_self)]
-    pub fn resolve_job_spec(&self, _job_spec: &str) -> Option<&mut Job> {
-        tracing::warn!("resolve_job_spec is not implemented");
-        None
+    pub fn prev_job(&self) -> Option<&Job> {
+        self.jobs
+            .iter()
+            .find(|j| matches!(j.annotation, JobAnnotation::Previous))
+    }
+
+    pub fn prev_job_mut(&mut self) -> Option<&mut Job> {
+        self.jobs
+            .iter_mut()
+            .find(|j| matches!(j.annotation, JobAnnotation::Previous))
+    }
+
+    pub fn resolve_job_spec(&mut self, job_spec: &str) -> Option<&mut Job> {
+        if !job_spec.starts_with('%') {
+            return None;
+        }
+
+        match &job_spec[1..] {
+            "%" | "+" => self.current_job_mut(),
+            "-" => self.prev_job_mut(),
+            s if s.chars().all(char::is_numeric) => {
+                let id = s.parse::<usize>().ok()?;
+                self.jobs.iter_mut().find(|j| j.id == id)
+            }
+            _ => {
+                tracing::warn!("UNIMPLEMENTED: job spec naming command: '{job_spec}'");
+                None
+            }
+        }
     }
 
     pub async fn wait_all(&mut self) -> Result<Vec<Job>, error::Error> {
-        for job in &mut self.background_jobs {
+        for job in &mut self.jobs {
             job.wait().await?;
         }
 
@@ -54,9 +89,9 @@ impl JobManager {
         let mut results = vec![];
 
         let mut i = 0;
-        while i != self.background_jobs.len() {
-            if let Some(result) = self.background_jobs[i].poll_done()? {
-                let job = self.background_jobs.remove(i);
+        while i != self.jobs.len() {
+            if let Some(result) = self.jobs[i].poll_done()? {
+                let job = self.jobs.remove(i);
                 results.push((job, result));
             } else {
                 i += 1;
@@ -70,9 +105,9 @@ impl JobManager {
         let mut completed_jobs = vec![];
 
         let mut i = 0;
-        while i != self.background_jobs.len() {
-            if self.background_jobs[i].join_handles.is_empty() {
-                completed_jobs.push(self.background_jobs.remove(i));
+        while i != self.jobs.len() {
+            if self.jobs[i].join_handles.is_empty() {
+                completed_jobs.push(self.jobs.remove(i));
             } else {
                 i += 1;
             }
@@ -118,13 +153,27 @@ impl Display for JobAnnotation {
     }
 }
 
+/// Encapsulates a set of processes managed by the shell as a single unit.
 pub struct Job {
+    /// Join handles for the tasks that are waiting on the job's processes.
     join_handles: VecDeque<JobJoinHandle>,
+
+    /// If available, the process IDs of the job's processes.
     pids: Vec<u32>,
+
+    /// If available, the process group ID of the job's processes.
+    pgid: Option<u32>,
+
+    /// The annotation of the job (e.g., current, previous).
     annotation: JobAnnotation,
 
+    /// The shell-internal ID of the job.
     pub id: usize,
+
+    /// The command line of the job.
     pub command_line: String,
+
+    /// The current operational state of the job.
     pub state: JobState,
 }
 
@@ -152,14 +201,29 @@ impl Job {
             id: 0,
             join_handles,
             pids,
+            pgid: None,
             annotation: JobAnnotation::None,
             command_line,
             state,
         }
     }
 
+    pub fn to_pid_style_string(&self) -> String {
+        let display_pid = self
+            .get_representative_pid()
+            .map_or_else(|| String::from("<pid unknown>"), |pid| pid.to_string());
+        std::format!("[{}]{}\t{}", self.id, self.annotation, display_pid)
+    }
+
     pub fn get_annotation(&self) -> JobAnnotation {
         self.annotation.clone()
+    }
+
+    pub fn get_command_name(&self) -> &str {
+        self.command_line
+            .split_ascii_whitespace()
+            .next()
+            .unwrap_or_default()
     }
 
     pub fn is_current(&self) -> bool {
