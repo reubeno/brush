@@ -429,7 +429,7 @@ impl Execute for ast::Pipeline {
                     if shell.options.interactive
                         && nix::unistd::isatty(nix::libc::STDIN_FILENO).unwrap_or_default()
                     {
-                        move_self_to_foreground()?;
+                        jobs::Job::move_self_to_foreground()?;
                     }
                 }
                 SpawnResult::ImmediateExit(exit_code) => {
@@ -1397,15 +1397,7 @@ async fn execute_external_command(
 #[allow(clippy::unnecessary_wraps)]
 #[allow(dead_code)]
 fn setup_process_before_exec() -> Result<(), std::io::Error> {
-    move_self_to_foreground().map_err(std::io::Error::other)
-}
-
-fn move_self_to_foreground() -> Result<(), error::Error> {
-    let pgid = nix::unistd::getpgid(None)?;
-
-    nix::unistd::tcsetpgrp(std::io::stdin(), pgid)?;
-
-    Ok(())
+    jobs::Job::move_self_to_foreground().map_err(std::io::Error::other)
 }
 
 async fn execute_builtin_command(

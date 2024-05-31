@@ -398,4 +398,12 @@ impl Job {
         // TODO: Don't assume that the first PID is the PGID.
         self.pgid.or_else(|| self.get_representative_pid())
     }
+
+    pub fn move_self_to_foreground() -> Result<(), error::Error> {
+        let pgid = nix::unistd::getpgid(None)?;
+
+        nix::unistd::tcsetpgrp(std::io::stdin(), pgid)?;
+
+        Ok(())
+    }
 }

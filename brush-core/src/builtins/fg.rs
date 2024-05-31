@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands};
+use crate::{builtin, commands, jobs};
 
 /// Move a specified job to the foreground.
 #[derive(Parser)]
@@ -39,7 +39,14 @@ impl builtin::Command for FgCommand {
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
-                Ok(builtin::ExitCode::from(result))
+
+                if context.shell.options.interactive
+                    && nix::unistd::isatty(nix::libc::STDIN_FILENO).unwrap_or_default()
+                {
+                    jobs::Job::move_self_to_foreground()?;
+                }
+
+                Ok(BuiltinExitCode::from(result))
             } else {
                 writeln!(stderr, "{}: no current job", context.command_name)?;
                 Ok(builtin::ExitCode::Custom(1))
