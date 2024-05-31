@@ -140,28 +140,17 @@ impl Execute for ast::CompoundList {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                let background_job = tokio::spawn(execute_ao_list_async(
-                    shell.clone(),
-                    params.clone(),
-                    ao_list.clone(),
-                ));
+                // TODO: Reenable launching in child process?
+                // let job = spawn_ao_list_in_child(ao_list, shell, params).await?;
 
-                // TODO: Find pids
-                let job = shell.jobs.add(jobs::Job::new(
-                    VecDeque::from([background_job]),
-                    vec![],
-                    ao_list.to_string(),
-                    jobs::JobState::Running,
-                ));
-                let job_id = job.id;
-                let job_annotation = job.get_annotation();
-                let job_pid = job
-                    .get_pid()?
-                    .map_or_else(|| String::from("<pid unknown>"), |pid| pid.to_string());
+                let job = spawn_ao_list_in_task(ao_list, shell, params);
+                let job_formatted = job.to_pid_style_string();
 
                 if shell.options.interactive {
-                    writeln!(shell.stderr(), "[{job_id}]{job_annotation}\t{job_pid}")?;
+                    writeln!(shell.stderr(), "{job_formatted}")?;
                 }
+
+                result = ExecutionResult::success();
             } else {
                 result = ao_list.execute(shell, params).await?;
             }
@@ -182,14 +171,81 @@ impl Execute for ast::CompoundList {
     }
 }
 
-async fn execute_ao_list_async(
-    mut shell: Shell,
-    params: ExecutionParameters,
-    ao_list: ast::AndOrList,
-) -> Result<ExecutionResult, error::Error> {
-    let background_job = ao_list.execute(&mut shell, &params).await?;
-    Ok(background_job)
+fn spawn_ao_list_in_task<'a>(
+    ao_list: &ast::AndOrList,
+    shell: &'a mut Shell,
+    params: &ExecutionParameters,
+) -> &'a jobs::Job {
+    // Clone the inputs.
+    let mut cloned_shell = shell.clone();
+    let cloned_params = params.clone();
+    let cloned_ao_list = ao_list.clone();
+
+    // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
+    cloned_shell.options.interactive = false;
+
+    let join_handle = tokio::spawn(async move {
+        cloned_ao_list
+            .execute(&mut cloned_shell, &cloned_params)
+            .await
+    });
+
+    let job = shell.jobs.add_as_current(jobs::Job::new(
+        VecDeque::from([join_handle]),
+        vec![],
+        ao_list.to_string(),
+        jobs::JobState::Running,
+    ));
+
+    job
 }
+
+// async fn spawn_ao_list_in_child<'a>(
+//     ao_list: &ast::AndOrList,
+//     shell: &'a mut Shell,
+//     params: &ExecutionParameters,
+// ) -> Result<&'a jobs::Job, error::Error> {
+//     let fork_result = unsafe { nix::unistd::fork() }?;
+
+//     #[allow(clippy::cast_lossless)]
+//     #[allow(clippy::cast_sign_loss)]
+//     match fork_result {
+//         nix::unistd::ForkResult::Parent { child } => {
+//             let join_handle = tokio::spawn(async move {
+//                 let wait_status = nix::sys::wait::waitid(
+//                     nix::sys::wait::Id::Pid(child),
+//                     nix::sys::wait::WaitPidFlag::WEXITED,
+//                 )?;
+
+//                 #[allow(clippy::cast_possible_truncation)]
+//                 if let nix::sys::wait::WaitStatus::Exited(_, code) = wait_status {
+//                     Ok(ExecutionResult::new(code as u8))
+//                 } else {
+//                     Ok(ExecutionResult::new(1))
+//                 }
+//             });
+
+//             let job = shell.jobs.add_as_current(jobs::Job::new(
+//                 VecDeque::from([join_handle]),
+//                 vec![child.as_raw() as u32],
+//                 ao_list.to_string(),
+//                 jobs::JobState::Running,
+//             ));
+
+//             Ok(job)
+//         }
+//         nix::unistd::ForkResult::Child => {
+//             if nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
+//                 .is_err()
+//             {
+//                 std::process::exit(1);
+//             }
+
+//             let result = ao_list.execute(shell, params).await?;
+//             std::process::exit(result.exit_code as i32);
+//         }
+//     }
+// }
 
 #[async_trait::async_trait]
 impl Execute for ast::AndOrList {
@@ -356,30 +412,17 @@ impl Execute for ast::Pipeline {
         }
 
         if !stopped.is_empty() {
-            let job = shell.jobs.add(jobs::Job::new(
+            let job = shell.jobs.add_as_current(jobs::Job::new(
                 stopped,
                 pids,
                 self.to_string(),
                 jobs::JobState::Stopped,
             ));
-            let job_id = job.id;
-            let job_state = job.state.clone();
 
-            let annotation = if job.is_current() {
-                "+"
-            } else if job.is_prev() {
-                "-"
-            } else {
-                ""
-            };
+            let formatted = job.to_string();
 
             // N.B. We use the '\r' to overwrite any ^Z output.
-            writeln!(
-                shell.stderr(),
-                "\r[{job_id}]{annotation:3}{:24}{}",
-                job_state.to_string(),
-                self
-            )?;
+            writeln!(shell.stderr(), "\r{formatted}")?;
         }
 
         if self.bang {
@@ -387,6 +430,7 @@ impl Execute for ast::Pipeline {
         }
 
         shell.last_exit_status = result.exit_code;
+
         Ok(result)
     }
 }

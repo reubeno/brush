@@ -79,7 +79,10 @@ impl Display for Pipeline {
         if self.bang {
             write!(f, "!")?;
         }
-        for command in &self.seq {
+        for (i, command) in self.seq.iter().enumerate() {
+            if i > 0 {
+                write!(f, " |")?;
+            }
             write!(f, "{}", command)?;
         }
 

@@ -57,7 +57,7 @@ impl BuiltinCommand for JobsCommand {
             return error::unimp("jobs with job specs");
         }
 
-        for job in &context.shell.jobs.background_jobs {
+        for job in &context.shell.jobs.jobs {
             writeln!(context.stdout(), "{job}")?;
         }
 

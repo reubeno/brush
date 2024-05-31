@@ -4,7 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{env, error, namedoptions, patterns, users, variables::ShellValueLiteral, Shell};
+use crate::{
+    env, error, jobs, namedoptions, patterns, traps, users, variables::ShellValueLiteral, Shell,
+};
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum CompleteAction {
@@ -229,8 +231,11 @@ impl CompletionSpec {
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Disabled => {
-                    // For now, no builtins are disabled.
-                    tracing::debug!("UNIMPLEMENTED: complete -A disabled");
+                    for (name, registration) in &shell.builtins {
+                        if registration.disabled {
+                            candidates.push(name.to_owned());
+                        }
+                    }
                 }
                 CompleteAction::Enabled => {
                     for (name, registration) in &shell.builtins {
@@ -268,13 +273,23 @@ impl CompletionSpec {
                         candidates.push(name.to_string_lossy().to_string());
                     }
                 }
-                CompleteAction::Job => tracing::debug!("UNIMPLEMENTED: complete -A job"),
+                CompleteAction::Job => {
+                    for job in &shell.jobs.jobs {
+                        candidates.push(job.get_command_name().to_owned());
+                    }
+                }
                 CompleteAction::Keyword => {
                     for keyword in shell.get_keywords() {
                         candidates.push(keyword.clone());
                     }
                 }
-                CompleteAction::Running => tracing::debug!("UNIMPLEMENTED: complete -A running"),
+                CompleteAction::Running => {
+                    for job in &shell.jobs.jobs {
+                        if matches!(job.state, jobs::JobState::Running) {
+                            candidates.push(job.get_command_name().to_owned());
+                        }
+                    }
+                }
                 CompleteAction::Service => tracing::debug!("UNIMPLEMENTED: complete -A service"),
                 CompleteAction::SetOpt => {
                     for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
@@ -286,8 +301,18 @@ impl CompletionSpec {
                         candidates.push((*name).to_owned());
                     }
                 }
-                CompleteAction::Signal => tracing::debug!("UNIMPLEMENTED: complete -A signal"),
-                CompleteAction::Stopped => tracing::debug!("UNIMPLEMENTED: complete -A stopped"),
+                CompleteAction::Signal => {
+                    for signal in traps::TrapSignal::all_values() {
+                        candidates.push(signal.to_string());
+                    }
+                }
+                CompleteAction::Stopped => {
+                    for job in &shell.jobs.jobs {
+                        if matches!(job.state, jobs::JobState::Stopped) {
+                            candidates.push(job.get_command_name().to_owned());
+                        }
+                    }
+                }
                 CompleteAction::User => {
                     let mut names = users::get_all_users()?;
                     candidates.append(&mut names);
