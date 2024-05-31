@@ -6,9 +6,11 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Push a path onto the current directory stack.
 #[derive(Parser)]
 pub(crate) struct PushdCommand {
+    /// Push the path without changing the current working directory.
     #[clap(short = 'n')]
     no_directory_change: bool,
 
+    /// Directory to push on the directory stack.
     dir: String,
     //
     // TODO: implement +N and -N

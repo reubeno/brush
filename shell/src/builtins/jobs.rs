@@ -7,21 +7,27 @@ use crate::error;
 /// Manage jobs.
 #[derive(Parser)]
 pub(crate) struct JobsCommand {
+    /// Also show process IDs.
     #[arg(short = 'l')]
     also_show_pids: bool,
 
+    /// List only jobs that have changed status since the last notification.
     #[arg(short = 'n')]
     list_changed_only: bool,
 
+    /// Show only process IDs.
     #[arg(short = 'p')]
     show_pids_only: bool,
 
+    /// Show only running jobs.
     #[arg(short = 'r')]
     running_jobs_only: bool,
 
+    /// Show only stopped jobs.
     #[arg(short = 's')]
     stopped_jobs_only: bool,
 
+    /// Job specs to list.
     // TODO: Add -x option
     job_specs: Vec<String>,
 }

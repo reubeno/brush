@@ -9,15 +9,19 @@ use std::io::Write;
 /// Display command help.
 #[derive(Parser)]
 pub(crate) struct HelpCommand {
+    /// Display a short description for the commands.
     #[arg(short = 'd')]
     short_description: bool,
 
+    /// Display a man-style page of documentation for the commands.
     #[arg(short = 'm')]
     man_page_style: bool,
 
+    /// Display a short usage summary for the commands.
     #[arg(short = 's')]
     short_usage: bool,
 
+    /// Patterns of topics to display help for.
     topic_patterns: Vec<String>,
 }
 

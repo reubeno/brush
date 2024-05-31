@@ -8,6 +8,7 @@ pub(crate) struct UnsetCommand {
     #[clap(flatten)]
     name_interpretation: UnsetNameInterpretation,
 
+    /// Names of variables to unset.
     names: Vec<String>,
 }
 

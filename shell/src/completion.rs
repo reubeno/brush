@@ -8,70 +8,101 @@ use crate::{env, error, namedoptions, patterns, users, variables::ShellValueLite
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum CompleteAction {
+    /// Complete with valid aliases.
     #[clap(name = "alias")]
     Alias,
+    /// Complete with names of array shell variables.
     #[clap(name = "arrayvar")]
     ArrayVar,
+    /// Complete with names of key bindings.
     #[clap(name = "binding")]
     Binding,
+    /// Complete with names of shell builtins.
     #[clap(name = "builtin")]
     Builtin,
+    /// Complete with names of executable commands.
     #[clap(name = "command")]
     Command,
+    /// Complete with directory names.
     #[clap(name = "directory")]
     Directory,
+    /// Complete with names of disabled shell builtins.
     #[clap(name = "disabled")]
     Disabled,
+    /// Complete with names of enabled shell builtins.
     #[clap(name = "enabled")]
     Enabled,
+    /// Complete with names of exported shell variables.
     #[clap(name = "export")]
     Export,
+    /// Complete with filenames.
     #[clap(name = "file")]
     File,
+    /// Complete with names of shell functions.
     #[clap(name = "function")]
     Function,
+    /// Complete with valid user groups.
     #[clap(name = "group")]
     Group,
+    /// Complete with names of valid shell help topics.
     #[clap(name = "helptopic")]
     HelpTopic,
+    /// Complete with the system's hostname(s).
     #[clap(name = "hostname")]
     HostName,
+    /// Complete with the command names of shell-managed jobs.
     #[clap(name = "job")]
     Job,
+    /// Complete with valid shell keywords.
     #[clap(name = "keyword")]
     Keyword,
+    /// Complete with the command names of running shell-managed jobs.
     #[clap(name = "running")]
     Running,
+    /// Complete with names of system services.
     #[clap(name = "service")]
     Service,
+    /// Complete with the names of options settable via shopt.
     #[clap(name = "setopt")]
     SetOpt,
+    /// Complete with the names of options settable via set -o.
     #[clap(name = "shopt")]
     ShOpt,
+    /// Complete with the names of trappable signals.
     #[clap(name = "signal")]
     Signal,
+    /// Complete with the command names of stopped shell-managed jobs.
     #[clap(name = "stopped")]
     Stopped,
+    /// Complete with valid usernames.
     #[clap(name = "user")]
     User,
+    /// Complete with names of shell variables.
     #[clap(name = "variable")]
     Variable,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
 pub enum CompleteOption {
+    /// Perform rest of default completions if no completions are generated.
     #[clap(name = "bashdefault")]
     BashDefault,
+    /// Use default filename completion if no completions are generated.
     #[clap(name = "default")]
     Default,
+    /// Treat completions as directory names.
     #[clap(name = "dirnames")]
     DirNames,
+    /// Treat completions as filenames.
     #[clap(name = "filenames")]
     FileNames,
+    /// Suppress default auto-quotation of completions.
     #[clap(name = "noquote")]
     NoQuote,
+    /// Do not sort completions.
     #[clap(name = "nosort")]
     NoSort,
+    /// Do not append a trailing space to completions at the end of the input line.
     #[clap(name = "nospace")]
     NoSpace,
     #[clap(name = "plusdirs")]

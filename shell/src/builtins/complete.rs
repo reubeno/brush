@@ -9,21 +9,27 @@ use crate::error;
 
 #[derive(Parser)]
 pub(crate) struct CommonCompleteCommandArgs {
+    /// Options governing the behavior of completions.
     #[arg(short = 'o')]
     options: Vec<CompleteOption>,
 
+    /// Actions to apply to generate completions.
     #[arg(short = 'A')]
     actions: Vec<CompleteAction>,
 
+    /// File glob pattern to be expanded to generate completions.
     #[arg(short = 'G')]
     glob_pattern: Option<String>,
 
+    /// List of words that will be considered as completions.
     #[arg(short = 'W')]
     word_list: Option<String>,
 
+    /// Name of a shell function to invoke to generate completions.
     #[arg(short = 'F')]
     function_name: Option<String>,
 
+    /// Command to execute to generate completions.
     #[arg(short = 'C')]
     command: Option<String>,
 

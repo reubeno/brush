@@ -9,6 +9,7 @@ use crate::{
 /// Evalute arithmetic expressions.
 #[derive(Parser)]
 pub(crate) struct LetCommand {
+    /// Arithmetic expressions to evaluate.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     exprs: Vec<String>,
 }

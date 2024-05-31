@@ -5,6 +5,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Shift positional arguments.
 #[derive(Parser)]
 pub(crate) struct ShiftCommand {
+    /// Number of positions to shift the arguments by (defaults to 1).
     n: Option<i32>,
 }
 

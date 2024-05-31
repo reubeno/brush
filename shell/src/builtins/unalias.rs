@@ -6,9 +6,11 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Unset a shell alias.
 #[derive(Parser)]
 pub(crate) struct UnaliasCommand {
+    /// Remove all aliases.
     #[arg(short = 'a')]
     remove_all: bool,
 
+    /// Names of aliases to operate on.
     aliases: Vec<String>,
 }
 

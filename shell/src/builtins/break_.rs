@@ -5,6 +5,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Breaks out of a control-flow loop.
 #[derive(Parser)]
 pub(crate) struct BreakCommand {
+    /// If specified, indicates which nested loop to break out of.
     #[clap(default_value = "1")]
     which_loop: i8,
 }
