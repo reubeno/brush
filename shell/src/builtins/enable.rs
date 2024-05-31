@@ -8,24 +8,31 @@ use crate::error;
 /// Enable, disable, or display built-in commands.
 #[derive(Parser)]
 pub(crate) struct EnableCommand {
+    /// Print a list of built-in commands.
     #[arg(short = 'a')]
     print_list: bool,
 
+    /// Disables the specified built-in commands.
     #[arg(short = 'n')]
     disable: bool,
 
+    /// Print a list of built-in commands with reusable output.
     #[arg(short = 'p')]
     print_reusably: bool,
 
+    /// Only operate on special built-in commands.
     #[arg(short = 's')]
     special_only: bool,
 
+    /// Path to a shared object from which built-in commands will be loaded.
     #[arg(short = 'f')]
     shared_object_path: Option<String>,
 
+    /// Remove the built-in commands loaded from the indicated object path.
     #[arg(short = 'd')]
     remove_loaded_builtin: bool,
 
+    /// Names of built-in commands to operate on.
     names: Vec<String>,
 }
 

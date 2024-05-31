@@ -1,3 +1,4 @@
+use clap::builder::styling;
 use clap::Parser;
 use futures::future::BoxFuture;
 
@@ -117,11 +118,14 @@ pub trait BuiltinCommand: Parser {
     ) -> Result<BuiltinExitCode, error::Error>;
 
     fn get_content(name: &str, content_type: BuiltinContentType) -> String {
+        let mut clap_command = Self::command().styles(brush_help_styles());
+        clap_command.set_bin_name(name);
+
         match content_type {
-            BuiltinContentType::DetailedHelp => Self::command().render_help().to_string(),
-            BuiltinContentType::ShortUsage => get_builtin_short_usage(name, &Self::command()),
+            BuiltinContentType::DetailedHelp => clap_command.render_long_help().ansi().to_string(),
+            BuiltinContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
             BuiltinContentType::ShortDescription => {
-                get_builtin_short_description(name, &Self::command())
+                get_builtin_short_description(name, &clap_command)
             }
         }
     }
@@ -248,4 +252,16 @@ fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
     }
 
     std::format!("{name}: {name} {usage}\n")
+}
+
+fn brush_help_styles() -> clap::builder::Styles {
+    styling::Styles::styled()
+        .header(
+            styling::AnsiColor::Yellow.on_default()
+                | styling::Effects::BOLD
+                | styling::Effects::UNDERLINE,
+        )
+        .usage(styling::AnsiColor::Green.on_default() | styling::Effects::BOLD)
+        .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
+        .placeholder(styling::AnsiColor::Cyan.on_default())
 }

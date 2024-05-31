@@ -5,6 +5,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Continue to the next iteration of a control-flow loop.
 #[derive(Parser)]
 pub(crate) struct ContinueCommand {
+    /// If specified, indicates which nested loop to continue to the next iteration of.
     #[clap(default_value = "1")]
     which_loop: i8,
 }

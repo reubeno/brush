@@ -1,10 +1,10 @@
 use std::{collections::HashSet, io::IsTerminal, path::Path};
 
-use clap::Parser;
+use clap::{builder::styling, Parser};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 #[derive(Parser)]
-#[clap(version, about, disable_help_flag = true, disable_version_flag = true)]
+#[clap(version, about, disable_help_flag = true, disable_version_flag = true, styles = brush_help_styles())]
 struct CommandLineArgs {
     #[clap(long = "help", action = clap::ArgAction::HelpLong, help = "Display usage information")]
     help: Option<bool>,
@@ -231,4 +231,16 @@ async fn run(
     }
 
     Ok(shell.shell().last_result())
+}
+
+fn brush_help_styles() -> clap::builder::Styles {
+    styling::Styles::styled()
+        .header(
+            styling::AnsiColor::Yellow.on_default()
+                | styling::Effects::BOLD
+                | styling::Effects::UNDERLINE,
+        )
+        .usage(styling::AnsiColor::Green.on_default() | styling::Effects::BOLD)
+        .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
+        .placeholder(styling::AnsiColor::Cyan.on_default())
 }

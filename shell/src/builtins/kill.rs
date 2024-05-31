@@ -9,15 +9,18 @@ use crate::{
 /// Signal a job or process.
 #[derive(Parser)]
 pub(crate) struct KillCommand {
+    /// Name of the signal to send.
     #[arg(short = 's')]
     signal_name: Option<String>,
 
+    /// Number of the signal to send.
     #[arg(short = 'n')]
     signal_number: Option<usize>,
 
     //
     // TODO: implement -sigspec syntax
     //
+    /// List known signal names.
     #[arg(short = 'l', short_alias = 'L')]
     list_signals: bool,
 

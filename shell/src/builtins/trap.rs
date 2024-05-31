@@ -9,9 +9,11 @@ use crate::{
 /// Manage signal traps.
 #[derive(Parser)]
 pub(crate) struct TrapCommand {
+    /// List all signal names.
     #[arg(short = 'l')]
     list_signals: bool,
 
+    /// Print registered trap commands.
     #[arg(short = 'p')]
     print_trap_commands: bool,
 

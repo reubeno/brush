@@ -7,6 +7,7 @@ use clap::Parser;
 /// Evalute the given string as script.
 #[derive(Parser)]
 pub(crate) struct EvalCommand {
+    /// The script to evaluate.
     #[clap(allow_hyphen_values = true)]
     pub args: Vec<String>,
 }

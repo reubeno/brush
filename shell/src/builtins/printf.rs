@@ -10,12 +10,14 @@ use crate::{
 #[derive(Parser)]
 #[clap(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct PrintfCommand {
+    /// If specified, the output of the command is assigned to this variable.
     #[arg(short = 'v')]
     output_variable: Option<String>,
 
+    /// Format string.
     format: String,
 
-    /// Args.
+    /// Arguments to the format string.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }

@@ -6,12 +6,14 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Manage the current directory stack.
 #[derive(Parser, Debug, Default)]
 pub(crate) struct DirsCommand {
+    /// Clear the directory stack.
     #[arg(short = 'c')]
     clear: bool,
 
     #[arg(short = 'l')]
     tilde_long: bool,
 
+    /// Print one directory per line instead of all on one line.
     #[arg(short = 'p')]
     print_one_per_line: bool,
 

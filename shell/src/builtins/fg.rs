@@ -6,6 +6,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Move a specified job to the foreground.
 #[derive(Parser)]
 pub(crate) struct FgCommand {
+    /// Job spec for the job to move to the foreground; if not specified, the current job is moved.
     job_spec: Option<String>,
 }
 

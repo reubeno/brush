@@ -5,6 +5,7 @@ use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 /// Return from the current function.
 #[derive(Parser)]
 pub(crate) struct ReturnCommand {
+    /// The exit code to return.
     code: Option<i32>,
 }
 
