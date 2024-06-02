@@ -87,7 +87,7 @@ impl BuiltinCommand for UnsetCommand {
                 }
             }
 
-            // TODO: Check if functions can be readonly.
+            // TODO: Deal with readonly functions
             if unspecified || self.name_interpretation.shell_functions {
                 if context.shell.funcs.remove(name).is_some() {
                     continue;

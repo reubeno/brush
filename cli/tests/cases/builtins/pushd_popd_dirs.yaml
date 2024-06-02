@@ -17,6 +17,20 @@ cases:
       popd
       echo $?
 
+  - name: "pushd without dir change"
+    stdin: |
+      cd /
+      pushd -n /usr
+      dirs
+
+  - name: "popd without dir change"
+    stdin: |
+      cd /
+      pushd /
+      pushd /usr
+      popd -n
+      dirs
+
   - name: "popd with empty stack"
     ignore_stderr: true
     stdin: popd
