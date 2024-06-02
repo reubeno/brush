@@ -23,7 +23,6 @@ pub struct Shell {
     pub traps: traps::TrapHandlerConfig,
     pub open_files: openfiles::OpenFiles,
     pub working_dir: PathBuf,
-    pub umask: u32,
     pub file_size_limit: u64,
     pub env: ShellEnvironment,
     pub funcs: HashMap<String, Arc<parser::ast::FunctionDefinition>>,
@@ -70,7 +69,6 @@ impl Clone for Shell {
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
-            umask: self.umask,
             file_size_limit: self.file_size_limit,
             env: self.env.clone(),
             funcs: self.funcs.clone(),
@@ -119,7 +117,6 @@ impl Shell {
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: std::env::current_dir()?,
-            umask: Default::default(),           // TODO: populate umask
             file_size_limit: Default::default(), // TODO: populate file size limit
             env: Self::initialize_vars(options)?,
             funcs: HashMap::default(),

@@ -21,10 +21,6 @@ impl BuiltinCommand for AliasCommand {
         &self,
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        //
-        // TODO: implement flags
-        //
-
         let mut exit_code = BuiltinExitCode::Success;
 
         if self.print || self.aliases.is_empty() {
