@@ -4,15 +4,12 @@ use std::collections::VecDeque;
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
-use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::process;
-#[cfg(unix)]
-use tokio_command_fds::{CommandFdExt, FdMapping};
 
 use crate::arithmetic::ExpandAndEvaluate;
-use crate::commands::CommandArg;
+use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::shell::Shell;
@@ -1243,92 +1240,39 @@ async fn apply_assignment(
 
 #[allow(clippy::too_many_lines)] // TODO: refactor this function
 async fn execute_external_command(
-    mut context: context::CommandExecutionContext<'_>,
+    context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<SpawnResult, error::Error> {
-    let mut cmd = process::Command::new(context.command_name.as_str());
-
-    // Pass through args.
+    // Filter out the args; we only want strings.
+    let mut cmd_args = vec![];
     for arg in args {
         if let CommandArg::String(s) = arg {
-            cmd.arg(s);
+            cmd_args.push(s);
         }
     }
 
-    // Use the shell's current working dir.
-    cmd.current_dir(context.shell.working_dir.as_path());
+    // Compose the std::process::Command that encapsulates what we want to launch.
+    let (cmd, stdin_here_doc) = commands::compose_std_command(
+        context.shell,
+        context.command_name.as_str(),
+        context.command_name.as_str(),
+        cmd_args.as_slice(),
+        context.open_files,
+        false, /* empty environment? */
+    )?;
 
-    // Start with a clear environment.
-    cmd.env_clear();
-
-    // Add in exported variables.
-    for (name, var) in context.shell.env.iter() {
-        if var.is_exported() {
-            let value_as_str = var.value().to_cow_string();
-            cmd.env(name, value_as_str.as_ref());
-        }
-    }
-
-    // Redirect stdin, if applicable.
-    let mut stdin_here_doc = None;
-    if let Some(stdin_file) = context.open_files.files.remove(&0) {
-        if let OpenFile::HereDocument(doc) = &stdin_file {
-            stdin_here_doc = Some(doc.clone());
-        }
-
-        let as_stdio: Stdio = stdin_file.into();
-        cmd.stdin(as_stdio);
-    }
-
-    // Redirect stdout, if applicable.
-    match context.open_files.files.remove(&1) {
-        Some(OpenFile::Stdout) | None => (),
-        Some(stdout_file) => {
-            let as_stdio: Stdio = stdout_file.into();
-            cmd.stdout(as_stdio);
-        }
-    }
-
-    // Redirect stderr, if applicable.
-    match context.open_files.files.remove(&2) {
-        Some(OpenFile::Stderr) | None => {}
-        Some(stderr_file) => {
-            let as_stdio: Stdio = stderr_file.into();
-            cmd.stderr(as_stdio);
-        }
-    }
-
-    // Inject any other fds.
-    #[cfg(unix)]
-    {
-        let fd_mappings = context
-            .open_files
-            .files
-            .iter()
-            .map(|(child_fd, open_file)| FdMapping {
-                child_fd: i32::try_from(*child_fd).unwrap(),
-                parent_fd: open_file.as_raw_fd().unwrap(),
-            })
-            .collect();
-        cmd.fd_mappings(fd_mappings)
-            .map_err(|_e| error::Error::ChildCreationFailure)?;
-    }
-    #[cfg(not(unix))]
-    {
-        if !context.open_files.files.is_empty() {
-            return error::unimp("fd redirections on non-Unix platform");
-        }
-    }
-
+    // When tracing is enabled, report.
     tracing::debug!(
         target: "commands",
         "Spawning: {} {}",
-        cmd.as_std().get_program().to_string_lossy().to_string(),
-        cmd.as_std()
-            .get_args()
+        cmd.get_program().to_string_lossy().to_string(),
+        cmd.get_args()
             .map(|a| a.to_string_lossy().to_string())
             .join(" ")
     );
+
+    // Convert to a tokio::process::Command so we can execute it asynchronously.
+    let mut cmd = tokio::process::Command::from(cmd);
 
     match cmd.spawn() {
         Ok(mut child) => {

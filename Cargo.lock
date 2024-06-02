@@ -299,6 +299,7 @@ dependencies = [
  "brush-parser",
  "cached",
  "clap",
+ "command-fds",
  "criterion",
  "exec",
  "faccess",
@@ -315,7 +316,6 @@ dependencies = [
  "rand",
  "thiserror",
  "tokio",
- "tokio-command-fds",
  "tracing",
  "uzers",
  "whoami",
@@ -516,6 +516,16 @@ checksum = "cbf2150cce219b664a8a70df7a1f933836724b503f8a413af9365b4dcc4d90b8"
 dependencies = [
  "lazy_static",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "command-fds"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bb11bd1378bf3731b182997b40cefe00aba6a6cc74042c8318c1b271d3badf7"
+dependencies = [
+ "nix 0.27.1",
+ "thiserror",
 ]
 
 [[package]]
@@ -1326,6 +1336,17 @@ dependencies = [
 
 [[package]]
 name = "nix"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
+dependencies = [
+ "bitflags 2.5.0",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
+name = "nix"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
@@ -2082,17 +2103,6 @@ dependencies = [
  "signal-hook-registry",
  "tokio-macros",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "tokio-command-fds"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ebc45f3aeb419b035f2c555b894e4281c79b4e065ea50866fa778dadc5be9c5"
-dependencies = [
- "nix 0.29.0",
- "thiserror",
- "tokio",
 ]
 
 [[package]]
