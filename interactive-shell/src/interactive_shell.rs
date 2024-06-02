@@ -201,9 +201,11 @@ impl EditorHelper {
 
     fn get_completion_candidate_display_str(s: &str) -> String {
         let s_without_trailing_space = s.trim_end();
-        let s_without_final_slash = s_without_trailing_space.strip_suffix('/').unwrap_or(s);
+        let s_without_final_slash = s_without_trailing_space
+            .strip_suffix(std::path::MAIN_SEPARATOR)
+            .unwrap_or(s);
 
-        let s = if let Some(slash_index) = s_without_final_slash.rfind('/') {
+        let s = if let Some(slash_index) = s_without_final_slash.rfind(std::path::MAIN_SEPARATOR) {
             &s[slash_index + 1..]
         } else {
             s
@@ -243,8 +245,9 @@ impl EditorHelper {
         if completions.options.treat_as_filenames {
             for candidate in &mut completions.candidates {
                 // Check if it's a directory.
-                if !candidate.ends_with('/') && Path::new(candidate).is_dir() {
-                    candidate.push('/');
+                if !candidate.ends_with(std::path::MAIN_SEPARATOR) && Path::new(candidate).is_dir()
+                {
+                    candidate.push(std::path::MAIN_SEPARATOR);
                 }
             }
         }
@@ -253,7 +256,9 @@ impl EditorHelper {
         }
         if completing_end_of_line && !completions.options.no_trailing_space_at_end_of_line {
             for candidate in &mut completions.candidates {
-                if !completions.options.treat_as_filenames || !candidate.ends_with('/') {
+                if !completions.options.treat_as_filenames
+                    || !candidate.ends_with(std::path::MAIN_SEPARATOR)
+                {
                     candidate.push(' ');
                 }
             }
@@ -284,7 +289,7 @@ impl rustyline::highlight::Highlighter for EditorHelper {
         candidate: &'c str, // FIXME should be Completer::Candidate
         _completion: rustyline::CompletionType,
     ) -> Cow<'c, str> {
-        if let Some(candidate_without_suffix) = candidate.strip_suffix('/') {
+        if let Some(candidate_without_suffix) = candidate.strip_suffix(std::path::MAIN_SEPARATOR) {
             Cow::Owned("\x1b[1;34m".to_owned() + candidate_without_suffix + "\x1b[0m/")
         } else {
             Cow::Borrowed(candidate)

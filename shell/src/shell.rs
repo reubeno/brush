@@ -2,9 +2,10 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use faccess::PathExt;
 
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
@@ -710,10 +711,7 @@ impl Shell {
 
     #[allow(clippy::manual_flatten)]
     pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
-        let is_executable = |path: &Path| {
-            path.metadata()
-                .is_ok_and(|md| md.permissions().mode() & 0o111 != 0)
-        };
+        let is_executable = |path: &Path| path.executable();
 
         let mut executables = vec![];
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {

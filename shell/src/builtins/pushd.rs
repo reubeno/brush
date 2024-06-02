@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
 
@@ -23,15 +22,13 @@ impl BuiltinCommand for PushdCommand {
         &self,
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        if self.no_directory_change {
-            writeln!(context.stderr(), "UNIMPLEMENTED: pushd -n")?;
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
-
         let prev_working_dir = context.shell.working_dir.clone();
 
-        let dir = std::path::Path::new(&self.dir);
-        context.shell.set_working_dir(dir)?;
+        if !self.no_directory_change {
+            let dir = std::path::Path::new(&self.dir);
+            context.shell.set_working_dir(dir)?;
+        }
+
         context.shell.directory_stack.push(prev_working_dir);
 
         // Display dirs.

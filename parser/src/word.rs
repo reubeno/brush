@@ -254,7 +254,7 @@ peg::parser! {
         rule double_quoted_escape_sequence() -> WordPiece =
             s:$("\\" ['$' | '`' | '\"' | '\'' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
 
-        // TODO: Handle colon syntax mentioned above
+        // TODO: Handle colon syntax
         rule tilde_prefix() -> WordPiece =
             tilde_parsing_enabled() "~" cs:$((!"/" [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
 

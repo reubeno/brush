@@ -871,7 +871,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     }
                 }
                 CommandPrefixOrSuffixItem::Word(arg) => {
-                    // TODO: Reevaluate if this is an appropriate place to handle aliases.
                     let mut next_args =
                         expansion::full_expand_and_split_word(context.shell, arg).await?;
 
@@ -880,7 +879,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
                             {
                                 //
-                                // TODO: This is a total hack.
+                                // TODO: This is a total hack; aliases are supposed to be handled
+                                // much earlier in the process.
                                 //
                                 let mut alias_pieces: Vec<_> = alias_value
                                     .split_ascii_whitespace()
@@ -979,7 +979,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 open_files,
             };
 
-            let execution_result = if !cmd_context.command_name.contains('/') {
+            let execution_result = if !cmd_context.command_name.contains(std::path::MAIN_SEPARATOR)
+            {
                 let mut builtin = cmd_context
                     .shell
                     .builtins
@@ -1238,7 +1239,7 @@ async fn apply_assignment(
     shell.env.add(variable_name, new_var, creation_scope)
 }
 
-#[allow(clippy::too_many_lines)] // TODO: refactor this function
+#[allow(clippy::too_many_lines)]
 async fn execute_external_command(
     context: context::CommandExecutionContext<'_>,
     args: &[CommandArg],
@@ -1406,7 +1407,7 @@ fn setup_pipeline_redirection(
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)] // TODO: refactor this function
+#[allow(clippy::too_many_lines)]
 async fn setup_redirect<'a>(
     open_files: &'a mut OpenFiles,
     shell: &mut Shell,

@@ -228,7 +228,7 @@ peg::parser! {
         rule pipe_sequence() -> Vec<ast::Command> =
             c:command() ++ (specific_operator("|") linebreak()) { c }
 
-        // TODO: Figure out why we needed to move the function definition branch up
+        // N.B. We needed to move the function definition branch up to avoid conflicts with array assignment syntax.
         rule command() -> ast::Command =
             f:function_definition() { ast::Command::Function(f) } /
             c:simple_command() { ast::Command::Simple(c) } /

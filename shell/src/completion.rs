@@ -427,7 +427,7 @@ impl CompletionSpec {
         function_name: &str,
         context: &CompletionContext<'_>,
     ) -> Result<CompletionResult, error::Error> {
-        // TODO: Don't pollute the persistent environment with these.
+        // TODO: Don't pollute the persistent environment with these?
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
@@ -816,14 +816,15 @@ fn get_completions_using_basic_lookup(
 ) -> CompletionResult {
     let mut candidates = get_file_completions(shell, context, false);
 
-    // TODO: Contextually generate different completions.
     // If this appears to be the command token (and if there's *some* prefix without
     // a path separator) then also consider whether we should search the path for
     // completions too.
     // TODO: Do a better job than just checking if index == 0.
     if context.token_index == 0
         && !context.token_to_complete.is_empty()
-        && !context.token_to_complete.contains('/')
+        && !context
+            .token_to_complete
+            .contains(std::path::MAIN_SEPARATOR)
     {
         let mut command_completions = get_command_completions(shell, context);
         candidates.append(&mut command_completions);
