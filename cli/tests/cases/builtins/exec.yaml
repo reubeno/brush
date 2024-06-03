@@ -15,3 +15,17 @@ cases:
     stdin: |
       exec $0 -c 'echo "In child shell"'
       echo "This is never reached"
+
+  - name: "exec without -c"
+    stdin: |
+      export myvar=value
+      exec $0 -c 'echo "myvar: ${myvar}"'
+
+  - name: "exec -c"
+    stdin: |
+      export myvar=value
+      exec -c $0 -c 'echo "myvar: ${myvar}"'
+
+  - name: "exec -a"
+    stdin: |
+      exec -a shellname $0 -c 'echo "0: $0"'

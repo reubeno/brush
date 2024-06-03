@@ -217,7 +217,9 @@ async fn run(
 
     if let Some(command) = args.command {
         // Pass through args.
-        shell.shell_mut().shell_name = args.script_path;
+        if let Some(script_path) = args.script_path {
+            shell.shell_mut().shell_name = Some(script_path);
+        }
         shell.shell_mut().positional_parameters = args.script_args;
 
         // Execute the command string.
