@@ -168,7 +168,7 @@ impl DeclareCommand {
         };
 
         if self.function_names_only || self.function_names_or_defs_only {
-            if let Some(def) = context.shell.funcs.get(name) {
+            if let Some(func_registration) = context.shell.funcs.get(name) {
                 if self.function_names_only {
                     if self.print {
                         writeln!(context.stdout(), "declare -f {name}")?;
@@ -176,7 +176,7 @@ impl DeclareCommand {
                         writeln!(context.stdout(), "{name}")?;
                     }
                 } else {
-                    writeln!(context.stdout(), "{def}")?;
+                    writeln!(context.stdout(), "{}", func_registration.definition)?;
                 }
                 Ok(true)
             } else {
@@ -467,11 +467,11 @@ impl DeclareCommand {
         &self,
         context: &mut crate::context::CommandExecutionContext<'_>,
     ) -> Result<(), error::Error> {
-        for (name, def) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
+        for (name, registration) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {
                 writeln!(context.stdout(), "declare -f {name}")?;
             } else {
-                writeln!(context.stdout(), "{def}")?;
+                writeln!(context.stdout(), "{}", registration.definition)?;
             }
         }
 

@@ -256,7 +256,7 @@ impl CompletionSpec {
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Function => {
-                    for name in shell.funcs.keys() {
+                    for (name, _) in shell.funcs.iter() {
                         candidates.push(name.to_owned());
                     }
                 }

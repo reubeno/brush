@@ -143,8 +143,8 @@ impl TypeCommand {
 
             // Check for functions.
             if !self.suppress_func_lookup {
-                if let Some(def) = shell.funcs.get(name) {
-                    types.push(ResolvedType::Function(def.clone()));
+                if let Some(registration) = shell.funcs.get(name) {
+                    types.push(ResolvedType::Function(registration.definition.clone()));
                 }
             }
 

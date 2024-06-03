@@ -781,7 +781,7 @@ impl Execute for ast::FunctionDefinition {
     ) -> Result<ExecutionResult, error::Error> {
         shell
             .funcs
-            .insert(self.fname.clone(), Arc::new(self.clone()));
+            .update(self.fname.clone(), Arc::new(self.clone()));
 
         let result = ExecutionResult::success();
         shell.last_exit_status = result.exit_code;
@@ -997,13 +997,14 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     .is_some_and(|r| !r.disabled && r.special_builtin)
                 {
                     execute_builtin_command(&builtin.unwrap(), cmd_context, args).await
-                } else if let Some(func_def) = cmd_context
+                } else if let Some(func_reg) = cmd_context
                     .shell
                     .funcs
                     .get(cmd_context.command_name.as_str())
                 {
                     // Strip the function name off args.
-                    invoke_shell_function(func_def.clone(), cmd_context, &args[1..]).await
+                    invoke_shell_function(func_reg.definition.clone(), cmd_context, &args[1..])
+                        .await
                 } else if let Some(builtin) = builtin {
                     execute_builtin_command(&builtin, cmd_context, args).await
                 } else {

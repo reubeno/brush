@@ -12,8 +12,8 @@ use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
-    builtin, builtins, commands, completion, context, env, error, expansion, jobs, keywords,
-    openfiles, patterns, prompt, traps, users,
+    builtin, builtins, commands, completion, context, env, error, expansion, functions, jobs,
+    keywords, openfiles, patterns, prompt, traps, users,
 };
 
 pub struct Shell {
@@ -25,7 +25,7 @@ pub struct Shell {
     pub working_dir: PathBuf,
     pub file_size_limit: u64,
     pub env: ShellEnvironment,
-    pub funcs: HashMap<String, Arc<parser::ast::FunctionDefinition>>,
+    pub funcs: functions::FunctionEnv,
     pub options: RuntimeOptions,
     pub jobs: jobs::JobManager,
     pub aliases: HashMap<String, String>,
@@ -119,7 +119,7 @@ impl Shell {
             working_dir: std::env::current_dir()?,
             file_size_limit: Default::default(), // TODO: populate file size limit
             env: Self::initialize_vars(options)?,
-            funcs: HashMap::default(),
+            funcs: functions::FunctionEnv::default(),
             options: RuntimeOptions::defaults_from(options),
             jobs: jobs::JobManager::new(),
             aliases: HashMap::default(),
@@ -392,11 +392,12 @@ impl Shell {
         let open_files = self.open_files.clone();
         let command_name = String::from(name);
 
-        let func = self
+        let func_registration = self
             .funcs
             .get(name)
-            .ok_or_else(|| error::Error::FunctionNotFound(name.to_owned()))?
-            .to_owned();
+            .ok_or_else(|| error::Error::FunctionNotFound(name.to_owned()))?;
+
+        let func = func_registration.definition.clone();
 
         let context = context::CommandExecutionContext {
             shell: self,
