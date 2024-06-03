@@ -129,7 +129,7 @@ impl Pattern {
         let mut paths_so_far = if is_absolute {
             prefix_to_remove = None;
             // TODO: Figure out appropriate thing to do on non-Unix platforms.
-            vec![PathBuf::from("/")]
+            vec![PathBuf::from(std::path::MAIN_SEPARATOR_STR)]
         } else {
             let mut working_dir_str = working_dir.to_string_lossy().to_string();
             working_dir_str.push(std::path::MAIN_SEPARATOR);

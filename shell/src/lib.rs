@@ -9,6 +9,7 @@ mod error;
 mod escape;
 mod expansion;
 mod extendedtests;
+mod functions;
 mod interp;
 mod jobs;
 mod keywords;

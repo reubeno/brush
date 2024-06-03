@@ -1,7 +1,10 @@
 use clap::Parser;
-use std::io::Write;
+use std::{borrow::Cow, os::unix::process::CommandExt};
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{
+    builtin::{BuiltinCommand, BuiltinExitCode},
+    commands, error,
+};
 
 /// Exec the provided command.
 #[derive(Parser)]
@@ -29,43 +32,35 @@ impl BuiltinCommand for ExecCommand {
         &self,
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        if self.name_for_argv0.is_some() {
-            writeln!(context.stderr(), "UNIMPLEMENTED: exec -a: name as argv[0]")?;
-            return Ok(BuiltinExitCode::Unimplemented);
+        if self.args.is_empty() {
+            return Ok(BuiltinExitCode::Success);
         }
 
-        if self.empty_environment {
-            writeln!(
-                context.stderr(),
-                "UNIMPLEMENTED: exec -c: empty environment"
-            )?;
-            return Ok(BuiltinExitCode::Unimplemented);
-        }
+        let mut argv0 = Cow::Borrowed(self.name_for_argv0.as_ref().unwrap_or(&self.args[0]));
 
         if self.exec_as_login {
-            writeln!(context.stderr(), "UNIMPLEMENTED: exec -l: exec as login")?;
-            return Ok(BuiltinExitCode::Unimplemented);
+            argv0 = Cow::Owned(std::format!("-{argv0}"));
         }
 
-        if !self.args.is_empty() {
-            // TODO: Do the Right Thing with the environment.
-            let err = exec::Command::new(self.args[0].as_str())
-                .args(&self.args[1..])
-                .exec();
-            match err {
-                exec::Error::BadArgument(_) => Err(crate::error::Error::InvalidArguments),
-                exec::Error::Errno(errno) => {
-                    let io_err: std::io::Error = errno.into();
+        let (mut cmd, here_doc) = commands::compose_std_command(
+            context.shell,
+            &self.args[0],
+            argv0.as_str(),
+            &self.args[1..],
+            context.open_files.clone(),
+            self.empty_environment,
+        )?;
 
-                    if io_err.kind() == std::io::ErrorKind::NotFound {
-                        Ok(BuiltinExitCode::Custom(127))
-                    } else {
-                        Err(crate::error::Error::from(io_err))
-                    }
-                }
-            }
+        if here_doc.is_some() {
+            return error::unimp("exec with here doc");
+        }
+
+        let exec_error = cmd.exec();
+
+        if exec_error.kind() == std::io::ErrorKind::NotFound {
+            Ok(BuiltinExitCode::Custom(127))
         } else {
-            return Ok(BuiltinExitCode::Success);
+            Err(crate::error::Error::from(exec_error))
         }
     }
 }

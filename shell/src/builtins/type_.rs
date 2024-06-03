@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::{io::Write, sync::Arc};
 
 use clap::Parser;
+use faccess::PathExt;
 use parser::ast;
 
 use crate::keywords;
@@ -142,8 +143,8 @@ impl TypeCommand {
 
             // Check for functions.
             if !self.suppress_func_lookup {
-                if let Some(def) = shell.funcs.get(name) {
-                    types.push(ResolvedType::Function(def.clone()));
+                if let Some(registration) = shell.funcs.get(name) {
+                    types.push(ResolvedType::Function(registration.definition.clone()));
                 }
             }
 
@@ -154,8 +155,10 @@ impl TypeCommand {
         }
 
         // Look in path.
-        if name.contains('/') {
-            // TODO: Handle this case.
+        if name.contains(std::path::MAIN_SEPARATOR) {
+            if std::path::Path::new(name).executable() {
+                types.push(ResolvedType::File(PathBuf::from(name)));
+            }
         } else {
             for item in shell.find_executables_in_path(name) {
                 types.push(ResolvedType::File(item));

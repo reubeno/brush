@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 #[cfg(unix)]
+use std::os::fd::AsFd;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
+#[cfg(unix)]
+use std::os::fd::OwnedFd;
 use std::process::Stdio;
 
 use crate::error;
@@ -33,6 +37,21 @@ impl OpenFile {
     }
 
     #[cfg(unix)]
+    pub(crate) fn into_owned_fd(self) -> Result<std::os::fd::OwnedFd, error::Error> {
+        match self {
+            OpenFile::Stdin => Ok(std::io::stdin().as_fd().try_clone_to_owned()?),
+            OpenFile::Stdout => Ok(std::io::stdout().as_fd().try_clone_to_owned()?),
+            OpenFile::Stderr => Ok(std::io::stderr().as_fd().try_clone_to_owned()?),
+            OpenFile::Null => error::unimp("to_owned_fd for null open file"),
+            OpenFile::File(f) => Ok(f.into()),
+            OpenFile::PipeReader(r) => Ok(OwnedFd::from(r)),
+            OpenFile::PipeWriter(w) => Ok(OwnedFd::from(w)),
+            OpenFile::HereDocument(_) => error::unimp("to_owned_fd for here doc"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[allow(dead_code)]
     pub(crate) fn as_raw_fd(&self) -> Result<i32, error::Error> {
         match self {
             OpenFile::Stdin => Ok(std::io::stdin().as_raw_fd()),

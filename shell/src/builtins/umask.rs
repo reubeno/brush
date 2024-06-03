@@ -1,4 +1,7 @@
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{
+    builtin::{BuiltinCommand, BuiltinExitCode},
+    error,
+};
 use clap::Parser;
 use std::io::Write;
 
@@ -28,28 +31,59 @@ impl BuiltinCommand for UmaskCommand {
         context: crate::context::CommandExecutionContext<'_>,
     ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
         if let Some(mode) = &self.mode {
-            if mode.starts_with('0') {
+            if mode.starts_with(|c: char| c.is_digit(8)) {
                 let parsed = u32::from_str_radix(mode.as_str(), 8)?;
-                context.shell.umask = parsed;
+                set_umask(parsed)?;
             } else {
                 return crate::error::unimp("umask setting mode from symbolic value");
             }
         } else {
-            let umask = if self.symbolic_output {
-                // TODO: handle symbolic output
-                return crate::error::unimp("displaying symbolic output");
+            let umask = get_umask()?;
+
+            let formatted = if self.symbolic_output {
+                let u = symbolic_mask_from_bits((!umask & 0o700) >> 6);
+                let g = symbolic_mask_from_bits((!umask & 0o070) >> 3);
+                let o = symbolic_mask_from_bits(!umask & 0o007);
+                std::format!("u={u},g={g},o={o}")
             } else {
-                let umask_value = context.shell.umask;
-                std::format!("0{umask_value:o}")
+                std::format!("{umask:04o}")
             };
 
             if self.print_roundtrippable {
-                writeln!(context.stdout(), "umask {umask}")?;
+                writeln!(context.stdout(), "umask {formatted}")?;
             } else {
-                writeln!(context.stdout(), "{umask}")?;
+                writeln!(context.stdout(), "{formatted}")?;
             }
         }
 
         Ok(BuiltinExitCode::Success)
     }
+}
+
+fn get_umask() -> Result<u32, error::Error> {
+    let me = procfs::process::Process::myself()?;
+    let status = me.status()?;
+    status.umask.ok_or_else(|| error::Error::InvalidUmask)
+}
+
+fn set_umask(value: u32) -> Result<(), error::Error> {
+    let mode = nix::sys::stat::Mode::from_bits(value).ok_or_else(|| error::Error::InvalidUmask)?;
+    nix::sys::stat::umask(mode);
+    Ok(())
+}
+
+fn symbolic_mask_from_bits(bits: u32) -> String {
+    let mut result = String::new();
+
+    if (bits & 0b100) != 0 {
+        result.push('r');
+    }
+    if (bits & 0b010) != 0 {
+        result.push('w');
+    }
+    if (bits & 0b001) != 0 {
+        result.push('x');
+    }
+
+    result
 }

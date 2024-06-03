@@ -2,17 +2,18 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use faccess::PathExt;
 
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
-    builtin, builtins, commands, completion, context, env, error, expansion, jobs, keywords,
-    openfiles, patterns, prompt, traps, users,
+    builtin, builtins, commands, completion, context, env, error, expansion, functions, jobs,
+    keywords, openfiles, patterns, prompt, traps, users,
 };
 
 pub struct Shell {
@@ -22,10 +23,9 @@ pub struct Shell {
     pub traps: traps::TrapHandlerConfig,
     pub open_files: openfiles::OpenFiles,
     pub working_dir: PathBuf,
-    pub umask: u32,
     pub file_size_limit: u64,
     pub env: ShellEnvironment,
-    pub funcs: HashMap<String, Arc<parser::ast::FunctionDefinition>>,
+    pub funcs: functions::FunctionEnv,
     pub options: RuntimeOptions,
     pub jobs: jobs::JobManager,
     pub aliases: HashMap<String, String>,
@@ -69,7 +69,6 @@ impl Clone for Shell {
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
-            umask: self.umask,
             file_size_limit: self.file_size_limit,
             env: self.env.clone(),
             funcs: self.funcs.clone(),
@@ -118,10 +117,9 @@ impl Shell {
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: std::env::current_dir()?,
-            umask: Default::default(),           // TODO: populate umask
             file_size_limit: Default::default(), // TODO: populate file size limit
             env: Self::initialize_vars(options)?,
-            funcs: HashMap::default(),
+            funcs: functions::FunctionEnv::default(),
             options: RuntimeOptions::defaults_from(options),
             jobs: jobs::JobManager::new(),
             aliases: HashMap::default(),
@@ -394,11 +392,12 @@ impl Shell {
         let open_files = self.open_files.clone();
         let command_name = String::from(name);
 
-        let func = self
+        let func_registration = self
             .funcs
             .get(name)
-            .ok_or_else(|| error::Error::FunctionNotFound(name.to_owned()))?
-            .to_owned();
+            .ok_or_else(|| error::Error::FunctionNotFound(name.to_owned()))?;
+
+        let func = func_registration.definition.clone();
 
         let context = context::CommandExecutionContext {
             shell: self,
@@ -710,10 +709,7 @@ impl Shell {
 
     #[allow(clippy::manual_flatten)]
     pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
-        let is_executable = |path: &Path| {
-            path.metadata()
-                .is_ok_and(|md| md.permissions().mode() & 0o111 != 0)
-        };
+        let is_executable = |path: &Path| path.executable();
 
         let mut executables = vec![];
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {

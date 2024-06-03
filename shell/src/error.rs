@@ -106,6 +106,12 @@ pub enum Error {
 
     #[error("system error: {0}")]
     ErrnoError(#[from] nix::errno::Errno),
+
+    #[error("invalid umask value")]
+    InvalidUmask,
+
+    #[error("procfs error: {0}")]
+    ProcfsError(#[from] procfs::ProcError),
 }
 
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {
