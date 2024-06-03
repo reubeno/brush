@@ -5,9 +5,11 @@
 
 ## About
 
-`brush` (**B**orn **RU**sty **SH**ell) is a shell implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as well as with [bash](https://www.gnu.org/software/bash/). It's generally functional for interactive use and can execute many scripts, but it's still very much a work in progress. 
+`brush` (**B**orn **RU**sty **SH**ell) is a shell implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as well as with [bash](https://www.gnu.org/software/bash/).
 
-This project was primarily borne out of curiosity and a desire to learn. If it proves to be sufficiently interesting and/or useful, then that's a bonus :).
+It's generally functional for interactive use and can execute many scripts, but it's still very much a work in progress. We do not recommend using this in production scenarios; until it's more stable, there's risk that using this implementation in place of your stable shell will result in unexpected behavior (e.g., this shell taking an `else` branch of a conditional when your `sh` may have otherwise taken the `then` branch).
+
+This project was primarily borne out of curiosity and a desire to learn. If it proves to be sufficiently interesting and/or useful, then that's a bonus :). Contributions are certainly welcome. For more guidance, please consult [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### License
 
@@ -32,7 +34,7 @@ There's certainly more gaps; with time we'll find a way to represent the gaps in
 
 ## Testing strategy
 
-This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include a few hundred test cases run on both this shell and an oracle, comparing standard output and exit codes.
+This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [300+ test cases](cli/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 ## Links: other shell implementations
 
@@ -40,3 +42,5 @@ This is certainly not the first attempt to implement a feature-rich POSIX-ish sh
 
 * https://github.com/shellgei/rusty_bash
 * https://github.com/mvdan/sh
+
+We're sure there are plenty more; we're happy to include links to them as well.
