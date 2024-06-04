@@ -11,5 +11,6 @@
         }
     },
     "features": {},
-    "remoteUser": "devel"
+    "remoteUser": "devel",
+    "updateRemoteUserUID": true
 }
