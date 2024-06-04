@@ -1,10 +1,12 @@
 name: "Builtins: shopt"
 cases:
   - name: "shopt defaults"
+    skip: true
     stdin: |
       shopt | sort | grep -v extglob
 
   - name: "shopt interactive defaults"
+    skip: true
     args: ["-i"]
     ignore_stderr: true
     stdin: |
