@@ -23,14 +23,14 @@ cases:
       shopt -o | sort | grep -v monitor
 
   - name: "extglob defaults"
-    known_failure: true # Issue #169
+    known_failure: true
     stdin: |
       shopt extglob
 
   - name: "extglob interactive defaults"
     args: ["-i"]
     ignore_stderr: true
-    known_failure: true # Issue #169
+    known_failure: true
     stdin: |
       shopt extglob
 

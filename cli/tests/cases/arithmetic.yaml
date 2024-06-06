@@ -24,7 +24,6 @@ cases:
       echo "$(((10)))"
 
   - name: "Unquoted parentheses"
-    known_failure: true
     stdin: |
       echo $(( (10) ))
       echo $(((10)))
@@ -121,7 +120,7 @@ cases:
       echo "x is now $x"
 
   - name: "Assignments in logical boolean expressions"
-    known_failure: true
+    known_failure: false
     stdin: |
       x=0
       echo "0 && x+=1 => $(( 0 && (x+=1) ))"

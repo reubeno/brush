@@ -21,9 +21,9 @@ Available for use and distribution under the [MIT license](LICENSE).
 
 In short, quite a lot. Standard and extended control flow, word expansion, most frequently used builtin commands, pipelines, redirection, variables, etc. The plumbing for completion is present, along with support for common cases (e.g. file/dir completion, basic support for programmable completion such as used with git and other tools). 
 
-### Known limitations
+### --Known limitations-- a.k.a. Where you can help!
 
-There's a lot that *is* working, but also non-trivial gaps in compatibility. Most notably:
+There's a lot that *is* working, but there are non-trivial gaps in compatibility. Most notably:
 
 * **Commands run asynchronously as jobs, job management.**
   You can run `some-command &` but it's proof-of-concept quality at best. Standard job management via `fg`, `bg`, and `jobs` is not fully implemented. This would be a great area for enthusiastic contributors to dive in :).
@@ -34,11 +34,24 @@ Shell built-ins are a mixed bag. Some are completely and fully implemented (e.g.
 
 There's certainly more gaps; with time we'll find a way to represent the gaps in some understandable way. Ideally, we'd like to evolve the test suites to add tests for all known missing pieces. That will let us focus on just "fixing the tests". 
 
+We'd absolutely love your help with any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help make this project better.
+
 ## Testing strategy
 
 This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [300+ test cases](cli/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
+
+## Credits
+
+There's a long list of OSS crates whose shoulders this project rests on. Notably, the following crates are directly relied on for major portions of shell functionality:
+
+* [`rustyline`](https://github.com/kkawakam/rustyline) - for readline input and interactive usage
+* [`clap`]() - command-line parsing, used both by the top-level brush CLI as well as built-in commands
+* [`fancy-regex`]() - relied on for everything regex
+* [`tokio`]() - async, well, everything
+
+Huge kudos and thanks also to `pprof` and `criterion` projects for enabling awesome flamegraphs in smooth integration with `cargo bench`'s standard benchmarking facilities.
 
 ## Links: other shell implementations
 

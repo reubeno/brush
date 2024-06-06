@@ -5,10 +5,13 @@ ARG USER_UID=1000
 ARG USER_GID=$USER_UID
     
 # Install basic utilities and prerequisites.
+#   bash-completion - for completion testing
 #   bsdmainutils - provides hexdump, used by integration tests
 #   neovim - for convenience and modern editing
 RUN apt-get update -y && \
     apt-get install -y \
+        bash \
+        bash-completion \
         bsdmainutils \
         build-essential \
         curl \

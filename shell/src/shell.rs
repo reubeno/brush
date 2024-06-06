@@ -355,6 +355,8 @@ impl Shell {
     ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
         let mut parser = parser::Parser::new(&mut reader, &self.parser_options(), source_info);
+
+        tracing::debug!(target: "parse", "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse(false);
 
         let mut other_positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
@@ -425,7 +427,7 @@ impl Shell {
 
     pub async fn run_string(
         &mut self,
-        command: &str,
+        command: String,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // TODO: Actually track line numbers; this is something of a hack, assuming each time
@@ -441,16 +443,8 @@ impl Shell {
             .await
     }
 
-    pub fn parse_string<S: AsRef<str>>(
-        &self,
-        s: S,
-    ) -> Result<parser::ast::Program, parser::ParseError> {
-        let mut reader = std::io::BufReader::new(s.as_ref().as_bytes());
-        let source_info = parser::SourceInfo {
-            source: String::from("main"),
-        };
-        let mut parser = parser::Parser::new(&mut reader, &self.parser_options(), &source_info);
-        parser.parse(true)
+    pub fn parse_string(&self, s: String) -> Result<parser::ast::Program, parser::ParseError> {
+        parse_string_impl(s, self.parser_options())
     }
 
     pub async fn basic_expand_string<S: AsRef<str>>(
@@ -833,4 +827,20 @@ impl Shell {
 
         Ok(())
     }
+}
+
+#[cached::proc_macro::cached(size = 32, result = true)]
+fn parse_string_impl(
+    s: String,
+    parser_options: parser::ParserOptions,
+) -> Result<parser::ast::Program, parser::ParseError> {
+    let mut reader = std::io::BufReader::new(s.as_bytes());
+    let source_info = parser::SourceInfo {
+        source: String::from("main"),
+    };
+    let mut parser: parser::Parser<&mut std::io::BufReader<&[u8]>> =
+        parser::Parser::new(&mut reader, &parser_options, &source_info);
+
+    tracing::debug!(target: "parse", "Parsing string as program...");
+    parser.parse(true)
 }

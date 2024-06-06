@@ -966,7 +966,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     // TODO: Discard result?
                     let _ = context
                         .shell
-                        .run_string(debug_trap_handler.as_str(), &params)
+                        .run_string(debug_trap_handler, &params)
                         .await?;
 
                     context.shell.traps.handler_depth -= 1;

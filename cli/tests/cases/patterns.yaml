@@ -38,13 +38,6 @@ cases:
       - path: "file2.txt"
     stdin: "echo file[12].txt"
 
-  - name: "Expansion with curly braces"
-    known_failure: true # Issue #152
-    test_files:
-      - path: "file1.txt"
-      - path: "file2.txt"
-    stdin: "echo file{1,2}.txt"
-
   - name: "Expansion with range"
     test_files:
       - path: "file1.txt"
@@ -156,7 +149,7 @@ cases:
       test_pattern "ad" "+(ab|ac)"
 
   - name: "Pathname expansion: extglob disabled"
-    known_failure: true # Issue #169
+    known_failure: true
     ignore_stderr: true
     test_files:
       - path: "ab.txt"

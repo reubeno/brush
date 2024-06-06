@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use crate::builtin::{BuiltinCommand, BuiltinExitCode};
-use crate::error;
+use crate::{error, jobs};
 
 /// Manage jobs.
 #[derive(Parser)]
@@ -44,23 +44,40 @@ impl BuiltinCommand for JobsCommand {
         if self.list_changed_only {
             return error::unimp("jobs -n");
         }
-        if self.show_pids_only {
-            return error::unimp("jobs -p");
-        }
-        if self.running_jobs_only {
-            return error::unimp("jobs -r");
-        }
-        if self.stopped_jobs_only {
-            return error::unimp("jobs -s");
-        }
-        if !self.job_specs.is_empty() {
+
+        if self.job_specs.is_empty() {
+            for job in &context.shell.jobs.jobs {
+                self.display_job(&context, job)?;
+            }
+        } else {
             return error::unimp("jobs with job specs");
         }
 
-        for job in &context.shell.jobs.jobs {
+        Ok(BuiltinExitCode::Success)
+    }
+}
+
+impl JobsCommand {
+    fn display_job(
+        &self,
+        context: &crate::context::CommandExecutionContext<'_>,
+        job: &jobs::Job,
+    ) -> Result<(), crate::error::Error> {
+        if self.running_jobs_only && !matches!(job.state, jobs::JobState::Running) {
+            return Ok(());
+        }
+        if self.stopped_jobs_only && !matches!(job.state, jobs::JobState::Stopped) {
+            return Ok(());
+        }
+
+        if self.show_pids_only {
+            if let Some(pid) = job.get_representative_pid() {
+                writeln!(context.stdout(), "{pid}")?;
+            }
+        } else {
             writeln!(context.stdout(), "{job}")?;
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(())
     }
 }
