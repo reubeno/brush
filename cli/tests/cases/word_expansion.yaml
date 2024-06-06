@@ -337,7 +337,7 @@ cases:
       echo "  -> result: $?"
 
   - name: "Parameter expression: error on condition (non-interactive)"
-    known_failure: true # Issue #155
+    known_failure: true
     ignore_stderr: true
     stdin: |
       echo "${non_existent_var?error message}"
@@ -703,13 +703,13 @@ cases:
       echo "\${arr2@k}: ${arr2@k}"
 
   - name: "Parameter transformations: expand escapes"
-    known_failure: true # Issue #155
+    known_failure: true
     stdin: |
       var="a\n\"b"
       echo "\${var@E}: ${var@E}"
 
   - name: "Parameter transformation: assignment"
-    known_failure: true # Issue #155
+    known_failure: true
     stdin: |
       var="hello"
       echo "\${var@A}: ${var@A}"
@@ -718,10 +718,37 @@ cases:
       echo "\${arr@A}: ${arr@A}"
 
   - name: "Parameter transformation: attributes"
-    known_failure: true # Issue #155
+    known_failure: true
     stdin: |
       var="hello"
       echo "\${var@a}: ${var@a}"
 
       declare -ia arr=(1 2 3)
       echo "\${arr@a}: ${arr@a}"
+
+  - name: "Expansion with curly braces"
+    known_failure: true # Issue #42
+    stdin: |
+      echo "{a,b}:"
+      echo {a,b}
+
+      echo "{}:"
+      echo {}
+
+      echo "1{a,b}2"
+      echo 1{a,b}2
+
+      echo "{a,b}{1,2}"
+      echo {a,b}{1,2}
+
+      echo "{a..f}"
+      echo {a..f}
+
+      echo "{a..f..2}"
+      echo {a..f..2}
+
+      echo "{2..9}"
+      echo {2..9}
+
+      echo "{2..9..2}"
+      echo {2..9..2}

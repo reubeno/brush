@@ -189,7 +189,7 @@ pub fn parse_parameter(
 
 peg::parser! {
     grammar expansion_parser(parser_options: &ParserOptions) for str {
-        pub(crate) rule unexpanded_word() -> Vec<WordPiece> = word(<&[_]>)
+        pub(crate) rule unexpanded_word() -> Vec<WordPiece> = word(<![_]>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPiece> =
             tilde:tilde_prefix()? pieces:word_piece(<stop_condition()>)* {
@@ -203,9 +203,20 @@ peg::parser! {
 
         // N.B. We don't bother returning the word pieces, as all users of this rule
         // only try to extract the consumed input string and not the parse result.
-        rule arithmetic_word<T>(stop_condition: rule<T>) -> () =
-            "(" word_piece(<stop_condition()>)* ")" {} /
-            word_piece(<stop_condition()>)* {}
+        rule arithmetic_word<T>(stop_condition: rule<T>) =
+            arithmetic_word_piece(<stop_condition()>)* {}
+
+        rule arithmetic_word_piece<T>(stop_condition: rule<T>) =
+            "(" arithmetic_word_plus_right_paren() {} /
+            word_piece(<param_rule_or_open_paren(<stop_condition()>)>) {}
+
+        rule param_rule_or_open_paren<T>(stop_condition: rule<T>) -> () =
+            stop_condition() {} /
+            "(" {}
+
+        rule arithmetic_word_plus_right_paren() =
+            "(" arithmetic_word_plus_right_paren() ")" /
+            word_piece(<[')']>)* ")" {}
 
         rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
             arithmetic_expansion() /
@@ -240,7 +251,17 @@ peg::parser! {
             "$\'" inner:$([^'\'']*) "\'" { inner }
 
         rule unquoted_literal_text<T>(stop_condition: rule<T>) -> WordPiece =
-            s:$((stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"'])+) { WordPiece::Text(s.to_owned()) }
+            s:$(unquoted_literal_text_piece(<stop_condition()>)+) { WordPiece::Text(s.to_owned()) }
+
+        rule unquoted_literal_text_piece<T>(stop_condition: rule<T>) =
+            extglob_pattern() /
+            !stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"'] {}
+
+        rule extglob_pattern() =
+            ("@" / "!" / "?" / "+" / "*") "(" extglob_body_piece()* ")" {}
+
+        rule extglob_body_piece() =
+            word_piece(<[')']>) {}
 
         rule double_quoted_text() -> WordPiece =
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
@@ -418,7 +439,7 @@ peg::parser! {
             $(command_piece()*)
 
         pub(crate) rule command_piece() -> () =
-            word_piece(<![')']>) {} /
+            word_piece(<[')']>) {} /
             ([' ' | '\t'])+ {}
 
         rule backquoted_command() -> String =
@@ -429,22 +450,25 @@ peg::parser! {
             [^'`']
 
         rule arithmetic_expansion() -> WordPiece =
-            "$((" e:$(arithmetic_word(<!"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+            "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
 
         rule substring_offset() -> ast::UnexpandedArithmeticExpr =
-            s:$(arithmetic_word(<![':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
+            s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
 
         rule substring_length() -> ast::UnexpandedArithmeticExpr =
-            s:$(arithmetic_word(<![':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
+            s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
 
         rule parameter_replacement_str() -> String =
-            s:$(word(<!['}' | '/']>)) { s.to_owned() }
+            s:$(word(<['}' | '/']>)) { s.to_owned() }
 
         rule parameter_search_pattern() -> String =
-            s:$(word(<!['}' | '/']>)) { s.to_owned() }
+            s:$(word(<['}' | '/']>)) { s.to_owned() }
 
         rule parameter_expression_word() -> String =
-            s:$(word(<!['}']>)) { s.to_owned() }
+            s:$(word(<['}']>)) { s.to_owned() }
+
+        rule extglob_enabled() -> () =
+            &[_] {? if parser_options.enable_extended_globbing { Ok(()) } else { Err("no extglob") } }
 
         rule non_posix_extensions_enabled() -> () =
             &[_] {? if !parser_options.sh_mode { Ok(()) } else { Err("posix") } }
@@ -490,6 +514,17 @@ mod tests {
         assert_matches!(
             &parsed[..],
             [WordPiece::CommandSubstitution(s)] if s.as_str() == r#"echo "hi""#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_substitution_with_embedded_extglob() -> Result<()> {
+        let parsed = super::parse_word_for_expansion("$(echo !(x))", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[..],
+            [WordPiece::CommandSubstitution(s)] if s.as_str() == "echo !(x)"
         );
 
         Ok(())

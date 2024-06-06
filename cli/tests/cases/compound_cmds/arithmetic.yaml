@@ -4,3 +4,8 @@ cases:
     stdin: |
       ((0 == 0)) && echo "0 == 0"
       ((0 != 0)) && echo "0 != 0"
+
+  - name: "Arithmetic statements with parens"
+    stdin: |
+      (( (0) )) && echo "0"
+      (( (1) )) && echo "1"

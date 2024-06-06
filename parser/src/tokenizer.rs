@@ -623,17 +623,28 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             if matches!(self.peek_char()?, Some('(')) {
                                 // Consume the second '(' and add it to the token.
                                 state.append_char(self.next_char()?.unwrap());
+                                // Keep track that we'll need to see *2* end parentheses
+                                // to leave this construct.
                                 required_end_parens = 2;
+                                // Keep track that we're in an arithmetic expression, since
+                                // some text will be interpreted differently as a result
+                                // (e.g., << is a left shift operator and not a here doc
+                                // input redirection operator).
                                 self.cross_state.arithmetic_expansion = true;
                             }
-
-                            let mut tokens = vec![];
 
                             loop {
                                 let cur_token = self.next_token_until(Some(')'))?;
                                 if let Some(cur_token_value) = cur_token.token {
                                     state.append_str(cur_token_value.to_str());
-                                    tokens.push(cur_token_value);
+
+                                    // If we encounter an embedded open parenthesis, then note that
+                                    // we'll have to see the matching end to it before we worry about
+                                    // the end of the containing construct.
+                                    if matches!(cur_token_value, Token::Operator(o, _) if o == "(")
+                                    {
+                                        required_end_parens += 1;
+                                    }
                                 }
 
                                 match cur_token.reason {
@@ -642,14 +653,17 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                         state.append_char(' ');
                                     }
                                     TokenEndReason::SpecifiedTerminatingChar => {
-                                        // We hit the ')' we were looking for; consume and append it.
-                                        if required_end_parens == 2 {
-                                            state.append_char(self.next_char()?.unwrap());
-                                        }
+                                        // We hit the ')' we were looking for. If this is the last
+                                        // end parenthesis we needed to find, then we'll exit the loop
+                                        // and consume and append it.
                                         required_end_parens -= 1;
                                         if required_end_parens == 0 {
                                             break;
                                         }
+
+                                        // This wasn't the *last* end parenthesis char, so let's
+                                        // consume and append it here before we loop around again.
+                                        state.append_char(self.next_char()?.unwrap());
                                     }
                                     _ => (),
                                 }
@@ -1101,12 +1115,44 @@ SOMETHING
     }
 
     #[test]
+    fn tokenize_command_substitution_containing_extglob() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("echo $(echo !(x))")?[..],
+            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+                t1.to_str() == "echo" &&
+                t2.to_str() == "$(echo !(x))"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn tokenize_arithmetic_expression() -> Result<()> {
         assert_matches!(
             &tokenize_str("a$((1+2))b c")?[..],
             [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
                 t1.to_str() == "a$((1+2))b" &&
                 t2.to_str() == "c"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_arithmetic_expression_with_space() -> Result<()> {
+        // N.B. The spacing comes out a bit odd, but it gets processed okay
+        // by later stages.
+        assert_matches!(
+            &tokenize_str("$(( 1 ))")?[..],
+            [t1 @ Token::Word(_, _)] if
+                t1.to_str() == "$((1 ))"
+        );
+        Ok(())
+    }
+    #[test]
+    fn tokenize_arithmetic_expression_with_parens() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("$(( (0) ))")?[..],
+            [t1 @ Token::Word(_, _)] if
+                t1.to_str() == "$(((0)))"
         );
         Ok(())
     }

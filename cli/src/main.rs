@@ -224,7 +224,7 @@ async fn run(
 
         // Execute the command string.
         let params = shell.shell().default_exec_params();
-        shell.shell_mut().run_string(&command, &params).await?;
+        shell.shell_mut().run_string(command, &params).await?;
     } else if args.read_commands_from_stdin {
         shell.run_interactively().await?;
     } else if let Some(script_path) = args.script_path {

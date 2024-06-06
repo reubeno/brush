@@ -48,7 +48,7 @@ cases:
       declare -p myarray
 
   - name: "Unset array element with interesting expression"
-    known_failure: true # Issues #170
+    known_failure: true
     stdin: |
       declare -a myarray=(a b c d e)
 

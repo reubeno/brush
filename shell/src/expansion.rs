@@ -406,6 +406,11 @@ impl<'a> WordExpander<'a> {
         tracing::debug!("Basic expanding: '{word}'");
 
         //
+        // TODO: Brace expansion in unquoted pieces
+        // Issue #42
+        //
+
+        //
         // Expand: tildes, parameters, command substitutions, arithmetic.
         //
         let pieces = parser::parse_word_for_expansion(word, &self.parser_options)?;
@@ -602,7 +607,7 @@ impl<'a> WordExpander<'a> {
                 // Run the command.
                 // TODO: inspect result?
                 let _ = subshell
-                    .run_string(s.as_str(), &subshell.default_exec_params())
+                    .run_string(s, &subshell.default_exec_params())
                     .await?;
 
                 // Make sure the subshell is closed; among other things, this
@@ -1167,6 +1172,7 @@ impl<'a> WordExpander<'a> {
         Ok(index_to_use)
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn expand_special_parameter(
         &mut self,
         parameter: &parser::word::SpecialParameter,
@@ -1197,7 +1203,12 @@ impl<'a> WordExpander<'a> {
                 Ok(Expansion::from(std::process::id().to_string()))
             }
             parser::word::SpecialParameter::LastBackgroundProcessId => {
-                error::unimp("expansion: last background process id")
+                if let Some(job) = self.shell.jobs.current_job() {
+                    if let Some(pid) = job.get_representative_pid() {
+                        return Ok(Expansion::from(pid.to_string()));
+                    }
+                }
+                Ok(Expansion::from(String::new()))
             }
             parser::word::SpecialParameter::ShellName => Ok(Expansion::from(
                 self.shell

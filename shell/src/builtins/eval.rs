@@ -26,7 +26,7 @@ impl BuiltinCommand for EvalCommand {
             let exec_result = context
                 .shell
                 .run_string(
-                    args_concatenated.as_str(),
+                    args_concatenated,
                     &ExecutionParameters {
                         open_files: context.open_files.clone(),
                     },

@@ -2,7 +2,7 @@ use crate::ast::{self, SeparatorOperator};
 use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 
-#[derive(Clone)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ParserOptions {
     pub enable_extended_globbing: bool,
     pub posix_mode: bool,
@@ -57,6 +57,8 @@ impl<R: std::io::BufRead> Parser<R> {
             },
         );
 
+        tracing::debug!(target: "tokenize", "Tokenizing...");
+
         let mut tokens = vec![];
         loop {
             let result = match tokenizer.next_token() {
@@ -84,6 +86,8 @@ impl<R: std::io::BufRead> Parser<R> {
                 break;
             }
         }
+
+        tracing::debug!(target: "tokenize", "  => {} token(s)", tokens.len());
 
         parse_tokens(&tokens, &self.options, &self.source_info)
     }
@@ -251,14 +255,17 @@ peg::parser! {
             non_posix_extensions_enabled() c:arithmetic_for_clause() { ast::CompoundCommand::ArithmeticForClause(c) } /
             expected!("compound command")
 
-        // N.B. This is not supported in sh.
         rule arithmetic_command() -> ast::ArithmeticCommand =
             specific_operator("(") specific_operator("(") expr:arithmetic_expression() arithmetic_end() {
                 ast::ArithmeticCommand { expr }
             }
 
         rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
-            raw_expr:$((!arithmetic_end() [_])*) { ast::UnexpandedArithmeticExpr { value: raw_expr } }
+            raw_expr:$(arithmetic_expression_piece()*) { ast::UnexpandedArithmeticExpr { value: raw_expr } }
+
+        rule arithmetic_expression_piece() =
+            specific_operator("(") arithmetic_expression_piece()* specific_operator(")") {} /
+            !arithmetic_end() [_] {}
 
         // TODO: evaluate arithmetic end; the semicolon is used in arithmetic for loops.
         rule arithmetic_end() -> () =

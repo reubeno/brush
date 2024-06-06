@@ -24,7 +24,7 @@ mod unix {
         let options = shell::CreateOptions::default();
         let mut shell = shell::Shell::new(&options).await.unwrap();
         shell
-            .run_string(command, &shell.default_exec_params())
+            .run_string(command.to_owned(), &shell.default_exec_params())
             .await
             .unwrap()
     }

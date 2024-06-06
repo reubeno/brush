@@ -136,9 +136,7 @@ impl InteractiveShell {
 
             let params = self.shell().default_exec_params();
 
-            self.shell_mut()
-                .run_string(prompt_cmd.as_str(), &params)
-                .await?;
+            self.shell_mut().run_string(prompt_cmd, &params).await?;
 
             self.shell_mut().last_exit_status = prev_last_result;
         }
@@ -149,7 +147,7 @@ impl InteractiveShell {
         match self.editor.readline(&prompt) {
             Ok(read_result) => {
                 let params = self.shell().default_exec_params();
-                match self.shell_mut().run_string(&read_result, &params).await {
+                match self.shell_mut().run_string(read_result, &params).await {
                     Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
                     Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
                 }
@@ -319,7 +317,7 @@ impl rustyline::validate::Validator for EditorHelper {
     ) -> rustyline::Result<rustyline::validate::ValidationResult> {
         let line = ctx.input();
 
-        let parse_result = self.shell.parse_string(line);
+        let parse_result = self.shell.parse_string(line.to_owned());
 
         let validation_result = match parse_result {
             Err(parser::ParseError::Tokenizing { inner, position: _ }) if inner.is_incomplete() => {
