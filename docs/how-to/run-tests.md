@@ -9,11 +9,11 @@ cargo test --workspace
 To run just integration tests:
 
 ```bash
-cargo test --test integration_tests
+cargo test --test brush-integration-tests
 ```
 
 To run a specific integration test case
 
 ```bash
-cargo test --test integration_tests -- '<name of test case>'
+cargo test --test brush-integration-tests -- '<name of test case>'
 ```

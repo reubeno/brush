@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["cli", "parser", "shell", "interactive-shell"]
-default-members = ["cli", "parser", "shell", "interactive-shell"]
+members = ["brush-shell", "brush-parser", "brush-core", "brush-interactive"]
+default-members = ["brush-shell", "brush-parser", "brush-core", "brush-interactive"]
 
 [workspace.package]
 categories = ["command-line-utilities", "development-tools"]
 edition = "2021"
-keywords = ["cli", "shell", "sh", "bash", "script"]
+keywords = ["cli", "shell", "sh", "bash", "script", "brush"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/reubeno/brush"
@@ -40,6 +40,7 @@ redundant_else = "allow"
 result_large_err = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
+multiple_crate_versions = "allow"
 
 [profile.release]
 opt-level = "z"

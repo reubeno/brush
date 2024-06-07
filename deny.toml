@@ -80,9 +80,7 @@ deny = []
 skip = []
 skip-tree = [
     { crate = "windows-sys", reason = "several crates use outdated versions" },
-    { crate = "bitflags", reason = "faccess, homedir, whoami, et al. can't agree" },
-    { crate = "nix", reason = "homedir is on an older version" },
-    { crate = "errno", reason = "exec and rustix pull in different versions" },
+    { crate = "nix", reason = "there are multiple versions floating" },
 ]
 
 # This section is considered when running `cargo deny check sources`.

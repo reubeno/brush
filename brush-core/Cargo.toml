@@ -1,0 +1,62 @@
+[package]
+name = "brush-core"
+description = "Core for brush shell"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[lib]
+bench = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.86"
+async-recursion = "1.1.0"
+async-trait = "0.1.80"
+brush-parser = { path = "../brush-parser" }
+cached = "0.51.3"
+clap = { version = "4.5.4", features = ["derive"] }
+fancy-regex = "0.13.0"
+futures = "0.3.30"
+hostname = "0.4.0"
+indexmap = "2.2.6"
+itertools = "0.13.0"
+lazy_static = "1.4.0"
+os_pipe = { version = "1.1.5", features = ["io_safety"] }
+rand = "0.8.5"
+thiserror = "1.0.61"
+tokio = { version = "1.37.0", features = [
+    "io-util",
+    "macros",
+    "process",
+    "rt",
+    "rt-multi-thread",
+    "signal",
+] }
+tracing = "0.1.40"
+
+[target.'cfg(windows)'.dependencies]
+homedir = "0.2.1"
+whoami = "1.5.1"
+
+[target.'cfg(unix)'.dependencies]
+command-fds = "0.3.0"
+nix = { version = "0.29.0", features = ["fs", "process", "signal", "user"] }
+procfs = "0.16.0"
+uzers = "0.12.0"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }
+
+[[bench]]
+name = "shell"
+harness = false

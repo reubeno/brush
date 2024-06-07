@@ -1,0 +1,39 @@
+[package]
+name = "brush-parser"
+description = "Shell parser for brush"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[lib]
+bench = false
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+if_same_then_else = "allow"
+
+[dependencies]
+indenter = "0.3.3"
+peg = "0.8.3"
+thiserror = "1.0.61"
+tracing = "0.1.40"
+utf8-chars = "3.0.3"
+
+[dev-dependencies]
+anyhow = "1.0.86"
+assert_matches = "1.5.0"
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }
+
+[[bench]]
+name = "parser"
+harness = false
