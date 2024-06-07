@@ -346,7 +346,8 @@ fn pattern_to_regex_str(
         return error::unimp("pattern matching with '**' pattern");
     }
 
-    let mut regex_str = brush_parser::pattern::pattern_to_regex_str(pattern, enable_extended_globbing)?;
+    let mut regex_str =
+        brush_parser::pattern::pattern_to_regex_str(pattern, enable_extended_globbing)?;
 
     if strict_prefix_match {
         regex_str.insert(0, '^');

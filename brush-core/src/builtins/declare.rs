@@ -324,7 +324,10 @@ impl DeclareCommand {
                         assigned_index = None;
                     }
                     brush_parser::ast::AssignmentName::ArrayElementName(var_name, index) => {
-                        if matches!(assignment.value, brush_parser::ast::AssignmentValue::Array(_)) {
+                        if matches!(
+                            assignment.value,
+                            brush_parser::ast::AssignmentValue::Array(_)
+                        ) {
                             return Err(error::Error::AssigningListToArrayMember);
                         }
 

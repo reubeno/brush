@@ -1,5 +1,5 @@
-use faccess::PathExt;
 use brush_parser::ast;
+use faccess::PathExt;
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;

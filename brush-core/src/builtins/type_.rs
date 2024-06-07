@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::{io::Write, sync::Arc};
 
+use brush_parser::ast;
 use clap::Parser;
 use faccess::PathExt;
-use brush_parser::ast;
 
 use crate::keywords;
 use crate::{

@@ -1,5 +1,5 @@
-use itertools::Itertools;
 use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
+use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
 #[cfg(unix)]

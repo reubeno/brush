@@ -1,7 +1,7 @@
 use std::{ffi::OsStr, fmt::Display, os::unix::process::CommandExt, process::Stdio};
 
-use command_fds::{CommandFdExt, FdMapping};
 use brush_parser::ast;
+use command_fds::{CommandFdExt, FdMapping};
 
 use crate::{
     error,

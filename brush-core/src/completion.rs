@@ -743,7 +743,8 @@ impl CompletionConfig {
 
             // If the position is after the last token, then we need to insert an empty
             // token for the new token to be generated.
-            let empty_token = brush_parser::Token::Word(String::new(), brush_parser::TokenLocation::default());
+            let empty_token =
+                brush_parser::Token::Word(String::new(), brush_parser::TokenLocation::default());
             adjusted_tokens.push(&empty_token);
 
             // Get the completions.
