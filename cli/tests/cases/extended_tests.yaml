@@ -93,6 +93,14 @@ cases:
       [[ -n "something" ]] && echo "-n: Pass"
       [[ -n "" ]] && echo "-n: Fail"
 
+  - name: "Shell option extended tests"
+    stdin: |
+      set -o emacs
+      [[ -o emacs ]] && echo "1: option enabled"
+
+      set +o emacs
+      [[ -o emacs ]] && echo "2: option enabled"
+
   - name: "Binary string extended tests"
     stdin: |
       [[ "" == "" ]] && echo "1. Pass"

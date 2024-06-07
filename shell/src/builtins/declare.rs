@@ -184,7 +184,11 @@ impl DeclareCommand {
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
-            let cs = variable.get_attribute_flags();
+            let mut cs = variable.get_attribute_flags();
+            if cs.is_empty() {
+                cs.push('-');
+            }
+
             let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
                 ""
             } else {
@@ -437,7 +441,11 @@ impl DeclareCommand {
             .sorted_by_key(|v| v.0)
         {
             if self.print {
-                let cs = variable.get_attribute_flags();
+                let mut cs = variable.get_attribute_flags();
+                if cs.is_empty() {
+                    cs.push('-');
+                }
+
                 let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
                     ""
                 } else {
