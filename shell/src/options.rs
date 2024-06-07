@@ -65,11 +65,11 @@ pub struct RuntimeOptions {
     //
     // Options set through shopt.
     //
-    /// 'assoc_expand_once'
+    /// `assoc_expand_once`
     pub assoc_expand_once: bool,
     /// 'autocd'
     pub auto_cd: bool,
-    /// 'cdable_vars'
+    /// `cdable_vars`
     pub cdable_vars: bool,
     /// 'cdspell'
     pub cd_autocorrect_spelling: bool,
@@ -95,7 +95,7 @@ pub struct RuntimeOptions {
     pub compat43: bool,
     /// 'compat44'
     pub compat44: bool,
-    /// 'complete_fullquote'
+    /// `complete_fullquote`
     pub quote_all_metachars_in_completion: bool,
     /// 'direxpand'
     pub expand_dir_names_on_completion: bool,
@@ -105,7 +105,7 @@ pub struct RuntimeOptions {
     pub glob_matches_dotfiles: bool,
     /// 'execfail'
     pub exit_on_exec_fail: bool,
-    /// 'expand_aliases'
+    /// `expand_aliases`
     pub expand_aliases: bool,
     /// 'extdebug'
     pub enable_debugger: bool,
@@ -115,13 +115,13 @@ pub struct RuntimeOptions {
     pub extquote: bool,
     /// 'failglob'
     pub fail_expansion_on_globs_without_match: bool,
-    /// 'force_fignore'
+    /// `force_fignore`
     pub force_fignore: bool,
     /// 'globasciiranges'
     pub glob_ranges_use_c_locale: bool,
     /// 'globstar'
     pub enable_star_star_glob: bool,
-    /// 'gnu_errfmt'
+    /// `gnu_errfmt`
     pub errors_in_gnu_format: bool,
     /// 'histappend'
     pub append_to_history_file: bool,
@@ -133,23 +133,23 @@ pub struct RuntimeOptions {
     pub enable_hostname_completion: bool,
     /// 'huponexit'
     pub send_sighup_to_all_jobs_on_exit: bool,
-    /// 'inherit_errexit'
+    /// `inherit_errexit`
     pub command_subst_inherits_errexit: bool,
-    /// 'interactive_comments'
+    /// `interactive_comments`
     pub interactive_comments: bool,
     /// 'lastpipe'
     pub run_last_pipeline_cmd_in_current_shell: bool,
     /// 'lithist'
     pub embed_newlines_in_multiline_cmds_in_history: bool,
-    /// 'localvar_inherit'
+    /// `localvar_inherit`
     pub local_vars_inherit_value_and_attrs: bool,
-    /// 'localvar_unset'
+    /// `localvar_unset`
     pub localvar_unset: bool,
-    /// 'login_shell'
+    /// `login_shell`
     pub login_shell: bool,
     /// 'mailwarn'
     pub mail_warn: bool,
-    /// 'no_empty_cmd_completion'
+    /// `no_empty_cmd_completion`
     pub case_insensitive_pathname_expansion: bool,
     /// 'nocaseglob'
     pub case_insensitive_conditionals: bool,
@@ -159,17 +159,17 @@ pub struct RuntimeOptions {
     pub expand_non_matching_patterns_to_null: bool,
     /// 'progcomp'
     pub programmable_completion: bool,
-    /// 'progcomp_alias'
+    /// `progcomp_alias`
     pub programmable_completion_alias: bool,
     /// 'promptvars'
     pub expand_prompt_strings: bool,
-    /// 'restricted_shell'
+    /// `restricted_shell`
     pub restricted_shell: bool,
-    /// 'shift_verbose'
+    /// `shift_verbose`
     pub shift_verbose: bool,
-    /// 'sourcepath'
+    /// `sourcepath`
     pub source_builtin_searches_path: bool,
-    /// 'xpg_echo'
+    /// `xpg_echo`
     pub echo_builtin_expands_escape_sequences: bool,
 
     //
