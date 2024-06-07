@@ -12,6 +12,9 @@ readme = "README.md"
 repository = "https://github.com/reubeno/brush"
 version = "0.1.0"
 
+[workspace.lints.rust]
+missing_docs = "warn"
+
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }

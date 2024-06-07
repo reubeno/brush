@@ -1,13 +1,25 @@
 use crate::error;
 
+/// Represents the kind of an extended glob.
 pub enum ExtendedGlobKind {
+    /// The `+` extended glob; matches one or more occurrences of the inner pattern.
     Plus,
+    /// The `@` extended glob; allows matching an alternation of inner patterns.
     At,
+    /// The `!` extended glob; matches the negation of the inner pattern.
     Exclamation,
+    /// The `?` extended glob; matches zero or one occurrence of the inner pattern.
     Question,
+    /// The `*` extended glob; matches zero or more occurrences of the inner pattern.
     Star,
 }
 
+/// Converts a shell pattern to a regular expression string.
+///
+/// # Arguments
+///
+/// * `pattern` - The shell pattern to convert.
+/// * `enable_extended_globbing` - Whether to enable extended globbing (extglob).
 pub fn pattern_to_regex_str(
     pattern: &str,
     enable_extended_globbing: bool,

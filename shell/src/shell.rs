@@ -16,50 +16,59 @@ use crate::{
     keywords, openfiles, patterns, prompt, traps, users,
 };
 
+/// Represents an instance of a shell.
 pub struct Shell {
     //
     // Core state required by specification
     //
+    /// Trap handler configuration for the shell.
     pub traps: traps::TrapHandlerConfig,
+    /// Manages files opened and accessible via redirection operators.
     pub open_files: openfiles::OpenFiles,
+    /// The current working directory.
     pub working_dir: PathBuf,
-    pub file_size_limit: u64,
+    /// The shell environment, containing shell variables.
     pub env: ShellEnvironment,
+    /// Shell function definitions.
     pub funcs: functions::FunctionEnv,
+    /// Runtime shell options.
     pub options: RuntimeOptions,
+    /// State of managed jobs.
     pub jobs: jobs::JobManager,
+    /// Shell aliases.
     pub aliases: HashMap<String, String>,
 
     //
     // Additional state
     //
+    /// The status of the last completed command.
     pub last_exit_status: u8,
 
-    // Track clone depth from main shell
+    /// Clone depth from the original ancestor shell.
     pub depth: usize,
 
-    // Positional parameters ($1 and beyond)
+    /// Positional parameters ($1 and beyond)
     pub positional_parameters: Vec<String>,
 
-    // Shell name
+    /// Shell name
     pub shell_name: Option<String>,
 
-    // Script call stack.
+    /// Script call stack.
     pub script_call_stack: VecDeque<String>,
 
-    // Function call stack.
+    /// Function call stack.
     pub function_call_stack: VecDeque<FunctionCall>,
 
-    // Directory stack used by pushd et al.
+    /// Directory stack used by pushd et al.
     pub directory_stack: Vec<PathBuf>,
 
-    // Current line number being processed.
+    /// Current line number being processed.
     pub current_line_number: u32,
 
-    // Completion configuration.
+    /// Completion configuration.
     pub completion_config: completion::CompletionConfig,
 
-    // Builtins.
+    /// Shell built-in commands.
     pub builtins: HashMap<String, builtin::BuiltinRegistration>,
 }
 
@@ -69,7 +78,6 @@ impl Clone for Shell {
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
-            file_size_limit: self.file_size_limit,
             env: self.env.clone(),
             funcs: self.funcs.clone(),
             options: self.options.clone(),
@@ -89,35 +97,54 @@ impl Clone for Shell {
     }
 }
 
+/// Options for creating a new shell.
 #[derive(Debug, Default)]
 pub struct CreateOptions {
+    /// Whether the shell is a login shell.
     pub login: bool,
+    /// Whether the shell is interactive.
     pub interactive: bool,
+    /// Whether to skip using a readline-like interface for input.
     pub no_editing: bool,
+    /// Whether to skip sourcing the system profile.
     pub no_profile: bool,
+    /// Whether to skip sourcing the user's rc file.
     pub no_rc: bool,
+    /// Whether the shell is in POSIX compliance mode.
     pub posix: bool,
+    /// Whether to print commands and arguments as they are read.
     pub print_commands_and_arguments: bool,
+    /// Whether commands are being read from stdin.
     pub read_commands_from_stdin: bool,
+    /// The name of the shell.
     pub shell_name: Option<String>,
+    /// Whether to run in maximal POSIX sh compatibility mode.
     pub sh_mode: bool,
+    /// Whether to print verbose output.
     pub verbose: bool,
 }
 
+/// Represents an active shell function call.
 #[derive(Clone, Debug)]
 pub struct FunctionCall {
+    /// The name of the function invoked.
     function_name: String,
+    /// The definition of the invoked function.
     function_definition: Arc<parser::ast::FunctionDefinition>,
 }
 
 impl Shell {
+    /// Returns a new shell instance created with the given options.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The options to use when creating the shell.
     pub async fn new(options: &CreateOptions) -> Result<Shell, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Shell {
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: std::env::current_dir()?,
-            file_size_limit: Default::default(), // TODO: populate file size limit
             env: Self::initialize_vars(options)?,
             funcs: functions::FunctionEnv::default(),
             options: RuntimeOptions::defaults_from(options),
@@ -314,6 +341,13 @@ impl Shell {
         }
     }
 
+    /// Source the given file as a shell script, returning the execution result.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the file to source.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `params` - Execution parameters.
     pub async fn source<S: AsRef<str>>(
         &mut self,
         path: &Path,
@@ -347,6 +381,14 @@ impl Shell {
             .await
     }
 
+    /// Source the given file as a shell script, returning the execution result.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The file to source.
+    /// * `source_info` - Information about the source of the script.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `params` - Execution parameters.
     pub async fn source_file<S: AsRef<str>>(
         &mut self,
         file: &std::fs::File,
@@ -391,6 +433,12 @@ impl Shell {
         result
     }
 
+    /// Invokes a function defined in this shell, returning the resulting exit status.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to invoke.
+    /// * `args` - The arguments to pass to the function.
     pub async fn invoke_function(&mut self, name: &str, args: &[&str]) -> Result<u8, error::Error> {
         let open_files = self.open_files.clone();
         let command_name = String::from(name);
@@ -426,6 +474,12 @@ impl Shell {
         }
     }
 
+    /// Executes the given string as a shell program, returning the resulting exit status.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The command to execute.
+    /// * `params` - Execution parameters.
     pub async fn run_string(
         &mut self,
         command: String,
@@ -444,10 +498,21 @@ impl Shell {
             .await
     }
 
+    /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
+    /// for the program.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to parse as a program.
     pub fn parse_string(&self, s: String) -> Result<parser::ast::Program, parser::ParseError> {
         parse_string_impl(s, self.parser_options())
     }
 
+    /// Applies basic shell expansion to the provided string.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to expand.
     pub async fn basic_expand_string<S: AsRef<str>>(
         &mut self,
         s: S,
@@ -456,6 +521,12 @@ impl Shell {
         Ok(result)
     }
 
+    /// Applies full shell expansion and field splitting to the provided string; returns
+    /// a sequence of fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to expand and split.
     pub async fn full_expand_and_split_string<S: AsRef<str>>(
         &mut self,
         s: S,
@@ -464,12 +535,19 @@ impl Shell {
         Ok(result)
     }
 
+    /// Returns the default execution parameters for this shell.
     pub fn default_exec_params(&self) -> ExecutionParameters {
         ExecutionParameters {
             open_files: self.open_files.clone(),
         }
     }
 
+    /// Executes the given script file, returning the resulting exit status.
+    ///
+    /// # Arguments
+    ///
+    /// * `script_path` - The path to the script file to execute.
+    /// * `args` - The arguments to pass to the script as positional parameters.
     pub async fn run_script<S: AsRef<str>>(
         &mut self,
         script_path: &Path,
@@ -541,6 +619,12 @@ impl Shell {
         Ok(result)
     }
 
+    /// Executes the given parsed shell program, returning the resulting exit status.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The program to execute.
+    /// * `params` - Execution parameters.
     pub async fn run_program(
         &mut self,
         program: parser::ast::Program,
@@ -549,6 +633,7 @@ impl Shell {
         program.execute(self, params).await
     }
 
+    /// Composes the shell's prompt, applying all appropriate expansions.
     pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
         const DEFAULT_PROMPT: &str = "$ ";
 
@@ -569,6 +654,7 @@ impl Shell {
         Ok(formatted_prompt)
     }
 
+    /// Returns the exit status of the last command executed in this shell.
     pub fn last_result(&self) -> u8 {
         self.last_exit_status
     }
@@ -580,7 +666,8 @@ impl Shell {
         )
     }
 
-    pub fn current_option_flags(&self) -> String {
+    /// Returns a string representing the current `set`-style option flags set in the shell.
+    pub(crate) fn current_option_flags(&self) -> String {
         let mut cs = vec![];
 
         for (x, y) in crate::namedoptions::SET_OPTIONS.iter() {
@@ -592,7 +679,9 @@ impl Shell {
         cs.into_iter().collect()
     }
 
-    pub fn parser_options(&self) -> parser::ParserOptions {
+    /// Returns the options that should be used for parsing shell programs; reflects
+    /// the current configuration state of the shell and may change over time.
+    pub(crate) fn parser_options(&self) -> parser::ParserOptions {
         parser::ParserOptions {
             enable_extended_globbing: self.options.extended_globbing,
             posix_mode: self.options.posix_mode,
@@ -601,11 +690,19 @@ impl Shell {
         }
     }
 
-    pub fn in_function(&self) -> bool {
+    /// Returns whether or not the shell is actively executing in a shell function.
+    pub(crate) fn in_function(&self) -> bool {
         !self.function_call_stack.is_empty()
     }
 
-    pub fn enter_function(
+    /// Updates the shell's internal tracking state to reflect that a new shell
+    /// function is being entered.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function being entered.
+    /// * `function_def` - The definition of the function being entered.
+    pub(crate) fn enter_function(
         &mut self,
         name: &str,
         function_def: &Arc<parser::ast::FunctionDefinition>,
@@ -619,7 +716,9 @@ impl Shell {
         Ok(())
     }
 
-    pub fn leave_function(&mut self) -> Result<(), error::Error> {
+    /// Updates the shell's internal tracking state to reflect that the shell
+    /// has exited the top-most function on its call stack.
+    pub(crate) fn leave_function(&mut self) -> Result<(), error::Error> {
         self.env.pop_scope(env::EnvironmentScope::Local)?;
         self.function_call_stack.pop_front();
         self.update_funcname_var()?;
@@ -673,6 +772,7 @@ impl Shell {
         Ok(())
     }
 
+    /// Returns the path to the history file used by the shell, if one is set.
     pub fn get_history_file_path(&self) -> Option<PathBuf> {
         self.env.get("HISTFILE").map(|(_, var)| {
             let histfile_str: String = var.value().to_cow_string().to_string();
@@ -680,17 +780,25 @@ impl Shell {
         })
     }
 
-    pub fn get_current_input_line_number(&self) -> u32 {
+    /// Returns the number of the line being executed in the currently executing program.
+    pub(crate) fn get_current_input_line_number(&self) -> u32 {
         self.current_line_number
     }
 
-    pub fn get_ifs(&self) -> Cow<'_, str> {
+    /// Returns the current value of the IFS variable, or the default value if it is not set.
+    pub(crate) fn get_ifs(&self) -> Cow<'_, str> {
         self.env.get("IFS").map_or_else(
             || Cow::Borrowed(" \t\n"),
             |(_, v)| v.value().to_cow_string(),
         )
     }
 
+    /// Generates command completions for the shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input string to generate completions for.
+    /// * `position` - The position in the input string to generate completions at.
     pub async fn get_completions(
         &mut self,
         input: &str,
@@ -702,8 +810,13 @@ impl Shell {
             .await
     }
 
+    /// Finds executables in the shell's current default PATH, matching the given glob pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `required_glob_pattern` - The glob pattern to match against.
     #[allow(clippy::manual_flatten)]
-    pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
+    pub(crate) fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
         let is_executable = |path: &Path| path.executable();
 
         let mut executables = vec![];
@@ -724,7 +837,12 @@ impl Shell {
         executables
     }
 
-    pub fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
+    /// Sets the shell's current working directory to the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `target_dir` - The path to set as the working directory.
+    pub(crate) fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
         let abs_path = if target_dir.is_absolute() {
             PathBuf::from(target_dir)
         } else {
@@ -763,7 +881,12 @@ impl Shell {
         Ok(())
     }
 
-    pub fn tilde_shorten(&self, s: String) -> String {
+    /// Tilde-shortens the given string, replacing the user's home directory with a tilde.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to shorten.
+    pub(crate) fn tilde_shorten(&self, s: String) -> String {
         if let Some(home_dir) = self.get_home_dir() {
             if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
                 return format!("~{stripped}");
@@ -772,7 +895,8 @@ impl Shell {
         s
     }
 
-    pub fn get_home_dir(&self) -> Option<PathBuf> {
+    /// Returns the shell's current home directory, if available.
+    pub(crate) fn get_home_dir(&self) -> Option<PathBuf> {
         Self::get_home_dir_with_env(&self.env)
     }
 
@@ -785,15 +909,24 @@ impl Shell {
         }
     }
 
+    /// Returns a value that can be used to write to the shell's currently configured
+    /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> openfiles::OpenFile {
         self.open_files.files.get(&1).unwrap().try_dup().unwrap()
     }
 
+    /// Returns a value that can be used to write to the shell's currently configured
+    /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> openfiles::OpenFile {
         self.open_files.files.get(&2).unwrap().try_dup().unwrap()
     }
 
-    pub fn trace_command<S: AsRef<str>>(&self, command: S) -> Result<(), std::io::Error> {
+    /// Outputs `set -x` style trace output for a command.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The command to trace.
+    pub(crate) fn trace_command<S: AsRef<str>>(&self, command: S) -> Result<(), std::io::Error> {
         // TODO: get prefix from PS4
         const DEFAULT_PREFIX: &str = "+ ";
 
@@ -809,7 +942,8 @@ impl Shell {
         writeln!(self.stderr(), "{prefix}{}", command.as_ref())
     }
 
-    pub fn get_keywords(&self) -> Vec<String> {
+    /// Returns the keywords that are reserved by the shell.
+    pub(crate) fn get_keywords(&self) -> Vec<String> {
         if self.options.sh_mode {
             keywords::SH_MODE_KEYWORDS.iter().cloned().collect()
         } else {
@@ -817,6 +951,7 @@ impl Shell {
         }
     }
 
+    /// Checks for completed jobs in the shell, reporting any changes found.
     pub fn check_for_completed_jobs(&mut self) -> Result<(), error::Error> {
         let results = self.jobs.poll()?;
 

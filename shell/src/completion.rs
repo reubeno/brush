@@ -111,84 +111,123 @@ pub enum CompleteOption {
     PlusDirs,
 }
 
+/// Encapsulates the shell's programmable command completion configuration.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Default)]
 pub struct CompletionConfig {
     commands: HashMap<String, CompletionSpec>,
 
+    /// Optionally, a completion spec to be used as a default, when earlier
+    /// matches yield no candidates.
     pub default: Option<CompletionSpec>,
+    /// Optionally, a completion spec to be used when the command line is empty.
     pub empty_line: Option<CompletionSpec>,
+    /// Optionally, a completion spec to be used for the initial word of a command line.
     pub initial_word: Option<CompletionSpec>,
 
+    /// Optionally, stores the current completion options in effect. May be mutated
+    /// while a completion generation is in-flight.
     pub current_completion_options: Option<CompletionOptions>,
 }
 
+/// Options for generating completions.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Default)]
 pub struct CompletionOptions {
     //
     // Options
     //
+    /// Perform rest of default completions if no completions are generated.
     pub bash_default: bool,
+    /// Use default filename completion if no completions are generated.
     pub default: bool,
+    /// Treat completions as directory names.
     pub dir_names: bool,
+    /// Treat completions as filenames.
     pub file_names: bool,
+    /// Do not add usual quoting for completions.
     pub no_quote: bool,
+    /// Do not sort completions.
     pub no_sort: bool,
+    /// Do not append typical space to a completion at the end of the input line.
     pub no_space: bool,
+    /// Also complete with directory names.
     pub plus_dirs: bool,
 }
 
+/// Encapsulates a command completion specification; provides policy for how to
+/// generate completions for a given input.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Default)]
 pub struct CompletionSpec {
     //
     // Options
     //
+    /// Options to use for completion.
     pub options: CompletionOptions,
 
     //
     // Generators
     //
+    /// Actions to take to generate completions.
     pub actions: Vec<CompleteAction>,
+    /// Optionally, a glob pattern whose expansion will be used as completions.
     pub glob_pattern: Option<String>,
+    /// Optionally, a list of words to use as completions.
     pub word_list: Option<String>,
+    /// Optionally, the name of a shell function to invoke to generate completions.
     pub function_name: Option<String>,
+    /// Optionally, the name of a command to execute to generate completions.
     pub command: Option<String>,
 
     //
     // Filters
     //
+    /// Optionally, a pattern to filter completions.
     pub filter_pattern: Option<String>,
+    /// If true, completion candidates matching `filter_pattern` are removed;
+    /// otherwise, those not matching it are removed.
     pub filter_pattern_excludes: bool,
 
     //
     // Transformers
     //
+    /// Optionally, provides a prefix to be prepended to all completion candidates.
     pub prefix: Option<String>,
+    /// Optionally, provides a suffix to be prepended to all completion candidates.
     pub suffix: Option<String>,
 }
 
+/// Encapsulates context used during completion generation.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct CompletionContext<'a> {
     /// The token to complete.
     pub token_to_complete: &'a str,
 
-    /// Other potentially relevant tokens.
+    /// If available, the name of the command being invoked.
     pub command_name: Option<&'a str>,
+    /// If there was one, the token preceding the one being completed.
     pub preceding_token: Option<&'a str>,
 
-    /// The index of the token to complete.
+    /// The 0-based index of the token to complete.
     pub token_index: usize,
 
-    /// The input.
+    /// The input line.
     pub input_line: &'a str,
+    /// The 0-based index of the cursor in the input line.
     pub cursor_index: usize,
+    /// The tokens in the input line.
     pub tokens: &'a [&'a parser::Token],
 }
 
 impl CompletionSpec {
+    /// Generates completion candidates using this specification.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell instance to use for completion generation.
+    /// * `context` - The context in which completion is being generated.
     #[allow(clippy::too_many_lines)]
     pub async fn get_completions(
         &self,
@@ -492,16 +531,21 @@ impl CompletionSpec {
     }
 }
 
+/// Represents a set of generated command completions.
 #[derive(Debug, Default)]
 pub struct Completions {
+    /// The index in the input line where the completions should be inserted.
     pub start: usize,
+    /// The ordered list of completions.
     pub candidates: Vec<String>,
+    /// Options for processing the candidates.
     pub options: CandidateProcessingOptions,
 }
 
+/// Options governing how command completion candidates are processed.
 #[derive(Debug)]
 pub struct CandidateProcessingOptions {
-    /// Treat completions as file names
+    /// Treat completions as file names.
     pub treat_as_filenames: bool,
     /// Don't auto-quote completions that are file names.
     pub no_autoquote_filenames: bool,
@@ -519,9 +563,13 @@ impl Default for CandidateProcessingOptions {
     }
 }
 
+/// Encapsulates a completion result.
 #[allow(clippy::module_name_repetitions)]
 pub enum CompletionResult {
+    /// The completion process generated a set of candidates along with options
+    /// controlling how to process them.
     Candidates(Vec<String>, CandidateProcessingOptions),
+    /// The completion process needs to be restarted.
     RestartCompletionProcess,
 }
 
@@ -530,6 +578,11 @@ const DEFAULT_COMMAND: &str = "_DefaultCmD_";
 const INITIAL_WORD: &str = "_InitialWorD_";
 
 impl CompletionConfig {
+    /// Removes a completion spec by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the completion spec to remove.
     pub fn remove(&mut self, name: &str) {
         match name {
             EMPTY_COMMAND => {
@@ -547,10 +600,16 @@ impl CompletionConfig {
         }
     }
 
+    /// Returns an iterator over the completion specs.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &CompletionSpec)> {
         self.commands.iter()
     }
 
+    /// If present, returns the completion spec for the command of the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
     pub fn get(&self, name: &str) -> Option<&CompletionSpec> {
         match name {
             EMPTY_COMMAND => self.empty_line.as_ref(),
@@ -560,6 +619,13 @@ impl CompletionConfig {
         }
     }
 
+    /// If present, sets the provided completion spec to be associated with the
+    /// command of the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
+    /// * `spec` - The completion spec to associate with the command.
     pub fn set(&mut self, name: &str, spec: CompletionSpec) {
         match name {
             EMPTY_COMMAND => {
@@ -577,6 +643,14 @@ impl CompletionConfig {
         }
     }
 
+    /// Returns a mutable reference to the completion spec for the command of the
+    /// given name; if the command already was associated with a spec, returns
+    /// a reference to that existing spec. Otherwise registers a new default
+    /// spec and returns a mutable reference to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
     pub fn get_or_add_mut(&mut self, name: &str) -> &mut CompletionSpec {
         match name {
             EMPTY_COMMAND => {
@@ -601,6 +675,13 @@ impl CompletionConfig {
         }
     }
 
+    /// Generates completions for the given input line and cursor position.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell instance to use for completion generation.
+    /// * `input` - The input line for which completions are being generated.
+    /// * `position` - The 0-based index of the cursor in the input line.
     #[allow(clippy::cast_sign_loss)]
     pub async fn get_completions(
         &self,

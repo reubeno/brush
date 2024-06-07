@@ -2,130 +2,175 @@ use crate::ast;
 use crate::error;
 use crate::ParserOptions;
 
+/// Represents a piece of a word.
 #[derive(Debug)]
 pub enum WordPiece {
+    /// A simple unquoted, unescaped string.
     Text(String),
+    /// A string that is single-quoted.
     SingleQuotedText(String),
+    /// A string that is ANSI-C quoted.
     AnsiCQuotedText(String),
+    /// A sequence of pieces that are embedded in double quotes.
     DoubleQuotedSequence(Vec<WordPiece>),
+    /// A tilde prefix.
     TildePrefix(String),
+    /// A parameter expansion.
     ParameterExpansion(ParameterExpr),
+    /// A command substitution.
     CommandSubstitution(String),
+    /// An escape sequence.
     EscapeSequence(String),
+    /// An arithmetic expression.
     ArithmeticExpression(ast::UnexpandedArithmeticExpr),
 }
 
+/// Type of a parameter test.
 #[derive(Debug)]
 pub enum ParameterTestType {
+    /// Check for unset or null.
     UnsetOrNull,
+    // Check for unset.
     Unset,
 }
 
+/// A parameter, used in a parameter expansion.
 #[derive(Debug)]
 pub enum Parameter {
+    /// A 0-indexed positional parameter.
     Positional(u32),
+    /// A special parameter.
     Special(SpecialParameter),
+    /// A named variable.
     Named(String),
+    /// An index into a named variable.
     NamedWithIndex { name: String, index: String },
+    /// A named array variable with all indices.
     NamedWithAllIndices { name: String, concatenate: bool },
 }
 
+/// A special parameter, used in a parameter expansion.
 #[derive(Debug)]
 pub enum SpecialParameter {
+    /// All positional parameters.
     AllPositionalParameters { concatenate: bool },
+    /// The count of positional parameters.
     PositionalParameterCount,
+    /// The last exit status in the shell.
     LastExitStatus,
+    /// The current shell option flags.
     CurrentOptionFlags,
+    /// The current shell process ID.
     ProcessId,
+    /// The last background process ID managed by the shell.
     LastBackgroundProcessId,
+    /// The name of the shell.
     ShellName,
 }
 
+/// A parameter expression, used in a parameter expansion.
 #[derive(Debug)]
 pub enum ParameterExpr {
+    /// A parameter, with optional indirection.
     Parameter {
         parameter: Parameter,
         indirect: bool,
     },
+    /// Conditionally use default values.
     UseDefaultValues {
         parameter: Parameter,
         indirect: bool,
         test_type: ParameterTestType,
         default_value: Option<String>,
     },
+    /// Conditionally assign default values.
     AssignDefaultValues {
         parameter: Parameter,
         indirect: bool,
         test_type: ParameterTestType,
         default_value: Option<String>,
     },
+    /// Indicate error if null or unset.
     IndicateErrorIfNullOrUnset {
         parameter: Parameter,
         indirect: bool,
         test_type: ParameterTestType,
         error_message: Option<String>,
     },
+    /// Conditionally use an alternative value.
     UseAlternativeValue {
         parameter: Parameter,
         indirect: bool,
         test_type: ParameterTestType,
         alternative_value: Option<String>,
     },
+    /// Compute the length of the given parameter.
     ParameterLength {
         parameter: Parameter,
         indirect: bool,
     },
+    /// Remove the smallest suffix from the given string matching the given pattern.
     RemoveSmallestSuffixPattern {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Remove the largest suffix from the given string matching the given pattern.
     RemoveLargestSuffixPattern {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Remove the smallest prefix from the given string matching the given pattern.
     RemoveSmallestPrefixPattern {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Remove the largest prefix from the given string matching the given pattern.
     RemoveLargestPrefixPattern {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Extract a substring from the given parameter.
     Substring {
         parameter: Parameter,
         indirect: bool,
         offset: ast::UnexpandedArithmeticExpr,
         length: Option<ast::UnexpandedArithmeticExpr>,
     },
+    /// Transform the given parameter.
     Transform {
         parameter: Parameter,
         indirect: bool,
         op: ParameterTransformOp,
     },
+    /// Uppercase the first character of the given parameter.
     UppercaseFirstChar {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Uppercase the portion of the given parameter matching the given pattern.
     UppercasePattern {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Lowercase the first character of the given parameter.
     LowercaseFirstChar {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Lowercase the portion of the given parameter matching the given pattern.
     LowercasePattern {
         parameter: Parameter,
         indirect: bool,
         pattern: Option<String>,
     },
+    /// Replace occurrences of the given pattern in the given parameter.
     ReplaceSubstring {
         parameter: Parameter,
         indirect: bool,
@@ -133,37 +178,57 @@ pub enum ParameterExpr {
         replacement: String,
         match_kind: SubstringMatchKind,
     },
-    VariableNames {
-        prefix: String,
-        concatenate: bool,
-    },
+    /// Select variable names from the environment with a given prefix.
+    VariableNames { prefix: String, concatenate: bool },
+    /// Select member keys from the named array.
     MemberKeys {
         variable_name: String,
         concatenate: bool,
     },
 }
 
+/// Kind of substring match.
 #[derive(Debug)]
 pub enum SubstringMatchKind {
+    /// Match the prefix of the string.
     Prefix,
+    /// Match the suffix of the string.
     Suffix,
+    /// Match the first occurrence in the string.
     FirstOccurrence,
+    /// Match all instances in the string.
     Anywhere,
 }
 
+/// Kind of operation to apply to a parameter.
 #[derive(Debug)]
 pub enum ParameterTransformOp {
+    /// Capitalizate initials.
     CapitalizeInitial,
+    /// Expand escape sequences.
     ExpandEscapeSequences,
+    /// Possibly quote with arrays expanded.
     PossiblyQuoteWithArraysExpanded { separate_words: bool },
+    /// Apply prompt expansion.
     PromptExpand,
+    /// Quote the parameter.
     Quoted,
+    /// Translate to a format usable in an assignment/declaration.
     ToAssignmentLogic,
+    /// Translate to the parameter's attribute flags.
     ToAttributeFlags,
+    /// Translate to lowercase.
     ToLowerCase,
+    /// Translate to uppercase.
     ToUpperCase,
 }
 
+/// Parse a word into its constituent pieces.
+///
+/// # Arguments
+///
+/// * `word` - The word to parse.
+/// * `options` - The parser options to use.
 pub fn parse_word_for_expansion(
     word: &str,
     options: &ParserOptions,
@@ -178,6 +243,12 @@ pub fn parse_word_for_expansion(
     Ok(pieces)
 }
 
+/// Parse the given word into a parameter expression.
+///
+/// # Arguments
+///
+/// * `word` - The word to parse.
+/// * `options` - The parser options to use.
 pub fn parse_parameter(
     word: &str,
     options: &ParserOptions,

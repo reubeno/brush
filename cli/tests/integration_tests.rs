@@ -1,3 +1,5 @@
+//! The test harness for brush shell integration tests.
+
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
 use clap::Parser;

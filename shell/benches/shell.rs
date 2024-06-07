@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 #[cfg(unix)]
 mod unix {
     use criterion::{black_box, Criterion};
@@ -48,6 +50,7 @@ mod unix {
             .unwrap()
     }
 
+    /// This function defines core shell benchmarks.
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
         c.bench_function("instantiate_shell", |b| {
             b.to_async(tokio()).iter(|| black_box(instantiate_shell()));

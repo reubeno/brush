@@ -18,12 +18,18 @@ use crate::variables::{
 };
 use crate::{builtin, context, error, expansion, extendedtests, jobs, openfiles, traps};
 
+/// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
 pub struct ExecutionResult {
+    /// The numerical exit code of the command.
     pub exit_code: u8,
+    /// Whether the shell should exit after this command.
     pub exit_shell: bool,
+    /// Whether the shell should return from the current function or script.
     pub return_from_function_or_script: bool,
+    /// If the command was executed in a loop, this is the number of levels to break out of.
     pub break_loop: Option<u8>,
+    /// If the command was executed in a loop, this is the number of levels to continue.
     pub continue_loop: Option<u8>,
 }
 
@@ -46,6 +52,10 @@ impl From<std::process::Output> for ExecutionResult {
 }
 
 impl ExecutionResult {
+    /// Returns a new `ExecutionResult` with the given exit code.
+    ///
+    /// # Parameters
+    /// - `exit_code` - The exit code of the command.
     pub fn new(exit_code: u8) -> ExecutionResult {
         ExecutionResult {
             exit_code,
@@ -53,25 +63,36 @@ impl ExecutionResult {
         }
     }
 
+    /// Returns a new `ExecutionResult` with an exit code of 0.
     pub fn success() -> ExecutionResult {
         Self::new(0)
     }
 
+    /// Returns whether the command was successful.
     pub fn is_success(&self) -> bool {
         self.exit_code == 0
     }
 }
 
+/// Represents the result of spawning a command.
 pub(crate) enum SpawnResult {
+    /// The child process was spawned.
     SpawnedChild(process::Child),
+    /// The command immediatedly exited with the given numeric exit code.
     ImmediateExit(u8),
+    /// The shell should exit after this command, yielding the given numeric exit code.
     ExitShell(u8),
+    /// The shell should return from the current function or script, yielding the given numeric exit code.
     ReturnFromFunctionOrScript(u8),
+    /// The shell should break out of the containing loop, identified by the given depth count.
     BreakLoop(u8),
+    /// The shell should continue the containing loop, identified by the given depth count.
     ContinueLoop(u8),
 }
 
+/// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
+    /// The shell in which the command is being executed.
     shell: &'a mut Shell,
 
     current_pipeline_index: usize,
@@ -81,8 +102,10 @@ struct PipelineExecutionContext<'a> {
     params: ExecutionParameters,
 }
 
+/// Parameters for execution.
 #[derive(Clone, Default)]
 pub struct ExecutionParameters {
+    /// The open files tracked by the current context.
     pub open_files: openfiles::OpenFiles,
 }
 

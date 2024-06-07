@@ -9,9 +9,13 @@ use crate::{
     Shell,
 };
 
+/// An argument to a command.
 #[derive(Clone, Debug)]
 pub enum CommandArg {
+    /// A simple string argument.
     String(String),
+    /// An assignment/declaration; typically treated as a string, but will
+    /// be specially handled by a limited set of built-in commands.
     Assignment(ast::Assignment),
 }
 

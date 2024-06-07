@@ -16,10 +16,14 @@ pub(crate) enum TokenEndReason {
     Other,
 }
 
+/// Represents a position in a source shell script.
 #[derive(Clone, Default, Debug)]
 pub struct SourcePosition {
+    /// The 0-based index of the character in the input stream.
     pub index: i32,
+    /// The 1-based line number.
     pub line: i32,
+    /// The 1-based column number.
     pub column: i32,
 }
 
@@ -29,15 +33,21 @@ impl Display for SourcePosition {
     }
 }
 
+/// Represents the location of a token in its source shell script.
 #[derive(Clone, Default, Debug)]
 pub struct TokenLocation {
+    /// The start position of the token.
     pub start: SourcePosition,
+    /// The end position of the token (exclusive).
     pub end: SourcePosition,
 }
 
+/// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
 pub enum Token {
+    /// An operator token.
     Operator(String, TokenLocation),
+    /// A word token.
     Word(String, TokenLocation),
 }
 
@@ -57,44 +67,59 @@ impl Token {
     }
 }
 
+/// Encapsulates the result of tokenizing a shell script.
 #[derive(Clone, Debug)]
 pub(crate) struct TokenizeResult {
+    /// Reason for tokenization ending.
     pub reason: TokenEndReason,
+    /// The token that was extracted, if any.
     pub token: Option<Token>,
 }
 
+/// Represents an error that occurred during tokenization.
 #[derive(thiserror::Error, Debug)]
 pub enum TokenizerError {
+    /// An unterminated escape sequence was encountered at the end of the input stream.
     #[error("unterminated escape sequence")]
     UnterminatedEscapeSequence,
 
+    /// An unterminated single-quoted substring was encountered at the end of the input stream.
     #[error("unterminated single quote at {0}")]
     UnterminatedSingleQuote(SourcePosition),
 
+    /// An unterminated double-quoted substring was encountered at the end of the input stream.
     #[error("unterminated double quote at {0}")]
     UnterminatedDoubleQuote(SourcePosition),
 
+    /// An unterminated back-quoted substring was encountered at the end of the input stream.
     #[error("unterminated backquote near {0}")]
     UnterminatedBackquote(SourcePosition),
 
+    /// An unterminated extended glob (extglob) pattern was encountered at the end of the input stream.
     #[error("unterminated extglob near {0}")]
     UnterminatedExtendedGlob(SourcePosition),
 
+    /// An error occurred decoding UTF-8 characters in the input stream.
     #[error("failed to decode UTF-8 characters")]
     FailedDecoding,
 
+    /// An I/O here tag was missing.
     #[error("missing here tag for here document body")]
     MissingHereTagForDocumentBody,
 
+    /// The indicated I/O here tag was missing.
     #[error("missing here tag '{0}'")]
     MissingHereTag(String),
 
+    /// An unterminated here document sequence was encountered at the end of the input stream.
     #[error("unterminated here document sequence; tag(s) found at: [{0}]")]
     UnterminatedHereDocuments(String),
 
+    /// An I/O error occurred while reading from the input stream.
     #[error("failed to read input")]
     ReadError(#[from] std::io::Error),
 
+    /// An unimplemented tokenization feature was encountered.
     #[error("unimplemented tokenization: {0}")]
     Unimplemented(&'static str),
 }
@@ -113,8 +138,10 @@ impl TokenizerError {
     }
 }
 
+/// Encapsulates a sequence of tokens.
 #[derive(Debug)]
 pub(crate) struct Tokens<'a> {
+    /// Sequence of tokens.
     pub tokens: &'a [Token],
 }
 
@@ -163,9 +190,12 @@ struct CrossTokenParseState {
     arithmetic_expansion: bool,
 }
 
+/// Options controlling how the tokenizer operates.
 #[derive(Clone, Debug)]
 pub struct TokenizerOptions {
+    /// Whether or not to enable extended globbing patterns (extglob).
     pub enable_extended_globbing: bool,
+    /// Whether or not to operate in POSIX compliance mode.
     pub posix_mode: bool,
 }
 
@@ -178,12 +208,14 @@ impl Default for TokenizerOptions {
     }
 }
 
+/// A tokenizer for shell scripts.
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
     char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
     cross_state: CrossTokenParseState,
     options: TokenizerOptions,
 }
 
+/// Encapsulates the current token parsing state.
 #[derive(Clone, Debug)]
 struct TokenParseState {
     pub start_position: SourcePosition,
@@ -348,6 +380,11 @@ impl TokenParseState {
     }
 }
 
+/// Break the given input shell script string into tokens, returning the tokens.
+///
+/// # Arguments
+///
+/// * `input` - The shell script to tokenize.
 pub fn tokenize_str(input: &str) -> Result<Vec<Token>, TokenizerError> {
     let mut reader = std::io::BufReader::new(input.as_bytes());
     let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &TokenizerOptions::default());

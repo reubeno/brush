@@ -2,9 +2,12 @@ use std::borrow::Cow;
 
 use crate::error;
 
+/// Represents a piece of a regular expression.
 #[derive(Clone, Debug)]
 pub(crate) enum RegexPiece {
+    /// A pattern that should be interpreted as a regular expression.
     Pattern(String),
+    /// A literal string that should be matched exactly.
     Literal(String),
 }
 
@@ -19,6 +22,7 @@ impl RegexPiece {
 
 type RegexWord = Vec<RegexPiece>;
 
+/// Encapsulates a regular expression usable in the shell.
 #[derive(Clone, Debug)]
 pub struct Regex {
     pieces: RegexWord,
@@ -31,6 +35,11 @@ impl From<RegexWord> for Regex {
 }
 
 impl Regex {
+    /// Computes if the regular expression matches the given string.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The string to check for a match.
     pub fn matches(&self, value: &str) -> Result<Option<Vec<Option<String>>>, error::Error> {
         let regex_pattern: String = self
             .pieces

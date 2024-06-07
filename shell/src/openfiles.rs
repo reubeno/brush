@@ -9,18 +9,28 @@ use std::process::Stdio;
 
 use crate::error;
 
+/// Represents a file open in a shell context.
 pub enum OpenFile {
+    /// The original standard input this process was started with.
     Stdin,
+    /// The original standard output this process was started with.
     Stdout,
+    /// The original standard error this process was started with.
     Stderr,
+    /// A null file that discards all input.
     Null,
+    /// A file open for reading or writing.
     File(std::fs::File),
+    /// A read end of a pipe.
     PipeReader(os_pipe::PipeReader),
+    /// A write end of a pipe.
     PipeWriter(os_pipe::PipeWriter),
+    /// A here document.
     HereDocument(String),
 }
 
 impl OpenFile {
+    /// Tries to duplicate the open file.
     pub fn try_dup(&self) -> Result<OpenFile, error::Error> {
         let result = match self {
             OpenFile::Stdin => OpenFile::Stdin,
@@ -36,6 +46,7 @@ impl OpenFile {
         Ok(result)
     }
 
+    /// Converts the open file into an `OwnedFd`.
     #[cfg(unix)]
     pub(crate) fn into_owned_fd(self) -> Result<std::os::fd::OwnedFd, error::Error> {
         match self {
@@ -50,6 +61,7 @@ impl OpenFile {
         }
     }
 
+    /// Retrieves the raw file descriptor for the open file.
     #[cfg(unix)]
     #[allow(dead_code)]
     pub(crate) fn as_raw_fd(&self) -> Result<i32, error::Error> {
@@ -138,7 +150,9 @@ impl std::io::Write for OpenFile {
     }
 }
 
+/// Represents the open files in a shell context.
 pub struct OpenFiles {
+    /// Maps shell file descriptors to open files.
     pub files: HashMap<u32, OpenFile>,
 }
 
@@ -161,6 +175,7 @@ impl Default for OpenFiles {
 }
 
 impl OpenFiles {
+    /// Tries to clone the open files.
     pub fn try_clone(&self) -> Result<OpenFiles, error::Error> {
         let mut files = HashMap::new();
         for (fd, file) in &self.files {

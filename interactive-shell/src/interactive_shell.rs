@@ -7,25 +7,36 @@ use std::{
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
+/// Options for creating an interactive shell.
 pub struct Options {
+    /// Lower-level options for creating the shell.
     pub shell: shell::CreateOptions,
+    /// Whether to disable bracketed paste mode.
     pub disable_bracketed_paste: bool,
 }
 
+/// Represents an interactive shell capable of taking commands from standard input
+/// and reporting results to standard output and standard error streams.
 pub struct InteractiveShell {
+    /// The `rustyline` editor.
     editor: Editor,
+    /// Optional path to the history file used for the shell.
     history_file_path: Option<PathBuf>,
 }
 
+/// Represents an error encountered while running or otherwise managing an interactive shell.
 #[allow(clippy::module_name_repetitions)]
 #[derive(thiserror::Error, Debug)]
 pub enum InteractiveShellError {
+    /// An error occurred with the embedded shell.
     #[error("{0}")]
     ShellError(#[from] shell::Error),
 
+    /// A generic I/O error occurred.
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 
+    /// An error occurred while reading input.
     #[error("input error: {0}")]
     ReadlineError(#[from] rustyline::error::ReadlineError),
 }
@@ -37,6 +48,11 @@ enum InteractiveExecutionResult {
 }
 
 impl InteractiveShell {
+    /// Returns a new interactive shell instance, created with the provided options.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Options for creating the interactive shell.
     pub async fn new(options: &Options) -> Result<InteractiveShell, InteractiveShellError> {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
@@ -58,10 +74,12 @@ impl InteractiveShell {
         })
     }
 
+    /// Returns an immutable reference to the inner shell object.
     pub fn shell(&self) -> &shell::Shell {
         &self.editor.helper().unwrap().shell
     }
 
+    /// Returns a mutable reference to the inner shell object.
     pub fn shell_mut(&mut self) -> &mut shell::Shell {
         &mut self.editor.helper_mut().unwrap().shell
     }
@@ -82,6 +100,9 @@ impl InteractiveShell {
         Ok(editor)
     }
 
+    /// Runs the interactive shell loop, reading commands from standard input and writing
+    /// results to standard output and standard error. Continues until the shell
+    /// normally exits or until a fatal error occurs.
     pub async fn run_interactively(&mut self) -> Result<(), InteractiveShellError> {
         loop {
             // Check for any completed jobs.

@@ -4,8 +4,10 @@ use crate::tokenizer;
 
 const DISPLAY_INDENT: &str = "    ";
 
+/// Represents a complete shell program.
 #[derive(Clone, Debug)]
 pub struct Program {
+    /// A sequence of complete shell commands.
     pub complete_commands: Vec<CompleteCommand>,
 }
 
@@ -18,12 +20,18 @@ impl Display for Program {
     }
 }
 
+/// Represents a complete shell command.
 pub type CompleteCommand = CompoundList;
+
+/// Represents a complete shell command item.
 pub type CompleteCommandItem = CompoundListItem;
 
+/// Indicates whether the preceding command is executed synchronously or asynchronously.
 #[derive(Clone, Debug)]
 pub enum SeparatorOperator {
+    /// The preceding command is executed asynchronously.
     Async,
+    /// The preceding command is executed synchronously.
     Sequence,
 }
 
@@ -36,9 +44,12 @@ impl Display for SeparatorOperator {
     }
 }
 
+/// Represents a sequence of command pipelines connected by boolean operators.
 #[derive(Clone, Debug)]
 pub struct AndOrList {
+    /// The first command pipeline.
     pub first: Pipeline,
+    /// Any additional command pipelines, in sequence order.
     pub additional: Vec<AndOr>,
 }
 
@@ -53,9 +64,15 @@ impl Display for AndOrList {
     }
 }
 
+/// Represents a boolean operator used to connect command pipelines, along with the
+/// succeeding pipeline.
 #[derive(Clone, Debug)]
 pub enum AndOr {
+    /// Boolean AND operator; the embedded pipeline is only to be executed if the
+    /// preceding command has succeeded.
     And(Pipeline),
+    /// Boolean OR operator; the embedded pipeline is only to be executed if the
+    /// preceding command has not succeeded.
     Or(Pipeline),
 }
 
@@ -68,9 +85,14 @@ impl Display for AndOr {
     }
 }
 
+/// A pipeline of commands, where each command's output is passed as standard input
+/// to the command that follows it.
 #[derive(Clone, Debug)]
 pub struct Pipeline {
+    /// Indicates whether the result of the overall pipeline should be the logical
+    /// negation of the result of the pipeline.
     pub bang: bool,
+    /// The sequence of commands in the pipeline.
     pub seq: Vec<Command>,
 }
 
@@ -90,11 +112,17 @@ impl Display for Pipeline {
     }
 }
 
+/// Represents a shell command.
 #[derive(Clone, Debug)]
 pub enum Command {
+    /// A simple command, directly invoking an external command, a built-in command,
+    /// a shell function, or similar.
     Simple(SimpleCommand),
+    /// A compound command, composed of multiple commands.
     Compound(CompoundCommand, Option<RedirectList>),
+    /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
+    /// A command that evaluates an extended test expression.
     ExtendedTest(ExtendedTestExpr),
 }
 
@@ -117,16 +145,27 @@ impl Display for Command {
     }
 }
 
+/// Represents a compound command, potentially made up of multiple nested commands.
 #[derive(Clone, Debug)]
 pub enum CompoundCommand {
+    /// An arithmetic command, evaluating an arithmetic expression.
     Arithmetic(ArithmeticCommand),
+    /// An arithmetic for clause, which loops until an arithmetic condition is reached.
     ArithmeticForClause(ArithmeticForClauseCommand),
+    /// A brace group, which groups commands together.
     BraceGroup(BraceGroupCommand),
+    /// A subshell, which executes commands in a subshell.
     Subshell(SubshellCommand),
+    /// A for clause, which loops over a set of values.
     ForClause(ForClauseCommand),
+    /// A case clause, which selects a command based on a value and a set of
+    /// pattern-based filters.
     CaseClause(CaseClauseCommand),
+    /// An if clause, which conditionally executes a command.
     IfClause(IfClauseCommand),
+    /// A while clause, which loops while a condition is met.
     WhileClause(WhileOrUntilClauseCommand),
+    /// An until clause, which loops until a condition is met.
     UntilClause(WhileOrUntilClauseCommand),
 }
 
@@ -156,8 +195,10 @@ impl Display for CompoundCommand {
     }
 }
 
+/// An arithmetic command, evaluating an arithmetic expression.
 #[derive(Clone, Debug)]
 pub struct ArithmeticCommand {
+    /// The raw, unparsed and unexpanded arithmetic expression.
     pub expr: UnexpandedArithmeticExpr,
 }
 
@@ -167,6 +208,7 @@ impl Display for ArithmeticCommand {
     }
 }
 
+/// A subshell, which executes commands in a subshell.
 #[derive(Clone, Debug)]
 pub struct SubshellCommand(pub CompoundList);
 
@@ -178,10 +220,14 @@ impl Display for SubshellCommand {
     }
 }
 
+/// A for clause, which loops over a set of values.
 #[derive(Clone, Debug)]
 pub struct ForClauseCommand {
+    /// The name of the iterator variable.
     pub variable_name: String,
+    /// The values being iterated over.
     pub values: Option<Vec<Word>>,
+    /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
 }
 
@@ -205,11 +251,16 @@ impl Display for ForClauseCommand {
     }
 }
 
+/// An arithmetic for clause, which loops until an arithmetic condition is reached.
 #[derive(Clone, Debug)]
 pub struct ArithmeticForClauseCommand {
+    /// Optionally, the initializer expression evaluated before the first iteration of the loop.
     pub initializer: Option<UnexpandedArithmeticExpr>,
+    /// Optionally, the expression evaluated as the exit condition of the loop.
     pub condition: Option<UnexpandedArithmeticExpr>,
+    /// Optionally, the expression evaluated after each iteration of the loop.
     pub updater: Option<UnexpandedArithmeticExpr>,
+    /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
 }
 
@@ -239,9 +290,13 @@ impl Display for ArithmeticForClauseCommand {
     }
 }
 
+/// A case clause, which selects a command based on a value and a set of
+/// pattern-based filters.
 #[derive(Clone, Debug)]
 pub struct CaseClauseCommand {
+    /// The value being matched on.
     pub value: Word,
+    /// The individual case branches.
     pub cases: Vec<CaseItem>,
 }
 
@@ -256,6 +311,7 @@ impl Display for CaseClauseCommand {
     }
 }
 
+/// A sequence of commands.
 #[derive(Clone, Debug)]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
@@ -281,6 +337,7 @@ impl Display for CompoundList {
     }
 }
 
+/// An element of a compound command list.
 #[derive(Clone, Debug)]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
@@ -292,10 +349,14 @@ impl Display for CompoundListItem {
     }
 }
 
+/// An if clause, which conditionally executes a command.
 #[derive(Clone, Debug)]
 pub struct IfClauseCommand {
+    /// The command whose execution result is inspected.
     pub condition: CompoundList,
+    /// The command to execute if the condition is true.
     pub then: CompoundList,
+    /// Optionally, `else` clauses that will be evaluated if the condition is false.
     pub elses: Option<Vec<ElseClause>>,
 }
 
@@ -320,9 +381,12 @@ impl Display for IfClauseCommand {
     }
 }
 
+/// Represents the `else` clause of a conditional command.
 #[derive(Clone, Debug)]
 pub struct ElseClause {
+    /// If present, the condition that must be met for this `else` clause to be executed.
     pub condition: Option<CompoundList>,
+    /// The commands to execute if this `else` clause is selected.
     pub body: CompoundList,
 }
 
@@ -343,9 +407,12 @@ impl Display for ElseClause {
     }
 }
 
+/// An individual matching case item in a case clause.
 #[derive(Clone, Debug)]
 pub struct CaseItem {
+    /// The patterns that select this case branch.
     pub patterns: Vec<Word>,
+    /// The commands to execute if this case branch is selected.
     pub cmd: Option<CompoundList>,
 }
 
@@ -368,6 +435,7 @@ impl Display for CaseItem {
     }
 }
 
+/// A while or until clause, whose looping is controlled by a condition.
 #[derive(Clone, Debug)]
 pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand);
 
@@ -377,10 +445,14 @@ impl Display for WhileOrUntilClauseCommand {
     }
 }
 
+/// Encapsulates the definition of a shell function.
 #[derive(Clone, Debug)]
 pub struct FunctionDefinition {
+    /// The name of the function.
     pub fname: String,
+    /// The body of the function.
     pub body: FunctionBody,
+    /// The source of the function definition.
     pub source: String,
 }
 
@@ -392,6 +464,7 @@ impl Display for FunctionDefinition {
     }
 }
 
+/// Encapsulates the body of a function definition.
 #[derive(Clone, Debug)]
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
 
@@ -406,6 +479,7 @@ impl Display for FunctionBody {
     }
 }
 
+/// A brace group, which groups commands together.
 #[derive(Clone, Debug)]
 pub struct BraceGroupCommand(pub CompoundList);
 
@@ -420,6 +494,7 @@ impl Display for BraceGroupCommand {
     }
 }
 
+/// A do group, which groups commands together.
 #[derive(Clone, Debug)]
 pub struct DoGroupCommand(pub CompoundList);
 
@@ -432,10 +507,14 @@ impl Display for DoGroupCommand {
     }
 }
 
+/// Represents the invocation of a simple command.
 #[derive(Clone, Debug)]
 pub struct SimpleCommand {
+    /// Optionally, a prefix to the command.
     pub prefix: Option<CommandPrefix>,
+    /// The name of the command to execute.
     pub word_or_name: Option<Word>,
+    /// Optionally, a suffix to the command.
     pub suffix: Option<CommandSuffix>,
 }
 
@@ -473,6 +552,7 @@ impl Display for SimpleCommand {
     }
 }
 
+/// Represents a prefix to a simple command.
 #[derive(Clone, Debug, Default)]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
@@ -489,6 +569,7 @@ impl Display for CommandPrefix {
     }
 }
 
+/// Represents a suffix to a simple command; a word argument, declaration, or I/O redirection.
 #[derive(Clone, Default, Debug)]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
@@ -505,10 +586,14 @@ impl Display for CommandSuffix {
     }
 }
 
+/// A prefix or suffix for a simple command.
 #[derive(Clone, Debug)]
 pub enum CommandPrefixOrSuffixItem {
+    /// An I/O redirection.
     IoRedirect(IoRedirect),
+    /// A word.
     Word(Word),
+    /// An assignment/declaration word.
     AssignmentWord(Assignment, Word),
 }
 
@@ -522,10 +607,14 @@ impl Display for CommandPrefixOrSuffixItem {
     }
 }
 
+/// Encapsulates an assignment declaration.
 #[derive(Clone, Debug)]
 pub struct Assignment {
+    /// Name being assigned to.
     pub name: AssignmentName,
+    /// Value being assigned.
     pub value: AssignmentValue,
+    /// Whether or not to append to the preexisting value associated with the named variable.
     pub append: bool,
 }
 
@@ -539,9 +628,12 @@ impl Display for Assignment {
     }
 }
 
+/// The target of an assignment.
 #[derive(Clone, Debug)]
 pub enum AssignmentName {
+    /// A named variable.
     VariableName(String),
+    /// An element in a named array.
     ArrayElementName(String, String),
 }
 
@@ -556,9 +648,12 @@ impl Display for AssignmentName {
     }
 }
 
+/// A value being assigned to a variable.
 #[derive(Clone, Debug)]
 pub enum AssignmentValue {
+    /// A scalar (word) value.
     Scalar(Word),
+    /// An array of elements.
     Array(Vec<(Option<Word>, Word)>),
 }
 
@@ -583,6 +678,7 @@ impl Display for AssignmentValue {
     }
 }
 
+/// A list of I/O redirections to be applied to a command.
 #[derive(Clone, Debug)]
 pub struct RedirectList(pub Vec<IoRedirect>);
 
@@ -595,11 +691,16 @@ impl Display for RedirectList {
     }
 }
 
+/// An I/O redirection.
 #[derive(Clone, Debug)]
 pub enum IoRedirect {
+    /// Redirection to a file.
     File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
+    /// Redirection from a here-document.
     HereDocument(Option<u32>, IoHereDocument),
+    /// Redirection from a here-string.
     HereString(Option<u32>, Word),
+    /// Redirection of both standard output and standard error.
     OutputAndError(Word),
 }
 
@@ -651,14 +752,22 @@ impl Display for IoRedirect {
     }
 }
 
+/// Kind of file I/O redirection.
 #[derive(Clone, Debug)]
 pub enum IoFileRedirectKind {
+    /// Read (`<`).
     Read,
+    /// Write (`>`).
     Write,
+    /// Append (`>>`).
     Append,
+    /// Read and write (`<>`).
     ReadAndWrite,
+    /// Clobber (`>|`).
     Clobber,
+    /// Duplicate input (`<&`).
     DuplicateInput,
+    /// Duplicate output (`>&`).
     DuplicateOutput,
 }
 
@@ -676,10 +785,15 @@ impl Display for IoFileRedirectKind {
     }
 }
 
+/// Target for an I/O file redirection.
 #[derive(Clone, Debug)]
 pub enum IoFileRedirectTarget {
+    /// Path to a file.
     Filename(Word),
+    /// File descriptor number.
     Fd(u32),
+    /// Process substitution: substitution with the results of executing the given
+    /// command in a subshell.
     ProcessSubstitution(SubshellCommand),
 }
 
@@ -695,22 +809,35 @@ impl Display for IoFileRedirectTarget {
     }
 }
 
+/// Represents an I/O here document.
 #[derive(Clone, Debug)]
 pub struct IoHereDocument {
+    /// Whether to remove leading tabs from the here document.
     pub remove_tabs: bool,
+    /// The delimiter marking the end of the here document.
     pub here_end: Word,
+    /// The contents of the here document.
     pub doc: Word,
 }
 
+/// A (non-extended) test expression.
 #[derive(Clone, Debug)]
 pub enum TestExpr {
+    /// Always evaluates to false.
     False,
+    /// A literal string.
     Literal(String),
+    /// Logical AND operation on two nested expressions.
     And(Box<TestExpr>, Box<TestExpr>),
+    /// Logical OR operation on two nested expressions.
     Or(Box<TestExpr>, Box<TestExpr>),
+    /// Logical NOT operation on a nested expression.
     Not(Box<TestExpr>),
+    /// A parenthesized expression.
     Parenthesized(Box<TestExpr>),
+    /// A unary test operation.
     UnaryTest(UnaryPredicate, String),
+    /// A binary test operation.
     BinaryTest(BinaryPredicate, String, String),
 }
 
@@ -729,13 +856,20 @@ impl Display for TestExpr {
     }
 }
 
+/// An extended test expression.
 #[derive(Clone, Debug)]
 pub enum ExtendedTestExpr {
+    /// Logical AND operation on two nested expressions.
     And(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
+    /// Logical OR operation on two nested expressions.
     Or(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
+    /// Logical NOT operation on a nested expression.
     Not(Box<ExtendedTestExpr>),
+    /// A parenthesized expression.
     Parenthesized(Box<ExtendedTestExpr>),
+    /// A unary test operation.
     UnaryTest(UnaryPredicate, Word),
+    /// A binary test operation.
     BinaryTest(BinaryPredicate, Word, Word),
 }
 
@@ -764,31 +898,56 @@ impl Display for ExtendedTestExpr {
     }
 }
 
+/// A unary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
 pub enum UnaryPredicate {
+    /// Computes if the operand is a path to an existing file.
     FileExists,
+    /// Computes if the operand is a path to an existing block device file.
     FileExistsAndIsBlockSpecialFile,
+    /// Computes if the operand is a path to an existing character device file.
     FileExistsAndIsCharSpecialFile,
+    /// Computes if the operand is a path to an existing directory.
     FileExistsAndIsDir,
+    /// Computes if the operand is a path to an existing regular file.
     FileExistsAndIsRegularFile,
+    /// Computes if the operand is a path to an existing file with the setgid bit set.
     FileExistsAndIsSetgid,
+    /// Computes if the operand is a path to an existing symbolic link.
     FileExistsAndIsSymlink,
+    /// Computes if the operand is a path to an existing file with the sticky bit set.
     FileExistsAndHasStickyBit,
+    /// Computes if the operand is a path to an existing FIFO file.
     FileExistsAndIsFifo,
+    /// Computes if the operand is a path to an existing file that is readable.
     FileExistsAndIsReadable,
+    /// Computes if the operand is a path to an existing file with a non-zero length.
     FileExistsAndIsNotZeroLength,
+    /// Computes if the operand is a file descriptor that is an open terminal.
     FdIsOpenTerminal,
+    /// Computes if the operand is a path to an existing file with the setuid bit set.
     FileExistsAndIsSetuid,
+    /// Computes if the operand is a path to an existing file that is writable.
     FileExistsAndIsWritable,
+    /// Computes if the operand is a path to an existing file that is executable.
     FileExistsAndIsExecutable,
+    /// Computes if the operand is a path to an existing file owned by the current context's effective group ID.
     FileExistsAndOwnedByEffectiveGroupId,
+    /// Computes if the operand is a path to an existing file that has been modified since last being read.
     FileExistsAndModifiedSinceLastRead,
+    /// Computes if the operand is a path to an existing file owned by the current context's effective user ID.
     FileExistsAndOwnedByEffectiveUserId,
+    /// Computes if the operand is a path to an existing socket file.
     FileExistsAndIsSocket,
+    /// Computes if the operand is a 'set -o' option that is enabled.
     ShellOptionEnabled,
+    /// Computes if the operand names a shell variable that is set and assigned a value.
     ShellVariableIsSetAndAssigned,
+    /// Computes if the operand names a shell variable that is set and of nameref type.
     ShellVariableIsSetAndNameRef,
+    /// Computes if the operand is a string with zero length.
     StringHasZeroLength,
+    /// Computes if the operand is a string with non-zero length.
     StringHasNonZeroLength,
 }
 
@@ -823,22 +982,38 @@ impl Display for UnaryPredicate {
     }
 }
 
+/// A binary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
 pub enum BinaryPredicate {
+    /// Computes if two files refer to the same device and inode numbers.
     FilesReferToSameDeviceAndInodeNumbers,
+    /// Computes if the left file is newer than the right, or exists when the right does not.
     LeftFileIsNewerOrExistsWhenRightDoesNot,
+    /// Computes if the left file is older than the right, or does not exist when the right does.
     LeftFileIsOlderOrDoesNotExistWhenRightDoes,
+    /// Computes if a string exactly matches a pattern.
     StringExactlyMatchesPattern,
+    /// Computes if a string does not exactly match a pattern.
     StringDoesNotExactlyMatchPattern,
+    /// Computes if a string matches a regular expression.
     StringMatchesRegex,
+    /// Computes if a string contains a substring.
     StringContainsSubstring,
+    /// Computes if the left value sorts before the right.
     LeftSortsBeforeRight,
+    /// Computes if the left value sorts after the right.
     LeftSortsAfterRight,
+    /// Computes if two values are equal via arithmetic comparison.
     ArithmeticEqualTo,
+    /// Computes if two values are not equal via arithmetic comparison.
     ArithmeticNotEqualTo,
+    /// Computes if the left value is less than the right via arithmetic comparison.
     ArithmeticLessThan,
+    /// Computes if the left value is less than or equal to the right via arithmetic comparison.
     ArithmeticLessThanOrEqualTo,
+    /// Computes if the left value is greater than the right via arithmetic comparison.
     ArithmeticGreaterThan,
+    /// Computes if the left value is greater than or equal to the right via arithmetic comparison.
     ArithmeticGreaterThanOrEqualTo,
 }
 
@@ -864,8 +1039,10 @@ impl Display for BinaryPredicate {
     }
 }
 
+/// Represents a shell word.
 #[derive(Clone, Debug)]
 pub struct Word {
+    /// Raw text of the word.
     pub value: String,
 }
 
@@ -889,19 +1066,23 @@ impl From<&tokenizer::Token> for Word {
 }
 
 impl Word {
+    /// Constructs a new `Word` from a given string.
     pub fn new(s: &str) -> Self {
         Self {
             value: s.to_owned(),
         }
     }
 
+    /// Returns the raw text of the word, consuming the `Word`.
     pub fn flatten(&self) -> String {
         self.value.clone()
     }
 }
 
+/// Encapsulates an unparsed arithmetic expression.
 #[derive(Clone, Debug)]
 pub struct UnexpandedArithmeticExpr {
+    /// The raw text of the expression.
     pub value: String,
 }
 
@@ -911,19 +1092,28 @@ impl Display for UnexpandedArithmeticExpr {
     }
 }
 
+/// An arithmetic expression.
 #[derive(Clone, Debug)]
 pub enum ArithmeticExpr {
+    /// A literal integer value.
     Literal(i64),
+    /// A dereference of a variable or array element.
     Reference(ArithmeticTarget),
+    /// A unary operation on an the result of a given nested expression.
     UnaryOp(UnaryOperator, Box<ArithmeticExpr>),
+    /// A binary operation on two nested expressions.
     BinaryOp(BinaryOperator, Box<ArithmeticExpr>, Box<ArithmeticExpr>),
+    /// A ternary conditional expression.
     Conditional(
         Box<ArithmeticExpr>,
         Box<ArithmeticExpr>,
         Box<ArithmeticExpr>,
     ),
+    /// An assignment operation.
     Assignment(ArithmeticTarget, Box<ArithmeticExpr>),
+    /// A binary assignment operation.
     BinaryAssignment(BinaryOperator, ArithmeticTarget, Box<ArithmeticExpr>),
+    /// A unary assignment operation.
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
 
@@ -957,27 +1147,48 @@ impl Display for ArithmeticExpr {
     }
 }
 
+/// A binary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
 pub enum BinaryOperator {
+    /// Exponentiation (e.g., `x ** y`).
     Power,
+    /// Multiplication (e.g., `x * y`).
     Multiply,
+    /// Division (e.g., `x / y`).
     Divide,
+    /// Modulo (e.g., `x % y`).
     Modulo,
+    /// Comma (e.g., `x, y`).
     Comma,
+    /// Addition (e.g., `x + y`).
     Add,
+    /// Subtraction (e.g., `x - y`).
     Subtract,
+    /// Bitwise left shift (e.g., `x << y`).
     ShiftLeft,
+    /// Bitwise right shift (e.g., `x >> y`).
     ShiftRight,
+    /// Less than (e.g., `x < y`).
     LessThan,
+    /// Less than or equal to (e.g., `x <= y`).
     LessThanOrEqualTo,
+    /// Greater than (e.g., `x > y`).
     GreaterThan,
+    /// Greater than or equal to (e.g., `x >= y`).
     GreaterThanOrEqualTo,
+    /// Equals (e.g., `x == y`).
     Equals,
+    /// Not equals (e.g., `x != y`).
     NotEquals,
+    /// Bitwise AND (e.g., `x & y`).
     BitwiseAnd,
+    /// Bitwise exclusive OR (xor) (e.g., `x ^ y`).
     BitwiseXor,
+    /// Bitwise OR (e.g., `x | y`).
     BitwiseOr,
+    /// Logical AND (e.g., `x && y`).
     LogicalAnd,
+    /// Logical OR (e.g., `x || y`).
     LogicalOr,
 }
 
@@ -1008,11 +1219,16 @@ impl Display for BinaryOperator {
     }
 }
 
+/// A unary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
 pub enum UnaryOperator {
+    /// Unary plus (e.g., `+x`).
     UnaryPlus,
+    /// Unary minus (e.g., `-x`).
     UnaryMinus,
+    /// Bitwise not (e.g., `~x`).
     BitwiseNot,
+    /// Logical not (e.g., `!x`).
     LogicalNot,
 }
 
@@ -1027,11 +1243,16 @@ impl Display for UnaryOperator {
     }
 }
 
+/// A unary arithmetic assignment operator.
 #[derive(Clone, Copy, Debug)]
 pub enum UnaryAssignmentOperator {
+    /// Prefix increment (e.g., `++x`).
     PrefixIncrement,
+    /// Prefix increment (e.g., `--x`).
     PrefixDecrement,
+    /// Postfix increment (e.g., `x++`).
     PostfixIncrement,
+    /// Postfix decrement (e.g., `x--`).
     PostfixDecrement,
 }
 
@@ -1046,9 +1267,12 @@ impl Display for UnaryAssignmentOperator {
     }
 }
 
+/// Identifies the target of an arithmetic assignment expression.
 #[derive(Clone, Debug)]
 pub enum ArithmeticTarget {
+    /// A named variable.
     Variable(String),
+    /// An element in an array.
     ArrayElement(String, Box<ArithmeticExpr>),
 }
 
