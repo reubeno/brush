@@ -4,8 +4,10 @@ use crate::tokenizer;
 
 const DISPLAY_INDENT: &str = "    ";
 
+/// Represents a complete shell program.
 #[derive(Clone, Debug)]
 pub struct Program {
+    /// A sequence of complete shell commands.
     pub complete_commands: Vec<CompleteCommand>,
 }
 
@@ -18,12 +20,18 @@ impl Display for Program {
     }
 }
 
+/// Represents a complete shell command.
 pub type CompleteCommand = CompoundList;
+
+/// Represents a complete shell command item.
 pub type CompleteCommandItem = CompoundListItem;
 
+/// Indicates whether the preceding command is executed synchronously or asynchronously.
 #[derive(Clone, Debug)]
 pub enum SeparatorOperator {
+    /// The preceding command is executed asynchronously.
     Async,
+    /// The preceding command is executed synchronously.
     Sequence,
 }
 
@@ -36,9 +44,12 @@ impl Display for SeparatorOperator {
     }
 }
 
+/// Represents a sequence of command pipelines connected by boolean operators.
 #[derive(Clone, Debug)]
 pub struct AndOrList {
+    /// The first command pipeline.
     pub first: Pipeline,
+    /// Any additional command pipelines, in sequence order.
     pub additional: Vec<AndOr>,
 }
 
@@ -53,9 +64,15 @@ impl Display for AndOrList {
     }
 }
 
+/// Represents a boolean operator used to connect command pipelines, along with the
+/// succeeding pipeline.
 #[derive(Clone, Debug)]
 pub enum AndOr {
+    /// Boolean AND operator; the embedded pipeline is only to be executed if the
+    /// preceding command has succeeded.
     And(Pipeline),
+    /// Boolean OR operator; the embedded pipeline is only to be executed if the
+    /// preceding command has not succeeded.
     Or(Pipeline),
 }
 
@@ -68,9 +85,14 @@ impl Display for AndOr {
     }
 }
 
+/// A pipeline of commands, where each command's output is passed as standard input
+/// to the command that follows it.
 #[derive(Clone, Debug)]
 pub struct Pipeline {
+    /// Indicates whether the result of the overall pipeline should be the logical
+    /// negation of the result of the pipeline.
     pub bang: bool,
+    /// The sequence of commands in the pipeline.
     pub seq: Vec<Command>,
 }
 
@@ -90,11 +112,17 @@ impl Display for Pipeline {
     }
 }
 
+/// Represents a shell command.
 #[derive(Clone, Debug)]
 pub enum Command {
+    /// A simple command, directly invoking an external command, a built-in command,
+    /// a shell function, or similar.
     Simple(SimpleCommand),
+    /// A compound command, composed of multiple commands.
     Compound(CompoundCommand, Option<RedirectList>),
+    /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
+    /// A command that evaluates an extended test expression.
     ExtendedTest(ExtendedTestExpr),
 }
 
@@ -117,16 +145,27 @@ impl Display for Command {
     }
 }
 
+/// Represents a compound command, potentially made up of multiple nested commands.
 #[derive(Clone, Debug)]
 pub enum CompoundCommand {
+    /// An arithmetic command, evaluating an arithmetic expression.
     Arithmetic(ArithmeticCommand),
+    /// An arithmetic for clause, which loops until an arithmetic condition is reached.
     ArithmeticForClause(ArithmeticForClauseCommand),
+    /// A brace group, which groups commands together.
     BraceGroup(BraceGroupCommand),
+    /// A subshell, which executes commands in a subshell.
     Subshell(SubshellCommand),
+    /// A for clause, which loops over a set of values.
     ForClause(ForClauseCommand),
+    /// A case clause, which selects a command based on a value and a set of
+    /// pattern-based filters.
     CaseClause(CaseClauseCommand),
+    /// An if clause, which conditionally executes a command.
     IfClause(IfClauseCommand),
+    /// A while clause, which loops while a condition is met.
     WhileClause(WhileOrUntilClauseCommand),
+    /// An until clause, which loops until a condition is met.
     UntilClause(WhileOrUntilClauseCommand),
 }
 
@@ -156,6 +195,7 @@ impl Display for CompoundCommand {
     }
 }
 
+/// An arithmetic command.
 #[derive(Clone, Debug)]
 pub struct ArithmeticCommand {
     pub expr: UnexpandedArithmeticExpr,
@@ -167,6 +207,7 @@ impl Display for ArithmeticCommand {
     }
 }
 
+/// A command that executes an embedded command in a subshell.
 #[derive(Clone, Debug)]
 pub struct SubshellCommand(pub CompoundList);
 
@@ -178,6 +219,7 @@ impl Display for SubshellCommand {
     }
 }
 
+/// Represents a command that loops over a set of values.
 #[derive(Clone, Debug)]
 pub struct ForClauseCommand {
     pub variable_name: String,

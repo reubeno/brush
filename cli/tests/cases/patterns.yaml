@@ -149,7 +149,6 @@ cases:
       test_pattern "ad" "+(ab|ac)"
 
   - name: "Pathname expansion: extglob disabled"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: "ab.txt"
@@ -159,23 +158,26 @@ cases:
       - path: "abadac.txt"
       - path: "fabadac.txt"
       - path: "f.txt"
+      - path: "script.sh"
+        contents: |
+          echo !(a*)
+          echo "result: $?"
+
+          echo @(abc|abd).txt
+          echo "result: $?"
+
+          echo ab?(c).txt
+          echo "result: $?"
+
+          echo *(ab|ad|ac).txt
+          echo "result: $?"
+
+          echo f+(ab|ad|ac).txt
+          echo "result: $?"
     stdin: |
       shopt -u extglob
-
-      echo !(a*)
-      echo "result: $?"
-
-      echo @(abc|abd).txt
-      echo "result: $?"
-
-      echo ab?(c).txt
-      echo "result: $?"
-
-      echo *(ab|ad|ac).txt
-      echo "result: $?"
-
-      echo f+(ab|ad|ac).txt
-      echo "result: $?"
+      chmod +x ./script.sh
+      ./script.sh
 
   - name: "Pathname expansion: Inverted patterns"
     ignore_stderr: true

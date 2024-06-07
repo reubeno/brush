@@ -1,3 +1,5 @@
+//! Core implementation of the brush shell
+
 mod arithmetic;
 mod builtin;
 mod builtins;

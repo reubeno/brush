@@ -1463,8 +1463,12 @@ impl<'a> WordExpander<'a> {
                 Ok(result)
             }
             parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
-                separate_words: _,
-            } => error::unimp("parameter transformation: PossiblyQuoteWithArraysExpanded"),
+                separate_words: _separate_words,
+            } => {
+                // TODO: This isn't right for arrays.
+                // TODO: This doesn't honor 'separate_words'
+                Ok(variables::quote_str_for_assignment(s))
+            }
             parser::word::ParameterTransformOp::Quoted => {
                 Ok(variables::quote_str_for_assignment(s))
             }

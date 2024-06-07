@@ -492,16 +492,21 @@ impl CompletionSpec {
     }
 }
 
+/// Represents a set of generated command completions.
 #[derive(Debug, Default)]
 pub struct Completions {
+    /// The index in the input line where the completions should be inserted.
     pub start: usize,
+    /// The ordered list of completions.
     pub candidates: Vec<String>,
+    /// Options for processing the candidates.
     pub options: CandidateProcessingOptions,
 }
 
+/// Options governing how command completion candidates are processed.
 #[derive(Debug)]
 pub struct CandidateProcessingOptions {
-    /// Treat completions as file names
+    /// Treat completions as file names.
     pub treat_as_filenames: bool,
     /// Don't auto-quote completions that are file names.
     pub no_autoquote_filenames: bool,

@@ -673,7 +673,6 @@ cases:
       echo "${var[@]@L}"
 
   - name: "Parameter quote transformations - Q"
-    known_failure: false
     stdin: |
       var='""'
       echo "\${var@Q}: ${var@Q}"
@@ -705,11 +704,20 @@ cases:
       var="Hello, world!"
       echo "\${var@K}: ${var@K}"
 
+      var="a 'b c' d"
+      echo "\${var@K}: ${var@K}"
+
       declare -a arr1=(a b c)
       echo "\${arr1@K}: ${arr1@K}"
+      echo "\${arr1[1]@K}: ${arr1[1]@K}"
+      echo "\${arr1[@]@K}: ${arr1[@]@K}"
+      echo "\${arr1[*]@K}: ${arr1[*]@K}"
 
       declare -A arr2=(["a"]=1 ["b"]=2)
       echo "\${arr2@K}: ${arr2@K}"
+      echo "\${arr2[b]@K}: ${arr2[b]@K}"
+      echo "\${arr2[@]@K}: ${arr2[@]@K}"
+      echo "\${arr2[*]@K}: ${arr2[*]@K}"
 
   - name: "Parameter quote transformations - k"
     known_failure: true

@@ -7,6 +7,14 @@ use crate::context;
 use crate::error;
 use crate::ExecutionResult;
 
+/// Macro to define a struct that represents a shell built-in flag argument that can be
+/// enabled or disabled by specifying an option with a leading '+' or '-' character.
+///
+/// # Examples
+///
+/// ```
+/// minus_or_plus_flag_arg!(DisableFilenameGlobbing, 'f', "Disable filename globbing");
+/// ```
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
     ($struct_name:ident, $flag_char:literal, $desc:literal) => {

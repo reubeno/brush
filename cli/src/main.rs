@@ -1,3 +1,5 @@
+//! The main entry point for the brush shell.
+
 use std::{collections::HashSet, io::IsTerminal, path::Path};
 
 use clap::{builder::styling, Parser};
@@ -72,20 +74,28 @@ struct CommandLineArgs {
     script_args: Vec<String>,
 }
 
+/// Type of event to trace.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 enum TraceEvent {
+    /// Traces parsing and evaluation of arithmetic expressions.
     #[clap(name = "arithmetic")]
     Arithmetic,
+    /// Traces command execution.
     #[clap(name = "commands")]
     Commands,
+    /// Traces command completion generation.
     #[clap(name = "complete")]
     Complete,
+    /// Traces word expansion.
     #[clap(name = "expand")]
     Expand,
+    /// Traces the process of parsing tokens into an abstract syntax tree.
     #[clap(name = "parse")]
     Parse,
+    /// Traces pattern matching.
     #[clap(name = "pattern")]
     Pattern,
+    /// Traces the process of tokenizing input text.
     #[clap(name = "tokenize")]
     Tokenize,
 }

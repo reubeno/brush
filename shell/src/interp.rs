@@ -18,12 +18,18 @@ use crate::variables::{
 };
 use crate::{builtin, context, error, expansion, extendedtests, jobs, openfiles, traps};
 
+/// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
 pub struct ExecutionResult {
+    /// The numerical exit code of the command.
     pub exit_code: u8,
+    /// Whether the shell should exit after this command.
     pub exit_shell: bool,
+    /// Whether the shell should return from the current function or script.
     pub return_from_function_or_script: bool,
+    /// If the command was executed in a loop, this is the number of levels to break out of.
     pub break_loop: Option<u8>,
+    /// If the command was executed in a loop, this is the number of levels to continue.
     pub continue_loop: Option<u8>,
 }
 
@@ -46,6 +52,10 @@ impl From<std::process::Output> for ExecutionResult {
 }
 
 impl ExecutionResult {
+    /// Returns a new `ExecutionResult` with the given exit code.
+    ///
+    /// # Parameters
+    /// - `exit_code` - The exit code of the command.
     pub fn new(exit_code: u8) -> ExecutionResult {
         ExecutionResult {
             exit_code,
@@ -53,10 +63,12 @@ impl ExecutionResult {
         }
     }
 
+    /// Returns a new `ExecutionResult` with an exit code of 0.
     pub fn success() -> ExecutionResult {
         Self::new(0)
     }
 
+    /// Returns whether the command was successful.
     pub fn is_success(&self) -> bool {
         self.exit_code == 0
     }
