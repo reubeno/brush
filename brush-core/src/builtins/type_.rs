@@ -3,8 +3,8 @@ use std::{io::Write, sync::Arc};
 
 use brush_parser::ast;
 use clap::Parser;
-use faccess::PathExt;
 
+use crate::files::PathExt;
 use crate::keywords;
 use crate::{
     builtin::{BuiltinCommand, BuiltinExitCode},

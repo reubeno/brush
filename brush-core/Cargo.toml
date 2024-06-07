@@ -22,7 +22,6 @@ async-trait = "0.1.80"
 brush-parser = { path = "../brush-parser" }
 cached = "0.51.3"
 clap = { version = "4.5.4", features = ["derive"] }
-faccess = "0.2.4"
 fancy-regex = "0.13.0"
 futures = "0.3.30"
 hostname = "0.4.0"

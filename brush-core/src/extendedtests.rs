@@ -1,11 +1,12 @@
 use brush_parser::ast;
-use faccess::PathExt;
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 
 use crate::{
-    env, error, expansion, namedoptions, patterns, users,
+    env, error, expansion,
+    files::PathExt,
+    namedoptions, patterns, users,
     variables::{self, ArrayLiteral},
     Shell,
 };

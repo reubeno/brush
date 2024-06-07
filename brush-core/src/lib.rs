@@ -11,6 +11,7 @@ mod error;
 mod escape;
 mod expansion;
 mod extendedtests;
+mod files;
 mod functions;
 mod interp;
 mod jobs;

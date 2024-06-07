@@ -245,7 +245,6 @@ dependencies = [
  "clap",
  "command-fds",
  "criterion",
- "faccess",
  "fancy-regex",
  "futures",
  "homedir",
@@ -391,21 +390,15 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.0.98"
+version = "1.0.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41c270e7540d725e65ac7f1b212ac8ce349719624d7bcff99f8e2e488e8cf03f"
+checksum = "96c51067fd44124faa7f870b4b1c969379ad32b2ba805aa959430ceaa384f695"
 
 [[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
-
-[[package]]
-name = "cfg_aliases"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "cfg_aliases"
@@ -789,17 +782,6 @@ dependencies = [
  "nix 0.26.4",
  "ptyprocess",
  "regex",
-]
-
-[[package]]
-name = "faccess"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59ae66425802d6a903e268ae1a08b8c38ba143520f227a205edf4e9c7e3e26d5"
-dependencies = [
- "bitflags 1.3.2",
- "libc",
- "winapi",
 ]
 
 [[package]]
@@ -1341,25 +1323,13 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
-dependencies = [
- "bitflags 2.5.0",
- "cfg-if",
- "cfg_aliases 0.1.1",
- "libc",
-]
-
-[[package]]
-name = "nix"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
 dependencies = [
  "bitflags 2.5.0",
  "cfg-if",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "libc",
 ]
 
@@ -1811,7 +1781,7 @@ dependencies = [
 [[package]]
 name = "rustyline"
 version = "14.0.0"
-source = "git+https://github.com/reubeno/rustyline?rev=023a08093e9b8ff81f9d8e096e00a23e6e83167a#023a08093e9b8ff81f9d8e096e00a23e6e83167a"
+source = "git+https://github.com/reubeno/rustyline?rev=fffa79df0751f95af9f8ec39191e92f3d4d7e21e#fffa79df0751f95af9f8ec39191e92f3d4d7e21e"
 dependencies = [
  "bitflags 2.5.0",
  "cfg-if",
@@ -1821,7 +1791,7 @@ dependencies = [
  "libc",
  "log",
  "memchr",
- "nix 0.28.0",
+ "nix 0.29.0",
  "radix_trie",
  "rustyline-derive",
  "unicode-segmentation",
@@ -1833,7 +1803,7 @@ dependencies = [
 [[package]]
 name = "rustyline-derive"
 version = "0.10.0"
-source = "git+https://github.com/reubeno/rustyline?rev=023a08093e9b8ff81f9d8e096e00a23e6e83167a#023a08093e9b8ff81f9d8e096e00a23e6e83167a"
+source = "git+https://github.com/reubeno/rustyline?rev=fffa79df0751f95af9f8ec39191e92f3d4d7e21e#fffa79df0751f95af9f8ec39191e92f3d4d7e21e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1967,9 +1937,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "symbolic-common"
-version = "12.9.1"
+version = "12.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89d2aef0f60f62e38c472334148758afbd570ed78d20be622692e5ebfec3734f"
+checksum = "71297dc3e250f7dbdf8adb99e235da783d690f5819fdeb4cce39d9cfb0aca9f1"
 dependencies = [
  "debugid",
  "memmap2",
@@ -1979,9 +1949,9 @@ dependencies = [
 
 [[package]]
 name = "symbolic-demangle"
-version = "12.9.1"
+version = "12.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1719d1292eac816cdd3fdad12b22315624b7ce6a7bacb267a3a27fccfd286b48"
+checksum = "424fa2c9bf2c862891b9cfd354a752751a6730fd838a4691e7f6c2c7957b9daf"
 dependencies = [
  "cpp_demangle",
  "rustc-demangle",

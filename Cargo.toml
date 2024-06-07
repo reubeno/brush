@@ -40,6 +40,7 @@ redundant_else = "allow"
 result_large_err = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
+multiple_crate_versions = "allow"
 
 [profile.release]
 opt-level = "z"

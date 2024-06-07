@@ -5,9 +5,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use faccess::PathExt;
-
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
+use crate::files::PathExt;
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::variables::{self, ShellValue, ShellVariable};
