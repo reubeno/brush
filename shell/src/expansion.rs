@@ -14,6 +14,7 @@ use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
 use crate::variables::ShellValueUnsetType;
+use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
 
 #[derive(Debug)]
@@ -868,6 +869,62 @@ impl<'a> WordExpander<'a> {
             parser::word::ParameterExpr::Transform {
                 parameter,
                 indirect,
+                op: ParameterTransformOp::ToAttributeFlags,
+            } => {
+                if let (_, _, Some(var)) = self
+                    .try_resolve_parameter_to_variable(&parameter, indirect)
+                    .await?
+                {
+                    Ok(var.get_attribute_flags().into())
+                } else {
+                    Ok(String::new().into())
+                }
+            }
+            parser::word::ParameterExpr::Transform {
+                parameter,
+                indirect,
+                op: ParameterTransformOp::ToAssignmentLogic,
+            } => {
+                if let (Some(name), index, Some(var)) = self
+                    .try_resolve_parameter_to_variable(&parameter, indirect)
+                    .await?
+                {
+                    let assignable_value_str = var.value().to_assignable_str(index.as_deref());
+
+                    let mut attr_str = var.get_attribute_flags();
+                    if attr_str.is_empty() {
+                        attr_str.push('-');
+                    }
+
+                    match var.value() {
+                        ShellValue::IndexedArray(_)
+                        | ShellValue::AssociativeArray(_)
+                        | ShellValue::Random => {
+                            let equals_or_nothing = if assignable_value_str.is_empty() {
+                                ""
+                            } else {
+                                "="
+                            };
+
+                            Ok(std::format!(
+                            "declare -{attr_str} {name}{equals_or_nothing}{assignable_value_str}"
+                        )
+                            .into())
+                        }
+                        ShellValue::String(_) => {
+                            Ok(std::format!("{name}={assignable_value_str}",).into())
+                        }
+                        ShellValue::Unset(_) => {
+                            Ok(std::format!("declare -{attr_str} {name}").into())
+                        }
+                    }
+                } else {
+                    Ok(String::new().into())
+                }
+            }
+            parser::word::ParameterExpr::Transform {
+                parameter,
+                indirect,
                 op,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
@@ -1054,6 +1111,47 @@ impl<'a> WordExpander<'a> {
                 env::EnvironmentScope::Global,
             )
         }
+    }
+
+    async fn try_resolve_parameter_to_variable(
+        &mut self,
+        parameter: &parser::word::Parameter,
+        indirect: bool,
+    ) -> Result<(Option<String>, Option<String>, Option<ShellVariable>), error::Error> {
+        if !indirect {
+            Ok(self.try_resolve_parameter_to_variable_without_indirect(parameter))
+        } else {
+            let expansion = self.expand_parameter(parameter, true).await?;
+            let parameter_str: String = expansion.into();
+            let inner_parameter =
+                parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
+            Ok(self.try_resolve_parameter_to_variable_without_indirect(&inner_parameter))
+        }
+    }
+
+    fn try_resolve_parameter_to_variable_without_indirect(
+        &self,
+        parameter: &parser::word::Parameter,
+    ) -> (Option<String>, Option<String>, Option<ShellVariable>) {
+        let (name, index) = match parameter {
+            parser::word::Parameter::Positional(_) | parser::word::Parameter::Special(_) => {
+                (None, None)
+            }
+            parser::word::Parameter::Named(name) => (Some(name.to_owned()), Some("0".into())),
+            parser::word::Parameter::NamedWithIndex { name, index } => {
+                (Some(name.to_owned()), Some(index.to_owned()))
+            }
+            parser::word::Parameter::NamedWithAllIndices {
+                name,
+                concatenate: _concatenate,
+            } => (Some(name.to_owned()), None),
+        };
+
+        let var = name
+            .as_ref()
+            .and_then(|name| self.shell.env.get(name).map(|(_, var)| var.clone()));
+
+        (name, index, var)
     }
 
     async fn expand_parameter(
@@ -1360,22 +1458,22 @@ impl<'a> WordExpander<'a> {
             }
             parser::word::ParameterTransformOp::CapitalizeInitial => Ok(to_initial_capitals(s)),
             parser::word::ParameterTransformOp::ExpandEscapeSequences => {
-                error::unimp("parameter transformation: ExpandEscapeSequences")
+                let (result, _) =
+                    escape::expand_backslash_escapes(s, escape::EscapeMode::AnsiCQuotes)?;
+                Ok(result)
             }
             parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
                 separate_words: _,
             } => error::unimp("parameter transformation: PossiblyQuoteWithArraysExpanded"),
             parser::word::ParameterTransformOp::Quoted => {
-                error::unimp("parameter transformation: Quoted")
-            }
-            parser::word::ParameterTransformOp::ToAssignmentLogic => {
-                error::unimp("parameter transformation: ToAssignmentLogic")
-            }
-            parser::word::ParameterTransformOp::ToAttributeFlags => {
-                error::unimp("parameter transformation: ToAttributeFlags")
+                Ok(variables::quote_str_for_assignment(s))
             }
             parser::word::ParameterTransformOp::ToLowerCase => Ok(s.to_lowercase()),
             parser::word::ParameterTransformOp::ToUpperCase => Ok(s.to_uppercase()),
+            parser::word::ParameterTransformOp::ToAssignmentLogic
+            | parser::word::ParameterTransformOp::ToAttributeFlags => {
+                unreachable!("covered in caller")
+            }
         }
     }
 }

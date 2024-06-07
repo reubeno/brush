@@ -408,10 +408,6 @@ impl ShellVariable {
             result.push('x');
         }
 
-        if result.is_empty() {
-            result.push('-');
-        }
-
         result
     }
 }
@@ -616,7 +612,7 @@ impl ShellValue {
                 result.push(')');
                 Ok(result.into())
             }
-            ShellValue::Random => error::unimp("formatting RANDOM"),
+            ShellValue::Random => Ok(std::format!("\"{}\"", get_random_str()).into()),
         }
     }
 
@@ -674,6 +670,25 @@ impl ShellValue {
             ShellValue::Random => Cow::Owned(get_random_str()),
         }
     }
+
+    pub fn to_assignable_str(&self, index: Option<&str>) -> String {
+        match self {
+            ShellValue::Unset(_) => String::new(),
+            ShellValue::String(s) => quote_str_for_assignment(s.as_str()),
+            ShellValue::AssociativeArray(_) | ShellValue::IndexedArray(_) => {
+                if let Some(index) = index {
+                    if let Ok(Some(value)) = self.get_at(index) {
+                        quote_str_for_assignment(value.as_ref())
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    self.format(FormatStyle::DeclarePrint).unwrap().into_owned()
+                }
+            }
+            ShellValue::Random => quote_str_for_assignment(get_random_str().as_str()),
+        }
+    }
 }
 
 impl From<&str> for ShellValue {
@@ -688,8 +703,30 @@ impl From<&String> for ShellValue {
     }
 }
 
-fn get_random_str() -> String {
+pub(crate) fn get_random_str() -> String {
     let mut rng = rand::thread_rng();
     let value = rng.gen_range(0..32768);
     value.to_string()
+}
+
+pub(crate) fn quote_str_for_assignment(s: &str) -> String {
+    let mut result = String::new();
+
+    let mut first = true;
+    for part in s.split('\'') {
+        if !first {
+            result.push('\\');
+            result.push('\'');
+        } else {
+            first = false;
+        }
+
+        if !part.is_empty() {
+            result.push('\'');
+            result.push_str(part);
+            result.push('\'');
+        }
+    }
+
+    result
 }

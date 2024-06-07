@@ -5,7 +5,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 
 use crate::{
-    env, error, expansion, patterns,
+    env, error, expansion, namedoptions, patterns, users,
     variables::{self, ArrayLiteral},
     Shell,
 };
@@ -55,6 +55,7 @@ async fn apply_unary_predicate(
     apply_unary_predicate_to_str(op, expanded_operand.as_str(), shell)
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn apply_unary_predicate_to_str(
     op: &ast::UnaryPredicate,
     operand: &str,
@@ -128,20 +129,37 @@ pub(crate) fn apply_unary_predicate_to_str(
             Ok(path.executable())
         }
         ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => {
-            error::unimp("unary extended test predicate: FileExistsAndOwnedByEffectiveGroupId")
+            let path = Path::new(operand);
+            if !path.exists() {
+                return Ok(false);
+            }
+
+            let md = path.metadata()?;
+            Ok(md.gid() == users::get_effective_gid()?)
         }
         ast::UnaryPredicate::FileExistsAndModifiedSinceLastRead => {
             error::unimp("unary extended test predicate: FileExistsAndModifiedSinceLastRead")
         }
         ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId => {
-            error::unimp("unary extended test predicate: FileExistsAndOwnedByEffectiveUserId")
+            let path = Path::new(operand);
+            if !path.exists() {
+                return Ok(false);
+            }
+
+            let md = path.metadata()?;
+            Ok(md.uid() == users::get_effective_uid()?)
         }
         ast::UnaryPredicate::FileExistsAndIsSocket => {
             let path = Path::new(operand);
             Ok(path_exists_and_is_socket(path))
         }
         ast::UnaryPredicate::ShellOptionEnabled => {
-            error::unimp("unary extended test predicate: ShellOptionEnabled")
+            let shopt_name = operand;
+            if let Some(option) = namedoptions::SET_O_OPTIONS.get(shopt_name) {
+                Ok((option.getter)(shell))
+            } else {
+                Ok(false)
+            }
         }
         ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env.is_set(operand)),
         ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {

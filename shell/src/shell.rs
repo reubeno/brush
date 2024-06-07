@@ -170,6 +170,7 @@ impl Shell {
 
         let mut random_var = ShellVariable::new(ShellValue::Random);
         random_var.hide_from_enumeration();
+        random_var.treat_as_integer();
         env.set_global("RANDOM", random_var)?;
 
         env.set_global("IFS", ShellVariable::new(" \t\n".into()))?;

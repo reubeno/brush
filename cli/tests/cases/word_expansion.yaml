@@ -672,53 +672,85 @@ cases:
       echo "${var[@]@u}"
       echo "${var[@]@L}"
 
-  - name: "Parameter quote transformations"
-    known_failure: true
+  - name: "Parameter quote transformations - Q"
+    known_failure: false
     stdin: |
       var='""'
       echo "\${var@Q}: ${var@Q}"
-      echo "\${var@K}: ${var@K}"
-      echo "\${var@k}: ${var@k}"
 
       var="Hello"
       echo "\${var@Q}: ${var@Q}"
-      echo "\${var@K}: ${var@K}"
-      echo "\${var@k}: ${var@k}"
 
       var="Hello, world!"
       echo "\${var@Q}: ${var@Q}"
+
+      var="a 'b c' d"
+      echo "\${var@Q}: ${var@Q}"
+
+      declare -a arr1=(a b c)
+      echo "\${arr1@Q}: ${arr1@Q}"
+
+      declare -A arr2=(["a"]=1 ["b"]=2)
+      echo "\${arr2@Q}: ${arr2@Q}"
+
+  - name: "Parameter quote transformations - K"
+    known_failure: true
+    stdin: |
+      var='""'
       echo "\${var@K}: ${var@K}"
+
+      var="Hello"
+      echo "\${var@K}: ${var@K}"
+
+      var="Hello, world!"
+      echo "\${var@K}: ${var@K}"
+
+      declare -a arr1=(a b c)
+      echo "\${arr1@K}: ${arr1@K}"
+
+      declare -A arr2=(["a"]=1 ["b"]=2)
+      echo "\${arr2@K}: ${arr2@K}"
+
+  - name: "Parameter quote transformations - k"
+    known_failure: true
+    stdin: |
+      var='""'
+      echo "\${var@k}: ${var@k}"
+
+      var="Hello"
+      echo "\${var@k}: ${var@k}"
+
+      var="Hello, world!"
       echo "\${var@k}: ${var@k}"
 
       declare -a arr1=(a b c)
-      declare -p arr1
-      echo "\${arr1@Q}: ${arr1@Q}"
-      echo "\${arr1@K}: ${arr1@K}"
       echo "\${arr1@k}: ${arr1@k}"
 
       declare -A arr2=(["a"]=1 ["b"]=2)
-      declare -p arr2
-      echo "\${arr2@Q}: ${arr2@Q}"
-      echo "\${arr2@K}: ${arr2@K}"
       echo "\${arr2@k}: ${arr2@k}"
 
   - name: "Parameter transformations: expand escapes"
-    known_failure: true
     stdin: |
       var="a\n\"b"
       echo "\${var@E}: ${var@E}"
 
   - name: "Parameter transformation: assignment"
-    known_failure: true
     stdin: |
       var="hello"
       echo "\${var@A}: ${var@A}"
 
       declare -ia arr=(1 2 3)
       echo "\${arr@A}: ${arr@A}"
+      echo "\${arr[1]@A}: ${arr[1]@A}"
+      echo "\${arr[@]@A}: ${arr[@]@A}"
+      echo "\${arr[*]@A}: ${arr[*]@A}"
+
+      declare -A arr2=(["a"]=b)
+      echo "\${arr2@A}: ${arr2@A}"
+      echo "\${arr2[@]@A}: ${arr2[@]@A}"
+      echo "\${arr2[*]@A}: ${arr2[*]@A}"
 
   - name: "Parameter transformation: attributes"
-    known_failure: true
     stdin: |
       var="hello"
       echo "\${var@a}: ${var@a}"
