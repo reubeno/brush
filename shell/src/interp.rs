@@ -74,16 +74,25 @@ impl ExecutionResult {
     }
 }
 
+/// Represents the result of spawning a command.
 pub(crate) enum SpawnResult {
+    /// The child process was spawned.
     SpawnedChild(process::Child),
+    /// The command immediatedly exited with the given numeric exit code.
     ImmediateExit(u8),
+    /// The shell should exit after this command, yielding the given numeric exit code.
     ExitShell(u8),
+    /// The shell should return from the current function or script, yielding the given numeric exit code.
     ReturnFromFunctionOrScript(u8),
+    /// The shell should break out of the containing loop, identified by the given depth count.
     BreakLoop(u8),
+    /// The shell should continue the containing loop, identified by the given depth count.
     ContinueLoop(u8),
 }
 
+/// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
+    /// The shell in which the command is being executed.
     shell: &'a mut Shell,
 
     current_pipeline_index: usize,
@@ -93,8 +102,10 @@ struct PipelineExecutionContext<'a> {
     params: ExecutionParameters,
 }
 
+/// Parameters for execution.
 #[derive(Clone, Default)]
 pub struct ExecutionParameters {
+    /// The open files tracked by the current context.
     pub open_files: openfiles::OpenFiles,
 }
 

@@ -3,32 +3,47 @@ use std::borrow::Cow;
 use crate::{env, expansion, variables, Shell};
 use parser::ast;
 
+/// Represents an error that occurs during evaluation of an arithmetic expression.
 #[derive(Debug, thiserror::Error)]
 pub enum EvalError {
+    /// Division by zero.
     #[error("division by zero")]
     DivideByZero,
 
+    /// Failed to tokenize an arithmetic expression.
     #[error("failed to tokenize expression")]
     FailedToTokenizeExpression,
 
+    /// Failed to expand an arithmetic expression.
     #[error("failed to expand expression")]
     FailedToExpandExpression,
 
+    /// Failed to access an element of an array.
     #[error("failed to access array")]
     FailedToAccessArray,
 
+    /// Failed to update the shell environment in an assignment operator.
     #[error("failed to update environment")]
     FailedToUpdateEnvironment,
 
+    /// Failed to parse an arithmetic expression.
     #[error("failed to parse expression: '{0}'")]
     ParseError(String),
 
+    /// Failed to trace an arithmetic expression.
     #[error("failed tracing expression")]
     TraceError,
 }
 
+/// Trait implemented by arithmetic expressions that can be evaluated.
 #[async_trait::async_trait]
 pub trait ExpandAndEvaluate {
+    /// Evaluate the given expression, returning the resulting numeric value.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell to use for evaluation.
+    /// * `trace_if_needed` - Whether to trace the evaluation.
     async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError>;
 }
 
@@ -56,8 +71,14 @@ impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
     }
 }
 
+/// Trait implemented by evaluatable arithmetic expressions.
 #[async_trait::async_trait]
 pub trait Evaluatable {
+    /// Evaluate the given arithmetic expression, returning the resulting numeric value.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell to use for evaluation.
     async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
 }
 

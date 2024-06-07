@@ -1,5 +1,6 @@
 use crate::CreateOptions;
 
+/// Runtime changeable options for a shell instance.
 #[derive(Clone, Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct RuntimeOptions {
@@ -64,69 +65,130 @@ pub struct RuntimeOptions {
     //
     // Options set through shopt.
     //
+    /// 'assoc_expand_once'
     pub assoc_expand_once: bool,
+    /// 'autocd'
     pub auto_cd: bool,
+    /// 'cdable_vars'
     pub cdable_vars: bool,
+    /// 'cdspell'
     pub cd_autocorrect_spelling: bool,
+    /// 'checkhash'
     pub check_hashtable_before_command_exec: bool,
+    /// 'checkjobs'
     pub check_jobs_before_exit: bool,
+    /// 'checkwinsize'
     pub check_window_size_after_external_commands: bool,
+    /// 'cmdhist'
     pub save_multiline_cmds_in_history: bool,
+    /// 'compat31'
     pub compat31: bool,
+    /// 'compat32'
     pub compat32: bool,
+    /// 'compat40'
     pub compat40: bool,
+    /// 'compat41'
     pub compat41: bool,
+    /// 'compat42'
     pub compat42: bool,
+    /// 'compat43'
     pub compat43: bool,
+    /// 'compat44'
     pub compat44: bool,
+    /// 'complete_fullquote'
     pub quote_all_metachars_in_completion: bool,
+    /// 'direxpand'
     pub expand_dir_names_on_completion: bool,
+    /// 'dirspell'
     pub autocorrect_dir_spelling_on_completion: bool,
+    /// 'dotglob'
     pub glob_matches_dotfiles: bool,
+    /// 'execfail'
     pub exit_on_exec_fail: bool,
+    /// 'expand_aliases'
     pub expand_aliases: bool,
+    /// 'extdebug'
     pub enable_debugger: bool,
+    /// 'extglob'
     pub extended_globbing: bool,
+    /// 'extquote'
     pub extquote: bool,
+    /// 'failglob'
     pub fail_expansion_on_globs_without_match: bool,
+    /// 'force_fignore'
     pub force_fignore: bool,
+    /// 'globasciiranges'
     pub glob_ranges_use_c_locale: bool,
+    /// 'globstar'
     pub enable_star_star_glob: bool,
+    /// 'gnu_errfmt'
     pub errors_in_gnu_format: bool,
+    /// 'histappend'
     pub append_to_history_file: bool,
+    /// 'histreedit'
     pub allow_reedit_failed_history_subst: bool,
+    /// 'histverify'
     pub allow_modifying_history_substitution: bool,
+    /// 'hostcomplete'
     pub enable_hostname_completion: bool,
+    /// 'huponexit'
     pub send_sighup_to_all_jobs_on_exit: bool,
+    /// 'inherit_errexit'
     pub command_subst_inherits_errexit: bool,
+    /// 'interactive_comments'
     pub interactive_comments: bool,
+    /// 'lastpipe'
     pub run_last_pipeline_cmd_in_current_shell: bool,
+    /// 'lithist'
     pub embed_newlines_in_multiline_cmds_in_history: bool,
+    /// 'localvar_inherit'
     pub local_vars_inherit_value_and_attrs: bool,
+    /// 'localvar_unset'
     pub localvar_unset: bool,
+    /// 'login_shell'
     pub login_shell: bool,
+    /// 'mailwarn'
     pub mail_warn: bool,
+    /// 'no_empty_cmd_completion'
     pub case_insensitive_pathname_expansion: bool,
+    /// 'nocaseglob'
     pub case_insensitive_conditionals: bool,
+    /// 'nocasematch'
     pub no_empty_cmd_completion: bool,
+    /// 'nullglob'
     pub expand_non_matching_patterns_to_null: bool,
+    /// 'progcomp'
     pub programmable_completion: bool,
+    /// 'progcomp_alias'
     pub programmable_completion_alias: bool,
+    /// 'promptvars'
     pub expand_prompt_strings: bool,
+    /// 'restricted_shell'
     pub restricted_shell: bool,
+    /// 'shift_verbose'
     pub shift_verbose: bool,
+    /// 'sourcepath'
     pub source_builtin_searches_path: bool,
+    /// 'xpg_echo'
     pub echo_builtin_expands_escape_sequences: bool,
 
     //
     // Options set by the shell.
     //
+    /// Whether or not the shell is interactive.
     pub interactive: bool,
+    /// Whether or not the shell is reading commands from standard input.
     pub read_commands_from_stdin: bool,
+    /// Whether or not the shell is in maximal `sh` compatibility mode.    
     pub sh_mode: bool,
 }
 
 impl RuntimeOptions {
+    /// Creates a default set of runtime options based on the given creation options.
+    ///
+    /// # Arguments
+    ///
+    /// * `create_options` - The options used to create the shell.
     pub fn defaults_from(create_options: &CreateOptions) -> RuntimeOptions {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {

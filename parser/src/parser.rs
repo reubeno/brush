@@ -2,11 +2,16 @@ use crate::ast::{self, SeparatorOperator};
 use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 
+/// Options used to control the behavior of the parser.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ParserOptions {
+    /// Whether or not to enable extended globbing (a.k.a. `extglob`).
     pub enable_extended_globbing: bool,
+    /// Whether or not to enable POSIX complaince mode.
     pub posix_mode: bool,
+    /// Whether or not to enable maximal compatibility with the `sh` shell.
     pub sh_mode: bool,
+    /// Whether or not to perform tilde expansion.
     pub tilde_expansion: bool,
 }
 
@@ -21,6 +26,7 @@ impl Default for ParserOptions {
     }
 }
 
+/// Implements parsing for shell programs.
 pub struct Parser<R> {
     reader: R,
     options: ParserOptions,
@@ -93,6 +99,13 @@ impl<R: std::io::BufRead> Parser<R> {
     }
 }
 
+/// Parses a sequence of tokens into the abstract syntax tree (AST) of a shell program.
+///
+/// # Arguments
+///
+/// * `tokens` - The tokens to parse.
+/// * `options` - The options to use when parsing.
+/// * `source_info` - Information about the source of the tokens.
 pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
@@ -180,8 +193,10 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
     }
 }
 
+/// Information about the source of tokens.
 #[derive(Clone, Default)]
 pub struct SourceInfo {
+    /// The source of the tokens.
     pub source: String,
 }
 

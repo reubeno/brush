@@ -9,12 +9,6 @@ use crate::ExecutionResult;
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.
-///
-/// # Examples
-///
-/// ```
-/// minus_or_plus_flag_arg!(DisableFilenameGlobbing, 'f', "Disable filename globbing");
-/// ```
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
     ($struct_name:ident, $flag_char:literal, $desc:literal) => {
@@ -51,20 +45,31 @@ macro_rules! minus_or_plus_flag_arg {
 
 pub(crate) use minus_or_plus_flag_arg;
 
+/// Result of executing a built-in command.
 #[allow(clippy::module_name_repetitions)]
 pub struct BuiltinResult {
+    /// The exit code from the command.
     pub exit_code: BuiltinExitCode,
 }
 
+/// Exit codes for built-in commands.
 #[allow(clippy::module_name_repetitions)]
 pub enum BuiltinExitCode {
+    /// The command was successful.
     Success,
+    /// The inputs to the command were invalid.
     InvalidUsage,
+    /// The command is not implemented.
     Unimplemented,
+    /// The command returned a specific custom numerical exit code.
     Custom(u8),
+    /// The command is requesting to exit the shell, yielding the given exit code.
     ExitShell(u8),
+    /// The command is requesting to return from a function or script, yielding the given exit code.
     ReturnFromFunctionOrScript(u8),
+    /// The command is requesting to continue a loop, identified by the given nesting count.
     ContinueLoop(u8),
+    /// The command is requesting to break a loop, identified by the given nesting count.
     BreakLoop(u8),
 }
 
@@ -86,15 +91,27 @@ impl From<ExecutionResult> for BuiltinExitCode {
     }
 }
 
+/// Type of a function implementing a built-in command.
+///
+/// # Arguments
+///
+/// * The context in which the command is being executed.
+/// * The arguments to the command.
 #[allow(clippy::module_name_repetitions)]
 pub type BuiltinCommandExecuteFunc = fn(
     context::CommandExecutionContext<'_>,
     Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<BuiltinResult, error::Error>>;
 
+/// Trait implemented by built-in shell commands.
 #[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
 pub trait BuiltinCommand: Parser {
+    /// Instantiates the built-in command with the given arguments.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The arguments to the command.
     fn new<I>(args: I) -> Result<Self, clap::Error>
     where
         I: IntoIterator<Item = String>,
@@ -116,15 +133,27 @@ pub trait BuiltinCommand: Parser {
         }
     }
 
+    /// Returns whether or not the command takes options with a leading '+' or '-' character.
     fn takes_plus_options() -> bool {
         false
     }
 
+    /// Executes the built-in command in the provided context.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The context in which the command is being executed.
     async fn execute(
         &self,
         context: context::CommandExecutionContext<'_>,
     ) -> Result<BuiltinExitCode, error::Error>;
 
+    /// Returns the textual help content associated with the command.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
+    /// * `content_type` - The type of content to retrieve.
     fn get_content(name: &str, content_type: BuiltinContentType) -> String {
         let mut clap_command = Self::command().styles(brush_help_styles());
         clap_command.set_bin_name(name);
@@ -139,19 +168,31 @@ pub trait BuiltinCommand: Parser {
     }
 }
 
+/// Trait implemented by built-in shell commands that take specially handled declarations
+/// as arguments.
 #[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
 pub trait BuiltinDeclarationCommand: BuiltinCommand {
+    /// Stores the declarations within the command instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `declarations` - The declarations to store.
     fn set_declarations(&mut self, declarations: Vec<CommandArg>);
 }
 
+/// Type of help content, typically associated with a built-in command.
 #[allow(clippy::module_name_repetitions)]
 pub enum BuiltinContentType {
+    /// Detailed help content for the command.
     DetailedHelp,
+    /// Short usage information for the command.
     ShortUsage,
+    /// Short description for the command.
     ShortDescription,
 }
 
+/// Encapsulates a registration for a built-in command.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
 pub struct BuiltinRegistration {

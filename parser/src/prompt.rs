@@ -1,46 +1,78 @@
 use crate::error;
 
+/// A piece of a prompt string.
 #[derive(Clone)]
 pub enum PromptPiece {
+    /// An ASCII character.
     AsciiCharacter(u32),
+    /// A backslash character.
     Backslash,
+    /// The bell character.
     BellCharacter,
+    /// A carriage return character.
     CarriageReturn,
+    /// The current command number.
     CurrentCommandNumber,
+    /// The current history number.
     CurrentHistoryNumber,
+    /// The name of the current user.
     CurrentUser,
+    /// Path to the current working directory.
     CurrentWorkingDirectory {
+        /// Whether or not to apply tilde-replacement before expanding.
         tilde_replaced: bool,
         basename: bool,
     },
+    /// The current date, using the given format.
     Date(PromptDateFormat),
+    /// The dollar or pound character.
     DollarOrPound,
+    /// Special marker indicating the end of a non-printing sequence of characters.
     EndNonPrintingSequence,
+    /// The escape character.
     EscapeCharacter,
+    /// The hostname of the system.
     Hostname {
+        /// Whether or not to include only up to the first dot of the name.
         only_up_to_first_dot: bool,
     },
+    /// A literal string.
     Literal(String),
+    /// A newline character.
     Newline,
+    /// The number of actively managed jobs.
     NumberOfManagedJobs,
+    /// The base name of the shell.
     ShellBaseName,
+    /// The release of the shell.
     ShellRelease,
+    /// The version of the shell.
     ShellVersion,
+    /// Special marker indicating the start of a non-printing sequence of characters.
     StartNonPrintingSequence,
+    /// The base name of the terminal device.
     TerminalDeviceBaseName,
+    /// The current time, using the given format.
     Time(PromptTimeFormat),
 }
 
+/// Format for a date in a prompt.
 #[derive(Clone)]
 pub enum PromptDateFormat {
+    /// A format including weekday, month, and date.
     WeekdayMonthDate,
+    /// A customer string format.
     Custom(String),
 }
 
+/// Format for a time in a prompt.
 #[derive(Clone)]
 pub enum PromptTimeFormat {
+    /// A twelve-hour time format with AM/PM.
     TwelveHourAM,
+    /// A twelve-hour time format (HHMMSS).
     TwelveHourHHMMSS,
+    /// A twenty-four-hour time format (HHMMSS).
     TwentyFourHourHHMMSS,
 }
 

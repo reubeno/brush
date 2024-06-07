@@ -18,7 +18,9 @@ pub struct Options {
 /// Represents an interactive shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.
 pub struct InteractiveShell {
+    /// The `rustyline` editor.
     editor: Editor,
+    /// Optional path to the history file used for the shell.
     history_file_path: Option<PathBuf>,
 }
 

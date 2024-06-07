@@ -4,9 +4,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Represents a piece of a shell pattern.
 #[derive(Clone, Debug)]
 pub(crate) enum PatternPiece {
+    /// A pattern that should be interpreted as a shell pattern.
     Pattern(String),
+    /// A literal string that should be matched exactly.
     Literal(String),
 }
 
@@ -21,6 +24,7 @@ impl PatternPiece {
 
 type PatternWord = Vec<PatternPiece>;
 
+/// Encapsulates a shell pattern.
 #[derive(Clone, Debug)]
 pub struct Pattern {
     pieces: PatternWord,
@@ -57,14 +61,23 @@ impl From<String> for Pattern {
 }
 
 impl Pattern {
+    /// Returns whether or not the pattern is empty.
     pub fn is_empty(&self) -> bool {
         self.pieces.iter().all(|p| p.as_str().is_empty())
     }
 
+    /// Placeholder function that always returns true.
     pub(crate) fn accept_all_expand_filter(_path: &Path) -> bool {
         true
     }
 
+    /// Expands the pattern into a list of matching file paths.
+    ///
+    /// # Arguments
+    ///
+    /// * `working_dir` - The current working directory, used for relative paths.
+    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
+    /// * `path_filter` - Optionally provides a function that filters paths after expansion.
     #[allow(clippy::too_many_lines)]
     pub(crate) fn expand<PF>(
         &self,
@@ -203,6 +216,13 @@ impl Pattern {
         Ok(results)
     }
 
+    /// Converts the pattern to a regular expression string.
+    ///
+    /// # Arguments
+    ///
+    /// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the string.
+    /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the string.
+    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     pub(crate) fn to_regex_str(
         &self,
         strict_prefix_match: bool,
@@ -233,6 +253,13 @@ impl Pattern {
         Ok(regex_str)
     }
 
+    /// Converts the pattern to a regular expression.
+    ///
+    /// # Arguments
+    ///
+    /// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the string.
+    /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the string.
+    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     pub(crate) fn to_regex(
         &self,
         strict_prefix_match: bool,
@@ -251,6 +278,12 @@ impl Pattern {
         Ok(re)
     }
 
+    /// Checks if the pattern exactly matches the given string.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The string to check for a match.
+    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     pub(crate) fn exactly_matches(
         &self,
         value: &str,
@@ -277,6 +310,14 @@ fn escape_for_regex(s: &str) -> String {
     escaped
 }
 
+/// Converts a shell pattern to a regular expression.
+///
+/// # Arguments
+///
+/// * `pattern` - The shell pattern to convert.
+/// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the string.
+/// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the string.
+/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 pub(crate) fn pattern_to_regex(
     pattern: &str,
     strict_prefix_match: bool,
@@ -318,6 +359,13 @@ fn pattern_to_regex_str(
     Ok(regex_str)
 }
 
+/// Removes the largest matching prefix from a string that matches the given pattern.
+///
+/// # Arguments
+///
+/// * `s` - The string to remove the prefix from.
+/// * `pattern` - The pattern to match.
+/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 pub(crate) fn remove_largest_matching_prefix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
@@ -334,6 +382,13 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
     Ok(s)
 }
 
+/// Removes the smallest matching prefix from a string that matches the given pattern.
+///
+/// # Arguments
+///
+/// * `s` - The string to remove the prefix from.
+/// * `pattern` - The pattern to match.
+/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 pub(crate) fn remove_smallest_matching_prefix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
@@ -350,6 +405,13 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
     Ok(s)
 }
 
+/// Removes the largest matching suffix from a string that matches the given pattern.
+///
+/// # Arguments
+///
+/// * `s` - The string to remove the suffix from.
+/// * `pattern` - The pattern to match.
+/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 pub(crate) fn remove_largest_matching_suffix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
@@ -366,6 +428,13 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
     Ok(s)
 }
 
+/// Removes the smallest matching suffix from a string that matches the given pattern.
+///
+/// # Arguments
+///
+/// * `s` - The string to remove the suffix from.
+/// * `pattern` - The pattern to match.
+/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 pub(crate) fn remove_smallest_matching_suffix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,

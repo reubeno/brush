@@ -5,22 +5,35 @@ use std::fmt::{Display, Write};
 
 use crate::error;
 
+/// A shell variable.
 #[derive(Clone, Debug)]
 pub struct ShellVariable {
+    /// The value currently associated with the variable.
     value: ShellValue,
+    /// Whether or not the variable is marked as exported to child processes.
     exported: bool,
+    /// Whether or not the variable is marked as read-only.
     readonly: bool,
+    /// Whether or not the variable should be enumerated in the shell's environment.
     enumerable: bool,
+    /// The transformation to apply to the variable's value when it is updated.
     transform_on_update: ShellVariableUpdateTransform,
+    /// Whether or not the variable is marked as being traced.
     trace: bool,
+    /// Whether or not the variable should be treated as an integer.
     treat_as_integer: bool,
+    /// Whether or not the variable should be treated as a name reference.
     treat_as_nameref: bool,
 }
 
+/// Kind of transformation to apply to a variable's value when it is updated.
 #[derive(Clone, Debug)]
 pub enum ShellVariableUpdateTransform {
+    /// No transformation.
     None,
+    /// Convert the value to lowercase.
     Lowercase,
+    /// Convert the value to uppercase.
     Uppercase,
 }
 
@@ -40,6 +53,11 @@ impl Default for ShellVariable {
 }
 
 impl ShellVariable {
+    /// Returns a new shell variable, initialized with the given value.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value to associate with the variable.
     pub fn new(value: ShellValue) -> Self {
         Self {
             value,
@@ -47,30 +65,37 @@ impl ShellVariable {
         }
     }
 
+    /// Returns the value associated with the variable.
     pub fn value(&self) -> &ShellValue {
         &self.value
     }
 
+    /// Returns whether or not the variable is exported to child processes.
     pub fn is_exported(&self) -> bool {
         self.exported
     }
 
+    /// Marks the variable as exported to child processes.
     pub fn export(&mut self) {
         self.exported = true;
     }
 
+    /// Marks the variable as not exported to child processes.
     pub fn unexport(&mut self) {
         self.exported = false;
     }
 
+    /// Returns whether or not the variable is read-only.
     pub fn is_readonly(&self) -> bool {
         self.readonly
     }
 
+    /// Marks the variable as read-only.
     pub fn set_readonly(&mut self) {
         self.readonly = true;
     }
 
+    /// Marks the variable as not read-only.
     pub fn unset_readonly(&mut self) -> Result<(), error::Error> {
         if self.readonly {
             return Err(error::Error::ReadonlyVariable);
@@ -80,58 +105,72 @@ impl ShellVariable {
         Ok(())
     }
 
+    /// Returns whether or not the variable is traced.
     pub fn is_trace_enabled(&self) -> bool {
         self.trace
     }
 
+    /// Marks the variable as traced.
     pub fn enable_trace(&mut self) {
         self.trace = true;
     }
 
+    /// Marks the variable as not traced.
     pub fn disable_trace(&mut self) {
         self.trace = false;
     }
 
+    /// Returns whether or not the variable should be enumerated in the shell's environment.
     pub fn is_enumerable(&self) -> bool {
         self.enumerable
     }
 
+    /// Marks the variable as not enumerable in the shell's environment.
     pub fn hide_from_enumeration(&mut self) {
         self.enumerable = false;
     }
 
+    /// Return the update transform associated with the variable.
     pub fn get_update_transform(&self) -> ShellVariableUpdateTransform {
         self.transform_on_update.clone()
     }
 
+    /// Set the update transform associated with the variable.
     pub fn set_update_transform(&mut self, transform: ShellVariableUpdateTransform) {
         self.transform_on_update = transform;
     }
 
+    /// Returns whether or not the variable should be treated as an integer.
     pub fn is_treated_as_integer(&self) -> bool {
         self.treat_as_integer
     }
 
+    /// Marks the variable as being treated as an integer.
     pub fn treat_as_integer(&mut self) {
         self.treat_as_integer = true;
     }
 
+    /// Marks the variable as not being treated as an integer.
     pub fn unset_treat_as_integer(&mut self) {
         self.treat_as_integer = false;
     }
 
+    /// Returns whether or not the variable should be treated as a name reference.
     pub fn is_treated_as_nameref(&self) -> bool {
         self.treat_as_nameref
     }
 
+    /// Marks the variable as being treated as a name reference.
     pub fn treat_as_nameref(&mut self) {
         self.treat_as_nameref = true;
     }
 
+    /// Marks the variable as not being treated as a name reference.
     pub fn unset_treat_as_nameref(&mut self) {
         self.treat_as_nameref = false;
     }
 
+    /// Converts the variable to an indexed array.
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
         match self.value() {
             ShellValue::IndexedArray(_) => Ok(()),
@@ -147,6 +186,7 @@ impl ShellVariable {
         }
     }
 
+    /// Converts the variable to an associative array.
     pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
         match self.value() {
             ShellValue::AssociativeArray(_) => Ok(()),
@@ -162,6 +202,12 @@ impl ShellVariable {
         }
     }
 
+    /// Assign the given value to the variable, conditionally appending to the preexisting value.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value to assign to the variable.
+    /// * `append` - Whether or not to append the value to the preexisting value.
     pub fn assign(&mut self, value: ShellValueLiteral, append: bool) -> Result<(), error::Error> {
         if self.is_readonly() {
             return Err(error::Error::ReadonlyVariable);
@@ -281,6 +327,14 @@ impl ShellVariable {
         }
     }
 
+    /// Assign the given value to the variable at the given index, conditionally appending to the
+    /// preexisting value present at that element within the value.
+    ///
+    /// # Arguments
+    ///
+    /// * `array_index` - The index at which to assign the value.
+    /// * `value` - The value to assign to the variable at the given index.
+    /// * `append` - Whether or not to append the value to the preexisting value stored at the given index.
     #[allow(clippy::needless_pass_by_value)]
     pub fn assign_at_index(
         &mut self,
@@ -353,6 +407,12 @@ impl ShellVariable {
         }
     }
 
+    /// Tries to unset the value stored at the given index in the variable. Returns
+    /// whether or not a value was unset.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index at which to unset the value.
     pub fn unset_index(&mut self, index: &str) -> Result<bool, error::Error> {
         match &mut self.value {
             ShellValue::Unset(ty) => match ty {
@@ -370,6 +430,7 @@ impl ShellVariable {
         }
     }
 
+    /// Returns the canonical attribute flag string for this variable.
     pub fn get_attribute_flags(&self) -> String {
         let mut result = String::new();
 
@@ -412,25 +473,38 @@ impl ShellVariable {
     }
 }
 
+/// A shell value.
 #[derive(Clone, Debug)]
 pub enum ShellValue {
+    /// A value that has been typed but not yet set.
     Unset(ShellValueUnsetType),
+    /// A string.
     String(String),
+    /// An associative array.
     AssociativeArray(BTreeMap<String, String>),
+    /// An indexed array.
     IndexedArray(BTreeMap<u64, String>),
+    /// A special value that yields a different random number each time its read.
     Random,
 }
 
+/// The type of an unset shell value.
 #[derive(Clone, Debug)]
 pub enum ShellValueUnsetType {
+    /// The value is untyped.
     Untyped,
+    /// The value is an associative array.
     AssociativeArray,
+    /// The value is an indexed array.
     IndexedArray,
 }
 
+/// A shell value literal; used for assignment.
 #[derive(Clone, Debug)]
 pub enum ShellValueLiteral {
+    /// A scalar value.
     Scalar(String),
+    /// An array value.
     Array(ArrayLiteral),
 }
 
@@ -476,16 +550,21 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
+/// An array literal.
 #[derive(Clone, Debug)]
 pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
 
+/// Style for formatting a shell variable's value.
 #[derive(Copy, Clone, Debug)]
 pub enum FormatStyle {
+    /// Basic formatting.
     Basic,
+    /// Formatting as appropriate in the `declare` built-in command.
     DeclarePrint,
 }
 
 impl ShellValue {
+    /// Returns whether or not the value is an array.
     pub fn is_array(&self) -> bool {
         matches!(
             self,
@@ -497,6 +576,11 @@ impl ShellValue {
         )
     }
 
+    /// Returns a new indexed array value constructed from the given slice of strings.
+    ///
+    /// # Arguments
+    ///
+    /// * `values` - The slice of strings to construct the indexed array from.
     pub fn indexed_array_from_slice(values: &[&str]) -> Self {
         let mut owned_values = BTreeMap::new();
         for (i, value) in values.iter().enumerate() {
@@ -506,6 +590,11 @@ impl ShellValue {
         ShellValue::IndexedArray(owned_values)
     }
 
+    /// Returns a new indexed array value constructed from the given literals.
+    ///
+    /// # Arguments
+    ///
+    /// * `literals` - The literals to construct the indexed array from.
     pub fn indexed_array_from_literals(literals: ArrayLiteral) -> Result<ShellValue, error::Error> {
         let mut values = BTreeMap::new();
         ShellValue::update_indexed_array_from_literals(&mut values, literals)?;
@@ -536,6 +625,11 @@ impl ShellValue {
         Ok(())
     }
 
+    /// Returns a new associative array value constructed from the given literals.
+    ///
+    /// # Arguments
+    ///
+    /// * `literals` - The literals to construct the associative array from.
     pub fn associative_array_from_literals(
         literals: ArrayLiteral,
     ) -> Result<ShellValue, error::Error> {
@@ -571,6 +665,11 @@ impl ShellValue {
         Ok(())
     }
 
+    /// Formats the value using the given style.
+    ///
+    /// # Arguments
+    ///
+    /// * `style` - The style to use for formatting the value.
     pub fn format(&self, style: FormatStyle) -> Result<Cow<'_, str>, error::Error> {
         match self {
             ShellValue::Unset(_) => Ok("".into()),
@@ -616,6 +715,11 @@ impl ShellValue {
         }
     }
 
+    /// Tries to retrieve the value stored at the given index in this variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index at which to retrieve the value.
     #[allow(clippy::unnecessary_wraps)]
     pub fn get_at(&self, index: &str) -> Result<Option<Cow<'_, str>>, error::Error> {
         match self {
@@ -638,6 +742,7 @@ impl ShellValue {
         }
     }
 
+    /// Returns the keys of the elements in this variable.
     pub fn get_element_keys(&self) -> Vec<String> {
         match self {
             ShellValue::Unset(_) => vec![],
@@ -647,6 +752,7 @@ impl ShellValue {
         }
     }
 
+    /// Returns the values of the elements in this variable.
     pub fn get_element_values(&self) -> Vec<String> {
         match self {
             ShellValue::Unset(_) => vec![],
@@ -657,6 +763,7 @@ impl ShellValue {
         }
     }
 
+    /// Converts this value to a string.
     pub fn to_cow_string(&self) -> Cow<'_, str> {
         match self {
             ShellValue::Unset(_) => Cow::Borrowed(""),
@@ -671,6 +778,11 @@ impl ShellValue {
         }
     }
 
+    /// Formats this value as a program string usable in an assignment.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index at which to retrieve the value, if indexing is to be performed.
     pub fn to_assignable_str(&self, index: Option<&str>) -> String {
         match self {
             ShellValue::Unset(_) => String::new(),
