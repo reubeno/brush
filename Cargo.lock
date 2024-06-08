@@ -249,7 +249,6 @@ dependencies = [
  "futures",
  "homedir",
  "hostname",
- "indexmap",
  "itertools 0.13.0",
  "lazy_static",
  "nix 0.29.0",

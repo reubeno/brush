@@ -679,6 +679,23 @@ impl Shell {
             }
         }
 
+        // Sort the flags in a way that matches what bash does.
+        cs.sort_by(|a, b| {
+            if a == b {
+                std::cmp::Ordering::Equal
+            } else if *a == 's' {
+                std::cmp::Ordering::Greater
+            } else if *b == 's' {
+                std::cmp::Ordering::Less
+            } else if a.is_ascii_lowercase() && b.is_ascii_uppercase() {
+                std::cmp::Ordering::Less
+            } else if a.is_ascii_uppercase() && b.is_ascii_lowercase() {
+                std::cmp::Ordering::Greater
+            } else {
+                a.cmp(b)
+            }
+        });
+
         cs.into_iter().collect()
     }
 
