@@ -18,7 +18,7 @@ workspace = true
 [dependencies]
 brush-parser = { version = "0.1.0", path = "../brush-parser" }
 brush-core = { version = "0.1.0", path = "../brush-core" }
-rustyline = { git = "https://github.com/reubeno/rustyline", rev = "fffa79df0751f95af9f8ec39191e92f3d4d7e21e", features = [
+rustyline = { package = "brush-rustyline-fork", version = "14.0.1", features = [
     "derive",
 ] }
 thiserror = "1.0.61"

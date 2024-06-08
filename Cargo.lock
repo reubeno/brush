@@ -269,7 +269,7 @@ version = "0.1.0"
 dependencies = [
  "brush-core",
  "brush-parser",
- "rustyline",
+ "brush-rustyline-fork",
  "thiserror",
  "tokio",
  "tracing",
@@ -288,6 +288,29 @@ dependencies = [
  "thiserror",
  "tracing",
  "utf8-chars",
+]
+
+[[package]]
+name = "brush-rustyline-fork"
+version = "14.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fadbfccf067c9230047bd64f98e588660edb19fb76818a80c80bb9ad9fd3921"
+dependencies = [
+ "bitflags 2.5.0",
+ "cfg-if",
+ "clipboard-win",
+ "fd-lock",
+ "home",
+ "libc",
+ "log",
+ "memchr",
+ "nix 0.29.0",
+ "radix_trie",
+ "rustyline-derive",
+ "unicode-segmentation",
+ "unicode-width",
+ "utf8parse",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1778,31 +1801,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustyline"
-version = "14.0.0"
-source = "git+https://github.com/reubeno/rustyline?rev=fffa79df0751f95af9f8ec39191e92f3d4d7e21e#fffa79df0751f95af9f8ec39191e92f3d4d7e21e"
-dependencies = [
- "bitflags 2.5.0",
- "cfg-if",
- "clipboard-win",
- "fd-lock",
- "home",
- "libc",
- "log",
- "memchr",
- "nix 0.29.0",
- "radix_trie",
- "rustyline-derive",
- "unicode-segmentation",
- "unicode-width",
- "utf8parse",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "rustyline-derive"
 version = "0.10.0"
-source = "git+https://github.com/reubeno/rustyline?rev=fffa79df0751f95af9f8ec39191e92f3d4d7e21e#fffa79df0751f95af9f8ec39191e92f3d4d7e21e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5af959c8bf6af1aff6d2b463a57f71aae53d1332da58419e30ad8dc7011d951"
 dependencies = [
  "proc-macro2",
  "quote",
