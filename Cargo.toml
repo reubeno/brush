@@ -4,6 +4,7 @@ members = ["brush-shell", "brush-parser", "brush-core", "brush-interactive"]
 default-members = ["brush-shell", "brush-parser", "brush-core", "brush-interactive"]
 
 [workspace.package]
+authors = ["reuben olinsky"]
 categories = ["command-line-utilities", "development-tools"]
 edition = "2021"
 keywords = ["cli", "shell", "sh", "bash", "script", "brush"]
