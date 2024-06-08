@@ -94,4 +94,4 @@ allow-git = []
 
 [sources.allow-org]
 # 1 or more github.com organizations to allow git sources for
-github = ["reubeno"]
+github = []
