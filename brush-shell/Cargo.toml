@@ -1,6 +1,7 @@
 [package]
 name = "brush-shell"
 description = "brush shell"
+authors.workspace = true
 categories.workspace = true
 edition.workspace = true
 keywords.workspace = true
