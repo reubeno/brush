@@ -365,10 +365,7 @@ impl Shell {
         if file_metadata.is_dir() {
             return Err(error::Error::FailedSourcingFile(
                 path.to_owned(),
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    anyhow::anyhow!("path is a directory"),
-                ),
+                std::io::Error::new(std::io::ErrorKind::Other, error::Error::IsADirectory),
             ));
         }
 

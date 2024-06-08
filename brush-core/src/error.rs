@@ -55,6 +55,10 @@ pub enum Error {
     #[error("not a directory: {0}")]
     NotADirectory(PathBuf),
 
+    /// The given path is a directory.
+    #[error("path is a directory")]
+    IsADirectory,
+
     /// The given variable is not an array.
     #[error("variable is not an array")]
     NotArray,
@@ -150,6 +154,14 @@ pub enum Error {
     /// An error occurred reading from procfs.
     #[error("procfs error: {0}")]
     ProcfsError(#[from] procfs::ProcError),
+
+    /// The given open file cannot be read from.
+    #[error("cannot read from {0}")]
+    OpenFileNotReadable(&'static str),
+
+    /// The given open file cannot be written to.
+    #[error("cannot write to {0}")]
+    OpenFileNotWritable(&'static str),
 }
 
 /// Convenience function for returning an error for unimplemented functionality.

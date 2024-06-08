@@ -23,9 +23,9 @@ harness = false
 workspace = true
 
 [dependencies]
-brush-interactive = { path = "../brush-interactive" }
-brush-parser = { path = "../brush-parser" }
-brush-core = { path = "../brush-core" }
+brush-interactive = { version = "0.1.0", path = "../brush-interactive" }
+brush-parser = { version = "0.1.0", path = "../brush-parser" }
+brush-core = { version = "0.1.0", path = "../brush-core" }
 clap = { version = "4.5.4", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["rt", "rt-multi-thread"] }
 tracing = "0.1.40"

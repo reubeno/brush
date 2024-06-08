@@ -97,21 +97,21 @@ impl std::io::Read for OpenFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             OpenFile::Stdin => std::io::stdin().read(buf),
-            OpenFile::Stdout => Err(std::io::Error::other(anyhow::anyhow!(
-                "cannot read from stdout"
+            OpenFile::Stdout => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
+                "stdout",
             ))),
-            OpenFile::Stderr => Err(std::io::Error::other(anyhow::anyhow!(
-                "cannot read from stderr"
+            OpenFile::Stderr => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
+                "stderr",
             ))),
             OpenFile::Null => Ok(0),
             OpenFile::File(f) => f.read(buf),
             OpenFile::PipeReader(reader) => reader.read(buf),
-            OpenFile::PipeWriter(_) => Err(std::io::Error::other(anyhow::anyhow!(
-                "cannot read from pipe writer"
-            ))),
-            OpenFile::HereDocument(_) => Err(std::io::Error::other(anyhow::anyhow!(
-                "cannot read from here document"
-            ))),
+            OpenFile::PipeWriter(_) => Err(std::io::Error::other(
+                error::Error::OpenFileNotReadable("pipe writer"),
+            )),
+            OpenFile::HereDocument(_) => Err(std::io::Error::other(
+                error::Error::OpenFileNotReadable("here document"),
+            )),
         }
     }
 }
@@ -119,20 +119,20 @@ impl std::io::Read for OpenFile {
 impl std::io::Write for OpenFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            OpenFile::Stdin => Err(std::io::Error::other(anyhow::anyhow!(
-                "cannot write to stdin"
+            OpenFile::Stdin => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
+                "stdin",
             ))),
             OpenFile::Stdout => std::io::stdout().write(buf),
             OpenFile::Stderr => std::io::stderr().write(buf),
             OpenFile::Null => Ok(buf.len()),
             OpenFile::File(f) => f.write(buf),
-            OpenFile::PipeReader(_) => Err(std::io::Error::other(anyhow::anyhow!(
-                "cannot write to pipe reader"
-            ))),
+            OpenFile::PipeReader(_) => Err(std::io::Error::other(
+                error::Error::OpenFileNotWritable("pipe reader"),
+            )),
             OpenFile::PipeWriter(writer) => writer.write(buf),
-            OpenFile::HereDocument(_) => Err(std::io::Error::other(anyhow::anyhow!(
-                "cannot write to here document"
-            ))),
+            OpenFile::HereDocument(_) => Err(std::io::Error::other(
+                error::Error::OpenFileNotWritable("here document"),
+            )),
         }
     }
 
