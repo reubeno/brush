@@ -16,8 +16,8 @@ bench = false
 workspace = true
 
 [dependencies]
-brush-parser = { path = "../brush-parser" }
-brush-core = { path = "../brush-core" }
+brush-parser = { version = "0.1.0", path = "../brush-parser" }
+brush-core = { version = "0.1.0", path = "../brush-core" }
 rustyline = { git = "https://github.com/reubeno/rustyline", rev = "fffa79df0751f95af9f8ec39191e92f3d4d7e21e", features = [
     "derive",
 ] }

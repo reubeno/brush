@@ -16,10 +16,9 @@ bench = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.86"
 async-recursion = "1.1.0"
 async-trait = "0.1.80"
-brush-parser = { path = "../brush-parser" }
+brush-parser = { version = "0.1.0", path = "../brush-parser" }
 cached = "0.51.3"
 clap = { version = "4.5.4", features = ["derive"] }
 fancy-regex = "0.13.0"
@@ -51,6 +50,7 @@ procfs = "0.16.0"
 uzers = "0.12.0"
 
 [dev-dependencies]
+anyhow = "1.0.86"
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
 
 [target.'cfg(unix)'.dev-dependencies]
