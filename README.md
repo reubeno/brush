@@ -46,8 +46,8 @@ There's a lot that *is* working, but there are non-trivial gaps in compatibility
   Most forms of expansion are implemented; for some reason, we never got around to implementing an expansion that turns `{a,b}` into `a b`. There's even a test for this, but it's marked as a known failing test.
 * **Tokenizer and parser edge cases.**
   For simplicity and ease of getting going, the tokenizer for `brush` was hand-implemented and the parsers were implemented using [`rust-peg`](https://github.com/kevinmehall/rust-peg). (Also a huge shout out to that project!) There are some edge cases that got tricky and may not be implemented with 100% fidelity (e.g., complex nested parenthetical expressions in arithmetic expressions, further nested inside command substitutions). All of our tests are passing in these areas, but coverage is limited. Augmenting test coverage would be a great starting point.
-
-Shell built-ins are a mixed bag. Some are completely and fully implemented (e.g. echo), while some only support their most commonly used options. Some aren't implemented at all.
+* **Anything tagged with a `TODO` comment or where `error::unimp()` is used to return a "not implemented" error**.
+  These aren't all tracked with GitHub issues right now, but there's many of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may entail cross-cutting challenges that require design work. These include shell built-ins. Some are completely and fully implemented (e.g. echo), while some only support their most commonly used options. Some aren't implemented at all.
 
 There's certainly more gaps; with time we'll find a way to represent the gaps in some understandable way. Ideally, we'd like to evolve the test suites to add tests for all known missing pieces. That will let us focus on just "fixing the tests". 
 
