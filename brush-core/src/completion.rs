@@ -1,3 +1,5 @@
+//! Implements programmable command completion support.
+
 use clap::ValueEnum;
 use std::{
     collections::{HashMap, HashSet},
@@ -8,6 +10,7 @@ use crate::{
     env, error, jobs, namedoptions, patterns, traps, users, variables::ShellValueLiteral, Shell,
 };
 
+/// Type of action to take to generate completion candidates.
 #[derive(Clone, Debug, ValueEnum)]
 pub enum CompleteAction {
     /// Complete with valid aliases.
@@ -84,6 +87,7 @@ pub enum CompleteAction {
     Variable,
 }
 
+/// Options influencing how command completions are generated.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
@@ -107,33 +111,32 @@ pub enum CompleteOption {
     /// Do not append a trailing space to completions at the end of the input line.
     #[clap(name = "nospace")]
     NoSpace,
+    /// Also generate directory completions.
     #[clap(name = "plusdirs")]
     PlusDirs,
 }
 
 /// Encapsulates the shell's programmable command completion configuration.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Default)]
-pub struct CompletionConfig {
-    commands: HashMap<String, CompletionSpec>,
+pub struct Config {
+    commands: HashMap<String, Spec>,
 
     /// Optionally, a completion spec to be used as a default, when earlier
     /// matches yield no candidates.
-    pub default: Option<CompletionSpec>,
+    pub default: Option<Spec>,
     /// Optionally, a completion spec to be used when the command line is empty.
-    pub empty_line: Option<CompletionSpec>,
+    pub empty_line: Option<Spec>,
     /// Optionally, a completion spec to be used for the initial word of a command line.
-    pub initial_word: Option<CompletionSpec>,
+    pub initial_word: Option<Spec>,
 
     /// Optionally, stores the current completion options in effect. May be mutated
     /// while a completion generation is in-flight.
-    pub current_completion_options: Option<CompletionOptions>,
+    pub current_completion_options: Option<GenerationOptions>,
 }
 
 /// Options for generating completions.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Default)]
-pub struct CompletionOptions {
+pub struct GenerationOptions {
     //
     // Options
     //
@@ -157,14 +160,13 @@ pub struct CompletionOptions {
 
 /// Encapsulates a command completion specification; provides policy for how to
 /// generate completions for a given input.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Default)]
-pub struct CompletionSpec {
+pub struct Spec {
     //
     // Options
     //
     /// Options to use for completion.
-    pub options: CompletionOptions,
+    pub options: GenerationOptions,
 
     //
     // Generators
@@ -199,9 +201,8 @@ pub struct CompletionSpec {
 }
 
 /// Encapsulates context used during completion generation.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
-pub struct CompletionContext<'a> {
+pub struct Context<'a> {
     /// The token to complete.
     pub token_to_complete: &'a str,
 
@@ -221,7 +222,7 @@ pub struct CompletionContext<'a> {
     pub tokens: &'a [&'a brush_parser::Token],
 }
 
-impl CompletionSpec {
+impl Spec {
     /// Generates completion candidates using this specification.
     ///
     /// # Arguments
@@ -232,8 +233,8 @@ impl CompletionSpec {
     pub async fn get_completions(
         &self,
         shell: &mut Shell,
-        context: &CompletionContext<'_>,
-    ) -> Result<CompletionResult, crate::error::Error> {
+        context: &Context<'_>,
+    ) -> Result<Answer, crate::error::Error> {
         let mut candidates: Vec<String> = vec![];
 
         // Store the current options in the shell; this is needed since the compopt
@@ -383,8 +384,8 @@ impl CompletionSpec {
                 .call_completion_function(shell, function_name.as_str(), context)
                 .await?;
             match call_result {
-                CompletionResult::RestartCompletionProcess => return Ok(call_result),
-                CompletionResult::Candidates(mut new_candidates, _options) => {
+                Answer::RestartCompletionProcess => return Ok(call_result),
+                Answer::Candidates(mut new_candidates, _options) => {
                     candidates.append(&mut new_candidates);
                 }
             }
@@ -427,7 +428,7 @@ impl CompletionSpec {
             &self.options
         };
 
-        let processing_options = CandidateProcessingOptions {
+        let processing_options = ProcessingOptions {
             treat_as_filenames: options.file_names,
             no_autoquote_filenames: options.no_quote,
             no_trailing_space_at_end_of_line: options.no_space,
@@ -457,15 +458,15 @@ impl CompletionSpec {
             candidates.sort();
         }
 
-        Ok(CompletionResult::Candidates(candidates, processing_options))
+        Ok(Answer::Candidates(candidates, processing_options))
     }
 
     async fn call_completion_function(
         &self,
         shell: &mut Shell,
         function_name: &str,
-        context: &CompletionContext<'_>,
-    ) -> Result<CompletionResult, error::Error> {
+        context: &Context<'_>,
+    ) -> Result<Answer, error::Error> {
         // TODO: Don't pollute the persistent environment with these?
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
@@ -509,23 +510,18 @@ impl CompletionSpec {
         // When the function returns the special value 124, then it's a request
         // for us to restart the completion process.
         if result == 124 {
-            Ok(CompletionResult::RestartCompletionProcess)
+            Ok(Answer::RestartCompletionProcess)
         } else {
             if let Some((_, reply)) = shell.env.get("COMPREPLY") {
                 match reply.value() {
-                    crate::variables::ShellValue::IndexedArray(values) => {
-                        Ok(CompletionResult::Candidates(
-                            values.values().map(|v| v.to_owned()).collect(),
-                            CandidateProcessingOptions::default(),
-                        ))
-                    }
+                    crate::variables::ShellValue::IndexedArray(values) => Ok(Answer::Candidates(
+                        values.values().map(|v| v.to_owned()).collect(),
+                        ProcessingOptions::default(),
+                    )),
                     _ => error::unimp("unexpected COMPREPLY value type"),
                 }
             } else {
-                Ok(CompletionResult::Candidates(
-                    vec![],
-                    CandidateProcessingOptions::default(),
-                ))
+                Ok(Answer::Candidates(vec![], ProcessingOptions::default()))
             }
         }
     }
@@ -539,12 +535,12 @@ pub struct Completions {
     /// The ordered list of completions.
     pub candidates: Vec<String>,
     /// Options for processing the candidates.
-    pub options: CandidateProcessingOptions,
+    pub options: ProcessingOptions,
 }
 
-/// Options governing how command completion candidates are processed.
+/// Options governing how command completion candidates are processed after being generated.
 #[derive(Debug)]
-pub struct CandidateProcessingOptions {
+pub struct ProcessingOptions {
     /// Treat completions as file names.
     pub treat_as_filenames: bool,
     /// Don't auto-quote completions that are file names.
@@ -553,7 +549,7 @@ pub struct CandidateProcessingOptions {
     pub no_trailing_space_at_end_of_line: bool,
 }
 
-impl Default for CandidateProcessingOptions {
+impl Default for ProcessingOptions {
     fn default() -> Self {
         Self {
             treat_as_filenames: true,
@@ -563,12 +559,11 @@ impl Default for CandidateProcessingOptions {
     }
 }
 
-/// Encapsulates a completion result.
-#[allow(clippy::module_name_repetitions)]
-pub enum CompletionResult {
+/// Encapsulates a completion answer.
+pub enum Answer {
     /// The completion process generated a set of candidates along with options
     /// controlling how to process them.
-    Candidates(Vec<String>, CandidateProcessingOptions),
+    Candidates(Vec<String>, ProcessingOptions),
     /// The completion process needs to be restarted.
     RestartCompletionProcess,
 }
@@ -577,7 +572,7 @@ const EMPTY_COMMAND: &str = "_EmptycmD_";
 const DEFAULT_COMMAND: &str = "_DefaultCmD_";
 const INITIAL_WORD: &str = "_InitialWorD_";
 
-impl CompletionConfig {
+impl Config {
     /// Removes a completion spec by name.
     ///
     /// # Arguments
@@ -601,7 +596,7 @@ impl CompletionConfig {
     }
 
     /// Returns an iterator over the completion specs.
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &CompletionSpec)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Spec)> {
         self.commands.iter()
     }
 
@@ -610,7 +605,7 @@ impl CompletionConfig {
     /// # Arguments
     ///
     /// * `name` - The name of the command.
-    pub fn get(&self, name: &str) -> Option<&CompletionSpec> {
+    pub fn get(&self, name: &str) -> Option<&Spec> {
         match name {
             EMPTY_COMMAND => self.empty_line.as_ref(),
             DEFAULT_COMMAND => self.default.as_ref(),
@@ -626,7 +621,7 @@ impl CompletionConfig {
     ///
     /// * `name` - The name of the command.
     /// * `spec` - The completion spec to associate with the command.
-    pub fn set(&mut self, name: &str, spec: CompletionSpec) {
+    pub fn set(&mut self, name: &str, spec: Spec) {
         match name {
             EMPTY_COMMAND => {
                 self.empty_line = Some(spec);
@@ -651,23 +646,23 @@ impl CompletionConfig {
     /// # Arguments
     ///
     /// * `name` - The name of the command.
-    pub fn get_or_add_mut(&mut self, name: &str) -> &mut CompletionSpec {
+    pub fn get_or_add_mut(&mut self, name: &str) -> &mut Spec {
         match name {
             EMPTY_COMMAND => {
                 if self.empty_line.is_none() {
-                    self.empty_line = Some(CompletionSpec::default());
+                    self.empty_line = Some(Spec::default());
                 }
                 self.empty_line.as_mut().unwrap()
             }
             DEFAULT_COMMAND => {
                 if self.default.is_none() {
-                    self.default = Some(CompletionSpec::default());
+                    self.default = Some(Spec::default());
                 }
                 self.default.as_mut().unwrap()
             }
             INITIAL_WORD => {
                 if self.initial_word.is_none() {
-                    self.initial_word = Some(CompletionSpec::default());
+                    self.initial_word = Some(Spec::default());
                 }
                 self.initial_word.as_mut().unwrap()
             }
@@ -748,15 +743,15 @@ impl CompletionConfig {
             adjusted_tokens.push(&empty_token);
 
             // Get the completions.
-            let mut result = CompletionResult::RestartCompletionProcess;
+            let mut result = Answer::RestartCompletionProcess;
             let mut restart_count = 0;
-            while matches!(result, CompletionResult::RestartCompletionProcess) {
+            while matches!(result, Answer::RestartCompletionProcess) {
                 if restart_count > MAX_RESTARTS {
                     tracing::error!("possible infinite loop detected in completion process");
                     break;
                 }
 
-                let completion_context = CompletionContext {
+                let completion_context = Context {
                     token_to_complete: completion_prefix,
                     preceding_token: preceding_token.map(|t| t.to_str()),
                     command_name: adjusted_tokens.first().map(|token| token.to_str()),
@@ -774,22 +769,22 @@ impl CompletionConfig {
             }
 
             match result {
-                CompletionResult::Candidates(candidates, options) => Ok(Completions {
+                Answer::Candidates(candidates, options) => Ok(Completions {
                     start: insertion_point as usize,
                     candidates,
                     options,
                 }),
-                CompletionResult::RestartCompletionProcess => Ok(Completions {
+                Answer::RestartCompletionProcess => Ok(Completions {
                     start: insertion_point as usize,
                     candidates: vec![],
-                    options: CandidateProcessingOptions::default(),
+                    options: ProcessingOptions::default(),
                 }),
             }
         } else {
             Ok(Completions {
                 start: position,
                 candidates: vec![],
-                options: CandidateProcessingOptions::default(),
+                options: ProcessingOptions::default(),
             })
         }
     }
@@ -797,8 +792,8 @@ impl CompletionConfig {
     async fn get_completions_for_token<'a>(
         &self,
         shell: &mut Shell,
-        mut context: CompletionContext<'a>,
-    ) -> CompletionResult {
+        mut context: Context<'a>,
+    ) -> Answer {
         // N.B. We basic-expand the token-to-be-completed first.
         let mut throwaway_shell = shell.clone();
         let expanded_token_to_complete = throwaway_shell
@@ -808,7 +803,7 @@ impl CompletionConfig {
         context.token_to_complete = expanded_token_to_complete.as_str();
 
         // See if we can find a completion spec matching the current command.
-        let mut found_spec: Option<&CompletionSpec> = None;
+        let mut found_spec: Option<&Spec> = None;
 
         if let Some(command_name) = context.command_name {
             if context.token_index == 0 {
@@ -846,12 +841,9 @@ impl CompletionConfig {
                 .to_owned()
                 .get_completions(shell, &context)
                 .await
-                .unwrap_or_else(|_err| {
-                    CompletionResult::Candidates(vec![], CandidateProcessingOptions::default())
-                });
+                .unwrap_or_else(|_err| Answer::Candidates(vec![], ProcessingOptions::default()));
 
-            if !matches!(&result, CompletionResult::Candidates(candidates, _) if candidates.is_empty())
-            {
+            if !matches!(&result, Answer::Candidates(candidates, _) if candidates.is_empty()) {
                 return result;
             }
         }
@@ -860,11 +852,7 @@ impl CompletionConfig {
     }
 }
 
-fn get_file_completions(
-    shell: &Shell,
-    context: &CompletionContext,
-    must_be_dir: bool,
-) -> Vec<String> {
+fn get_file_completions(shell: &Shell, context: &Context, must_be_dir: bool) -> Vec<String> {
     let glob = std::format!("{}*", context.token_to_complete);
 
     let path_filter = |path: &Path| !must_be_dir || path.is_dir();
@@ -879,7 +867,7 @@ fn get_file_completions(
         .unwrap_or_default()
 }
 
-fn get_command_completions(shell: &Shell, context: &CompletionContext) -> Vec<String> {
+fn get_command_completions(shell: &Shell, context: &Context) -> Vec<String> {
     let mut candidates = HashSet::new();
     let glob_pattern = std::format!("{}*", context.token_to_complete);
 
@@ -893,10 +881,7 @@ fn get_command_completions(shell: &Shell, context: &CompletionContext) -> Vec<St
     candidates.into_iter().collect()
 }
 
-fn get_completions_using_basic_lookup(
-    shell: &Shell,
-    context: &CompletionContext,
-) -> CompletionResult {
+fn get_completions_using_basic_lookup(shell: &Shell, context: &Context) -> Answer {
     let mut candidates = get_file_completions(shell, context, false);
 
     // If this appears to be the command token (and if there's *some* prefix without
@@ -953,7 +938,7 @@ fn get_completions_using_basic_lookup(
             .collect();
     }
 
-    CompletionResult::Candidates(candidates, CandidateProcessingOptions::default())
+    Answer::Candidates(candidates, ProcessingOptions::default())
 }
 
 fn split_string_using_ifs<S: AsRef<str>>(s: S, shell: &Shell) -> Vec<String> {

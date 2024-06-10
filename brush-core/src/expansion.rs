@@ -414,7 +414,7 @@ impl<'a> WordExpander<'a> {
         //
         // Expand: tildes, parameters, command substitutions, arithmetic.
         //
-        let pieces = brush_parser::parse_word_for_expansion(word, &self.parser_options)?;
+        let pieces = brush_parser::word::parse(word, &self.parser_options)?;
 
         let mut expansions = vec![];
         for piece in pieces {

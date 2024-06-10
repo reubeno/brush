@@ -1,10 +1,7 @@
 use clap::Parser;
 use std::{io::Write, str::FromStr};
 
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    error, traps,
-};
+use crate::{builtin, commands, error, traps};
 
 /// Manage signal traps.
 #[derive(Parser)]
@@ -21,14 +18,14 @@ pub(crate) struct TrapCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for TrapCommand {
+impl builtin::Command for TrapCommand {
     async fn execute(
         &self,
-        mut context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        mut context: commands::ExecutionContext<'_>,
+    ) -> Result<builtin::ExitCode, crate::error::Error> {
         if self.list_signals {
             Self::display_signals(&context)?;
-            Ok(BuiltinExitCode::Success)
+            Ok(builtin::ExitCode::Success)
         } else if self.print_trap_commands || self.args.is_empty() {
             if !self.args.is_empty() {
                 for signal_type in &self.args {
@@ -38,12 +35,12 @@ impl BuiltinCommand for TrapCommand {
             } else {
                 Self::display_all_handlers(&context)?;
             }
-            Ok(BuiltinExitCode::Success)
+            Ok(builtin::ExitCode::Success)
         } else if self.args.len() == 1 {
             let signal = self.args[0].as_str();
             let signal_type = parse_signal(signal)?;
             Self::remove_all_handlers(&mut context, signal_type);
-            Ok(BuiltinExitCode::Success)
+            Ok(builtin::ExitCode::Success)
         } else {
             let handler = &self.args[0];
 
@@ -53,15 +50,13 @@ impl BuiltinCommand for TrapCommand {
             }
 
             Self::register_handler(&mut context, signal_types, handler.as_str());
-            Ok(BuiltinExitCode::Success)
+            Ok(builtin::ExitCode::Success)
         }
     }
 }
 
 impl TrapCommand {
-    fn display_signals(
-        context: &crate::context::CommandExecutionContext<'_>,
-    ) -> Result<(), error::Error> {
+    fn display_signals(context: &commands::ExecutionContext<'_>) -> Result<(), error::Error> {
         for signal in nix::sys::signal::Signal::iterator() {
             writeln!(context.stdout(), "{}: {signal}", signal as i32)?;
         }
@@ -69,9 +64,7 @@ impl TrapCommand {
         Ok(())
     }
 
-    fn display_all_handlers(
-        context: &crate::context::CommandExecutionContext<'_>,
-    ) -> Result<(), error::Error> {
+    fn display_all_handlers(context: &commands::ExecutionContext<'_>) -> Result<(), error::Error> {
         for signal in context.shell.traps.handlers.keys() {
             Self::display_handlers_for(context, *signal)?;
         }
@@ -79,7 +72,7 @@ impl TrapCommand {
     }
 
     fn display_handlers_for(
-        context: &crate::context::CommandExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         signal_type: traps::TrapSignal,
     ) -> Result<(), error::Error> {
         if let Some(handler) = context.shell.traps.handlers.get(&signal_type) {
@@ -89,14 +82,14 @@ impl TrapCommand {
     }
 
     fn remove_all_handlers(
-        context: &mut crate::context::CommandExecutionContext<'_>,
+        context: &mut crate::commands::ExecutionContext<'_>,
         signal: traps::TrapSignal,
     ) {
         context.shell.traps.remove_handlers(signal);
     }
 
     fn register_handler(
-        context: &mut crate::context::CommandExecutionContext<'_>,
+        context: &mut crate::commands::ExecutionContext<'_>,
         signals: Vec<traps::TrapSignal>,
         handler: &str,
     ) {

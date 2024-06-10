@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use clap::Parser;
 
-use crate::builtin::{self, BuiltinCommand, BuiltinExitCode};
-use crate::{error, namedoptions};
+use crate::{builtin, commands, error, namedoptions};
 
 builtin::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
@@ -131,7 +130,7 @@ pub(crate) struct SetCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for SetCommand {
+impl builtin::Command for SetCommand {
     fn takes_plus_options() -> bool {
         true
     }
@@ -139,9 +138,9 @@ impl BuiltinCommand for SetCommand {
     #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<BuiltinExitCode, error::Error> {
-        let mut result = BuiltinExitCode::Success;
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<builtin::ExitCode, error::Error> {
+        let mut result = builtin::ExitCode::Success;
 
         if let Some(value) = self.print_commands_and_arguments.to_bool() {
             context.shell.options.print_commands_and_arguments = value;
@@ -253,7 +252,7 @@ impl BuiltinCommand for SetCommand {
             if let Some(option_def) = namedoptions::SET_O_OPTIONS.get(option_name.as_str()) {
                 (option_def.setter)(context.shell, value);
             } else {
-                result = BuiltinExitCode::InvalidUsage;
+                result = builtin::ExitCode::InvalidUsage;
             }
         }
 

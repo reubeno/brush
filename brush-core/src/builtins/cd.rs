@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{builtin, commands};
 
 /// Change the current working directory.
 #[derive(Parser)]
@@ -29,11 +29,11 @@ pub(crate) struct CdCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for CdCommand {
+impl builtin::Command for CdCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         // TODO: implement options
         if self.force_follow_symlinks
             || self.use_physical_dir
@@ -50,7 +50,7 @@ impl BuiltinCommand for CdCommand {
                 PathBuf::from(home_var.to_string())
             } else {
                 writeln!(context.stderr(), "HOME not set")?;
-                return Ok(BuiltinExitCode::Custom(1));
+                return Ok(builtin::ExitCode::Custom(1));
             }
         };
 
@@ -58,10 +58,10 @@ impl BuiltinCommand for CdCommand {
             Ok(()) => {}
             Err(e) => {
                 writeln!(context.stderr(), "cd: {e}")?;
-                return Ok(BuiltinExitCode::Custom(1));
+                return Ok(builtin::ExitCode::Custom(1));
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }

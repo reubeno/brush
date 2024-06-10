@@ -1,76 +1,78 @@
-//! The main entry point for the brush shell.
+//! Implements the command-line interface for the `brush` shell.
 
 use std::{collections::HashSet, io::IsTerminal, path::Path};
 
 use clap::{builder::styling, Parser};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
+/// Parsed command-line arguments for the brush shell.
 #[derive(Parser)]
 #[clap(version, about, disable_help_flag = true, disable_version_flag = true, styles = brush_help_styles())]
 struct CommandLineArgs {
-    #[clap(long = "help", action = clap::ArgAction::HelpLong, help = "Display usage information")]
+    /// Display usage information.
+    #[clap(long = "help", action = clap::ArgAction::HelpLong)]
     help: Option<bool>,
 
-    #[clap(long = "version", action = clap::ArgAction::Version, help = "Display shell version")]
+    /// Display shell version.
+    #[clap(long = "version", action = clap::ArgAction::Version)]
     version: Option<bool>,
 
-    #[arg(short = 'c', help = "Execute the provided command and then exit")]
+    /// Execute the provided command and then exit.
+    #[arg(short = 'c')]
     command: Option<String>,
 
-    #[clap(short = 'i', help = "Run in interactive mode")]
+    /// Run in interactive mode.
+    #[clap(short = 'i')]
     interactive: bool,
 
-    #[clap(
-        short = 'l',
-        long = "login",
-        help = "Make shell act as if it had been invoked as a login shell"
-    )]
+    /// Make shell act as if it had been invoked as a login shell.
+    #[clap(short = 'l', long = "login")]
     login: bool,
 
-    #[clap(long = "noediting", help = "Don't use readline for input.")]
+    /// Don't use readline for input.
+    #[clap(long = "noediting")]
     no_editing: bool,
 
-    #[clap(
-        long = "noprofile",
-        help = "Don't process any profile/login files (/etc/profile, ~/.bash_profile, ~/.bash_login, ~/.profile)."
-    )]
+    /// Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`, `~/.profile`).
+    #[clap(long = "noprofile")]
     no_profile: bool,
 
-    #[clap(
-        long = "norc",
-        help = "Don't process ~/.bashrc if the shell is interactive."
-    )]
+    /// Don't process "rc" files if the shell is interactive (e.g., `~/.bashrc`, `~/.brushrc`).
+    #[clap(long = "norc")]
     no_rc: bool,
 
-    #[clap(long = "posix", help = "Disable non-POSIX extensions.")]
+    /// Disable non-POSIX extensions.
+    #[clap(long = "posix")]
     posix: bool,
 
-    #[clap(short = 's', help = "Read commands from standard input.")]
+    /// Read commands from standard input.
+    #[clap(short = 's')]
     read_commands_from_stdin: bool,
 
-    #[clap(long = "sh", help = "Run in sh compatibility mode.")]
+    /// Run in sh compatibility mode.
+    #[clap(long = "sh")]
     sh_mode: bool,
 
-    #[clap(
-        short = 'v',
-        long = "verbose",
-        help = "Print input when it's processed."
-    )]
+    /// Print input when it's processed.
+    #[clap(short = 'v', long = "verbose")]
     verbose: bool,
 
-    #[clap(short = 'x', help = "Print commands as they execute.")]
+    /// Print commands as they execute.
+    #[clap(short = 'x')]
     print_commands_and_arguments: bool,
 
-    #[clap(long = "disable-bracketed-paste", help = "Disable bracketed paste.")]
+    /// Disable bracketed paste.
+    #[clap(long = "disable-bracketed-paste")]
     disable_bracketed_paste: bool,
 
+    /// Enable debug logging for classes of tracing events.
     #[clap(long = "log-enable")]
     enabled_log_events: Vec<TraceEvent>,
 
-    #[clap(help = "Path to script to execute")]
+    /// Path to script to execute.
     script_path: Option<String>,
 
-    #[clap(help = "Arguments for script")]
+    /// Arguments for script.
     script_args: Vec<String>,
 }
 
@@ -118,6 +120,7 @@ impl CommandLineArgs {
     }
 }
 
+/// Main entry point for the `brush` shell.
 fn main() {
     //
     // Parse args.
@@ -190,10 +193,17 @@ fn main() {
     std::process::exit(exit_code as i32);
 }
 
+/// Run the brush shell. Returns the exit code.
+///
+/// # Arguments
+///
+/// * `cli_args` - The command-line arguments to the shell, in string form.
+/// * `args` - The already-parsed command-line arguments.
+#[doc(hidden)]
 async fn run(
     cli_args: Vec<String>,
     args: CommandLineArgs,
-) -> Result<u8, brush_interactive::InteractiveShellError> {
+) -> Result<u8, brush_interactive::ShellError> {
     let argv0 = if args.sh_mode {
         // Simulate having been run as "sh".
         Some(String::from("sh"))
@@ -249,6 +259,8 @@ async fn run(
     Ok(shell.shell().last_result())
 }
 
+/// Returns clap styling to be used for command-line help.
+#[doc(hidden)]
 fn brush_help_styles() -> clap::builder::Styles {
     styling::Styles::styled()
         .header(

@@ -2,8 +2,7 @@ use clap::builder::styling;
 use clap::Parser;
 use futures::future::BoxFuture;
 
-use crate::commands::CommandArg;
-use crate::context;
+use crate::commands;
 use crate::error;
 use crate::ExecutionResult;
 
@@ -49,12 +48,11 @@ pub(crate) use minus_or_plus_flag_arg;
 #[allow(clippy::module_name_repetitions)]
 pub struct BuiltinResult {
     /// The exit code from the command.
-    pub exit_code: BuiltinExitCode,
+    pub exit_code: ExitCode,
 }
 
 /// Exit codes for built-in commands.
-#[allow(clippy::module_name_repetitions)]
-pub enum BuiltinExitCode {
+pub enum ExitCode {
     /// The command was successful.
     Success,
     /// The inputs to the command were invalid.
@@ -73,20 +71,20 @@ pub enum BuiltinExitCode {
     BreakLoop(u8),
 }
 
-impl From<ExecutionResult> for BuiltinExitCode {
+impl From<ExecutionResult> for ExitCode {
     fn from(result: ExecutionResult) -> Self {
         if let Some(count) = result.continue_loop {
-            BuiltinExitCode::ContinueLoop(count)
+            ExitCode::ContinueLoop(count)
         } else if let Some(count) = result.break_loop {
-            BuiltinExitCode::BreakLoop(count)
+            ExitCode::BreakLoop(count)
         } else if result.return_from_function_or_script {
-            BuiltinExitCode::ReturnFromFunctionOrScript(result.exit_code)
+            ExitCode::ReturnFromFunctionOrScript(result.exit_code)
         } else if result.exit_shell {
-            BuiltinExitCode::ExitShell(result.exit_code)
+            ExitCode::ExitShell(result.exit_code)
         } else if result.exit_code == 0 {
-            BuiltinExitCode::Success
+            ExitCode::Success
         } else {
-            BuiltinExitCode::Custom(result.exit_code)
+            ExitCode::Custom(result.exit_code)
         }
     }
 }
@@ -97,16 +95,14 @@ impl From<ExecutionResult> for BuiltinExitCode {
 ///
 /// * The context in which the command is being executed.
 /// * The arguments to the command.
-#[allow(clippy::module_name_repetitions)]
-pub type BuiltinCommandExecuteFunc = fn(
-    context::CommandExecutionContext<'_>,
-    Vec<CommandArg>,
+pub type CommandExecuteFunc = fn(
+    commands::ExecutionContext<'_>,
+    Vec<commands::CommandArg>,
 ) -> BoxFuture<'_, Result<BuiltinResult, error::Error>>;
 
 /// Trait implemented by built-in shell commands.
-#[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
-pub trait BuiltinCommand: Parser {
+pub trait Command: Parser {
     /// Instantiates the built-in command with the given arguments.
     ///
     /// # Arguments
@@ -145,8 +141,8 @@ pub trait BuiltinCommand: Parser {
     /// * `context` - The context in which the command is being executed.
     async fn execute(
         &self,
-        context: context::CommandExecutionContext<'_>,
-    ) -> Result<BuiltinExitCode, error::Error>;
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<ExitCode, error::Error>;
 
     /// Returns the textual help content associated with the command.
     ///
@@ -154,36 +150,32 @@ pub trait BuiltinCommand: Parser {
     ///
     /// * `name` - The name of the command.
     /// * `content_type` - The type of content to retrieve.
-    fn get_content(name: &str, content_type: BuiltinContentType) -> String {
+    fn get_content(name: &str, content_type: ContentType) -> String {
         let mut clap_command = Self::command().styles(brush_help_styles());
         clap_command.set_bin_name(name);
 
         match content_type {
-            BuiltinContentType::DetailedHelp => clap_command.render_long_help().ansi().to_string(),
-            BuiltinContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
-            BuiltinContentType::ShortDescription => {
-                get_builtin_short_description(name, &clap_command)
-            }
+            ContentType::DetailedHelp => clap_command.render_long_help().ansi().to_string(),
+            ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
+            ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
         }
     }
 }
 
 /// Trait implemented by built-in shell commands that take specially handled declarations
 /// as arguments.
-#[allow(clippy::module_name_repetitions)]
 #[async_trait::async_trait]
-pub trait BuiltinDeclarationCommand: BuiltinCommand {
+pub trait DeclarationCommand: Command {
     /// Stores the declarations within the command instance.
     ///
     /// # Arguments
     ///
     /// * `declarations` - The declarations to store.
-    fn set_declarations(&mut self, declarations: Vec<CommandArg>);
+    fn set_declarations(&mut self, declarations: Vec<commands::CommandArg>);
 }
 
 /// Type of help content, typically associated with a built-in command.
-#[allow(clippy::module_name_repetitions)]
-pub enum BuiltinContentType {
+pub enum ContentType {
     /// Detailed help content for the command.
     DetailedHelp,
     /// Short usage information for the command.
@@ -193,14 +185,13 @@ pub enum BuiltinContentType {
 }
 
 /// Encapsulates a registration for a built-in command.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
-pub struct BuiltinRegistration {
+pub struct Registration {
     /// Function to execute the builtin.
-    pub execute_func: BuiltinCommandExecuteFunc,
+    pub execute_func: CommandExecuteFunc,
 
     /// Function to retrieve the builtin's content/help text.
-    pub content_func: fn(&str, BuiltinContentType) -> String,
+    pub content_func: fn(&str, ContentType) -> String,
 
     /// Has this registration been disabled?
     pub disabled: bool,

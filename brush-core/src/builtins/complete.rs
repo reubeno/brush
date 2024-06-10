@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use crate::builtin::{self, BuiltinCommand, BuiltinExitCode};
-use crate::completion::{self, CompleteAction, CompleteOption, CompletionSpec};
+use crate::builtin;
+use crate::commands;
+use crate::completion::{self, CompleteAction, CompleteOption, Spec};
 use crate::error;
 
 #[derive(Parser)]
@@ -92,7 +93,7 @@ pub(crate) struct CommonCompleteCommandArgs {
 }
 
 impl CommonCompleteCommandArgs {
-    fn create_spec(&self) -> completion::CompletionSpec {
+    fn create_spec(&self) -> completion::Spec {
         let filter_pattern_excludes;
         let filter_pattern = if let Some(filter_pattern) = self.filter_pattern.as_ref() {
             if let Some(filter_pattern) = filter_pattern.strip_prefix('!') {
@@ -107,8 +108,8 @@ impl CommonCompleteCommandArgs {
             None
         };
 
-        let mut spec = completion::CompletionSpec {
-            options: completion::CompletionOptions::default(),
+        let mut spec = completion::Spec {
+            options: completion::GenerationOptions::default(),
             actions: self.resolve_actions(),
             glob_pattern: self.glob_pattern.clone(),
             word_list: self.word_list.clone(),
@@ -206,11 +207,11 @@ pub(crate) struct CompleteCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for CompleteCommand {
+impl builtin::Command for CompleteCommand {
     async fn execute(
         &self,
-        mut context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        mut context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         // If -D, -E, or -I are specified, then any names provided are ignored.
         if self.use_as_default
             || self.use_for_empty_line
@@ -224,14 +225,14 @@ impl BuiltinCommand for CompleteCommand {
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }
 
 impl CompleteCommand {
     fn process_global(
         &self,
-        context: &mut crate::context::CommandExecutionContext<'_>,
+        context: &mut crate::commands::ExecutionContext<'_>,
     ) -> Result<(), crate::error::Error> {
         // These are processed in an intentional order.
         let special_option_name;
@@ -282,7 +283,7 @@ impl CompleteCommand {
     }
 
     fn display_spec_for_command(
-        context: &mut crate::context::CommandExecutionContext<'_>,
+        context: &mut commands::ExecutionContext<'_>,
         name: &str,
     ) -> Result<(), error::Error> {
         if let Some(spec) = context.shell.completion_config.get(name) {
@@ -293,10 +294,10 @@ impl CompleteCommand {
     }
 
     fn display_spec(
-        context: &crate::context::CommandExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         special_name: Option<&str>,
         command_name: Option<&str>,
-        spec: &CompletionSpec,
+        spec: &Spec,
     ) -> Result<(), error::Error> {
         let mut s = String::from("complete");
 
@@ -396,7 +397,7 @@ impl CompleteCommand {
 
     fn process_for_command(
         &self,
-        context: &mut crate::context::CommandExecutionContext<'_>,
+        context: &mut crate::commands::ExecutionContext<'_>,
         name: &str,
     ) -> Result<(), crate::error::Error> {
         if self.print {
@@ -424,16 +425,16 @@ pub(crate) struct CompGenCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for CompGenCommand {
+impl builtin::Command for CompGenCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         let spec = self.common_args.create_spec();
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
-        let completion_context = completion::CompletionContext {
+        let completion_context = completion::Context {
             token_to_complete,
             preceding_token: None,
             command_name: None,
@@ -451,17 +452,17 @@ impl BuiltinCommand for CompGenCommand {
             .await?;
 
         match result {
-            completion::CompletionResult::Candidates(candidates, _options) => {
+            completion::Answer::Candidates(candidates, _options) => {
                 for candidate in candidates {
                     writeln!(context.stdout(), "{candidate}")?;
                 }
             }
-            completion::CompletionResult::RestartCompletionProcess => {
+            completion::Answer::RestartCompletionProcess => {
                 return error::unimp("restart completion")
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }
 
@@ -486,11 +487,11 @@ pub(crate) struct CompOptCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for CompOptCommand {
+impl builtin::Command for CompOptCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         let mut options = HashMap::new();
         for option in &self.disabled_options {
             options.insert(option.clone(), false);
@@ -505,7 +506,7 @@ impl BuiltinCommand for CompOptCommand {
                     context.stderr(),
                     "compopt: cannot specify names with -D, -E, or -I"
                 )?;
-                return Ok(builtin::BuiltinExitCode::InvalidUsage);
+                return Ok(builtin::ExitCode::InvalidUsage);
             }
 
             for name in &self.names {
@@ -516,7 +517,7 @@ impl BuiltinCommand for CompOptCommand {
             if let Some(spec) = &mut context.shell.completion_config.default {
                 Self::set_options_for_spec(spec, &options);
             } else {
-                let mut spec = CompletionSpec::default();
+                let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
                 std::mem::swap(
                     &mut context.shell.completion_config.default,
@@ -527,7 +528,7 @@ impl BuiltinCommand for CompOptCommand {
             if let Some(spec) = &mut context.shell.completion_config.empty_line {
                 Self::set_options_for_spec(spec, &options);
             } else {
-                let mut spec = CompletionSpec::default();
+                let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
                 std::mem::swap(
                     &mut context.shell.completion_config.empty_line,
@@ -538,7 +539,7 @@ impl BuiltinCommand for CompOptCommand {
             if let Some(spec) = &mut context.shell.completion_config.initial_word {
                 Self::set_options_for_spec(spec, &options);
             } else {
-                let mut spec = CompletionSpec::default();
+                let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
                 std::mem::swap(
                     &mut context.shell.completion_config.initial_word,
@@ -557,17 +558,17 @@ impl BuiltinCommand for CompOptCommand {
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }
 
 impl CompOptCommand {
-    fn set_options_for_spec(spec: &mut CompletionSpec, options: &HashMap<CompleteOption, bool>) {
+    fn set_options_for_spec(spec: &mut Spec, options: &HashMap<CompleteOption, bool>) {
         Self::set_options(&mut spec.options, options);
     }
 
     fn set_options(
-        target_options: &mut completion::CompletionOptions,
+        target_options: &mut completion::GenerationOptions,
         options: &HashMap<CompleteOption, bool>,
     ) {
         for (option, value) in options {

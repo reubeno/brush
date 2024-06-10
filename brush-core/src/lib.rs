@@ -1,11 +1,12 @@
-//! Core implementation of the brush shell
+//! Core implementation of the brush shell. Implements the shell's abstraction, its interpreter, and
+//! various facilities used internally by the shell.
+
+pub mod completion;
 
 mod arithmetic;
 mod builtin;
 mod builtins;
 mod commands;
-mod completion;
-mod context;
 mod env;
 mod error;
 mod escape;
@@ -28,7 +29,6 @@ mod traps;
 mod users;
 mod variables;
 
-pub use completion::{CandidateProcessingOptions, Completions};
 pub use error::Error;
 pub use interp::ExecutionResult;
 pub use shell::{CreateOptions, Shell};

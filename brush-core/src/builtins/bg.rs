@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{builtin, commands};
 
 /// Moves a job to run in the background.
 #[derive(Parser)]
@@ -11,12 +11,12 @@ pub(crate) struct BgCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for BgCommand {
+impl builtin::Command for BgCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        let mut exit_code = BuiltinExitCode::Success;
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+        let mut exit_code = builtin::ExitCode::Success;
 
         if !self.job_specs.is_empty() {
             for job_spec in &self.job_specs {
@@ -29,7 +29,7 @@ impl BuiltinCommand for BgCommand {
                         context.command_name,
                         job_spec
                     )?;
-                    exit_code = BuiltinExitCode::Custom(1);
+                    exit_code = builtin::ExitCode::Custom(1);
                 }
             }
         } else {
@@ -37,7 +37,7 @@ impl BuiltinCommand for BgCommand {
                 job.move_to_background()?;
             } else {
                 writeln!(context.stderr(), "{}: no current job", context.command_name)?;
-                exit_code = BuiltinExitCode::Custom(1);
+                exit_code = builtin::ExitCode::Custom(1);
             }
         }
 

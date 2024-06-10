@@ -2,7 +2,8 @@ use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::builtin;
+use crate::commands;
 use crate::error;
 
 /// Enable, disable, or display built-in commands.
@@ -37,12 +38,12 @@ pub(crate) struct EnableCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for EnableCommand {
+impl builtin::Command for EnableCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        let mut result = BuiltinExitCode::Success;
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<builtin::ExitCode, crate::error::Error> {
+        let mut result = builtin::ExitCode::Success;
 
         if self.shared_object_path.is_some() {
             return error::unimp("enable -f");
@@ -57,7 +58,7 @@ impl BuiltinCommand for EnableCommand {
                     builtin.disabled = self.disable;
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
-                    result = BuiltinExitCode::Custom(1);
+                    result = builtin::ExitCode::Custom(1);
                 }
             }
         } else {

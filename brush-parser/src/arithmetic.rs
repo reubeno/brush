@@ -1,9 +1,14 @@
+//! Parser for shell arithmetic expressions.
+
 use crate::ast;
 use crate::error;
 
-pub fn parse_arithmetic_expression(
-    input: &str,
-) -> Result<ast::ArithmeticExpr, crate::error::WordParseError> {
+/// Parses a shell arithmetic expression.
+///
+/// # Arguments
+///
+/// * `input` - The arithmetic expression to parse, in string form.
+pub fn parse(input: &str) -> Result<ast::ArithmeticExpr, crate::error::WordParseError> {
     tracing::debug!("parsing arithmetic expression: '{input}'");
 
     // Special-case the empty string.

@@ -1,10 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    expansion,
-};
+use crate::{builtin, commands, expansion};
 
 /// Format a string.
 #[derive(Parser)]
@@ -23,11 +20,11 @@ pub(crate) struct PrintfCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for PrintfCommand {
+impl builtin::Command for PrintfCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         // TODO: Don't call external printf command.
         let mut cmd = std::process::Command::new("printf");
         cmd.env_clear();
@@ -44,7 +41,9 @@ impl BuiltinCommand for PrintfCommand {
         if !output.status.success() {
             #[allow(clippy::cast_possible_truncation)]
             #[allow(clippy::cast_sign_loss)]
-            return Ok(BuiltinExitCode::Custom(output.status.code().unwrap() as u8));
+            return Ok(builtin::ExitCode::Custom(
+                output.status.code().unwrap() as u8
+            ));
         }
 
         if let Some(variable_name) = &self.output_variable {
@@ -54,6 +53,6 @@ impl BuiltinCommand for PrintfCommand {
             context.stdout().flush()?;
         }
 
-        return Ok(BuiltinExitCode::Success);
+        return Ok(builtin::ExitCode::Success);
     }
 }

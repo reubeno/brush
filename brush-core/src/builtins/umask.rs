@@ -1,7 +1,4 @@
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    error,
-};
+use crate::{builtin, commands, error};
 use clap::Parser;
 use std::io::Write;
 
@@ -25,11 +22,11 @@ pub(crate) struct UmaskCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for UmaskCommand {
+impl builtin::Command for UmaskCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
                 let parsed = u32::from_str_radix(mode.as_str(), 8)?;
@@ -56,7 +53,7 @@ impl BuiltinCommand for UmaskCommand {
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }
 

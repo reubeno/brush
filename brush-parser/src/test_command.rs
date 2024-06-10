@@ -1,6 +1,13 @@
+//! Parser for shell test commands.
+
 use crate::{ast, error};
 
-pub fn parse_test_command(input: &[String]) -> Result<ast::TestExpr, error::TestCommandParseError> {
+/// Parses a test command expression.
+///
+/// # Arguments
+///
+/// * `input` - The test command expression to parse, in string form.
+pub fn parse(input: &[String]) -> Result<ast::TestExpr, error::TestCommandParseError> {
     let input: Vec<_> = input.iter().map(|s| s.as_str()).collect();
 
     let expr = test_command::full_expression(input.as_slice())

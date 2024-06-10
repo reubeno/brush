@@ -56,7 +56,7 @@ impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
             .map_err(|_e| EvalError::FailedToExpandExpression)?;
 
         // Now parse.
-        let expr = brush_parser::parse_arithmetic_expression(&expanded_self)
+        let expr = brush_parser::arithmetic::parse(&expanded_self)
             .map_err(|_e| EvalError::ParseError(expanded_self))?;
 
         // Trace if applicable.
