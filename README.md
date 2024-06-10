@@ -8,6 +8,8 @@
 
 `brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a shell implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash](https://www.gnu.org/software/bash/).
 
+![screenshot](./docs/extras/brush-screenshot.png)
+
 It's generally functional for interactive use and can execute many scripts but still a work in progress. We do not recommend using this in production scenarios; until it's more stable, there's risk that using this implementation in place of your stable shell may result in unexpected behavior.
 
 This project was primarily borne out of curiosity and a desire to learn. If it proves to be interesting or useful, then that's a bonus :).
