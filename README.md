@@ -6,7 +6,7 @@
 
 ## About
 
-`brush` (**B**orn **RU**sty **SH**ell) is a shell implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash](https://www.gnu.org/software/bash/).
+`brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a shell implementation with aspirations of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash](https://www.gnu.org/software/bash/).
 
 It's generally functional for interactive use and can execute many scripts but still a work in progress. We do not recommend using this in production scenarios; until it's more stable, there's risk that using this implementation in place of your stable shell may result in unexpected behavior.
 
@@ -17,6 +17,18 @@ Contributions and feedback of all kinds are welcome! For more guidance, please c
 ### License
 
 Available for use and distribution under the [MIT license](LICENSE).
+
+### Try it out!
+
+We don't yet have binary releases of `brush`, but if you have a working `rust` toolchain installed you can simply run:
+
+```bash
+cargo install --locked brush-shell
+```
+
+Alternatively, you can clone this repo and execute `cargo run`. If you don't have `rust` installed, we recommend installing it via [`rustup`](https://rustup.rs/).
+
+When you run `brush`, it should hopefully look much like `bash` would on your system since it processes `.bashrc` and other usual configuration. If you'd like to customize the look of `brush` to distinguish it from the other shells installed on your system, then you can also author a `~/.brushrc` file.
 
 ### What's working?
 
