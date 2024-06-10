@@ -1,6 +1,6 @@
 [package]
 name = "brush-interactive"
-description = "Interactive shell for brush"
+description = "Interactive layer of brush-shell"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true

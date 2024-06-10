@@ -1,6 +1,6 @@
 [package]
 name = "brush-core"
-description = "Core for brush shell"
+description = "Reusable core of a POSIX/bash shell (used by brush-shell)"
 categories.workspace = true
 edition.workspace = true
 keywords.workspace = true
