@@ -1,10 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    error, tests, Shell,
-};
+use crate::{builtin, commands, error, tests, Shell};
 
 /// Evaluate test expression.
 #[derive(Parser)]
@@ -15,11 +12,11 @@ pub(crate) struct TestCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for TestCommand {
+impl builtin::Command for TestCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         let mut args = self.args.as_slice();
 
         if context.command_name == "[" {
@@ -27,7 +24,7 @@ impl BuiltinCommand for TestCommand {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {
                     writeln!(context.stderr(), "[: missing ']'")?;
-                    return Ok(BuiltinExitCode::InvalidUsage);
+                    return Ok(builtin::ExitCode::InvalidUsage);
                 }
             }
 
@@ -35,15 +32,15 @@ impl BuiltinCommand for TestCommand {
         }
 
         if execute_test(context.shell, args)? {
-            Ok(BuiltinExitCode::Success)
+            Ok(builtin::ExitCode::Success)
         } else {
-            Ok(BuiltinExitCode::Custom(1))
+            Ok(builtin::ExitCode::Custom(1))
         }
     }
 }
 
 fn execute_test(shell: &mut Shell, args: &[String]) -> Result<bool, error::Error> {
     let test_command =
-        brush_parser::parse_test_command(args).map_err(error::Error::TestCommandParseError)?;
+        brush_parser::test_command::parse(args).map_err(error::Error::TestCommandParseError)?;
     tests::eval_test_expr(&test_command, shell)
 }

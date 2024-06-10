@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{builtin, commands};
 
 /// Breaks out of a control-flow loop.
 #[derive(Parser)]
@@ -11,17 +11,17 @@ pub(crate) struct BreakCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for BreakCommand {
+impl builtin::Command for BreakCommand {
     async fn execute(
         &self,
-        _context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        _context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         // If specified, which_loop needs to be positive.
         if self.which_loop <= 0 {
-            return Ok(BuiltinExitCode::InvalidUsage);
+            return Ok(builtin::ExitCode::InvalidUsage);
         }
 
         #[allow(clippy::cast_sign_loss)]
-        Ok(BuiltinExitCode::BreakLoop((self.which_loop - 1) as u8))
+        Ok(builtin::ExitCode::BreakLoop((self.which_loop - 1) as u8))
     }
 }

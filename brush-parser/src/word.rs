@@ -1,3 +1,14 @@
+//! Parser for shell words, used in expansion and other contexts.
+//!
+//! Implements support for:
+//!
+//! - Text quoting (single, double, ANSI C).
+//! - Escape sequences.
+//! - Tilde prefixes.
+//! - Parameter expansion expressions.
+//! - Command substitution expressions.
+//! - Arithmetic expansion expressions.
+
 use crate::ast;
 use crate::error;
 use crate::ParserOptions;
@@ -229,10 +240,7 @@ pub enum ParameterTransformOp {
 ///
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
-pub fn parse_word_for_expansion(
-    word: &str,
-    options: &ParserOptions,
-) -> Result<Vec<WordPiece>, error::WordParseError> {
+pub fn parse(word: &str, options: &ParserOptions) -> Result<Vec<WordPiece>, error::WordParseError> {
     tracing::debug!("Parsing word '{}'", word);
 
     let pieces = expansion_parser::unexpanded_word(word, options)
@@ -561,7 +569,7 @@ mod tests {
         super::expansion_parser::command("echo hi", &ParserOptions::default())?;
         super::expansion_parser::command_substitution("$(echo hi)", &ParserOptions::default())?;
 
-        let parsed = super::parse_word_for_expansion("$(echo hi)", &ParserOptions::default())?;
+        let parsed = super::parse("$(echo hi)", &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPiece::CommandSubstitution(s)] if s.as_str() == "echo hi"
@@ -580,7 +588,7 @@ mod tests {
             &ParserOptions::default(),
         )?;
 
-        let parsed = super::parse_word_for_expansion(r#"$(echo "hi")"#, &ParserOptions::default())?;
+        let parsed = super::parse(r#"$(echo "hi")"#, &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPiece::CommandSubstitution(s)] if s.as_str() == r#"echo "hi""#
@@ -591,7 +599,7 @@ mod tests {
 
     #[test]
     fn parse_command_substitution_with_embedded_extglob() -> Result<()> {
-        let parsed = super::parse_word_for_expansion("$(echo !(x))", &ParserOptions::default())?;
+        let parsed = super::parse("$(echo !(x))", &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPiece::CommandSubstitution(s)] if s.as_str() == "echo !(x)"

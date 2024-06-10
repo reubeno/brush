@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{builtin, commands};
 
 /// Unset a variable.
 #[derive(Parser)]
@@ -44,11 +44,11 @@ impl UnsetNameInterpretation {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for UnsetCommand {
+impl builtin::Command for UnsetCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         //
         // TODO: implement nameref
         //
@@ -95,6 +95,6 @@ impl BuiltinCommand for UnsetCommand {
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }

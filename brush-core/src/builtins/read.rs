@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{collections::VecDeque, io::Read};
 
-use crate::{builtin::BuiltinCommand, env, error, openfiles, variables};
+use crate::{builtin, commands, env, error, openfiles, variables};
 
 /// Parse standard input.
 #[derive(Parser)]
@@ -43,11 +43,11 @@ pub(crate) struct ReadCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for ReadCommand {
+impl builtin::Command for ReadCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         if self.array_variable.is_some() {
             return error::unimp("read -a");
         }
@@ -98,9 +98,9 @@ impl BuiltinCommand for ReadCommand {
                     return error::unimp("too few variable names");
                 }
             }
-            Ok(crate::builtin::BuiltinExitCode::Success)
+            Ok(crate::builtin::ExitCode::Success)
         } else {
-            Ok(crate::builtin::BuiltinExitCode::Custom(1))
+            Ok(crate::builtin::ExitCode::Custom(1))
         }
     }
 }

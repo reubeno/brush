@@ -2,10 +2,7 @@ use std::path::Path;
 
 use clap::Parser;
 
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    interp::ExecutionParameters,
-};
+use crate::{builtin, commands, interp::ExecutionParameters};
 
 /// Evalute the provided script in the current shell environment.
 #[derive(Debug, Parser)]
@@ -19,11 +16,11 @@ pub(crate) struct DotCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for DotCommand {
+impl builtin::Command for DotCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         // TODO: Handle trap inheritance.
         let script_args: Vec<_> = self.script_args.iter().map(|a| a.as_str()).collect();
 
@@ -39,9 +36,9 @@ impl BuiltinCommand for DotCommand {
             .await?;
 
         if result.exit_code != 0 {
-            return Ok(crate::builtin::BuiltinExitCode::Custom(result.exit_code));
+            return Ok(builtin::ExitCode::Custom(result.exit_code));
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }

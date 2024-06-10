@@ -1,10 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{
-    arithmetic::Evaluatable,
-    builtin::{BuiltinCommand, BuiltinExitCode},
-};
+use crate::{arithmetic::Evaluatable, builtin, commands};
 
 /// Evalute arithmetic expressions.
 #[derive(Parser)]
@@ -15,12 +12,12 @@ pub(crate) struct LetCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for LetCommand {
+impl builtin::Command for LetCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
-        let mut exit_code = BuiltinExitCode::InvalidUsage;
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+        let mut exit_code = builtin::ExitCode::InvalidUsage;
 
         if self.exprs.is_empty() {
             writeln!(context.stderr(), "missing expression")?;
@@ -28,13 +25,13 @@ impl BuiltinCommand for LetCommand {
         }
 
         for expr in &self.exprs {
-            let parsed = brush_parser::parse_arithmetic_expression(expr.as_str())?;
+            let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
             let evaluated = parsed.eval(context.shell).await?;
 
             if evaluated == 0 {
-                exit_code = BuiltinExitCode::Custom(1);
+                exit_code = builtin::ExitCode::Custom(1);
             } else {
-                exit_code = BuiltinExitCode::Custom(0);
+                exit_code = builtin::ExitCode::Custom(0);
             }
         }
 

@@ -1,8 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
-use crate::{error, jobs};
+use crate::{builtin, commands, error, jobs};
 
 /// Manage jobs.
 #[derive(Parser)]
@@ -33,11 +32,11 @@ pub(crate) struct JobsCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for JobsCommand {
+impl builtin::Command for JobsCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         if self.also_show_pids {
             return error::unimp("jobs -l");
         }
@@ -53,14 +52,14 @@ impl BuiltinCommand for JobsCommand {
             return error::unimp("jobs with job specs");
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }
 
 impl JobsCommand {
     fn display_job(
         &self,
-        context: &crate::context::CommandExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         job: &jobs::Job,
     ) -> Result<(), crate::error::Error> {
         if self.running_jobs_only && !matches!(job.state, jobs::JobState::Running) {

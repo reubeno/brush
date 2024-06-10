@@ -1,3 +1,6 @@
+//! Defines the Abstract Syntax Tree (ast) for shell programs. Includes types and utilities
+//! for manipulating the AST.
+
 use std::fmt::{Display, Write};
 
 use crate::tokenizer;

@@ -1,4 +1,4 @@
-use crate::builtin::{BuiltinCommand, BuiltinExitCode};
+use crate::{builtin, commands};
 use clap::Parser;
 use std::io::Write;
 
@@ -18,11 +18,11 @@ pub(crate) struct PwdCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for PwdCommand {
+impl builtin::Command for PwdCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         //
         // TODO: implement flags
         // TODO: look for 'physical' option in execution context
@@ -30,13 +30,13 @@ impl BuiltinCommand for PwdCommand {
 
         if self.physical || self.allow_symlinks {
             writeln!(context.stderr(), "UNIMPLEMENTED: pwd with -P or -L")?;
-            return Ok(BuiltinExitCode::Unimplemented);
+            return Ok(builtin::ExitCode::Unimplemented);
         }
 
         let cwd = context.shell.working_dir.to_string_lossy().into_owned();
 
         writeln!(context.stdout(), "{cwd}")?;
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }

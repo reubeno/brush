@@ -1,7 +1,4 @@
-use crate::{
-    builtin::{BuiltinCommand, BuiltinDeclarationCommand, BuiltinExitCode},
-    commands,
-};
+use crate::{builtin, commands};
 use std::io::Write;
 
 use clap::Parser;
@@ -17,11 +14,11 @@ pub(crate) struct UnimplementedCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for UnimplementedCommand {
+impl builtin::Command for UnimplementedCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         writeln!(
             context.stderr(),
             "UNIMPLEMENTED: {}: built-in unimplemented: {} {}",
@@ -33,11 +30,11 @@ impl BuiltinCommand for UnimplementedCommand {
             context.command_name,
             self.args.join(" ")
         )?;
-        Ok(BuiltinExitCode::Unimplemented)
+        Ok(builtin::ExitCode::Unimplemented)
     }
 }
 
-impl BuiltinDeclarationCommand for UnimplementedCommand {
+impl builtin::DeclarationCommand for UnimplementedCommand {
     fn set_declarations(&mut self, declarations: Vec<commands::CommandArg>) {
         self.declarations = declarations;
     }

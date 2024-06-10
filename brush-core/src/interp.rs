@@ -16,7 +16,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{builtin, context, error, expansion, extendedtests, jobs, openfiles, traps};
+use crate::{builtin, error, expansion, extendedtests, jobs, openfiles, traps};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -996,7 +996,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 }
             }
 
-            let cmd_context = context::CommandExecutionContext {
+            let cmd_context = commands::ExecutionContext {
                 shell: context.shell,
                 command_name: cmd_name,
                 open_files,
@@ -1265,7 +1265,7 @@ async fn apply_assignment(
 
 #[allow(clippy::too_many_lines)]
 async fn execute_external_command(
-    context: context::CommandExecutionContext<'_>,
+    context: commands::ExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<SpawnResult, error::Error> {
     // Filter out the args; we only want strings.
@@ -1331,24 +1331,22 @@ async fn execute_external_command(
 }
 
 async fn execute_builtin_command(
-    builtin: &builtin::BuiltinRegistration,
-    context: context::CommandExecutionContext<'_>,
+    builtin: &builtin::Registration,
+    context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<SpawnResult, error::Error> {
     let exit_code = match (builtin.execute_func)(context, args).await {
         Ok(builtin_result) => match builtin_result.exit_code {
-            builtin::BuiltinExitCode::Success => 0,
-            builtin::BuiltinExitCode::InvalidUsage => 2,
-            builtin::BuiltinExitCode::Unimplemented => 99,
-            builtin::BuiltinExitCode::Custom(code) => code,
-            builtin::BuiltinExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
-            builtin::BuiltinExitCode::ReturnFromFunctionOrScript(code) => {
+            builtin::ExitCode::Success => 0,
+            builtin::ExitCode::InvalidUsage => 2,
+            builtin::ExitCode::Unimplemented => 99,
+            builtin::ExitCode::Custom(code) => code,
+            builtin::ExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
+            builtin::ExitCode::ReturnFromFunctionOrScript(code) => {
                 return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
             }
-            builtin::BuiltinExitCode::BreakLoop(count) => return Ok(SpawnResult::BreakLoop(count)),
-            builtin::BuiltinExitCode::ContinueLoop(count) => {
-                return Ok(SpawnResult::ContinueLoop(count))
-            }
+            builtin::ExitCode::BreakLoop(count) => return Ok(SpawnResult::BreakLoop(count)),
+            builtin::ExitCode::ContinueLoop(count) => return Ok(SpawnResult::ContinueLoop(count)),
         },
         Err(e) => {
             tracing::error!("error: {}", e);
@@ -1361,7 +1359,7 @@ async fn execute_builtin_command(
 
 pub(crate) async fn invoke_shell_function(
     function_definition: Arc<ast::FunctionDefinition>,
-    mut context: context::CommandExecutionContext<'_>,
+    mut context: commands::ExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<SpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function_definition.body;
