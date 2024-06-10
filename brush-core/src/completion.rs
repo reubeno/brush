@@ -883,6 +883,7 @@ fn get_command_completions(shell: &Shell, context: &CompletionContext) -> Vec<St
     let mut candidates = HashSet::new();
     let glob_pattern = std::format!("{}*", context.token_to_complete);
 
+    // Look for external commands.
     for path in shell.find_executables_in_path(&glob_pattern) {
         if let Some(file_name) = path.file_name() {
             candidates.insert(file_name.to_string_lossy().to_string());
@@ -908,8 +909,40 @@ fn get_completions_using_basic_lookup(
             .token_to_complete
             .contains(std::path::MAIN_SEPARATOR)
     {
+        // Add external commands.
         let mut command_completions = get_command_completions(shell, context);
         candidates.append(&mut command_completions);
+
+        // Add built-in commands.
+        for (name, registration) in &shell.builtins {
+            if !registration.disabled && name.starts_with(context.token_to_complete) {
+                candidates.push(name.to_owned());
+            }
+        }
+
+        // Add shell functions.
+        for (name, _) in shell.funcs.iter() {
+            if name.starts_with(context.token_to_complete) {
+                candidates.push(name.to_owned());
+            }
+        }
+
+        // Add aliases.
+        for name in shell.aliases.keys() {
+            if name.starts_with(context.token_to_complete) {
+                candidates.push(name.to_owned());
+            }
+        }
+
+        // Add keywords.
+        for keyword in shell.get_keywords() {
+            if keyword.starts_with(context.token_to_complete) {
+                candidates.push(keyword.clone());
+            }
+        }
+
+        // Sort.
+        candidates.sort();
     }
 
     #[cfg(windows)]
