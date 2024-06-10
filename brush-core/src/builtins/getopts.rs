@@ -2,10 +2,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use clap::Parser;
 
-use crate::{
-    builtin::{BuiltinCommand, BuiltinExitCode},
-    variables,
-};
+use crate::{builtin, commands, variables};
 
 /// Parse command options.
 #[derive(Parser)]
@@ -22,11 +19,11 @@ pub(crate) struct GetOptsCommand {
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for GetOptsCommand {
+impl builtin::Command for GetOptsCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         let mut args = HashMap::<char, bool>::new();
 
         // Build the args map
@@ -37,7 +34,7 @@ impl BuiltinCommand for GetOptsCommand {
                     args.insert(last_char, true);
                     continue;
                 } else {
-                    return Ok(BuiltinExitCode::InvalidUsage);
+                    return Ok(builtin::ExitCode::InvalidUsage);
                 }
             }
 
@@ -54,17 +51,17 @@ impl BuiltinCommand for GetOptsCommand {
             .parse()?;
 
         if next_index < 1 {
-            return Ok(BuiltinExitCode::InvalidUsage);
+            return Ok(builtin::ExitCode::InvalidUsage);
         }
 
         let mut next_index_zero_based = next_index - 1;
         if next_index_zero_based >= self.args.len() {
-            return Ok(BuiltinExitCode::Custom(1));
+            return Ok(builtin::ExitCode::Custom(1));
         }
 
         let arg = self.args[next_index_zero_based].as_str();
         if !arg.starts_with('-') || arg.len() != 2 {
-            return Ok(BuiltinExitCode::Custom(1));
+            return Ok(builtin::ExitCode::Custom(1));
         }
 
         // Single character option
@@ -75,7 +72,7 @@ impl BuiltinCommand for GetOptsCommand {
                 next_index_zero_based += 1;
 
                 if next_index_zero_based >= self.args.len() {
-                    return Ok(BuiltinExitCode::Custom(1));
+                    return Ok(builtin::ExitCode::Custom(1));
                 }
 
                 let opt_arg = self.args[next_index_zero_based].as_str();
@@ -105,9 +102,9 @@ impl BuiltinCommand for GetOptsCommand {
                 crate::env::EnvironmentScope::Global,
             )?;
         } else {
-            return Ok(BuiltinExitCode::Custom(1));
+            return Ok(builtin::ExitCode::Custom(1));
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }

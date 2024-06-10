@@ -25,9 +25,8 @@ pub struct InteractiveShell {
 }
 
 /// Represents an error encountered while running or otherwise managing an interactive shell.
-#[allow(clippy::module_name_repetitions)]
 #[derive(thiserror::Error, Debug)]
-pub enum InteractiveShellError {
+pub enum ShellError {
     /// An error occurred with the embedded shell.
     #[error("{0}")]
     ShellError(#[from] brush_core::Error),
@@ -53,7 +52,7 @@ impl InteractiveShell {
     /// # Arguments
     ///
     /// * `options` - Options for creating the interactive shell.
-    pub async fn new(options: &Options) -> Result<InteractiveShell, InteractiveShellError> {
+    pub async fn new(options: &Options) -> Result<InteractiveShell, ShellError> {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
         let shell = brush_core::Shell::new(&options.shell).await?;
@@ -84,10 +83,7 @@ impl InteractiveShell {
         &mut self.editor.helper_mut().unwrap().shell
     }
 
-    fn new_editor(
-        options: &Options,
-        shell: brush_core::Shell,
-    ) -> Result<Editor, InteractiveShellError> {
+    fn new_editor(options: &Options, shell: brush_core::Shell) -> Result<Editor, ShellError> {
         let config = rustyline::config::Builder::new()
             .max_history_size(1000)?
             .history_ignore_dups(true)?
@@ -106,7 +102,7 @@ impl InteractiveShell {
     /// Runs the interactive shell loop, reading commands from standard input and writing
     /// results to standard output and standard error. Continues until the shell
     /// normally exits or until a fatal error occurs.
-    pub async fn run_interactively(&mut self) -> Result<(), InteractiveShellError> {
+    pub async fn run_interactively(&mut self) -> Result<(), ShellError> {
         loop {
             // Check for any completed jobs.
             self.shell_mut().check_for_completed_jobs()?;
@@ -148,9 +144,7 @@ impl InteractiveShell {
         Ok(())
     }
 
-    async fn run_interactively_once(
-        &mut self,
-    ) -> Result<InteractiveExecutionResult, InteractiveShellError> {
+    async fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult, ShellError> {
         // If there's a variable called PROMPT_COMMAND, then run it first.
         if let Some((_, prompt_cmd)) = self.shell().env.get("PROMPT_COMMAND") {
             let prompt_cmd = prompt_cmd.value().to_cow_string().to_string();
@@ -256,10 +250,10 @@ impl EditorHelper {
             }
         };
 
-        let mut completions = result.unwrap_or_else(|_| brush_core::Completions {
+        let mut completions = result.unwrap_or_else(|_| brush_core::completion::Completions {
             start: pos,
             candidates: vec![],
-            options: brush_core::CandidateProcessingOptions::default(),
+            options: brush_core::completion::ProcessingOptions::default(),
         });
 
         // TODO: implement completion postprocessing

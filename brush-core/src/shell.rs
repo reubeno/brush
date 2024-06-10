@@ -11,8 +11,8 @@ use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
-    builtin, builtins, commands, completion, context, env, error, expansion, functions, jobs,
-    keywords, openfiles, patterns, prompt, traps, users,
+    builtin, builtins, commands, completion, env, error, expansion, functions, jobs, keywords,
+    openfiles, patterns, prompt, traps, users,
 };
 
 /// Represents an instance of a shell.
@@ -65,10 +65,10 @@ pub struct Shell {
     pub current_line_number: u32,
 
     /// Completion configuration.
-    pub completion_config: completion::CompletionConfig,
+    pub completion_config: completion::Config,
 
     /// Shell built-in commands.
-    pub builtins: HashMap<String, builtin::BuiltinRegistration>,
+    pub builtins: HashMap<String, builtin::Registration>,
 }
 
 impl Clone for Shell {
@@ -156,7 +156,7 @@ impl Shell {
             script_call_stack: VecDeque::new(),
             directory_stack: vec![],
             current_line_number: 0,
-            completion_config: completion::CompletionConfig::default(),
+            completion_config: completion::Config::default(),
             builtins: builtins::get_default_builtins(options),
             depth: 0,
         };
@@ -447,7 +447,7 @@ impl Shell {
 
         let func = func_registration.definition.clone();
 
-        let context = context::CommandExecutionContext {
+        let context = commands::ExecutionContext {
             shell: self,
             command_name,
             open_files,

@@ -1,3 +1,5 @@
+//! Parser for shell prompt syntax (e.g., `PS1`).
+
 use crate::error;
 
 /// A piece of a prompt string.
@@ -127,7 +129,12 @@ peg::parser! {
     }
 }
 
-pub fn parse_prompt(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
+/// Parses a shell prompt string.
+///
+/// # Arguments
+///
+/// * `s` - The prompt string to parse.
+pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
     let result = prompt_parser::prompt(s).map_err(error::WordParseError::Prompt)?;
     Ok(result)
 }

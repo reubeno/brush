@@ -3,8 +3,7 @@ use itertools::Itertools;
 use std::io::Write;
 
 use crate::{
-    builtin::{BuiltinCommand, BuiltinDeclarationCommand, BuiltinExitCode},
-    commands,
+    builtin, commands,
     env::{EnvironmentLookup, EnvironmentScope},
     variables,
 };
@@ -30,18 +29,18 @@ pub(crate) struct ExportCommand {
     declarations: Vec<commands::CommandArg>,
 }
 
-impl BuiltinDeclarationCommand for ExportCommand {
+impl builtin::DeclarationCommand for ExportCommand {
     fn set_declarations(&mut self, declarations: Vec<commands::CommandArg>) {
         self.declarations = declarations;
     }
 }
 
 #[async_trait::async_trait]
-impl BuiltinCommand for ExportCommand {
+impl builtin::Command for ExportCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         if !self.declarations.is_empty() {
             for decl in &self.declarations {
                 match decl {
@@ -57,7 +56,7 @@ impl BuiltinCommand for ExportCommand {
                             brush_parser::ast::AssignmentName::VariableName(name) => name,
                             brush_parser::ast::AssignmentName::ArrayElementName(_, _) => {
                                 writeln!(context.stderr(), "not a valid variable name")?;
-                                return Ok(BuiltinExitCode::InvalidUsage);
+                                return Ok(builtin::ExitCode::InvalidUsage);
                             }
                         };
 
@@ -104,6 +103,6 @@ impl BuiltinCommand for ExportCommand {
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }

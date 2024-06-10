@@ -23,7 +23,7 @@ pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String, error::
 fn parse_prompt(
     spec: String,
 ) -> Result<Vec<brush_parser::prompt::PromptPiece>, brush_parser::WordParseError> {
-    brush_parser::prompt::parse_prompt(spec.as_str())
+    brush_parser::prompt::parse(spec.as_str())
 }
 
 pub(crate) fn format_prompt_piece(

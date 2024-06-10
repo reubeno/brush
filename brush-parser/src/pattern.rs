@@ -1,3 +1,5 @@
+//! Implements parsing for shell glob and extglob patterns.
+
 use crate::error;
 
 /// Represents the kind of an extended glob.
@@ -132,6 +134,11 @@ peg::parser! {
     }
 }
 
+/// Returns whether or not a given character needs to be escaped in a regular expression.
+///
+/// # Arguments
+///
+/// * `c` - The character to check.
 pub fn regex_char_needs_escaping(c: char) -> bool {
     matches!(
         c,

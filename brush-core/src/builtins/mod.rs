@@ -2,11 +2,8 @@ use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::io::Write;
 
-use crate::builtin::{
-    self, BuiltinCommand, BuiltinDeclarationCommand, BuiltinRegistration, BuiltinResult,
-};
-use crate::commands::CommandArg;
-use crate::context;
+use crate::builtin;
+use crate::commands::{self, CommandArg};
 use crate::error;
 
 mod alias;
@@ -54,8 +51,8 @@ mod unimp;
 mod unset;
 mod wait;
 
-fn builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
-    BuiltinRegistration {
+fn builtin<B: builtin::Command + Send>() -> builtin::Registration {
+    builtin::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -64,8 +61,8 @@ fn builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
     }
 }
 
-fn special_builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
-    BuiltinRegistration {
+fn special_builtin<B: builtin::Command + Send>() -> builtin::Registration {
+    builtin::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -74,8 +71,8 @@ fn special_builtin<B: BuiltinCommand + Send>() -> BuiltinRegistration {
     }
 }
 
-fn decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
-    BuiltinRegistration {
+fn decl_builtin<B: builtin::DeclarationCommand + Send>() -> builtin::Registration {
+    builtin::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -84,8 +81,8 @@ fn decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
     }
 }
 
-fn special_decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistration {
-    BuiltinRegistration {
+fn special_decl_builtin<B: builtin::DeclarationCommand + Send>() -> builtin::Registration {
+    builtin::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -94,24 +91,24 @@ fn special_decl_builtin<B: BuiltinDeclarationCommand + Send>() -> BuiltinRegistr
     }
 }
 
-fn get_builtin_content<T: BuiltinCommand + Send>(
+fn get_builtin_content<T: builtin::Command + Send>(
     name: &str,
-    content_type: builtin::BuiltinContentType,
+    content_type: builtin::ContentType,
 ) -> String {
     T::get_content(name, content_type)
 }
 
-fn exec_builtin<T: BuiltinCommand + Send>(
-    context: context::CommandExecutionContext<'_>,
+fn exec_builtin<T: builtin::Command + Send>(
+    context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<builtin::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_builtin_impl<T: BuiltinCommand + Send>(
-    context: context::CommandExecutionContext<'_>,
+async fn exec_builtin_impl<T: builtin::Command + Send>(
+    context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<BuiltinResult, error::Error> {
+) -> Result<builtin::BuiltinResult, error::Error> {
     let plain_args = args.into_iter().map(|arg| match arg {
         CommandArg::String(s) => s,
         CommandArg::Assignment(a) => a.to_string(),
@@ -122,28 +119,28 @@ async fn exec_builtin_impl<T: BuiltinCommand + Send>(
         Ok(command) => command,
         Err(e) => {
             writeln!(context.stderr(), "{e}")?;
-            return Ok(BuiltinResult {
-                exit_code: builtin::BuiltinExitCode::InvalidUsage,
+            return Ok(builtin::BuiltinResult {
+                exit_code: builtin::ExitCode::InvalidUsage,
             });
         }
     };
 
-    Ok(BuiltinResult {
+    Ok(builtin::BuiltinResult {
         exit_code: command.execute(context).await?,
     })
 }
 
-fn exec_declaration_builtin<T: BuiltinDeclarationCommand + Send>(
-    context: context::CommandExecutionContext<'_>,
+fn exec_declaration_builtin<T: builtin::DeclarationCommand + Send>(
+    context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<builtin::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
-    context: context::CommandExecutionContext<'_>,
+async fn exec_declaration_builtin_impl<T: builtin::DeclarationCommand + Send>(
+    context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<BuiltinResult, error::Error> {
+) -> Result<builtin::BuiltinResult, error::Error> {
     let mut options = vec![];
     let mut declarations = vec![];
 
@@ -161,15 +158,15 @@ async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
         Ok(command) => command,
         Err(e) => {
             writeln!(context.stderr(), "{e}")?;
-            return Ok(BuiltinResult {
-                exit_code: builtin::BuiltinExitCode::InvalidUsage,
+            return Ok(builtin::BuiltinResult {
+                exit_code: builtin::ExitCode::InvalidUsage,
             });
         }
     };
 
     command.set_declarations(declarations);
 
-    Ok(BuiltinResult {
+    Ok(builtin::BuiltinResult {
         exit_code: command.execute(context).await?,
     })
 }
@@ -177,8 +174,8 @@ async fn exec_declaration_builtin_impl<T: BuiltinDeclarationCommand + Send>(
 #[allow(clippy::too_many_lines)]
 pub(crate) fn get_default_builtins(
     options: &crate::CreateOptions,
-) -> HashMap<String, BuiltinRegistration> {
-    let mut m = HashMap::<String, BuiltinRegistration>::new();
+) -> HashMap<String, builtin::Registration> {
+    let mut m = HashMap::<String, builtin::Registration>::new();
 
     //
     // POSIX special builtins
@@ -247,7 +244,7 @@ pub(crate) fn get_default_builtins(
     m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
 
     if !options.sh_mode {
-        m.insert("builtin".into(), builtin::<builtin_::BuiltiCommand>());
+        m.insert("builtin".into(), builtin::<builtin_::BuiltinCommand>());
         m.insert("declare".into(), decl_builtin::<declare::DeclareCommand>());
         m.insert("echo".into(), builtin::<echo::EchoCommand>());
         m.insert("enable".into(), builtin::<enable::EnableCommand>());

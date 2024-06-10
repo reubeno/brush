@@ -3,8 +3,7 @@ use itertools::Itertools;
 use std::io::Write;
 
 use crate::{
-    builtin::{self, BuiltinCommand, BuiltinDeclarationCommand, BuiltinExitCode},
-    commands::CommandArg,
+    builtin, commands,
     env::{EnvironmentLookup, EnvironmentScope},
     error,
     variables::{
@@ -73,7 +72,7 @@ pub(crate) struct DeclareCommand {
     // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
     //
     #[clap(skip)]
-    declarations: Vec<CommandArg>,
+    declarations: Vec<commands::CommandArg>,
 }
 
 #[derive(Clone, Copy)]
@@ -83,23 +82,23 @@ enum DeclareVerb {
     Readonly,
 }
 
-impl BuiltinDeclarationCommand for DeclareCommand {
-    fn set_declarations(&mut self, declarations: Vec<CommandArg>) {
+impl builtin::DeclarationCommand for DeclareCommand {
+    fn set_declarations(&mut self, declarations: Vec<commands::CommandArg>) {
         self.declarations = declarations;
     }
 }
 
 #[allow(clippy::too_many_lines)]
 #[async_trait::async_trait]
-impl BuiltinCommand for DeclareCommand {
+impl builtin::Command for DeclareCommand {
     fn takes_plus_options() -> bool {
         true
     }
 
     async fn execute(
         &self,
-        mut context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        mut context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         let verb = match context.command_name.as_str() {
             "local" => DeclareVerb::Local,
             "readonly" => DeclareVerb::Readonly,
@@ -112,19 +111,19 @@ impl BuiltinCommand for DeclareCommand {
                 context.stderr(),
                 "UNIMPLEMENTED: declare -I: locals inherit from previous scope"
             )?;
-            return Ok(BuiltinExitCode::Unimplemented);
+            return Ok(builtin::ExitCode::Unimplemented);
         }
 
-        let mut result = BuiltinExitCode::Success;
+        let mut result = builtin::ExitCode::Success;
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
                     if !self.try_display_declaration(&mut context, declaration, verb)? {
-                        result = BuiltinExitCode::Custom(1);
+                        result = builtin::ExitCode::Custom(1);
                     }
                 } else {
                     if !self.process_declaration(&mut context, declaration, verb)? {
-                        result = BuiltinExitCode::Custom(1);
+                        result = builtin::ExitCode::Custom(1);
                     }
                 }
             }
@@ -149,13 +148,13 @@ impl BuiltinCommand for DeclareCommand {
 impl DeclareCommand {
     fn try_display_declaration(
         &self,
-        context: &mut crate::context::CommandExecutionContext<'_>,
-        declaration: &CommandArg,
+        context: &mut crate::commands::ExecutionContext<'_>,
+        declaration: &commands::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, error::Error> {
         let name = match declaration {
-            CommandArg::String(s) => s,
-            CommandArg::Assignment(_) => {
+            commands::CommandArg::String(s) => s,
+            commands::CommandArg::Assignment(_) => {
                 writeln!(context.stderr(), "declare: {declaration}: not found")?;
                 return Ok(false);
             }
@@ -212,8 +211,8 @@ impl DeclareCommand {
 
     fn process_declaration(
         &self,
-        context: &mut crate::context::CommandExecutionContext<'_>,
-        declaration: &CommandArg,
+        context: &mut crate::commands::ExecutionContext<'_>,
+        declaration: &commands::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, error::Error> {
         let create_var_local = matches!(verb, DeclareVerb::Local)
@@ -290,7 +289,7 @@ impl DeclareCommand {
 
     #[allow(clippy::unwrap_in_result)]
     fn declaration_to_name_and_value(
-        declaration: &CommandArg,
+        declaration: &commands::CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), error::Error> {
         let name;
         let assigned_index;
@@ -298,7 +297,7 @@ impl DeclareCommand {
         let name_is_array;
 
         match declaration {
-            CommandArg::String(s) => {
+            commands::CommandArg::String(s) => {
                 // We need to handle the case of someone invoking `declare array[index]`.
                 // In such case, we ignore the index and treat it as a declaration of
                 // the array.
@@ -317,7 +316,7 @@ impl DeclareCommand {
                 }
                 initial_value = None;
             }
-            CommandArg::Assignment(assignment) => {
+            commands::CommandArg::Assignment(assignment) => {
                 match &assignment.name {
                     brush_parser::ast::AssignmentName::VariableName(var_name) => {
                         name = var_name.to_owned();
@@ -368,7 +367,7 @@ impl DeclareCommand {
 
     fn display_matching_env_declarations(
         &self,
-        context: &mut crate::context::CommandExecutionContext<'_>,
+        context: &mut crate::commands::ExecutionContext<'_>,
         verb: DeclareVerb,
     ) -> Result<(), error::Error> {
         //
@@ -476,7 +475,7 @@ impl DeclareCommand {
 
     fn display_matching_functions(
         &self,
-        context: &mut crate::context::CommandExecutionContext<'_>,
+        context: &mut crate::commands::ExecutionContext<'_>,
     ) -> Result<(), error::Error> {
         for (name, registration) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {

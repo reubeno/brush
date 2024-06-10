@@ -1,7 +1,4 @@
-use crate::{
-    builtin::{self, BuiltinCommand, BuiltinExitCode, BuiltinRegistration},
-    context,
-};
+use crate::{builtin, commands, error};
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
@@ -28,11 +25,11 @@ pub(crate) struct HelpCommand {
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[async_trait::async_trait]
-impl BuiltinCommand for HelpCommand {
+impl builtin::Command for HelpCommand {
     async fn execute(
         &self,
-        context: crate::context::CommandExecutionContext<'_>,
-    ) -> Result<crate::builtin::BuiltinExitCode, crate::error::Error> {
+        context: commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
         } else {
@@ -41,13 +38,13 @@ impl BuiltinCommand for HelpCommand {
             }
         }
 
-        Ok(BuiltinExitCode::Success)
+        Ok(builtin::ExitCode::Success)
     }
 }
 
 impl HelpCommand {
     fn display_general_help(
-        context: &crate::context::CommandExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
     ) -> Result<(), crate::error::Error> {
         const COLUMN_COUNT: usize = 3;
 
@@ -76,7 +73,7 @@ impl HelpCommand {
 
     fn display_help_for_topic_pattern(
         &self,
-        context: &crate::context::CommandExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         topic_pattern: &str,
     ) -> Result<(), crate::error::Error> {
         let pattern = crate::patterns::Pattern::from(topic_pattern);
@@ -102,16 +99,16 @@ impl HelpCommand {
 
     fn display_help_for_builtin(
         &self,
-        context: &crate::context::CommandExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         name: &str,
-        registration: &BuiltinRegistration,
-    ) -> Result<(), crate::error::Error> {
+        registration: &builtin::Registration,
+    ) -> Result<(), error::Error> {
         let content_type = if self.short_description {
-            builtin::BuiltinContentType::ShortDescription
+            builtin::ContentType::ShortDescription
         } else if self.short_usage {
-            builtin::BuiltinContentType::ShortUsage
+            builtin::ContentType::ShortUsage
         } else {
-            builtin::BuiltinContentType::DetailedHelp
+            builtin::ContentType::DetailedHelp
         };
 
         let content = (registration.content_func)(name, content_type);
@@ -122,8 +119,8 @@ impl HelpCommand {
 }
 
 fn get_builtins_sorted_by_name<'a>(
-    context: &'a context::CommandExecutionContext<'_>,
-) -> Vec<(&'a String, &'a BuiltinRegistration)> {
+    context: &'a commands::ExecutionContext<'_>,
+) -> Vec<(&'a String, &'a builtin::Registration)> {
     context
         .shell
         .builtins
