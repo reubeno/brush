@@ -1,11 +1,14 @@
 name: "CI"
 on:
-  pull_request: {}
+  pull_request:
+    paths-ignore:
+      - "release-plz.toml"
   push:
     paths-ignore:
       - "docs/**"
       - "**.md"
       - "LICENSE"
+      - "release-plz.toml"
     branches:
       - main
 

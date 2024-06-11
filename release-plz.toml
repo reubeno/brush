@@ -2,8 +2,7 @@
 # disable the changelog for all packages
 # ref: https://release-plz.ieni.dev/docs/extra/single-changelog
 changelog_update = false
-publish = false
-pr_draft = false
+publish = true
 git_release_draft = true
 git_release_type = "pre"
 
