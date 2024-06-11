@@ -11,7 +11,6 @@ keywords = ["cli", "shell", "sh", "bash", "script"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/reubeno/brush"
-version = "0.1.0"
 
 [workspace.lints.rust]
 missing_docs = "warn"
