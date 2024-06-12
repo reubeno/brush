@@ -305,7 +305,10 @@ impl Spec {
                     candidates.append(&mut names);
                 }
                 CompleteAction::HelpTopic => {
-                    tracing::debug!("UNIMPLEMENTED: complete -A helptopic");
+                    // For now, we only have help topics for built-in commands.
+                    for name in shell.builtins.keys() {
+                        candidates.push(name.to_owned());
+                    }
                 }
                 CompleteAction::HostName => {
                     // N.B. We only retrieve one hostname.
