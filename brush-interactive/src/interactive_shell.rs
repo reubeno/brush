@@ -215,17 +215,20 @@ impl EditorHelper {
         Self { shell }
     }
 
-    fn get_completion_candidate_display_str(s: &str) -> String {
+    fn get_completion_candidate_display_str(
+        mut s: &str,
+        options: &brush_core::completion::ProcessingOptions,
+    ) -> String {
         let s_without_trailing_space = s.trim_end();
         let s_without_final_slash = s_without_trailing_space
             .strip_suffix(std::path::MAIN_SEPARATOR)
             .unwrap_or(s);
 
-        let s = if let Some(slash_index) = s_without_final_slash.rfind(std::path::MAIN_SEPARATOR) {
-            &s[slash_index + 1..]
-        } else {
-            s
-        };
+        if options.treat_as_filenames {
+            if let Some(slash_index) = s_without_final_slash.rfind(std::path::MAIN_SEPARATOR) {
+                s = &s[slash_index + 1..];
+            }
+        }
 
         s.to_owned()
     }
@@ -280,11 +283,12 @@ impl EditorHelper {
             }
         }
 
+        let options = completions.options;
         let candidates = completions
             .candidates
             .into_iter()
             .map(|c| rustyline::completion::Pair {
-                display: Self::get_completion_candidate_display_str(c.as_str()),
+                display: Self::get_completion_candidate_display_str(c.as_str(), &options),
                 replacement: c,
             })
             .collect();
