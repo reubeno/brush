@@ -379,7 +379,7 @@ impl Spec {
             candidates.append(&mut expansions);
         }
         if let Some(word_list) = &self.word_list {
-            let mut words = split_string_using_ifs(word_list, shell);
+            let mut words = crate::expansion::full_expand_and_split_str(shell, word_list).await?;
             candidates.append(&mut words);
         }
         if let Some(function_name) = &self.function_name {
@@ -942,12 +942,4 @@ fn get_completions_using_basic_lookup(shell: &Shell, context: &Context) -> Answe
     }
 
     Answer::Candidates(candidates, ProcessingOptions::default())
-}
-
-fn split_string_using_ifs<S: AsRef<str>>(s: S, shell: &Shell) -> Vec<String> {
-    let ifs_chars: Vec<char> = shell.get_ifs().chars().collect();
-    s.as_ref()
-        .split(ifs_chars.as_slice())
-        .map(|s| s.to_owned())
-        .collect()
 }
