@@ -1,13 +1,32 @@
-use std::{ffi::OsStr, fmt::Display, os::unix::process::CommandExt, process::Stdio};
+use std::{ffi::OsStr, fmt::Display, os::unix::process::CommandExt, process::Stdio, sync::Arc};
 
 use brush_parser::ast;
 use command_fds::{CommandFdExt, FdMapping};
+use itertools::Itertools;
+use tokio::{io::AsyncWriteExt, process};
 
 use crate::{
-    error,
+    builtin, error,
+    interp::{self, Execute},
     openfiles::{OpenFile, OpenFiles},
     Shell,
 };
+
+/// Represents the result of spawning a command.
+pub(crate) enum SpawnResult {
+    /// The child process was spawned.
+    SpawnedChild(process::Child),
+    /// The command immediatedly exited with the given numeric exit code.
+    ImmediateExit(u8),
+    /// The shell should exit after this command, yielding the given numeric exit code.
+    ExitShell(u8),
+    /// The shell should return from the current function or script, yielding the given numeric exit code.
+    ReturnFromFunctionOrScript(u8),
+    /// The shell should break out of the containing loop, identified by the given depth count.
+    BreakLoop(u8),
+    /// The shell should continue the containing loop, identified by the given depth count.
+    ContinueLoop(u8),
+}
 
 /// Represents the context for executing a command.
 pub struct ExecutionContext<'a> {
@@ -152,4 +171,185 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     Ok((cmd, stdin_here_doc))
+}
+
+pub(crate) async fn execute(
+    cmd_context: ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+    use_functions: bool,
+) -> Result<SpawnResult, error::Error> {
+    if !cmd_context.command_name.contains(std::path::MAIN_SEPARATOR) {
+        let builtin = cmd_context
+            .shell
+            .builtins
+            .get(&cmd_context.command_name)
+            .cloned();
+
+        // Ignore the builtin if it's marked as disabled.
+        if builtin
+            .as_ref()
+            .is_some_and(|r| !r.disabled && r.special_builtin)
+        {
+            return execute_builtin_command(&builtin.unwrap(), cmd_context, args).await;
+        }
+
+        if use_functions {
+            if let Some(func_reg) = cmd_context
+                .shell
+                .funcs
+                .get(cmd_context.command_name.as_str())
+            {
+                // Strip the function name off args.
+                return invoke_shell_function(func_reg.definition.clone(), cmd_context, &args[1..])
+                    .await;
+            }
+        }
+
+        if let Some(builtin) = builtin {
+            if !builtin.disabled {
+                return execute_builtin_command(&builtin, cmd_context, args).await;
+            }
+        }
+    }
+
+    // Strip the command name off args.
+    execute_external_command(cmd_context, &args[1..]).await
+}
+
+#[allow(clippy::too_many_lines)]
+pub(crate) async fn execute_external_command(
+    context: ExecutionContext<'_>,
+    args: &[CommandArg],
+) -> Result<SpawnResult, error::Error> {
+    // Filter out the args; we only want strings.
+    let mut cmd_args = vec![];
+    for arg in args {
+        if let CommandArg::String(s) = arg {
+            cmd_args.push(s);
+        }
+    }
+
+    // Compose the std::process::Command that encapsulates what we want to launch.
+    let (cmd, stdin_here_doc) = compose_std_command(
+        context.shell,
+        context.command_name.as_str(),
+        context.command_name.as_str(),
+        cmd_args.as_slice(),
+        context.open_files,
+        false, /* empty environment? */
+    )?;
+
+    // When tracing is enabled, report.
+    tracing::debug!(
+        target: "commands",
+        "Spawning: {} {}",
+        cmd.get_program().to_string_lossy().to_string(),
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .join(" ")
+    );
+
+    // Convert to a tokio::process::Command so we can execute it asynchronously.
+    let mut cmd = tokio::process::Command::from(cmd);
+
+    match cmd.spawn() {
+        Ok(mut child) => {
+            // Special case: handle writing here document, if needed.
+            if let Some(doc) = stdin_here_doc {
+                if let Some(mut child_stdin) = child.stdin.take() {
+                    child_stdin.write_all(doc.as_bytes()).await?;
+                }
+            }
+
+            Ok(SpawnResult::SpawnedChild(child))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if context.shell.options.sh_mode {
+                tracing::error!(
+                    "{}: {}: {}: not found",
+                    context.shell.shell_name.as_ref().unwrap_or(&String::new()),
+                    context.shell.get_current_input_line_number(),
+                    context.command_name
+                );
+            } else {
+                tracing::error!("{}: not found", context.command_name);
+            }
+            Ok(SpawnResult::ImmediateExit(127))
+        }
+        Err(e) => {
+            tracing::error!("error: {}", e);
+            Ok(SpawnResult::ImmediateExit(126))
+        }
+    }
+}
+
+async fn execute_builtin_command(
+    builtin: &builtin::Registration,
+    context: ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<SpawnResult, error::Error> {
+    let exit_code = match (builtin.execute_func)(context, args).await {
+        Ok(builtin_result) => match builtin_result.exit_code {
+            builtin::ExitCode::Success => 0,
+            builtin::ExitCode::InvalidUsage => 2,
+            builtin::ExitCode::Unimplemented => 99,
+            builtin::ExitCode::Custom(code) => code,
+            builtin::ExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
+            builtin::ExitCode::ReturnFromFunctionOrScript(code) => {
+                return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
+            }
+            builtin::ExitCode::BreakLoop(count) => return Ok(SpawnResult::BreakLoop(count)),
+            builtin::ExitCode::ContinueLoop(count) => return Ok(SpawnResult::ContinueLoop(count)),
+        },
+        Err(e) => {
+            tracing::error!("error: {}", e);
+            1
+        }
+    };
+
+    Ok(SpawnResult::ImmediateExit(exit_code))
+}
+
+pub(crate) async fn invoke_shell_function(
+    function_definition: Arc<ast::FunctionDefinition>,
+    mut context: ExecutionContext<'_>,
+    args: &[CommandArg],
+) -> Result<SpawnResult, error::Error> {
+    let ast::FunctionBody(body, redirects) = &function_definition.body;
+
+    // Apply any redirects specified at function definition-time.
+    if let Some(redirects) = redirects {
+        for redirect in &redirects.0 {
+            interp::setup_redirect(&mut context.open_files, context.shell, redirect).await?;
+        }
+    }
+
+    // Temporarily replace positional parameters.
+    let prior_positional_params = std::mem::take(&mut context.shell.positional_parameters);
+    context.shell.positional_parameters = args.iter().map(|a| a.to_string()).collect();
+
+    // Pass through open files.
+    let params = interp::ExecutionParameters {
+        open_files: context.open_files.clone(),
+    };
+
+    // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
+    // before "exiting" the function.
+    context
+        .shell
+        .enter_function(context.command_name.as_str(), &function_definition)?;
+
+    // Invoke the function.
+    let result = body.execute(context.shell, &params).await;
+
+    // Clean up parameters so any owned files are closed.
+    drop(params);
+
+    // We've come back out, reflect it.
+    context.shell.leave_function()?;
+
+    // Restore positional parameters.
+    context.shell.positional_parameters = prior_positional_params;
+
+    Ok(SpawnResult::ImmediateExit(result?.exit_code))
 }

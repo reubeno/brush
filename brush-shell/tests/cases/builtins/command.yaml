@@ -1,0 +1,38 @@
+name: "Builtins: command"
+cases:
+  - name: "Basic command usage"
+    ignore_stderr: true
+    stdin: |
+      echo "Executing echo built-in"
+      command echo "Hello"
+
+      echo "Executing ls using name"
+      command ls -d /
+
+      echo "Executing ls using absolute path"
+      command $(which ls) -d /
+
+      echo "Executing non-existent command by name"
+      command non-existent
+
+      echo "Executing non-existent command by path"
+      command /usr/bin/non-existent
+
+  - name: "command -v"
+    stdin: |
+      command -v echo
+      command -v ls
+      command -v $(which ls)
+
+      command -v non-existent || echo "1. Not found"
+      command -v /usr/bin/non-existent || echo "2. Not found"
+
+  - name: "command -V"
+    ignore_stderr: true
+    stdin: |
+      command -V echo
+      command -V ls
+      command -V $(which ls)
+
+      command -V non-existent || echo "1. Not found"
+      command -V /usr/bin/non-existent || echo "2. Not found"

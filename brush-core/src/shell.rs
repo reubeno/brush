@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::files::PathExt;
-use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
+use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
@@ -458,14 +458,14 @@ impl Shell {
             .map(|s| commands::CommandArg::String(String::from(*s)))
             .collect::<Vec<_>>();
 
-        match interp::invoke_shell_function(func, context, &command_args).await? {
-            interp::SpawnResult::SpawnedChild(_) => {
+        match commands::invoke_shell_function(func, context, &command_args).await? {
+            commands::SpawnResult::SpawnedChild(_) => {
                 error::unimp("child spawned from function invocation")
             }
-            interp::SpawnResult::ImmediateExit(code) => Ok(code),
-            interp::SpawnResult::ExitShell(code) => Ok(code),
-            interp::SpawnResult::ReturnFromFunctionOrScript(code) => Ok(code),
-            interp::SpawnResult::BreakLoop(_) | interp::SpawnResult::ContinueLoop(_) => {
+            commands::SpawnResult::ImmediateExit(code) => Ok(code),
+            commands::SpawnResult::ExitShell(code) => Ok(code),
+            commands::SpawnResult::ReturnFromFunctionOrScript(code) => Ok(code),
+            commands::SpawnResult::BreakLoop(_) | commands::SpawnResult::ContinueLoop(_) => {
                 error::unimp("break or continue returned from function invocation")
             }
         }

@@ -12,6 +12,7 @@ mod break_;
 mod builtin_;
 mod cd;
 mod colon;
+mod command;
 mod complete;
 mod continue_;
 mod declare;
@@ -221,6 +222,7 @@ pub(crate) fn get_default_builtins(
     m.insert("alias".into(), builtin::<alias::AliasCommand>()); // TODO: should be exec_declaration_builtin
     m.insert("bg".into(), builtin::<bg::BgCommand>());
     m.insert("cd".into(), builtin::<cd::CdCommand>());
+    m.insert("command".into(), builtin::<command::CommandCommand>());
     m.insert("false".into(), builtin::<false_::FalseCommand>());
     m.insert("fg".into(), builtin::<fg::FgCommand>());
     m.insert("getopts".into(), builtin::<getopts::GetOptsCommand>());
@@ -238,7 +240,6 @@ pub(crate) fn get_default_builtins(
     m.insert("wait".into(), builtin::<wait::WaitCommand>());
 
     // TODO: Unimplemented non-special builtins
-    m.insert("command".into(), builtin::<unimp::UnimplementedCommand>());
     m.insert("fc".into(), builtin::<unimp::UnimplementedCommand>());
     m.insert("hash".into(), builtin::<unimp::UnimplementedCommand>());
     m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
