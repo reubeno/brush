@@ -79,7 +79,7 @@ struct PipelineExecutionContext<'a> {
 
     current_pipeline_index: usize,
     pipeline_len: usize,
-    output_pipes: Vec<os_pipe::PipeReader>,
+    output_pipes: &'a mut Vec<os_pipe::PipeReader>,
 
     params: ExecutionParameters,
 }
@@ -301,20 +301,35 @@ impl Execute for ast::Pipeline {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let mut pipeline_context = PipelineExecutionContext {
-            shell,
-            current_pipeline_index: 0,
-            pipeline_len: self.seq.len(),
-            output_pipes: vec![],
-            params: params.clone(),
-        };
-
+        let pipeline_len = self.seq.len();
+        let mut output_pipes = vec![];
         let mut spawn_results = VecDeque::new();
 
-        for command in &self.seq {
-            let spawn_result = command.execute_in_pipeline(&mut pipeline_context).await?;
+        for (current_pipeline_index, command) in self.seq.iter().enumerate() {
+            // If there's only one command in the pipeline, then we run directly in the current shell.
+            // Otherwise, we spawn a separate subshell for each command in the pipeline.
+            let spawn_result = if pipeline_len > 1 {
+                let mut subshell = shell.clone();
+                let mut pipeline_context = PipelineExecutionContext {
+                    shell: &mut subshell,
+                    current_pipeline_index,
+                    pipeline_len,
+                    output_pipes: &mut output_pipes,
+                    params: params.clone(),
+                };
+                command.execute_in_pipeline(&mut pipeline_context).await?
+            } else {
+                let mut pipeline_context = PipelineExecutionContext {
+                    shell,
+                    current_pipeline_index,
+                    pipeline_len,
+                    output_pipes: &mut output_pipes,
+                    params: params.clone(),
+                };
+                command.execute_in_pipeline(&mut pipeline_context).await?
+            };
+
             spawn_results.push_back(spawn_result);
-            pipeline_context.current_pipeline_index += 1;
         }
 
         let mut result = ExecutionResult::success();

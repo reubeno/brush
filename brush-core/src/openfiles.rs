@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::IsTerminal;
 #[cfg(unix)]
 use std::os::fd::AsFd;
 #[cfg(unix)]
@@ -75,6 +76,55 @@ impl OpenFile {
             OpenFile::PipeWriter(w) => Ok(w.as_raw_fd()),
             OpenFile::HereDocument(_) => error::unimp("as_raw_fd for here doc"),
         }
+    }
+
+    pub(crate) fn is_term(&self) -> bool {
+        match self {
+            OpenFile::Stdin => std::io::stdin().is_terminal(),
+            OpenFile::Stdout => std::io::stdout().is_terminal(),
+            OpenFile::Stderr => std::io::stderr().is_terminal(),
+            OpenFile::Null => false,
+            OpenFile::File(f) => f.is_terminal(),
+            OpenFile::PipeReader(_) => false,
+            OpenFile::PipeWriter(_) => false,
+            OpenFile::HereDocument(_) => false,
+        }
+    }
+
+    pub(crate) fn get_term_attr(&self) -> Result<Option<nix::sys::termios::Termios>, error::Error> {
+        if !self.is_term() {
+            return Ok(None);
+        }
+
+        let result = match self {
+            OpenFile::Stdin => Some(nix::sys::termios::tcgetattr(std::io::stdin())?),
+            OpenFile::Stdout => Some(nix::sys::termios::tcgetattr(std::io::stdout())?),
+            OpenFile::Stderr => Some(nix::sys::termios::tcgetattr(std::io::stderr())?),
+            OpenFile::Null => None,
+            OpenFile::File(f) => Some(nix::sys::termios::tcgetattr(f)?),
+            OpenFile::PipeReader(_) => None,
+            OpenFile::PipeWriter(_) => None,
+            OpenFile::HereDocument(_) => None,
+        };
+        Ok(result)
+    }
+
+    pub(crate) fn set_term_attr(
+        &self,
+        action: nix::sys::termios::SetArg,
+        termios: &nix::sys::termios::Termios,
+    ) -> Result<(), error::Error> {
+        match self {
+            OpenFile::Stdin => nix::sys::termios::tcsetattr(std::io::stdin(), action, termios)?,
+            OpenFile::Stdout => nix::sys::termios::tcsetattr(std::io::stdout(), action, termios)?,
+            OpenFile::Stderr => nix::sys::termios::tcsetattr(std::io::stderr(), action, termios)?,
+            OpenFile::Null => (),
+            OpenFile::File(f) => nix::sys::termios::tcsetattr(f, action, termios)?,
+            OpenFile::PipeReader(_) => (),
+            OpenFile::PipeWriter(_) => (),
+            OpenFile::HereDocument(_) => (),
+        }
+        Ok(())
     }
 }
 

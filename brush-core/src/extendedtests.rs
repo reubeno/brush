@@ -115,7 +115,15 @@ pub(crate) fn apply_unary_predicate_to_str(
             }
         }
         ast::UnaryPredicate::FdIsOpenTerminal => {
-            error::unimp("unary extended test predicate: FdIsOpenTerminal")
+            if let Ok(fd) = operand.parse::<u32>() {
+                if let Some(open_file) = shell.open_files.files.get(&fd) {
+                    Ok(open_file.is_term())
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
         }
         ast::UnaryPredicate::FileExistsAndIsSetuid => {
             let path = Path::new(operand);
