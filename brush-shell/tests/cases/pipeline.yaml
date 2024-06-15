@@ -25,3 +25,14 @@ cases:
           exit $1
     stdin: |
       ./script.sh 10 | ./script.sh 0 | ./script.sh 33
+
+  - name: "Side effects in pipe commands"
+    stdin: |
+      var=0
+      echo "var: ${var}"
+      { var=1; }
+      echo "var: ${var}"
+      { var=2; echo hi; } | cat
+      echo "var: ${var}"
+      echo hi | { var=3; cat; }
+      echo "var: ${var}"

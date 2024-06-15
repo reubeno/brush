@@ -17,3 +17,21 @@ cases:
           b
     stdin: |
       (echo a; echo b) | while read name; do echo "Hello, $name"; done
+
+  - name: "read from here string"
+    known_failure: true
+    stdin: |
+      read myvar <<< "hello"
+      echo "myvar: ${myvar}"
+
+  - name: "read from process substitution"
+    known_failure: true
+    stdin: |
+      read myvar < <(echo hello)
+      echo "myvar: ${myvar}"
+
+  - name: "read from command substitution"
+    known_failure: true
+    stdin: |
+      read myvar <<< "$(echo hello)"
+      echo "myvar: ${myvar}"
