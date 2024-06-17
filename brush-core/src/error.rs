@@ -162,6 +162,10 @@ pub enum Error {
     /// The given open file cannot be written to.
     #[error("cannot write to {0}")]
     OpenFileNotWritable(&'static str),
+
+    /// Bad file descriptor.
+    #[error("bad file descriptor: {0}")]
+    BadFileDescriptor(u32),
 }
 
 /// Convenience function for returning an error for unimplemented functionality.

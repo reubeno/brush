@@ -1,6 +1,8 @@
 //! Core implementation of the brush shell. Implements the shell's abstraction, its interpreter, and
 //! various facilities used internally by the shell.
 
+#![deny(missing_docs)]
+
 pub mod completion;
 
 mod arithmetic;

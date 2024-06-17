@@ -95,7 +95,7 @@ fn special_decl_builtin<B: builtin::DeclarationCommand + Send>() -> builtin::Reg
 fn get_builtin_content<T: builtin::Command + Send>(
     name: &str,
     content_type: builtin::ContentType,
-) -> String {
+) -> Result<String, error::Error> {
     T::get_content(name, content_type)
 }
 

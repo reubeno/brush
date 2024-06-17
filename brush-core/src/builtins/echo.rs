@@ -59,6 +59,8 @@ impl builtin::Command for EchoCommand {
         }
 
         write!(context.stdout(), "{s}")?;
+        context.stdout().flush()?;
+
         return Ok(builtin::ExitCode::Success);
     }
 }

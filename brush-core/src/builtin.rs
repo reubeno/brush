@@ -8,6 +8,12 @@ use crate::ExecutionResult;
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.
+///
+/// # Arguments
+///
+/// - `$struct_name` - The identifier to be used for the struct to define.
+/// - `$flag_char` - The character to use as the flag.
+/// - `$desc` - The string description of the flag.
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
     ($struct_name:ident, $flag_char:literal, $desc:literal) => {
@@ -150,15 +156,18 @@ pub trait Command: Parser {
     ///
     /// * `name` - The name of the command.
     /// * `content_type` - The type of content to retrieve.
-    fn get_content(name: &str, content_type: ContentType) -> String {
+    fn get_content(name: &str, content_type: ContentType) -> Result<String, error::Error> {
         let mut clap_command = Self::command().styles(brush_help_styles());
         clap_command.set_bin_name(name);
 
-        match content_type {
+        let s = match content_type {
             ContentType::DetailedHelp => clap_command.render_long_help().ansi().to_string(),
             ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
             ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
-        }
+            ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
+        };
+
+        Ok(s)
     }
 }
 
@@ -182,6 +191,8 @@ pub enum ContentType {
     ShortUsage,
     /// Short description for the command.
     ShortDescription,
+    /// man-style help page.
+    ManPage,
 }
 
 /// Encapsulates a registration for a built-in command.
@@ -191,7 +202,7 @@ pub struct Registration {
     pub execute_func: CommandExecuteFunc,
 
     /// Function to retrieve the builtin's content/help text.
-    pub content_func: fn(&str, ContentType) -> String,
+    pub content_func: fn(&str, ContentType) -> Result<String, error::Error>,
 
     /// Has this registration been disabled?
     pub disabled: bool,
@@ -201,6 +212,10 @@ pub struct Registration {
 
     /// Is this builtin one that takes specially handled declarations?
     pub declaration_builtin: bool,
+}
+
+fn get_builtin_man_page(_name: &str, _command: &clap::Command) -> Result<String, error::Error> {
+    error::unimp("man page rendering is not yet implemented")
 }
 
 fn get_builtin_short_description(name: &str, command: &clap::Command) -> String {

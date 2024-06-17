@@ -23,6 +23,7 @@ pub enum PromptPiece {
     CurrentWorkingDirectory {
         /// Whether or not to apply tilde-replacement before expanding.
         tilde_replaced: bool,
+        /// Whether or not to only expand to the basename of the directory.
         basename: bool,
     },
     /// The current date, using the given format.

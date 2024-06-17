@@ -5,19 +5,15 @@ use std::io::Write;
 /// Manage the process umask.
 #[derive(Parser)]
 pub(crate) struct UmaskCommand {
-    #[arg(
-        short = 'p',
-        help = "if MODE is omitted, output in a form that may be reused as input"
-    )]
+    /// If MODE is omitted, output in a form that may be reused as input.
+    #[arg(short = 'p')]
     print_roundtrippable: bool,
 
-    #[arg(
-        short = 'S',
-        help = "makes the output symbolic; otherwise an octal number is given"
-    )]
+    /// Makes the output symbolic; otherwise an octal number is given.
+    #[arg(short = 'S')]
     symbolic_output: bool,
 
-    #[arg(help = "mode mask")]
+    /// Mode mask.
     mode: Option<String>,
 }
 

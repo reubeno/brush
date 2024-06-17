@@ -41,7 +41,7 @@ pub enum WordPiece {
 pub enum ParameterTestType {
     /// Check for unset or null.
     UnsetOrNull,
-    // Check for unset.
+    /// Check for unset.
     Unset,
 }
 
@@ -55,16 +55,29 @@ pub enum Parameter {
     /// A named variable.
     Named(String),
     /// An index into a named variable.
-    NamedWithIndex { name: String, index: String },
+    NamedWithIndex {
+        /// Variable name.
+        name: String,
+        /// Index.
+        index: String,
+    },
     /// A named array variable with all indices.
-    NamedWithAllIndices { name: String, concatenate: bool },
+    NamedWithAllIndices {
+        /// Variable name.
+        name: String,
+        /// Whether to concatenate the values.
+        concatenate: bool,
+    },
 }
 
 /// A special parameter, used in a parameter expansion.
 #[derive(Debug)]
 pub enum SpecialParameter {
     /// All positional parameters.
-    AllPositionalParameters { concatenate: bool },
+    AllPositionalParameters {
+        /// Whether to concatenate the values.
+        concatenate: bool,
+    },
     /// The count of positional parameters.
     PositionalParameterCount,
     /// The last exit status in the shell.
@@ -84,116 +97,216 @@ pub enum SpecialParameter {
 pub enum ParameterExpr {
     /// A parameter, with optional indirection.
     Parameter {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
     },
     /// Conditionally use default values.
     UseDefaultValues {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// The type of test to perform.
         test_type: ParameterTestType,
+        /// Default value to conditionally use.
         default_value: Option<String>,
     },
     /// Conditionally assign default values.
     AssignDefaultValues {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// The type of test to perform.
         test_type: ParameterTestType,
+        /// Default value to conditionally assign.
         default_value: Option<String>,
     },
     /// Indicate error if null or unset.
     IndicateErrorIfNullOrUnset {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// The type of test to perform.
         test_type: ParameterTestType,
+        /// Error message to conditionally yield.
         error_message: Option<String>,
     },
     /// Conditionally use an alternative value.
     UseAlternativeValue {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// The type of test to perform.
         test_type: ParameterTestType,
+        /// Alternative value to conditionally use.
         alternative_value: Option<String>,
     },
     /// Compute the length of the given parameter.
     ParameterLength {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
     },
     /// Remove the smallest suffix from the given string matching the given pattern.
     RemoveSmallestSuffixPattern {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Remove the largest suffix from the given string matching the given pattern.
     RemoveLargestSuffixPattern {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Remove the smallest prefix from the given string matching the given pattern.
     RemoveSmallestPrefixPattern {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Remove the largest prefix from the given string matching the given pattern.
     RemoveLargestPrefixPattern {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Extract a substring from the given parameter.
     Substring {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Arithmetic expression that will be expanded to compute the offset
+        /// at which the substring should be extracted.
         offset: ast::UnexpandedArithmeticExpr,
+        /// Optionally provides an arithmetic expression that will be expanded
+        /// to compute the length of substring to be extracted; if left
+        /// unspecified, the remainder of the string will be extracted.
         length: Option<ast::UnexpandedArithmeticExpr>,
     },
     /// Transform the given parameter.
     Transform {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Type of transformation to apply.
         op: ParameterTransformOp,
     },
     /// Uppercase the first character of the given parameter.
     UppercaseFirstChar {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Uppercase the portion of the given parameter matching the given pattern.
     UppercasePattern {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Lowercase the first character of the given parameter.
     LowercaseFirstChar {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Lowercase the portion of the given parameter matching the given pattern.
     LowercasePattern {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Optionally provides a pattern to match.
         pattern: Option<String>,
     },
     /// Replace occurrences of the given pattern in the given parameter.
     ReplaceSubstring {
+        /// The parameter.
         parameter: Parameter,
+        /// Whether to treat the expanded parameter as an indirect
+        /// reference, which should be subsequently dereferenced
+        /// for the expansion.
         indirect: bool,
+        /// Pattern to match.
         pattern: String,
+        /// Replacement string.
         replacement: String,
+        /// Kind of match to perform.
         match_kind: SubstringMatchKind,
     },
     /// Select variable names from the environment with a given prefix.
-    VariableNames { prefix: String, concatenate: bool },
+    VariableNames {
+        /// The prefix to match.
+        prefix: String,
+        /// Whether to concatenate the results.
+        concatenate: bool,
+    },
     /// Select member keys from the named array.
     MemberKeys {
+        /// Name of the array variable.
         variable_name: String,
+        /// Whether to concatenate the results.
         concatenate: bool,
     },
 }
@@ -219,7 +332,10 @@ pub enum ParameterTransformOp {
     /// Expand escape sequences.
     ExpandEscapeSequences,
     /// Possibly quote with arrays expanded.
-    PossiblyQuoteWithArraysExpanded { separate_words: bool },
+    PossiblyQuoteWithArraysExpanded {
+        /// Whether or not to yield separate words.
+        separate_words: bool,
+    },
     /// Apply prompt expansion.
     PromptExpand,
     /// Quote the parameter.

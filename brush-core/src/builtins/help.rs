@@ -105,15 +105,19 @@ impl HelpCommand {
     ) -> Result<(), error::Error> {
         let content_type = if self.short_description {
             builtin::ContentType::ShortDescription
+        } else if self.man_page_style {
+            builtin::ContentType::ManPage
         } else if self.short_usage {
             builtin::ContentType::ShortUsage
         } else {
             builtin::ContentType::DetailedHelp
         };
 
-        let content = (registration.content_func)(name, content_type);
+        let content = (registration.content_func)(name, content_type)?;
 
         write!(context.stdout(), "{content}")?;
+        context.stdout().flush()?;
+
         Ok(())
     }
 }

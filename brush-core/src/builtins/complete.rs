@@ -188,15 +188,19 @@ pub(crate) struct CompleteCommand {
     #[arg(short = 'p')]
     print: bool,
 
+    /// Remove the completion settings associated with the given command.
     #[arg(short = 'r')]
     remove: bool,
 
+    /// Apply these settings to the default completion scenario.
     #[arg(short = 'D')]
     use_as_default: bool,
 
+    /// Apply these settings to completion of empty lines.
     #[arg(short = 'E')]
     use_for_empty_line: bool,
 
+    /// Apply these settings to completion of the initial word of the input line.
     #[arg(short = 'I')]
     use_for_initial_word: bool,
 
