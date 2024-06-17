@@ -12,9 +12,6 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/reubeno/brush"
 
-[workspace.lints.rust]
-missing_docs = "warn"
-
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
@@ -34,13 +31,13 @@ if_same_then_else = "allow"
 match_same_arms = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+multiple_crate_versions = "allow"
 must_use_candidate = "allow"
 redundant_closure_for_method_calls = "allow"
 redundant_else = "allow"
 result_large_err = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
-multiple_crate_versions = "allow"
 
 [profile.release]
 opt-level = "z"

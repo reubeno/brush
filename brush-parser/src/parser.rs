@@ -34,6 +34,13 @@ pub struct Parser<R> {
 }
 
 impl<R: std::io::BufRead> Parser<R> {
+    /// Returns a new parser instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - The reader to use for input.
+    /// * `options` - The options to use when parsing.
+    /// * `source_info` - Information about the source of the tokens.
     pub fn new(reader: R, options: &ParserOptions, source_info: &SourceInfo) -> Self {
         Parser {
             reader,
@@ -42,6 +49,11 @@ impl<R: std::io::BufRead> Parser<R> {
         }
     }
 
+    /// Parses the input into an abstract syntax tree (AST) of a shell program.
+    ///
+    /// # Arguments
+    ///
+    /// * `stop_on_unescaped_newline` - Whether or not to stop parsing when an unescaped newline is encountered.
     pub fn parse(
         &mut self,
         stop_on_unescaped_newline: bool,
@@ -700,7 +712,6 @@ peg::parser! {
             linebreak() [Token::Word(e, _)] linebreak() { e }
 
         rule io_number() -> u32 =
-            // TODO: implement io_number more accurately.
             w:[Token::Word(_, _)] {? w.to_str().parse().or(Err("io_number u32")) }
 
         //

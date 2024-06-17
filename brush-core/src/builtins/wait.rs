@@ -5,15 +5,20 @@ use crate::{builtin, commands, error};
 /// Wait for jobs to terminate.
 #[derive(Parser)]
 pub(crate) struct WaitCommand {
+    /// Wait for specified job to terminate (instead of change status).
     #[arg(short = 'f')]
     wait_for_terminate: bool,
 
+    /// Wait for a single job to change status; if jobs are specified, waits for
+    /// the first to change status, and otherwise waits for the next change.
     #[arg(short = 'n')]
     wait_for_first_or_next: bool,
 
+    /// Name of variable to receive the job ID of the job whose status is indicated.
     #[arg(short = 'p')]
     variable_to_receive_id: Option<String>,
 
+    /// Specs of jobs to wait for.
     job_specs: Vec<String>,
 }
 

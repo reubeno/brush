@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 #[cfg(unix)]
 mod unix {
     use criterion::{black_box, Criterion};

@@ -52,6 +52,7 @@ pub enum Token {
 }
 
 impl Token {
+    /// Returns the string value of the token.
     pub fn to_str(&self) -> &str {
         match self {
             Token::Operator(s, _) => s,
@@ -59,6 +60,7 @@ impl Token {
         }
     }
 
+    /// Returns the location of the token in the source script.
     pub fn location(&self) -> &TokenLocation {
         match self {
             Token::Operator(_, l) => l,

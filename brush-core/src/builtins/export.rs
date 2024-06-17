@@ -11,12 +11,15 @@ use crate::{
 /// Add or update exported shell variables.
 #[derive(Parser)]
 pub(crate) struct ExportCommand {
+    /// Names are treated as function names.
     #[arg(short = 'f')]
     names_are_functions: bool,
 
+    /// Un-export the names.
     #[arg(short = 'n')]
     unexport: bool,
 
+    /// Display all exported names.
     #[arg(short = 'p')]
     display_exported_names: bool,
 

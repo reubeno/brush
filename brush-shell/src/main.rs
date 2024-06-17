@@ -1,5 +1,7 @@
 //! Implements the command-line interface for the `brush` shell.
 
+#![deny(missing_docs)]
+
 use std::{collections::HashSet, io::IsTerminal, path::Path};
 
 use clap::{builder::styling, Parser};

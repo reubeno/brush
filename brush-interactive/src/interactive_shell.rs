@@ -259,7 +259,6 @@ impl EditorHelper {
             options: brush_core::completion::ProcessingOptions::default(),
         });
 
-        // TODO: implement completion postprocessing
         let completing_end_of_line = pos == line.len();
         if completions.options.treat_as_filenames {
             for candidate in &mut completions.candidates {

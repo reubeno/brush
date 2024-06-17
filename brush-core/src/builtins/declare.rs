@@ -12,18 +12,39 @@ use crate::{
     },
 };
 
-builtin::minus_or_plus_flag_arg!(MakeIndexedArrayFlag, 'a', "");
-builtin::minus_or_plus_flag_arg!(MakeAssociativeArrayFlag, 'A', "");
-builtin::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "");
-builtin::minus_or_plus_flag_arg!(LowercaseValueOnAssignmentFlag, 'l', "");
-builtin::minus_or_plus_flag_arg!(MakeNameRefFlag, 'n', "");
-builtin::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "");
-builtin::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "");
-builtin::minus_or_plus_flag_arg!(UppercaseValueOnAssignmentFlag, 'u', "");
-builtin::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "");
+builtin::minus_or_plus_flag_arg!(
+    MakeIndexedArrayFlag,
+    'a',
+    "Make the variable an indexed array."
+);
+builtin::minus_or_plus_flag_arg!(
+    MakeAssociativeArrayFlag,
+    'A',
+    "Make the variable an associative array."
+);
+builtin::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
+builtin::minus_or_plus_flag_arg!(
+    LowercaseValueOnAssignmentFlag,
+    'l',
+    "Enable lowercase-on-assignment for the variable."
+);
+builtin::minus_or_plus_flag_arg!(
+    MakeNameRefFlag,
+    'n',
+    "Mark the variable as a name reference"
+);
+builtin::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "Mark the variable as read-only.");
+builtin::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "Enable tracing for the variable.");
+builtin::minus_or_plus_flag_arg!(
+    UppercaseValueOnAssignmentFlag,
+    'u',
+    "Enable uppercase-on-assignment for the variable."
+);
+builtin::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "Mark the variable for export.");
 
 /// Display or update variables and their attributes.
 #[derive(Parser)]
+#[clap(override_usage = "declare [OPTIONS] [DECLARATIONS]...")]
 pub(crate) struct DeclareCommand {
     /// Constrain to function names or definitions.
     #[arg(short = 'f')]
@@ -37,6 +58,8 @@ pub(crate) struct DeclareCommand {
     #[arg(short = 'g')]
     create_global: bool,
 
+    /// When creating a local variable that shadows another variable of the same name,
+    /// then initialize it with the contents and attributes of the variable being shadowed.
     #[arg(short = 'I')]
     locals_inherit_from_prev_scope: bool,
 

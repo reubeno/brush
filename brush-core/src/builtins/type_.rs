@@ -11,21 +11,28 @@ use crate::{builtin, commands, Shell};
 /// Inspect the type of a named shell item.
 #[derive(Parser)]
 pub(crate) struct TypeCommand {
+    /// Display all locations of the specified name, not just the first.
     #[arg(short = 'a')]
     all_locations: bool,
 
+    /// Don't consider functions when resolving the name.
     #[arg(short = 'f')]
     suppress_func_lookup: bool,
 
+    /// Force searching by file path, even if the name is an alias, built-in
+    /// command, or shell function.
     #[arg(short = 'P')]
     force_path_search: bool,
 
+    /// Show file path only.
     #[arg(short = 'p')]
     show_path_only: bool,
 
+    /// Only display the type of the specified name.
     #[arg(short = 't')]
     type_only: bool,
 
+    /// Names to search for.
     names: Vec<String>,
 }
 

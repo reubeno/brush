@@ -5,15 +5,12 @@ use std::io::Write;
 /// Display the current working directory.
 #[derive(Parser)]
 pub(crate) struct PwdCommand {
-    #[arg(
-        short = 'P',
-        help = "print the physical directory, without any symbolic links"
-    )]
+    /// Print the physical directory without any symlinks.
+    #[arg(short = 'P')]
     physical: bool,
-    #[arg(
-        short = 'L',
-        help = "print the value of $PWD if it names the current working directory"
-    )]
+
+    /// Print $PWD if it names the current working directory.
+    #[arg(short = 'L')]
     allow_symlinks: bool,
 }
 
