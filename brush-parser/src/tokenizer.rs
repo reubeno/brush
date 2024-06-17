@@ -461,6 +461,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         self.next_token_until(None)
     }
 
+    #[allow(clippy::if_same_then_else)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,
