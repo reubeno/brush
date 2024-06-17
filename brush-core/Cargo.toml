@@ -19,8 +19,8 @@ workspace = true
 async-recursion = "1.1.0"
 async-trait = "0.1.80"
 brush-parser = { version = "0.1.0", path = "../brush-parser" }
-cached = "0.51.3"
-clap = { version = "4.5.4", features = ["derive"] }
+cached = "0.51.4"
+clap = { version = "4.5.7", features = ["derive"] }
 fancy-regex = "0.13.0"
 futures = "0.3.30"
 hostname = "0.4.0"
