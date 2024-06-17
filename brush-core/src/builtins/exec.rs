@@ -39,7 +39,7 @@ impl builtin::Command for ExecCommand {
             argv0 = Cow::Owned(std::format!("-{argv0}"));
         }
 
-        let (mut cmd, here_doc) = commands::compose_std_command(
+        let mut cmd = commands::compose_std_command(
             context.shell,
             &self.args[0],
             argv0.as_str(),
@@ -47,10 +47,6 @@ impl builtin::Command for ExecCommand {
             context.open_files.clone(),
             self.empty_environment,
         )?;
-
-        if here_doc.is_some() {
-            return error::unimp("exec with here doc");
-        }
 
         let exec_error = cmd.exec();
 

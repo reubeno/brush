@@ -21,7 +21,6 @@ cases:
       (echo "a b") | while read -a arr; do declare -p arr; done
 
   - name: "read from here string"
-    known_failure: true
     stdin: |
       read myvar <<< "hello"
       echo "myvar: ${myvar}"
@@ -30,10 +29,4 @@ cases:
     known_failure: true
     stdin: |
       read myvar < <(echo hello)
-      echo "myvar: ${myvar}"
-
-  - name: "read from command substitution"
-    known_failure: true
-    stdin: |
-      read myvar <<< "$(echo hello)"
       echo "myvar: ${myvar}"

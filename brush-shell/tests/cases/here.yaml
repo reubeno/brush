@@ -11,6 +11,23 @@ cases:
           echo "This is after"
     args: ["./script.sh"]
 
+  - name: "Here doc with expansions"
+    known_failure: true
+    stdin: |
+      cat <<END-MARKER
+      Something here...
+      ...and here.
+      $(echo "This is after")
+      END-MARKER
+
+  - name: "Here doc with tab removal"
+    known_failure: true
+    stdin: |
+      cat <<-END-MARKER
+      	Something here...
+      	...and here.
+      	END-MARKER
+
   - name: "Basic here string"
     stdin: |
       shopt -ou posix

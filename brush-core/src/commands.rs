@@ -3,7 +3,7 @@ use std::{ffi::OsStr, fmt::Display, os::unix::process::CommandExt, process::Stdi
 use brush_parser::ast;
 use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
-use tokio::{io::AsyncWriteExt, process};
+use tokio::process;
 
 use crate::{
     builtin, error,
@@ -98,7 +98,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     args: &[S],
     mut open_files: OpenFiles,
     empty_env: bool,
-) -> Result<(std::process::Command, Option<String>), error::Error> {
+) -> Result<std::process::Command, error::Error> {
     let mut cmd = std::process::Command::new(command_name);
 
     // Override argv[0].
@@ -126,14 +126,12 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stdin, if applicable.
-    let mut stdin_here_doc = None;
-    if let Some(stdin_file) = open_files.files.remove(&0) {
-        if let OpenFile::HereDocument(doc) = &stdin_file {
-            stdin_here_doc = Some(doc.clone());
+    match open_files.files.remove(&0) {
+        Some(OpenFile::Stdin) | None => (),
+        Some(stdin_file) => {
+            let as_stdio: Stdio = stdin_file.into();
+            cmd.stdin(as_stdio);
         }
-
-        let as_stdio: Stdio = stdin_file.into();
-        cmd.stdin(as_stdio);
     }
 
     // Redirect stdout, if applicable.
@@ -175,7 +173,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
         }
     }
 
-    Ok((cmd, stdin_here_doc))
+    Ok(cmd)
 }
 
 pub(crate) async fn execute(
@@ -218,11 +216,11 @@ pub(crate) async fn execute(
     }
 
     // Strip the command name off args.
-    execute_external_command(cmd_context, &args[1..]).await
+    execute_external_command(cmd_context, &args[1..])
 }
 
 #[allow(clippy::too_many_lines)]
-pub(crate) async fn execute_external_command(
+pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<SpawnResult, error::Error> {
@@ -235,7 +233,7 @@ pub(crate) async fn execute_external_command(
     }
 
     // Compose the std::process::Command that encapsulates what we want to launch.
-    let (cmd, stdin_here_doc) = compose_std_command(
+    let cmd = compose_std_command(
         context.shell,
         context.command_name.as_str(),
         context.command_name.as_str(),
@@ -258,16 +256,7 @@ pub(crate) async fn execute_external_command(
     let mut cmd = tokio::process::Command::from(cmd);
 
     match cmd.spawn() {
-        Ok(mut child) => {
-            // Special case: handle writing here document, if needed.
-            if let Some(doc) = stdin_here_doc {
-                if let Some(mut child_stdin) = child.stdin.take() {
-                    child_stdin.write_all(doc.as_bytes()).await?;
-                }
-            }
-
-            Ok(SpawnResult::SpawnedChild(child))
-        }
+        Ok(child) => Ok(SpawnResult::SpawnedChild(child)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if context.shell.options.sh_mode {
                 tracing::error!(
