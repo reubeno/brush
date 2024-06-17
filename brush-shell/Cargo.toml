@@ -27,7 +27,7 @@ workspace = true
 brush-interactive = { version = "0.1.0", path = "../brush-interactive" }
 brush-parser = { version = "0.1.0", path = "../brush-parser" }
 brush-core = { version = "0.1.0", path = "../brush-core" }
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.4", features = ["derive", "wrap_help"] }
 tokio = { version = "1.37.0", features = ["rt", "rt-multi-thread"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
