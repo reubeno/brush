@@ -10,13 +10,15 @@ cases:
       while read name; do echo "Hello, $name"; done < data.txt
 
   - name: "Basic read usage from pipe"
-    test_files:
-      - path: "data.txt"
-        contents: |
-          a
-          b
     stdin: |
+      echo "1."
       (echo a; echo b) | while read name; do echo "Hello, $name"; done
+
+      echo "2."
+      (echo "a b") | while read name; do echo "Hello, 1:$name REPLY:$REPLY"; done
+
+      echo "3."
+      (echo "a b") | while read -a arr; do declare -p arr; done
 
   - name: "read from here string"
     known_failure: true
