@@ -8,7 +8,7 @@ use tokio::{io::AsyncWriteExt, process};
 use crate::{
     builtin, error,
     interp::{self, Execute},
-    openfiles::{OpenFile, OpenFiles},
+    openfiles::{self, OpenFile, OpenFiles},
     Shell,
 };
 
@@ -35,23 +35,28 @@ pub struct ExecutionContext<'a> {
     /// The name of the command being executed.    
     pub command_name: String,
     /// The open files tracked by the current context.
-    pub open_files: crate::openfiles::OpenFiles,
+    pub open_files: openfiles::OpenFiles,
 }
 
 impl ExecutionContext<'_> {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> crate::openfiles::OpenFile {
-        self.open_files.files.get(&0).unwrap().try_dup().unwrap()
+    pub fn stdin(&self) -> openfiles::OpenFile {
+        self.fd(0).unwrap()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> crate::openfiles::OpenFile {
-        self.open_files.files.get(&1).unwrap().try_dup().unwrap()
+    pub fn stdout(&self) -> openfiles::OpenFile {
+        self.fd(1).unwrap()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> crate::openfiles::OpenFile {
-        self.open_files.files.get(&2).unwrap().try_dup().unwrap()
+    pub fn stderr(&self) -> openfiles::OpenFile {
+        self.fd(2).unwrap()
+    }
+
+    /// Returns the file descriptor with the given number.
+    pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
+        self.open_files.files.get(&fd).map(|f| f.try_dup().unwrap())
     }
 }
 

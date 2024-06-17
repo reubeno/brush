@@ -52,6 +52,7 @@ pub enum Token {
 }
 
 impl Token {
+    /// Returns the string value of the token.
     pub fn to_str(&self) -> &str {
         match self {
             Token::Operator(s, _) => s,
@@ -59,6 +60,7 @@ impl Token {
         }
     }
 
+    /// Returns the location of the token in the source script.
     pub fn location(&self) -> &TokenLocation {
         match self {
             Token::Operator(_, l) => l,
@@ -459,6 +461,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         self.next_token_until(None)
     }
 
+    #[allow(clippy::if_same_then_else)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,

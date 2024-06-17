@@ -13,13 +13,6 @@ repository.workspace = true
 [lib]
 bench = false
 
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-missing_errors_doc = "allow"
-collapsible_if = "allow"
-collapsible_else_if = "allow"
-if_same_then_else = "allow"
-
 [dependencies]
 indenter = "0.3.3"
 peg = "0.8.3"

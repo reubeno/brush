@@ -80,6 +80,7 @@ pub(crate) struct SetOption {
 #[derive(Parser)]
 #[clap(disable_help_flag = true)]
 pub(crate) struct SetCommand {
+    /// Display help for this command.
     #[clap(long, action = clap::ArgAction::HelpLong)]
     help: Option<bool>,
 

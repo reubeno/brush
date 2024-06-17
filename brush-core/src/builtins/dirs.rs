@@ -10,6 +10,7 @@ pub(crate) struct DirsCommand {
     #[arg(short = 'c')]
     clear: bool,
 
+    /// Don't tilde-shorten paths.
     #[arg(short = 'l')]
     tilde_long: bool,
 
@@ -17,6 +18,7 @@ pub(crate) struct DirsCommand {
     #[arg(short = 'p')]
     print_one_per_line: bool,
 
+    /// Print one directory per line with its index.
     #[arg(short = 'v')]
     print_one_per_line_with_index: bool,
     //

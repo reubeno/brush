@@ -37,6 +37,7 @@ impl builtin::Command for PrintfCommand {
         let stderr = String::from_utf8(output.stderr)?;
 
         write!(context.stderr(), "{stderr}")?;
+        context.stderr().flush()?;
 
         if !output.status.success() {
             #[allow(clippy::cast_possible_truncation)]

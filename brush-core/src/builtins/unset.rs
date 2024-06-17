@@ -15,25 +15,16 @@ pub(crate) struct UnsetCommand {
 #[derive(Parser)]
 #[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
 pub(crate) struct UnsetNameInterpretation {
-    #[arg(
-        short = 'f',
-        group = "name-interpretation",
-        help = "treat each name as a shell function"
-    )]
+    /// Treat each name as a shell function.
+    #[arg(short = 'f', group = "name-interpretation")]
     shell_functions: bool,
 
-    #[arg(
-        short = 'v',
-        group = "name-interpretation",
-        help = "treat each name as a shell variable"
-    )]
+    /// Treat each name as a shell variable.
+    #[arg(short = 'v', group = "name-interpretation")]
     shell_variables: bool,
 
-    #[arg(
-        short = 'n',
-        group = "name-interpretation",
-        help = "treat each name as a name reference"
-    )]
+    /// Treat each name as a name reference.
+    #[arg(short = 'n', group = "name-interpretation")]
     name_references: bool,
 }
 
