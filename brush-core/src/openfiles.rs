@@ -26,8 +26,6 @@ pub enum OpenFile {
     PipeReader(os_pipe::PipeReader),
     /// A write end of a pipe.
     PipeWriter(os_pipe::PipeWriter),
-    /// A here document.
-    HereDocument(String),
 }
 
 impl OpenFile {
@@ -41,7 +39,6 @@ impl OpenFile {
             OpenFile::File(f) => OpenFile::File(f.try_clone()?),
             OpenFile::PipeReader(f) => OpenFile::PipeReader(f.try_clone()?),
             OpenFile::PipeWriter(f) => OpenFile::PipeWriter(f.try_clone()?),
-            OpenFile::HereDocument(doc) => OpenFile::HereDocument(doc.clone()),
         };
 
         Ok(result)
@@ -58,7 +55,6 @@ impl OpenFile {
             OpenFile::File(f) => Ok(f.into()),
             OpenFile::PipeReader(r) => Ok(OwnedFd::from(r)),
             OpenFile::PipeWriter(w) => Ok(OwnedFd::from(w)),
-            OpenFile::HereDocument(_) => error::unimp("to_owned_fd for here doc"),
         }
     }
 
@@ -74,7 +70,6 @@ impl OpenFile {
             OpenFile::File(f) => Ok(f.as_raw_fd()),
             OpenFile::PipeReader(r) => Ok(r.as_raw_fd()),
             OpenFile::PipeWriter(w) => Ok(w.as_raw_fd()),
-            OpenFile::HereDocument(_) => error::unimp("as_raw_fd for here doc"),
         }
     }
 
@@ -87,7 +82,6 @@ impl OpenFile {
             OpenFile::File(f) => f.is_terminal(),
             OpenFile::PipeReader(_) => false,
             OpenFile::PipeWriter(_) => false,
-            OpenFile::HereDocument(_) => false,
         }
     }
 
@@ -104,7 +98,6 @@ impl OpenFile {
             OpenFile::File(f) => Some(nix::sys::termios::tcgetattr(f)?),
             OpenFile::PipeReader(_) => None,
             OpenFile::PipeWriter(_) => None,
-            OpenFile::HereDocument(_) => None,
         };
         Ok(result)
     }
@@ -122,7 +115,6 @@ impl OpenFile {
             OpenFile::File(f) => nix::sys::termios::tcsetattr(f, action, termios)?,
             OpenFile::PipeReader(_) => (),
             OpenFile::PipeWriter(_) => (),
-            OpenFile::HereDocument(_) => (),
         }
         Ok(())
     }
@@ -138,7 +130,6 @@ impl From<OpenFile> for Stdio {
             OpenFile::File(f) => f.into(),
             OpenFile::PipeReader(f) => f.into(),
             OpenFile::PipeWriter(f) => f.into(),
-            OpenFile::HereDocument(_) => Stdio::piped(),
         }
     }
 }
@@ -159,9 +150,6 @@ impl std::io::Read for OpenFile {
             OpenFile::PipeWriter(_) => Err(std::io::Error::other(
                 error::Error::OpenFileNotReadable("pipe writer"),
             )),
-            OpenFile::HereDocument(_) => Err(std::io::Error::other(
-                error::Error::OpenFileNotReadable("here document"),
-            )),
         }
     }
 }
@@ -180,9 +168,6 @@ impl std::io::Write for OpenFile {
                 error::Error::OpenFileNotWritable("pipe reader"),
             )),
             OpenFile::PipeWriter(writer) => writer.write(buf),
-            OpenFile::HereDocument(_) => Err(std::io::Error::other(
-                error::Error::OpenFileNotWritable("here document"),
-            )),
         }
     }
 
@@ -195,7 +180,6 @@ impl std::io::Write for OpenFile {
             OpenFile::File(f) => f.flush(),
             OpenFile::PipeReader(_) => Ok(()),
             OpenFile::PipeWriter(writer) => writer.flush(),
-            OpenFile::HereDocument(_) => Ok(()),
         }
     }
 }

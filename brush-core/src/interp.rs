@@ -2,6 +2,7 @@ use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
+use std::os::fd::{AsFd, AsRawFd};
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::sync::Arc;
@@ -1433,9 +1434,9 @@ pub(crate) async fn setup_redirect<'a>(
             // TODO: figure out if we need to expand?
             let io_here_doc = io_here.doc.flatten();
 
-            open_files
-                .files
-                .insert(fd_num, OpenFile::HereDocument(io_here_doc));
+            let f = setup_open_file_with_contents(io_here_doc.as_str())?;
+
+            open_files.files.insert(fd_num, f);
             Ok(Some(fd_num))
         }
         ast::IoRedirect::HereString(fd_num, word) => {
@@ -1445,12 +1446,29 @@ pub(crate) async fn setup_redirect<'a>(
             let mut expanded_word = expansion::basic_expand_word(shell, word).await?;
             expanded_word.push('\n');
 
-            open_files
-                .files
-                .insert(fd_num, OpenFile::HereDocument(expanded_word));
+            let f = setup_open_file_with_contents(expanded_word.as_str())?;
+
+            open_files.files.insert(fd_num, f);
             Ok(Some(fd_num))
         }
     }
+}
+
+fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
+    let (reader, mut writer) = os_pipe::pipe()?;
+
+    let bytes = contents.as_bytes();
+    let len = i32::try_from(bytes.len())?;
+
+    nix::fcntl::fcntl(
+        reader.as_fd().as_raw_fd(),
+        nix::fcntl::FcntlArg::F_SETPIPE_SZ(len),
+    )?;
+
+    writer.write_all(bytes)?;
+    drop(writer);
+
+    Ok(OpenFile::PipeReader(reader))
 }
 
 #[cfg(not(unix))]
