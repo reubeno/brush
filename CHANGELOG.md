@@ -31,7 +31,7 @@ All notable changes to this project will be documented in this file.
 
 ### ⚙️ Miscellaneous Tasks
 
-- *(release)* Bump version to 0.2.0
+- *(release)* Bump version to 0.2.0 (#88)
 
 ### Build
 
