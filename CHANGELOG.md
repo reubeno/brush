@@ -5,7 +5,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 All notable changes to this project will be documented in this file.
 
-## [unreleased]
+## [brush-shell-v0.2.0] - 2024-06-18
 
 ### 🚀 Features
 
@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Rework here doc files (#85)
 - Set + validate intentional MSRV (1.72.0) (#86)
 - Add basic changelog
+- Add basic changelog (#87)
 
 ### 🐛 Bug Fixes
 
@@ -27,6 +28,10 @@ All notable changes to this project will be documented in this file.
 
 - Add crate shields to readme (#74)
 - Add missing code documentation
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump version to 0.2.0
 
 ### Build
 
