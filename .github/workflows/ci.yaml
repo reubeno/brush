@@ -169,14 +169,21 @@ jobs:
   check:
     name: "Source code checks"
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        # Test latest stable as well as MSRV.
+        rust-version: ["stable", "1.72.0"]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up rust toolchain
+      - name: Set up rust toolchain (${{ matrix.rust-version }})
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust-version }}
+          components: clippy, rustfmt
 
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@v2
@@ -200,6 +207,7 @@ jobs:
           cargo deny check
 
       - name: Clippy check
+        if: matrix.rust-version == 'stable'
         run: cargo clippy --all-targets
 
   benchmark:

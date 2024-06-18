@@ -52,7 +52,7 @@ mod unimp;
 mod unset;
 mod wait;
 
-fn builtin<B: builtin::Command + Send>() -> builtin::Registration {
+fn builtin<B: builtin::Command + Send + Sync>() -> builtin::Registration {
     builtin::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -62,7 +62,7 @@ fn builtin<B: builtin::Command + Send>() -> builtin::Registration {
     }
 }
 
-fn special_builtin<B: builtin::Command + Send>() -> builtin::Registration {
+fn special_builtin<B: builtin::Command + Send + Sync>() -> builtin::Registration {
     builtin::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -72,7 +72,7 @@ fn special_builtin<B: builtin::Command + Send>() -> builtin::Registration {
     }
 }
 
-fn decl_builtin<B: builtin::DeclarationCommand + Send>() -> builtin::Registration {
+fn decl_builtin<B: builtin::DeclarationCommand + Send + Sync>() -> builtin::Registration {
     builtin::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -82,7 +82,7 @@ fn decl_builtin<B: builtin::DeclarationCommand + Send>() -> builtin::Registratio
     }
 }
 
-fn special_decl_builtin<B: builtin::DeclarationCommand + Send>() -> builtin::Registration {
+fn special_decl_builtin<B: builtin::DeclarationCommand + Send + Sync>() -> builtin::Registration {
     builtin::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -92,21 +92,21 @@ fn special_decl_builtin<B: builtin::DeclarationCommand + Send>() -> builtin::Reg
     }
 }
 
-fn get_builtin_content<T: builtin::Command + Send>(
+fn get_builtin_content<T: builtin::Command + Send + Sync>(
     name: &str,
     content_type: builtin::ContentType,
 ) -> Result<String, error::Error> {
     T::get_content(name, content_type)
 }
 
-fn exec_builtin<T: builtin::Command + Send>(
+fn exec_builtin<T: builtin::Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<builtin::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_builtin_impl<T: builtin::Command + Send>(
+async fn exec_builtin_impl<T: builtin::Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<builtin::BuiltinResult, error::Error> {
@@ -131,14 +131,14 @@ async fn exec_builtin_impl<T: builtin::Command + Send>(
     })
 }
 
-fn exec_declaration_builtin<T: builtin::DeclarationCommand + Send>(
+fn exec_declaration_builtin<T: builtin::DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<builtin::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_declaration_builtin_impl<T: builtin::DeclarationCommand + Send>(
+async fn exec_declaration_builtin_impl<T: builtin::DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<builtin::BuiltinResult, error::Error> {
