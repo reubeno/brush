@@ -77,7 +77,9 @@ deny = []
 #exact = true
 
 # Certain crates/versions that will be skipped when doing duplicate detection.
-skip = []
+skip = [
+    { crate = "strsim", reason = "conflict between old version of clap and cached" }
+]
 skip-tree = [
     { crate = "windows-sys", reason = "several crates use outdated versions" },
     { crate = "nix", reason = "there are multiple versions floating" },
