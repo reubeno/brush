@@ -2,13 +2,18 @@ use crate::tokenizer;
 use crate::Token;
 
 /// Represents an error that occurred while parsing tokens.
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ParseError {
     /// A parsing error occurred near the given token.
+    #[error("parse error near token: {}", .0.location().start)]
     ParsingNearToken(Token),
+
     /// A parsing error occurred at the end of the input.
+    #[error("parse error at end of input")]
     ParsingAtEndOfInput,
+
     /// An error occurred while tokenizing the input stream.
+    #[error("failed to tokenize input")]
     Tokenizing {
         /// The inner error.
         inner: tokenizer::TokenizerError,
