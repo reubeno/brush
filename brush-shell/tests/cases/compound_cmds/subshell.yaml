@@ -4,6 +4,11 @@ cases:
     stdin: |
       (echo hi)
 
+  - name: "Subshells in sequence"
+    ignore_stderr: true
+    stdin: |
+      (echo hi)(echo there)
+
   - name: "Subshell env usage"
     stdin: |
       (subshell_var=value && echo "subshell_var: ${subshell_var}")
