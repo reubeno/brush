@@ -41,6 +41,7 @@ similar_names = "allow"
 struct_excessive_bools = "allow"
 
 [profile.release]
+strip = "debuginfo"
 opt-level = "z"
 lto = true
 codegen-units = 1
