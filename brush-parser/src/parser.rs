@@ -53,7 +53,8 @@ impl<R: std::io::BufRead> Parser<R> {
     ///
     /// # Arguments
     ///
-    /// * `stop_on_unescaped_newline` - Whether or not to stop parsing when an unescaped newline is encountered.
+    /// * `stop_on_unescaped_newline` - Whether or not to stop parsing when an unescaped newline is
+    ///   encountered.
     pub fn parse(
         &mut self,
         stop_on_unescaped_newline: bool,
@@ -620,13 +621,11 @@ peg::parser! {
             word()
 
         rule newline_list() -> () =
-            newline()* {}
+            newline()+ {}
 
-        // N.B. We don't need to add a '?' to the invocation of the newline_list()
-        // rule because it already allows 0 newlines.
         rule linebreak() -> () =
             quiet! {
-                newline_list() {}
+                newline()* {}
             }
 
         rule separator_op() -> ast::SeparatorOperator =
