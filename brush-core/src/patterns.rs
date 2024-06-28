@@ -88,8 +88,13 @@ impl Pattern {
     where
         PF: Fn(&Path) -> bool,
     {
+        // If the pattern is completely empty, then short-circuit the function; there's
+        // no reason to proceed onward when we know there's no expansions.
         if self.is_empty() {
             return Ok(vec![]);
+
+        // Similarly, if we're *confident* the pattern doesn't require expansion, then we
+        // know there's a single expansion (before filtering).
         } else if !self.pieces.iter().any(|piece| {
             matches!(piece, PatternPiece::Pattern(_)) && requires_expansion(piece.as_str())
         }) {
@@ -130,6 +135,7 @@ impl Pattern {
             }
         }
 
+        // Check if the path appears to be absolute.
         let is_absolute = if let Some(first_component) = components.first() {
             first_component
                 .iter()
@@ -145,7 +151,10 @@ impl Pattern {
             vec![PathBuf::from(std::path::MAIN_SEPARATOR_STR)]
         } else {
             let mut working_dir_str = working_dir.to_string_lossy().to_string();
-            working_dir_str.push(std::path::MAIN_SEPARATOR);
+
+            if !working_dir_str.ends_with(std::path::MAIN_SEPARATOR) {
+                working_dir_str.push(std::path::MAIN_SEPARATOR);
+            }
 
             prefix_to_remove = Some(working_dir_str);
             vec![working_dir.to_path_buf()]
@@ -220,8 +229,10 @@ impl Pattern {
     ///
     /// # Arguments
     ///
-    /// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the string.
-    /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the string.
+    /// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of
+    ///   the string.
+    /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the
+    ///   string.
     /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     pub(crate) fn to_regex_str(
         &self,
@@ -257,8 +268,10 @@ impl Pattern {
     ///
     /// # Arguments
     ///
-    /// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the string.
-    /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the string.
+    /// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of
+    ///   the string.
+    /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the
+    ///   string.
     /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     pub(crate) fn to_regex(
         &self,
@@ -315,8 +328,10 @@ fn escape_for_regex(s: &str) -> String {
 /// # Arguments
 ///
 /// * `pattern` - The shell pattern to convert.
-/// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the string.
-/// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the string.
+/// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the
+///   string.
+/// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the
+///   string.
 /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 pub(crate) fn pattern_to_regex(
     pattern: &str,
