@@ -40,6 +40,7 @@ cases:
   - name: "Redirect stdout and stderr"
     stdin: |
       ls -d . non-existent-dir &>/dev/null
+      ls -d . non-existent-dir &>>/dev/null
 
   - name: "Process substitution: input + output"
     known_failure: true
