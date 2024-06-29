@@ -307,8 +307,9 @@ impl Execute for ast::Pipeline {
         let mut spawn_results = VecDeque::new();
 
         for (current_pipeline_index, command) in self.seq.iter().enumerate() {
-            // If there's only one command in the pipeline, then we run directly in the current shell.
-            // Otherwise, we spawn a separate subshell for each command in the pipeline.
+            // If there's only one command in the pipeline, then we run directly in the current
+            // shell. Otherwise, we spawn a separate subshell for each command in the
+            // pipeline.
             let spawn_result = if pipeline_len > 1 {
                 let mut subshell = shell.clone();
                 let mut pipeline_context = PipelineExecutionContext {
@@ -354,8 +355,9 @@ impl Execute for ast::Pipeline {
 
                     let mut child_future = Box::pin(child.wait_with_output());
 
-                    // Wait for the process to exit or for a relevant signal, whichever happens first.
-                    // TODO: Figure out how to detect a SIGSTOP'd process.
+                    // Wait for the process to exit or for a relevant signal, whichever happens
+                    // first. TODO: Figure out how to detect a SIGSTOP'd
+                    // process.
                     let wait_result = if stopped.is_empty() {
                         loop {
                             tokio::select! {
@@ -879,8 +881,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                                 basic_expand_assignment(context.shell, assignment).await?;
                             args.push(CommandArg::Assignment(expanded));
                         } else {
-                            // This *looks* like an assignment, but it's really a string we should fully
-                            // treat as a regular looking argument.
+                            // This *looks* like an assignment, but it's really a string we should
+                            // fully treat as a regular looking
+                            // argument.
                             let mut next_args =
                                 expansion::full_expand_and_split_word(context.shell, word)
                                     .await?
@@ -914,8 +917,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                                 next_args = alias_pieces;
                             }
 
-                            // Check if we're going to be invoking a special declaration builtin. That will
-                            // change how we parse and process args.
+                            // Check if we're going to be invoking a special declaration builtin.
+                            // That will change how we parse and process
+                            // args.
                             if context
                                 .shell
                                 .builtins
@@ -1002,7 +1006,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             // Execute.
             let execution_result =
-                commands::execute(cmd_context, args, true /*use functions?*/).await;
+                commands::execute(cmd_context, args, true /* use functions? */).await;
 
             // Pop off that ephemeral environment scope.
             context.shell.env.pop_scope(EnvironmentScope::Command)?;
@@ -1103,7 +1107,8 @@ async fn apply_assignment(
     required_scope: Option<EnvironmentScope>,
     creation_scope: EnvironmentScope,
 ) -> Result<(), error::Error> {
-    // Figure out if we are trying to assign to a variable or assign to an element of an existing array.
+    // Figure out if we are trying to assign to a variable or assign to an element of an existing
+    // array.
     let mut array_index;
     let variable_name = match &assignment.name {
         ast::AssignmentName::VariableName(name) => {
@@ -1263,7 +1268,7 @@ pub(crate) async fn setup_redirect<'a>(
     redirect: &ast::IoRedirect,
 ) -> Result<Option<u32>, error::Error> {
     match redirect {
-        ast::IoRedirect::OutputAndError(f) => {
+        ast::IoRedirect::OutputAndError(f, append) => {
             let mut expanded_file_path = expansion::full_expand_and_split_word(shell, f).await?;
             if expanded_file_path.len() != 1 {
                 return Err(error::Error::InvalidRedirection);
@@ -1274,7 +1279,8 @@ pub(crate) async fn setup_redirect<'a>(
             let opened_file = std::fs::File::options()
                 .create(true)
                 .write(true)
-                .truncate(true)
+                .truncate(!*append)
+                .append(*append)
                 .open(expanded_file_path.as_str())
                 .map_err(|err| error::Error::RedirectionFailure(expanded_file_path, err))?;
 

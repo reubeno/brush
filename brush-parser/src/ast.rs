@@ -703,8 +703,8 @@ pub enum IoRedirect {
     HereDocument(Option<u32>, IoHereDocument),
     /// Redirection from a here-string.
     HereString(Option<u32>, Word),
-    /// Redirection of both standard output and standard error.
-    OutputAndError(Word),
+    /// Redirection of both standard output and standard error (with optional append).
+    OutputAndError(Word, bool),
 }
 
 impl Display for IoRedirect {
@@ -717,8 +717,12 @@ impl Display for IoRedirect {
 
                 write!(f, "{} {}", kind, target)?;
             }
-            IoRedirect::OutputAndError(target) => {
-                write!(f, "&> {}", target)?;
+            IoRedirect::OutputAndError(target, append) => {
+                write!(f, "&>")?;
+                if *append {
+                    write!(f, ">")?;
+                }
+                write!(f, " {}", target)?;
             }
             IoRedirect::HereDocument(
                 fd_num,
@@ -934,11 +938,14 @@ pub enum UnaryPredicate {
     FileExistsAndIsWritable,
     /// Computes if the operand is a path to an existing file that is executable.
     FileExistsAndIsExecutable,
-    /// Computes if the operand is a path to an existing file owned by the current context's effective group ID.
+    /// Computes if the operand is a path to an existing file owned by the current context's
+    /// effective group ID.
     FileExistsAndOwnedByEffectiveGroupId,
-    /// Computes if the operand is a path to an existing file that has been modified since last being read.
+    /// Computes if the operand is a path to an existing file that has been modified since last
+    /// being read.
     FileExistsAndModifiedSinceLastRead,
-    /// Computes if the operand is a path to an existing file owned by the current context's effective user ID.
+    /// Computes if the operand is a path to an existing file owned by the current context's
+    /// effective user ID.
     FileExistsAndOwnedByEffectiveUserId,
     /// Computes if the operand is a path to an existing socket file.
     FileExistsAndIsSocket,

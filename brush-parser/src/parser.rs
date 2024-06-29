@@ -580,7 +580,8 @@ peg::parser! {
                 let (kind, target) = f;
                 ast::IoRedirect::File(n, kind, target)
             } /
-            non_posix_extensions_enabled() specific_operator("&>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target)) } /
+            non_posix_extensions_enabled() specific_operator("&>>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target), true) } /
+            non_posix_extensions_enabled() specific_operator("&>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target), false) } /
             non_posix_extensions_enabled() n:io_number()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
             n:io_number()? h:io_here() { ast::IoRedirect::HereDocument(n, h) } /
             expected!("I/O redirect")
