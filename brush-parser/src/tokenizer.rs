@@ -97,9 +97,18 @@ pub enum TokenizerError {
     #[error("unterminated backquote near {0}")]
     UnterminatedBackquote(SourcePosition),
 
-    /// An unterminated extended glob (extglob) pattern was encountered at the end of the input stream.
+    /// An unterminated extended glob (extglob) pattern was encountered at the end of the input
+    /// stream.
     #[error("unterminated extglob near {0}")]
     UnterminatedExtendedGlob(SourcePosition),
+
+    /// An unterminated variable expression was encountered at the end of the input stream.
+    #[error("unterminated variable expression")]
+    UnterminatedVariable,
+
+    /// An unterminated command substitiion was encountered at the end of the input stream.
+    #[error("unterminated command substitution")]
+    UnterminatedCommandSubstitution,
 
     /// An error occurred decoding UTF-8 characters in the input stream.
     #[error("failed to decode UTF-8 characters")]
@@ -134,6 +143,8 @@ impl TokenizerError {
                 | Self::UnterminatedSingleQuote(_)
                 | Self::UnterminatedDoubleQuote(_)
                 | Self::UnterminatedBackquote(_)
+                | Self::UnterminatedCommandSubstitution
+                | Self::UnterminatedVariable
                 | Self::UnterminatedExtendedGlob(_)
                 | Self::UnterminatedHereDocuments(_)
         )
@@ -479,7 +490,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             let next = self.peek_char()?;
             let c = next.unwrap_or('\0');
 
-            // When we hit the end of the input, then we're done with the current token (if there is one).
+            // When we hit the end of the input, then we're done with the current token (if there is
+            // one).
             if next.is_none() {
                 // TODO: Verify we're not waiting on some terminating character?
                 // Verify we're out of all quotes.
@@ -614,7 +626,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             }
             //
             // Handle end of single-quote or double-quote.
-            //
             else if !state.in_escape
                 && matches!(state.quote_mode, QuoteMode::Single(_))
                 && c == '\''
@@ -633,7 +644,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             // Handle end of escape sequence.
             // TODO: Handle double-quote specific escape sequences.
-            //
             else if state.in_escape {
                 state.in_escape = false;
                 self.consume_char()?;
@@ -679,8 +689,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     state.append_str(cur_token_value.to_str());
 
                                     // If we encounter an embedded open parenthesis, then note that
-                                    // we'll have to see the matching end to it before we worry about
-                                    // the end of the containing construct.
+                                    // we'll have to see the matching end to it before we worry
+                                    // about the end of the
+                                    // containing construct.
                                     if matches!(cur_token_value, Token::Operator(o, _) if o == "(")
                                     {
                                         required_end_parens += 1;
@@ -694,8 +705,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     }
                                     TokenEndReason::SpecifiedTerminatingChar => {
                                         // We hit the ')' we were looking for. If this is the last
-                                        // end parenthesis we needed to find, then we'll exit the loop
-                                        // and consume and append it.
+                                        // end parenthesis we needed to find, then we'll exit the
+                                        // loop and consume
+                                        // and append it.
                                         required_end_parens -= 1;
                                         if required_end_parens == 0 {
                                             break;
@@ -705,7 +717,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                         // consume and append it here before we loop around again.
                                         state.append_char(self.next_char()?.unwrap());
                                     }
-                                    _ => (),
+                                    TokenEndReason::EndOfInput => {
+                                        return Err(TokenizerError::UnterminatedCommandSubstitution)
+                                    }
+                                    TokenEndReason::Other => (),
                                 }
                             }
 
@@ -731,14 +746,19 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     state.append_char(' ');
                                 }
 
-                                if matches!(
-                                    cur_token.reason,
-                                    TokenEndReason::SpecifiedTerminatingChar
-                                ) {
-                                    // We hit the end brace we were looking for but did not
-                                    // yet consume it. Do so now.
-                                    state.append_char(self.next_char()?.unwrap());
-                                    break;
+                                match cur_token.reason {
+                                    TokenEndReason::SpecifiedTerminatingChar => {
+                                        // We hit the end brace we were looking for but did not
+                                        // yet consume it. Do so now.
+                                        state.append_char(self.next_char()?.unwrap());
+                                        break;
+                                    }
+                                    TokenEndReason::EndOfInput => {
+                                        return Err(TokenizerError::UnterminatedVariable)
+                                    }
+                                    TokenEndReason::UnescapedNewLine
+                                    | TokenEndReason::NonNewLineBlank
+                                    | TokenEndReason::Other => (),
                                 }
                             }
                         }
@@ -749,8 +769,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         }
                     }
                 } else {
-                    // We look for the terminating backquote. First disable normal consumption and consume
-                    // the starting backquote.
+                    // We look for the terminating backquote. First disable normal consumption and
+                    // consume the starting backquote.
                     let backquote_pos = self.cross_state.cursor.clone();
                     self.consume_char()?;
 
@@ -788,7 +808,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             // If extended globbing is enabled, the last consumed character is an
             // unquoted start of an extglob pattern, *and* if the current character
             // is an open parenthesis, then this begins an extglob pattern.
-            //
             else if c == '('
                 && self.options.enable_extended_globbing
                 && state.unquoted()
@@ -855,7 +874,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             // N.B. We need to remember if we were recursively called, say in a command
             // substitution; in that case we won't think a token was started but... we'd
             // be wrong.
-            //
             else if !state.token_is_operator
                 && (state.started_token() || terminating_char.is_some())
             {
@@ -887,8 +905,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 result =
                     state.delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
             } else {
-                // If we got here, then we don't have a token in progress and we're not starting an operator.
-                // Add the character to a new token.
+                // If we got here, then we don't have a token in progress and we're not starting an
+                // operator. Add the character to a new token.
                 self.consume_char()?;
                 state.append_char(c);
             }
@@ -1144,6 +1162,22 @@ SOMETHING
     }
 
     #[test]
+    fn tokenize_unterminated_backquote() {
+        assert_matches!(
+            tokenize_str("`"),
+            Err(TokenizerError::UnterminatedBackquote(_))
+        );
+    }
+
+    #[test]
+    fn tokenize_unterminated_command_substitution() {
+        assert_matches!(
+            tokenize_str("$("),
+            Err(TokenizerError::UnterminatedCommandSubstitution)
+        );
+    }
+
+    #[test]
     fn tokenize_command_substitution() -> Result<()> {
         assert_matches!(
             &tokenize_str("a$(echo hi)b c")?[..],
@@ -1233,6 +1267,14 @@ SOMETHING
             [t1 @ Token::Word(_, _)] if t1.to_str() == "a$x"
         );
         Ok(())
+    }
+
+    #[test]
+    fn tokenize_unterminated_parameter_expansion() {
+        assert_matches!(
+            tokenize_str("${x"),
+            Err(TokenizerError::UnterminatedVariable)
+        );
     }
 
     #[test]

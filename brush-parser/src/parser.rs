@@ -127,7 +127,10 @@ pub fn parse_tokens(
     let parse_result = token_parser::program(&Tokens { tokens }, options, source_info);
 
     let result = match parse_result {
-        Ok(program) => Ok(program),
+        Ok(program) => {
+            tracing::debug!(target: "parse", "PROG: {:?}", program);
+            Ok(program)
+        }
         Err(parse_error) => {
             tracing::debug!("Parse error: {:?}", parse_error);
             Err(error::convert_peg_parse_error(
@@ -136,12 +139,6 @@ pub fn parse_tokens(
             ))
         }
     };
-
-    if tracing::enabled!(tracing::Level::DEBUG) {
-        if let Ok(program) = &result {
-            tracing::debug!(target: "parse", "PROG: {:?}", program);
-        }
-    }
 
     result
 }
@@ -284,7 +281,7 @@ peg::parser! {
             expected!("compound command")
 
         rule arithmetic_command() -> ast::ArithmeticCommand =
-            specific_operator("(") specific_operator("(") expr:arithmetic_expression() arithmetic_end() {
+            specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") specific_operator(")") {
                 ast::ArithmeticCommand { expr }
             }
 
