@@ -10,6 +10,10 @@ pub enum EvalError {
     #[error("division by zero")]
     DivideByZero,
 
+    /// Negative exponent.
+    #[error("exponent less than 0")]
+    NegativeExponent,
+
     /// Failed to tokenize an arithmetic expression.
     #[error("failed to tokenize expression")]
     FailedToTokenizeExpression,
@@ -204,13 +208,19 @@ async fn apply_binary_op(
     #[allow(clippy::cast_possible_truncation)]
     #[allow(clippy::cast_sign_loss)]
     match op {
-        ast::BinaryOperator::Power => Ok(left.pow(right as u32)),
-        ast::BinaryOperator::Multiply => Ok(left * right),
+        ast::BinaryOperator::Power => {
+            if right >= 0 {
+                Ok(left.wrapping_pow(right as u32))
+            } else {
+                Err(EvalError::NegativeExponent)
+            }
+        }
+        ast::BinaryOperator::Multiply => Ok(left.wrapping_mul(right)),
         ast::BinaryOperator::Divide => {
             if right == 0 {
                 Err(EvalError::DivideByZero)
             } else {
-                Ok(left / right)
+                Ok(left.wrapping_div(right))
             }
         }
         ast::BinaryOperator::Modulo => {
@@ -221,10 +231,10 @@ async fn apply_binary_op(
             }
         }
         ast::BinaryOperator::Comma => Ok(right),
-        ast::BinaryOperator::Add => Ok(left + right),
-        ast::BinaryOperator::Subtract => Ok(left - right),
-        ast::BinaryOperator::ShiftLeft => Ok(left << right),
-        ast::BinaryOperator::ShiftRight => Ok(left >> right),
+        ast::BinaryOperator::Add => Ok(left.wrapping_add(right)),
+        ast::BinaryOperator::Subtract => Ok(left.wrapping_sub(right)),
+        ast::BinaryOperator::ShiftLeft => Ok(left.wrapping_shl(right as u32)),
+        ast::BinaryOperator::ShiftRight => Ok(left.wrapping_shr(right as u32)),
         ast::BinaryOperator::LessThan => Ok(bool_to_i64(left < right)),
         ast::BinaryOperator::LessThanOrEqualTo => Ok(bool_to_i64(left <= right)),
         ast::BinaryOperator::GreaterThan => Ok(bool_to_i64(left > right)),

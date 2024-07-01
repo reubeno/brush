@@ -38,7 +38,7 @@ async fn eval_arithmetic_async(input: ast::ArithmeticExpr) -> Result<()> {
     const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
     oracle_cmd.timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_IN_SECONDS));
 
-    let input = std::format!("echo \"$(( {input} ))\"\n");
+    let input = std::format!("echo \"$(( {input_str} ))\"\n");
     oracle_cmd.write_stdin(input.as_bytes());
 
     let oracle_result = oracle_cmd.output()?;
@@ -54,7 +54,7 @@ async fn eval_arithmetic_async(input: ast::ArithmeticExpr) -> Result<()> {
     //
     if our_eval_result != oracle_eval_result {
         Err(anyhow::anyhow!(
-            "Mismatched eval results: {oracle_eval_result:?} from oracle vs. {our_eval_result:?} from our test (expr: '{input}', oracle result: {oracle_result:?})"
+            "Mismatched eval results: {oracle_eval_result:?} from oracle vs. {our_eval_result:?} from our test (expr: '{input_str}', oracle result: {oracle_result:?})"
         ))
     } else {
         Ok(())
@@ -69,6 +69,8 @@ fuzz_target!(|input: ast::ArithmeticExpr| {
     if s.contains("+ 0")
         || s.is_empty()
         || s.contains(|c: char| c.is_ascii_control() || !c.is_ascii())
+        || s.contains("$[")
+    // old deprecated form of arithmetic expansion
     {
         return;
     }
