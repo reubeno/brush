@@ -1,8 +1,16 @@
 [package]
 name = "brush-fuzz"
-version = "0.0.0"
+description = "Fuzz tests for brush"
 publish = false
-edition = "2021"
+version = "0.2.2"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [package.metadata]
 cargo-fuzz = true
