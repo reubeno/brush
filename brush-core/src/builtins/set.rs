@@ -251,7 +251,7 @@ impl builtin::Command for SetCommand {
 
         for (option_name, value) in named_options {
             if let Some(option_def) = namedoptions::SET_O_OPTIONS.get(option_name.as_str()) {
-                (option_def.setter)(context.shell, value);
+                (option_def.setter)(&mut context.shell.options, value);
             } else {
                 result = builtin::ExitCode::InvalidUsage;
             }

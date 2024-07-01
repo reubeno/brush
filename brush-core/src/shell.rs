@@ -99,10 +99,14 @@ impl Clone for Shell {
 /// Options for creating a new shell.
 #[derive(Debug, Default)]
 pub struct CreateOptions {
-    /// Whether the shell is a login shell.
-    pub login: bool,
+    /// Disabled shopt options.
+    pub disabled_shopt_options: Vec<String>,
+    /// Enabled shopt options.
+    pub enabled_shopt_options: Vec<String>,
     /// Whether the shell is interactive.
     pub interactive: bool,
+    /// Whether the shell is a login shell.
+    pub login: bool,
     /// Whether to skip using a readline-like interface for input.
     pub no_editing: bool,
     /// Whether to skip sourcing the system profile.
@@ -671,7 +675,7 @@ impl Shell {
         let mut cs = vec![];
 
         for (x, y) in crate::namedoptions::SET_OPTIONS.iter() {
-            if (y.getter)(self) {
+            if (y.getter)(&self.options) {
                 cs.push(*x);
             }
         }
