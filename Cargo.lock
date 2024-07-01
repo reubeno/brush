@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "brush-fuzz"
-version = "0.0.0"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
