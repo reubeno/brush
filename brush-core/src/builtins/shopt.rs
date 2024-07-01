@@ -62,7 +62,7 @@ impl builtin::Command for ShoptCommand {
             };
 
             for (option_name, option_definition) in options {
-                let option_value = (option_definition.getter)(context.shell);
+                let option_value = (option_definition.getter)(&context.shell.options);
                 if self.set && !option_value {
                     continue;
                 }
@@ -98,11 +98,11 @@ impl builtin::Command for ShoptCommand {
 
                 if let Some(option_definition) = option_definition {
                     if self.set {
-                        (option_definition.setter)(context.shell, true);
+                        (option_definition.setter)(&mut context.shell.options, true);
                     } else if self.unset {
-                        (option_definition.setter)(context.shell, false);
+                        (option_definition.setter)(&mut context.shell.options, false);
                     } else {
-                        let option_value = (option_definition.getter)(context.shell);
+                        let option_value = (option_definition.getter)(&context.shell.options);
                         if !option_value {
                             return_value = builtin::ExitCode::Custom(1);
                         }

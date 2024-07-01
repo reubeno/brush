@@ -35,13 +35,22 @@ struct CommandLineArgs {
     #[clap(long = "noediting")]
     no_editing: bool,
 
-    /// Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`, `~/.profile`).
+    /// Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`,
+    /// `~/.profile`).
     #[clap(long = "noprofile")]
     no_profile: bool,
 
     /// Don't process "rc" files if the shell is interactive (e.g., `~/.bashrc`, `~/.brushrc`).
     #[clap(long = "norc")]
     no_rc: bool,
+
+    /// Enable shell option.
+    #[clap(short = 'O')]
+    enabled_shopt_options: Vec<String>,
+
+    /// Disable shell option.
+    #[clap(long = "+O", hide = true)]
+    disabled_shopt_options: Vec<String>,
 
     /// Disable non-POSIX extensions.
     #[clap(long = "posix")]
@@ -127,7 +136,15 @@ fn main() {
     //
     // Parse args.
     //
-    let args: Vec<_> = std::env::args().collect();
+    let mut args: Vec<_> = std::env::args().collect();
+
+    // Work around clap's limitations handling +O options.
+    for arg in &mut args {
+        if arg.starts_with("+O") {
+            arg.insert_str(0, "--");
+        }
+    }
+
     let parsed_args = CommandLineArgs::parse_from(&args);
 
     //
@@ -218,10 +235,13 @@ async fn run(
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
         || (args.script_path.is_none() && args.command.is_none());
 
+    let interactive = args.is_interactive();
     let options = brush_interactive::Options {
         shell: brush_core::CreateOptions {
+            disabled_shopt_options: args.disabled_shopt_options,
+            enabled_shopt_options: args.enabled_shopt_options,
             login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
-            interactive: args.is_interactive(),
+            interactive,
             no_editing: args.no_editing,
             no_profile: args.no_profile,
             no_rc: args.no_rc,
