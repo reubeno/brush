@@ -26,10 +26,18 @@ path = "../brush-core"
 
 [dependencies.brush-parser]
 path = "../brush-parser"
+features = ["fuzz-testing"]
 
 [[bin]]
 name = "fuzz_target"
 path = "fuzz_targets/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_arithmetic"
+path = "fuzz_targets/fuzz_arithmetic.rs"
 test = false
 doc = false
 bench = false

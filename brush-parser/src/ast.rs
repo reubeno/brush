@@ -9,6 +9,7 @@ const DISPLAY_INDENT: &str = "    ";
 
 /// Represents a complete shell program.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct Program {
     /// A sequence of complete shell commands.
     pub complete_commands: Vec<CompleteCommand>,
@@ -31,6 +32,7 @@ pub type CompleteCommandItem = CompoundListItem;
 
 /// Indicates whether the preceding command is executed synchronously or asynchronously.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum SeparatorOperator {
     /// The preceding command is executed asynchronously.
     Async,
@@ -49,6 +51,7 @@ impl Display for SeparatorOperator {
 
 /// Represents a sequence of command pipelines connected by boolean operators.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct AndOrList {
     /// The first command pipeline.
     pub first: Pipeline,
@@ -70,6 +73,7 @@ impl Display for AndOrList {
 /// Represents a boolean operator used to connect command pipelines, along with the
 /// succeeding pipeline.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum AndOr {
     /// Boolean AND operator; the embedded pipeline is only to be executed if the
     /// preceding command has succeeded.
@@ -91,6 +95,7 @@ impl Display for AndOr {
 /// A pipeline of commands, where each command's output is passed as standard input
 /// to the command that follows it.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct Pipeline {
     /// Indicates whether the result of the overall pipeline should be the logical
     /// negation of the result of the pipeline.
@@ -117,6 +122,7 @@ impl Display for Pipeline {
 
 /// Represents a shell command.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum Command {
     /// A simple command, directly invoking an external command, a built-in command,
     /// a shell function, or similar.
@@ -150,6 +156,7 @@ impl Display for Command {
 
 /// Represents a compound command, potentially made up of multiple nested commands.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum CompoundCommand {
     /// An arithmetic command, evaluating an arithmetic expression.
     Arithmetic(ArithmeticCommand),
@@ -200,6 +207,7 @@ impl Display for CompoundCommand {
 
 /// An arithmetic command, evaluating an arithmetic expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct ArithmeticCommand {
     /// The raw, unparsed and unexpanded arithmetic expression.
     pub expr: UnexpandedArithmeticExpr,
@@ -213,6 +221,7 @@ impl Display for ArithmeticCommand {
 
 /// A subshell, which executes commands in a subshell.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct SubshellCommand(pub CompoundList);
 
 impl Display for SubshellCommand {
@@ -225,6 +234,7 @@ impl Display for SubshellCommand {
 
 /// A for clause, which loops over a set of values.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct ForClauseCommand {
     /// The name of the iterator variable.
     pub variable_name: String,
@@ -256,6 +266,7 @@ impl Display for ForClauseCommand {
 
 /// An arithmetic for clause, which loops until an arithmetic condition is reached.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct ArithmeticForClauseCommand {
     /// Optionally, the initializer expression evaluated before the first iteration of the loop.
     pub initializer: Option<UnexpandedArithmeticExpr>,
@@ -296,6 +307,7 @@ impl Display for ArithmeticForClauseCommand {
 /// A case clause, which selects a command based on a value and a set of
 /// pattern-based filters.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct CaseClauseCommand {
     /// The value being matched on.
     pub value: Word,
@@ -316,6 +328,7 @@ impl Display for CaseClauseCommand {
 
 /// A sequence of commands.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
 impl Display for CompoundList {
@@ -342,6 +355,7 @@ impl Display for CompoundList {
 
 /// An element of a compound command list.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
 impl Display for CompoundListItem {
@@ -354,6 +368,7 @@ impl Display for CompoundListItem {
 
 /// An if clause, which conditionally executes a command.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct IfClauseCommand {
     /// The command whose execution result is inspected.
     pub condition: CompoundList,
@@ -386,6 +401,7 @@ impl Display for IfClauseCommand {
 
 /// Represents the `else` clause of a conditional command.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct ElseClause {
     /// If present, the condition that must be met for this `else` clause to be executed.
     pub condition: Option<CompoundList>,
@@ -412,6 +428,7 @@ impl Display for ElseClause {
 
 /// An individual matching case item in a case clause.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct CaseItem {
     /// The patterns that select this case branch.
     pub patterns: Vec<Word>,
@@ -440,6 +457,7 @@ impl Display for CaseItem {
 
 /// A while or until clause, whose looping is controlled by a condition.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand);
 
 impl Display for WhileOrUntilClauseCommand {
@@ -450,6 +468,7 @@ impl Display for WhileOrUntilClauseCommand {
 
 /// Encapsulates the definition of a shell function.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct FunctionDefinition {
     /// The name of the function.
     pub fname: String,
@@ -469,6 +488,7 @@ impl Display for FunctionDefinition {
 
 /// Encapsulates the body of a function definition.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
 
 impl Display for FunctionBody {
@@ -484,6 +504,7 @@ impl Display for FunctionBody {
 
 /// A brace group, which groups commands together.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct BraceGroupCommand(pub CompoundList);
 
 impl Display for BraceGroupCommand {
@@ -499,6 +520,7 @@ impl Display for BraceGroupCommand {
 
 /// A do group, which groups commands together.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct DoGroupCommand(pub CompoundList);
 
 impl Display for DoGroupCommand {
@@ -512,6 +534,7 @@ impl Display for DoGroupCommand {
 
 /// Represents the invocation of a simple command.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct SimpleCommand {
     /// Optionally, a prefix to the command.
     pub prefix: Option<CommandPrefix>,
@@ -557,6 +580,7 @@ impl Display for SimpleCommand {
 
 /// Represents a prefix to a simple command.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandPrefix {
@@ -574,6 +598,7 @@ impl Display for CommandPrefix {
 
 /// Represents a suffix to a simple command; a word argument, declaration, or I/O redirection.
 #[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandSuffix {
@@ -591,6 +616,7 @@ impl Display for CommandSuffix {
 
 /// A prefix or suffix for a simple command.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum CommandPrefixOrSuffixItem {
     /// An I/O redirection.
     IoRedirect(IoRedirect),
@@ -612,6 +638,7 @@ impl Display for CommandPrefixOrSuffixItem {
 
 /// Encapsulates an assignment declaration.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct Assignment {
     /// Name being assigned to.
     pub name: AssignmentName,
@@ -633,6 +660,7 @@ impl Display for Assignment {
 
 /// The target of an assignment.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum AssignmentName {
     /// A named variable.
     VariableName(String),
@@ -653,6 +681,7 @@ impl Display for AssignmentName {
 
 /// A value being assigned to a variable.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum AssignmentValue {
     /// A scalar (word) value.
     Scalar(Word),
@@ -683,6 +712,7 @@ impl Display for AssignmentValue {
 
 /// A list of I/O redirections to be applied to a command.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct RedirectList(pub Vec<IoRedirect>);
 
 impl Display for RedirectList {
@@ -696,6 +726,7 @@ impl Display for RedirectList {
 
 /// An I/O redirection.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum IoRedirect {
     /// Redirection to a file.
     File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
@@ -761,6 +792,7 @@ impl Display for IoRedirect {
 
 /// Kind of file I/O redirection.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum IoFileRedirectKind {
     /// Read (`<`).
     Read,
@@ -794,6 +826,7 @@ impl Display for IoFileRedirectKind {
 
 /// Target for an I/O file redirection.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum IoFileRedirectTarget {
     /// Path to a file.
     Filename(Word),
@@ -818,6 +851,7 @@ impl Display for IoFileRedirectTarget {
 
 /// Represents an I/O here document.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct IoHereDocument {
     /// Whether to remove leading tabs from the here document.
     pub remove_tabs: bool,
@@ -865,6 +899,7 @@ impl Display for TestExpr {
 
 /// An extended test expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum ExtendedTestExpr {
     /// Logical AND operation on two nested expressions.
     And(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
@@ -907,6 +942,7 @@ impl Display for ExtendedTestExpr {
 
 /// A unary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum UnaryPredicate {
     /// Computes if the operand is a path to an existing file.
     FileExists,
@@ -994,6 +1030,7 @@ impl Display for UnaryPredicate {
 
 /// A binary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum BinaryPredicate {
     /// Computes if two files refer to the same device and inode numbers.
     FilesReferToSameDeviceAndInodeNumbers,
@@ -1051,6 +1088,7 @@ impl Display for BinaryPredicate {
 
 /// Represents a shell word.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct Word {
     /// Raw text of the word.
     pub value: String,
@@ -1091,6 +1129,7 @@ impl Word {
 
 /// Encapsulates an unparsed arithmetic expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub struct UnexpandedArithmeticExpr {
     /// The raw text of the expression.
     pub value: String,
@@ -1127,6 +1166,55 @@ pub enum ArithmeticExpr {
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
 
+#[cfg(feature = "fuzz-testing")]
+impl<'a> arbitrary::Arbitrary<'a> for ArithmeticExpr {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let variant = u.choose(&[
+            "Literal",
+            "Reference",
+            "UnaryOp",
+            "BinaryOp",
+            "Conditional",
+            "Assignment",
+            "BinaryAssignment",
+            "UnaryAssignment",
+        ])?;
+
+        match *variant {
+            "Literal" => Ok(ArithmeticExpr::Literal(i64::arbitrary(u)?)),
+            "Reference" => Ok(ArithmeticExpr::Reference(ArithmeticTarget::arbitrary(u)?)),
+            "UnaryOp" => Ok(ArithmeticExpr::UnaryOp(
+                UnaryOperator::arbitrary(u)?,
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+            )),
+            "BinaryOp" => Ok(ArithmeticExpr::BinaryOp(
+                BinaryOperator::arbitrary(u)?,
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+            )),
+            "Conditional" => Ok(ArithmeticExpr::Conditional(
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+            )),
+            "Assignment" => Ok(ArithmeticExpr::Assignment(
+                ArithmeticTarget::arbitrary(u)?,
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+            )),
+            "BinaryAssignment" => Ok(ArithmeticExpr::BinaryAssignment(
+                BinaryOperator::arbitrary(u)?,
+                ArithmeticTarget::arbitrary(u)?,
+                Box::new(ArithmeticExpr::arbitrary(u)?),
+            )),
+            "UnaryAssignment" => Ok(ArithmeticExpr::UnaryAssignment(
+                UnaryAssignmentOperator::arbitrary(u)?,
+                ArithmeticTarget::arbitrary(u)?,
+            )),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl Display for ArithmeticExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1159,6 +1247,7 @@ impl Display for ArithmeticExpr {
 
 /// A binary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum BinaryOperator {
     /// Exponentiation (e.g., `x ** y`).
     Power,
@@ -1231,6 +1320,7 @@ impl Display for BinaryOperator {
 
 /// A unary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum UnaryOperator {
     /// Unary plus (e.g., `+x`).
     UnaryPlus,
@@ -1255,6 +1345,7 @@ impl Display for UnaryOperator {
 
 /// A unary arithmetic assignment operator.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum UnaryAssignmentOperator {
     /// Prefix increment (e.g., `++x`).
     PrefixIncrement,
@@ -1279,6 +1370,7 @@ impl Display for UnaryAssignmentOperator {
 
 /// Identifies the target of an arithmetic assignment expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum ArithmeticTarget {
     /// A named variable.
     Variable(String),

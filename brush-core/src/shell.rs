@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::files::PathExt;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
@@ -19,7 +20,6 @@ use crate::{
 pub struct Shell {
     //
     // Core state required by specification
-    //
     /// Trap handler configuration for the shell.
     pub traps: traps::TrapHandlerConfig,
     /// Manages files opened and accessible via redirection operators.
@@ -39,7 +39,6 @@ pub struct Shell {
 
     //
     // Additional state
-    //
     /// The status of the last completed command.
     pub last_exit_status: u8,
 
@@ -983,6 +982,15 @@ impl Shell {
         }
 
         Ok(())
+    }
+
+    /// Evaluate the given arithmetic expression, returning the result.
+    pub async fn eval_arithmetic(
+        &mut self,
+        expr: brush_parser::ast::ArithmeticExpr,
+    ) -> Result<i64, error::Error> {
+        let result = expr.eval(self).await?;
+        Ok(result)
     }
 }
 
