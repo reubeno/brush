@@ -708,8 +708,13 @@ peg::parser! {
         rule array_element() -> &'input String =
             linebreak() [Token::Word(e, _)] linebreak() { e }
 
+        // N.B. An I/O number must be a string of only digits, and it must be
+        // followed by a '<' or '>' character (but not consume them).
         rule io_number() -> u32 =
-            w:[Token::Word(_, _)] {? w.to_str().parse().or(Err("io_number u32")) }
+            [Token::Word(w, _) if w.chars().all(|c: char| c.is_ascii_digit())]
+            &([Token::Operator(o, _) if o.starts_with('<') || o.starts_with('>')]) {
+                w.parse().unwrap()
+            }
 
         //
         // Helpers

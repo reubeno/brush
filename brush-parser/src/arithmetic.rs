@@ -68,7 +68,7 @@ peg::parser! {
             x:(@) _ "%" _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Modulo, Box::new(x), Box::new(y)) }
             x:(@) _ "/" _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Divide, Box::new(x), Box::new(y)) }
             --
-            x:(@) _ "**" _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Power, Box::new(x), Box::new(y)) }
+            x:@ _ "**" _ y:(@) { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Power, Box::new(x), Box::new(y)) }
             --
             "!" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::LogicalNot, Box::new(x)) }
             "~" x:(@) { ast::ArithmeticExpr::UnaryOp(ast::UnaryOperator::BitwiseNot, Box::new(x)) }
@@ -96,14 +96,14 @@ peg::parser! {
             }
 
         rule variable_name() -> &'input str =
-            $(['a'..='z' | 'A'..='Z' | '_']+)
+            $(['a'..='z' | 'A'..='Z' | '_'](['a'..='z' | 'A'..='Z' | '_' | '0'..='9']*))
 
         rule _() -> () = quiet!{[' ' | '\t' | '\n' | '\r']*} {}
 
         rule literal_number() -> i64 =
             // TODO: handle binary?
-            "0" ['x' | 'X'] s:$(['0'..='9']*) {? i64::from_str_radix(s, 16).or(Err("i64")) } /
-            s:$("0" ['0'..='9']*) {? i64::from_str_radix(s, 8).or(Err("i64")) } /
+            "0" ['x' | 'X'] s:$(['0'..='9' | 'a'..='f' | 'A'..='F']*) {? i64::from_str_radix(s, 16).or(Err("i64")) } /
+            s:$("0" ['0'..='8']*) {? i64::from_str_radix(s, 8).or(Err("i64")) } /
             s:$(['1'..='9'] ['0'..='9']*) {? s.parse().or(Err("i64")) }
     }
 }
