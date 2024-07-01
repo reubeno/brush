@@ -1,0 +1,27 @@
+[package]
+name = "brush-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+anyhow = "1.0.86"
+assert_cmd = "=2.0.13"
+libfuzzer-sys = "0.4"
+tokio = { version = "1.37.0", features = ["rt"] }
+
+[dependencies.brush-core]
+path = "../brush-core"
+
+[dependencies.brush-parser]
+path = "../brush-parser"
+
+[[bin]]
+name = "fuzz_target"
+path = "fuzz_targets/fuzz_target.rs"
+test = false
+doc = false
+bench = false
