@@ -32,5 +32,5 @@ mod users;
 mod variables;
 
 pub use error::Error;
-pub use interp::ExecutionResult;
+pub use interp::{ExecutionParameters, ExecutionResult};
 pub use shell::{CreateOptions, Shell};

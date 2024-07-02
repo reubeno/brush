@@ -3,12 +3,22 @@
 use anyhow::Result;
 use libfuzzer_sys::fuzz_target;
 
-async fn run_async(input: String) -> Result<()> {
+lazy_static::lazy_static! {
+    static ref TOKIO_RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+    static ref SHELL_TEMPLATE: brush_core::Shell = {
+        let options = brush_core::CreateOptions {
+            no_profile: true,
+            no_rc: true,
+            ..Default::default()
+        };
+        TOKIO_RT.block_on(brush_core::Shell::new(&options)).unwrap()
+    };
+}
+
+async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
     //
     // Instantiate a brush shell with defaults, then try to parse the input.
     //
-    let options = brush_core::CreateOptions::default();
-    let shell = brush_core::Shell::new(&options).await?;
     let our_parse_result = shell.parse_string(input.clone());
 
     //
@@ -60,8 +70,6 @@ fuzz_target!(|input: String| {
         return;
     }
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let result = rt.block_on(run_async(input));
-
-    result.unwrap();
+    let shell = SHELL_TEMPLATE.clone();
+    TOKIO_RT.block_on(parse_async(shell, input)).unwrap();
 });

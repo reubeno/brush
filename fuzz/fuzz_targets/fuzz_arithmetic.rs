@@ -4,7 +4,22 @@ use anyhow::Result;
 use brush_parser::ast;
 use libfuzzer_sys::fuzz_target;
 
-async fn eval_arithmetic_async(input: ast::ArithmeticExpr) -> Result<()> {
+lazy_static::lazy_static! {
+    static ref TOKIO_RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+    static ref SHELL_TEMPLATE: brush_core::Shell = {
+        let options = brush_core::CreateOptions {
+            no_profile: true,
+            no_rc: true,
+            ..Default::default()
+        };
+        TOKIO_RT.block_on(brush_core::Shell::new(&options)).unwrap()
+    };
+}
+
+async fn eval_arithmetic_async(
+    mut shell: brush_core::Shell,
+    input: ast::ArithmeticExpr,
+) -> Result<()> {
     //
     // Turn it back into a string so we can pass it in on the command-line.
     //
@@ -13,8 +28,6 @@ async fn eval_arithmetic_async(input: ast::ArithmeticExpr) -> Result<()> {
     //
     // Instantiate a brush shell with defaults, then try to evaluate the expression.
     //
-    let options = brush_core::CreateOptions::default();
-    let mut shell = brush_core::Shell::new(&options).await?;
     let parsed_expr = brush_parser::arithmetic::parse(input_str.as_str()).ok();
     let our_eval_result = if let Some(parsed_expr) = parsed_expr {
         shell.eval_arithmetic(parsed_expr).await.ok()
@@ -75,6 +88,8 @@ fuzz_target!(|input: ast::ArithmeticExpr| {
         return;
     }
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(eval_arithmetic_async(input)).unwrap();
+    let shell = SHELL_TEMPLATE.clone();
+    TOKIO_RT
+        .block_on(eval_arithmetic_async(shell, input))
+        .unwrap();
 });
