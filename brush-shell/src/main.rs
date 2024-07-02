@@ -2,6 +2,8 @@
 
 #![deny(missing_docs)]
 
+mod productinfo;
+
 use std::{collections::HashSet, io::IsTerminal, path::Path};
 
 use clap::{builder::styling, Parser};
@@ -9,7 +11,12 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 /// Parsed command-line arguments for the brush shell.
 #[derive(Parser)]
-#[clap(version, about, disable_help_flag = true, disable_version_flag = true, styles = brush_help_styles())]
+#[clap(name = productinfo::PRODUCT_NAME,
+       version = const_format::concatcp!(productinfo::PRODUCT_VERSION, " (", productinfo::PRODUCT_GIT_VERSION, ")"),
+       about,
+       disable_help_flag = true,
+       disable_version_flag = true,
+       styles = brush_help_styles())]
 struct CommandLineArgs {
     /// Display usage information.
     #[clap(long = "help", action = clap::ArgAction::HelpLong)]
@@ -254,6 +261,7 @@ async fn run(
             print_commands_and_arguments: args.print_commands_and_arguments,
             read_commands_from_stdin,
             shell_name: argv0,
+            shell_product_display_str: Some(productinfo::get_product_display_str()),
             sh_mode: args.sh_mode,
             verbose: args.verbose,
         },
