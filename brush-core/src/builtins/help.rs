@@ -22,8 +22,6 @@ pub(crate) struct HelpCommand {
     topic_patterns: Vec<String>,
 }
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-
 #[async_trait::async_trait]
 impl builtin::Command for HelpCommand {
     async fn execute(
@@ -48,7 +46,9 @@ impl HelpCommand {
     ) -> Result<(), crate::error::Error> {
         const COLUMN_COUNT: usize = 3;
 
-        writeln!(context.stdout(), "brush version {VERSION}\n")?;
+        if let Some(display_str) = &context.shell.shell_product_display_str {
+            writeln!(context.stdout(), "{display_str}\n")?;
+        }
 
         writeln!(
             context.stdout(),
@@ -62,7 +62,8 @@ impl HelpCommand {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
                     let prefix = if builtin.disabled { "*" } else { " " };
-                    write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired column width
+                    write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
+                                                                       // column width
                 }
             }
             writeln!(context.stdout())?;

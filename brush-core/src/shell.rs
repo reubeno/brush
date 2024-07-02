@@ -51,6 +51,9 @@ pub struct Shell {
     /// Shell name
     pub shell_name: Option<String>,
 
+    /// Detailed display string for the shell
+    pub shell_product_display_str: Option<String>,
+
     /// Script call stack.
     pub script_call_stack: VecDeque<String>,
 
@@ -84,6 +87,7 @@ impl Clone for Shell {
             last_exit_status: self.last_exit_status,
             positional_parameters: self.positional_parameters.clone(),
             shell_name: self.shell_name.clone(),
+            shell_product_display_str: self.shell_product_display_str.clone(),
             function_call_stack: self.function_call_stack.clone(),
             script_call_stack: self.script_call_stack.clone(),
             directory_stack: self.directory_stack.clone(),
@@ -122,6 +126,8 @@ pub struct CreateOptions {
     pub read_commands_from_stdin: bool,
     /// The name of the shell.
     pub shell_name: Option<String>,
+    /// Optionally provides a display string describing the version and variant of the shell.
+    pub shell_product_display_str: Option<String>,
     /// Whether to run in maximal POSIX sh compatibility mode.
     pub sh_mode: bool,
     /// Whether to print verbose output.
@@ -163,6 +169,7 @@ impl Shell {
             last_exit_status: 0,
             positional_parameters: vec![],
             shell_name: options.shell_name.clone(),
+            shell_product_display_str: options.shell_product_display_str.clone(),
             function_call_stack: VecDeque::new(),
             script_call_stack: VecDeque::new(),
             directory_stack: vec![],
