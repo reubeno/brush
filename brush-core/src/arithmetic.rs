@@ -210,7 +210,7 @@ async fn apply_binary_op(
     match op {
         ast::BinaryOperator::Power => {
             if right >= 0 {
-                Ok(left.wrapping_pow(right as u32))
+                Ok(wrapping_pow_u64(left, right as u64))
             } else {
                 Err(EvalError::NegativeExponent)
             }
@@ -325,4 +325,22 @@ fn bool_to_i64(value: bool) -> i64 {
     } else {
         0
     }
+}
+
+// N.B. We implement our own version of wrapping_pow that takes a 64-bit exponent.
+// This seems to be the best way to guarantee that we handle overflow cases
+// with exponents correctly.
+fn wrapping_pow_u64(mut base: i64, mut exponent: u64) -> i64 {
+    let mut result: i64 = 1;
+
+    while exponent > 0 {
+        if exponent % 2 == 1 {
+            result = result.wrapping_mul(base);
+        }
+
+        base = base.wrapping_mul(base);
+        exponent /= 2;
+    }
+
+    result
 }

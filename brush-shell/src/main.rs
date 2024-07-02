@@ -31,6 +31,10 @@ struct CommandLineArgs {
     #[clap(short = 'l', long = "login")]
     login: bool,
 
+    /// Do not execute commands.
+    #[clap(short = 'n')]
+    do_not_execute_commands: bool,
+
     /// Don't use readline for input.
     #[clap(long = "noediting")]
     no_editing: bool,
@@ -240,6 +244,7 @@ async fn run(
         shell: brush_core::CreateOptions {
             disabled_shopt_options: args.disabled_shopt_options,
             enabled_shopt_options: args.enabled_shopt_options,
+            do_not_execute_commands: args.do_not_execute_commands,
             login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
             interactive,
             no_editing: args.no_editing,

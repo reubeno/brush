@@ -18,6 +18,7 @@ cargo-fuzz = true
 [dependencies]
 anyhow = "1.0.86"
 assert_cmd = "=2.0.13"
+lazy_static = "1.5.0"
 libfuzzer-sys = "0.4"
 tokio = { version = "1.37.0", features = ["rt"] }
 
@@ -29,8 +30,8 @@ path = "../brush-parser"
 features = ["fuzz-testing"]
 
 [[bin]]
-name = "fuzz_target"
-path = "fuzz_targets/fuzz_target.rs"
+name = "fuzz_parse"
+path = "fuzz_targets/fuzz_parse.rs"
 test = false
 doc = false
 bench = false

@@ -6,7 +6,6 @@ use crate::CreateOptions;
 pub struct RuntimeOptions {
     //
     // Single-character options.
-    //
     /// -a
     pub export_variables_on_modification: bool,
     /// -b
@@ -48,7 +47,6 @@ pub struct RuntimeOptions {
 
     //
     // Options set through -o.
-    //
     /// 'emacs'
     pub emacs_mode: bool,
     /// 'history'
@@ -64,7 +62,6 @@ pub struct RuntimeOptions {
 
     //
     // Options set through shopt.
-    //
     /// `assoc_expand_once`
     pub assoc_expand_once: bool,
     /// 'autocd'
@@ -174,7 +171,6 @@ pub struct RuntimeOptions {
 
     //
     // Options set by the shell.
-    //
     /// Whether or not the shell is interactive.
     pub interactive: bool,
     /// Whether or not the shell is reading commands from standard input.
@@ -193,6 +189,7 @@ impl RuntimeOptions {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {
             interactive: create_options.interactive,
+            do_not_execute_commands: create_options.do_not_execute_commands,
             enable_command_history: create_options.interactive,
             enable_job_control: create_options.interactive,
             read_commands_from_stdin: create_options.read_commands_from_stdin,

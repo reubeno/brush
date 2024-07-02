@@ -461,6 +461,10 @@ impl ExecuteInPipeline for ast::Command {
         &self,
         pipeline_context: &mut PipelineExecutionContext,
     ) -> Result<SpawnResult, error::Error> {
+        if pipeline_context.shell.options.do_not_execute_commands {
+            return Ok(SpawnResult::ImmediateExit(0));
+        }
+
         match self {
             ast::Command::Simple(simple) => simple.execute_in_pipeline(pipeline_context).await,
             ast::Command::Compound(compound, redirects) => {

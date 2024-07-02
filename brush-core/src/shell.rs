@@ -102,6 +102,8 @@ pub struct CreateOptions {
     pub disabled_shopt_options: Vec<String>,
     /// Enabled shopt options.
     pub enabled_shopt_options: Vec<String>,
+    /// Do not execute commands.
+    pub do_not_execute_commands: bool,
     /// Whether the shell is interactive.
     pub interactive: bool,
     /// Whether the shell is a login shell.
@@ -133,6 +135,12 @@ pub struct FunctionCall {
     function_name: String,
     /// The definition of the invoked function.
     function_definition: Arc<brush_parser::ast::FunctionDefinition>,
+}
+
+lazy_static::lazy_static! {
+    // NOTE: We have difficulty with xterm escape sequences going through rustyline;
+    // so we compile a regex that can be used to strip them out.
+    static ref PROMPT_XTERM_ESCAPE_SEQ_REGEX: fancy_regex::Regex = fancy_regex::Regex::new("\x1b][0-2];[^\x07]*\x07").unwrap();
 }
 
 impl Shell {
@@ -636,20 +644,27 @@ impl Shell {
         program.execute(self, params).await
     }
 
+    fn default_prompt(&self) -> &'static str {
+        if self.options.sh_mode {
+            "$ "
+        } else {
+            "brush$ "
+        }
+    }
+
     /// Composes the shell's prompt, applying all appropriate expansions.
     pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
-        const DEFAULT_PROMPT: &str = "$ ";
-
         // Retrieve the spec.
-        let ps1 = self.parameter_or_default("PS1", DEFAULT_PROMPT);
+        let ps1 = self.parameter_or_default("PS1", self.default_prompt());
 
         // Expand it.
         let formatted_prompt = prompt::expand_prompt(self, ps1.as_ref())?;
 
         // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
         // so we strip them here.
-        let re = fancy_regex::Regex::new("\x1b][0-2];[^\x07]*\x07")?;
-        let formatted_prompt = re.replace_all(formatted_prompt.as_str(), "").to_string();
+        let formatted_prompt = PROMPT_XTERM_ESCAPE_SEQ_REGEX
+            .replace_all(formatted_prompt.as_str(), "")
+            .to_string();
 
         // Now expand.
         let formatted_prompt = expansion::basic_expand_str(self, &formatted_prompt).await?;
