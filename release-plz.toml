@@ -1,59 +1,11 @@
 [workspace]
 # disable the changelog for all packages
 # ref: https://release-plz.ieni.dev/docs/extra/single-changelog
+changelog_config = "cliff.toml"
 changelog_update = false
 publish = true
-git_release_draft = true
-git_release_type = "pre"
-
-[changelog]
-header = """
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-"""
-body = """
-{% if version %}\
-    ## [{{ version | trim_start_matches(pat="v") }}]
-{% else %}\
-    ## [unreleased]
-{% endif %}\
-{% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | striptags | trim | upper_first }}
-    {% for commit in commits %}
-        - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
-            {% if commit.breaking %}[**breaking**] {% endif %}\
-            {{ commit.message | upper_first }}\
-    {% endfor %}
-{% endfor %}\n
-"""
-trim = true
-tag_pattern = ".*v[0-9].*"
-sort_commits = "oldest"
-commit_parsers = [
-  { message = "^feat", group = "<!-- 0 -->🚀 Features" },
-  { message = "^fix", group = "<!-- 1 -->🐛 Bug Fixes" },
-  { message = "^refactor", group = "<!-- 2 -->🚜 Refactor" },
-  { message = "^doc", group = "<!-- 3 -->📚 Documentation" },
-  { message = "^perf", group = "<!-- 4 -->⚡ Performance" },
-  { message = "^style", group = "<!-- 5 -->🎨 Styling" },
-  { message = "^test", group = "<!-- 6 -->🧪 Testing" },
-  { message = "^build", group = "<!-- 7 -->🛠️ Build" },
-  { message = "^chore\\(release\\): prepare for", skip = true },
-  { message = "^chore\\(deps.*\\)", skip = true },
-  { message = "^chore\\(pr\\)", skip = true },
-  { message = "^chore\\(pull\\)", skip = true },
-  { message = "^chore|^ci", group = "<!-- 8 -->⚙️ Miscellaneous Tasks" },
-  { body = ".*security", group = "<!-- 9 -->🛡️ Security" },
-  { message = "^revert", group = "<!-- 10 -->◀️ Revert" },
-]
 
 [[package]]
 name = "brush-shell"
-# TODO: reenable this
-# enable the changelog for this package and set path to root
-changelog_update = false
+changelog_update = true
 changelog_path = "./CHANGELOG.md"
