@@ -1,26 +1,29 @@
-use std::{ffi::OsStr, fmt::Display, os::unix::process::CommandExt, process::Stdio, sync::Arc};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+use std::{ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
 
 use brush_parser::ast;
+#[cfg(unix)]
 use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
-use tokio::process;
 
 use crate::{
     builtin, error,
     interp::{self, Execute},
     openfiles::{self, OpenFile, OpenFiles},
-    Shell,
+    sys, Shell,
 };
 
 /// Represents the result of spawning a command.
 pub(crate) enum SpawnResult {
     /// The child process was spawned.
-    SpawnedChild(process::Child),
+    SpawnedChild(sys::process::Child),
     /// The command immediatedly exited with the given numeric exit code.
     ImmediateExit(u8),
     /// The shell should exit after this command, yielding the given numeric exit code.
     ExitShell(u8),
-    /// The shell should return from the current function or script, yielding the given numeric exit code.
+    /// The shell should return from the current function or script, yielding the given numeric
+    /// exit code.
     ReturnFromFunctionOrScript(u8),
     /// The shell should break out of the containing loop, identified by the given depth count.
     BreakLoop(u8),
@@ -91,6 +94,7 @@ impl From<&String> for CommandArg {
     }
 }
 
+#[allow(unused_variables)]
 pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     shell: &mut Shell,
     command_name: &str,
@@ -102,6 +106,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     let mut cmd = std::process::Command::new(command_name);
 
     // Override argv[0].
+    #[cfg(unix)]
     cmd.arg0(argv0);
 
     // Pass through args.
@@ -252,10 +257,7 @@ pub(crate) fn execute_external_command(
             .join(" ")
     );
 
-    // Convert to a tokio::process::Command so we can execute it asynchronously.
-    let mut cmd = tokio::process::Command::from(cmd);
-
-    match cmd.spawn() {
+    match sys::process::spawn(cmd) {
         Ok(child) => Ok(SpawnResult::SpawnedChild(child)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if context.shell.options.sh_mode {

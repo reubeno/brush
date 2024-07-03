@@ -1,7 +1,7 @@
 use clap::Parser;
-use std::{io::Write, str::FromStr};
+use std::io::Write;
 
-use crate::{builtin, commands, error, traps};
+use crate::{builtin, commands, error, sys, traps};
 
 /// Manage signal traps.
 #[derive(Parser)]
@@ -55,8 +55,10 @@ impl builtin::Command for TrapCommand {
     }
 }
 
+#[allow(unused_variables)]
 impl TrapCommand {
     fn display_signals(context: &commands::ExecutionContext<'_>) -> Result<(), error::Error> {
+        #[cfg(unix)]
         for signal in nix::sys::signal::Signal::iterator() {
             writeln!(context.stdout(), "{}: {signal}", signal as i32)?;
         }
@@ -108,9 +110,7 @@ fn parse_signal(signal: &str) -> Result<traps::TrapSignal, error::Error> {
             .parse::<i32>()
             .map_err(|_| error::Error::InvalidSignal)?;
 
-        Ok(traps::TrapSignal::Signal(
-            nix::sys::signal::Signal::try_from(digits).map_err(|_| error::Error::InvalidSignal)?,
-        ))
+        sys::signal::parse_numeric_signal(digits)
     } else {
         let mut signal_to_parse = signal.to_ascii_uppercase();
 
@@ -122,10 +122,7 @@ fn parse_signal(signal: &str) -> Result<traps::TrapSignal, error::Error> {
             s if s == "SIGDEBUG" => Ok(traps::TrapSignal::Debug),
             s if s == "SIGERR" => Ok(traps::TrapSignal::Err),
             s if s == "SIGEXIT" => Ok(traps::TrapSignal::Exit),
-            _ => Ok(traps::TrapSignal::Signal(
-                nix::sys::signal::Signal::from_str(signal_to_parse.as_str())
-                    .map_err(|_| error::Error::InvalidSignal)?,
-            )),
+            s => sys::signal::parse_os_signal_name(s.as_str()),
         }
     }
 }

@@ -46,6 +46,7 @@ mod test;
 mod trap;
 mod true_;
 mod type_;
+#[cfg(unix)]
 mod umask;
 mod unalias;
 mod unimp;
@@ -235,6 +236,7 @@ pub(crate) fn get_default_builtins(
     m.insert("read".into(), builtin::<read::ReadCommand>());
     m.insert("true".into(), builtin::<true_::TrueCommand>());
     m.insert("type".into(), builtin::<type_::TypeCommand>());
+    #[cfg(unix)]
     m.insert("umask".into(), builtin::<umask::UmaskCommand>());
     m.insert("unalias".into(), builtin::<unalias::UnaliasCommand>());
     m.insert("wait".into(), builtin::<wait::WaitCommand>());

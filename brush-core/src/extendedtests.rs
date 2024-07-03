@@ -1,12 +1,9 @@
 use brush_parser::ast;
-#[cfg(unix)]
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 
 use crate::{
-    env, error, expansion,
-    files::PathExt,
-    namedoptions, patterns, users,
+    env, error, expansion, namedoptions, patterns,
+    sys::{fs::MetadataExt, fs::PathExt, users},
     variables::{self, ArrayLiteral},
     Shell,
 };
@@ -72,11 +69,11 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile => {
             let path = Path::new(operand);
-            Ok(path_exists_and_is_block_device(path))
+            Ok(path.exists_and_is_block_device())
         }
         ast::UnaryPredicate::FileExistsAndIsCharSpecialFile => {
             let path = Path::new(operand);
-            Ok(path_exists_and_is_char_device(path))
+            Ok(path.exists_and_is_char_device())
         }
         ast::UnaryPredicate::FileExistsAndIsDir => {
             let path = Path::new(operand);
@@ -88,7 +85,7 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::FileExistsAndIsSetgid => {
             let path = Path::new(operand);
-            Ok(path_exists_and_is_setgid(path))
+            Ok(path.exists_and_is_setgid())
         }
         ast::UnaryPredicate::FileExistsAndIsSymlink => {
             let path = Path::new(operand);
@@ -96,11 +93,11 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::FileExistsAndHasStickyBit => {
             let path = Path::new(operand);
-            Ok(path_exists_and_is_sticky_bit(path))
+            Ok(path.exists_and_is_sticky_bit())
         }
         ast::UnaryPredicate::FileExistsAndIsFifo => {
             let path = Path::new(operand);
-            Ok(path_exists_and_is_fifo(path))
+            Ok(path.exists_and_is_fifo())
         }
         ast::UnaryPredicate::FileExistsAndIsReadable => {
             let path = Path::new(operand);
@@ -127,7 +124,7 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::FileExistsAndIsSetuid => {
             let path = Path::new(operand);
-            Ok(path_exists_and_is_setuid(path))
+            Ok(path.exists_and_is_setuid())
         }
         ast::UnaryPredicate::FileExistsAndIsWritable => {
             let path = Path::new(operand);
@@ -160,7 +157,7 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::FileExistsAndIsSocket => {
             let path = Path::new(operand);
-            Ok(path_exists_and_is_socket(path))
+            Ok(path.exists_and_is_socket())
         }
         ast::UnaryPredicate::ShellOptionEnabled => {
             let shopt_name = operand;
@@ -444,106 +441,6 @@ fn apply_binary_arithmetic_predicate(left: &str, right: &str, op: fn(i64, i64) -
     if let (Ok(left), Ok(right)) = (left, right) {
         op(left, right)
     } else {
-        false
-    }
-}
-
-#[cfg(unix)]
-fn try_get_file_type(path: &Path) -> Option<std::fs::FileType> {
-    path.metadata().map(|metadata| metadata.file_type()).ok()
-}
-
-#[cfg(unix)]
-fn try_get_file_mode(path: &Path) -> Option<u32> {
-    path.metadata().map(|metadata| metadata.mode()).ok()
-}
-
-#[allow(unused_variables)]
-fn path_exists_and_is_block_device(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        try_get_file_type(path).map_or(false, |ft| ft.is_block_device())
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
-#[allow(unused_variables)]
-fn path_exists_and_is_char_device(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        try_get_file_type(path).map_or(false, |ft| ft.is_char_device())
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
-#[allow(unused_variables)]
-fn path_exists_and_is_fifo(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        try_get_file_type(path).map_or(false, |ft: std::fs::FileType| ft.is_fifo())
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
-#[allow(unused_variables)]
-fn path_exists_and_is_socket(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        try_get_file_type(path).map_or(false, |ft| ft.is_socket())
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
-#[allow(unused_variables)]
-fn path_exists_and_is_setgid(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        const S_ISGID: u32 = 0o2000;
-        let file_mode = try_get_file_mode(path);
-        file_mode.map_or(false, |mode| mode & S_ISGID != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
-#[allow(unused_variables)]
-fn path_exists_and_is_setuid(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        const S_ISUID: u32 = 0o4000;
-        let file_mode = try_get_file_mode(path);
-        file_mode.map_or(false, |mode| mode & S_ISUID != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
-#[allow(unused_variables)]
-fn path_exists_and_is_sticky_bit(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        const S_ISVTX: u32 = 0o1000;
-        let file_mode = try_get_file_mode(path);
-        file_mode.map_or(false, |mode| mode & S_ISVTX != 0)
-    }
-    #[cfg(not(unix))]
-    {
         false
     }
 }

@@ -14,7 +14,6 @@ mod error;
 mod escape;
 mod expansion;
 mod extendedtests;
-mod files;
 mod functions;
 mod interp;
 mod jobs;
@@ -26,9 +25,9 @@ mod patterns;
 mod prompt;
 mod regex;
 mod shell;
+mod sys;
 mod tests;
 mod traps;
-mod users;
 mod variables;
 
 pub use error::Error;

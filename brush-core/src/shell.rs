@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
-use crate::files::PathExt;
 use crate::interp::{Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
+use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
     builtin, builtins, commands, completion, env, error, expansion, functions, jobs, keywords,
-    openfiles, patterns, prompt, traps, users,
+    openfiles, patterns, prompt, sys::users, traps,
 };
 
 /// Represents an instance of a shell.

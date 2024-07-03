@@ -1,4 +1,8 @@
-use crate::{error, shell::Shell, users};
+use crate::{
+    error,
+    shell::Shell,
+    sys::{self, users},
+};
 use std::path::Path;
 
 const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -62,7 +66,7 @@ pub(crate) fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::Hostname {
             only_up_to_first_dot,
         } => {
-            let hn = hostname::get()
+            let hn = sys::network::get_hostname()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();

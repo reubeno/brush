@@ -4,8 +4,8 @@ use std::{io::Write, sync::Arc};
 use brush_parser::ast;
 use clap::Parser;
 
-use crate::files::PathExt;
 use crate::keywords;
+use crate::sys::fs::PathExt;
 use crate::{builtin, commands, Shell};
 
 /// Inspect the type of a named shell item.

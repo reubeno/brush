@@ -9,6 +9,7 @@ use std::os::fd::OwnedFd;
 use std::process::Stdio;
 
 use crate::error;
+use crate::sys;
 
 /// Represents a file open in a shell context.
 pub enum OpenFile {
@@ -23,9 +24,9 @@ pub enum OpenFile {
     /// A file open for reading or writing.
     File(std::fs::File),
     /// A read end of a pipe.
-    PipeReader(os_pipe::PipeReader),
+    PipeReader(sys::pipes::PipeReader),
     /// A write end of a pipe.
-    PipeWriter(os_pipe::PipeWriter),
+    PipeWriter(sys::pipes::PipeWriter),
 }
 
 impl OpenFile {
@@ -85,17 +86,19 @@ impl OpenFile {
         }
     }
 
-    pub(crate) fn get_term_attr(&self) -> Result<Option<nix::sys::termios::Termios>, error::Error> {
+    pub(crate) fn get_term_attr(
+        &self,
+    ) -> Result<Option<sys::terminal::TerminalSettings>, error::Error> {
         if !self.is_term() {
             return Ok(None);
         }
 
         let result = match self {
-            OpenFile::Stdin => Some(nix::sys::termios::tcgetattr(std::io::stdin())?),
-            OpenFile::Stdout => Some(nix::sys::termios::tcgetattr(std::io::stdout())?),
-            OpenFile::Stderr => Some(nix::sys::termios::tcgetattr(std::io::stderr())?),
+            OpenFile::Stdin => Some(sys::terminal::get_term_attr(std::io::stdin())?),
+            OpenFile::Stdout => Some(sys::terminal::get_term_attr(std::io::stdout())?),
+            OpenFile::Stderr => Some(sys::terminal::get_term_attr(std::io::stderr())?),
             OpenFile::Null => None,
-            OpenFile::File(f) => Some(nix::sys::termios::tcgetattr(f)?),
+            OpenFile::File(f) => Some(sys::terminal::get_term_attr(f)?),
             OpenFile::PipeReader(_) => None,
             OpenFile::PipeWriter(_) => None,
         };
@@ -104,15 +107,14 @@ impl OpenFile {
 
     pub(crate) fn set_term_attr(
         &self,
-        action: nix::sys::termios::SetArg,
-        termios: &nix::sys::termios::Termios,
+        termios: &sys::terminal::TerminalSettings,
     ) -> Result<(), error::Error> {
         match self {
-            OpenFile::Stdin => nix::sys::termios::tcsetattr(std::io::stdin(), action, termios)?,
-            OpenFile::Stdout => nix::sys::termios::tcsetattr(std::io::stdout(), action, termios)?,
-            OpenFile::Stderr => nix::sys::termios::tcsetattr(std::io::stderr(), action, termios)?,
+            OpenFile::Stdin => sys::terminal::set_term_attr_now(std::io::stdin(), termios)?,
+            OpenFile::Stdout => sys::terminal::set_term_attr_now(std::io::stdout(), termios)?,
+            OpenFile::Stderr => sys::terminal::set_term_attr_now(std::io::stderr(), termios)?,
             OpenFile::Null => (),
-            OpenFile::File(f) => nix::sys::termios::tcsetattr(f, action, termios)?,
+            OpenFile::File(f) => sys::terminal::set_term_attr_now(f, termios)?,
             OpenFile::PipeReader(_) => (),
             OpenFile::PipeWriter(_) => (),
         }
