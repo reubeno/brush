@@ -5,7 +5,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 All notable changes to this project will be documented in this file.
 
-## [brush-shell-v0.2.0] - 2024-06-18
+## [brush-shell-v0.2.3] - 2024-07-03
+
+### 🚀 Features
+
+- Enable -O and +O on command line (#105)
+- Start using cargo-fuzz for testing (#106)
+- Enable fuzz-testing arithmetic eval (#108)
+- Include more details in version info (#112)
+
+### 🐛 Bug Fixes
+
+- Correct expansion when PWD is / (#96)
+- Ensure parser error actually impls Error (#98)
+- Realign newline parsing with spec (#99)
+- Correct handling of unterminated expansions (#101)
+- Add &>> implementation (#103)
+- Correct metadata for fuzz crate (#107)
+- Resolve assorted arithmetic eval issues (#110)
+- Correct ** overflow behavior (#111)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.lock (#113)
+- Release
+
+### Build
+
+- Take targeted dependency updates (#93)
+- Update config (#97)
+
+## [brush-shell-v0.2.2] - 2024-06-19
 
 ### 🚀 Features
 
@@ -23,6 +53,8 @@ All notable changes to this project will be documented in this file.
 - Don't split completions that aren't file paths (#79)
 - Allow interrupting read builtin, run pipeline cmds in subshell (#81)
 - Add missing flush calls
+- Tweak manifests to work with release flow (#89)
+- Ensure brush-core builds outside workspace (#90)
 
 ### 📚 Documentation
 
