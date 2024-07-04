@@ -2,6 +2,7 @@ use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::fd::{AsFd, AsRawFd};
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
@@ -15,7 +16,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{error, expansion, extendedtests, jobs, openfiles, traps};
+use crate::{error, expansion, extendedtests, jobs, openfiles, sys, traps};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -80,7 +81,7 @@ struct PipelineExecutionContext<'a> {
 
     current_pipeline_index: usize,
     pipeline_len: usize,
-    output_pipes: &'a mut Vec<os_pipe::PipeReader>,
+    output_pipes: &'a mut Vec<sys::pipes::PipeReader>,
 
     params: ExecutionParameters,
 }
@@ -334,18 +335,15 @@ impl Execute for ast::Pipeline {
             spawn_results.push_back(spawn_result);
         }
 
-        let mut result = ExecutionResult::success();
-
         const SIGTSTP: std::os::raw::c_int = 20;
 
-        #[cfg(unix)]
-        let mut sigtstp =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(SIGTSTP))?;
-        #[cfg(not(unix))]
-        let sigtstp = FakeSignal::new();
+        #[allow(unused_mut)]
+        let mut sigtstp = sys::signal::tstp_signal_listener()?;
 
+        let mut result = ExecutionResult::success();
         let mut stopped: VecDeque<jobs::JobJoinHandle> = VecDeque::new();
         let mut pids = vec![];
+
         while let Some(child) = spawn_results.pop_front() {
             match child {
                 SpawnResult::SpawnedChild(child) => {
@@ -367,7 +365,7 @@ impl Execute for ast::Pipeline {
                                 _ = sigtstp.recv() => {
                                     break ExecuteWaitResult::Sigtstp
                                 },
-                                _ = tokio::signal::ctrl_c() => {
+                                _ = sys::signal::await_ctrl_c() => {
                                     // SIGINT got thrown. Handle it and continue looping. The child should
                                     // have received it as well, and either handled it or ended up getting
                                     // terminated (in which case we'll see the child exit).
@@ -1257,7 +1255,7 @@ fn setup_pipeline_redirection(
     // to a pipe that we can read later.
     if context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1 {
         // Set up stdout of this process to go to stdin of the succeeding process.
-        let (reader, writer) = os_pipe::pipe()?;
+        let (reader, writer) = sys::pipes::pipe()?;
         context.output_pipes.push(reader);
         open_files.files.insert(1, OpenFile::PipeWriter(writer));
     }
@@ -1388,7 +1386,7 @@ pub(crate) async fn setup_redirect<'a>(
                             let mut subshell = shell.clone();
 
                             // Set up pipe so we can connect to the command.
-                            let (reader, writer) = os_pipe::pipe()?;
+                            let (reader, writer) = sys::pipes::pipe()?;
 
                             if matches!(kind, ast::IoFileRedirectKind::Read) {
                                 subshell
@@ -1464,12 +1462,14 @@ pub(crate) async fn setup_redirect<'a>(
     }
 }
 
+#[allow(unused_variables)]
 fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
-    let (reader, mut writer) = os_pipe::pipe()?;
+    let (reader, mut writer) = sys::pipes::pipe()?;
 
     let bytes = contents.as_bytes();
     let len = i32::try_from(bytes.len())?;
 
+    #[cfg(unix)]
     nix::fcntl::fcntl(
         reader.as_fd().as_raw_fd(),
         nix::fcntl::FcntlArg::F_SETPIPE_SZ(len),
@@ -1479,18 +1479,4 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     drop(writer);
 
     Ok(OpenFile::PipeReader(reader))
-}
-
-#[cfg(not(unix))]
-struct FakeSignal {}
-
-#[cfg(not(unix))]
-impl FakeSignal {
-    fn new() -> Self {
-        Self {}
-    }
-
-    async fn recv(&self) -> () {
-        futures::future::pending::<()>().await
-    }
 }

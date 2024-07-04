@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 
-use crate::{builtin, commands, env, error, openfiles, variables};
+use crate::{builtin, commands, env, error, openfiles, sys, variables};
 
 /// Parse standard input.
 #[derive(Parser)]
@@ -219,7 +219,7 @@ impl ReadCommand {
         }
 
         if let Some(orig_term_attr) = &orig_term_attr {
-            input_file.set_term_attr(nix::sys::termios::SetArg::TCSANOW, orig_term_attr)?;
+            input_file.set_term_attr(orig_term_attr)?;
         }
 
         if line.is_empty() {
@@ -232,25 +232,18 @@ impl ReadCommand {
     fn setup_terminal_settings(
         &self,
         file: &openfiles::OpenFile,
-    ) -> Result<Option<nix::sys::termios::Termios>, crate::Error> {
+    ) -> Result<Option<sys::terminal::TerminalSettings>, crate::Error> {
         let orig_term_attr = file.get_term_attr()?;
         if let Some(orig_term_attr) = &orig_term_attr {
             let mut updated_term_attr = orig_term_attr.to_owned();
 
-            updated_term_attr
-                .local_flags
-                .remove(nix::sys::termios::LocalFlags::ICANON);
-            updated_term_attr
-                .local_flags
-                .remove(nix::sys::termios::LocalFlags::ISIG);
-
+            updated_term_attr.set_canonical(false);
+            updated_term_attr.set_int_signal(false);
             if self.silent {
-                updated_term_attr
-                    .local_flags
-                    .remove(nix::sys::termios::LocalFlags::ECHO);
+                updated_term_attr.set_echo(false);
             }
 
-            file.set_term_attr(nix::sys::termios::SetArg::TCSANOW, &updated_term_attr)?;
+            file.set_term_attr(&updated_term_attr)?;
         }
         Ok(orig_term_attr)
     }

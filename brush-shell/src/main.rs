@@ -205,7 +205,12 @@ fn main() {
     //
     // Run.
     //
-    let result = tokio::runtime::Builder::new_multi_thread()
+    #[cfg(any(unix, windows))]
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    #[cfg(not(any(unix, windows)))]
+    let mut builder = tokio::runtime::Builder::new_current_thread();
+
+    let result = builder
         .enable_all()
         .build()
         .unwrap()

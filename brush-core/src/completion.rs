@@ -7,7 +7,11 @@ use std::{
 };
 
 use crate::{
-    env, error, jobs, namedoptions, patterns, traps, users, variables::ShellValueLiteral, Shell,
+    env, error, jobs, namedoptions, patterns,
+    sys::{self, users},
+    traps,
+    variables::ShellValueLiteral,
+    Shell,
 };
 
 /// Type of action to take to generate completion candidates.
@@ -139,7 +143,6 @@ pub struct Config {
 pub struct GenerationOptions {
     //
     // Options
-    //
     /// Perform rest of default completions if no completions are generated.
     pub bash_default: bool,
     /// Use default filename completion if no completions are generated.
@@ -164,13 +167,11 @@ pub struct GenerationOptions {
 pub struct Spec {
     //
     // Options
-    //
     /// Options to use for completion.
     pub options: GenerationOptions,
 
     //
     // Generators
-    //
     /// Actions to take to generate completions.
     pub actions: Vec<CompleteAction>,
     /// Optionally, a glob pattern whose expansion will be used as completions.
@@ -184,7 +185,6 @@ pub struct Spec {
 
     //
     // Filters
-    //
     /// Optionally, a pattern to filter completions.
     pub filter_pattern: Option<String>,
     /// If true, completion candidates matching `filter_pattern` are removed;
@@ -193,7 +193,6 @@ pub struct Spec {
 
     //
     // Transformers
-    //
     /// Optionally, provides a prefix to be prepended to all completion candidates.
     pub prefix: Option<String>,
     /// Optionally, provides a suffix to be prepended to all completion candidates.
@@ -312,7 +311,7 @@ impl Spec {
                 }
                 CompleteAction::HostName => {
                     // N.B. We only retrieve one hostname.
-                    if let Ok(name) = hostname::get() {
+                    if let Ok(name) = sys::network::get_hostname() {
                         candidates.push(name.to_string_lossy().to_string());
                     }
                 }

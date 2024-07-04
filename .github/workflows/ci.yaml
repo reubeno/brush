@@ -50,9 +50,23 @@ jobs:
           name: binaries-x86_64-linux
           path: target/release/brush
 
-  build_aarch64:
-    name: "Build (aarch64/Linux)"
+  build_cross:
+    name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - target: "aarch64-unknown-linux-gnu"
+            arch: "aarch64"
+            os: "Linux"
+          - target: "wasm32-wasip1"
+            arch: "wasm32"
+            os: "WASI-0.1"
+          - target: "x86_64-pc-windows-gnu"
+            arch: "x86_64"
+            os: "Windows"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,10 +75,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: aarch64-unknown-linux-gnu
+          targets: ${{ matrix.target }}
 
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          key: "${{ matrix.target }}"
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@v1.7.3
@@ -78,13 +94,13 @@ jobs:
           tool: cross
 
       - name: Build
-        run: cross build --release --target=aarch64-unknown-linux-gnu
+        run: cross build --release --target=${{ matrix.target }}
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-aarch64-linux
-          path: target/aarch64-unknown-linux-gnu/release/brush
+          name: binaries-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/brush
 
   test:
     name: "Test"

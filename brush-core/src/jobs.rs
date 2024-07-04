@@ -4,6 +4,7 @@ use std::fmt::Display;
 use futures::FutureExt;
 
 use crate::error;
+use crate::sys;
 use crate::ExecutionResult;
 
 pub(crate) type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>;
@@ -316,20 +317,13 @@ impl Job {
     }
 
     /// Moves the job to execute in the foreground.
-    #[cfg(unix)]
     pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
         if !matches!(self.state, JobState::Stopped) {
             return error::unimp("move job to foreground for not stopped job");
         }
 
-        #[allow(clippy::cast_possible_wrap)]
         if let Some(pid) = self.get_representative_pid() {
-            nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid as i32),
-                nix::sys::signal::SIGCONT,
-            )
-            .map_err(|_errno| error::Error::FailedToSendSignal)?;
-
+            sys::signal::continue_process(pid)?;
             self.state = JobState::Running;
             Ok(())
         } else {
@@ -337,32 +331,13 @@ impl Job {
         }
     }
 
-    /// Moves the job to execute in the foreground.
-    #[cfg(not(unix))]
-    pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
-        error::unimp("move job to foreground")
-    }
-
     /// Kills the job.
-    #[cfg(unix)]
     pub fn kill(&mut self) -> Result<(), error::Error> {
         if let Some(pid) = self.get_representative_pid() {
-            #[allow(clippy::cast_possible_wrap)]
-            nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid as i32),
-                nix::sys::signal::SIGKILL,
-            )
-            .map_err(|_errno| error::Error::FailedToSendSignal)?;
-            Ok(())
+            sys::signal::kill_process(pid)
         } else {
             Err(error::Error::FailedToSendSignal)
         }
-    }
-
-    /// Kills the job.
-    #[cfg(not(unix))]
-    pub fn kill(&mut self) -> Result<(), error::Error> {
-        error::unimp("kill job")
     }
 
     /// Tries to retrieve a "representative" pid for the job.

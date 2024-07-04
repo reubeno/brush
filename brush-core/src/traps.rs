@@ -4,6 +4,7 @@ use std::{collections::HashMap, fmt::Display};
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum TrapSignal {
     /// A system signal.
+    #[cfg(unix)]
     Signal(nix::sys::signal::Signal),
     /// The `DEBUG` trap.
     Debug,
@@ -16,6 +17,7 @@ pub enum TrapSignal {
 impl Display for TrapSignal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            #[cfg(unix)]
             TrapSignal::Signal(s) => s.fmt(f),
             TrapSignal::Debug => write!(f, "DEBUG"),
             TrapSignal::Err => write!(f, "ERR"),
@@ -26,9 +28,11 @@ impl Display for TrapSignal {
 
 impl TrapSignal {
     /// Returns all possible values of `TrapSignal`.
+    #[allow(unused_mut)]
     pub fn all_values() -> Vec<TrapSignal> {
         let mut signals = vec![TrapSignal::Debug, TrapSignal::Err, TrapSignal::Exit];
 
+        #[cfg(unix)]
         for signal in nix::sys::signal::Signal::iterator() {
             signals.push(TrapSignal::Signal(signal));
         }

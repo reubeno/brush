@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fmt::Display, io::Write};
 
-use crate::{builtin, commands, error, files::PathExt, shell};
+use crate::{builtin, commands, error, shell, sys::fs::PathExt};
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Parser)]
@@ -126,7 +126,7 @@ impl CommandCommand {
 
         #[allow(clippy::cast_possible_truncation)]
         #[allow(clippy::cast_sign_loss)]
-        match commands::execute(context, args, false /*use functions?*/).await? {
+        match commands::execute(context, args, false /* use functions? */).await? {
             commands::SpawnResult::SpawnedChild(mut child) => {
                 let real_result = child.wait().await?;
                 let exit_code = real_result.code().unwrap_or(1);

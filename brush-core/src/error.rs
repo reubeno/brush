@@ -144,6 +144,7 @@ pub enum Error {
     InvalidSignal,
 
     /// A system error occurred.
+    #[cfg(unix)]
     #[error("system error: {0}")]
     ErrnoError(#[from] nix::errno::Errno),
 
@@ -152,6 +153,7 @@ pub enum Error {
     InvalidUmask,
 
     /// An error occurred reading from procfs.
+    #[cfg(unix)]
     #[error("procfs error: {0}")]
     ProcfsError(#[from] procfs::ProcError),
 

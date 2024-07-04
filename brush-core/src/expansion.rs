@@ -13,6 +13,7 @@ use crate::openfiles;
 use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
+use crate::sys;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
@@ -552,7 +553,8 @@ impl<'a> WordExpander<'a> {
                             .flatten()
                             .collect();
 
-                        // If there were no pieces, make sure there's an empty string after concatenation.
+                        // If there were no pieces, make sure there's an empty string after
+                        // concatenation.
                         if concatenated.is_empty() {
                             concatenated.push(ExpansionPiece::Splittable(String::new()));
                         }
@@ -580,8 +582,8 @@ impl<'a> WordExpander<'a> {
                     }
                 }
 
-                // If there were no pieces, then make sure we yield a single field containing an empty,
-                // unsplittable string.
+                // If there were no pieces, then make sure we yield a single field containing an
+                // empty, unsplittable string.
                 if pieces_is_empty {
                     fields.push(WordField::from(ExpansionPiece::Unsplittable(String::new())));
                 }
@@ -603,7 +605,7 @@ impl<'a> WordExpander<'a> {
                 let mut subshell = self.shell.clone();
 
                 // Set up pipe so we can read the output.
-                let (reader, writer) = os_pipe::pipe()?;
+                let (reader, writer) = sys::pipes::pipe()?;
                 subshell
                     .open_files
                     .files

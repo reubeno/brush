@@ -7,14 +7,6 @@ use std::{
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
 
-/// Options for creating an interactive shell.
-pub struct Options {
-    /// Lower-level options for creating the shell.
-    pub shell: brush_core::CreateOptions,
-    /// Whether to disable bracketed paste mode.
-    pub disable_bracketed_paste: bool,
-}
-
 /// Represents an interactive shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.
 pub struct InteractiveShell {
@@ -52,7 +44,7 @@ impl InteractiveShell {
     /// # Arguments
     ///
     /// * `options` - Options for creating the interactive shell.
-    pub async fn new(options: &Options) -> Result<InteractiveShell, ShellError> {
+    pub async fn new(options: &crate::Options) -> Result<InteractiveShell, ShellError> {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
         let shell = brush_core::Shell::new(&options.shell).await?;
@@ -83,7 +75,10 @@ impl InteractiveShell {
         &mut self.editor.helper_mut().unwrap().shell
     }
 
-    fn new_editor(options: &Options, shell: brush_core::Shell) -> Result<Editor, ShellError> {
+    fn new_editor(
+        options: &crate::Options,
+        shell: brush_core::Shell,
+    ) -> Result<Editor, ShellError> {
         let config = rustyline::config::Builder::new()
             .max_history_size(1000)?
             .history_ignore_dups(true)?
