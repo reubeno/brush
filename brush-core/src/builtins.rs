@@ -6,6 +6,56 @@ use crate::commands;
 use crate::error;
 use crate::ExecutionResult;
 
+mod alias;
+mod bg;
+mod break_;
+mod builtin_;
+mod cd;
+mod colon;
+mod command;
+mod complete;
+mod continue_;
+mod declare;
+mod dirs;
+mod dot;
+mod echo;
+mod enable;
+mod eval;
+#[cfg(unix)]
+mod exec;
+mod exit;
+mod export;
+mod factory;
+mod false_;
+mod fg;
+mod getopts;
+mod help;
+mod jobs;
+#[cfg(unix)]
+mod kill;
+mod let_;
+mod popd;
+mod printf;
+mod pushd;
+mod pwd;
+mod read;
+mod return_;
+mod set;
+mod shift;
+mod shopt;
+mod test;
+mod trap;
+mod true_;
+mod type_;
+#[cfg(unix)]
+mod umask;
+mod unalias;
+mod unimp;
+mod unset;
+mod wait;
+
+pub(crate) use factory::get_default_builtins;
+
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.
 ///
@@ -69,7 +119,8 @@ pub enum ExitCode {
     Custom(u8),
     /// The command is requesting to exit the shell, yielding the given exit code.
     ExitShell(u8),
-    /// The command is requesting to return from a function or script, yielding the given exit code.
+    /// The command is requesting to return from a function or script, yielding the given exit
+    /// code.
     ReturnFromFunctionOrScript(u8),
     /// The command is requesting to continue a loop, identified by the given nesting count.
     ContinueLoop(u8),

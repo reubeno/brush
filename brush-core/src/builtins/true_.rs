@@ -1,17 +1,17 @@
 use clap::Parser;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Return 0.
 #[derive(Parser)]
 pub(crate) struct TrueCommand {}
 
 #[async_trait::async_trait]
-impl builtin::Command for TrueCommand {
+impl builtins::Command for TrueCommand {
     async fn execute(
         &self,
         _context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
-        Ok(builtin::ExitCode::Success)
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        Ok(builtins::ExitCode::Success)
     }
 }

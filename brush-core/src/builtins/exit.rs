@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Exit the shell.
 #[derive(Parser)]
@@ -10,11 +10,11 @@ pub(crate) struct ExitCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ExitCommand {
+impl builtins::Command for ExitCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let code_8bit: u8;
 
         #[allow(clippy::cast_sign_loss)]
@@ -24,6 +24,6 @@ impl builtin::Command for ExitCommand {
             code_8bit = context.shell.last_exit_status;
         }
 
-        Ok(builtin::ExitCode::ExitShell(code_8bit))
+        Ok(builtins::ExitCode::ExitShell(code_8bit))
     }
 }

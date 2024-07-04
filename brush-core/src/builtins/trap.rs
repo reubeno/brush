@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands, error, sys, traps};
+use crate::{builtins, commands, error, sys, traps};
 
 /// Manage signal traps.
 #[derive(Parser)]
@@ -18,14 +18,14 @@ pub(crate) struct TrapCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for TrapCommand {
+impl builtins::Command for TrapCommand {
     async fn execute(
         &self,
         mut context: commands::ExecutionContext<'_>,
-    ) -> Result<builtin::ExitCode, crate::error::Error> {
+    ) -> Result<builtins::ExitCode, crate::error::Error> {
         if self.list_signals {
             Self::display_signals(&context)?;
-            Ok(builtin::ExitCode::Success)
+            Ok(builtins::ExitCode::Success)
         } else if self.print_trap_commands || self.args.is_empty() {
             if !self.args.is_empty() {
                 for signal_type in &self.args {
@@ -35,12 +35,12 @@ impl builtin::Command for TrapCommand {
             } else {
                 Self::display_all_handlers(&context)?;
             }
-            Ok(builtin::ExitCode::Success)
+            Ok(builtins::ExitCode::Success)
         } else if self.args.len() == 1 {
             let signal = self.args[0].as_str();
             let signal_type = parse_signal(signal)?;
             Self::remove_all_handlers(&mut context, signal_type);
-            Ok(builtin::ExitCode::Success)
+            Ok(builtins::ExitCode::Success)
         } else {
             let handler = &self.args[0];
 
@@ -50,7 +50,7 @@ impl builtin::Command for TrapCommand {
             }
 
             Self::register_handler(&mut context, signal_types, handler.as_str());
-            Ok(builtin::ExitCode::Success)
+            Ok(builtins::ExitCode::Success)
         }
     }
 }

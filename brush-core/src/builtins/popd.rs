@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Pop a path from the current directory stack.
 #[derive(Parser)]
@@ -15,11 +15,11 @@ pub(crate) struct PopdCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for PopdCommand {
+impl builtins::Command for PopdCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if let Some(popped) = context.shell.directory_stack.pop() {
             if !self.no_directory_change {
                 context.shell.set_working_dir(&popped)?;
@@ -30,9 +30,9 @@ impl builtin::Command for PopdCommand {
             dirs_cmd.execute(context).await?;
         } else {
             writeln!(context.stderr(), "popd: directory stack empty")?;
-            return Ok(builtin::ExitCode::Custom(1));
+            return Ok(builtins::ExitCode::Custom(1));
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }

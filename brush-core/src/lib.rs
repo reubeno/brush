@@ -6,7 +6,6 @@
 pub mod completion;
 
 mod arithmetic;
-mod builtin;
 mod builtins;
 mod commands;
 mod env;

@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// No-op command.
 #[derive(Parser)]
@@ -11,11 +11,11 @@ pub(crate) struct ColonCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ColonCommand {
+impl builtins::Command for ColonCommand {
     async fn execute(
         &self,
         _context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
-        Ok(builtin::ExitCode::Success)
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        Ok(builtins::ExitCode::Success)
     }
 }

@@ -2,67 +2,67 @@ use std::collections::HashMap;
 
 use clap::Parser;
 
-use crate::{builtin, commands, error, namedoptions};
+use crate::{builtins, commands, error, namedoptions};
 
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
     'a',
     "Export variables on modification"
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     NotfyJobTerminationImmediately,
     'b',
     "Notify job termination immediately"
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     ExitOnNonzeroCommandExit,
     'e',
     "Exit on nonzero command exit"
 );
-builtin::minus_or_plus_flag_arg!(DisableFilenameGlobbing, 'f', "Disable filename globbing");
-builtin::minus_or_plus_flag_arg!(RememberCommandLocations, 'h', "Remember command locations");
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(DisableFilenameGlobbing, 'f', "Disable filename globbing");
+builtins::minus_or_plus_flag_arg!(RememberCommandLocations, 'h', "Remember command locations");
+builtins::minus_or_plus_flag_arg!(
     PlaceAllAssignmentArgsInCommandEnv,
     'k',
     "Place all assignment args in command environment"
 );
-builtin::minus_or_plus_flag_arg!(EnableJobControl, 'm', "Enable job control");
-builtin::minus_or_plus_flag_arg!(DoNotExecuteCommands, 'n', "Do not execute commands");
-builtin::minus_or_plus_flag_arg!(RealEffectiveUidMismatch, 'p', "Real effective UID mismatch");
-builtin::minus_or_plus_flag_arg!(ExitAfterOneCommand, 't', "Exit after one command");
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(EnableJobControl, 'm', "Enable job control");
+builtins::minus_or_plus_flag_arg!(DoNotExecuteCommands, 'n', "Do not execute commands");
+builtins::minus_or_plus_flag_arg!(RealEffectiveUidMismatch, 'p', "Real effective UID mismatch");
+builtins::minus_or_plus_flag_arg!(ExitAfterOneCommand, 't', "Exit after one command");
+builtins::minus_or_plus_flag_arg!(
     TreatUnsetVariablesAsError,
     'u',
     "Treat unset variables as error"
 );
-builtin::minus_or_plus_flag_arg!(PrintShellInputLines, 'v', "Print shell input lines");
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(PrintShellInputLines, 'v', "Print shell input lines");
+builtins::minus_or_plus_flag_arg!(
     PrintCommandsAndArguments,
     'x',
     "Print commands and arguments"
 );
-builtin::minus_or_plus_flag_arg!(PerformBraceExpansion, 'B', "Perform brace expansion");
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(PerformBraceExpansion, 'B', "Perform brace expansion");
+builtins::minus_or_plus_flag_arg!(
     DisallowOverwritingRegularFilesViaOutputRedirection,
     'C',
     "Disallow overwriting regular files via output redirection"
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     ShellFunctionsInheritErrTrap,
     'E',
     "Shell functions inherit ERR trap"
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     EnableBangStyleHistorySubstitution,
     'H',
     "Enable bang style history substitution"
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     DoNotResolveSymlinksWhenChangingDir,
     'P',
     "Do not resolve symlinks when changing dir"
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     ShellFunctionsInheritDebugAndReturnTraps,
     'T',
     "Shell functions inherit DEBUG and RETURN traps"
@@ -131,7 +131,7 @@ pub(crate) struct SetCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for SetCommand {
+impl builtins::Command for SetCommand {
     fn takes_plus_options() -> bool {
         true
     }
@@ -140,8 +140,8 @@ impl builtin::Command for SetCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<builtin::ExitCode, error::Error> {
-        let mut result = builtin::ExitCode::Success;
+    ) -> Result<builtins::ExitCode, error::Error> {
+        let mut result = builtins::ExitCode::Success;
 
         if let Some(value) = self.print_commands_and_arguments.to_bool() {
             context.shell.options.print_commands_and_arguments = value;
@@ -253,7 +253,7 @@ impl builtin::Command for SetCommand {
             if let Some(option_def) = namedoptions::SET_O_OPTIONS.get(option_name.as_str()) {
                 (option_def.setter)(&mut context.shell.options, value);
             } else {
-                result = builtin::ExitCode::InvalidUsage;
+                result = builtins::ExitCode::InvalidUsage;
             }
         }
 

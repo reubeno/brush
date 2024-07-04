@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
-use crate::{builtin, commands, error};
+use crate::{builtins, commands, error};
 
 /// Exec the provided command.
 #[derive(Parser)]
@@ -24,13 +24,13 @@ pub(crate) struct ExecCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ExecCommand {
+impl builtins::Command for ExecCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<builtin::ExitCode, crate::error::Error> {
+    ) -> Result<builtins::ExitCode, crate::error::Error> {
         if self.args.is_empty() {
-            return Ok(builtin::ExitCode::Success);
+            return Ok(builtins::ExitCode::Success);
         }
 
         let mut argv0 = Cow::Borrowed(self.name_for_argv0.as_ref().unwrap_or(&self.args[0]));
@@ -51,7 +51,7 @@ impl builtin::Command for ExecCommand {
         let exec_error = cmd.exec();
 
         if exec_error.kind() == std::io::ErrorKind::NotFound {
-            Ok(builtin::ExitCode::Custom(127))
+            Ok(builtins::ExitCode::Custom(127))
         } else {
             Err(error::Error::from(exec_error))
         }

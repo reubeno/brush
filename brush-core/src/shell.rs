@@ -12,8 +12,8 @@ use crate::options::RuntimeOptions;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
-    builtin, builtins, commands, completion, env, error, expansion, functions, jobs, keywords,
-    openfiles, patterns, prompt, sys::users, traps,
+    builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
+    patterns, prompt, sys::users, traps,
 };
 
 /// Represents an instance of a shell.
@@ -70,7 +70,7 @@ pub struct Shell {
     pub completion_config: completion::Config,
 
     /// Shell built-in commands.
-    pub builtins: HashMap<String, builtin::Registration>,
+    pub builtins: HashMap<String, builtins::Registration>,
 }
 
 impl Clone for Shell {

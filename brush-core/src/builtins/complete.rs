@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use crate::builtin;
+use crate::builtins;
 use crate::commands;
 use crate::completion::{self, CompleteAction, CompleteOption, Spec};
 use crate::error;
@@ -211,11 +211,11 @@ pub(crate) struct CompleteCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for CompleteCommand {
+impl builtins::Command for CompleteCommand {
     async fn execute(
         &self,
         mut context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // If -D, -E, or -I are specified, then any names provided are ignored.
         if self.use_as_default
             || self.use_for_empty_line
@@ -229,7 +229,7 @@ impl builtin::Command for CompleteCommand {
             }
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }
 
@@ -429,11 +429,11 @@ pub(crate) struct CompGenCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for CompGenCommand {
+impl builtins::Command for CompGenCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let spec = self.common_args.create_spec();
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();
@@ -466,7 +466,7 @@ impl builtin::Command for CompGenCommand {
             }
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }
 
@@ -491,11 +491,11 @@ pub(crate) struct CompOptCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for CompOptCommand {
+impl builtins::Command for CompOptCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut options = HashMap::new();
         for option in &self.disabled_options {
             options.insert(option.clone(), false);
@@ -510,7 +510,7 @@ impl builtin::Command for CompOptCommand {
                     context.stderr(),
                     "compopt: cannot specify names with -D, -E, or -I"
                 )?;
-                return Ok(builtin::ExitCode::InvalidUsage);
+                return Ok(builtins::ExitCode::InvalidUsage);
             }
 
             for name in &self.names {
@@ -562,7 +562,7 @@ impl builtin::Command for CompOptCommand {
             }
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }
 

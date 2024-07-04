@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Return from the current function.
 #[derive(Parser)]
@@ -10,11 +10,11 @@ pub(crate) struct ReturnCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ReturnCommand {
+impl builtins::Command for ReturnCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let code_8bit: u8;
         #[allow(clippy::cast_sign_loss)]
         if let Some(code_32bit) = &self.code {
@@ -24,6 +24,6 @@ impl builtin::Command for ReturnCommand {
         }
 
         // TODO: only allow return invocation from a function or script
-        Ok(builtin::ExitCode::ReturnFromFunctionOrScript(code_8bit))
+        Ok(builtins::ExitCode::ReturnFromFunctionOrScript(code_8bit))
     }
 }

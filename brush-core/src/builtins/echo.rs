@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands, escape};
+use crate::{builtins, commands, escape};
 
 /// Echo text to standard output.
 #[derive(Parser)]
@@ -25,11 +25,11 @@ pub(crate) struct EchoCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for EchoCommand {
+impl builtins::Command for EchoCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut trailing_newline = !self.no_trailing_newline;
         let mut s;
         if self.interpret_backslash_escapes {
@@ -61,6 +61,6 @@ impl builtin::Command for EchoCommand {
         write!(context.stdout(), "{s}")?;
         context.stdout().flush()?;
 
-        return Ok(builtin::ExitCode::Success);
+        return Ok(builtins::ExitCode::Success);
     }
 }

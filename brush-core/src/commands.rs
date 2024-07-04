@@ -8,7 +8,7 @@ use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
 
 use crate::{
-    builtin, error,
+    builtins, error,
     interp::{self, Execute},
     openfiles::{self, OpenFile, OpenFiles},
     sys, Shell,
@@ -281,22 +281,22 @@ pub(crate) fn execute_external_command(
 }
 
 async fn execute_builtin_command(
-    builtin: &builtin::Registration,
+    builtin: &builtins::Registration,
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<SpawnResult, error::Error> {
     let exit_code = match (builtin.execute_func)(context, args).await {
         Ok(builtin_result) => match builtin_result.exit_code {
-            builtin::ExitCode::Success => 0,
-            builtin::ExitCode::InvalidUsage => 2,
-            builtin::ExitCode::Unimplemented => 99,
-            builtin::ExitCode::Custom(code) => code,
-            builtin::ExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
-            builtin::ExitCode::ReturnFromFunctionOrScript(code) => {
+            builtins::ExitCode::Success => 0,
+            builtins::ExitCode::InvalidUsage => 2,
+            builtins::ExitCode::Unimplemented => 99,
+            builtins::ExitCode::Custom(code) => code,
+            builtins::ExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
+            builtins::ExitCode::ReturnFromFunctionOrScript(code) => {
                 return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
             }
-            builtin::ExitCode::BreakLoop(count) => return Ok(SpawnResult::BreakLoop(count)),
-            builtin::ExitCode::ContinueLoop(count) => return Ok(SpawnResult::ContinueLoop(count)),
+            builtins::ExitCode::BreakLoop(count) => return Ok(SpawnResult::BreakLoop(count)),
+            builtins::ExitCode::ContinueLoop(count) => return Ok(SpawnResult::ContinueLoop(count)),
         },
         Err(e) => {
             tracing::error!("error: {}", e);

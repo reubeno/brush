@@ -1,4 +1,4 @@
-use crate::{builtin, commands, error};
+use crate::{builtins, commands, error};
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
@@ -23,11 +23,11 @@ pub(crate) struct HelpCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for HelpCommand {
+impl builtins::Command for HelpCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
         } else {
@@ -36,7 +36,7 @@ impl builtin::Command for HelpCommand {
             }
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }
 
@@ -102,16 +102,16 @@ impl HelpCommand {
         &self,
         context: &commands::ExecutionContext<'_>,
         name: &str,
-        registration: &builtin::Registration,
+        registration: &builtins::Registration,
     ) -> Result<(), error::Error> {
         let content_type = if self.short_description {
-            builtin::ContentType::ShortDescription
+            builtins::ContentType::ShortDescription
         } else if self.man_page_style {
-            builtin::ContentType::ManPage
+            builtins::ContentType::ManPage
         } else if self.short_usage {
-            builtin::ContentType::ShortUsage
+            builtins::ContentType::ShortUsage
         } else {
-            builtin::ContentType::DetailedHelp
+            builtins::ContentType::DetailedHelp
         };
 
         let content = (registration.content_func)(name, content_type)?;
@@ -125,7 +125,7 @@ impl HelpCommand {
 
 fn get_builtins_sorted_by_name<'a>(
     context: &'a commands::ExecutionContext<'_>,
-) -> Vec<(&'a String, &'a builtin::Registration)> {
+) -> Vec<(&'a String, &'a builtins::Registration)> {
     context
         .shell
         .builtins
