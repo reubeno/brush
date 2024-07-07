@@ -153,7 +153,7 @@ pub enum Error {
     InvalidUmask,
 
     /// An error occurred reading from procfs.
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[error("procfs error: {0}")]
     ProcfsError(#[from] procfs::ProcError),
 

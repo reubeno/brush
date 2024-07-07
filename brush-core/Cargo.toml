@@ -21,6 +21,7 @@ async-recursion = "1.1.0"
 async-trait = "0.1.80"
 brush-parser = { version = "^0.2.3", path = "../brush-parser" }
 cached = "0.51.3"
+cfg-if = "1.0.0"
 # N.B. Pin to 4.4.18 for now to keep to 1.72.0 as MSRV; 4.5.x requires a later version.
 clap = { version = "=4.4.18", features = ["derive", "wrap_help"] }
 fancy-regex = "0.13.0"
@@ -57,8 +58,10 @@ whoami = "1.5.1"
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.0"
 nix = { version = "0.29.0", features = ["fs", "process", "signal", "term", "user"] }
-procfs = "0.16.0"
 uzers = "0.12.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = "0.16.0"
 
 [dev-dependencies]
 anyhow = "1.0.86"
