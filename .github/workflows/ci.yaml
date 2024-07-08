@@ -23,9 +23,19 @@ permissions:
   contents: read
 
 jobs:
-  build_x86_64:
-    name: "Build (x86_64/Linux)"
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - host: "ubuntu-latest"
+            os: "linux"
+            arch: "x86_64"
+          - host: "macos-latest"
+            os: "macos"
+            arch: "aarch64"
+
+    name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
+    runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +57,7 @@ jobs:
       - name: "Upload binaries"
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-x86_64-linux
+          name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/release/brush
 
   build_cross:
