@@ -35,7 +35,7 @@ jobs:
           head_repo_owner=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_repository.owner.login')
 
           if [[ "${head_branch}" != "" && "${head_repo}" != "" ]]; then
-            pr_number="$(gh pr list --state open --json number,headRefName,headRepositoryOwner,headRepository,baseRefName -q "map(select(.headRefName == \"${head_branch}\" and .headRepositoryOwner.login == \"${head_repo_owner}\" and .baseRefName == \"main\")) | .[0].number" || true)"
+            pr_number="$(gh pr list -R ${{ github.repository }} --state open --json number,headRefName,headRepositoryOwner,headRepository,baseRefName -q "map(select(.headRefName == \"${head_branch}\" and .headRepositoryOwner.login == \"${head_repo_owner}\" and .baseRefName == \"main\")) | .[0].number" || true)"
           else
             pr_number=""
           fi
