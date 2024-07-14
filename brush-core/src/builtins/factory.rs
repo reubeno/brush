@@ -9,7 +9,9 @@ use crate::builtins;
 use crate::commands::{self, CommandArg};
 use crate::error;
 
-fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
+/// Returns a built-in command registration, given an implementation of the
+/// `Command` trait.
+pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
     builtins::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,

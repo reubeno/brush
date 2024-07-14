@@ -1,3 +1,5 @@
+//! Infrastructure for shell built-in commands.
+
 use clap::builder::styling;
 use clap::Parser;
 use futures::future::BoxFuture;
@@ -54,6 +56,7 @@ mod unimp;
 mod unset;
 mod wait;
 
+pub use factory::builtin;
 pub(crate) use factory::get_default_builtins;
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be

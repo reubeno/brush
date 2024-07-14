@@ -2,12 +2,12 @@
 
 #![deny(missing_docs)]
 
+mod brushctl;
+mod events;
 mod productinfo;
 
-use std::{collections::HashSet, io::IsTerminal, path::Path};
-
 use clap::{builder::styling, Parser};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use std::{io::IsTerminal, path::Path, sync::Arc};
 
 /// Parsed command-line arguments for the brush shell.
 #[derive(Parser)]
@@ -89,39 +89,13 @@ struct CommandLineArgs {
 
     /// Enable debug logging for classes of tracing events.
     #[clap(long = "log-enable")]
-    enabled_log_events: Vec<TraceEvent>,
+    enabled_log_events: Vec<events::TraceEvent>,
 
     /// Path to script to execute.
     script_path: Option<String>,
 
     /// Arguments for script.
     script_args: Vec<String>,
-}
-
-/// Type of event to trace.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
-enum TraceEvent {
-    /// Traces parsing and evaluation of arithmetic expressions.
-    #[clap(name = "arithmetic")]
-    Arithmetic,
-    /// Traces command execution.
-    #[clap(name = "commands")]
-    Commands,
-    /// Traces command completion generation.
-    #[clap(name = "complete")]
-    Complete,
-    /// Traces word expansion.
-    #[clap(name = "expand")]
-    Expand,
-    /// Traces the process of parsing tokens into an abstract syntax tree.
-    #[clap(name = "parse")]
-    Parse,
-    /// Traces pattern matching.
-    #[clap(name = "pattern")]
-    Pattern,
-    /// Traces the process of tokenizing input text.
-    #[clap(name = "tokenize")]
-    Tokenize,
 }
 
 impl CommandLineArgs {
@@ -142,6 +116,11 @@ impl CommandLineArgs {
     }
 }
 
+lazy_static::lazy_static! {
+    static ref TRACE_EVENT_CONFIG: Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> =
+        Arc::new(tokio::sync::Mutex::new(None));
+}
+
 /// Main entry point for the `brush` shell.
 fn main() {
     //
@@ -157,50 +136,6 @@ fn main() {
     }
 
     let parsed_args = CommandLineArgs::parse_from(&args);
-
-    //
-    // Initializing tracing.
-    //
-    let mut filter = tracing_subscriber::filter::Targets::new()
-        .with_default(tracing_subscriber::filter::LevelFilter::INFO);
-
-    let enabled_trace_events: HashSet<TraceEvent> =
-        parsed_args.enabled_log_events.iter().cloned().collect();
-    for event in enabled_trace_events {
-        let targets = match event {
-            TraceEvent::Arithmetic => vec!["parser::arithmetic"],
-            TraceEvent::Commands => vec!["commands"],
-            TraceEvent::Complete => vec![
-                "completion",
-                "shell::completion",
-                "shell::builtins::complete",
-            ],
-            TraceEvent::Expand => vec!["parser::word", "shell::expansion"],
-            TraceEvent::Parse => vec!["parse"],
-            TraceEvent::Pattern => vec!["shell::pattern"],
-            TraceEvent::Tokenize => vec!["tokenize"],
-        };
-
-        filter = filter.with_targets(
-            targets
-                .into_iter()
-                .map(|target| (target, tracing::Level::DEBUG)),
-        );
-    }
-
-    let stderr_log_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .without_time()
-        .with_filter(filter);
-
-    if tracing_subscriber::registry()
-        .with(stderr_log_layer)
-        .try_init()
-        .is_err()
-    {
-        // Something went wrong; proceed on anyway but complain audibly.
-        eprintln!("warning: failed to initialize tracing.");
-    }
 
     //
     // Run.
@@ -239,6 +174,48 @@ async fn run(
     cli_args: Vec<String>,
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
+    // Initializing tracing.
+    let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
+    *event_config = Some(events::TraceEventConfig::init(&args.enabled_log_events));
+    drop(event_config);
+
+    // Instantiate an appropriately configured shell.
+    let mut shell = instantiate_shell(&args, cli_args).await?;
+
+    // Handle commands.
+    if let Some(command) = args.command {
+        // Pass through args.
+        if let Some(script_path) = args.script_path {
+            shell.shell_mut().shell_name = Some(script_path);
+        }
+        shell.shell_mut().positional_parameters = args.script_args;
+
+        // Execute the command string.
+        let params = shell.shell().default_exec_params();
+        shell.shell_mut().run_string(command, &params).await?;
+    } else if args.read_commands_from_stdin {
+        // We were asked to read commands from stdin; do so, even if there was a script
+        // passed on the command line.
+        shell.run_interactively().await?;
+    } else if let Some(script_path) = args.script_path {
+        // The path to a script was provided on the command line; run the script.
+        shell
+            .shell_mut()
+            .run_script(Path::new(&script_path), args.script_args.as_slice())
+            .await?;
+    } else {
+        // In all other cases, run interactively, taking input from stdin.
+        shell.run_interactively().await?;
+    }
+
+    // Make sure to return the last result observed in the shell.
+    Ok(shell.shell().last_result())
+}
+
+async fn instantiate_shell(
+    args: &CommandLineArgs,
+    cli_args: Vec<String>,
+) -> Result<brush_interactive::InteractiveShell, brush_interactive::ShellError> {
     let argv0 = if args.sh_mode {
         // Simulate having been run as "sh".
         Some(String::from("sh"))
@@ -250,12 +227,13 @@ async fn run(
 
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
         || (args.script_path.is_none() && args.command.is_none());
-
     let interactive = args.is_interactive();
+
+    // Compose the options we'll use to create the shell.
     let options = brush_interactive::Options {
         shell: brush_core::CreateOptions {
-            disabled_shopt_options: args.disabled_shopt_options,
-            enabled_shopt_options: args.enabled_shopt_options,
+            disabled_shopt_options: args.disabled_shopt_options.clone(),
+            enabled_shopt_options: args.enabled_shopt_options.clone(),
             do_not_execute_commands: args.do_not_execute_commands,
             login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
             interactive,
@@ -273,30 +251,17 @@ async fn run(
         disable_bracketed_paste: args.disable_bracketed_paste,
     };
 
+    // Create the shell.
     let mut shell = brush_interactive::InteractiveShell::new(&options).await?;
 
-    if let Some(command) = args.command {
-        // Pass through args.
-        if let Some(script_path) = args.script_path {
-            shell.shell_mut().shell_name = Some(script_path);
-        }
-        shell.shell_mut().positional_parameters = args.script_args;
+    // Register our own built-in(s) with the shell.
+    brushctl::register(&mut shell);
 
-        // Execute the command string.
-        let params = shell.shell().default_exec_params();
-        shell.shell_mut().run_string(command, &params).await?;
-    } else if args.read_commands_from_stdin {
-        shell.run_interactively().await?;
-    } else if let Some(script_path) = args.script_path {
-        shell
-            .shell_mut()
-            .run_script(Path::new(&script_path), args.script_args.as_slice())
-            .await?;
-    } else {
-        shell.run_interactively().await?;
-    }
+    Ok(shell)
+}
 
-    Ok(shell.shell().last_result())
+pub(crate) fn get_event_config() -> Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> {
+    TRACE_EVENT_CONFIG.clone()
 }
 
 /// Returns clap styling to be used for command-line help.
