@@ -1,5 +1,7 @@
 use crate::{builtin, commands, error};
+use cfg_if::cfg_if;
 use clap::Parser;
+use nix::sys::stat::Mode;
 use std::io::Write;
 
 /// Manage the process umask.
@@ -53,14 +55,25 @@ impl builtin::Command for UmaskCommand {
     }
 }
 
-fn get_umask() -> Result<u32, error::Error> {
-    let me = procfs::process::Process::myself()?;
-    let status = me.status()?;
-    status.umask.ok_or_else(|| error::Error::InvalidUmask)
+cfg_if! {
+    if #[cfg(target_os = "linux")] {
+        fn get_umask() -> Result<u32, error::Error> {
+            let me = procfs::process::Process::myself()?;
+            let status = me.status()?;
+            status.umask.ok_or_else(|| error::Error::InvalidUmask)
+        }
+    } else {
+        fn get_umask() -> Result<u32, error::Error> {
+            let u = nix::sys::stat::umask(Mode::empty());
+            nix::sys::stat::umask(u);
+            Ok(u.bits() as u32)
+        }
+    }
 }
 
 fn set_umask(value: u32) -> Result<(), error::Error> {
-    let mode = nix::sys::stat::Mode::from_bits(value).ok_or_else(|| error::Error::InvalidUmask)?;
+    let mode =
+        nix::sys::stat::Mode::from_bits(value as _).ok_or_else(|| error::Error::InvalidUmask)?;
     nix::sys::stat::umask(mode);
     Ok(())
 }

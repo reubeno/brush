@@ -251,6 +251,7 @@ dependencies = [
  "async-trait",
  "brush-parser",
  "cached",
+ "cfg-if",
  "clap",
  "command-fds",
  "criterion",

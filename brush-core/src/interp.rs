@@ -2,7 +2,7 @@ use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::fd::{AsFd, AsRawFd};
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
@@ -1469,7 +1469,7 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     let bytes = contents.as_bytes();
     let len = i32::try_from(bytes.len())?;
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     nix::fcntl::fcntl(
         reader.as_fd().as_raw_fd(),
         nix::fcntl::FcntlArg::F_SETPIPE_SZ(len),
