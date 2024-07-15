@@ -6,7 +6,7 @@ use std::path::PathBuf;
 //
 
 pub(crate) fn get_user_home_dir() -> Option<PathBuf> {
-    homedir::get_my_home().unwrap_or_default()
+    homedir::my_home().unwrap_or_default()
 }
 
 pub(crate) fn is_root() -> bool {
