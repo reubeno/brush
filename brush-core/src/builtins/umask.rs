@@ -1,4 +1,4 @@
-use crate::{builtin, commands, error};
+use crate::{builtins, commands, error};
 use cfg_if::cfg_if;
 use clap::Parser;
 #[cfg(not(target_os = "linux"))]
@@ -21,11 +21,11 @@ pub(crate) struct UmaskCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for UmaskCommand {
+impl builtins::Command for UmaskCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
                 let parsed = u32::from_str_radix(mode.as_str(), 8)?;
@@ -52,7 +52,7 @@ impl builtin::Command for UmaskCommand {
             }
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }
 

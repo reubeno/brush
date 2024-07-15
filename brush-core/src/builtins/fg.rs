@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Move a specified job to the foreground.
 #[derive(Parser)]
@@ -11,11 +11,11 @@ pub(crate) struct FgCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for FgCommand {
+impl builtins::Command for FgCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut stderr = context.stdout();
 
         if let Some(job_spec) = &self.job_spec {
@@ -24,14 +24,14 @@ impl builtin::Command for FgCommand {
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
-                Ok(builtin::ExitCode::from(result))
+                Ok(builtins::ExitCode::from(result))
             } else {
                 writeln!(
                     stderr,
                     "{}: {}: no such job",
                     job_spec, context.command_name
                 )?;
-                Ok(builtin::ExitCode::Custom(1))
+                Ok(builtins::ExitCode::Custom(1))
             }
         } else {
             if let Some(job) = context.shell.jobs.current_job_mut() {
@@ -39,10 +39,10 @@ impl builtin::Command for FgCommand {
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
-                Ok(builtin::ExitCode::from(result))
+                Ok(builtins::ExitCode::from(result))
             } else {
                 writeln!(stderr, "{}: no current job", context.command_name)?;
-                Ok(builtin::ExitCode::Custom(1))
+                Ok(builtins::ExitCode::Custom(1))
             }
         }
     }

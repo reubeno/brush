@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands, expansion};
+use crate::{builtins, commands, expansion};
 
 /// Format a string.
 #[derive(Parser)]
@@ -20,11 +20,11 @@ pub(crate) struct PrintfCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for PrintfCommand {
+impl builtins::Command for PrintfCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // TODO: Don't call external printf command.
         let mut cmd = std::process::Command::new("printf");
         cmd.env_clear();
@@ -42,7 +42,7 @@ impl builtin::Command for PrintfCommand {
         if !output.status.success() {
             #[allow(clippy::cast_possible_truncation)]
             #[allow(clippy::cast_sign_loss)]
-            return Ok(builtin::ExitCode::Custom(
+            return Ok(builtins::ExitCode::Custom(
                 output.status.code().unwrap() as u8
             ));
         }
@@ -54,6 +54,6 @@ impl builtin::Command for PrintfCommand {
             context.stdout().flush()?;
         }
 
-        return Ok(builtin::ExitCode::Success);
+        return Ok(builtins::ExitCode::Success);
     }
 }

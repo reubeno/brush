@@ -1,4 +1,4 @@
-use crate::{builtin, commands, interp::ExecutionParameters};
+use crate::{builtins, commands, interp::ExecutionParameters};
 use clap::Parser;
 
 /// Evalute the given string as script.
@@ -10,11 +10,11 @@ pub(crate) struct EvalCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for EvalCommand {
+impl builtins::Command for EvalCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if !self.args.is_empty() {
             let args_concatenated = self.args.join(" ");
 
@@ -30,9 +30,9 @@ impl builtin::Command for EvalCommand {
                 )
                 .await?;
 
-            Ok(builtin::ExitCode::Custom(exec_result.exit_code))
+            Ok(builtins::ExitCode::Custom(exec_result.exit_code))
         } else {
-            Ok(builtin::ExitCode::Success)
+            Ok(builtins::ExitCode::Success)
         }
     }
 }

@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::io::Write;
 
 use crate::{
-    builtin, commands,
+    builtins, commands,
     env::{EnvironmentLookup, EnvironmentScope},
     error,
     variables::{
@@ -12,35 +12,35 @@ use crate::{
     },
 };
 
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     MakeIndexedArrayFlag,
     'a',
     "Make the variable an indexed array."
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     MakeAssociativeArrayFlag,
     'A',
     "Make the variable an associative array."
 );
-builtin::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
+builtins::minus_or_plus_flag_arg!(
     LowercaseValueOnAssignmentFlag,
     'l',
     "Enable lowercase-on-assignment for the variable."
 );
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(
     MakeNameRefFlag,
     'n',
     "Mark the variable as a name reference"
 );
-builtin::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "Mark the variable as read-only.");
-builtin::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "Enable tracing for the variable.");
-builtin::minus_or_plus_flag_arg!(
+builtins::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "Mark the variable as read-only.");
+builtins::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "Enable tracing for the variable.");
+builtins::minus_or_plus_flag_arg!(
     UppercaseValueOnAssignmentFlag,
     'u',
     "Enable uppercase-on-assignment for the variable."
 );
-builtin::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "Mark the variable for export.");
+builtins::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "Mark the variable for export.");
 
 /// Display or update variables and their attributes.
 #[derive(Parser)]
@@ -69,7 +69,6 @@ pub(crate) struct DeclareCommand {
 
     //
     // Attribute options
-    //
     #[clap(flatten)] // -a
     make_indexed_array: MakeIndexedArrayFlag,
     #[clap(flatten)] // -A
@@ -93,7 +92,6 @@ pub(crate) struct DeclareCommand {
     // Declarations
     //
     // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
-    //
     #[clap(skip)]
     declarations: Vec<commands::CommandArg>,
 }
@@ -105,7 +103,7 @@ enum DeclareVerb {
     Readonly,
 }
 
-impl builtin::DeclarationCommand for DeclareCommand {
+impl builtins::DeclarationCommand for DeclareCommand {
     fn set_declarations(&mut self, declarations: Vec<commands::CommandArg>) {
         self.declarations = declarations;
     }
@@ -113,7 +111,7 @@ impl builtin::DeclarationCommand for DeclareCommand {
 
 #[allow(clippy::too_many_lines)]
 #[async_trait::async_trait]
-impl builtin::Command for DeclareCommand {
+impl builtins::Command for DeclareCommand {
     fn takes_plus_options() -> bool {
         true
     }
@@ -121,7 +119,7 @@ impl builtin::Command for DeclareCommand {
     async fn execute(
         &self,
         mut context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let verb = match context.command_name.as_str() {
             "local" => DeclareVerb::Local,
             "readonly" => DeclareVerb::Readonly,
@@ -134,19 +132,19 @@ impl builtin::Command for DeclareCommand {
                 context.stderr(),
                 "UNIMPLEMENTED: declare -I: locals inherit from previous scope"
             )?;
-            return Ok(builtin::ExitCode::Unimplemented);
+            return Ok(builtins::ExitCode::Unimplemented);
         }
 
-        let mut result = builtin::ExitCode::Success;
+        let mut result = builtins::ExitCode::Success;
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
                     if !self.try_display_declaration(&mut context, declaration, verb)? {
-                        result = builtin::ExitCode::Custom(1);
+                        result = builtins::ExitCode::Custom(1);
                     }
                 } else {
                     if !self.process_declaration(&mut context, declaration, verb)? {
-                        result = builtin::ExitCode::Custom(1);
+                        result = builtins::ExitCode::Custom(1);
                     }
                 }
             }

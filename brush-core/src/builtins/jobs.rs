@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands, error, jobs};
+use crate::{builtins, commands, error, jobs};
 
 /// Manage jobs.
 #[derive(Parser)]
@@ -32,11 +32,11 @@ pub(crate) struct JobsCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for JobsCommand {
+impl builtins::Command for JobsCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.also_show_pids {
             return error::unimp("jobs -l");
         }
@@ -52,7 +52,7 @@ impl builtin::Command for JobsCommand {
             return error::unimp("jobs with job specs");
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }
 

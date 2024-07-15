@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Shift positional arguments.
 #[derive(Parser)]
@@ -10,26 +10,26 @@ pub(crate) struct ShiftCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ShiftCommand {
+impl builtins::Command for ShiftCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let n = self.n.unwrap_or(1);
 
         if n < 0 {
-            return Ok(builtin::ExitCode::InvalidUsage);
+            return Ok(builtins::ExitCode::InvalidUsage);
         }
 
         #[allow(clippy::cast_sign_loss)]
         let n = n as usize;
 
         if n > context.shell.positional_parameters.len() {
-            return Ok(builtin::ExitCode::InvalidUsage);
+            return Ok(builtins::ExitCode::InvalidUsage);
         }
 
         context.shell.positional_parameters.drain(0..n);
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }

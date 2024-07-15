@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands, error, tests, Shell};
+use crate::{builtins, commands, error, tests, Shell};
 
 /// Evaluate test expression.
 #[derive(Parser)]
@@ -12,11 +12,11 @@ pub(crate) struct TestCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for TestCommand {
+impl builtins::Command for TestCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut args = self.args.as_slice();
 
         if context.command_name == "[" {
@@ -24,7 +24,7 @@ impl builtin::Command for TestCommand {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {
                     writeln!(context.stderr(), "[: missing ']'")?;
-                    return Ok(builtin::ExitCode::InvalidUsage);
+                    return Ok(builtins::ExitCode::InvalidUsage);
                 }
             }
 
@@ -32,9 +32,9 @@ impl builtin::Command for TestCommand {
         }
 
         if execute_test(context.shell, args)? {
-            Ok(builtin::ExitCode::Success)
+            Ok(builtins::ExitCode::Success)
         } else {
-            Ok(builtin::ExitCode::Custom(1))
+            Ok(builtins::ExitCode::Custom(1))
         }
     }
 }

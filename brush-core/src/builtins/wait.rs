@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::{builtin, commands, error};
+use crate::{builtins, commands, error};
 
 /// Wait for jobs to terminate.
 #[derive(Parser)]
@@ -23,11 +23,11 @@ pub(crate) struct WaitCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for WaitCommand {
+impl builtins::Command for WaitCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<builtin::ExitCode, crate::error::Error> {
+    ) -> Result<builtins::ExitCode, crate::error::Error> {
         if self.wait_for_terminate {
             return error::unimp("wait -f");
         }
@@ -43,6 +43,6 @@ impl builtin::Command for WaitCommand {
 
         context.shell.jobs.wait_all().await?;
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }

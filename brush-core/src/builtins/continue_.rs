@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Continue to the next iteration of a control-flow loop.
 #[derive(Parser)]
@@ -11,17 +11,19 @@ pub(crate) struct ContinueCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ContinueCommand {
+impl builtins::Command for ContinueCommand {
     async fn execute(
         &self,
         _context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // If specified, which_loop needs to be positive.
         if self.which_loop <= 0 {
-            return Ok(builtin::ExitCode::InvalidUsage);
+            return Ok(builtins::ExitCode::InvalidUsage);
         }
 
         #[allow(clippy::cast_sign_loss)]
-        Ok(builtin::ExitCode::ContinueLoop((self.which_loop - 1) as u8))
+        Ok(builtins::ExitCode::ContinueLoop(
+            (self.which_loop - 1) as u8,
+        ))
     }
 }

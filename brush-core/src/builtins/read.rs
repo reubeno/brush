@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 
-use crate::{builtin, commands, env, error, openfiles, sys, variables};
+use crate::{builtins, commands, env, error, openfiles, sys, variables};
 
 /// Parse standard input.
 #[derive(Parser)]
@@ -60,11 +60,11 @@ pub(crate) struct ReadCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ReadCommand {
+impl builtins::Command for ReadCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.use_readline {
             return error::unimp("read -e");
         }
@@ -148,9 +148,9 @@ impl builtin::Command for ReadCommand {
                 )?;
             }
 
-            Ok(crate::builtin::ExitCode::Success)
+            Ok(crate::builtins::ExitCode::Success)
         } else {
-            Ok(crate::builtin::ExitCode::Custom(1))
+            Ok(crate::builtins::ExitCode::Custom(1))
         }
     }
 }

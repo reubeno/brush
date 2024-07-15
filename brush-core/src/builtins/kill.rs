@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands, error};
+use crate::{builtins, commands, error};
 
 /// Signal a job or process.
 #[derive(Parser)]
@@ -26,11 +26,11 @@ pub(crate) struct KillCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for KillCommand {
+impl builtins::Command for KillCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.signal_name.is_some() {
             return error::unimp("kill -s");
         }
@@ -43,10 +43,10 @@ impl builtin::Command for KillCommand {
         } else {
             if self.args.len() != 1 {
                 writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
-                return Ok(builtin::ExitCode::InvalidUsage);
+                return Ok(builtins::ExitCode::InvalidUsage);
             }
 
-            let exit_code = builtin::ExitCode::Success;
+            let exit_code = builtins::ExitCode::Success;
 
             let pid_or_job_spec = &self.args[0];
             if pid_or_job_spec.starts_with('%') {
@@ -60,7 +60,7 @@ impl builtin::Command for KillCommand {
                         context.command_name,
                         pid_or_job_spec
                     )?;
-                    return Ok(builtin::ExitCode::Custom(1));
+                    return Ok(builtins::ExitCode::Custom(1));
                 }
             } else {
                 let pid = pid_or_job_spec.parse::<i32>()?;

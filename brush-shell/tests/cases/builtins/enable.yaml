@@ -7,7 +7,9 @@ cases:
     stdin: enable -n
 
   - name: "List all builtins"
-    stdin: enable
+    stdin: |
+      # List builtins but ignore any brush specific ones.
+      enable | grep -v brush
 
   - name: "Disable builtins"
     ignore_stderr: true

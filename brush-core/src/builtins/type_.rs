@@ -6,7 +6,7 @@ use clap::Parser;
 
 use crate::keywords;
 use crate::sys::fs::PathExt;
-use crate::{builtin, commands, Shell};
+use crate::{builtins, commands, Shell};
 
 /// Inspect the type of a named shell item.
 #[derive(Parser)]
@@ -45,12 +45,12 @@ enum ResolvedType {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for TypeCommand {
+impl builtins::Command for TypeCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
-        let mut result = builtin::ExitCode::Success;
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        let mut result = builtins::ExitCode::Success;
 
         for name in &self.names {
             let resolved_types = self.resolve_types(context.shell, name);
@@ -60,7 +60,7 @@ impl builtin::Command for TypeCommand {
                     writeln!(context.stderr(), "type: {name} not found")?;
                 }
 
-                result = builtin::ExitCode::Custom(1);
+                result = builtins::ExitCode::Custom(1);
                 continue;
             }
 

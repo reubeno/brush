@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Manage shopt-style options.
 #[derive(Parser)]
@@ -32,22 +32,22 @@ pub(crate) struct ShoptCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for ShoptCommand {
+impl builtins::Command for ShoptCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.set && self.unset {
             writeln!(
                 context.stderr(),
                 "cannot set and unset shell options simultaneously"
             )?;
-            return Ok(builtin::ExitCode::InvalidUsage);
+            return Ok(builtins::ExitCode::InvalidUsage);
         }
 
         if self.options.is_empty() {
             if self.quiet {
-                return Ok(builtin::ExitCode::Success);
+                return Ok(builtins::ExitCode::Success);
             }
 
             // Enumerate all options of the selected type.
@@ -84,9 +84,9 @@ impl builtin::Command for ShoptCommand {
                 }
             }
 
-            Ok(builtin::ExitCode::Success)
+            Ok(builtins::ExitCode::Success)
         } else {
-            let mut return_value = builtin::ExitCode::Success;
+            let mut return_value = builtins::ExitCode::Success;
 
             // Enumerate only the specified options.
             for option_name in &self.options {
@@ -104,7 +104,7 @@ impl builtin::Command for ShoptCommand {
                     } else {
                         let option_value = (option_definition.getter)(&context.shell.options);
                         if !option_value {
-                            return_value = builtin::ExitCode::Custom(1);
+                            return_value = builtins::ExitCode::Custom(1);
                         }
 
                         if !self.quiet {
@@ -135,7 +135,7 @@ impl builtin::Command for ShoptCommand {
                         context.command_name,
                         option_name
                     )?;
-                    return_value = builtin::ExitCode::Custom(1);
+                    return_value = builtins::ExitCode::Custom(1);
                 }
             }
 

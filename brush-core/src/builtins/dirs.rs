@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtin, commands};
+use crate::{builtins, commands};
 
 /// Manage the current directory stack.
 #[derive(Parser, Debug, Default)]
@@ -23,15 +23,14 @@ pub(crate) struct DirsCommand {
     print_one_per_line_with_index: bool,
     //
     // TODO: implement +N and -N
-    //
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for DirsCommand {
+impl builtins::Command for DirsCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.clear {
             context.shell.directory_stack.clear();
         } else {
@@ -64,9 +63,9 @@ impl builtin::Command for DirsCommand {
                 }
             }
 
-            return Ok(builtin::ExitCode::Success);
+            return Ok(builtins::ExitCode::Success);
         }
 
-        Ok(builtin::ExitCode::Success)
+        Ok(builtins::ExitCode::Success)
     }
 }

@@ -6,8 +6,7 @@
 pub mod completion;
 
 mod arithmetic;
-mod builtin;
-mod builtins;
+pub mod builtins;
 mod commands;
 mod env;
 mod error;
@@ -30,6 +29,7 @@ mod tests;
 mod traps;
 mod variables;
 
+pub use commands::ExecutionContext;
 pub use error::Error;
 pub use interp::{ExecutionParameters, ExecutionResult};
 pub use shell::{CreateOptions, Shell};

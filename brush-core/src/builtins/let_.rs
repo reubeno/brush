@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{arithmetic::Evaluatable, builtin, commands};
+use crate::{arithmetic::Evaluatable, builtins, commands};
 
 /// Evalute arithmetic expressions.
 #[derive(Parser)]
@@ -12,12 +12,12 @@ pub(crate) struct LetCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for LetCommand {
+impl builtins::Command for LetCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtin::ExitCode, crate::error::Error> {
-        let mut exit_code = builtin::ExitCode::InvalidUsage;
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        let mut exit_code = builtins::ExitCode::InvalidUsage;
 
         if self.exprs.is_empty() {
             writeln!(context.stderr(), "missing expression")?;
@@ -29,9 +29,9 @@ impl builtin::Command for LetCommand {
             let evaluated = parsed.eval(context.shell).await?;
 
             if evaluated == 0 {
-                exit_code = builtin::ExitCode::Custom(1);
+                exit_code = builtins::ExitCode::Custom(1);
             } else {
-                exit_code = builtin::ExitCode::Custom(0);
+                exit_code = builtins::ExitCode::Custom(0);
             }
         }
 

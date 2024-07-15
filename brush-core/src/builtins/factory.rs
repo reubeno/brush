@@ -2,59 +2,17 @@ use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::io::Write;
 
-use crate::builtin;
+#[allow(clippy::wildcard_imports)]
+use super::*;
+
+use crate::builtins;
 use crate::commands::{self, CommandArg};
 use crate::error;
 
-mod alias;
-mod bg;
-mod break_;
-mod builtin_;
-mod cd;
-mod colon;
-mod command;
-mod complete;
-mod continue_;
-mod declare;
-mod dirs;
-mod dot;
-mod echo;
-mod enable;
-mod eval;
-#[cfg(unix)]
-mod exec;
-mod exit;
-mod export;
-mod false_;
-mod fg;
-mod getopts;
-mod help;
-mod jobs;
-#[cfg(unix)]
-mod kill;
-mod let_;
-mod popd;
-mod printf;
-mod pushd;
-mod pwd;
-mod read;
-mod return_;
-mod set;
-mod shift;
-mod shopt;
-mod test;
-mod trap;
-mod true_;
-mod type_;
-#[cfg(unix)]
-mod umask;
-mod unalias;
-mod unimp;
-mod unset;
-mod wait;
-
-fn builtin<B: builtin::Command + Send + Sync>() -> builtin::Registration {
-    builtin::Registration {
+/// Returns a built-in command registration, given an implementation of the
+/// `Command` trait.
+pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
+    builtins::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -63,8 +21,8 @@ fn builtin<B: builtin::Command + Send + Sync>() -> builtin::Registration {
     }
 }
 
-fn special_builtin<B: builtin::Command + Send + Sync>() -> builtin::Registration {
-    builtin::Registration {
+fn special_builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
+    builtins::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -73,8 +31,8 @@ fn special_builtin<B: builtin::Command + Send + Sync>() -> builtin::Registration
     }
 }
 
-fn decl_builtin<B: builtin::DeclarationCommand + Send + Sync>() -> builtin::Registration {
-    builtin::Registration {
+fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
+    builtins::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -83,8 +41,8 @@ fn decl_builtin<B: builtin::DeclarationCommand + Send + Sync>() -> builtin::Regi
     }
 }
 
-fn special_decl_builtin<B: builtin::DeclarationCommand + Send + Sync>() -> builtin::Registration {
-    builtin::Registration {
+fn special_decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
+    builtins::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
@@ -93,24 +51,24 @@ fn special_decl_builtin<B: builtin::DeclarationCommand + Send + Sync>() -> built
     }
 }
 
-fn get_builtin_content<T: builtin::Command + Send + Sync>(
+fn get_builtin_content<T: builtins::Command + Send + Sync>(
     name: &str,
-    content_type: builtin::ContentType,
+    content_type: builtins::ContentType,
 ) -> Result<String, error::Error> {
     T::get_content(name, content_type)
 }
 
-fn exec_builtin<T: builtin::Command + Send + Sync>(
+fn exec_builtin<T: builtins::Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<builtin::BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<builtins::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_builtin_impl<T: builtin::Command + Send + Sync>(
+async fn exec_builtin_impl<T: builtins::Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<builtin::BuiltinResult, error::Error> {
+) -> Result<builtins::BuiltinResult, error::Error> {
     let plain_args = args.into_iter().map(|arg| match arg {
         CommandArg::String(s) => s,
         CommandArg::Assignment(a) => a.to_string(),
@@ -121,28 +79,28 @@ async fn exec_builtin_impl<T: builtin::Command + Send + Sync>(
         Ok(command) => command,
         Err(e) => {
             writeln!(context.stderr(), "{e}")?;
-            return Ok(builtin::BuiltinResult {
-                exit_code: builtin::ExitCode::InvalidUsage,
+            return Ok(builtins::BuiltinResult {
+                exit_code: builtins::ExitCode::InvalidUsage,
             });
         }
     };
 
-    Ok(builtin::BuiltinResult {
+    Ok(builtins::BuiltinResult {
         exit_code: command.execute(context).await?,
     })
 }
 
-fn exec_declaration_builtin<T: builtin::DeclarationCommand + Send + Sync>(
+fn exec_declaration_builtin<T: builtins::DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<builtin::BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<builtins::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_declaration_builtin_impl<T: builtin::DeclarationCommand + Send + Sync>(
+async fn exec_declaration_builtin_impl<T: builtins::DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<builtin::BuiltinResult, error::Error> {
+) -> Result<builtins::BuiltinResult, error::Error> {
     let mut options = vec![];
     let mut declarations = vec![];
 
@@ -160,15 +118,15 @@ async fn exec_declaration_builtin_impl<T: builtin::DeclarationCommand + Send + S
         Ok(command) => command,
         Err(e) => {
             writeln!(context.stderr(), "{e}")?;
-            return Ok(builtin::BuiltinResult {
-                exit_code: builtin::ExitCode::InvalidUsage,
+            return Ok(builtins::BuiltinResult {
+                exit_code: builtins::ExitCode::InvalidUsage,
             });
         }
     };
 
     command.set_declarations(declarations);
 
-    Ok(builtin::BuiltinResult {
+    Ok(builtins::BuiltinResult {
         exit_code: command.execute(context).await?,
     })
 }
@@ -176,8 +134,8 @@ async fn exec_declaration_builtin_impl<T: builtin::DeclarationCommand + Send + S
 #[allow(clippy::too_many_lines)]
 pub(crate) fn get_default_builtins(
     options: &crate::CreateOptions,
-) -> HashMap<String, builtin::Registration> {
-    let mut m = HashMap::<String, builtin::Registration>::new();
+) -> HashMap<String, builtins::Registration> {
+    let mut m = HashMap::<String, builtins::Registration>::new();
 
     //
     // POSIX special builtins

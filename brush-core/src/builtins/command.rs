@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fmt::Display, io::Write};
 
-use crate::{builtin, commands, error, shell, sys::fs::PathExt};
+use crate::{builtins, commands, error, shell, sys::fs::PathExt};
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Parser)]
@@ -27,11 +27,11 @@ pub(crate) struct CommandCommand {
 }
 
 #[async_trait::async_trait]
-impl builtin::Command for CommandCommand {
+impl builtins::Command for CommandCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<builtin::ExitCode, error::Error> {
+    ) -> Result<builtins::ExitCode, error::Error> {
         if self.use_default_path {
             return error::unimp("command -p");
         }
@@ -50,7 +50,7 @@ impl builtin::Command for CommandCommand {
                         }
                     }
                 }
-                Ok(builtin::ExitCode::Success)
+                Ok(builtins::ExitCode::Success)
             } else {
                 if self.print_verbose_description {
                     writeln!(
@@ -59,7 +59,7 @@ impl builtin::Command for CommandCommand {
                         self.command_name
                     )?;
                 }
-                Ok(builtin::ExitCode::Custom(1))
+                Ok(builtins::ExitCode::Custom(1))
             }
         } else {
             self.execute_command(context).await
@@ -115,7 +115,7 @@ impl CommandCommand {
     async fn execute_command(
         &self,
         mut context: commands::ExecutionContext<'_>,
-    ) -> Result<builtin::ExitCode, error::Error> {
+    ) -> Result<builtins::ExitCode, error::Error> {
         let args: Vec<_> = std::iter::once(&self.command_name)
             .chain(self.args.iter())
             .map(|arg| arg.into())
@@ -130,9 +130,9 @@ impl CommandCommand {
             commands::SpawnResult::SpawnedChild(mut child) => {
                 let real_result = child.wait().await?;
                 let exit_code = real_result.code().unwrap_or(1);
-                Ok(builtin::ExitCode::Custom(exit_code as u8))
+                Ok(builtins::ExitCode::Custom(exit_code as u8))
             }
-            commands::SpawnResult::ImmediateExit(code) => Ok(builtin::ExitCode::Custom(code)),
+            commands::SpawnResult::ImmediateExit(code) => Ok(builtins::ExitCode::Custom(code)),
             commands::SpawnResult::ExitShell(_)
             | commands::SpawnResult::ReturnFromFunctionOrScript(_)
             | commands::SpawnResult::BreakLoop(_)
