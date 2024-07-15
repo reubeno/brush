@@ -58,6 +58,7 @@ impl ExecutionContext<'_> {
     }
 
     /// Returns the file descriptor with the given number.
+    #[allow(clippy::unwrap_in_result)]
     pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
         self.open_files.files.get(&fd).map(|f| f.try_dup().unwrap())
     }

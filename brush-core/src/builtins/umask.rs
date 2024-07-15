@@ -1,6 +1,7 @@
 use crate::{builtin, commands, error};
 use cfg_if::cfg_if;
 use clap::Parser;
+#[cfg(not(target_os = "linux"))]
 use nix::sys::stat::Mode;
 use std::io::Write;
 

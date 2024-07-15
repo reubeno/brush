@@ -367,7 +367,7 @@ peg::parser! {
             left:word() (specific_word("==") / specific_word("=")) right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringExactlyMatchesPattern, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringDoesNotExactlyMatchPattern, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_word("=~") right:regex_word()  {
-                if right.value.starts_with(|c| matches!(c, '\'' | '\"')) {
+                if right.value.starts_with(['\'', '\"']) {
                     // TODO: Confirm it ends with that too?
                     ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringContainsSubstring, ast::Word::from(left), right)
                 } else {

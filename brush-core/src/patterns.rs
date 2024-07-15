@@ -79,6 +79,7 @@ impl Pattern {
     /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     /// * `path_filter` - Optionally provides a function that filters paths after expansion.
     #[allow(clippy::too_many_lines)]
+    #[allow(clippy::unwrap_in_result)]
     pub(crate) fn expand<PF>(
         &self,
         working_dir: &Path,
@@ -309,7 +310,7 @@ impl Pattern {
 
 fn requires_expansion(s: &str) -> bool {
     // TODO: Make this more accurate.
-    s.contains(|c| matches!(c, '*' | '?' | '[' | ']' | '(' | ')'))
+    s.contains(['*', '?', '[', ']', '(', ')'])
 }
 
 fn escape_for_regex(s: &str) -> String {
