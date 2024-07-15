@@ -20,7 +20,7 @@ workspace = true
 [dependencies]
 brush-parser = { version = "^0.2.3", path = "../brush-parser" }
 brush-core = { version = "^0.2.3", path = "../brush-core" }
-thiserror = "1.0.61"
+thiserror = "1.0.62"
 tracing = "0.1.40"
 
 [target.'cfg(any(windows, unix))'.dependencies]

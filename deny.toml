@@ -82,6 +82,8 @@ skip = [
 ]
 skip-tree = [
     { crate = "windows-sys", reason = "several crates use outdated versions" },
+    { crate = "windows-core", reason = "several crates use outdated versions" },
+    { crate = "windows", reason = "several crates use outdated versions" },
     { crate = "nix", reason = "there are multiple versions floating" },
 ]
 
