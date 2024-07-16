@@ -60,8 +60,8 @@ fuzz_target!(|input: String| {
     // Ignore known problematic cases without actually running them.
     if input.is_empty()
         || input.contains(|c: char| c.is_ascii_control() || !c.is_ascii()) // non-ascii chars (or control sequences)
-        || input.contains("!") // history expansions
-        || (input.contains("[") && !input.contains("]")) // ???
+        || input.contains('!') // history expansions
+        || (input.contains('[') && !input.contains(']')) // ???
         || input.contains("<<") // weirdness with here docs
         || input.ends_with('\\') // unterminated trailing escape char?
         || input.contains("|&")

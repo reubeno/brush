@@ -345,6 +345,7 @@ impl Execute for ast::Pipeline {
         let mut pids = vec![];
 
         while let Some(child) = spawn_results.pop_front() {
+            #[allow(clippy::ignored_unit_patterns)]
             match child {
                 SpawnResult::SpawnedChild(child) => {
                     if let Some(pid) = child.id() {

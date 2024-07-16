@@ -932,7 +932,7 @@ fn get_completions_using_basic_lookup(shell: &Shell, context: &Context) -> Answe
     {
         candidates = candidates
             .into_iter()
-            .map(|c| c.replace("\\", "/"))
+            .map(|c| c.replace('\\', "/"))
             .collect();
     }
 
