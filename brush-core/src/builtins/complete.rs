@@ -473,20 +473,25 @@ impl builtins::Command for CompGenCommand {
 /// Set programmable command completion options.
 #[derive(Parser)]
 pub(crate) struct CompOptCommand {
+    /// Update the default completion settings.
     #[arg(short = 'D')]
     update_default: bool,
 
+    /// Update the completion settings for empty lines.
     #[arg(short = 'E')]
     update_empty: bool,
 
+    /// Update the completion settings for the initial word of the input line.
     #[arg(short = 'I')]
     update_initial_word: bool,
 
+    /// Enable the specified option for selected completion scenarios.
     #[arg(short = 'o')]
     enabled_options: Vec<CompleteOption>,
     #[arg(long = concat!("+o"), hide = true)]
     disabled_options: Vec<CompleteOption>,
 
+    /// If specified, scopes updates to completions of the named commands.
     names: Vec<String>,
 }
 

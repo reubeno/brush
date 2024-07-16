@@ -839,18 +839,14 @@ impl Config {
 
         // Try to generate completions.
         if let Some(spec) = found_spec {
-            let result = spec
-                .to_owned()
+            spec.to_owned()
                 .get_completions(shell, &context)
                 .await
-                .unwrap_or_else(|_err| Answer::Candidates(vec![], ProcessingOptions::default()));
-
-            if !matches!(&result, Answer::Candidates(candidates, _) if candidates.is_empty()) {
-                return result;
-            }
+                .unwrap_or_else(|_err| Answer::Candidates(vec![], ProcessingOptions::default()))
+        } else {
+            // If we didn't find a spec, then fall back to basic completion.
+            get_completions_using_basic_lookup(shell, &context)
         }
-
-        get_completions_using_basic_lookup(shell, &context)
     }
 }
 
