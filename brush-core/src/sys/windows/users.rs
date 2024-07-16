@@ -23,14 +23,17 @@ pub(crate) fn get_effective_gid() -> Result<u32, error::Error> {
 }
 
 pub(crate) fn get_current_username() -> Result<String, error::Error> {
-    Ok(whoami::username())
+    let username = whoami::fallible::username()?;
+    Ok(username)
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
     // TODO: implement some version of this for Windows
     Ok(vec![])
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
     // TODO: implement some version of this for Windows
     Ok(vec![])

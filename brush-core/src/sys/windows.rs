@@ -1,6 +1,6 @@
 pub(crate) use crate::sys::os_pipe as pipes;
 pub(crate) use crate::sys::stubs::fs;
-pub(crate) use crate::sys::stubs::network;
+pub(crate) mod network;
 
 pub(crate) mod signal {
     pub(crate) use crate::sys::stubs::signal::*;
