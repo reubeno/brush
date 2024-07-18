@@ -101,7 +101,7 @@ peg::parser! {
         rule _() -> () = quiet!{[' ' | '\t' | '\n' | '\r']*} {}
 
         rule literal_number() -> i64 =
-            // TODO: handle binary?
+            // TODO: handle explicit radix (e.g., <base>#<literal>) for bases 2 through 64
             "0" ['x' | 'X'] s:$(['0'..='9' | 'a'..='f' | 'A'..='F']*) {? i64::from_str_radix(s, 16).or(Err("i64")) } /
             s:$("0" ['0'..='8']*) {? i64::from_str_radix(s, 8).or(Err("i64")) } /
             s:$(['1'..='9'] ['0'..='9']*) {? s.parse().or(Err("i64")) }
