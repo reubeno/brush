@@ -224,17 +224,17 @@ jobs:
         run: cargo fmt --check --all
 
       - name: Check
-        run: cargo check --all-targets
+        run: cargo check --all-features --all-targets
 
       - name: Deny check
         run: |
           set -euo pipefail
           cargo binstall --no-confirm --force cargo-deny
-          cargo deny check
+          cargo deny --all-features check all
 
       - name: Clippy check
         if: matrix.rust-version == 'stable'
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-features --all-targets
 
   benchmark:
     if: github.event_name == 'pull_request'
