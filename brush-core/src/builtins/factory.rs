@@ -9,6 +9,31 @@ use crate::builtins;
 use crate::commands::{self, CommandArg};
 use crate::error;
 
+/// A simple command that can be registered as a built-in.
+pub trait SimpleCommand {
+    /// Returns the content of the built-in command.
+    fn get_content(name: &str, content_type: builtins::ContentType)
+        -> Result<String, error::Error>;
+
+    /// Executes the built-in command.
+    fn execute(
+        context: commands::ExecutionContext<'_>,
+        args: &[&str],
+    ) -> Result<builtins::BuiltinResult, error::Error>;
+}
+
+/// Returns a built-in command registration, given an implementation of the
+/// `SimpleCommand` trait.
+pub fn simple_builtin<B: SimpleCommand + Send + Sync>() -> builtins::Registration {
+    builtins::Registration {
+        execute_func: exec_simple_builtin::<B>,
+        content_func: B::get_content,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: false,
+    }
+}
+
 /// Returns a built-in command registration, given an implementation of the
 /// `Command` trait.
 pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
@@ -56,6 +81,31 @@ fn get_builtin_content<T: builtins::Command + Send + Sync>(
     content_type: builtins::ContentType,
 ) -> Result<String, error::Error> {
     T::get_content(name, content_type)
+}
+
+fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<builtins::BuiltinResult, error::Error>> {
+    Box::pin(async move { exec_simple_builtin_impl::<T>(context, args).await })
+}
+
+#[allow(clippy::unused_async)]
+async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<builtins::BuiltinResult, error::Error> {
+    let plain_args: Vec<_> = args
+        .into_iter()
+        .map(|arg| match arg {
+            CommandArg::String(s) => s,
+            CommandArg::Assignment(a) => a.to_string(),
+        })
+        .collect();
+
+    let plain_args: Vec<_> = plain_args.iter().map(AsRef::as_ref).collect();
+
+    T::execute(context, plain_args.as_slice())
 }
 
 fn exec_builtin<T: builtins::Command + Send + Sync>(
