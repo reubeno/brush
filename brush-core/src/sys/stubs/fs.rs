@@ -1,17 +1,14 @@
 #[cfg(not(unix))]
 impl crate::sys::fs::PathExt for std::path::Path {
     fn readable(&self) -> bool {
-        // TODO: implement
         true
     }
 
     fn writable(&self) -> bool {
-        // TODO: implement
         true
     }
 
     fn executable(&self) -> bool {
-        // TODO: implement
         true
     }
 
@@ -46,12 +43,10 @@ impl crate::sys::fs::PathExt for std::path::Path {
 
 pub(crate) trait StubMetadataExt {
     fn gid(&self) -> u32 {
-        // TODO: implement
         0
     }
 
     fn uid(&self) -> u32 {
-        // TODO: implement
         0
     }
 }
