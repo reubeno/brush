@@ -56,8 +56,8 @@ mod unimp;
 mod unset;
 mod wait;
 
-pub use factory::builtin;
 pub(crate) use factory::get_default_builtins;
+pub use factory::{builtin, simple_builtin, SimpleCommand};
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.
@@ -160,6 +160,14 @@ pub type CommandExecuteFunc = fn(
     Vec<commands::CommandArg>,
 ) -> BoxFuture<'_, Result<BuiltinResult, error::Error>>;
 
+/// Type of a function to retrieve help content for a built-in command.
+///
+/// # Arguments
+///
+/// * `name` - The name of the command.
+/// * `content_type` - The type of content to retrieve.
+pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Error>;
+
 /// Trait implemented by built-in shell commands.
 #[async_trait::async_trait]
 pub trait Command: Parser {
@@ -256,7 +264,7 @@ pub struct Registration {
     pub execute_func: CommandExecuteFunc,
 
     /// Function to retrieve the builtin's content/help text.
-    pub content_func: fn(&str, ContentType) -> Result<String, error::Error>,
+    pub content_func: CommandContentFunc,
 
     /// Has this registration been disabled?
     pub disabled: bool,
