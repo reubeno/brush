@@ -3,9 +3,14 @@
 # ref: https://release-plz.ieni.dev/docs/extra/single-changelog
 changelog_config = "cliff.toml"
 changelog_update = false
+git_release_enable = false
 publish = true
 
 [[package]]
 name = "brush-shell"
 changelog_update = true
 changelog_path = "./CHANGELOG.md"
+changelog_include = ["brush-core", "brush-interactive-shell", "brush-parser"]
+git_release_enable = true
+git_release_name = "brush v{{ version }}"
+git_release_body = ""
