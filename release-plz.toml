@@ -9,3 +9,4 @@ publish = true
 name = "brush-shell"
 changelog_update = true
 changelog_path = "./CHANGELOG.md"
+changelog_include = ["brush-core", "brush-interactive-shell", "brush-parser"]
