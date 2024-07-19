@@ -52,11 +52,14 @@ impl InteractiveShell {
 
         let mut editor = Self::new_editor(options, shell)?;
         if let Some(history_file_path) = &history_file_path {
+            // If the history file doesn't already exist, then make a best-effort attempt.
+            // to create it.
             if !history_file_path.exists() {
-                std::fs::File::create(history_file_path)?;
+                let _ = std::fs::File::create(history_file_path);
             }
 
-            editor.load_history(history_file_path)?;
+            // Make a best effort attempt to load the history file.
+            let _ = editor.load_history(history_file_path);
         }
 
         Ok(InteractiveShell {
