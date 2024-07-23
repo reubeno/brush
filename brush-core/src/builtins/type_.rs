@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{io::Write, sync::Arc};
 
 use brush_parser::ast;
@@ -160,7 +160,7 @@ impl TypeCommand {
 
         // Look in path.
         if name.contains(std::path::MAIN_SEPARATOR) {
-            if std::path::Path::new(name).executable() {
+            if shell.get_absolute_path(Path::new(name)).executable() {
                 types.push(ResolvedType::File(PathBuf::from(name)));
             }
         } else {

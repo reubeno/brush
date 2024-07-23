@@ -6,6 +6,7 @@ use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::arithmetic::ExpandAndEvaluate;
@@ -1272,20 +1273,26 @@ pub(crate) async fn setup_redirect<'a>(
 ) -> Result<Option<u32>, error::Error> {
     match redirect {
         ast::IoRedirect::OutputAndError(f, append) => {
-            let mut expanded_file_path = expansion::full_expand_and_split_word(shell, f).await?;
-            if expanded_file_path.len() != 1 {
+            let mut expanded_fields = expansion::full_expand_and_split_word(shell, f).await?;
+            if expanded_fields.len() != 1 {
                 return Err(error::Error::InvalidRedirection);
             }
 
-            let expanded_file_path = expanded_file_path.remove(0);
+            let expanded_file_path: PathBuf =
+                shell.get_absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
             let opened_file = std::fs::File::options()
                 .create(true)
                 .write(true)
                 .truncate(!*append)
                 .append(*append)
-                .open(expanded_file_path.as_str())
-                .map_err(|err| error::Error::RedirectionFailure(expanded_file_path, err))?;
+                .open(expanded_file_path.as_path())
+                .map_err(|err| {
+                    error::Error::RedirectionFailure(
+                        expanded_file_path.to_string_lossy().to_string(),
+                        err,
+                    )
+                })?;
 
             let stdout_file = OpenFile::File(opened_file);
             let stderr_file = stdout_file.try_dup()?;
@@ -1345,18 +1352,23 @@ pub(crate) async fn setup_redirect<'a>(
 
                     fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
-                    let mut expanded_file_path =
+                    let mut expanded_fields =
                         expansion::full_expand_and_split_word(shell, f).await?;
 
-                    if expanded_file_path.len() != 1 {
+                    if expanded_fields.len() != 1 {
                         return Err(error::Error::InvalidRedirection);
                     }
 
-                    let expanded_file_path = expanded_file_path.remove(0);
+                    let expanded_file_path: PathBuf =
+                        shell.get_absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
-                    let opened_file = options
-                        .open(expanded_file_path.as_str())
-                        .map_err(|err| error::Error::RedirectionFailure(expanded_file_path, err))?;
+                    let opened_file =
+                        options.open(expanded_file_path.as_path()).map_err(|err| {
+                            error::Error::RedirectionFailure(
+                                expanded_file_path.to_string_lossy().to_string(),
+                                err,
+                            )
+                        })?;
                     target_file = OpenFile::File(opened_file);
                 }
                 ast::IoFileRedirectTarget::Fd(fd) => {
