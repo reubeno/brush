@@ -48,9 +48,6 @@ jobs:
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.7.4
-
       - name: Build
         run: cargo build --release
 
@@ -70,12 +67,15 @@ jobs:
           - target: "aarch64-unknown-linux-gnu"
             arch: "aarch64"
             os: "Linux"
+            binary_name: "brush"
           - target: "wasm32-wasip1"
             arch: "wasm32"
             os: "WASI-0.1"
+            binary_name: "brush.wasm"
           - target: "x86_64-pc-windows-gnu"
             arch: "x86_64"
             os: "Windows"
+            binary_name: "brush.exe"
 
     steps:
       - name: Checkout
@@ -110,7 +110,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/brush
+          path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
   test:
     name: "Test"
