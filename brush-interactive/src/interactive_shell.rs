@@ -236,6 +236,8 @@ impl EditorHelper {
         line: &str,
         pos: usize,
     ) -> rustyline::Result<(usize, Vec<rustyline::completion::Pair>)> {
+        let working_dir = self.shell.working_dir.clone();
+
         // Intentionally ignore any errors that arise.
         let completion_future = self.shell.get_completions(line, pos);
         tokio::pin!(completion_future);
@@ -261,9 +263,17 @@ impl EditorHelper {
         if completions.options.treat_as_filenames {
             for candidate in &mut completions.candidates {
                 // Check if it's a directory.
-                if !candidate.ends_with(std::path::MAIN_SEPARATOR) && Path::new(candidate).is_dir()
-                {
-                    candidate.push(std::path::MAIN_SEPARATOR);
+                if !candidate.ends_with(std::path::MAIN_SEPARATOR) {
+                    let candidate_path = Path::new(candidate);
+                    let abs_candidate_path = if candidate_path.is_absolute() {
+                        PathBuf::from(candidate_path)
+                    } else {
+                        working_dir.join(candidate_path)
+                    };
+
+                    if abs_candidate_path.is_dir() {
+                        candidate.push(std::path::MAIN_SEPARATOR);
+                    }
                 }
             }
         }

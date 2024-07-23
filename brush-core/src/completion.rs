@@ -853,7 +853,7 @@ impl Config {
 fn get_file_completions(shell: &Shell, context: &Context, must_be_dir: bool) -> Vec<String> {
     let glob = std::format!("{}*", context.token_to_complete);
 
-    let path_filter = |path: &Path| !must_be_dir || path.is_dir();
+    let path_filter = |path: &Path| !must_be_dir || shell.get_absolute_path(path).is_dir();
 
     // TODO: Pass through quoting.
     patterns::Pattern::from(glob)
