@@ -244,7 +244,7 @@ checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
 
 [[package]]
 name = "brush-core"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "brush-interactive"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "brush-core",
  "brush-parser",
@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "brush-parser"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "brush-shell"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "assert_cmd",

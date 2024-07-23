@@ -1,7 +1,7 @@
 [package]
 name = "brush-core"
 description = "Reusable core of a POSIX/bash shell (used by brush-shell)"
-version = "0.2.4"
+version = "0.2.5"
 categories.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -19,7 +19,7 @@ workspace = true
 [dependencies]
 async-recursion = "1.1.0"
 async-trait = "0.1.81"
-brush-parser = { version = "^0.2.4", path = "../brush-parser" }
+brush-parser = { version = "^0.2.5", path = "../brush-parser" }
 cached = "0.53.0"
 cfg-if = "1.0.0"
 # N.B. Pin to 4.4.18 for now to keep to 1.72.0 as MSRV; 4.5.x requires a later version.
