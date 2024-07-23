@@ -1,7 +1,7 @@
 [package]
 name = "brush-interactive"
 description = "Interactive layer of brush-shell"
-version = "0.2.5"
+version = "0.2.6"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -19,7 +19,7 @@ workspace = true
 
 [dependencies]
 brush-parser = { version = "^0.2.5", path = "../brush-parser" }
-brush-core = { version = "^0.2.5", path = "../brush-core" }
+brush-core = { version = "^0.2.6", path = "../brush-core" }
 thiserror = "1.0.62"
 tracing = "0.1.40"
 
