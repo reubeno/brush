@@ -373,7 +373,9 @@ impl Shell {
     ) -> Result<ExecutionResult, error::Error> {
         tracing::debug!("sourcing: {}", path.display());
 
-        let opened_file = std::fs::File::open(path)
+        let path_to_open = self.get_absolute_path(path);
+
+        let opened_file = std::fs::File::open(path_to_open)
             .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e))?;
 
         let file_metadata = opened_file
@@ -879,17 +881,26 @@ impl Shell {
         executables
     }
 
+    /// Gets the absolute form of the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to get the absolute form of.
+    pub(crate) fn get_absolute_path(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() {
+            path.to_owned()
+        } else {
+            self.working_dir.join(path)
+        }
+    }
+
     /// Sets the shell's current working directory to the given path.
     ///
     /// # Arguments
     ///
     /// * `target_dir` - The path to set as the working directory.
     pub(crate) fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
-        let abs_path = if target_dir.is_absolute() {
-            PathBuf::from(target_dir)
-        } else {
-            self.working_dir.join(target_dir)
-        };
+        let abs_path = self.get_absolute_path(target_dir);
 
         match std::fs::metadata(&abs_path) {
             Ok(m) => {

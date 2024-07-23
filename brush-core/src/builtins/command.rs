@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::{fmt::Display, io::Write};
+use std::{fmt::Display, io::Write, path::Path};
 
 use crate::{builtins, commands, error, shell, sys::fs::PathExt};
 
@@ -86,7 +86,7 @@ impl CommandCommand {
     fn try_find_command(&self, shell: &shell::Shell) -> Option<FoundCommand> {
         // Look in path.
         if self.command_name.contains(std::path::MAIN_SEPARATOR) {
-            let candidate_path = std::path::Path::new(&self.command_name);
+            let candidate_path = shell.get_absolute_path(Path::new(&self.command_name));
             if candidate_path.executable() {
                 Some(FoundCommand::External(
                     candidate_path
