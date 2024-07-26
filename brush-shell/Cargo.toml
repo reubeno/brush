@@ -29,8 +29,7 @@ async-trait = "0.1.80"
 brush-interactive = { version = "^0.2.6", path = "../brush-interactive" }
 brush-parser = { version = "^0.2.5", path = "../brush-parser" }
 brush-core = { version = "^0.2.6", path = "../brush-core" }
-# N.B. Pin to 4.4.18 for now to keep to 1.72.0 as MSRV; 4.5.x requires a later version.
-clap = { version = "=4.4.18", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.11", features = ["derive", "wrap_help"] }
 const_format = "0.2.32"
 git-version = "0.3.9"
 lazy_static = "1.5.0"
@@ -45,8 +44,7 @@ tokio = { version = "1.37.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
 anyhow = "1.0.86"
-# N.B. Pin to 2.0.13 for now to keep to 1.72.0 as MSRV; 2.0.14 requires a later version.
-assert_cmd = "=2.0.13"
+assert_cmd = "2.0.15"
 assert_fs = "1.1.1"
 colored = "2.1.0"
 descape = "1.1.2"
