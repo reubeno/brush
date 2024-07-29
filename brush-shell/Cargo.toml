@@ -37,7 +37,7 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 
 [target.'cfg(not(any(windows, unix)))'.dependencies]
-tokio = { version = "1.37.0", features = ["rt", "sync"] }
+tokio = { version = "1.39.2", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 tokio = { version = "1.37.0", features = ["rt", "rt-multi-thread", "sync"] }
