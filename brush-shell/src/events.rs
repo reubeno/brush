@@ -69,6 +69,7 @@ impl TraceEventConfig {
         let layer = tracing_subscriber::fmt::layer()
             .with_writer(std::io::stderr)
             .without_time()
+            .with_target(false)
             .with_filter(reload_filter);
 
         if tracing_subscriber::registry()
