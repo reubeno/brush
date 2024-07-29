@@ -27,4 +27,4 @@ tracing = "0.1.40"
 rustyline = { package = "brush-rustyline-fork", version = "14.0.1", features = [
     "derive",
 ] }
-tokio = { version = "1.37.0", features = ["macros", "signal"] }
+tokio = { version = "1.39.2", features = ["macros", "signal"] }
