@@ -93,7 +93,7 @@ jobs:
           key: "${{ matrix.target }}"
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.7.4
+        uses: cargo-bins/cargo-binstall@v1.8.0
 
       - name: Install native prerequisites
         run: sudo apt-get update -y && sudo apt-get install -y gcc-aarch64-linux-gnu
@@ -132,7 +132,7 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.7.4
+        uses: cargo-bins/cargo-binstall@v1.8.0
 
       - name: Install cargo-llvm-cov
         run: cargo binstall --no-confirm --force cargo-llvm-cov
@@ -218,7 +218,7 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.7.4
+        uses: cargo-bins/cargo-binstall@v1.8.0
 
       - name: Format check
         run: cargo fmt --check --all
@@ -265,7 +265,7 @@ jobs:
             ./main
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.7.4
+        uses: cargo-bins/cargo-binstall@v1.8.0
 
       - name: Performance analysis on PR
         run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt
