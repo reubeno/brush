@@ -525,7 +525,9 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::WordPiece::AnsiCQuotedText(s) => {
                 let (expanded, _) =
                     escape::expand_backslash_escapes(s.as_str(), escape::EscapeMode::AnsiCQuotes)?;
-                Expansion::from(ExpansionPiece::Unsplittable(expanded))
+                Expansion::from(ExpansionPiece::Unsplittable(
+                    String::from_utf8_lossy(expanded.as_slice()).into_owned(),
+                ))
             }
             brush_parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
                 let mut fields: Vec<WordField> = vec![];
@@ -1469,7 +1471,7 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::ParameterTransformOp::ExpandEscapeSequences => {
                 let (result, _) =
                     escape::expand_backslash_escapes(s, escape::EscapeMode::AnsiCQuotes)?;
-                Ok(result)
+                Ok(String::from_utf8_lossy(result.as_slice()).into_owned())
             }
             brush_parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
                 separate_words: _separate_words,

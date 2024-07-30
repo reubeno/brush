@@ -43,7 +43,7 @@ impl builtins::Command for EchoCommand {
                     arg.as_str(),
                     escape::EscapeMode::EchoBuiltin,
                 )?;
-                s.push_str(expanded_arg.as_str());
+                s.push_str(&String::from_utf8_lossy(expanded_arg.as_slice()));
 
                 if !keep_going {
                     trailing_newline = false;
