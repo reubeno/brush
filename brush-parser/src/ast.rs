@@ -614,6 +614,25 @@ impl Display for CommandSuffix {
     }
 }
 
+/// Represents the I/O direction of a process substitution.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+pub enum ProcessSubstitutionKind {
+    /// The process is read from.
+    Read,
+    /// The process is written to.
+    Write,
+}
+
+impl Display for ProcessSubstitutionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProcessSubstitutionKind::Read => write!(f, "<"),
+            ProcessSubstitutionKind::Write => write!(f, ">"),
+        }
+    }
+}
+
 /// A prefix or suffix for a simple command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
@@ -624,6 +643,8 @@ pub enum CommandPrefixOrSuffixItem {
     Word(Word),
     /// An assignment/declaration word.
     AssignmentWord(Assignment, Word),
+    /// A process substitution.
+    ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
 }
 
 impl Display for CommandPrefixOrSuffixItem {
@@ -632,6 +653,9 @@ impl Display for CommandPrefixOrSuffixItem {
             CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{}", io_redirect),
             CommandPrefixOrSuffixItem::Word(word) => write!(f, "{}", word),
             CommandPrefixOrSuffixItem::AssignmentWord(_assignment, word) => write!(f, "{}", word),
+            CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
+                write!(f, "{}({})", kind, subshell_command)
+            }
         }
     }
 }
@@ -834,7 +858,7 @@ pub enum IoFileRedirectTarget {
     Fd(u32),
     /// Process substitution: substitution with the results of executing the given
     /// command in a subshell.
-    ProcessSubstitution(SubshellCommand),
+    ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
 }
 
 impl Display for IoFileRedirectTarget {
@@ -842,8 +866,8 @@ impl Display for IoFileRedirectTarget {
         match self {
             IoFileRedirectTarget::Filename(word) => write!(f, "{}", word),
             IoFileRedirectTarget::Fd(fd) => write!(f, "{}", fd),
-            IoFileRedirectTarget::ProcessSubstitution(subshell_command) => {
-                write!(f, "{}", subshell_command)
+            IoFileRedirectTarget::ProcessSubstitution(kind, subshell_command) => {
+                write!(f, "{kind}{subshell_command}")
             }
         }
     }
