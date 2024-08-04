@@ -558,6 +558,10 @@ peg::parser! {
 
         rule cmd_suffix() -> ast::CommandSuffix =
             s:(
+                non_posix_extensions_enabled() sub:process_substitution() {
+                    let (kind, subshell) = sub;
+                    ast::CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell)
+                } /
                 i:io_redirect() {
                     ast::CommandPrefixOrSuffixItem::IoRedirect(i)
                 } /
@@ -577,9 +581,9 @@ peg::parser! {
         // N.B. here strings are extensions to the POSIX standard.
         rule io_redirect() -> ast::IoRedirect =
             n:io_number()? f:io_file() {
-                let (kind, target) = f;
-                ast::IoRedirect::File(n, kind, target)
-            } /
+                    let (kind, target) = f;
+                    ast::IoRedirect::File(n, kind, target)
+                } /
             non_posix_extensions_enabled() specific_operator("&>>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target), true) } /
             non_posix_extensions_enabled() specific_operator("&>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target), false) } /
             non_posix_extensions_enabled() n:io_number()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
@@ -588,10 +592,8 @@ peg::parser! {
 
         // N.B. Process substitution forms are extensions to the POSIX standard.
         rule io_file() -> (ast::IoFileRedirectKind, ast::IoFileRedirectTarget) =
-            non_posix_extensions_enabled() specific_operator("<") s:subshell() { (ast::IoFileRedirectKind::Read, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
             specific_operator("<")  f:io_filename() { (ast::IoFileRedirectKind::Read, f) } /
             specific_operator("<&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
-            non_posix_extensions_enabled() specific_operator(">") s:subshell() { (ast::IoFileRedirectKind::Write, ast::IoFileRedirectTarget::ProcessSubstitution(s)) } /
             specific_operator(">")  f:io_filename() { (ast::IoFileRedirectKind::Write, f) } /
             specific_operator(">&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
             specific_operator(">>") f:io_filename() { (ast::IoFileRedirectKind::Append, f) } /
@@ -606,6 +608,10 @@ peg::parser! {
             w:[Token::Word(_, _)] {? w.to_str().parse().or(Err("io_fd u32")) }
 
         rule io_filename() -> ast::IoFileRedirectTarget =
+            non_posix_extensions_enabled() sub:process_substitution() {
+                let (kind, subshell) = sub;
+                ast::IoFileRedirectTarget::ProcessSubstitution(kind, subshell)
+            } /
             f:filename() { ast::IoFileRedirectTarget::Filename(ast::Word::from(f)) }
 
         rule filename() -> &'input Token =
@@ -617,6 +623,10 @@ peg::parser! {
 
         rule here_end() -> &'input Token =
             word()
+
+        rule process_substitution() -> (ast::ProcessSubstitutionKind, ast::SubshellCommand) =
+            specific_operator("<") s:subshell() { (ast::ProcessSubstitutionKind::Read, s) } /
+            specific_operator(">") s:subshell() { (ast::ProcessSubstitutionKind::Write, s) }
 
         rule newline_list() -> () =
             newline()+ {}

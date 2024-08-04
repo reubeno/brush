@@ -851,25 +851,27 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if let Some(installed_fd_num) =
-                        setup_redirect(&mut open_files, context.shell, redirect).await?
+                    if setup_redirect(&mut open_files, context.shell, redirect)
+                        .await?
+                        .is_none()
                     {
-                        if matches!(
-                            redirect,
-                            ast::IoRedirect::File(
-                                _,
-                                _,
-                                ast::IoFileRedirectTarget::ProcessSubstitution(_)
-                            )
-                        ) {
-                            args.push(CommandArg::String(std::format!(
-                                "/dev/fd/{installed_fd_num}"
-                            )));
-                        }
-                    } else {
                         // Something went wrong.
                         return Ok(SpawnResult::ImmediateExit(1));
                     }
+                }
+                CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
+                    let (installed_fd_num, substitution_file) = setup_process_substitution(
+                        &mut open_files,
+                        context.shell,
+                        kind,
+                        subshell_command,
+                    )?;
+
+                    open_files.files.insert(installed_fd_num, substitution_file);
+
+                    args.push(CommandArg::String(std::format!(
+                        "/dev/fd/{installed_fd_num}"
+                    )));
                 }
                 CommandPrefixOrSuffixItem::AssignmentWord(assignment, word) => {
                     if args.is_empty() {
@@ -1309,42 +1311,35 @@ pub(crate) async fn setup_redirect<'a>(
                 ast::IoFileRedirectTarget::Filename(f) => {
                     let mut options = std::fs::File::options();
 
-                    let default_fd_if_unspecified;
+                    let default_fd_if_unspecified = get_default_fd_for_redirect_kind(kind);
                     match kind {
                         ast::IoFileRedirectKind::Read => {
-                            default_fd_if_unspecified = 0;
                             options.read(true);
                         }
                         ast::IoFileRedirectKind::Write => {
                             // TODO: honor noclobber options
-                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.write(true);
                             options.truncate(true);
                         }
                         ast::IoFileRedirectKind::Append => {
-                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.append(true);
                         }
                         ast::IoFileRedirectKind::ReadAndWrite => {
-                            default_fd_if_unspecified = 0;
                             options.create(true);
                             options.read(true);
                             options.write(true);
                         }
                         ast::IoFileRedirectKind::Clobber => {
-                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.write(true);
                             options.truncate(true);
                         }
                         ast::IoFileRedirectKind::DuplicateInput => {
-                            default_fd_if_unspecified = 0;
                             options.read(true);
                         }
                         ast::IoFileRedirectKind::DuplicateOutput => {
-                            default_fd_if_unspecified = 1;
                             options.create(true);
                             options.write(true);
                         }
@@ -1389,56 +1384,25 @@ pub(crate) async fn setup_redirect<'a>(
                         return Ok(None);
                     }
                 }
-                ast::IoFileRedirectTarget::ProcessSubstitution(ast::SubshellCommand(
-                    subshell_cmd,
-                )) => {
+                ast::IoFileRedirectTarget::ProcessSubstitution(substitution_kind, subshell_cmd) => {
                     match kind {
-                        ast::IoFileRedirectKind::Read | ast::IoFileRedirectKind::Write => {
-                            // TODO: Don't execute synchronously!
-                            // Execute in a subshell.
-                            let mut subshell = shell.clone();
+                        ast::IoFileRedirectKind::Read
+                        | ast::IoFileRedirectKind::Write
+                        | ast::IoFileRedirectKind::Append
+                        | ast::IoFileRedirectKind::ReadAndWrite
+                        | ast::IoFileRedirectKind::Clobber => {
+                            let (substitution_fd, substitution_file) = setup_process_substitution(
+                                open_files,
+                                shell,
+                                substitution_kind,
+                                subshell_cmd,
+                            )?;
 
-                            // Set up pipe so we can connect to the command.
-                            let (reader, writer) = sys::pipes::pipe()?;
+                            target_file = substitution_file.try_dup()?;
+                            open_files.files.insert(substitution_fd, substitution_file);
 
-                            if matches!(kind, ast::IoFileRedirectKind::Read) {
-                                subshell
-                                    .open_files
-                                    .files
-                                    .insert(1, openfiles::OpenFile::PipeWriter(writer));
-                                target_file = OpenFile::PipeReader(reader);
-                            } else {
-                                subshell
-                                    .open_files
-                                    .files
-                                    .insert(0, openfiles::OpenFile::PipeReader(reader));
-                                target_file = OpenFile::PipeWriter(writer);
-                            }
-
-                            let exec_params = ExecutionParameters {
-                                open_files: subshell.open_files.clone(),
-                            };
-
-                            // TODO: inspect result of execution?
-                            let _ = subshell_cmd.execute(&mut subshell, &exec_params).await?;
-
-                            // Make sure the subshell + parameters are closed; among other
-                            // things, this ensures they're not holding onto the write end
-                            // of the pipe.
-                            drop(exec_params);
-                            drop(subshell);
-
-                            // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
-                            // available fd.
-                            let mut candidate_fd_num = 63;
-                            while open_files.files.contains_key(&candidate_fd_num) {
-                                candidate_fd_num -= 1;
-                                if candidate_fd_num == 0 {
-                                    return error::unimp("no available file descriptors");
-                                }
-                            }
-
-                            fd_num = candidate_fd_num;
+                            fd_num = specified_fd_num
+                                .unwrap_or_else(|| get_default_fd_for_redirect_kind(kind));
                         }
                         _ => return error::unimp("invalid process substitution"),
                     }
@@ -1473,6 +1437,73 @@ pub(crate) async fn setup_redirect<'a>(
             Ok(Some(fd_num))
         }
     }
+}
+
+fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {
+    match kind {
+        ast::IoFileRedirectKind::Read => 0,
+        ast::IoFileRedirectKind::Write => 1,
+        ast::IoFileRedirectKind::Append => 1,
+        ast::IoFileRedirectKind::ReadAndWrite => 0,
+        ast::IoFileRedirectKind::Clobber => 1,
+        ast::IoFileRedirectKind::DuplicateInput => 0,
+        ast::IoFileRedirectKind::DuplicateOutput => 1,
+    }
+}
+
+fn setup_process_substitution(
+    open_files: &mut OpenFiles,
+    shell: &mut Shell,
+    kind: &ast::ProcessSubstitutionKind,
+    subshell_cmd: &ast::SubshellCommand,
+) -> Result<(u32, OpenFile), error::Error> {
+    // TODO: Don't execute synchronously!
+    // Execute in a subshell.
+    let mut subshell = shell.clone();
+
+    // Set up pipe so we can connect to the command.
+    let (reader, writer) = sys::pipes::pipe()?;
+
+    let target_file = match kind {
+        ast::ProcessSubstitutionKind::Read => {
+            subshell
+                .open_files
+                .files
+                .insert(1, openfiles::OpenFile::PipeWriter(writer));
+            OpenFile::PipeReader(reader)
+        }
+        ast::ProcessSubstitutionKind::Write => {
+            subshell
+                .open_files
+                .files
+                .insert(0, openfiles::OpenFile::PipeReader(reader));
+            OpenFile::PipeWriter(writer)
+        }
+    };
+
+    let exec_params = ExecutionParameters {
+        open_files: subshell.open_files.clone(),
+    };
+
+    // Asynchronously spawn off the subshell; we intentionally don't block on its
+    // completion.
+    let subshell_cmd = subshell_cmd.to_owned();
+    tokio::spawn(async move {
+        // Intentionally ignore the result of the subshell command.
+        let _ = subshell_cmd.0.execute(&mut subshell, &exec_params).await;
+    });
+
+    // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
+    // available fd.
+    let mut candidate_fd_num = 63;
+    while open_files.files.contains_key(&candidate_fd_num) {
+        candidate_fd_num -= 1;
+        if candidate_fd_num == 0 {
+            return error::unimp("no available file descriptors");
+        }
+    }
+
+    Ok((candidate_fd_num, target_file))
 }
 
 #[allow(unused_variables)]
