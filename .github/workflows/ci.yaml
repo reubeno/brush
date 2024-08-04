@@ -92,9 +92,6 @@ jobs:
         with:
           key: "${{ matrix.target }}"
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.8.0
-
       - name: Install native prerequisites
         run: sudo apt-get update -y && sudo apt-get install -y gcc-aarch64-linux-gnu
 
@@ -131,11 +128,10 @@ jobs:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.8.0
-
       - name: Install cargo-llvm-cov
-        run: cargo binstall --no-confirm --force cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
 
       - name: Test
         run: |
@@ -178,6 +174,11 @@ jobs:
         with:
           artifact_download_workflow_names: "CI"
           filename: "codecov.xml"
+          overall_coverage_fail_threshold: 70
+          only_list_changed_files: ${{ github.event_name == 'pull_request' }}
+          fail_on_negative_difference: true
+          negative_difference_by: "overall"
+          negative_difference_threshold: 5
 
       - name: "Upload code coverage report"
         uses: actions/upload-artifact@v4
@@ -217,20 +218,19 @@ jobs:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.8.0
-
       - name: Format check
         run: cargo fmt --check --all
 
       - name: Check
         run: cargo check --all-features --all-targets
 
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
       - name: Deny check
-        run: |
-          set -euo pipefail
-          cargo binstall --no-confirm --force cargo-deny
-          cargo deny --all-features check all
+        run: cargo deny --all-features check all
 
       - name: Clippy check
         if: matrix.rust-version == 'stable'
@@ -263,9 +263,6 @@ jobs:
           workspaces: |
             ./pr
             ./main
-
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.8.0
 
       - name: Performance analysis on PR
         run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt

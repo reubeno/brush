@@ -15,7 +15,7 @@ args = parser.parse_args()
 class Benchmark:
     test_name: str
     duration_in_ns: int
-    deviation_in_ns: int
+    plus_or_minus_in_ns: int
 
 def parse_benchmarks_results(file_path: str) -> Dict[str, Benchmark]:
     benchmarks = {}
@@ -27,7 +27,7 @@ def parse_benchmarks_results(file_path: str) -> Dict[str, Benchmark]:
                 benchmark = Benchmark(
                     test_name=match.group(1),
                     duration_in_ns=int(match.group(2)),
-                    deviation_in_ns=int(match.group(3))
+                    plus_or_minus_in_ns=int(match.group(3))
                 )
 
                 benchmarks[benchmark.test_name] = benchmark
@@ -47,34 +47,50 @@ common = base_test_names & test_test_names
 print("# Performance Benchmark Report")
 
 if common:
-    print(f"| {'Benchmark name':36} | {'Baseline (ns)':>13} | {'Test/PR (ns)':>13} | {'Delta (ns)':>13} | {'Delta %'} |")
-    print(f"| {'-' * 36} | {'-' * 13} | {'-' * 13} | {'-' * 13} | {'-' * 7}")
+    print(f"| {'Benchmark name':38} | {'Baseline (μs)':>13} | {'Test/PR (μs)':>13} | {'Delta (μs)':>13} | {'Delta %':15} |")
+    print(f"| {'-' * 38} | {'-' * 13} | {'-' * 13} | {'-' * 13} | {'-' * 15} |")
     for name in sorted(common):
-        base_duration = base_results[name].duration_in_ns
-        test_duration = test_results[name].duration_in_ns
+        # Retrieve base data
+        base_duration = base_results[name].duration_in_ns / 1000.0
+        base_plus_or_minus = base_results[name].plus_or_minus_in_ns / 1000.0
+        base_plus_or_minus_percentage = (100.0 * base_plus_or_minus) / base_duration
 
+        # Retrieve test data
+        test_duration = test_results[name].duration_in_ns / 1000.0
+        test_plus_or_minus = test_results[name].plus_or_minus_in_ns / 1000.0
+        test_plus_or_minus_percentage = (100.0 * test_plus_or_minus) / test_duration
+
+        # Compute delta
         delta_duration = test_duration - base_duration
-        delta_str = str(delta_duration)
-        if delta_duration > 0:
-            delta_str = "+" + delta_str
-
         delta_percentage = (100.0 * delta_duration) / base_duration
-        delta_percentage_str = f"{delta_percentage:.2f}%"
-        if delta_percentage < 0:
-            delta_percentage_str = "🟢 " + delta_percentage_str
-        elif delta_percentage > 0:
-            delta_percentage_str = "🟠 +" + delta_percentage_str
-        else:
-            delta_percentage_str = "⚪  " + delta_percentage_str
+        abs_delta_percentage = abs(delta_percentage)
+        max_plus_or_minus_percentage = max(base_plus_or_minus_percentage, test_plus_or_minus_percentage)
 
-        print(f"| `{name:36}` | `{base_duration:10} ns` | `{test_duration:10} ns` | `{delta_str:>10} ns` | `{delta_percentage_str:>7}` |")
+        # Format
+        delta_str = f"{delta_duration:8.2f}"
+
+        if abs_delta_percentage > max_plus_or_minus_percentage:
+            if delta_percentage < 0:
+                delta_prefix = "🟢 "
+            elif delta_percentage > 0:
+                delta_prefix = "🟠 +"
+            else:
+                delta_prefix = "⚪  "
+
+            delta_percentage_str = f"{delta_prefix}{delta_percentage:.2f}%"
+        else:
+            delta_percentage_str = "⚪  Unchanged"
+
+        print(f"| `{name:36}` | `{base_duration:8.2f} μs` | `{test_duration:8.2f} μs` | `{delta_str:>8} μs` | `{delta_percentage_str:12}` |")
 
 if removed_from_base:
+    print()
     print("Benchmarks removed:")
     for name in removed_from_base:
         print(f"  - {name}")
 
 if added_by_test:
+    print()
     print("Benchmarks added:")
     for name in added_by_test:
         print(f"  - {name}")
