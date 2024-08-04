@@ -92,9 +92,14 @@ struct CommandLineArgs {
     enabled_log_events: Vec<events::TraceEvent>,
 
     /// Path to script to execute.
+    // allow any string as command_name similar to sh
+    #[clap(allow_hyphen_values = true)]
     script_path: Option<String>,
 
     /// Arguments for script.
+    // `allow_hyphen_values`: do not strip `-` from flags
+    // `num_args=1..`: consume everything
+    #[clap(allow_hyphen_values = true, num_args=1..)]
     script_args: Vec<String>,
 }
 
@@ -135,7 +140,33 @@ fn main() {
         }
     }
 
-    let parsed_args = CommandLineArgs::parse_from(&args);
+    // clap always interprets `--` as a separator and not as an argument
+    // See: clap-rs/clap/clap_builder/src/parser/parser.rs `if arg_os.is_escape() { ...; continue } // means if arg_os == '--' {}`
+    // but sh can handle `--` just fine
+    // so we split [..., 'arg1', '--', 'arg2', ...] to [..., 'arg1'] for processing in CommandLineArgs::parse_from
+    // and raw script_args ['--', 'arg2', ...]
+    let parsed_args = {
+        // simulate take_until and split the iter by "--"
+        let hyphen_pos = args.iter().position(|arg| arg == "--");
+        let mut iter = args.iter();
+        let mut parsed_args =
+            CommandLineArgs::parse_from(iter.by_ref().take(hyphen_pos.unwrap_or(args.len())));
+        // if the iter was split
+        if hyphen_pos.is_some() {
+            // if script_path has not been parsed yet
+            // use the first script_args[0] as script_path (`command_name` in sh) $0
+            // Posix: sh -c command_string [**command_name** [argument...]]
+            // See: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/sh.html
+            let first = iter.next().cloned();
+            if parsed_args.script_path.is_none() {
+                parsed_args.script_path = first;
+                parsed_args.script_args = iter.cloned().collect();
+            } else {
+                parsed_args.script_args = first.into_iter().chain(iter.cloned()).collect();
+            }
+        }
+        parsed_args
+    };
 
     //
     // Run.
