@@ -1,0 +1,7 @@
+name: "Builtins: echo"
+cases:
+  - name: "echo with only --"
+    stdin: echo --
+
+  - name: "echo with -- and args"
+    stdin: echo -- -1 --"aaa" ?^1as-

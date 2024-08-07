@@ -121,6 +121,32 @@ impl CommandLineArgs {
     }
 }
 
+impl CommandLineArgs {
+    // Work around clap's limitation handling `--` like a regular value
+    // TODO: We can safely remove this `impl` after the issue is resolved
+    // https://github.com/clap-rs/clap/issues/5055
+    // This function takes precedence over [`clap::Parser::parse_from`]
+    fn parse_from<'a>(itr: impl IntoIterator<Item = &'a String>) -> Self {
+        let (mut this, script_args) = brush_core::builtins::parse_known::<CommandLineArgs, _>(itr);
+        // if we have `--` and unparsed raw args than
+        script_args.map(|mut args| {
+            // if script_path has not been parsed yet
+            // use the first script_args[0] (it is `--`)
+            // as script_path
+            let first = args.next();
+            if this.script_path.is_none() {
+                this.script_path = first.cloned();
+                this.script_args.extend(args.cloned());
+            } else {
+                // if script_path already exists, everyone goes into script_args
+                this.script_args
+                    .extend(first.into_iter().chain(args).cloned());
+            }
+        });
+        this
+    }
+}
+
 lazy_static::lazy_static! {
     static ref TRACE_EVENT_CONFIG: Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> =
         Arc::new(tokio::sync::Mutex::new(None));
@@ -140,33 +166,7 @@ fn main() {
         }
     }
 
-    // clap always interprets `--` as a separator and not as an argument
-    // See: clap-rs/clap/clap_builder/src/parser/parser.rs `if arg_os.is_escape() { ...; continue } // means if arg_os == '--' {}`
-    // but sh can handle `--` just fine
-    // so we split [..., 'arg1', '--', 'arg2', ...] to [..., 'arg1'] for processing in CommandLineArgs::parse_from
-    // and raw script_args ['--', 'arg2', ...]
-    let parsed_args = {
-        // simulate take_until and split the iter by "--"
-        let hyphen_pos = args.iter().position(|arg| arg == "--");
-        let mut iter = args.iter();
-        let mut parsed_args =
-            CommandLineArgs::parse_from(iter.by_ref().take(hyphen_pos.unwrap_or(args.len())));
-        // if the iter was split
-        if hyphen_pos.is_some() {
-            // if script_path has not been parsed yet
-            // use the first script_args[0] as script_path (`command_name` in sh) $0
-            // Posix: sh -c command_string [**command_name** [argument...]]
-            // See: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/sh.html
-            let first = iter.next().cloned();
-            if parsed_args.script_path.is_none() {
-                parsed_args.script_path = first;
-                parsed_args.script_args = iter.cloned().collect();
-            } else {
-                parsed_args.script_args = first.into_iter().chain(iter.cloned()).collect();
-            }
-        }
-        parsed_args
-    };
+    let parsed_args = CommandLineArgs::parse_from(&args);
 
     //
     // Run.

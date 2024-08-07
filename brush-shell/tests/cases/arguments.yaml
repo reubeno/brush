@@ -40,10 +40,16 @@ cases:
       - --
       - --
       - -&-1
-      - --
-      - -2!
-      - --
+      - --!
+      - "\"-2\""
+      - "''--''"
       - 3--*
+
+  - name: "-c modeonly one --"
+    args:
+      - "-c"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - --
 
   - name: "script arguments without --"
     args:
@@ -67,6 +73,11 @@ cases:
       - "--"
       - --
       - -!-1*
-      - -2
+      - "\"-2\""
       - --
       - 3--
+
+  - name: "script only one --"
+    args:
+      - script.sh
+      - --
