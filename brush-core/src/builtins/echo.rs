@@ -26,6 +26,20 @@ pub(crate) struct EchoCommand {
 
 #[async_trait::async_trait]
 impl builtins::Command for EchoCommand {
+    /// Override the default [builtins::Command::new] function to handle clap's limitation related to `--`.
+    /// See [crate::builtins::parse_known] for more information
+    /// TODO: we can safely remove this after the issue is resolved
+    fn new<I>(args: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let (mut this, rest_args) = crate::builtins::try_parse_known::<EchoCommand>(args)?;
+        if let Some(args) = rest_args {
+            this.args.extend(args);
+        }
+        Ok(this)
+    }
+
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,

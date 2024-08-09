@@ -92,9 +92,14 @@ struct CommandLineArgs {
     enabled_log_events: Vec<events::TraceEvent>,
 
     /// Path to script to execute.
+    // allow any string as command_name similar to sh
+    #[clap(allow_hyphen_values = true)]
     script_path: Option<String>,
 
     /// Arguments for script.
+    // `allow_hyphen_values`: do not strip `-` from flags
+    // `num_args=1..`: consume everything
+    #[clap(allow_hyphen_values = true, num_args=1..)]
     script_args: Vec<String>,
 }
 
@@ -113,6 +118,32 @@ impl CommandLineArgs {
         }
 
         true
+    }
+}
+
+impl CommandLineArgs {
+    // Work around clap's limitation handling `--` like a regular value
+    // TODO: We can safely remove this `impl` after the issue is resolved
+    // https://github.com/clap-rs/clap/issues/5055
+    // This function takes precedence over [`clap::Parser::parse_from`]
+    fn parse_from<'a>(itr: impl IntoIterator<Item = &'a String>) -> Self {
+        let (mut this, script_args) = brush_core::builtins::parse_known::<CommandLineArgs, _>(itr);
+        // if we have `--` and unparsed raw args than
+        script_args.map(|mut args| {
+            // if script_path has not been parsed yet
+            // use the first script_args[0] (it is `--`)
+            // as script_path
+            let first = args.next();
+            if this.script_path.is_none() {
+                this.script_path = first.cloned();
+                this.script_args.extend(args.cloned());
+            } else {
+                // if script_path already exists, everyone goes into script_args
+                this.script_args
+                    .extend(first.into_iter().chain(args).cloned());
+            }
+        });
+        this
     }
 }
 
