@@ -383,17 +383,17 @@ fn brush_help_styles() -> clap::builder::Styles {
         .placeholder(styling::AnsiColor::Cyan.on_default())
 }
 
-/// This function and the [try_parse_known] exists to deal with
+/// This function and the [`try_parse_known`] exists to deal with
 /// the Clap's limitation of treating `--` like a regular value
-/// https://github.com/clap-rs/clap/issues/5055
+/// `https://github.com/clap-rs/clap/issues/5055`
 ///
 /// # Arguments
 ///
-/// * `args` - An Iterator from std::env::args
+/// * `args` - An Iterator from [`std::env::args`]
 ///
 /// # Returns
 ///
-/// * a parsed struct T from [clap::Parser::parse_from]
+/// * a parsed struct T from [`clap::Parser::parse_from`]
 /// * the remain iterator `args` with `--` and the rest arguments if they present
 ///   othervise None
 ///
@@ -435,8 +435,8 @@ where
     (parsed_args, raw_args)
 }
 
-/// Similar to [parse_known] but with [clap::Parser::try_parse_from]
-/// This function is used to parse arguments in builtins such as [crate::builtins::echo::EchoCommand]
+/// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
+/// This function is used to parse arguments in builtins such as [`crate::builtins::echo::EchoCommand`]
 pub fn try_parse_known<T: Parser>(
     args: impl IntoIterator<Item = String>,
 ) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {

@@ -34,9 +34,9 @@ impl builtins::Command for EchoCommand {
         I: IntoIterator<Item = String>,
     {
         let (mut this, rest_args) = crate::builtins::try_parse_known::<EchoCommand>(args)?;
-        rest_args.map(|args| {
+        if let Some(args) = rest_args {
             this.args.extend(args);
-        });
+        }
         Ok(this)
     }
 
