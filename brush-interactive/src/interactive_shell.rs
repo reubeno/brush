@@ -135,8 +135,20 @@ impl InteractiveShell {
         }
 
         if let Some(history_file_path) = &self.history_file_path {
-            // TODO: Decide append or not based on configuration.
-            self.editor.append_history(history_file_path)?;
+            let history_result = if self.shell().options.append_to_history_file {
+                self.editor.append_history(history_file_path)
+            } else {
+                self.editor.save_history(history_file_path)
+            };
+
+            if let Err(e) = history_result {
+                // N.B. This seems like the sort of thing that's worth being noisy about,
+                // but bash doesn't do that -- and probably for a reason.
+                tracing::debug!(
+                    "couldn't save history to {}: {e}",
+                    history_file_path.display()
+                );
+            }
         }
 
         Ok(())
