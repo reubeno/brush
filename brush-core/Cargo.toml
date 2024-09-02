@@ -32,7 +32,7 @@ thiserror = "1.0.62"
 tracing = "0.1.40"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.39.3", features = [
+tokio = { version = "1.40.0", features = [
     "io-util",
     "macros",
     "rt",
@@ -41,7 +41,7 @@ tokio = { version = "1.39.3", features = [
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.0"
 os_pipe = { version = "1.2.1", features = ["io_safety"] }
-tokio = { version = "1.39.3", features = [
+tokio = { version = "1.40.0", features = [
     "io-util",
     "macros",
     "process",
