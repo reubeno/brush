@@ -5,11 +5,11 @@ use crate::{events, productinfo};
 
 const SHORT_DESCRIPTION: &str = "Bo[u]rn[e] RUsty SHell";
 
-const LONG_DESCRIPTION: &str = r#"
+const LONG_DESCRIPTION: &str = r"
 brush is a Rust-implemented, POSIX-style shell that aims to be compatible with bash.
 
 brush is a work in progress. If you encounter any issues or discrepancies in behavior from bash, please report them at https://github.com/reubeno/brush.
-"#;
+";
 
 const VERSION: &str = const_format::concatcp!(
     productinfo::PRODUCT_VERSION,
@@ -28,6 +28,7 @@ const VERSION: &str = const_format::concatcp!(
        disable_help_flag = true,
        disable_version_flag = true,
        styles = brush_help_styles())]
+#[allow(clippy::module_name_repetitions)]
 pub struct CommandLineArgs {
     /// Display usage information.
     #[clap(long = "help", action = clap::ArgAction::HelpLong)]
@@ -57,12 +58,12 @@ pub struct CommandLineArgs {
     #[clap(long = "noediting")]
     pub no_editing: bool,
 
-    /// Don't process any profile/login files (/etc/profile, ~/.bash_profile, ~/.bash_login,
-    /// ~/.profile).
+    /// Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`,
+    /// `~/.profile`).
     #[clap(long = "noprofile")]
     pub no_profile: bool,
 
-    /// Don't process "rc" files if the shell is interactive (e.g., ~/.bashrc, ~/.brushrc).
+    /// Don't process "rc" files if the shell is interactive (e.g., `~/.bashrc`, `~/.brushrc`).
     #[clap(long = "norc")]
     pub no_rc: bool,
 
