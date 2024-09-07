@@ -1,0 +1,19 @@
+[package]
+name = "xtask"
+publish = false
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1.0.86"
+brush-shell = { version = "^0.2.7", path = "../brush-shell" }
+clap = { version = "4.5.11", features = ["derive"] }
+clap_mangen = "0.2.23"
+clap-markdown = "0.1.4"

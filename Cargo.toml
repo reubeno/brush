@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["brush-shell", "brush-parser", "brush-core", "brush-interactive", "fuzz"]
+members = ["brush-shell", "brush-parser", "brush-core", "brush-interactive", "fuzz", "xtask"]
 default-members = ["brush-shell"]
 
 [workspace.package]

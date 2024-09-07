@@ -7,7 +7,7 @@ use tracing_subscriber::{
 
 /// Type of event to trace.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
-pub(crate) enum TraceEvent {
+pub enum TraceEvent {
     /// Traces parsing and evaluation of arithmetic expressions.
     #[clap(name = "arithmetic")]
     Arithmetic,
