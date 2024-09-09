@@ -22,7 +22,7 @@ async-trait = "0.1.82"
 brush-parser = { version = "^0.2.6", path = "../brush-parser" }
 cached = "0.53.0"
 cfg-if = "1.0.0"
-clap = { version = "4.5.11", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.17", features = ["derive", "wrap_help"] }
 fancy-regex = "0.13.0"
 futures = "0.3.30"
 itertools = "0.13.0"
@@ -32,11 +32,7 @@ thiserror = "1.0.62"
 tracing = "0.1.40"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.40.0", features = [
-    "io-util",
-    "macros",
-    "rt",
-] }
+tokio = { version = "1.40.0", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.0"
@@ -56,7 +52,13 @@ whoami = "1.5.2"
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.0"
-nix = { version = "0.29.0", features = ["fs", "process", "signal", "term", "user"] }
+nix = { version = "0.29.0", features = [
+    "fs",
+    "process",
+    "signal",
+    "term",
+    "user",
+] }
 uzers = "0.12.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -2,15 +2,23 @@
 
 #![deny(missing_docs)]
 
-#[cfg(any(unix, windows))]
-mod interactive_shell;
-#[cfg(any(unix, windows))]
-pub use interactive_shell::{InteractiveShell, ShellError};
+mod error;
+pub use error::ShellError;
 
-#[cfg(not(any(unix, windows)))]
-mod basic_shell;
-#[cfg(not(any(unix, windows)))]
-pub use basic_shell::{InteractiveShell, ShellError};
+mod interactive_shell;
+pub use interactive_shell::{InteractiveExecutionResult, InteractiveShell, ReadResult};
 
 mod options;
 pub use options::Options;
+
+// Rustyline-based shell
+#[cfg(feature = "rustyline")]
+mod rustyline_shell;
+#[cfg(feature = "rustyline")]
+pub use rustyline_shell::RustylineShell;
+
+// Basic shell
+#[cfg(feature = "basic")]
+mod basic_shell;
+#[cfg(feature = "basic")]
+pub use basic_shell::BasicShell;
