@@ -5,7 +5,11 @@ use std::path::PathBuf;
 // Non-Unix implementation
 //
 
-pub(crate) fn get_user_home_dir() -> Option<PathBuf> {
+pub(crate) fn get_user_home_dir(username: &str) -> Option<PathBuf> {
+    homedir::home(username).unwrap_or_default()
+}
+
+pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
     homedir::my_home().unwrap_or_default()
 }
 

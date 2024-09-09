@@ -7,7 +7,15 @@ pub(crate) fn is_root() -> bool {
     uzers::get_current_uid() == 0
 }
 
-pub(crate) fn get_user_home_dir() -> Option<PathBuf> {
+pub(crate) fn get_user_home_dir(username: &str) -> Option<PathBuf> {
+    if let Some(user_info) = uzers::get_user_by_name(username) {
+        return Some(user_info.home_dir().to_path_buf());
+    }
+
+    None
+}
+
+pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
     if let Some(username) = uzers::get_current_username() {
         if let Some(user_info) = uzers::get_user_by_name(&username) {
             return Some(user_info.home_dir().to_path_buf());
