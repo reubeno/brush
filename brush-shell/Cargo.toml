@@ -25,12 +25,12 @@ harness = false
 workspace = true
 
 [dependencies]
-async-trait = "0.1.80"
+async-trait = "0.1.82"
 brush-interactive = { version = "^0.2.7", path = "../brush-interactive" }
 brush-parser = { version = "^0.2.6", path = "../brush-parser" }
 brush-core = { version = "^0.2.7", path = "../brush-core" }
 clap = { version = "4.5.11", features = ["derive", "wrap_help"] }
-const_format = "0.2.32"
+const_format = "0.2.33"
 git-version = "0.3.9"
 lazy_static = "1.5.0"
 tracing = "0.1.40"
@@ -43,7 +43,7 @@ tokio = { version = "1.40.0", features = ["rt", "sync"] }
 tokio = { version = "1.39.3", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.87"
 assert_cmd = "2.0.15"
 assert_fs = "1.1.1"
 colored = "2.1.0"
@@ -56,6 +56,6 @@ indent = "0.1.1"
 junit-report = "0.8.3"
 pathdiff = "0.2.1"
 regex = "1.10.6"
-serde = { version = "1.0.209", features = ["derive"] }
+serde = { version = "1.0.210", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.0"
