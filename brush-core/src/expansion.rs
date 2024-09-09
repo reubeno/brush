@@ -597,7 +597,7 @@ impl<'a> WordExpander<'a> {
                 }
             }
             brush_parser::word::WordPiece::TildePrefix(prefix) => Expansion::from(
-                ExpansionPiece::Splittable(self.expand_tilde_expression(prefix.as_str())?),
+                ExpansionPiece::Unsplittable(self.expand_tilde_expression(prefix.as_str())?),
             ),
             brush_parser::word::WordPiece::ParameterExpansion(p) => {
                 self.expand_parameter_expr(p).await?
@@ -645,10 +645,11 @@ impl<'a> WordExpander<'a> {
 
     fn expand_tilde_expression(&self, prefix: &str) -> Result<String, error::Error> {
         if !prefix.is_empty() {
-            return error::unimp("expansion: complex tilde expression");
-        }
-
-        if let Some(home_dir) = self.shell.get_home_dir() {
+            Ok(sys::users::get_user_home_dir(prefix).map_or_else(
+                || std::format!("~{prefix}"),
+                |p| p.to_string_lossy().to_string(),
+            ))
+        } else if let Some(home_dir) = self.shell.get_home_dir() {
             Ok(home_dir.to_string_lossy().to_string())
         } else {
             Err(error::Error::TildeWithoutValidHome)

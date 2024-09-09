@@ -970,7 +970,7 @@ impl Shell {
             Some(PathBuf::from(home.value().to_cow_string().to_string()))
         } else {
             // HOME isn't set, so let's sort it out ourselves.
-            users::get_user_home_dir()
+            users::get_current_user_home_dir()
         }
     }
 

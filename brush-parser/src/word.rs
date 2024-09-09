@@ -472,7 +472,7 @@ peg::parser! {
 
         // TODO: Handle colon syntax
         rule tilde_prefix() -> WordPiece =
-            tilde_parsing_enabled() "~" cs:$((!"/" [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
+            tilde_parsing_enabled() "~" cs:$((!['/' | ':' | ';'] [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
 
         // TODO: Deal with fact that there may be a quoted word or escaped closing brace chars.
         // TODO: Improve on how we handle a '$' not followed by a valid variable name or parameter.

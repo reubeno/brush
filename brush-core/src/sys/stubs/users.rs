@@ -1,7 +1,11 @@
 use crate::error;
 use std::path::PathBuf;
 
-pub(crate) fn get_user_home_dir() -> Option<PathBuf> {
+pub(crate) fn get_user_home_dir(_username: &str) -> Option<PathBuf> {
+    None
+}
+
+pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
     None
 }
 
