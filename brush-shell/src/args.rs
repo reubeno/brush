@@ -18,6 +18,12 @@ const VERSION: &str = const_format::concatcp!(
     ")"
 );
 
+#[derive(Clone, clap::ValueEnum)]
+pub enum InputBackend {
+    Rustyline,
+    Basic,
+}
+
 /// Parsed command-line arguments for the brush shell.
 #[derive(Parser)]
 #[clap(name = productinfo::PRODUCT_NAME,
@@ -98,6 +104,10 @@ pub struct CommandLineArgs {
     /// Disable bracketed paste.
     #[clap(long = "disable-bracketed-paste")]
     pub disable_bracketed_paste: bool,
+
+    /// Input backend.
+    #[clap(long = "input-backend")]
+    pub input_backend: Option<InputBackend>,
 
     /// Enable debug logging for classes of tracing events.
     #[clap(long = "log-enable", value_name = "EVENT")]

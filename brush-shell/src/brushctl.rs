@@ -1,11 +1,10 @@
-use brush_interactive::InteractiveShell;
 use clap::{Parser, Subcommand};
 use std::io::Write;
 
 use crate::events;
 
-pub(crate) fn register(shell: &mut InteractiveShell) {
-    shell.shell_mut().builtins.insert(
+pub(crate) fn register(shell: &mut brush_core::Shell) {
+    shell.builtins.insert(
         "brushctl".into(),
         brush_core::builtins::builtin::<BrushCtlCommand>(),
     );

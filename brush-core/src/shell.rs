@@ -99,6 +99,18 @@ impl Clone for Shell {
     }
 }
 
+impl AsRef<Shell> for Shell {
+    fn as_ref(&self) -> &Shell {
+        self
+    }
+}
+
+impl AsMut<Shell> for Shell {
+    fn as_mut(&mut self) -> &mut Shell {
+        self
+    }
+}
+
 /// Options for creating a new shell.
 #[derive(Debug, Default)]
 pub struct CreateOptions {

@@ -6,8 +6,10 @@ mod args;
 mod brushctl;
 mod events;
 mod productinfo;
+mod shell_factory;
 
-use crate::args::CommandLineArgs;
+use crate::args::{CommandLineArgs, InputBackend};
+use brush_interactive::InteractiveShell;
 use clap::Parser;
 use std::{path::Path, sync::Arc};
 
@@ -69,25 +71,51 @@ async fn run(
     cli_args: Vec<String>,
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
+    let default_backend = get_default_input_backend();
+
+    match args.input_backend.as_ref().unwrap_or(&default_backend) {
+        InputBackend::Rustyline => {
+            run_impl(cli_args, args, shell_factory::RustylineShellFactory).await
+        }
+        InputBackend::Basic => run_impl(cli_args, args, shell_factory::BasicShellFactory).await,
+    }
+}
+
+/// Run the brush shell. Returns the exit code.
+///
+/// # Arguments
+///
+/// * `cli_args` - The command-line arguments to the shell, in string form.
+/// * `args` - The already-parsed command-line arguments.
+#[doc(hidden)]
+async fn run_impl(
+    cli_args: Vec<String>,
+    args: CommandLineArgs,
+    factory: impl shell_factory::ShellFactory,
+) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
     *event_config = Some(events::TraceEventConfig::init(&args.enabled_log_events));
     drop(event_config);
 
     // Instantiate an appropriately configured shell.
-    let mut shell = instantiate_shell(&args, cli_args).await?;
+    let mut shell = instantiate_shell(&args, cli_args, factory).await?;
 
     // Handle commands.
     if let Some(command) = args.command {
         // Pass through args.
         if let Some(script_path) = args.script_path {
-            shell.shell_mut().shell_name = Some(script_path);
+            shell.shell_mut().as_mut().shell_name = Some(script_path);
         }
-        shell.shell_mut().positional_parameters = args.script_args;
+        shell.shell_mut().as_mut().positional_parameters = args.script_args;
 
         // Execute the command string.
-        let params = shell.shell().default_exec_params();
-        shell.shell_mut().run_string(command, &params).await?;
+        let params = shell.shell().as_ref().default_exec_params();
+        shell
+            .shell_mut()
+            .as_mut()
+            .run_string(command, &params)
+            .await?;
     } else if args.read_commands_from_stdin {
         // We were asked to read commands from stdin; do so, even if there was a script
         // passed on the command line.
@@ -96,6 +124,7 @@ async fn run(
         // The path to a script was provided on the command line; run the script.
         shell
             .shell_mut()
+            .as_mut()
             .run_script(Path::new(&script_path), args.script_args.as_slice())
             .await?;
     } else {
@@ -104,13 +133,16 @@ async fn run(
     }
 
     // Make sure to return the last result observed in the shell.
-    Ok(shell.shell().last_result())
+    let result = shell.shell().as_ref().last_result();
+
+    Ok(result)
 }
 
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_interactive::InteractiveShell, brush_interactive::ShellError> {
+    factory: impl shell_factory::ShellFactory,
+) -> Result<impl brush_interactive::InteractiveShell, brush_interactive::ShellError> {
     let argv0 = if args.sh_mode {
         // Simulate having been run as "sh".
         Some(String::from("sh"))
@@ -147,12 +179,23 @@ async fn instantiate_shell(
     };
 
     // Create the shell.
-    let mut shell = brush_interactive::InteractiveShell::new(&options).await?;
+    let mut shell = factory.create(&options).await?;
 
     // Register our own built-in(s) with the shell.
-    brushctl::register(&mut shell);
+    brushctl::register(shell.shell_mut().as_mut());
 
     Ok(shell)
+}
+
+fn get_default_input_backend() -> InputBackend {
+    #[cfg(any(windows, unix))]
+    {
+        InputBackend::Rustyline
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        InputBackend::Basic
+    }
 }
 
 pub(crate) fn get_event_config() -> Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> {
