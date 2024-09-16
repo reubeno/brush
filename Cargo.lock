@@ -117,9 +117,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.87"
+version = "1.0.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10f00e1f6e58a40e807377c75c6a7f97bf9044fab57816f2414e6f5f4499d7b8"
+checksum = "86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6"
 
 [[package]]
 name = "arbitrary"
@@ -803,9 +803,9 @@ dependencies = [
 
 [[package]]
 name = "descape"
-version = "1.1.2"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "396a0a312bef78b5f62b0251d7162c4b8af162949b8b104d2967e41b26c1b68c"
+checksum = "ded38a8c3b37dcea20252418a1ccaa59cd399da7488c34452144720872a1b80b"
 
 [[package]]
 name = "diff"

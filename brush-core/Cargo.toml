@@ -65,7 +65,7 @@ uzers = "0.12.1"
 procfs = "0.16.0"
 
 [dev-dependencies]
-anyhow = "1.0.87"
+anyhow = "1.0.89"
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
 
 [target.'cfg(unix)'.dev-dependencies]

@@ -49,11 +49,11 @@ brush-interactive = { version = "^0.2.7", path = "../brush-interactive", feature
 tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
-anyhow = "1.0.87"
+anyhow = "1.0.89"
 assert_cmd = "2.0.15"
 assert_fs = "1.1.1"
 colored = "2.1.0"
-descape = "1.1.2"
+descape = "1.2.0"
 diff = "0.1.13"
 dir-cmp = "0.1.0"
 expectrl = "0.7.1"
