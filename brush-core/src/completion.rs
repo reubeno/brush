@@ -506,7 +506,13 @@ impl Spec {
             args.push(preceding_token);
         }
 
+        // TODO: Find a more appropriate interlock here. For now we use the existing
+        // handler depth count to suppress any debug traps.
+        shell.traps.handler_depth += 1;
+
         let result = shell.invoke_function(function_name, &args).await?;
+
+        shell.traps.handler_depth -= 1;
 
         tracing::debug!("[called completion func '{function_name}' => {result}]");
 

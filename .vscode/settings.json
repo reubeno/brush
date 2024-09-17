@@ -11,5 +11,6 @@
     },
     "rust-analyzer.check.command": "clippy",
     "rewrap.wrappingColumn": 90,
-    "rust-analyzer.cargo.features": "all"
+    "rust-analyzer.cargo.features": "all",
+    "rust-analyzer.debug.openDebugPane": true
 }
