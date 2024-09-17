@@ -385,6 +385,7 @@ impl Spec {
             let call_result = self
                 .call_completion_function(shell, function_name.as_str(), context)
                 .await?;
+
             match call_result {
                 Answer::RestartCompletionProcess => return Ok(call_result),
                 Answer::Candidates(mut new_candidates, _options) => {

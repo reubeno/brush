@@ -216,6 +216,8 @@ impl builtins::Command for CompleteCommand {
         &self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        let mut result = builtins::ExitCode::Success;
+
         // If -D, -E, or -I are specified, then any names provided are ignored.
         if self.use_as_default
             || self.use_for_empty_line
@@ -225,11 +227,13 @@ impl builtins::Command for CompleteCommand {
             self.process_global(&mut context)?;
         } else {
             for name in &self.names {
-                self.process_for_command(&mut context, name.as_str())?;
+                if !self.try_process_for_command(&mut context, name.as_str())? {
+                    result = builtins::ExitCode::Custom(1);
+                }
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(result)
     }
 }
 
@@ -286,14 +290,16 @@ impl CompleteCommand {
         Ok(())
     }
 
-    fn display_spec_for_command(
+    fn try_display_spec_for_command(
         context: &mut commands::ExecutionContext<'_>,
         name: &str,
-    ) -> Result<(), error::Error> {
+    ) -> Result<bool, error::Error> {
         if let Some(spec) = context.shell.completion_config.get(name) {
-            Self::display_spec(context, None, Some(name), spec)
+            Self::display_spec(context, None, Some(name), spec)?;
+            Ok(true)
         } else {
-            error::unimp("no completion found for command")
+            writeln!(context.stderr(), "no completion found for command")?;
+            Ok(false)
         }
     }
 
@@ -399,23 +405,23 @@ impl CompleteCommand {
         Ok(())
     }
 
-    fn process_for_command(
+    fn try_process_for_command(
         &self,
         context: &mut crate::commands::ExecutionContext<'_>,
         name: &str,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<bool, crate::error::Error> {
         if self.print {
-            return Self::display_spec_for_command(context, name);
+            return Self::try_display_spec_for_command(context, name);
         } else if self.remove {
             context.shell.completion_config.remove(name);
-            return Ok(());
+            return Ok(true);
         }
 
         let config = self.common_args.create_spec();
 
         context.shell.completion_config.set(name, config);
 
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -438,8 +444,15 @@ impl builtins::Command for CompGenCommand {
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
+        // N.B. We basic-expand the token-to-be-completed first.
+        let mut throwaway_shell = context.shell.clone();
+        let expanded_token_to_complete = throwaway_shell
+            .basic_expand_string(token_to_complete)
+            .await
+            .unwrap_or_else(|_| token_to_complete.to_owned());
+
         let completion_context = completion::Context {
-            token_to_complete,
+            token_to_complete: expanded_token_to_complete.as_str(),
             preceding_token: None,
             command_name: None,
             token_index: 0,
