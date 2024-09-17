@@ -1,5 +1,9 @@
 name: "Builtins: printf"
 cases:
+  - name: "One-variable printf"
+    stdin: |
+      printf "%s" "0"
+
   - name: "Basic printf"
     stdin: |
       printf "%s, %s" "Hello" "world"

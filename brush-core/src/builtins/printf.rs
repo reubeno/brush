@@ -25,6 +25,37 @@ impl builtins::Command for PrintfCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        let result = self.evaluate(&context)?;
+
+        if let Some(variable_name) = &self.output_variable {
+            expansion::assign_to_named_parameter(context.shell, variable_name, result).await?;
+        } else {
+            write!(context.stdout(), "{result}")?;
+            context.stdout().flush()?;
+        }
+
+        return Ok(builtins::ExitCode::Success);
+    }
+}
+
+impl PrintfCommand {
+    fn evaluate(
+        &self,
+        context: &commands::ExecutionContext<'_>,
+    ) -> Result<String, crate::error::Error> {
+        // Special-case common format string: "%s".
+        if self.format == "%s" && self.args.len() == 1 {
+            return Ok(self.args[0].clone());
+        }
+
+        self.evaluate_via_external_command(context)
+    }
+
+    #[allow(clippy::unwrap_in_result)]
+    fn evaluate_via_external_command(
+        &self,
+        context: &commands::ExecutionContext<'_>,
+    ) -> Result<String, crate::error::Error> {
         // TODO: Don't call external printf command.
         let mut cmd = std::process::Command::new("printf");
         cmd.env_clear();
@@ -39,21 +70,12 @@ impl builtins::Command for PrintfCommand {
         write!(context.stderr(), "{stderr}")?;
         context.stderr().flush()?;
 
-        if !output.status.success() {
-            #[allow(clippy::cast_possible_truncation)]
-            #[allow(clippy::cast_sign_loss)]
-            return Ok(builtins::ExitCode::Custom(
-                output.status.code().unwrap() as u8
-            ));
-        }
-
-        if let Some(variable_name) = &self.output_variable {
-            expansion::assign_to_named_parameter(context.shell, variable_name, stdout).await?;
+        if output.status.success() {
+            Ok(stdout)
         } else {
-            write!(context.stdout(), "{stdout}")?;
-            context.stdout().flush()?;
+            Err(crate::error::Error::PrintfFailure(
+                output.status.code().unwrap(),
+            ))
         }
-
-        return Ok(builtins::ExitCode::Success);
     }
 }

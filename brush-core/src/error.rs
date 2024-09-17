@@ -168,6 +168,10 @@ pub enum Error {
     /// Bad file descriptor.
     #[error("bad file descriptor: {0}")]
     BadFileDescriptor(u32),
+
+    /// Printf failure
+    #[error("printf failure: {0}")]
+    PrintfFailure(i32),
 }
 
 /// Convenience function for returning an error for unimplemented functionality.
