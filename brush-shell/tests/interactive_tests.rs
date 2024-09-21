@@ -18,7 +18,7 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
 
     // Suspend and resume a handful of times to make sure it pauses and
     // resumes reliably.
-    for _ in 0..1 {
+    for _ in 0..5 {
         // Suspend.
         session.suspend()?;
         session.expect_prompt()?;

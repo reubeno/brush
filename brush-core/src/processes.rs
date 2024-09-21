@@ -46,7 +46,7 @@ impl ChildProcess {
                     #[allow(unused_mut)]
                     let mut found_stopped = false;
 
-                    #[cfg(unix)]
+                    #[cfg(target_os = "linux")]
                     loop {
                         let wait_status = nix::sys::wait::waitid(
                             nix::sys::wait::Id::All,
