@@ -1,3 +1,5 @@
+use futures::FutureExt;
+
 use crate::{error, sys};
 
 /// A waitable future that will yield the results of a child process's execution.
@@ -74,9 +76,11 @@ impl ChildProcess {
         }
     }
 
-    pub(crate) fn poll(&self) -> Option<std::process::Output> {
-        // DBG:RRO
-        None
+    pub(crate) fn poll(&mut self) -> Option<Result<std::process::Output, error::Error>> {
+        let checkable_future = &mut self.exec_future;
+        checkable_future
+            .now_or_never()
+            .map(|result| result.map_err(Into::into))
     }
 }
 

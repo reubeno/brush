@@ -52,11 +52,11 @@ impl JobTask {
     }
 
     #[allow(clippy::unwrap_in_result)]
-    fn poll(&mut self) -> Option<Result<ExecutionResult, crate::Error>> {
+    fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
             JobTask::External(process) => {
                 let check_result = process.poll();
-                check_result.map(|output| Ok(output.into()))
+                check_result.map(|polled_result| polled_result.map(|output| output.into()))
             }
             JobTask::Internal(handle) => {
                 let checkable_handle = handle;
