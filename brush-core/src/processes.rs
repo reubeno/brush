@@ -41,6 +41,7 @@ impl ChildProcess {
                     break Ok(ProcessWaitResult::Stopped)
                 },
                 _ = sigchld.recv() => {
+                    #[allow(unused_mut)]
                     let mut found_stopped = false;
 
                     #[cfg(unix)]

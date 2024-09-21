@@ -332,6 +332,7 @@ pub(crate) fn execute_external_command(
     }
 
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
+    #[allow(unused_variables)]
     let child_stdin_is_terminal = context
         .params
         .open_files
@@ -342,6 +343,7 @@ pub(crate) fn execute_external_command(
     let new_pg = context.should_cmd_lead_own_process_group();
 
     // Compose the std::process::Command that encapsulates what we want to launch.
+    #[allow(unused_mut)]
     let mut cmd = compose_std_command(
         context.shell,
         context.command_name.as_str(),
