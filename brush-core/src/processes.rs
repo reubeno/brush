@@ -42,6 +42,8 @@ impl ChildProcess {
                 },
                 _ = sigchld.recv() => {
                     let mut found_stopped = false;
+
+                    #[cfg(unix)]
                     loop {
                         let wait_status = nix::sys::wait::waitid(
                             nix::sys::wait::Id::All,
@@ -72,6 +74,7 @@ impl ChildProcess {
     }
 
     pub(crate) fn poll(&self) -> Option<std::process::Output> {
+        // DBG:RRO
         None
     }
 }

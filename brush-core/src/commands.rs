@@ -354,7 +354,10 @@ pub(crate) fn execute_external_command(
     // Set up process group state.
     let required_pgid = if new_pg {
         let required_pgid = process_group_id.unwrap_or(0);
+
+        #[cfg(unix)]
         cmd.process_group(required_pgid);
+
         required_pgid
     } else {
         0
@@ -362,6 +365,7 @@ pub(crate) fn execute_external_command(
 
     // Register some code to run in the forked child process before it execs
     // the target command.
+    #[cfg(unix)]
     if new_pg && child_stdin_is_terminal {
         unsafe {
             cmd.pre_exec(setup_process_before_exec);
@@ -415,6 +419,7 @@ pub(crate) fn execute_external_command(
     }
 }
 
+#[cfg(unix)]
 fn setup_process_before_exec() -> Result<(), std::io::Error> {
     sys::terminal::move_self_to_foreground().map_err(std::io::Error::other)?;
     Ok(())

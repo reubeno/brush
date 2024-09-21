@@ -28,7 +28,7 @@ pub(crate) fn set_term_attr_now<Fd>(
     Ok(())
 }
 
-pub(crate) fn is_stdin_a_terminal() -> Result<(), error::Error> {
+pub(crate) fn is_stdin_a_terminal() -> Result<bool, error::Error> {
     Ok(false)
 }
 
