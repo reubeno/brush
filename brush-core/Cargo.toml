@@ -28,7 +28,7 @@ futures = "0.3.30"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 rand = "0.8.5"
-thiserror = "1.0.62"
+thiserror = "1.0.64"
 tracing = "0.1.40"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
