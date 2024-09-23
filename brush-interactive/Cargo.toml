@@ -28,7 +28,7 @@ brush-core = { version = "^0.2.8", path = "../brush-core" }
 rustyline = { package = "brush-rustyline-fork", version = "14.0.1", optional = true, features = [
     "derive",
 ] }
-thiserror = "1.0.62"
+thiserror = "1.0.64"
 tracing = "0.1.40"
 
 [target.'cfg(any(windows, unix))'.dependencies]
