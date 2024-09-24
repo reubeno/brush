@@ -10,12 +10,39 @@ mod shell_factory;
 
 use crate::args::{CommandLineArgs, InputBackend};
 use brush_interactive::InteractiveShell;
-use clap::Parser;
 use std::{path::Path, sync::Arc};
 
 lazy_static::lazy_static! {
     static ref TRACE_EVENT_CONFIG: Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> =
         Arc::new(tokio::sync::Mutex::new(None));
+}
+
+// WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
+// after the `use clap::Parser`
+impl CommandLineArgs {
+    // Work around clap's limitation handling `--` like a regular value
+    // TODO: We can safely remove this `impl` after the issue is resolved
+    // https://github.com/clap-rs/clap/issues/5055
+    // This function takes precedence over [`clap::Parser::parse_from`]
+    fn parse_from<'a>(itr: impl IntoIterator<Item = &'a String>) -> Self {
+        let (mut this, script_args) = brush_core::builtins::parse_known::<CommandLineArgs, _>(itr);
+        // if we have `--` and unparsed raw args than
+        script_args.map(|mut args| {
+            // if script_path has not been parsed yet
+            // use the first script_args[0] (it is `--`)
+            // as script_path
+            let first = args.next();
+            if this.script_path.is_none() {
+                this.script_path = first.cloned();
+                this.script_args.extend(args.cloned());
+            } else {
+                // if script_path already exists, everyone goes into script_args
+                this.script_args
+                    .extend(first.into_iter().chain(args).cloned());
+            }
+        });
+        this
+    }
 }
 
 /// Main entry point for the `brush` shell.
