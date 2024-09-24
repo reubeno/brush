@@ -6,14 +6,14 @@ To run all workspace tests:
 cargo test --workspace
 ```
 
-To run just integration tests:
+To run just bash compatibility tests:
 
 ```bash
-cargo test --test brush-integration-tests
+cargo test --test brush-compat-tests
 ```
 
-To run a specific integration test case
+To run a specific compatibility test case
 
 ```bash
-cargo test --test brush-integration-tests -- '<name of test case>'
+cargo test --test brush-compat-tests -- '<name of test case>'
 ```
