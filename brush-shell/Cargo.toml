@@ -17,9 +17,13 @@ path = "src/main.rs"
 bench = false
 
 [[test]]
-name = "brush-integration-tests"
-path = "tests/integration_tests.rs"
+name = "brush-compat-tests"
+path = "tests/compat_tests.rs"
 harness = false
+
+[[test]]
+name = "brush-interactive-tests"
+path = "tests/interactive_tests.rs"
 
 [lints]
 workspace = true
@@ -53,10 +57,10 @@ anyhow = "1.0.89"
 assert_cmd = "2.0.15"
 assert_fs = "1.1.1"
 colored = "2.1.0"
-descape = "1.2.0"
+descape = "2.0.3"
 diff = "0.1.13"
 dir-cmp = "0.1.0"
-expectrl = "0.7.1"
+expectrl = { git = "https://github.com/zhiburt/expectrl", rev = "a0f4f7816b9a47a191dd858080e8fd80ff71cd96" }
 glob = "0.3.1"
 indent = "0.1.1"
 junit-report = "0.8.3"
