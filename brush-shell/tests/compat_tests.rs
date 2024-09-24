@@ -878,6 +878,8 @@ impl TestCase {
     #[allow(clippy::unused_async)]
     #[cfg(unix)]
     async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
+        use expectrl::Expect;
+
         let mut log = Vec::new();
         let writer = std::io::Cursor::new(&mut log);
 
@@ -928,9 +930,10 @@ impl TestCase {
 
         let mut wait_status = p.get_process().status()?;
 
-        if matches!(wait_status, expectrl::WaitStatus::StillAlive) {
+        if matches!(wait_status, expectrl::process::unix::WaitStatus::StillAlive) {
             // Try to terminate it safely.
-            p.get_process_mut().kill(expectrl::Signal::SIGTERM)?;
+            p.get_process_mut()
+                .kill(expectrl::process::unix::Signal::SIGTERM)?;
             wait_status = p.get_process().wait()?;
         }
 
@@ -939,13 +942,15 @@ impl TestCase {
         let cleaned = make_expectrl_output_readable(output);
 
         match wait_status {
-            expectrl::WaitStatus::Exited(_, code) => Ok(RunResult {
+            expectrl::process::unix::WaitStatus::Exited(_, code) => Ok(RunResult {
                 exit_status: ExitStatus::from_raw(code),
                 stdout: cleaned,
                 stderr: String::new(),
                 duration,
             }),
-            expectrl::WaitStatus::Signaled(_, _, _) => Err(anyhow::anyhow!("process was signaled")),
+            expectrl::process::unix::WaitStatus::Signaled(_, _, _) => {
+                Err(anyhow::anyhow!("process was signaled"))
+            }
             _ => Err(anyhow::anyhow!(
                 "unexpected status for process: {:?}",
                 wait_status
@@ -1182,7 +1187,6 @@ struct TestOptions {
 
     //
     // Compat-only options
-    //
     /// Show output from test cases (for compatibility only, has no effect)
     #[clap(long = "show-output")]
     pub show_output: bool,
@@ -1200,7 +1204,6 @@ struct TestOptions {
 
     //
     // Filters
-    //
     pub filters: Vec<String>,
 }
 

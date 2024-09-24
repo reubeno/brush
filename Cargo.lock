@@ -803,9 +803,9 @@ dependencies = [
 
 [[package]]
 name = "descape"
-version = "1.2.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ded38a8c3b37dcea20252418a1ccaa59cd399da7488c34452144720872a1b80b"
+checksum = "7c1113b908df80c963b107424498e37fba986b424b605729d1492dfbe4b2a630"
 
 [[package]]
 name = "diff"
@@ -889,8 +889,7 @@ checksum = "a0474425d51df81997e2f90a21591180b38eccf27292d755f3e30750225c175b"
 [[package]]
 name = "expectrl"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ede784925953fcab9a3351d5009bcb8d2b0c13e940924c88087e8e2ce0c4717a"
+source = "git+https://github.com/zhiburt/expectrl?rev=a0f4f7816b9a47a191dd858080e8fd80ff71cd96#a0f4f7816b9a47a191dd858080e8fd80ff71cd96"
 dependencies = [
  "conpty",
  "nix 0.26.4",
