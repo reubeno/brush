@@ -34,9 +34,9 @@ impl TestConfig {
     pub fn for_bash_testing(options: &TestOptions) -> Self {
         // Skip rc file and profile for deterministic behavior across systems/distros.
         Self {
-            name: String::from("bash"),
+            name: String::from(BASH_CONFIG_NAME),
             oracle_shell: ShellConfig {
-                which: WhichShell::NamedShell(String::from("bash")),
+                which: WhichShell::NamedShell(options.bash_path.clone()),
                 default_args: vec![String::from("--norc"), String::from("--noprofile")],
             },
             test_shell: ShellConfig {
@@ -55,7 +55,7 @@ impl TestConfig {
     pub fn for_sh_testing(options: &TestOptions) -> Self {
         // Skip rc file and profile for deterministic behavior across systems/distros.
         Self {
-            name: String::from("sh"),
+            name: String::from(SH_CONFIG_NAME),
             oracle_shell: ShellConfig {
                 which: WhichShell::NamedShell(String::from("sh")),
                 default_args: vec![],
@@ -90,11 +90,11 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
 
     let mut test_configs = vec![];
 
-    if options.should_enable_config("bash") {
+    if options.should_enable_config(BASH_CONFIG_NAME) {
         test_configs.push(TestConfig::for_bash_testing(&options));
     }
 
-    if options.should_enable_config("sh") {
+    if options.should_enable_config(SH_CONFIG_NAME) {
         test_configs.push(TestConfig::for_sh_testing(&options));
     }
 
@@ -240,7 +240,11 @@ fn report_integration_test_results_junit(
 
             let mut output_buf: Vec<u8> = vec![];
             r.write_details(&mut output_buf, options)?;
-            test_case.set_system_out(String::from_utf8(output_buf)?.as_str());
+
+            // Strip out any VT100-style escape sequences; they won't be okay in the XML
+            // that this turns into.
+            let output_as_string = String::from_utf8(output_buf)?;
+            test_case.set_system_out(strip_ansi_escapes::strip_str(output_as_string).as_str());
 
             suite.add_testcase(test_case);
         }
@@ -1185,6 +1189,10 @@ struct TestOptions {
     #[clap(long = "exact")]
     pub exact_match: bool,
 
+    /// Optionaly specify a non-default path for bash
+    #[clap(long = "bash-path", default_value = "bash")]
+    pub bash_path: String,
+
     //
     // Compat-only options
     /// Show output from test cases (for compatibility only, has no effect)
@@ -1207,10 +1215,13 @@ struct TestOptions {
     pub filters: Vec<String>,
 }
 
+const BASH_CONFIG_NAME: &str = "bash";
+const SH_CONFIG_NAME: &str = "sh";
+
 impl TestOptions {
     pub fn should_enable_config(&self, config: &str) -> bool {
         let enabled_configs = if self.enabled_configs.is_empty() {
-            vec![String::from("bash")]
+            vec![String::from(BASH_CONFIG_NAME)]
         } else {
             self.enabled_configs.clone()
         };
@@ -1289,19 +1300,26 @@ fn write_diff(
     Ok(())
 }
 
-fn main() {
+fn main() -> Result<()> {
     let unparsed_args: Vec<_> = std::env::args().collect();
-    let options = TestOptions::parse_from(unparsed_args);
+    let mut options = TestOptions::parse_from(unparsed_args);
 
     if options.list_tests_only && options.ignored {
-        return;
+        return Ok(());
+    }
+
+    // Allow overriding the bash path for invocations where custom arguments
+    // can't be used (because other tests get run too and they don't support
+    // those arguments).
+    if let Ok(value) = std::env::var("BASH_PATH") {
+        options.bash_path = value;
     }
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(32)
-        .build()
-        .unwrap()
-        .block_on(cli_integration_tests(options))
-        .unwrap();
+        .build()?
+        .block_on(cli_integration_tests(options))?;
+
+    Ok(())
 }

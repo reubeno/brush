@@ -23,60 +23,49 @@ permissions:
   contents: read
 
 jobs:
+  # Build and upload release binaries for all relevant architectures.
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
+          # Build for x86_64/linux target on native host.
           - host: "ubuntu-latest"
+            target: ""
             os: "linux"
             arch: "x86_64"
+            binary_name: "brush"
+          # Build for aarch64/macos target on native host.
           - host: "macos-latest"
+            target: ""
             os: "macos"
             arch: "aarch64"
+            required_tools: ""
+            binary_name: "brush"
+          # Build for aarch64/linux target on x86_64/linux host.
+          - host: "ubuntu-latest"
+            target: "aarch64-unknown-linux-gnu"
+            os: "linux"
+            arch: "aarch64"
+            required_tools: "gcc-aarch64-linux-gnu"
+            binary_name: "brush"
+          # Build for WASI-0.1 target on x86_64/linux host.
+          - host: "ubuntu-latest"
+            target: "wasm32-wasip1"
+            os: "wasi-0.1"
+            arch: "wasm32"
+            required_tools: ""
+            binary_name: "brush.wasm"
+          # Build for x86_64/windows target on x86_64/linux host.
+          - host: "ubuntu-latest"
+            target: "x86_64-pc-windows-gnu"
+            os: "windows"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush.exe"
 
     name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ${{ matrix.host }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build
-        run: cargo build --release
-
-      - name: "Upload binaries"
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.arch }}-${{ matrix.os }}
-          path: target/release/brush
-
-  build_cross:
-    name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        include:
-          - target: "aarch64-unknown-linux-gnu"
-            arch: "aarch64"
-            os: "Linux"
-            binary_name: "brush"
-          - target: "wasm32-wasip1"
-            arch: "wasm32"
-            os: "WASI-0.1"
-            binary_name: "brush.wasm"
-          - target: "x86_64-pc-windows-gnu"
-            arch: "x86_64"
-            os: "Windows"
-            binary_name: "brush.exe"
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,26 +81,51 @@ jobs:
         with:
           key: "${{ matrix.target }}"
 
-      - name: Install native prerequisites
-        run: sudo apt-get update -y && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Install additional prerequisite tools
+        if: ${{ matrix.required_tools != '' }}
+        run: sudo apt-get update -y && sudo apt-get install -y ${{ matrix.required_tools }}
 
       - name: Install cross-compilation toolchain
+        if: ${{ matrix.target != '' }}
         uses: taiki-e/install-action@v2
         with:
           tool: cross
 
-      - name: Build
+      - name: "Build (native)"
+        if: ${{ matrix.target == '' }}
+        run: cargo build --release
+
+      - name: "Build (cross)"
+        if: ${{ matrix.target != '' }}
         run: cross build --release --target=${{ matrix.target }}
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.target }}
+          name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
+  # Test functional correctness
   test:
-    name: "Test"
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: "ubuntu-latest"
+            variant: "linux"
+            artifact_suffix: ""
+            name_suffix: "(linux)"
+
+          #
+          # TODO: Re-enable once tests are passing.
+          #
+          # - host: "macos-latest"
+          #   variant: "macos"
+          #   artifact_suffix: "-macos"
+          #   name_suffix: "(macOS) -- ** not yet expected to pass **"
+
+    name: "Test ${{ matrix.name_suffix }}"
+    runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -133,38 +147,54 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
+      - name: "Install recent bash for tests (macos)"
+        if: ${{ matrix.host == 'macos-latest' }}
+        run: |
+          brew install bash
+          BASH_PATH="$(brew --prefix bash)/bin/bash"
+          echo "Using bash from: ${BASH_PATH}"
+          echo "BASH_PATH=${BASH_PATH}">>$GITHUB_ENV
+
       - name: Test
         run: |
           set -euxo pipefail
+
+          # Set us up to use cargo-llvm-cov
           source <(cargo llvm-cov show-env --export-prefix)
           cargo llvm-cov clean --workspace
 
+          # Run the tests
           result=0
-          RUSTC_BOOTSTRAP=1 BRUSH_TEST_REPORT=0 cargo test --workspace -- -Z unstable-options --format junit >raw-test-output.txt 2>test-errors.txt || result=$?
+          RUSTC_BOOTSTRAP=1 cargo test --workspace -- -Z unstable-options --format junit >raw-test-output.txt 2>test-errors.txt || result=$?
 
+          # Dump any errors to stdout
           if [[ -f test-errors.txt ]]; then
             cat test-errors.txt
           fi
 
-          cargo llvm-cov report --cobertura --output-path ./codecov.xml
+          # Generate code coverage report
+          cargo llvm-cov report --cobertura --output-path ./codecov-${{ matrix.variant }}.xml || result=$?
 
           # Process raw test output
-          n=1
-          while IFS= read -r line
-          do
-            if [[ ${line} == "<?xml"* ]]; then
-              ((n++))
-            fi
-            echo "${line}" >>"test-results-${n}.xml"
-          done <raw-test-output.txt
+          if [[ -f raw-test-output.txt ]]; then
+              n=1
+              while IFS= read -r line
+              do
+                if [[ ${line} == "<?xml"* ]]; then
+                  ((n++))
+                fi
+                echo "${line}" >>"test-results-${{ matrix.variant }}-${n}.xml"
+              done <raw-test-output.txt
+          fi
 
+          # Report the actual test results
           exit ${result}
 
       - name: "Upload test results"
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-reports
+          name: test-reports${{ matrix.artifact_suffix }}
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
@@ -173,7 +203,7 @@ jobs:
         id: "code_coverage_report"
         with:
           artifact_download_workflow_names: "CI"
-          filename: "codecov.xml"
+          filename: codecov-${{ matrix.variant }}.xml
           overall_coverage_fail_threshold: 70
           only_list_changed_files: ${{ github.event_name == 'pull_request' }}
           fail_on_negative_difference: true
@@ -184,15 +214,10 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: codecov-reports
+          name: codecov-reports${{ matrix.artifact_suffix }}
           path: code-coverage-results.md
 
-      - name: "Upload event file"
-        uses: actions/upload-artifact@v4
-        with:
-          name: event-file
-          path: ${{ github.event_path }}
-
+  # Static analysis of the code.
   check:
     name: "Source code checks"
     runs-on: ubuntu-latest
@@ -236,6 +261,7 @@ jobs:
         if: matrix.rust-version == 'stable'
         run: cargo clippy --all-features --all-targets
 
+  # Performance analysis of the code.
   benchmark:
     if: github.event_name == 'pull_request'
     name: "Benchmarks"

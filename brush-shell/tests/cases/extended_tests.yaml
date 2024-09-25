@@ -56,7 +56,7 @@ cases:
       [[ -x non-existent ]] || echo "-x correctly identified non-existent path"
 
       touch test-file
-      ln -sfr link test-file
+      ln -sf link test-file
       [[ -x test-file ]] || echo "-x correctly identified non-executable file"
       [[ -x link ]] || echo "-x correctly identified link to non-executable file"
 
@@ -73,7 +73,7 @@ cases:
       [[ -w non-existent ]] || echo "-w correctly identified non-existent path"
 
       touch test-file
-      ln -sfr link test-file
+      ln -sf link test-file
       [[ -w test-file ]] || echo "-w correctly identified non-writable file"
       [[ -w link ]] || echo "-w correctly identified link to non-writable file"
 
