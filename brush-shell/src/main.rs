@@ -27,7 +27,7 @@ impl CommandLineArgs {
     fn parse_from<'a>(itr: impl IntoIterator<Item = &'a String>) -> Self {
         let (mut this, script_args) = brush_core::builtins::parse_known::<CommandLineArgs, _>(itr);
         // if we have `--` and unparsed raw args than
-        script_args.map(|mut args| {
+        if let Some(mut args) = script_args {
             // if script_path has not been parsed yet
             // use the first script_args[0] (it is `--`)
             // as script_path
@@ -40,7 +40,7 @@ impl CommandLineArgs {
                 this.script_args
                     .extend(first.into_iter().chain(args).cloned());
             }
-        });
+        }
         this
     }
 }
