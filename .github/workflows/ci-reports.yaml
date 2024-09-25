@@ -56,7 +56,8 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: codecov-reports
+          pattern: codecov-reports*
+          merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
           path: reports/
@@ -66,7 +67,8 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: perf-reports
+          pattern: perf-reports*
+          merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
           path: reports/
@@ -76,7 +78,8 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: test-reports
+          pattern: test-reports*
+          merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
           path: reports/
