@@ -288,5 +288,10 @@ pub(crate) fn get_default_builtins(
         m.insert("suspend".into(), builtin::<unimp::UnimplementedCommand>());
     }
 
+    //
+    // Brush-specific builtins.
+    //
+    m.insert("brushinfo".into(), builtin::<brushinfo::BrushInfoCommand>());
+
     m
 }

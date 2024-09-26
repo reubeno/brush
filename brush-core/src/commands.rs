@@ -9,15 +9,15 @@ use itertools::Itertools;
 
 use crate::{
     builtins, error,
-    interp::{self, Execute},
+    interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
-    sys, Shell,
+    processes, sys, trace_categories, ExecutionParameters, ExecutionResult, Shell,
 };
 
 /// Represents the result of spawning a command.
-pub(crate) enum SpawnResult {
+pub(crate) enum CommandSpawnResult {
     /// The child process was spawned.
-    SpawnedChild(sys::process::Child),
+    SpawnedProcess(processes::ChildProcess),
     /// The command immediatedly exited with the given numeric exit code.
     ImmediateExit(u8),
     /// The shell should exit after this command, yielding the given numeric exit code.
@@ -31,14 +31,93 @@ pub(crate) enum SpawnResult {
     ContinueLoop(u8),
 }
 
+impl CommandSpawnResult {
+    // TODO: jobs: remove `no_wait`; it doesn't make any sense
+    // TODO: jobs: figure out how to remove 'shell'
+    #[allow(clippy::too_many_lines)]
+    pub async fn wait(
+        self,
+        shell: &mut Shell,
+        no_wait: bool,
+    ) -> Result<CommandWaitResult, error::Error> {
+        #[allow(clippy::ignored_unit_patterns)]
+        match self {
+            CommandSpawnResult::SpawnedProcess(mut child) => {
+                let process_wait_result = if !no_wait {
+                    // Wait for the process to exit or for a relevant signal, whichever happens
+                    // first.
+                    child.wait().await?
+                } else {
+                    processes::ProcessWaitResult::Stopped
+                };
+
+                let command_wait_result = match process_wait_result {
+                    processes::ProcessWaitResult::Completed(output) => {
+                        CommandWaitResult::CommandCompleted(ExecutionResult::from(output))
+                    }
+                    processes::ProcessWaitResult::Stopped => CommandWaitResult::CommandStopped(
+                        ExecutionResult::from(processes::ProcessWaitResult::Stopped),
+                        child,
+                    ),
+                };
+
+                if shell.options.interactive {
+                    sys::terminal::move_self_to_foreground()?;
+                }
+
+                Ok(command_wait_result)
+            }
+            CommandSpawnResult::ImmediateExit(exit_code) => Ok(
+                CommandWaitResult::CommandCompleted(ExecutionResult::new(exit_code)),
+            ),
+            CommandSpawnResult::ExitShell(exit_code) => {
+                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
+                    exit_code,
+                    exit_shell: true,
+                    ..ExecutionResult::default()
+                }))
+            }
+            CommandSpawnResult::ReturnFromFunctionOrScript(exit_code) => {
+                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
+                    exit_code,
+                    return_from_function_or_script: true,
+                    ..ExecutionResult::default()
+                }))
+            }
+            CommandSpawnResult::BreakLoop(count) => {
+                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
+                    exit_code: 0,
+                    break_loop: Some(count),
+                    ..ExecutionResult::default()
+                }))
+            }
+            CommandSpawnResult::ContinueLoop(count) => {
+                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
+                    exit_code: 0,
+                    continue_loop: Some(count),
+                    ..ExecutionResult::default()
+                }))
+            }
+        }
+    }
+}
+
+/// Encapsulates the result of waiting for a command to complete.
+pub(crate) enum CommandWaitResult {
+    /// The command completed.
+    CommandCompleted(ExecutionResult),
+    /// The command was stopped before it completed.
+    CommandStopped(ExecutionResult, processes::ChildProcess),
+}
+
 /// Represents the context for executing a command.
 pub struct ExecutionContext<'a> {
     /// The shell in which the command is being executed.
     pub shell: &'a mut Shell,
     /// The name of the command being executed.    
     pub command_name: String,
-    /// The open files tracked by the current context.
-    pub open_files: openfiles::OpenFiles,
+    /// The parameters for the execution.
+    pub params: ExecutionParameters,
 }
 
 impl ExecutionContext<'_> {
@@ -60,7 +139,19 @@ impl ExecutionContext<'_> {
     /// Returns the file descriptor with the given number.
     #[allow(clippy::unwrap_in_result)]
     pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
-        self.open_files.files.get(&fd).map(|f| f.try_dup().unwrap())
+        self.params
+            .open_files
+            .files
+            .get(&fd)
+            .map(|f| f.try_dup().unwrap())
+    }
+
+    pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
+        self.shell.options.interactive
+            && matches!(
+                self.params.process_group_policy,
+                ProcessGroupPolicy::NewProcessGroup
+            )
     }
 }
 
@@ -184,9 +275,10 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
 
 pub(crate) async fn execute(
     cmd_context: ExecutionContext<'_>,
+    process_group_id: &mut Option<i32>,
     args: Vec<CommandArg>,
     use_functions: bool,
-) -> Result<SpawnResult, error::Error> {
+) -> Result<CommandSpawnResult, error::Error> {
     if !cmd_context.command_name.contains(std::path::MAIN_SEPARATOR) {
         let builtin = cmd_context
             .shell
@@ -222,14 +314,15 @@ pub(crate) async fn execute(
     }
 
     // Strip the command name off args.
-    execute_external_command(cmd_context, &args[1..])
+    execute_external_command(cmd_context, process_group_id, &args[1..])
 }
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
+    process_group_id: &mut Option<i32>,
     args: &[CommandArg],
-) -> Result<SpawnResult, error::Error> {
+) -> Result<CommandSpawnResult, error::Error> {
     // Filter out the args; we only want strings.
     let mut cmd_args = vec![];
     for arg in args {
@@ -238,20 +331,53 @@ pub(crate) fn execute_external_command(
         }
     }
 
+    // Before we lose ownership of the open files, figure out if stdin will be a terminal.
+    #[allow(unused_variables)]
+    let child_stdin_is_terminal = context
+        .params
+        .open_files
+        .stdin()
+        .is_some_and(|f| f.is_term());
+
+    // Figure out if we should be setting up a new process group.
+    let new_pg = context.should_cmd_lead_own_process_group();
+
     // Compose the std::process::Command that encapsulates what we want to launch.
-    let cmd = compose_std_command(
+    #[allow(unused_mut)]
+    let mut cmd = compose_std_command(
         context.shell,
         context.command_name.as_str(),
         context.command_name.as_str(),
         cmd_args.as_slice(),
-        context.open_files,
+        context.params.open_files,
         false, /* empty environment? */
     )?;
 
+    // Set up process group state.
+    let required_pgid = if new_pg {
+        let required_pgid = process_group_id.unwrap_or(0);
+
+        #[cfg(unix)]
+        cmd.process_group(required_pgid);
+
+        required_pgid
+    } else {
+        0
+    };
+
+    // Register some code to run in the forked child process before it execs
+    // the target command.
+    #[cfg(unix)]
+    if new_pg && child_stdin_is_terminal {
+        unsafe {
+            cmd.pre_exec(setup_process_before_exec);
+        }
+    }
+
     // When tracing is enabled, report.
     tracing::debug!(
-        target: "commands",
-        "Spawning: {} {}",
+        target: trace_categories::COMMANDS,
+        "Spawning: pgid={required_pgid} cmd='{} {}'",
         cmd.get_program().to_string_lossy().to_string(),
         cmd.get_args()
             .map(|a| a.to_string_lossy().to_string())
@@ -259,7 +385,22 @@ pub(crate) fn execute_external_command(
     );
 
     match sys::process::spawn(cmd) {
-        Ok(child) => Ok(SpawnResult::SpawnedChild(child)),
+        Ok(child) => {
+            // Retrieve the pid.
+            let pid = child.id();
+            if let Some(pid) = &pid {
+                #[allow(clippy::cast_possible_wrap)]
+                if required_pgid == 0 {
+                    *process_group_id = Some(*pid as i32);
+                }
+            } else {
+                tracing::warn!("could not retrieve pid for child process");
+            }
+
+            Ok(CommandSpawnResult::SpawnedProcess(
+                processes::ChildProcess::new(pid, child),
+            ))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if context.shell.options.sh_mode {
                 tracing::error!(
@@ -271,32 +412,42 @@ pub(crate) fn execute_external_command(
             } else {
                 tracing::error!("{}: not found", context.command_name);
             }
-            Ok(SpawnResult::ImmediateExit(127))
+            Ok(CommandSpawnResult::ImmediateExit(127))
         }
         Err(e) => {
             tracing::error!("error: {}", e);
-            Ok(SpawnResult::ImmediateExit(126))
+            Ok(CommandSpawnResult::ImmediateExit(126))
         }
     }
+}
+
+#[cfg(unix)]
+fn setup_process_before_exec() -> Result<(), std::io::Error> {
+    sys::terminal::move_self_to_foreground().map_err(std::io::Error::other)?;
+    Ok(())
 }
 
 async fn execute_builtin_command(
     builtin: &builtins::Registration,
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<SpawnResult, error::Error> {
+) -> Result<CommandSpawnResult, error::Error> {
     let exit_code = match (builtin.execute_func)(context, args).await {
         Ok(builtin_result) => match builtin_result.exit_code {
             builtins::ExitCode::Success => 0,
             builtins::ExitCode::InvalidUsage => 2,
             builtins::ExitCode::Unimplemented => 99,
             builtins::ExitCode::Custom(code) => code,
-            builtins::ExitCode::ExitShell(code) => return Ok(SpawnResult::ExitShell(code)),
+            builtins::ExitCode::ExitShell(code) => return Ok(CommandSpawnResult::ExitShell(code)),
             builtins::ExitCode::ReturnFromFunctionOrScript(code) => {
-                return Ok(SpawnResult::ReturnFromFunctionOrScript(code))
+                return Ok(CommandSpawnResult::ReturnFromFunctionOrScript(code))
             }
-            builtins::ExitCode::BreakLoop(count) => return Ok(SpawnResult::BreakLoop(count)),
-            builtins::ExitCode::ContinueLoop(count) => return Ok(SpawnResult::ContinueLoop(count)),
+            builtins::ExitCode::BreakLoop(count) => {
+                return Ok(CommandSpawnResult::BreakLoop(count))
+            }
+            builtins::ExitCode::ContinueLoop(count) => {
+                return Ok(CommandSpawnResult::ContinueLoop(count))
+            }
         },
         Err(e) => {
             tracing::error!("error: {}", e);
@@ -304,20 +455,20 @@ async fn execute_builtin_command(
         }
     };
 
-    Ok(SpawnResult::ImmediateExit(exit_code))
+    Ok(CommandSpawnResult::ImmediateExit(exit_code))
 }
 
 pub(crate) async fn invoke_shell_function(
     function_definition: Arc<ast::FunctionDefinition>,
     mut context: ExecutionContext<'_>,
     args: &[CommandArg],
-) -> Result<SpawnResult, error::Error> {
+) -> Result<CommandSpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function_definition.body;
 
     // Apply any redirects specified at function definition-time.
     if let Some(redirects) = redirects {
         for redirect in &redirects.0 {
-            interp::setup_redirect(&mut context.open_files, context.shell, redirect).await?;
+            interp::setup_redirect(&mut context.params.open_files, context.shell, redirect).await?;
         }
     }
 
@@ -326,9 +477,7 @@ pub(crate) async fn invoke_shell_function(
     context.shell.positional_parameters = args.iter().map(|a| a.to_string()).collect();
 
     // Pass through open files.
-    let params = interp::ExecutionParameters {
-        open_files: context.open_files.clone(),
-    };
+    let params = context.params.clone();
 
     // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
     // before "exiting" the function.
@@ -348,5 +497,5 @@ pub(crate) async fn invoke_shell_function(
     // Restore positional parameters.
     context.shell.positional_parameters = prior_positional_params;
 
-    Ok(SpawnResult::ImmediateExit(result?.exit_code))
+    Ok(CommandSpawnResult::ImmediateExit(result?.exit_code))
 }

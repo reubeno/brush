@@ -44,6 +44,9 @@ pub trait InteractiveShell {
     /// results to standard output and standard error. Continues until the shell
     /// normally exits or until a fatal error occurs.
     async fn run_interactively(&mut self) -> Result<(), ShellError> {
+        // TODO: Consider finding a better place for this.
+        let _ = brush_core::TerminalControl::acquire()?;
+
         loop {
             let result = self.run_interactively_once().await?;
             match result {

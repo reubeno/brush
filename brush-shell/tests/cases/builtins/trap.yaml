@@ -4,26 +4,26 @@ cases:
     stdin: |
       trap "echo 1" SIGINT
       trap "echo 2" SIGINT
-      trap
+      trap -p INT
 
       trap "echo 3" int
-      trap
+      trap -p INT
 
       trap "echo 4" 2
-      trap
+      trap -p INT
 
   - name: "trap EXIT"
     known_failure: true
     stdin: |
       trap "echo [exit]" EXIT
-      trap
+      trap -p EXIT
 
   - name: "trap DEBUG"
     stdin: |
       trap 'echo [command: ${BASH_COMMAND}]' DEBUG
-      trap
+      trap -p DEBUG
 
   - name: "trap ERR"
     stdin: |
       trap "echo [err]" ERR
-      trap
+      trap -p ERR

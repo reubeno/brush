@@ -56,8 +56,6 @@ completion scripts.
 
 There's a lot that *is* working, but there are also known gaps in compatibility. Most notably:
 
-* **Commands run asynchronously as jobs, job management.**
-  You can run `some-command &` but it's proof-of-concept quality at best. Standard job management via `fg`, `bg`, and `jobs` is not fully implemented. This would be a great area for enthusiastic contributors to dive in :).
 * **Honoring `set` and `shopt` options (e.g., `set -e`).**
   The `set` builtin is implemented, as is `set -x` and a few other options, but most of the behaviors aren't there. `set -e`, for example, will execute but its semantics aren't applied across execution.
 * **Curly brace expansion.**

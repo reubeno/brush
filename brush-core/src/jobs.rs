@@ -4,7 +4,9 @@ use std::fmt::Display;
 use futures::FutureExt;
 
 use crate::error;
+use crate::processes;
 use crate::sys;
+use crate::trace_categories;
 use crate::ExecutionResult;
 
 pub(crate) type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>;
@@ -15,6 +17,53 @@ pub(crate) type JobResult = (Job, Result<ExecutionResult, error::Error>);
 pub struct JobManager {
     /// The jobs that are currently managed by the shell.
     pub jobs: Vec<Job>,
+}
+
+/// Represents a task that is part of a job.
+pub enum JobTask {
+    /// An external process.
+    External(processes::ChildProcess),
+    /// An internal asynchronous task.
+    Internal(JobJoinHandle),
+}
+
+/// Represents the result of waiting on a job task.
+pub enum JobTaskWaitResult {
+    /// The task has completed.
+    Completed(ExecutionResult),
+    /// The task was stopped.
+    Stopped,
+}
+
+impl JobTask {
+    pub async fn wait(&mut self) -> Result<JobTaskWaitResult, error::Error> {
+        match self {
+            JobTask::External(process) => {
+                let wait_result = process.wait().await?;
+                match wait_result {
+                    processes::ProcessWaitResult::Completed(output) => {
+                        Ok(JobTaskWaitResult::Completed(output.into()))
+                    }
+                    processes::ProcessWaitResult::Stopped => Ok(JobTaskWaitResult::Stopped),
+                }
+            }
+            JobTask::Internal(handle) => Ok(JobTaskWaitResult::Completed(handle.await??)),
+        }
+    }
+
+    #[allow(clippy::unwrap_in_result)]
+    fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
+        match self {
+            JobTask::External(process) => {
+                let check_result = process.poll();
+                check_result.map(|polled_result| polled_result.map(|output| output.into()))
+            }
+            JobTask::Internal(handle) => {
+                let checkable_handle = handle;
+                checkable_handle.now_or_never().map(|r| r.unwrap())
+            }
+        }
+    }
 }
 
 impl JobManager {
@@ -96,7 +145,7 @@ impl JobManager {
         }
     }
 
-    /// Waits for all managede jobs to complete.
+    /// Waits for all managed jobs to complete.
     pub async fn wait_all(&mut self) -> Result<Vec<Job>, error::Error> {
         for job in &mut self.jobs {
             job.wait().await?;
@@ -114,6 +163,10 @@ impl JobManager {
             if let Some(result) = self.jobs[i].poll_done()? {
                 let job = self.jobs.remove(i);
                 results.push((job, result));
+            } else if matches!(self.jobs[i].state, JobState::Done) {
+                // TODO: This is a workaround to remove jobs that are done but for which we don't
+                // know what happened.
+                results.push((self.jobs.remove(i), Ok(ExecutionResult::success())));
             } else {
                 i += 1;
             }
@@ -127,7 +180,7 @@ impl JobManager {
 
         let mut i = 0;
         while i != self.jobs.len() {
-            if self.jobs[i].join_handles.is_empty() {
+            if self.jobs[i].tasks.is_empty() {
                 completed_jobs.push(self.jobs.remove(i));
             } else {
                 i += 1;
@@ -185,11 +238,11 @@ impl Display for JobAnnotation {
 
 /// Encapsulates a set of processes managed by the shell as a single unit.
 pub struct Job {
-    /// Join handles for the tasks that are waiting on the job's processes.
-    join_handles: VecDeque<JobJoinHandle>,
+    /// The tasks that make up the job.
+    tasks: VecDeque<JobTask>,
 
-    /// If available, the process IDs of the job's processes.
-    pids: Vec<u32>,
+    /// If available, the process group ID of the job's processes.
+    pgid: Option<u32>,
 
     /// The annotation of the job (e.g., current, previous).
     annotation: JobAnnotation,
@@ -222,20 +275,17 @@ impl Job {
     ///
     /// # Arguments
     ///
-    /// * `join_handles` - The join handles for the tasks that are waiting on the job's processes.
-    /// * `pids` - If available, the process IDs of the job's processes.
+    /// * `children` - The job's known child processes.
     /// * `command_line` - The command line of the job.
     /// * `state` - The current operational state of the job.
-    pub(crate) fn new(
-        join_handles: VecDeque<JobJoinHandle>,
-        pids: Vec<u32>,
-        command_line: String,
-        state: JobState,
-    ) -> Self {
+    pub(crate) fn new<I>(tasks: I, command_line: String, state: JobState) -> Self
+    where
+        I: IntoIterator<Item = JobTask>,
+    {
         Self {
             id: 0,
-            join_handles,
-            pids,
+            tasks: tasks.into_iter().collect(),
+            pgid: None,
             annotation: JobAnnotation::None,
             command_line,
             state,
@@ -274,25 +324,28 @@ impl Job {
     }
 
     /// Polls whether the job has completed.
+    #[allow(clippy::unnecessary_wraps)]
     pub fn poll_done(
         &mut self,
     ) -> Result<Option<Result<ExecutionResult, error::Error>>, error::Error> {
         let mut result: Option<Result<ExecutionResult, error::Error>> = None;
 
-        while !self.join_handles.is_empty() {
-            let join_handle = &mut self.join_handles[0];
-            match join_handle.now_or_never() {
-                Some(Ok(r)) => {
-                    self.join_handles.remove(0);
+        tracing::debug!(target: trace_categories::JOBS, "Polling job {} for completion...", self.id);
+
+        while !self.tasks.is_empty() {
+            let task = &mut self.tasks[0];
+            match task.poll() {
+                Some(r) => {
+                    self.tasks.remove(0);
                     result = Some(r);
                 }
-                Some(Err(e)) => {
-                    self.join_handles.remove(0);
-                    return Err(error::Error::ThreadingError(e));
+                None => {
+                    return Ok(None);
                 }
-                None => return Ok(None),
             }
         }
+
+        tracing::debug!(target: trace_categories::JOBS, "Job {} has completed.", self.id);
 
         self.state = JobState::Done;
 
@@ -303,8 +356,18 @@ impl Job {
     pub async fn wait(&mut self) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
 
-        while let Some(join_handle) = self.join_handles.pop_back() {
-            result = join_handle.await.unwrap()?;
+        while let Some(task) = self.tasks.back_mut() {
+            match task.wait().await? {
+                JobTaskWaitResult::Completed(execution_result) => {
+                    result = execution_result;
+                    self.tasks.pop_back();
+                }
+                JobTaskWaitResult::Stopped => {
+                    self.state = JobState::Stopped;
+                    result = ExecutionResult::stopped();
+                    break;
+                }
+            }
         }
 
         Ok(result)
@@ -313,27 +376,40 @@ impl Job {
     /// Moves the job to execute in the background.
     #[allow(clippy::unused_self)]
     pub fn move_to_background(&mut self) -> Result<(), error::Error> {
-        error::unimp("move job to background")
+        if matches!(self.state, JobState::Stopped) {
+            if let Some(pgid) = self.get_process_group_id() {
+                sys::signal::continue_process(pgid)?;
+                self.state = JobState::Running;
+                Ok(())
+            } else {
+                Err(error::Error::FailedToSendSignal)
+            }
+        } else {
+            error::unimp("move job to background")
+        }
     }
 
     /// Moves the job to execute in the foreground.
     pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
-        if !matches!(self.state, JobState::Stopped) {
-            return error::unimp("move job to foreground for not stopped job");
+        if matches!(self.state, JobState::Stopped) {
+            if let Some(pgid) = self.get_process_group_id() {
+                sys::signal::continue_process(pgid)?;
+                self.state = JobState::Running;
+            } else {
+                return Err(error::Error::FailedToSendSignal);
+            }
         }
 
-        if let Some(pid) = self.get_representative_pid() {
-            sys::signal::continue_process(pid)?;
-            self.state = JobState::Running;
-            Ok(())
-        } else {
-            Err(error::Error::FailedToSendSignal)
+        if let Some(pgid) = self.get_process_group_id() {
+            sys::terminal::move_to_foreground(pgid)?;
         }
+
+        Ok(())
     }
 
     /// Kills the job.
     pub fn kill(&mut self) -> Result<(), error::Error> {
-        if let Some(pid) = self.get_representative_pid() {
+        if let Some(pid) = self.get_process_group_id() {
             sys::signal::kill_process(pid)
         } else {
             Err(error::Error::FailedToSendSignal)
@@ -342,6 +418,21 @@ impl Job {
 
     /// Tries to retrieve a "representative" pid for the job.
     pub fn get_representative_pid(&self) -> Option<u32> {
-        self.pids.first().copied()
+        for task in &self.tasks {
+            match task {
+                JobTask::External(p) => {
+                    if let Some(pid) = p.pid() {
+                        return Some(pid);
+                    }
+                }
+                JobTask::Internal(_) => continue,
+            }
+        }
+        None
+    }
+
+    pub fn get_process_group_id(&self) -> Option<u32> {
+        // TODO: Don't assume that the first PID is the PGID.
+        self.pgid.or_else(|| self.get_representative_pid())
     }
 }

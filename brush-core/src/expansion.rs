@@ -9,6 +9,7 @@ use crate::arithmetic::ExpandAndEvaluate;
 use crate::env;
 use crate::error;
 use crate::escape;
+use crate::interp::ProcessGroupPolicy;
 use crate::openfiles;
 use crate::patterns;
 use crate::prompt;
@@ -613,15 +614,17 @@ impl<'a> WordExpander<'a> {
                     .files
                     .insert(1, openfiles::OpenFile::PipeWriter(writer));
 
+                let mut params = subshell.default_exec_params();
+                params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
                 // Run the command.
                 // TODO: inspect result?
-                let _ = subshell
-                    .run_string(s, &subshell.default_exec_params())
-                    .await?;
+                let _cmd_result = subshell.run_string(s, &params).await?;
 
-                // Make sure the subshell is closed; among other things, this
-                // ensures it's not holding onto the write end of the pipe.
+                // Make sure the subshell and params are closed; among other things, this
+                // ensures they're not holding onto the write end of the pipe.
                 drop(subshell);
+                drop(params);
 
                 // Extract output.
                 let output_str = std::io::read_to_string(reader)?;

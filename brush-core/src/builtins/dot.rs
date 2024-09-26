@@ -2,7 +2,7 @@ use std::path::Path;
 
 use clap::Parser;
 
-use crate::{builtins, commands, interp::ExecutionParameters};
+use crate::{builtins, commands};
 
 /// Evalute the provided script in the current shell environment.
 #[derive(Debug, Parser)]
@@ -24,14 +24,13 @@ impl builtins::Command for DotCommand {
         // TODO: Handle trap inheritance.
         let script_args: Vec<_> = self.script_args.iter().map(|a| a.as_str()).collect();
 
+        let params = context.params.clone();
         let result = context
             .shell
             .source(
                 Path::new(&self.script_path),
                 script_args.as_slice(),
-                &ExecutionParameters {
-                    open_files: context.open_files.clone(),
-                },
+                &params,
             )
             .await?;
 

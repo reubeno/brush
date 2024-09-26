@@ -225,4 +225,19 @@ impl OpenFiles {
 
         Ok(OpenFiles { files })
     }
+
+    /// Retrieves the file backing standard input in this context.
+    pub fn stdin(&self) -> Option<&OpenFile> {
+        self.files.get(&0)
+    }
+
+    /// Retrieves the file backing standard output in this context.
+    pub fn stdout(&self) -> Option<&OpenFile> {
+        self.files.get(&1)
+    }
+
+    /// Retrieves the file backing standard error in this context.
+    pub fn stderr(&self) -> Option<&OpenFile> {
+        self.files.get(&2)
+    }
 }
