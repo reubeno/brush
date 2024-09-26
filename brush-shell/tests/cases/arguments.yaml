@@ -1,0 +1,83 @@
+name: "Argument handling tests"
+common_test_files:
+  - path: "script.sh"
+    contents: |
+      echo \"$0\" \"$1\" \"$2\" \"$@\"
+
+cases:
+  - name: "-c mode arguments without --"
+    args:
+      - "-c"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - 1
+      - "-2"
+      - "3"
+
+  - name: "-c mode arguments with --"
+    args:
+      - "-c"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - "--"
+      - 1
+      - 2
+      - 3
+
+  - name: "-c mode and arguments with +O"
+    args:
+      - "+O"
+      - "nullglob"
+      - "-c"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - "--"
+      - 1
+      - 2
+      - 3
+
+  - name: "-c mode -- torture"
+    args:
+      - "-c"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - --
+      - --
+      - -&-1
+      - --!
+      - "\"-2\""
+      - "''--''"
+      - 3--*
+
+  - name: "-c modeonly one --"
+    args:
+      - "-c"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - --
+
+  - name: "script arguments without --"
+    args:
+      - script.sh
+      - -1
+      - -2
+      - -3
+
+  - name: "script arguments with --"
+    args:
+      - script.sh
+      - --
+      - --1
+      - -2
+      - 3
+
+  - name: "script -- torture"
+    args:
+      - script.sh
+      - --
+      - "--"
+      - --
+      - -!-1*
+      - "\"-2\""
+      - --
+      - 3--
+
+  - name: "script only one --"
+    args:
+      - script.sh
+      - --

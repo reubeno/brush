@@ -114,9 +114,14 @@ pub struct CommandLineArgs {
     pub enabled_log_events: Vec<events::TraceEvent>,
 
     /// Path to script to execute.
+    // allow any string as command_name similar to sh
+    #[clap(allow_hyphen_values = true)]
     pub script_path: Option<String>,
 
     /// Arguments for script.
+    // `allow_hyphen_values`: do not strip `-` from flags
+    // `num_args=1..`: consume everything
+    #[clap(allow_hyphen_values = true, num_args=1..)]
     pub script_args: Vec<String>,
 }
 

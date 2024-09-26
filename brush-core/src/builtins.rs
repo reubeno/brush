@@ -382,3 +382,75 @@ fn brush_help_styles() -> clap::builder::Styles {
         .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
         .placeholder(styling::AnsiColor::Cyan.on_default())
 }
+
+/// This function and the [`try_parse_known`] exists to deal with
+/// the Clap's limitation of treating `--` like a regular value
+/// `https://github.com/clap-rs/clap/issues/5055`
+///
+/// # Arguments
+///
+/// * `args` - An Iterator from [`std::env::args`]
+///
+/// # Returns
+///
+/// * a parsed struct T from [`clap::Parser::parse_from`]
+/// * the remain iterator `args` with `--` and the rest arguments if they present
+///   othervise None
+///
+/// # Examples
+/// ```
+///    use clap::{builder::styling, Parser};
+///    #[derive(Parser)]
+///    struct CommandLineArgs {
+///       #[clap(allow_hyphen_values = true, num_args=1..)]
+///       script_args: Vec<String>,
+///    }
+///
+///    let (mut parsed_args, raw_args) =
+///        brush_core::builtins::parse_known::<CommandLineArgs, _>(std::env::args());
+///    if raw_args.is_some() {
+///        parsed_args.script_args = raw_args.unwrap().collect();
+///    }
+/// ```
+pub fn parse_known<T: Parser, S>(
+    args: impl IntoIterator<Item = S>,
+) -> (T, Option<impl Iterator<Item = S>>)
+where
+    S: Into<std::ffi::OsString> + Clone + PartialEq<&'static str>,
+{
+    let mut args = args.into_iter();
+    // the best way to save `--` is to get it out with a side effect while `clap` iterates over the args
+    // this way we can be 100% sure that we have '--' and the remaining args
+    // and we will iterate only once
+    let mut hyphen = None;
+    let args_before_hyphen = args.by_ref().take_while(|a| {
+        let is_hyphen = *a == "--";
+        if is_hyphen {
+            hyphen = Some(a.clone());
+        }
+        !is_hyphen
+    });
+    let parsed_args = T::parse_from(args_before_hyphen);
+    let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
+    (parsed_args, raw_args)
+}
+
+/// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
+/// This function is used to parse arguments in builtins such as [`crate::builtins::echo::EchoCommand`]
+pub fn try_parse_known<T: Parser>(
+    args: impl IntoIterator<Item = String>,
+) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {
+    let mut args = args.into_iter();
+    let mut hyphen = None;
+    let args_before_hyphen = args.by_ref().take_while(|a| {
+        let is_hyphen = a == "--";
+        if is_hyphen {
+            hyphen = Some(a.clone());
+        }
+        !is_hyphen
+    });
+    let parsed_args = T::try_parse_from(args_before_hyphen)?;
+
+    let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
+    Ok((parsed_args, raw_args))
+}
