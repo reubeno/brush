@@ -200,6 +200,7 @@ jobs:
         id: "code_coverage_report"
         with:
           artifact_download_workflow_names: "CI"
+          artifact_name: coverage-%name%${{ matrix.artifact_suffix }}
           filename: codecov-${{ matrix.variant }}.xml
           overall_coverage_fail_threshold: 70
           only_list_changed_files: ${{ github.event_name == 'pull_request' }}
