@@ -16,7 +16,7 @@ cases:
 
   - name: "Working dir based prompts"
     stdin: |
-      cd /tmp
+      cd /usr
 
       prompt='\w '
       echo "Prompt: '${prompt@P}'"

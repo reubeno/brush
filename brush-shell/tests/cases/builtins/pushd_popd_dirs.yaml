@@ -46,7 +46,7 @@ cases:
 
   - name: "dirs with tilde replacement"
     stdin: |
-      HOME=/tmp
+      HOME=/usr
       cd ~
       echo "PWD: $PWD"
       dirs
@@ -54,8 +54,8 @@ cases:
 
   - name: "dirs to clear"
     stdin: |
-      cd /tmp
-      pushd /tmp
+      cd /usr
+      pushd /usr
       pushd /
       dirs -c
       dirs
