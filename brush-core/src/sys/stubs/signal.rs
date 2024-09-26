@@ -48,3 +48,7 @@ pub(crate) async fn await_ctrl_c() -> std::io::Result<()> {
 pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     Ok(())
 }
+
+pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
+    Ok(false)
+}

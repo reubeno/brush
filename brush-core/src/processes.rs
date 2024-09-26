@@ -43,28 +43,8 @@ impl ChildProcess {
                     break Ok(ProcessWaitResult::Stopped)
                 },
                 _ = sigchld.recv() => {
-                    #[allow(unused_mut)]
-                    let mut found_stopped = false;
-
-                    #[cfg(target_os = "linux")]
-                    loop {
-                        let wait_status = nix::sys::wait::waitid(
-                            nix::sys::wait::Id::All,
-                            nix::sys::wait::WaitPidFlag::WUNTRACED | nix::sys::wait::WaitPidFlag::WNOHANG);
-                        match wait_status {
-                            Ok(nix::sys::wait::WaitStatus::Stopped(_stopped_pid, _signal)) => {
-                                found_stopped = true;
-                            },
-                            Ok(_) => break,
-                            Err(nix::errno::Errno::ECHILD) => break,
-                            Err(e) => {
-                                return Err(e.into())
-                            },
-                        }
-                    }
-
-                    if found_stopped {
-                        break Ok(ProcessWaitResult::Stopped)
+                    if sys::signal::poll_for_stopped_children()? {
+                        break Ok(ProcessWaitResult::Stopped);
                     }
                 },
                 _ = sys::signal::await_ctrl_c() => {
