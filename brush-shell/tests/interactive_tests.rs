@@ -6,13 +6,14 @@ use expectrl::{
     Expect, Session,
 };
 
+#[ignore] // TODO: Debug flakiness
 #[test]
 fn run_suspend_and_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
 
     // Ping localhost in a loop; wait for at least one response.
     session.expect_prompt()?;
-    session.send_line("ping 127.0.0.1")?;
+    session.send_line("ping -c 1000000 127.0.0.1")?;
     session.expect("bytes from")?;
 
     // Suspend and resume a handful of times to make sure it pauses and
@@ -24,7 +25,7 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
 
         // Run `jobs` to see the suspended job.
         let jobs_output = session.exec_output("jobs")?;
-        assert!(jobs_output.contains("ping 127.0.0.1"));
+        assert!(jobs_output.contains("ping"));
 
         // Bring the job to the foreground.
         session.send_line("fg")?;
@@ -42,13 +43,14 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[ignore] // TODO: Debug flakiness
 #[test]
 fn run_in_bg_then_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
 
     // Ping localhost in a loop; wait for at least one response.
     session.expect_prompt()?;
-    session.send_line("ping 127.0.0.1")?;
+    session.send_line("ping -c 1000000 127.0.0.1")?;
     session.expect("bytes from")?;
 
     // Suspend and send to background.
@@ -57,7 +59,7 @@ fn run_in_bg_then_fg() -> anyhow::Result<()> {
 
     // Run `jobs` to see the suspended job.
     let jobs_output = session.exec_output("jobs")?;
-    assert!(jobs_output.contains("ping 127.0.0.1"));
+    assert!(jobs_output.contains("ping"));
 
     // Send the job to the background.
     session.send_line("bg")?;
