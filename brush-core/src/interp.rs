@@ -85,6 +85,7 @@ impl ExecutionResult {
 
     /// Returns a new `ExecutionResult` reflecting a process that was stopped.
     pub fn stopped() -> ExecutionResult {
+        // TODO: Decide how to sort this out in a platform-independent way.
         const SIGTSTP: std::os::raw::c_int = 20;
 
         #[allow(clippy::cast_possible_truncation)]
