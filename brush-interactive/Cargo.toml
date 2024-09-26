@@ -1,7 +1,7 @@
 [package]
 name = "brush-interactive"
 description = "Interactive layer of brush-shell"
-version = "0.2.8"
+version = "0.2.9"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -23,8 +23,8 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1.82"
-brush-parser = { version = "^0.2.7", path = "../brush-parser" }
-brush-core = { version = "^0.2.8", path = "../brush-core" }
+brush-parser = { version = "^0.2.8", path = "../brush-parser" }
+brush-core = { version = "^0.2.9", path = "../brush-core" }
 rustyline = { package = "brush-rustyline-fork", version = "14.0.1", optional = true, features = [
     "derive",
 ] }

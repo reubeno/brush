@@ -1,7 +1,7 @@
 [package]
 name = "brush-shell"
 description = "Rust-implemented shell focused on POSIX and bash compatibility"
-version = "0.2.8"
+version = "0.2.9"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -30,8 +30,8 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1.82"
-brush-parser = { version = "^0.2.7", path = "../brush-parser" }
-brush-core = { version = "^0.2.8", path = "../brush-core" }
+brush-parser = { version = "^0.2.8", path = "../brush-parser" }
+brush-core = { version = "^0.2.9", path = "../brush-core" }
 cfg-if = "1.0.0"
 clap = { version = "4.5.17", features = ["derive", "wrap_help"] }
 const_format = "0.2.33"
@@ -41,13 +41,13 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 
 [target.'cfg(not(any(windows, unix)))'.dependencies]
-brush-interactive = { version = "^0.2.8", path = "../brush-interactive", features = [
+brush-interactive = { version = "^0.2.9", path = "../brush-interactive", features = [
     "basic",
 ] }
 tokio = { version = "1.40.0", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
-brush-interactive = { version = "^0.2.8", path = "../brush-interactive", features = [
+brush-interactive = { version = "^0.2.9", path = "../brush-interactive", features = [
     "rustyline",
 ] }
 tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "sync"] }
