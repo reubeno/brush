@@ -6,7 +6,6 @@ use expectrl::{
     Expect, Session,
 };
 
-#[ignore] // TODO: Debug flakiness in GitHub runs.
 #[test]
 fn run_suspend_and_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
@@ -43,7 +42,6 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[ignore] // TODO: Debug flakiness in GitHub runs.
 #[test]
 fn run_in_bg_then_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
