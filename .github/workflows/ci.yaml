@@ -116,13 +116,10 @@ jobs:
             artifact_suffix: ""
             name_suffix: "(linux)"
 
-          #
-          # TODO: Re-enable once tests are passing.
-          #
-          # - host: "macos-latest"
-          #   variant: "macos"
-          #   artifact_suffix: "-macos"
-          #   name_suffix: "(macOS) -- ** not yet expected to pass **"
+          - host: "macos-latest"
+            variant: "macos"
+            artifact_suffix: "-macos"
+            name_suffix: "(macOS)"
 
     name: "Test ${{ matrix.name_suffix }}"
     runs-on: ${{ matrix.host }}

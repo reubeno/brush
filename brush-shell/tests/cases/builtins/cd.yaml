@@ -8,8 +8,8 @@ cases:
       echo $?
       echo "pwd: $PWD"
 
-      echo "cd tmp"
-      cd tmp
+      echo "cd usr"
+      cd usr
       echo $?
       echo "pwd: $PWD"
 

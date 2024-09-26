@@ -6,6 +6,6 @@ cases:
       pwd
       echo "Result: $?"
       #
-      cd tmp
+      cd usr
       pwd
       echo "Result: $?"

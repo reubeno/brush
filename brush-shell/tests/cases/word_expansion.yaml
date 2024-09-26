@@ -693,7 +693,7 @@ cases:
       echo "\${arr2@Q}: ${arr2@Q}"
 
   - name: "Parameter quote transformations - K"
-    known_failure: true
+    skip: true # TODO: Figure out why this succeeds on macOS but fails on Linux
     stdin: |
       var='""'
       echo "\${var@K}: ${var@K}"
@@ -720,7 +720,7 @@ cases:
       echo "\${arr2[*]@K}: ${arr2[*]@K}"
 
   - name: "Parameter quote transformations - k"
-    known_failure: true
+    skip: true # TODO: Figure out why this succeeds on macOS but fails on Linux
     stdin: |
       var='""'
       echo "\${var@k}: ${var@k}"

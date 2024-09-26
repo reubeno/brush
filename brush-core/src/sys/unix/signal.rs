@@ -35,10 +35,10 @@ pub(crate) fn kill_process(pid: u32) -> Result<(), error::Error> {
     Ok(())
 }
 
-const SIGTSTP: std::os::raw::c_int = 20;
-
 pub(crate) fn tstp_signal_listener() -> Result<tokio::signal::unix::Signal, error::Error> {
-    let signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(SIGTSTP))?;
+    let signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(
+        nix::libc::SIGTSTP,
+    ))?;
     Ok(signal)
 }
 
