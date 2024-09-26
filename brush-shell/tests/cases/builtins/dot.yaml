@@ -35,7 +35,7 @@ cases:
           }
     stdin: |
       var="orig"
-      source script.sh
+      source ./script.sh
       echo "var: ${var}"
       script_func
 

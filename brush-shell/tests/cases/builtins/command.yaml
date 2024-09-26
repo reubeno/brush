@@ -21,8 +21,8 @@ cases:
   - name: "command -v"
     stdin: |
       command -v echo
-      command -v ls
-      command -v $(which ls)
+      command -v cat
+      command -v $(command -v cat)
 
       command -v non-existent || echo "1. Not found"
       command -v /usr/bin/non-existent || echo "2. Not found"
