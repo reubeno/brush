@@ -2,13 +2,13 @@ name: "Interactive"
 incompatible_configs: ["sh"]
 cases:
   - name: "Basic interactive test"
-    skip: true
     pty: true
     ignore_stdout: true
     stdin: |
       #expect-prompt
       echo hi
       #send:Enter
+      #expect:hi
       #expect-prompt
       #send:Ctrl+D
 
@@ -25,19 +25,5 @@ cases:
       #send:Tab
       #send:Enter
       #expect:Hello, world.
-      #expect-prompt
-      #send:Ctrl+D
-
-  - name: "Tab completion with broken syntax"
-    skip: true
-    pty: true
-    ignore_stdout: true
-    stdin: |
-      #expect-prompt
-      (echo abc
-      #send:Tab
-      )
-      #send:Enter
-      #expect:abc
       #expect-prompt
       #send:Ctrl+D

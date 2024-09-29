@@ -892,6 +892,7 @@ impl TestCase {
 
         // Hard-code a well known prompt for PS1.
         test_cmd.env("PS1", "test$ ");
+        // Try to get decent backtraces when problems get hit.
         test_cmd.env("RUST_BACKTRACE", "1");
 
         // Set up any env vars needed for collecting coverage data.

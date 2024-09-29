@@ -1,12 +1,13 @@
 #![allow(clippy::panic_in_result_fn)]
 
+use anyhow::Context;
 use expectrl::{
     process::unix::{PtyStream, UnixProcess},
     repl::ReplSession,
+    stream::log::LogStream,
     Expect, Session,
 };
 
-#[ignore] // TODO: Debug flakiness
 #[test]
 fn run_suspend_and_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
@@ -14,7 +15,9 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
     // Ping localhost in a loop; wait for at least one response.
     session.expect_prompt()?;
     session.send_line("ping -c 1000000 127.0.0.1")?;
-    session.expect("bytes from")?;
+    session
+        .expect("bytes from")
+        .context("Initial ping invocation output")?;
 
     // Suspend and resume a handful of times to make sure it pauses and
     // resumes reliably.
@@ -29,7 +32,7 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
 
         // Bring the job to the foreground.
         session.send_line("fg")?;
-        session.expect("ping")?;
+        session.expect("ping").context("Foregrounded ping")?;
     }
 
     // Ctrl+C to cancel the ping.
@@ -43,7 +46,6 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[ignore] // TODO: Debug flakiness
 #[test]
 fn run_in_bg_then_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
@@ -84,14 +86,40 @@ fn run_in_bg_then_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[ignore] // TODO: Fix this test!
+#[test]
+fn run_pipeline_interactively() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+
+    // Run a pipeline interactively.
+    session.expect_prompt()?;
+    session.send_line("echo hello | TERM=linux less")?;
+    session
+        .expect("hello")
+        .context("Echoed text didn't show up")?;
+    session.send("h")?;
+    session
+        .expect("SUMMARY OF LESS COMMANDS")
+        .context("less help didn't show up")?;
+    session.send("q")?;
+    session.send("q")?;
+    session
+        .expect_prompt()
+        .context("Final prompt didn't show up")?;
+
+    // Exit the shell.
+    session.exit()?;
+
+    Ok(())
+}
+
 //
 // Helpers
 //
 
-// N.B. Uncomment the following line to enable logging of the session (along with a similar line
-// below). type ShellSession = ReplSession<Session<UnixProcess, LogStream<PtyStream,
-// std::io::Stdout>>>;
-type ShellSession = ReplSession<Session<UnixProcess, PtyStream>>;
+type ShellSession = ReplSession<Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>>;
+// N.B. Comment out the above line and uncomment out the following line to disable logging of the session.
+// type ShellSession = ReplSession<Session<UnixProcess, PtyStream>>;
 
 trait SessionExt {
     fn suspend(&mut self) -> anyhow::Result<()>;
@@ -130,8 +158,8 @@ fn start_shell_session() -> anyhow::Result<ShellSession> {
 
     let session = expectrl::session::Session::spawn(cmd)?;
 
-    // N.B. Uncomment this line to enable logging of the session (along with a similar line above).
-    // let session = expectrl::session::log(session, std::io::stdout())?;
+    // N.B. Comment out this line to disable logging of the session (along with a similar line above).
+    let session = expectrl::session::log(session, std::io::stdout())?;
 
     let session = expectrl::repl::ReplSession::new(session, DEFAULT_PROMPT);
 

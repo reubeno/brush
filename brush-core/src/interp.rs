@@ -957,6 +957,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             .await;
 
             // Pop off that ephemeral environment scope.
+            // TODO: jobs: do we need to move self back to foreground on error here?
             context.shell.env.pop_scope(EnvironmentScope::Command)?;
 
             execution_result

@@ -290,6 +290,7 @@ cases:
       echo "\${undeclared:+}        : ${undeclared:+}"
 
   - name: "Parameter expression: error on condition (interactive)"
+    skip: true # TODO: fails with cargo nextest
     ignore_stderr: true
     args: ["-i"]
     stdin: |
@@ -693,7 +694,7 @@ cases:
       echo "\${arr2@Q}: ${arr2@Q}"
 
   - name: "Parameter quote transformations - K"
-    skip: true # TODO: Figure out why this succeeds on macOS but fails on Linux
+    known_failure: true
     stdin: |
       var='""'
       echo "\${var@K}: ${var@K}"
@@ -720,7 +721,6 @@ cases:
       echo "\${arr2[*]@K}: ${arr2[*]@K}"
 
   - name: "Parameter quote transformations - k"
-    skip: true # TODO: Figure out why this succeeds on macOS but fails on Linux
     stdin: |
       var='""'
       echo "\${var@k}: ${var@k}"
