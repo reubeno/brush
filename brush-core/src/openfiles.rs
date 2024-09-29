@@ -74,6 +74,14 @@ impl OpenFile {
         }
     }
 
+    pub(crate) fn is_dir(&self) -> bool {
+        match self {
+            OpenFile::Stdin | OpenFile::Stdout | OpenFile::Stderr | OpenFile::Null => false,
+            OpenFile::File(file) => file.metadata().map(|m| m.is_dir()).unwrap_or(false),
+            OpenFile::PipeReader(_) | OpenFile::PipeWriter(_) => false,
+        }
+    }
+
     pub(crate) fn is_term(&self) -> bool {
         match self {
             OpenFile::Stdin => std::io::stdin().is_terminal(),
@@ -119,6 +127,12 @@ impl OpenFile {
             OpenFile::PipeWriter(_) => (),
         }
         Ok(())
+    }
+}
+
+impl From<std::fs::File> for OpenFile {
+    fn from(file: std::fs::File) -> Self {
+        OpenFile::File(file)
     }
 }
 

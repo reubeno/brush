@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -382,20 +382,14 @@ impl Shell {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         tracing::debug!("sourcing: {}", path.display());
+        let opened_file: openfiles::OpenFile = self
+            .open_file(path, params)
+            .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e.into()))?;
 
-        let path_to_open = self.get_absolute_path(path);
-
-        let opened_file = std::fs::File::open(path_to_open)
-            .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e))?;
-
-        let file_metadata = opened_file
-            .metadata()
-            .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e))?;
-
-        if file_metadata.is_dir() {
+        if opened_file.is_dir() {
             return Err(error::Error::FailedSourcingFile(
                 path.to_owned(),
-                std::io::Error::new(std::io::ErrorKind::Other, error::Error::IsADirectory),
+                error::Error::IsADirectory.into(),
             ));
         }
 
@@ -403,7 +397,7 @@ impl Shell {
             source: path.to_string_lossy().to_string(),
         };
 
-        self.source_file(&opened_file, &source_info, args, params)
+        self.source_file(opened_file, &source_info, args, params)
             .await
     }
 
@@ -415,9 +409,9 @@ impl Shell {
     /// * `source_info` - Information about the source of the script.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    pub async fn source_file<S: AsRef<str>>(
+    pub async fn source_file<F: Read, S: AsRef<str>>(
         &mut self,
-        file: &std::fs::File,
+        file: F,
         source_info: &brush_parser::SourceInfo,
         args: &[S],
         params: &ExecutionParameters,
@@ -906,6 +900,37 @@ impl Shell {
         } else {
             self.working_dir.join(path)
         }
+    }
+
+    /// Opens the given file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the file to open; may be relative to the shell's working directory.
+    /// * `params` - Execution parameters.
+    pub(crate) fn open_file(
+        &self,
+        path: &Path,
+        params: &ExecutionParameters,
+    ) -> Result<openfiles::OpenFile, error::Error> {
+        let path_to_open = self.get_absolute_path(path);
+
+        // See if this is a reference to a file descriptor, in which case the actual
+        // /dev/fd* file path for this process may not match with what's in the execution
+        // parameters.
+        if let Some(parent) = path_to_open.parent() {
+            if parent == Path::new("/dev/fd") {
+                if let Some(filename) = path_to_open.file_name() {
+                    if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
+                        if let Some(open_file) = params.open_files.files.get(&fd_num) {
+                            return open_file.try_dup();
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(std::fs::File::open(path_to_open)?.into())
     }
 
     /// Sets the shell's current working directory to the given path.

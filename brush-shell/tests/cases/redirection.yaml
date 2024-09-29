@@ -42,6 +42,11 @@ cases:
       shopt -u -o posix
       for f in <(echo hi); do echo $f; done
 
+  - name: "Process substitution: builtins"
+    stdin: |
+      source <(echo VAR=100)
+      echo "var: ${VAR}"
+
   - name: "Process substitution: input redirection"
     stdin: |
       shopt -u -o posix

@@ -25,7 +25,7 @@ pub enum Error {
 
     /// An error occurred while sourcing the indicated script file.
     #[error("failed to source file: {0}; {1}")]
-    FailedSourcingFile(PathBuf, std::io::Error),
+    FailedSourcingFile(PathBuf, Box<Error>),
 
     /// The shell failed to send a signal to a process.
     #[error("failed to send signal to process")]
