@@ -22,7 +22,7 @@ rustyline = ["dep:rustyline"]
 workspace = true
 
 [dependencies]
-async-trait = "0.1.82"
+async-trait = "0.1.83"
 brush-parser = { version = "^0.2.8", path = "../brush-parser" }
 brush-core = { version = "^0.2.9", path = "../brush-core" }
 rustyline = { package = "brush-rustyline-fork", version = "14.0.1", optional = true, features = [
