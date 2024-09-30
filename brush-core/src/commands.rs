@@ -402,6 +402,10 @@ pub(crate) fn execute_external_command(
             ))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if context.shell.options.interactive {
+                sys::terminal::move_self_to_foreground()?;
+            }
+
             if context.shell.options.sh_mode {
                 tracing::error!(
                     "{}: {}: {}: not found",
@@ -415,6 +419,10 @@ pub(crate) fn execute_external_command(
             Ok(CommandSpawnResult::ImmediateExit(127))
         }
         Err(e) => {
+            if context.shell.options.interactive {
+                sys::terminal::move_self_to_foreground()?;
+            }
+
             tracing::error!("error: {}", e);
             Ok(CommandSpawnResult::ImmediateExit(126))
         }

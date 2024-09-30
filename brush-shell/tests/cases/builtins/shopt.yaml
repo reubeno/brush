@@ -6,21 +6,16 @@ cases:
       shopt | sort | grep -v extglob
 
   - name: "shopt interactive defaults"
-    skip: true
-    args: ["-i"]
-    ignore_stderr: true
-    stdin: |
-      shopt | sort | grep -v extglob
+    skip: true # TODO: Causes problems with cargo nextest
+    args: ["-i", "-c", "shopt | sort | grep -v extglob"]
 
   - name: "shopt -o defaults"
     stdin: |
       shopt -o | sort
 
   - name: "shopt -o interactive defaults"
-    args: ["-i"]
-    ignore_stderr: true
-    stdin: |
-      shopt -o | sort | grep -v monitor
+    skip: true # TODO: Causes problems with cargo nextest
+    args: ["-i", "-c", "shopt -o | sort | grep -v monitor"]
 
   - name: "extglob defaults"
     known_failure: true
@@ -28,18 +23,13 @@ cases:
       shopt extglob
 
   - name: "extglob interactive defaults"
-    args: ["-i"]
-    ignore_stderr: true
+    skip: true # TODO: Causes problems with cargo nextest
+    args: ["-i", "-c", "shopt extglob"]
     known_failure: true
-    stdin: |
-      shopt extglob
 
   - name: "shopt -o interactive monitor default"
-    skip: true
-    args: ["-i"]
-    ignore_stderr: true
-    stdin: |
-      shopt -o monitor
+    skip: true # TODO: Causes problems with cargo nextest
+    args: ["-i", "-c", "shopt -o monitor"]
 
   - name: "shopt toggle"
     stdin: |

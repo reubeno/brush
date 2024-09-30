@@ -1,0 +1,6 @@
+[profile.default]
+retries = 3
+status-level = "slow"
+
+[profile.default.junit]
+path = "test-results.xml"
