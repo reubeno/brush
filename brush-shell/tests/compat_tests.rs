@@ -120,11 +120,13 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
 
             if options.list_tests_only {
                 for test_case in &test_case_set.cases {
-                    println!(
-                        "{}::{}: test",
-                        test_case_set.name.as_deref().unwrap_or("unnamed"),
-                        test_case.name.as_deref().unwrap_or("unnamed"),
-                    );
+                    if test_case.skip == options.skipped_tests_only {
+                        println!(
+                            "{}::{}: test",
+                            test_case_set.name.as_deref().unwrap_or("unnamed"),
+                            test_case.name.as_deref().unwrap_or("unnamed"),
+                        );
+                    }
                 }
             } else {
                 // Clone the test case set and test config so the spawned function below
@@ -410,7 +412,7 @@ impl TestCaseSet {
 
             let test_case_result = test_case.run(self, &test_config).await?;
 
-            if test_case_result.skip {
+            if test_case_result.skip != test_config.options.skipped_tests_only {
                 skip_count += 1;
             } else if test_case_result.success {
                 if test_case.known_failure {
@@ -682,7 +684,7 @@ impl TestCase {
         test_case_set: &TestCaseSet,
         test_config: &TestConfig,
     ) -> Result<TestCaseResult> {
-        if self.skip {
+        if self.skip != test_config.options.skipped_tests_only {
             return Ok(TestCaseResult {
                 success: true,
                 comparison: RunComparison::ignored(),
@@ -1238,7 +1240,7 @@ struct TestOptions {
     pub no_capture: bool,
 
     #[clap(long = "ignored")]
-    pub ignored: bool,
+    pub skipped_tests_only: bool,
 
     /// Unstable flags (for compatibility only, has no effect)
     #[clap(short = 'Z')]
@@ -1337,10 +1339,6 @@ fn write_diff(
 fn main() -> Result<()> {
     let unparsed_args: Vec<_> = std::env::args().collect();
     let mut options = TestOptions::parse_from(unparsed_args);
-
-    if options.list_tests_only && options.ignored {
-        return Ok(());
-    }
 
     // Allow overriding the bash path for invocations where custom arguments
     // can't be used (because other tests get run too and they don't support
