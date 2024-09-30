@@ -1,3 +1,5 @@
+pub(crate) type ProcessId = i32;
+
 pub(crate) struct Child {
     inner: std::process::Child,
 }

@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::{error, traps};
+use crate::{error, sys, traps};
 
 pub(crate) fn parse_numeric_signal(signal: i32) -> Result<traps::TrapSignal, error::Error> {
     Ok(traps::TrapSignal::Signal(
@@ -14,23 +14,16 @@ pub(crate) fn parse_os_signal_name(signal: &str) -> Result<traps::TrapSignal, er
     ))
 }
 
-pub(crate) fn continue_process(pid: u32) -> Result<(), error::Error> {
+pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
     #[allow(clippy::cast_possible_wrap)]
-    nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(pid as i32),
-        nix::sys::signal::SIGCONT,
-    )
-    .map_err(|_errno| error::Error::FailedToSendSignal)?;
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGCONT)
+        .map_err(|_errno| error::Error::FailedToSendSignal)?;
     Ok(())
 }
 
-pub(crate) fn kill_process(pid: u32) -> Result<(), error::Error> {
-    #[allow(clippy::cast_possible_wrap)]
-    nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(pid as i32),
-        nix::sys::signal::SIGKILL,
-    )
-    .map_err(|_errno| error::Error::FailedToSendSignal)?;
+pub(crate) fn kill_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGKILL)
+        .map_err(|_errno| error::Error::FailedToSendSignal)?;
 
     Ok(())
 }

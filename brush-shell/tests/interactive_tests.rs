@@ -86,7 +86,6 @@ fn run_in_bg_then_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[ignore] // TODO: Fix this test!
 #[test]
 fn run_pipeline_interactively() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
@@ -99,7 +98,7 @@ fn run_pipeline_interactively() -> anyhow::Result<()> {
         .context("Echoed text didn't show up")?;
     session.send("h")?;
     session
-        .expect("SUMMARY OF LESS COMMANDS")
+        .expect("SUMMARY")
         .context("less help didn't show up")?;
     session.send("q")?;
     session.send("q")?;

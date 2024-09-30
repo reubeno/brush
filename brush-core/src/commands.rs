@@ -33,13 +33,8 @@ pub(crate) enum CommandSpawnResult {
 
 impl CommandSpawnResult {
     // TODO: jobs: remove `no_wait`; it doesn't make any sense
-    // TODO: jobs: figure out how to remove 'shell'
     #[allow(clippy::too_many_lines)]
-    pub async fn wait(
-        self,
-        shell: &mut Shell,
-        no_wait: bool,
-    ) -> Result<CommandWaitResult, error::Error> {
+    pub async fn wait(self, no_wait: bool) -> Result<CommandWaitResult, error::Error> {
         #[allow(clippy::ignored_unit_patterns)]
         match self {
             CommandSpawnResult::SpawnedProcess(mut child) => {
@@ -60,10 +55,6 @@ impl CommandSpawnResult {
                         child,
                     ),
                 };
-
-                if shell.options.interactive {
-                    sys::terminal::move_self_to_foreground()?;
-                }
 
                 Ok(command_wait_result)
             }
@@ -354,16 +345,15 @@ pub(crate) fn execute_external_command(
     )?;
 
     // Set up process group state.
-    let required_pgid = if new_pg {
-        let required_pgid = process_group_id.unwrap_or(0);
-
+    if new_pg {
+        // We need to set up a new process group.
         #[cfg(unix)]
-        cmd.process_group(required_pgid);
-
-        required_pgid
-    } else {
-        0
-    };
+        cmd.process_group(0);
+    } else if let Some(pgid) = process_group_id {
+        // We need to join an established process group.
+        #[cfg(unix)]
+        cmd.process_group(*pgid);
+    }
 
     // Register some code to run in the forked child process before it execs
     // the target command.
@@ -377,7 +367,7 @@ pub(crate) fn execute_external_command(
     // When tracing is enabled, report.
     tracing::debug!(
         target: trace_categories::COMMANDS,
-        "Spawning: pgid={required_pgid} cmd='{} {}'",
+        "Spawning: cmd='{} {}'",
         cmd.get_program().to_string_lossy().to_string(),
         cmd.get_args()
             .map(|a| a.to_string_lossy().to_string())
@@ -387,11 +377,11 @@ pub(crate) fn execute_external_command(
     match sys::process::spawn(cmd) {
         Ok(child) => {
             // Retrieve the pid.
-            let pid = child.id();
+            #[allow(clippy::cast_possible_wrap)]
+            let pid = child.id().map(|id| id as i32);
             if let Some(pid) = &pid {
-                #[allow(clippy::cast_possible_wrap)]
-                if required_pgid == 0 {
-                    *process_group_id = Some(*pid as i32);
+                if new_pg {
+                    *process_group_id = Some(*pid);
                 }
             } else {
                 tracing::warn!("could not retrieve pid for child process");

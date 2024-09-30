@@ -116,7 +116,7 @@ pub struct ExecutionParameters {
     pub process_group_policy: ProcessGroupPolicy,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 /// Policy for how to manage spawned external processes.
 pub enum ProcessGroupPolicy {
     /// Place the process in a new process group.
@@ -324,6 +324,12 @@ async fn spawn_pipeline_processes(
                 process_group_id,
                 params: params.clone(),
             };
+
+            // Make sure that all commands in the pipeline are in the same process group.
+            if current_pipeline_index > 0 {
+                pipeline_context.params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+            }
+
             spawn_results.push_back(command.execute_in_pipeline(&mut pipeline_context).await?);
             process_group_id = pipeline_context.process_group_id;
         } else {
@@ -335,6 +341,7 @@ async fn spawn_pipeline_processes(
                 process_group_id,
                 params: params.clone(),
             };
+
             spawn_results.push_back(command.execute_in_pipeline(&mut pipeline_context).await?);
             process_group_id = pipeline_context.process_group_id;
         }
@@ -352,7 +359,7 @@ async fn wait_for_pipeline_processes(
     let mut stopped_children = vec![];
 
     while let Some(child) = process_spawn_results.pop_front() {
-        match child.wait(shell, !stopped_children.is_empty()).await? {
+        match child.wait(!stopped_children.is_empty()).await? {
             commands::CommandWaitResult::CommandCompleted(current_result) => {
                 result = current_result;
                 shell.last_exit_status = result.exit_code;
@@ -364,6 +371,10 @@ async fn wait_for_pipeline_processes(
                 stopped_children.push(jobs::JobTask::External(child));
             }
         }
+    }
+
+    if shell.options.interactive {
+        sys::terminal::move_self_to_foreground()?;
     }
 
     // If there were stopped jobs, then encapsulate the pipeline as a managed job and hand it
