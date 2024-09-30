@@ -242,7 +242,7 @@ pub struct Job {
     tasks: VecDeque<JobTask>,
 
     /// If available, the process group ID of the job's processes.
-    pgid: Option<u32>,
+    pgid: Option<sys::process::ProcessId>,
 
     /// The annotation of the job (e.g., current, previous).
     annotation: JobAnnotation,
@@ -417,7 +417,7 @@ impl Job {
     }
 
     /// Tries to retrieve a "representative" pid for the job.
-    pub fn get_representative_pid(&self) -> Option<u32> {
+    pub fn get_representative_pid(&self) -> Option<sys::process::ProcessId> {
         for task in &self.tasks {
             match task {
                 JobTask::External(p) => {
@@ -431,7 +431,7 @@ impl Job {
         None
     }
 
-    pub fn get_process_group_id(&self) -> Option<u32> {
+    pub fn get_process_group_id(&self) -> Option<sys::process::ProcessId> {
         // TODO: Don't assume that the first PID is the PGID.
         self.pgid.or_else(|| self.get_representative_pid())
     }

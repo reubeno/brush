@@ -1,4 +1,4 @@
-use crate::error;
+use crate::{error, sys};
 
 #[derive(Clone)]
 pub(crate) struct TerminalSettings {}
@@ -32,19 +32,19 @@ pub(crate) fn is_stdin_a_terminal() -> Result<bool, error::Error> {
     Ok(false)
 }
 
-pub(crate) fn get_parent_process_id() -> Option<u32> {
+pub(crate) fn get_parent_process_id() -> Option<sys::process::ProcessId> {
     None
 }
 
-pub(crate) fn get_process_group_id() -> Option<u32> {
+pub(crate) fn get_process_group_id() -> Option<sys::process::ProcessId> {
     None
 }
 
-pub(crate) fn get_foreground_pid() -> Option<u32> {
+pub(crate) fn get_foreground_pid() -> Option<sys::process::ProcessId> {
     None
 }
 
-pub(crate) fn move_to_foreground(_pid: u32) -> Result<(), error::Error> {
+pub(crate) fn move_to_foreground(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     Ok(())
 }
 

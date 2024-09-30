@@ -1,4 +1,4 @@
-use crate::{error, traps};
+use crate::{error, sys, traps};
 
 pub(crate) fn parse_numeric_signal(_signal: i32) -> Result<traps::TrapSignal, error::Error> {
     Err(error::Error::InvalidSignal)
@@ -8,11 +8,11 @@ pub(crate) fn parse_os_signal_name(_signal: &str) -> Result<traps::TrapSignal, e
     Err(error::Error::InvalidSignal)
 }
 
-pub(crate) fn continue_process(_pid: u32) -> Result<(), error::Error> {
+pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     error::unimp("continue process")
 }
 
-pub(crate) fn kill_process(_pid: u32) -> Result<(), error::Error> {
+pub(crate) fn kill_process(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     error::unimp("kill process")
 }
 
