@@ -8,22 +8,23 @@
 
 ## About
 
-`brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a shell with goals of compatibility with the [POSIX Shell specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash](https://www.gnu.org/software/bash/).
-It's primarily built for use on Linux, with experimental builds now available for Windows and MacOS.
+`brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash-](https://www.gnu.org/software/bash/)compatible shell,
+implemented in Rust. It's built and tested on Linux and macOS, with experimental support on Windows. (Its Linux build is fully supported running on Windows via WSL.)
 
 ![screenshot](./docs/extras/brush-screenshot.png)
 
-`brush` is functional for interactive use as a daily driver. It can execute most `sh` and `bash` scripts we've
-encountered, but still a work in progress with known limitations. Given this, we do not yet recommend
-using it in production scenarios due to the risk that it may not behave identically to your existing stable
-shell. (If you do find any behavioral differences, though, please report them with an issue!)
+`brush` is functional for interactive use as a daily driver! It can execute most `sh` and `bash` scripts we've
+encountered, but has known limitations we're iteratively working to address. Out of an abundance of caution, 
+we do not yet recommend using it in production scenarios due to the risk that it may not behave identically
+to your existing stable shell. (If you do find any behavioral differences, though, please report them with an
+issue!)
 
 Contributions and feedback of all kinds are welcome! For more guidance, please consult our
 [contribution guidelines](CONTRIBUTING.md). For more technical details, please consult the
 [documentation](docs/README.md) in this repo.
 
-This project was originally borne out of curiosity and a desire to learn. If it proves over time to be interesting
-or useful, then that's a bonus :).
+This project was originally borne out of curiosity and a desire to learn. If it proves over time to be useful, then
+that's a bonus :).
 
 ### License
 
@@ -31,7 +32,7 @@ Available for use and distribution under the [MIT license](LICENSE).
 
 ### Try it out!
 
-We don't yet publish binary releases of `brush`, but if you have a working `rust` toolchain installed you can simply run:
+We don't publish binary releases of `brush`, but if you have a working `rust` toolchain installed you can simply run:
 
 ```bash
 cargo install --locked brush-shell
@@ -42,28 +43,22 @@ greatest bits, you can clone this repo and execute `cargo run`.
 
 If you don't have `rust` installed, we recommend installing it via [`rustup`](https://rustup.rs/).
 
-When you run `brush`, it should hopefully look much like `bash` would on your system since it processes `.bashrc` and
+When you run `brush`, it should look exactly as `bash` would on your system since it processes `.bashrc` and
 other usual configuration. If you'd like to customize the look of `brush` to distinguish it from the other shells
 installed on your system, then you can also author a `~/.brushrc` file.
 
-### What's working?
-
-In short, quite a lot. Standard and extended control flow, word expansion, arithmetic, most frequently used builtin
-commands, pipelines, redirection, variables, etc. Programmable completion works, in conjunction with standard `bash`
-completion scripts.
-
 ### <strike>Known limitations</strike> Where you can help!
 
-There's a lot that *is* working, but there are also known gaps in compatibility. Most notably:
+There are some known gaps in compatibility. Most notably:
 
 * **Honoring `set` and `shopt` options (e.g., `set -e`).**
-  The `set` builtin is implemented, as is `set -x` and a few other options, but most of the behaviors aren't there. `set -e`, for example, will execute but its semantics aren't applied across execution.
+  The `set` builtin is implemented, as is `set -x` and a few other options, but most of the options aren't fully implemented. `set -e`, for example, will execute but its semantics aren't applied across execution.
 * **Curly brace expansion.**
-  Most forms of expansion are implemented; for some reason, we never got around to implementing an expansion that turns `{a,b}` into `a b`. There's even a test for this, but it's marked as a known failing test.
+  Almost all forms of expansion are implemented; for some reason, we never got around to implementing an expansion that turns `{a,b}` into `a b`. There's even a test for this, but it's marked as a known failing test.
 * **Tokenizer and parser edge cases.**
-  For simplicity and ease of getting going, the tokenizer for `brush` was hand-implemented and the parsers were implemented using [`rust-peg`](https://github.com/kevinmehall/rust-peg). (Also a huge shout out to that project!) There are some edge cases that got tricky and may not be implemented with 100% fidelity (e.g., complex nested parenthetical expressions in arithmetic expressions, further nested inside command substitutions). All of our tests are passing in these areas, but coverage is limited. Augmenting test coverage would be a great starting point for contributing in this area.
+  For simplicity, the tokenizer for `brush` was hand-implemented and the parsers were implemented using [`rust-peg`](https://github.com/kevinmehall/rust-peg). (Huge shout out to that project!) There are some edge cases that got tricky and may not be implemented with 100% fidelity (e.g., complex nested parenthetical expressions in arithmetic expressions, further nested inside command substitutions). All of our tests are passing in these areas, but coverage is limited. Augmenting test coverage would be a great starting point for contributing in this area.
 * **Anything tagged with a `TODO` comment or where `error::unimp()` is used to return a "not implemented" error**.
-  These aren't all tracked with GitHub issues right now, but there's a number of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may entail cross-cutting challenges that require design work. These include some shell built-ins. Some are completely and fully implemented (e.g. echo), a number of them support only their most commonly used options, and a minority of them aren't implemented at all.
+  These aren't all tracked with GitHub issues right now, but there's a number of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may be more complicated. These include some shell built-ins. Some are completely and fully implemented (e.g. echo), a number of them support only their most commonly used options, and a decreasingly small minority of them aren't implemented at all.
 
 There's certainly more gaps; with time we'll find a way to represent the gaps in some understandable way. Ideally, we'd like to evolve the test suites to add tests for all known missing pieces. That will let us focus on just "fixing the tests". 
 
