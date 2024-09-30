@@ -13,7 +13,7 @@ cases:
       trap -p INT
 
   - name: "trap EXIT"
-    known_failure: true
+    known_failure: true # TODO: needs triage and debugging
     stdin: |
       trap "echo [exit]" EXIT
       trap -p EXIT
