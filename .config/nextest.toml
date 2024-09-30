@@ -1,6 +1,7 @@
 [profile.default]
 retries = 3
 status-level = "slow"
+slow-timeout = { period = "5s", terminate-after = 3, grace-period = "2s" }
 
 [profile.default.junit]
 path = "test-results.xml"

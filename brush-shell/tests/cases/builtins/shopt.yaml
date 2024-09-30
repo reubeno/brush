@@ -1,12 +1,13 @@
 name: "Builtins: shopt"
 cases:
   - name: "shopt defaults"
-    skip: true
+    known_failure: true # TODO: new options from newer version of bash?
     stdin: |
       shopt | sort | grep -v extglob
 
   - name: "shopt interactive defaults"
-    skip: true # TODO: Causes problems with cargo nextest
+    known_failure: true # TODO: new options from newer version of bash?
+    pty: true
     args: ["-i", "-c", "shopt | sort | grep -v extglob"]
 
   - name: "shopt -o defaults"
@@ -14,21 +15,21 @@ cases:
       shopt -o | sort
 
   - name: "shopt -o interactive defaults"
-    skip: true # TODO: Causes problems with cargo nextest
+    pty: true
     args: ["-i", "-c", "shopt -o | sort | grep -v monitor"]
 
   - name: "extglob defaults"
-    known_failure: true
+    known_failure: true # TODO: we force this setting on in our shell
     stdin: |
       shopt extglob
 
   - name: "extglob interactive defaults"
-    skip: true # TODO: Causes problems with cargo nextest
+    pty: true
     args: ["-i", "-c", "shopt extglob"]
     known_failure: true
 
   - name: "shopt -o interactive monitor default"
-    skip: true # TODO: Causes problems with cargo nextest
+    pty: true
     args: ["-i", "-c", "shopt -o monitor"]
 
   - name: "shopt toggle"

@@ -12,7 +12,7 @@ cases:
     args: ["./script.sh"]
 
   - name: "Here doc with expansions"
-    known_failure: true
+    known_failure: true # TODO: needs triage and debugging
     stdin: |
       cat <<END-MARKER
       Something here...
@@ -21,7 +21,7 @@ cases:
       END-MARKER
 
   - name: "Here doc with tab removal"
-    known_failure: true
+    known_failure: true # TODO: needs triage and debugging
     stdin: |
       cat <<-END-MARKER
       	Something here...

@@ -53,7 +53,6 @@ cases:
       cat < <(echo hi)
 
   - name: "Process substitution: output redirection"
-    skip: true # Periodically fails, possibly due to output race condition.
     stdin: |
       shopt -u -o posix
       echo hi > >(wc -l)

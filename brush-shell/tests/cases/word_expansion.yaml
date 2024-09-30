@@ -338,7 +338,7 @@ cases:
       echo "  -> result: $?"
 
   - name: "Parameter expression: error on condition (non-interactive)"
-    known_failure: true
+    known_failure: true # TODO: needs triage and debugging
     ignore_stderr: true
     stdin: |
       echo "${non_existent_var?error message}"
@@ -393,7 +393,7 @@ cases:
       done
 
   - name: "Parameter expression: expanded array as default value"
-    known_failure: true
+    known_failure: true # TODO: needs triage and debugging
     stdin: |
       declare -a var=("abc" "def" "ghi" "")
 
@@ -694,7 +694,7 @@ cases:
       echo "\${arr2@Q}: ${arr2@Q}"
 
   - name: "Parameter quote transformations - K"
-    known_failure: true
+    known_failure: true # TODO: needs triage and debugging
     stdin: |
       var='""'
       echo "\${var@K}: ${var@K}"
