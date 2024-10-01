@@ -1,11 +1,13 @@
 name: "Builtins: shopt"
 cases:
   - name: "shopt defaults"
+    min_oracle_version: 5.2
     known_failure: true # TODO: new options from newer version of bash?
     stdin: |
       shopt | sort | grep -v extglob
 
   - name: "shopt interactive defaults"
+    min_oracle_version: 5.2
     known_failure: true # TODO: new options from newer version of bash?
     pty: true
     args: ["-i", "-c", "shopt | sort | grep -v extglob"]

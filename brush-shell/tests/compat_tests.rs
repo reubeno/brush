@@ -26,19 +26,24 @@ struct ShellConfig {
 struct TestConfig {
     pub name: String,
     pub oracle_shell: ShellConfig,
+    pub oracle_version_str: Option<String>,
     pub test_shell: ShellConfig,
     pub options: TestOptions,
 }
 
 impl TestConfig {
-    pub fn for_bash_testing(options: &TestOptions) -> Self {
+    pub fn for_bash_testing(options: &TestOptions) -> Result<Self> {
+        // Check for bash version.
+        let bash_version_str = get_bash_version_str(Path::new(&options.bash_path))?;
+
         // Skip rc file and profile for deterministic behavior across systems/distros.
-        Self {
+        Ok(Self {
             name: String::from(BASH_CONFIG_NAME),
             oracle_shell: ShellConfig {
                 which: WhichShell::NamedShell(options.bash_path.clone()),
                 default_args: vec![String::from("--norc"), String::from("--noprofile")],
             },
+            oracle_version_str: Some(bash_version_str),
             test_shell: ShellConfig {
                 which: WhichShell::ShellUnderTest(String::from("brush")),
                 // Disable a few fancy UI options for shells under test.
@@ -49,17 +54,19 @@ impl TestConfig {
                 ],
             },
             options: options.clone(),
-        }
+        })
     }
 
-    pub fn for_sh_testing(options: &TestOptions) -> Self {
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn for_sh_testing(options: &TestOptions) -> Result<Self> {
         // Skip rc file and profile for deterministic behavior across systems/distros.
-        Self {
+        Ok(Self {
             name: String::from(SH_CONFIG_NAME),
             oracle_shell: ShellConfig {
                 which: WhichShell::NamedShell(String::from("sh")),
                 default_args: vec![],
             },
+            oracle_version_str: None,
             test_shell: ShellConfig {
                 which: WhichShell::ShellUnderTest(String::from("brush")),
                 // Disable a few fancy UI options for shells under test.
@@ -71,7 +78,7 @@ impl TestConfig {
                 ],
             },
             options: options.clone(),
-        }
+        })
     }
 }
 
@@ -92,11 +99,11 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
     let mut test_configs = vec![];
 
     if options.should_enable_config(BASH_CONFIG_NAME) {
-        test_configs.push(TestConfig::for_bash_testing(&options));
+        test_configs.push(TestConfig::for_bash_testing(&options)?);
     }
 
     if options.should_enable_config(SH_CONFIG_NAME) {
-        test_configs.push(TestConfig::for_sh_testing(&options));
+        test_configs.push(TestConfig::for_sh_testing(&options)?);
     }
 
     // Spawn each test case set separately.
@@ -307,6 +314,8 @@ struct TestCase {
     #[serde(default)]
     pub incompatible_configs: HashSet<String>,
     #[serde(default)]
+    pub min_oracle_version: Option<String>,
+    #[serde(default)]
     pub timeout_in_seconds: Option<u64>,
 }
 
@@ -403,6 +412,25 @@ impl TestCaseSet {
             // Make sure it's compatible.
             if test_case.incompatible_configs.contains(&test_config.name) {
                 continue;
+            }
+
+            // Make sure the oracle meets any min version listed.
+            if let Some(min_oracle_version_str) = &test_case.min_oracle_version {
+                if let Some(actual_oracle_version_str) = &test_config.oracle_version_str {
+                    let actual_oracle_version =
+                        version_compare::Version::from(actual_oracle_version_str.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("failed to parse oracle version"))?;
+
+                    let min_oracle_version = version_compare::Version::from(min_oracle_version_str)
+                        .ok_or_else(|| anyhow::anyhow!("failed to parse min oracle version"))?;
+
+                    if matches!(
+                        actual_oracle_version.compare(min_oracle_version),
+                        version_compare::Cmp::Lt
+                    ) {
+                        continue;
+                    }
+                }
             }
 
             // Make sure it passes filters.
@@ -1334,6 +1362,21 @@ fn write_diff(
     }
 
     Ok(())
+}
+
+fn get_bash_version_str(bash_path: &Path) -> Result<String> {
+    let output = std::process::Command::new(bash_path)
+        .arg("--norc")
+        .arg("--noprofile")
+        .arg("-c")
+        .arg("echo -n ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}.${BASH_VERSINFO[2]}")
+        .output()
+        .context("failed to retrieve bash version")?
+        .stdout;
+
+    let ver_str = String::from_utf8(output)?;
+
+    Ok(ver_str)
 }
 
 fn main() -> Result<()> {

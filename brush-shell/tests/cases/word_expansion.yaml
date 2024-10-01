@@ -721,6 +721,7 @@ cases:
       echo "\${arr2[*]@K}: ${arr2[*]@K}"
 
   - name: "Parameter quote transformations - k"
+    min_oracle_version: 5.2
     stdin: |
       var='""'
       echo "\${var@k}: ${var@k}"
