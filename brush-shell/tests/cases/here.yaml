@@ -21,7 +21,6 @@ cases:
       END-MARKER
 
   - name: "Here doc with tab removal"
-    known_failure: true # TODO: needs triage and debugging
     stdin: |
       cat <<-END-MARKER
       	Something here...

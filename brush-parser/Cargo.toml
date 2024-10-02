@@ -19,6 +19,7 @@ fuzz-testing = ["dep:arbitrary"]
 
 [dependencies]
 arbitrary = { version = "1.3.2", optional = true, features = ["derive"] }
+cached = "0.53.0"
 indenter = "0.3.3"
 peg = "0.8.4"
 thiserror = "1.0.64"

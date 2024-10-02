@@ -8,6 +8,7 @@ pub(crate) trait ShellFactory {
     ) -> Result<Self::ShellType, brush_interactive::ShellError>;
 }
 
+#[allow(dead_code)]
 pub(crate) struct StubShell;
 
 #[allow(clippy::panic)]
@@ -26,7 +27,7 @@ impl brush_interactive::InteractiveShell for StubShell {
 
     fn read_line(
         &mut self,
-        _prompt: &str,
+        _prompt: brush_interactive::InteractivePrompt,
     ) -> Result<brush_interactive::ReadResult, brush_interactive::ShellError> {
         Err(brush_interactive::ShellError::InputBackendNotSupported)
     }
@@ -54,9 +55,34 @@ pub(crate) struct RustylineShellFactory;
 
 #[async_trait::async_trait]
 impl ShellFactory for RustylineShellFactory {
-    #[cfg(any(windows, unix))]
+    #[cfg(all(feature = "rustyline", any(windows, unix)))]
     type ShellType = brush_interactive::RustylineShell;
-    #[cfg(not(any(windows, unix)))]
+    #[cfg(any(not(feature = "rustyline"), not(any(windows, unix))))]
+    type ShellType = StubShell;
+
+    #[allow(unused)]
+    async fn create(
+        &self,
+        options: &brush_interactive::Options,
+    ) -> Result<Self::ShellType, brush_interactive::ShellError> {
+        #[cfg(all(feature = "rustyline", any(windows, unix)))]
+        {
+            brush_interactive::RustylineShell::new(options).await
+        }
+        #[cfg(any(not(feature = "rustyline"), not(any(windows, unix))))]
+        {
+            Err(brush_interactive::ShellError::InputBackendNotSupported)
+        }
+    }
+}
+
+pub(crate) struct ReedlineShellFactory;
+
+#[async_trait::async_trait]
+impl ShellFactory for ReedlineShellFactory {
+    #[cfg(all(feature = "reedline", any(windows, unix)))]
+    type ShellType = brush_interactive::ReedlineShell;
+    #[cfg(any(not(feature = "reedline"), not(any(windows, unix))))]
     type ShellType = StubShell;
 
     #[allow(unused)]
@@ -66,7 +92,7 @@ impl ShellFactory for RustylineShellFactory {
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
         #[cfg(any(windows, unix))]
         {
-            brush_interactive::RustylineShell::new(options).await
+            brush_interactive::ReedlineShell::new(options).await
         }
         #[cfg(not(any(windows, unix)))]
         {
@@ -79,9 +105,9 @@ pub(crate) struct BasicShellFactory;
 
 #[async_trait::async_trait]
 impl ShellFactory for BasicShellFactory {
-    #[cfg(not(any(windows, unix)))]
+    #[cfg(feature = "basic")]
     type ShellType = brush_interactive::BasicShell;
-    #[cfg(any(windows, unix))]
+    #[cfg(not(feature = "basic"))]
     type ShellType = StubShell;
 
     #[allow(unused)]
@@ -89,11 +115,11 @@ impl ShellFactory for BasicShellFactory {
         &self,
         options: &brush_interactive::Options,
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
-        #[cfg(not(any(windows, unix)))]
+        #[cfg(feature = "basic")]
         {
             brush_interactive::BasicShell::new(options).await
         }
-        #[cfg(any(windows, unix))]
+        #[cfg(not(feature = "basic"))]
         {
             Err(brush_interactive::ShellError::InputBackendNotSupported)
         }

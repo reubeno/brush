@@ -1563,6 +1563,7 @@ fn transform_expansion(
 }
 
 #[allow(clippy::panic_in_result_fn)]
+#[allow(clippy::needless_return)]
 #[cfg(test)]
 mod tests {
     use super::*;

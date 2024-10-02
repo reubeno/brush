@@ -48,9 +48,11 @@ impl TestConfig {
                 which: WhichShell::ShellUnderTest(String::from("brush")),
                 // Disable a few fancy UI options for shells under test.
                 default_args: vec![
-                    String::from("--norc"),
-                    String::from("--noprofile"),
-                    String::from("--disable-bracketed-paste"),
+                    "--norc".into(),
+                    "--noprofile".into(),
+                    "--input-backend=basic".into(),
+                    "--disable-bracketed-paste".into(),
+                    "--disable-color".into(),
                 ],
             },
             options: options.clone(),

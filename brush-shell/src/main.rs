@@ -104,6 +104,9 @@ async fn run(
         InputBackend::Rustyline => {
             run_impl(cli_args, args, shell_factory::RustylineShellFactory).await
         }
+        InputBackend::Reedline => {
+            run_impl(cli_args, args, shell_factory::ReedlineShellFactory).await
+        }
         InputBackend::Basic => run_impl(cli_args, args, shell_factory::BasicShellFactory).await,
     }
 }
@@ -203,6 +206,8 @@ async fn instantiate_shell(
             verbose: args.verbose,
         },
         disable_bracketed_paste: args.disable_bracketed_paste,
+        disable_color: args.disable_color,
+        disable_highlighting: !args.enable_highlighting,
     };
 
     // Create the shell.

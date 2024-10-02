@@ -21,6 +21,7 @@ const VERSION: &str = const_format::concatcp!(
 #[derive(Clone, clap::ValueEnum)]
 pub enum InputBackend {
     Rustyline,
+    Reedline,
     Basic,
 }
 
@@ -104,6 +105,14 @@ pub struct CommandLineArgs {
     /// Disable bracketed paste.
     #[clap(long = "disable-bracketed-paste")]
     pub disable_bracketed_paste: bool,
+
+    /// Disable colorized output.
+    #[clap(long = "disable-color")]
+    pub disable_color: bool,
+
+    /// Enable syntax highlighting (experimental).
+    #[clap(long = "enable-highlighting")]
+    pub enable_highlighting: bool,
 
     /// Input backend.
     #[clap(long = "input-backend")]

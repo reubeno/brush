@@ -117,8 +117,8 @@ fn run_pipeline_interactively() -> anyhow::Result<()> {
 //
 
 type ShellSession = ReplSession<Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>>;
-// N.B. Comment out the above line and uncomment out the following line to disable logging of the session.
-// type ShellSession = ReplSession<Session<UnixProcess, PtyStream>>;
+// N.B. Comment out the above line and uncomment out the following line to disable logging of the
+// session. type ShellSession = ReplSession<Session<UnixProcess, PtyStream>>;
 
 trait SessionExt {
     fn suspend(&mut self) -> anyhow::Result<()>;
@@ -151,13 +151,20 @@ fn start_shell_session() -> anyhow::Result<ShellSession> {
     let shell_path = assert_cmd::cargo::cargo_bin("brush");
 
     let mut cmd = std::process::Command::new(shell_path);
-    cmd.args(["--norc", "--noprofile", "--disable-bracketed-paste"]);
+    cmd.args([
+        "--norc",
+        "--noprofile",
+        "--disable-bracketed-paste",
+        "--disable-color",
+        "--input-backend=basic",
+    ]);
     cmd.env("PS1", DEFAULT_PROMPT);
-    cmd.env("TERM", "dumb");
+    cmd.env("TERM", "linux");
 
     let session = expectrl::session::Session::spawn(cmd)?;
 
-    // N.B. Comment out this line to disable logging of the session (along with a similar line above).
+    // N.B. Comment out this line to disable logging of the session (along with a similar line
+    // above).
     let session = expectrl::session::log(session, std::io::stdout())?;
 
     let session = expectrl::repl::ReplSession::new(session, DEFAULT_PROMPT);

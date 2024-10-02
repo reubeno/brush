@@ -21,6 +21,16 @@ pub enum InteractiveExecutionResult {
     Eof,
 }
 
+/// Represents an interactive prompt.
+pub struct InteractivePrompt {
+    /// Prompt to display.
+    pub prompt: String,
+    /// Alternate-side prompt (typically right) to display.
+    pub alt_side_prompt: String,
+    /// Prompt to display on a continuation line of input.
+    pub continuation_prompt: String,
+}
+
 /// Represents a shell capable of taking commands from standard input.
 #[async_trait::async_trait]
 pub trait InteractiveShell {
@@ -35,7 +45,7 @@ pub trait InteractiveShell {
     /// # Arguments
     ///
     /// * `prompt` - The prompt to display to the user.
-    fn read_line(&mut self, prompt: &str) -> Result<ReadResult, ShellError>;
+    fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError>;
 
     /// Update history, if relevant.
     fn update_history(&mut self) -> Result<(), ShellError>;
@@ -103,16 +113,19 @@ pub trait InteractiveShell {
             let params = shell_mut.as_mut().default_exec_params();
 
             shell_mut.as_mut().run_string(prompt_cmd, &params).await?;
-
             shell_mut.as_mut().last_exit_status = prev_last_result;
         }
 
         // Now that we've done that, compose the prompt.
-        let prompt = shell_mut.as_mut().compose_prompt().await?;
+        let prompt = InteractivePrompt {
+            prompt: shell_mut.as_mut().compose_prompt().await?,
+            alt_side_prompt: shell_mut.as_mut().compose_alt_side_prompt().await?,
+            continuation_prompt: shell_mut.as_mut().continuation_prompt()?,
+        };
 
         drop(shell_mut);
 
-        match self.read_line(prompt.as_str())? {
+        match self.read_line(prompt)? {
             ReadResult::Input(read_result) => {
                 let mut shell_mut = self.shell_mut();
                 let params = shell_mut.as_mut().default_exec_params();
