@@ -82,7 +82,7 @@ impl Display for FoundCommand {
 }
 
 impl CommandCommand {
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     fn try_find_command(&self, shell: &shell::Shell) -> Option<FoundCommand> {
         // Look in path.
         if self.command_name.contains(std::path::MAIN_SEPARATOR) {
@@ -127,8 +127,6 @@ impl CommandCommand {
         // We do not have an existing process group to place this into.
         let mut pgid = None;
 
-        #[allow(clippy::cast_possible_truncation)]
-        #[allow(clippy::cast_sign_loss)]
         match commands::execute(context, &mut pgid, args, false /* use functions? */).await? {
             commands::CommandSpawnResult::SpawnedProcess(mut child) => {
                 // TODO: jobs: review this logic

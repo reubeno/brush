@@ -10,15 +10,15 @@ pub(crate) trait ShellFactory {
 
 pub(crate) struct StubShell;
 
-#[allow(clippy::panic)]
+#[expect(clippy::panic)]
 impl brush_interactive::InteractiveShell for StubShell {
-    #[allow(unreachable_code)]
+    #[expect(unreachable_code)]
     fn shell(&self) -> impl AsRef<brush_core::Shell> + Send {
         panic!("No interactive shell implementation available");
         self
     }
 
-    #[allow(unreachable_code)]
+    #[expect(unreachable_code)]
     fn shell_mut(&mut self) -> impl AsMut<brush_core::Shell> + Send {
         panic!("No interactive shell implementation available");
         self
@@ -36,14 +36,14 @@ impl brush_interactive::InteractiveShell for StubShell {
     }
 }
 
-#[allow(clippy::panic)]
+#[expect(clippy::panic)]
 impl AsRef<brush_core::Shell> for StubShell {
     fn as_ref(&self) -> &brush_core::Shell {
         panic!("No interactive shell implementation available")
     }
 }
 
-#[allow(clippy::panic)]
+#[expect(clippy::panic)]
 impl AsMut<brush_core::Shell> for StubShell {
     fn as_mut(&mut self) -> &mut brush_core::Shell {
         panic!("No interactive shell implementation available")
@@ -59,7 +59,6 @@ impl ShellFactory for RustylineShellFactory {
     #[cfg(not(any(windows, unix)))]
     type ShellType = StubShell;
 
-    #[allow(unused)]
     async fn create(
         &self,
         options: &brush_interactive::Options,
@@ -84,7 +83,7 @@ impl ShellFactory for BasicShellFactory {
     #[cfg(any(windows, unix))]
     type ShellType = StubShell;
 
-    #[allow(unused)]
+    #[expect(unused)]
     async fn create(
         &self,
         options: &brush_interactive::Options,

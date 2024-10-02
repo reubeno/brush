@@ -1,4 +1,4 @@
-#[allow(unused_imports)]
+#[expect(unused_imports)]
 pub(crate) use super::platform::fs::*;
 
 #[cfg(unix)]

@@ -136,7 +136,7 @@ impl builtins::Command for SetCommand {
         true
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,

@@ -15,7 +15,6 @@ pub(crate) fn parse_os_signal_name(signal: &str) -> Result<traps::TrapSignal, er
 }
 
 pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
-    #[allow(clippy::cast_possible_wrap)]
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGCONT)
         .map_err(|_errno| error::Error::FailedToSendSignal)?;
     Ok(())
@@ -45,7 +44,6 @@ pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, erro
     Ok(signal)
 }
 
-#[allow(unused)]
 pub(crate) use tokio::signal::ctrl_c as await_ctrl_c;
 
 pub(crate) fn mask_sigttou() -> Result<(), error::Error> {

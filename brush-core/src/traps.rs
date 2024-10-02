@@ -28,7 +28,6 @@ impl Display for TrapSignal {
 
 impl TrapSignal {
     /// Returns all possible values of `TrapSignal`.
-    #[allow(unused_mut)]
     pub fn all_values() -> Vec<TrapSignal> {
         let mut signals = vec![TrapSignal::Debug, TrapSignal::Err, TrapSignal::Exit];
 

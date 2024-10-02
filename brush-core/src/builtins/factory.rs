@@ -90,7 +90,7 @@ fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(
     Box::pin(async move { exec_simple_builtin_impl::<T>(context, args).await })
 }
 
-#[allow(clippy::unused_async)]
+#[expect(clippy::unused_async)]
 async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
@@ -181,7 +181,6 @@ async fn exec_declaration_builtin_impl<T: builtins::DeclarationCommand + Send + 
     })
 }
 
-#[allow(clippy::too_many_lines)]
 pub(crate) fn get_default_builtins(
     options: &crate::CreateOptions,
 ) -> HashMap<String, builtins::Registration> {

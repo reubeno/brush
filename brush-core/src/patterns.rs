@@ -78,8 +78,8 @@ impl Pattern {
     /// * `working_dir` - The current working directory, used for relative paths.
     /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     /// * `path_filter` - Optionally provides a function that filters paths after expansion.
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::too_many_lines)]
+    #[expect(clippy::unwrap_in_result)]
     pub(crate) fn expand<PF>(
         &self,
         working_dir: &Path,
@@ -474,7 +474,7 @@ fn compile_regex(regex_str: String) -> fancy_regex::Result<fancy_regex::Regex> {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic_in_result_fn)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;

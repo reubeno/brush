@@ -1,6 +1,5 @@
 /// Represents an error encountered while running or otherwise managing an interactive shell.
-#[allow(clippy::module_name_repetitions)]
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::module_name_repetitions)]
 #[derive(thiserror::Error, Debug)]
 pub enum ShellError {
     /// An error occurred with the embedded shell.

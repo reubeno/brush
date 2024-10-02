@@ -31,13 +31,13 @@ pub(crate) fn get_current_username() -> Result<String, error::Error> {
     Ok(username)
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
     // TODO: implement some version of this for Windows
     Ok(vec![])
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
     // TODO: implement some version of this for Windows
     Ok(vec![])

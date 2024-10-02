@@ -867,7 +867,6 @@ impl Shell {
     /// # Arguments
     ///
     /// * `required_glob_pattern` - The glob pattern to match against.
-    #[allow(clippy::manual_flatten)]
     pub(crate) fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
         let is_executable = |path: &Path| path.executable();
 

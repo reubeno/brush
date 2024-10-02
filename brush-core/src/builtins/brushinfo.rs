@@ -18,7 +18,7 @@ enum CommandGroup {
 }
 
 /// Commands for configuring tracing events.
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 #[derive(Subcommand)]
 enum ProcessCommand {
     /// Display process ID.

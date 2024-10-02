@@ -55,9 +55,7 @@ impl builtins::Command for TrapCommand {
     }
 }
 
-#[allow(unused_variables)]
 impl TrapCommand {
-    #[allow(clippy::unnecessary_wraps)]
     fn display_signals(context: &commands::ExecutionContext<'_>) -> Result<(), error::Error> {
         #[cfg(unix)]
         for signal in nix::sys::signal::Signal::iterator() {

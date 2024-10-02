@@ -51,7 +51,7 @@ impl PrintfCommand {
         self.evaluate_via_external_command(context)
     }
 
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     fn evaluate_via_external_command(
         &self,
         context: &commands::ExecutionContext<'_>,

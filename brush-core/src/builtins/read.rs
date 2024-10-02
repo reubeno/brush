@@ -79,7 +79,7 @@ impl builtins::Command for ReadCommand {
         }
 
         // Find the input stream to use.
-        #[allow(clippy::cast_lossless)]
+        #[expect(clippy::cast_lossless)]
         let input_stream = if let Some(fd_num) = self.fd_num_to_read {
             let fd_num = fd_num as u32;
             context

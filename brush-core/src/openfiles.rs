@@ -61,7 +61,7 @@ impl OpenFile {
 
     /// Retrieves the raw file descriptor for the open file.
     #[cfg(unix)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn as_raw_fd(&self) -> Result<i32, error::Error> {
         match self {
             OpenFile::Stdin => Ok(std::io::stdin().as_raw_fd()),

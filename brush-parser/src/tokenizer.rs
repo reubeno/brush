@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use utf8_chars::BufReadCharsExt;
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) enum TokenEndReason {
     /// End of input was reached.
@@ -475,7 +475,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         self.next_token_until(None)
     }
 
-    #[allow(clippy::if_same_then_else)]
+    #[expect(clippy::if_same_then_else)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,
@@ -962,7 +962,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'a, R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_token() {
-            #[allow(clippy::manual_map)]
+            #[expect(clippy::manual_map)]
             Ok(result) => match result.token {
                 Some(_) => Some(Ok(result)),
                 None => None,

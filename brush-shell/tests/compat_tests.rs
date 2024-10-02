@@ -57,7 +57,7 @@ impl TestConfig {
         })
     }
 
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     pub fn for_sh_testing(options: &TestOptions) -> Result<Self> {
         // Skip rc file and profile for deterministic behavior across systems/distros.
         Ok(Self {
@@ -82,7 +82,7 @@ impl TestConfig {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 async fn cli_integration_tests(options: TestOptions) -> Result<()> {
     let dir = env!("CARGO_MANIFEST_DIR");
 
@@ -350,7 +350,6 @@ struct TestCaseSet {
     pub source_dir: PathBuf,
 }
 
-#[allow(clippy::struct_field_names)]
 struct TestCaseSetResults {
     pub name: Option<String>,
     pub config_name: String,
@@ -504,7 +503,7 @@ impl TestCaseResult {
         self.write_details(std::io::stderr(), options)
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     pub fn write_details<W: std::io::Write>(
         &self,
         mut writer: W,
@@ -943,7 +942,7 @@ impl TestCase {
         test_cmd
     }
 
-    #[allow(clippy::unused_async)]
+    #[expect(clippy::unused_async)]
     #[cfg(unix)]
     async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
         use expectrl::Expect;
@@ -1026,7 +1025,7 @@ impl TestCase {
         }
     }
 
-    #[allow(clippy::unused_async)]
+    #[expect(clippy::unused_async)]
     async fn run_command_with_stdin(&self, cmd: std::process::Command) -> Result<RunResult> {
         const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
 
@@ -1136,7 +1135,7 @@ impl ExitStatusComparison {
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 enum StringComparison {
     Ignored {
         test_string: String,

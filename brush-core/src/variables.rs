@@ -215,8 +215,8 @@ impl ShellVariable {
 
         if append {
             match (&self.value, &value) {
-                // If we're appending an array to a declared-but-unset variable (or appending anything to a declared-but-unset array),
-                // then fill it out first.
+                // If we're appending an array to a declared-but-unset variable (or appending
+                // anything to a declared-but-unset array), then fill it out first.
                 (ShellValue::Unset(_), ShellValueLiteral::Array(_))
                 | (
                     ShellValue::Unset(
@@ -226,8 +226,8 @@ impl ShellVariable {
                 ) => {
                     self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
                 }
-                // If we're trying to append an array to a string, we first promote the string to be an array
-                // with the string being present at index 0.
+                // If we're trying to append an array to a string, we first promote the string to be
+                // an array with the string being present at index 0.
                 (ShellValue::String(_), ShellValueLiteral::Array(_)) => {
                     self.convert_to_indexed_array()?;
                 }
@@ -289,9 +289,9 @@ impl ShellVariable {
                     ShellValueLiteral::Scalar(s),
                 ) => self.assign_at_index(String::from("0"), s, false),
 
-                // If we're updating an indexed array value with an array, then preserve the array type.
-                // We also default to using an indexed array if we are assigning an array to a previously
-                // string-holding variable.
+                // If we're updating an indexed array value with an array, then preserve the array
+                // type. We also default to using an indexed array if we are
+                // assigning an array to a previously string-holding variable.
                 (
                     ShellValue::IndexedArray(_)
                     | ShellValue::Unset(
@@ -305,7 +305,8 @@ impl ShellVariable {
                     Ok(())
                 }
 
-                // If we're updating an associative array value with an array, then preserve the array type.
+                // If we're updating an associative array value with an array, then preserve the
+                // array type.
                 (
                     ShellValue::AssociativeArray(_)
                     | ShellValue::Unset(ShellValueUnsetType::AssociativeArray),
@@ -334,8 +335,8 @@ impl ShellVariable {
     ///
     /// * `array_index` - The index at which to assign the value.
     /// * `value` - The value to assign to the variable at the given index.
-    /// * `append` - Whether or not to append the value to the preexisting value stored at the given index.
-    #[allow(clippy::needless_pass_by_value)]
+    /// * `append` - Whether or not to append the value to the preexisting value stored at the given
+    ///   index.
     pub fn assign_at_index(
         &mut self,
         array_index: String,
@@ -602,7 +603,7 @@ impl ShellValue {
         Ok(ShellValue::IndexedArray(values))
     }
 
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     fn update_indexed_array_from_literals(
         existing_values: &mut BTreeMap<u64, String>,
         literal_values: ArrayLiteral,
@@ -720,7 +721,7 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `index` - The index at which to retrieve the value.
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     pub fn get_at(&self, index: &str) -> Result<Option<Cow<'_, str>>, error::Error> {
         match self {
             ShellValue::Unset(_) => Ok(None),

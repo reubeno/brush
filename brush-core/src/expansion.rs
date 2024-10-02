@@ -360,7 +360,7 @@ impl<'a> WordExpander<'a> {
         let expansion = self.basic_expand(word).await?;
 
         // TODO: Use IFS instead for separator?
-        #[allow(unstable_name_collisions)]
+        #[expect(unstable_name_collisions)]
         let pattern_pieces: Vec<_> = expansion
             .fields
             .into_iter()
@@ -385,7 +385,7 @@ impl<'a> WordExpander<'a> {
         let expansion = self.basic_expand(word).await?;
 
         // TODO: Use IFS instead for separator?
-        #[allow(unstable_name_collisions)]
+        #[expect(unstable_name_collisions)]
         let regex_pieces: Vec<_> = expansion
             .fields
             .into_iter()
@@ -543,7 +543,7 @@ impl<'a> WordExpander<'a> {
                     } = self.expand_word_piece(piece).await?;
 
                     let fields_to_append = if concatenate {
-                        #[allow(unstable_name_collisions)]
+                        #[expect(unstable_name_collisions)]
                         let mut concatenated: Vec<ExpansionPiece> = this_fields
                             .into_iter()
                             .map(|WordField(pieces)| {
@@ -659,12 +659,11 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     async fn expand_parameter_expr(
         &mut self,
         expr: brush_parser::word::ParameterExpr,
     ) -> Result<Expansion, error::Error> {
-        #[allow(clippy::cast_possible_truncation)]
         match expr {
             brush_parser::word::ParameterExpr::Parameter {
                 parameter,
@@ -1283,7 +1282,7 @@ impl<'a> WordExpander<'a> {
         Ok(index_to_use)
     }
 
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     fn expand_special_parameter(
         &mut self,
         parameter: &brush_parser::word::SpecialParameter,
@@ -1338,7 +1337,7 @@ impl<'a> WordExpander<'a> {
         Ok(value.to_string())
     }
 
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     fn uppercase_first_char(
         &mut self,
         s: String,
@@ -1368,7 +1367,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     fn lowercase_first_char(
         &mut self,
         s: String,
@@ -1440,7 +1439,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     fn replace_substring(
         s: &str,
         regex: &fancy_regex::Regex,
@@ -1562,7 +1561,7 @@ fn transform_expansion(
     })
 }
 
-#[allow(clippy::panic_in_result_fn)]
+#[expect(clippy::panic_in_result_fn)]
 #[cfg(test)]
 mod tests {
     use super::*;

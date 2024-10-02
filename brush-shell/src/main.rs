@@ -83,7 +83,7 @@ fn main() {
         }
     };
 
-    #[allow(clippy::cast_lossless)]
+    #[expect(clippy::cast_lossless)]
     std::process::exit(exit_code as i32);
 }
 

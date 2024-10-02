@@ -153,7 +153,6 @@ async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Resu
     Ok(value)
 }
 
-#[allow(clippy::unnecessary_wraps)]
 async fn apply_unary_op(
     shell: &mut Shell,
     op: ast::UnaryOperator,
@@ -205,8 +204,8 @@ async fn apply_binary_op(
     let left = left.eval(shell).await?;
     let right = right.eval(shell).await?;
 
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_sign_loss)]
     match op {
         ast::BinaryOperator::Power => {
             if right >= 0 {
@@ -280,7 +279,6 @@ async fn apply_unary_assignment_op(
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
 async fn assign(
     shell: &mut Shell,
     lvalue: &ast::ArithmeticTarget,

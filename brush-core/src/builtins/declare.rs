@@ -109,7 +109,6 @@ impl builtins::DeclarationCommand for DeclareCommand {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 #[async_trait::async_trait]
 impl builtins::Command for DeclareCommand {
     fn takes_plus_options() -> bool {
@@ -308,7 +307,7 @@ impl DeclareCommand {
         Ok(true)
     }
 
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     fn declaration_to_name_and_value(
         declaration: &commands::CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), error::Error> {
@@ -396,7 +395,7 @@ impl DeclareCommand {
         //
 
         // We start by excluding all variables that are not enumerable.
-        #[allow(clippy::type_complexity)]
+        #[expect(clippy::type_complexity)]
         let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool>> =
             vec![Box::new(|(_, v)| v.is_enumerable())];
 
@@ -509,7 +508,7 @@ impl DeclareCommand {
         Ok(())
     }
 
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     fn apply_attributes_before_update(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
         if let Some(value) = self.make_integer.to_bool() {
             if value {
@@ -563,7 +562,6 @@ impl DeclareCommand {
         Ok(())
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn apply_attributes_after_update(
         &self,
         var: &mut ShellVariable,

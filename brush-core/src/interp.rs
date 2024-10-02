@@ -46,13 +46,13 @@ impl From<processes::ProcessWaitResult> for ExecutionResult {
 impl From<std::process::Output> for ExecutionResult {
     fn from(output: std::process::Output) -> ExecutionResult {
         if let Some(code) = output.status.code() {
-            #[allow(clippy::cast_sign_loss)]
+            #[expect(clippy::cast_sign_loss)]
             return Self::new((code & 0xFF) as u8);
         }
 
         #[cfg(unix)]
         if let Some(signal) = output.status.signal() {
-            #[allow(clippy::cast_sign_loss)]
+            #[expect(clippy::cast_sign_loss)]
             return Self::new((signal & 0xFF) as u8 + 128);
         }
 
@@ -88,7 +88,7 @@ impl ExecutionResult {
         // TODO: Decide how to sort this out in a platform-independent way.
         const SIGTSTP: std::os::raw::c_int = 20;
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         Self::new(128 + SIGTSTP as u8)
     }
 }
@@ -761,7 +761,7 @@ impl Execute for ast::FunctionDefinition {
 
 #[async_trait::async_trait]
 impl ExecuteInPipeline for ast::SimpleCommand {
-    #[allow(clippy::too_many_lines)] // TODO: refactor this function
+    #[expect(clippy::too_many_lines)] // TODO: refactor this function
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext,
@@ -1059,7 +1059,7 @@ async fn basic_expand_assignment_value(
     Ok(expanded)
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
@@ -1221,7 +1221,7 @@ fn setup_pipeline_redirection(
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 pub(crate) async fn setup_redirect<'a>(
     open_files: &'a mut OpenFiles,
     shell: &mut Shell,
@@ -1461,7 +1461,6 @@ fn setup_process_substitution(
     Ok((candidate_fd_num, target_file))
 }
 
-#[allow(unused_variables)]
 fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
     let (reader, mut writer) = sys::pipes::pipe()?;
 

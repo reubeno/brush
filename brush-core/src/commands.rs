@@ -33,9 +33,7 @@ pub(crate) enum CommandSpawnResult {
 
 impl CommandSpawnResult {
     // TODO: jobs: remove `no_wait`; it doesn't make any sense
-    #[allow(clippy::too_many_lines)]
     pub async fn wait(self, no_wait: bool) -> Result<CommandWaitResult, error::Error> {
-        #[allow(clippy::ignored_unit_patterns)]
         match self {
             CommandSpawnResult::SpawnedProcess(mut child) => {
                 let process_wait_result = if !no_wait {
@@ -128,7 +126,7 @@ impl ExecutionContext<'_> {
     }
 
     /// Returns the file descriptor with the given number.
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
         self.params
             .open_files
@@ -177,7 +175,6 @@ impl From<&String> for CommandArg {
     }
 }
 
-#[allow(unused_variables)]
 pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     shell: &mut Shell,
     command_name: &str,
@@ -308,7 +305,6 @@ pub(crate) async fn execute(
     execute_external_command(cmd_context, process_group_id, &args[1..])
 }
 
-#[allow(clippy::too_many_lines)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
     process_group_id: &mut Option<i32>,
@@ -323,7 +319,6 @@ pub(crate) fn execute_external_command(
     }
 
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
-    #[allow(unused_variables)]
     let child_stdin_is_terminal = context
         .params
         .open_files
@@ -334,7 +329,6 @@ pub(crate) fn execute_external_command(
     let new_pg = context.should_cmd_lead_own_process_group();
 
     // Compose the std::process::Command that encapsulates what we want to launch.
-    #[allow(unused_mut)]
     let mut cmd = compose_std_command(
         context.shell,
         context.command_name.as_str(),
@@ -377,7 +371,7 @@ pub(crate) fn execute_external_command(
     match sys::process::spawn(cmd) {
         Ok(child) => {
             // Retrieve the pid.
-            #[allow(clippy::cast_possible_wrap)]
+            #[expect(clippy::cast_possible_wrap)]
             let pid = child.id().map(|id| id as i32);
             if let Some(pid) = &pid {
                 if new_pg {

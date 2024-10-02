@@ -51,7 +51,7 @@ impl JobTask {
         }
     }
 
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
             JobTask::External(process) => {
@@ -324,7 +324,7 @@ impl Job {
     }
 
     /// Polls whether the job has completed.
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     pub fn poll_done(
         &mut self,
     ) -> Result<Option<Result<ExecutionResult, error::Error>>, error::Error> {
@@ -374,7 +374,6 @@ impl Job {
     }
 
     /// Moves the job to execute in the background.
-    #[allow(clippy::unused_self)]
     pub fn move_to_background(&mut self) -> Result<(), error::Error> {
         if matches!(self.state, JobState::Stopped) {
             if let Some(pgid) = self.get_process_group_id() {

@@ -2,7 +2,7 @@ use crate::CreateOptions;
 
 /// Runtime changeable options for a shell instance.
 #[derive(Clone, Default)]
-#[allow(clippy::module_name_repetitions)]
+#[expect(clippy::module_name_repetitions)]
 pub struct RuntimeOptions {
     //
     // Single-character options.
