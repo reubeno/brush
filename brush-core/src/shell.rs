@@ -689,6 +689,18 @@ impl Shell {
         Ok(formatted_prompt)
     }
 
+    /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
+    #[allow(clippy::unused_async)]
+    pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
+        Ok(String::new())
+    }
+
+    /// Retrieve's the shell's continuation prompt.
+    pub fn continuation_prompt(&self) -> Result<String, error::Error> {
+        // TODO: Evaluate expansion?
+        Ok(self.parameter_or_default("PS2", "> "))
+    }
+
     /// Returns the exit status of the last command executed in this shell.
     pub fn last_result(&self) -> u8 {
         self.last_exit_status

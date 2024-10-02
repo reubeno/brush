@@ -25,6 +25,12 @@ harness = false
 name = "brush-interactive-tests"
 path = "tests/interactive_tests.rs"
 
+[features]
+default = ["basic", "reedline", "rustyline"]
+basic = []
+reedline = []
+rustyline = []
+
 [lints]
 workspace = true
 
@@ -48,6 +54,7 @@ tokio = { version = "1.40.0", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.10", path = "../brush-interactive", features = [
+    "reedline",
     "rustyline",
 ] }
 tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "sync"] }

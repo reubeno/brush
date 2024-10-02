@@ -540,7 +540,9 @@ impl Spec {
 #[derive(Debug, Default)]
 pub struct Completions {
     /// The index in the input line where the completions should be inserted.
-    pub start: usize,
+    pub insertion_index: usize,
+    /// The number of chars in the input line that should be removed before insertion.
+    pub delete_count: usize,
     /// The ordered list of completions.
     pub candidates: Vec<String>,
     /// Options for processing the candidates.
@@ -696,11 +698,12 @@ impl Config {
         const MAX_RESTARTS: u32 = 10;
 
         // Make a best-effort attempt to tokenize.
+        // TODO: Should we incorporate current shell settings into tokenizer settings?
         if let Ok(tokens) = brush_parser::tokenize_str(input) {
             let cursor: i32 = i32::try_from(position)?;
             let mut preceding_token = None;
             let mut completion_prefix = "";
-            let mut insertion_point = cursor;
+            let mut insertion_index = cursor;
             let mut completion_token_index = tokens.len();
 
             // Copy a set of references to the tokens; we will adjust this list as
@@ -726,11 +729,11 @@ impl Config {
                 else if cursor >= token.location().start.index
                     && cursor <= token.location().end.index
                 {
-                    // Update insertion point.
-                    insertion_point = token.location().start.index;
+                    // Update insertion index.
+                    insertion_index = token.location().start.index;
 
                     // Update prefix.
-                    let offset_into_token = (cursor - insertion_point) as usize;
+                    let offset_into_token = (cursor - insertion_index) as usize;
                     let token_str = token.to_str();
                     completion_prefix = &token_str[..offset_into_token];
 
@@ -779,19 +782,22 @@ impl Config {
 
             match result {
                 Answer::Candidates(candidates, options) => Ok(Completions {
-                    start: insertion_point as usize,
+                    insertion_index: insertion_index as usize,
+                    delete_count: completion_prefix.len(),
                     candidates,
                     options,
                 }),
                 Answer::RestartCompletionProcess => Ok(Completions {
-                    start: insertion_point as usize,
+                    insertion_index: insertion_index as usize,
+                    delete_count: 0,
                     candidates: vec![],
                     options: ProcessingOptions::default(),
                 }),
             }
         } else {
             Ok(Completions {
-                start: position,
+                insertion_index: position,
+                delete_count: 0,
                 candidates: vec![],
                 options: ProcessingOptions::default(),
             })

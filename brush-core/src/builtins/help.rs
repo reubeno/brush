@@ -56,7 +56,7 @@ impl HelpCommand {
         )?;
 
         let builtins = get_builtins_sorted_by_name(context);
-        let items_per_column = (builtins.len() + COLUMN_COUNT - 1) / COLUMN_COUNT;
+        let items_per_column = builtins.len().div_ceil(COLUMN_COUNT);
 
         for i in 0..items_per_column {
             for j in 0..COLUMN_COUNT {

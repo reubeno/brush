@@ -1,13 +1,10 @@
 use rustyline::validate::ValidationResult;
-use std::{
-    borrow::Cow,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, path::PathBuf};
 
 use crate::{
+    completion,
     error::ShellError,
-    interactive_shell::{InteractiveShell, ReadResult},
-    trace_categories,
+    interactive_shell::{InteractivePrompt, InteractiveShell, ReadResult},
 };
 
 type Editor = rustyline::Editor<EditorHelper, rustyline::history::FileHistory>;
@@ -79,8 +76,13 @@ impl InteractiveShell for RustylineShell {
         &mut self.editor.helper_mut().unwrap().shell
     }
 
-    fn read_line(&mut self, prompt: &str) -> Result<ReadResult, ShellError> {
-        match self.editor.readline(prompt) {
+    /// Reads a line of input, using the given prompt.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The prompt to display to the user.
+    fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
+        match self.editor.readline(prompt.prompt.as_str()) {
             Ok(s) => Ok(ReadResult::Input(s)),
             Err(rustyline::error::ReadlineError::Eof) => Ok(ReadResult::Eof),
             Err(rustyline::error::ReadlineError::Interrupted) => Ok(ReadResult::Interrupted),
@@ -88,6 +90,7 @@ impl InteractiveShell for RustylineShell {
         }
     }
 
+    /// Update history, if relevant.
     fn update_history(&mut self) -> Result<(), ShellError> {
         if let Some(history_file_path) = &self.history_file_path {
             if self.shell().as_ref().options.append_to_history_file {
@@ -161,59 +164,7 @@ impl EditorHelper {
         line: &str,
         pos: usize,
     ) -> rustyline::Result<(usize, Vec<rustyline::completion::Pair>)> {
-        let working_dir = self.shell.working_dir.clone();
-
-        // Intentionally ignore any errors that arise.
-        let completion_future = self.shell.get_completions(line, pos);
-        tokio::pin!(completion_future);
-
-        // Wait for the completions to come back or interruption, whichever happens first.
-        let result = loop {
-            tokio::select! {
-                result = &mut completion_future => {
-                    break result;
-                }
-                _ = tokio::signal::ctrl_c() => {
-                },
-            }
-        };
-
-        let mut completions = result.unwrap_or_else(|_| brush_core::completion::Completions {
-            start: pos,
-            candidates: vec![],
-            options: brush_core::completion::ProcessingOptions::default(),
-        });
-
-        let completing_end_of_line = pos == line.len();
-        if completions.options.treat_as_filenames {
-            for candidate in &mut completions.candidates {
-                // Check if it's a directory.
-                if !candidate.ends_with(std::path::MAIN_SEPARATOR) {
-                    let candidate_path = Path::new(candidate);
-                    let abs_candidate_path = if candidate_path.is_absolute() {
-                        PathBuf::from(candidate_path)
-                    } else {
-                        working_dir.join(candidate_path)
-                    };
-
-                    if abs_candidate_path.is_dir() {
-                        candidate.push(std::path::MAIN_SEPARATOR);
-                    }
-                }
-            }
-        }
-        if completions.options.no_autoquote_filenames {
-            tracing::debug!(target: trace_categories::COMPLETION, "don't autoquote filenames");
-        }
-        if completing_end_of_line && !completions.options.no_trailing_space_at_end_of_line {
-            for candidate in &mut completions.candidates {
-                if !completions.options.treat_as_filenames
-                    || !candidate.ends_with(std::path::MAIN_SEPARATOR)
-                {
-                    candidate.push(' ');
-                }
-            }
-        }
+        let completions = completion::complete_async(&mut self.shell, line, pos).await;
 
         let options = completions.options;
         let candidates = completions
@@ -225,7 +176,7 @@ impl EditorHelper {
             })
             .collect();
 
-        Ok((completions.start, candidates))
+        Ok((completions.insertion_index, candidates))
     }
 }
 
