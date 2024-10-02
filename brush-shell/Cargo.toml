@@ -69,3 +69,4 @@ regex = "1.11.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.0"
+version-compare = "0.2.0"
