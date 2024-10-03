@@ -13,8 +13,19 @@ use crate::ast;
 use crate::error;
 use crate::ParserOptions;
 
+/// Encapsulates a `WordPiece` together with its position in the string it came from.
+#[derive(Clone, Debug)]
+pub struct WordPieceWithSource {
+    /// The word piece.
+    pub piece: WordPiece,
+    /// The start index of the piece in the source string.
+    pub start_index: usize,
+    /// The end index of the piece in the source string.
+    pub end_index: usize,
+}
+
 /// Represents a piece of a word.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum WordPiece {
     /// A simple unquoted, unescaped string.
     Text(String),
@@ -23,13 +34,15 @@ pub enum WordPiece {
     /// A string that is ANSI-C quoted.
     AnsiCQuotedText(String),
     /// A sequence of pieces that are embedded in double quotes.
-    DoubleQuotedSequence(Vec<WordPiece>),
+    DoubleQuotedSequence(Vec<WordPieceWithSource>),
     /// A tilde prefix.
     TildePrefix(String),
     /// A parameter expansion.
     ParameterExpansion(ParameterExpr),
     /// A command substitution.
     CommandSubstitution(String),
+    /// A backquoted command substitution.
+    BackquotedCommandSubstitution(String),
     /// An escape sequence.
     EscapeSequence(String),
     /// An arithmetic expression.
@@ -37,7 +50,7 @@ pub enum WordPiece {
 }
 
 /// Type of a parameter test.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ParameterTestType {
     /// Check for unset or null.
     UnsetOrNull,
@@ -46,7 +59,7 @@ pub enum ParameterTestType {
 }
 
 /// A parameter, used in a parameter expansion.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Parameter {
     /// A 0-indexed positional parameter.
     Positional(u32),
@@ -71,7 +84,7 @@ pub enum Parameter {
 }
 
 /// A special parameter, used in a parameter expansion.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SpecialParameter {
     /// All positional parameters.
     AllPositionalParameters {
@@ -93,7 +106,7 @@ pub enum SpecialParameter {
 }
 
 /// A parameter expression, used in a parameter expansion.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ParameterExpr {
     /// A parameter, with optional indirection.
     Parameter {
@@ -312,7 +325,7 @@ pub enum ParameterExpr {
 }
 
 /// Kind of substring match.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SubstringMatchKind {
     /// Match the prefix of the string.
     Prefix,
@@ -325,7 +338,7 @@ pub enum SubstringMatchKind {
 }
 
 /// Kind of operation to apply to a parameter.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ParameterTransformOp {
     /// Capitalizate initials.
     CapitalizeInitial,
@@ -356,10 +369,21 @@ pub enum ParameterTransformOp {
 ///
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
-pub fn parse(word: &str, options: &ParserOptions) -> Result<Vec<WordPiece>, error::WordParseError> {
+pub fn parse(
+    word: &str,
+    options: &ParserOptions,
+) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
+    cacheable_parse(word.to_owned(), options.to_owned())
+}
+
+#[cached::proc_macro::cached(size = 64, result = true)]
+fn cacheable_parse(
+    word: String,
+    options: ParserOptions,
+) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
     tracing::debug!("Parsing word '{}'", word);
 
-    let pieces = expansion_parser::unexpanded_word(word, options)
+    let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
 
     tracing::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
@@ -384,10 +408,10 @@ pub fn parse_parameter(
 
 peg::parser! {
     grammar expansion_parser(parser_options: &ParserOptions) for str {
-        pub(crate) rule unexpanded_word() -> Vec<WordPiece> = word(<![_]>)
+        pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = word(<![_]>)
 
-        rule word<T>(stop_condition: rule<T>) -> Vec<WordPiece> =
-            tilde:tilde_prefix()? pieces:word_piece(<stop_condition()>)* {
+        rule word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
+            tilde:tilde_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>)* {
                 let mut all_pieces = Vec::new();
                 if let Some(tilde) = tilde {
                     all_pieces.push(tilde);
@@ -413,6 +437,11 @@ peg::parser! {
             "(" arithmetic_word_plus_right_paren() ")" /
             word_piece(<[')']>)* ")" {}
 
+        rule word_piece_with_source<T>(stop_condition: rule<T>) -> WordPieceWithSource =
+            start_index:position!() piece:word_piece(<stop_condition()>) end_index:position!() {
+                WordPieceWithSource { piece, start_index, end_index }
+            }
+
         rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
             arithmetic_expansion() /
             command_substitution() /
@@ -433,11 +462,17 @@ peg::parser! {
             normal_escape_sequence() /
             unquoted_literal_text(<stop_condition()>)
 
-        rule double_quoted_sequence() -> Vec<WordPiece> =
+        rule double_quoted_sequence() -> Vec<WordPieceWithSource> =
             "\"" i:double_quoted_sequence_inner()* "\"" { i }
 
-        rule double_quoted_sequence_inner() -> WordPiece =
-            double_quoted_word_piece()
+        rule double_quoted_sequence_inner() -> WordPieceWithSource =
+            start_index:position!() piece:double_quoted_word_piece() end_index:position!() {
+                WordPieceWithSource {
+                    piece,
+                    start_index,
+                    end_index
+                }
+            }
 
         rule single_quoted_literal_text() -> &'input str =
             "\'" inner:$([^'\'']*) "\'" { inner }
@@ -469,6 +504,15 @@ peg::parser! {
 
         rule double_quoted_escape_sequence() -> WordPiece =
             s:$("\\" ['$' | '`' | '\"' | '\'' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
+
+        rule tilde_prefix_with_source() -> WordPieceWithSource =
+            start_index:position!() piece:tilde_prefix() end_index:position!() {
+                WordPieceWithSource {
+                    piece,
+                    start_index,
+                    end_index
+                }
+            }
 
         // TODO: Handle colon syntax
         rule tilde_prefix() -> WordPiece =
@@ -627,7 +671,7 @@ peg::parser! {
 
         pub(crate) rule command_substitution() -> WordPiece =
             "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
-            "`" c:backquoted_command() "`" { WordPiece::CommandSubstitution(c) }
+            "`" c:backquoted_command() "`" { WordPiece::BackquotedCommandSubstitution(c) }
 
         pub(crate) rule command() -> &'input str =
             $(command_piece()*)
@@ -688,7 +732,7 @@ mod tests {
         let parsed = super::parse("$(echo hi)", &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
-            [WordPiece::CommandSubstitution(s)] if s.as_str() == "echo hi"
+            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo hi"
         );
 
         Ok(())
@@ -707,7 +751,7 @@ mod tests {
         let parsed = super::parse(r#"$(echo "hi")"#, &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
-            [WordPiece::CommandSubstitution(s)] if s.as_str() == r#"echo "hi""#
+            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == r#"echo "hi""#
         );
 
         Ok(())
@@ -718,7 +762,7 @@ mod tests {
         let parsed = super::parse("$(echo !(x))", &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
-            [WordPiece::CommandSubstitution(s)] if s.as_str() == "echo !(x)"
+            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo !(x)"
         );
 
         Ok(())

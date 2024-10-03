@@ -28,19 +28,30 @@ impl ReedlineCompleter {
         completions
             .candidates
             .into_iter()
-            .map(|candidate| {
-                reedline::Suggestion {
-                    value: candidate,
-                    description: None, // TODO: fill in description
-                    style: None,       // TODO: fill in style
-                    extra: None,       // TODO: fill in extras
-                    span: reedline::Span {
-                        start: insertion_index,
-                        end: insertion_index + delete_count,
-                    },
-                    append_whitespace: false, // TODO: compute this
-                }
-            })
+            .map(|candidate| Self::to_suggestion(candidate, insertion_index, delete_count))
             .collect()
+    }
+
+    fn to_suggestion(
+        candidate: String,
+        insertion_index: usize,
+        delete_count: usize,
+    ) -> reedline::Suggestion {
+        let mut style = nu_ansi_term::Style::new().dimmed();
+        if candidate.ends_with(std::path::MAIN_SEPARATOR) {
+            style = style.fg(nu_ansi_term::Color::Green);
+        }
+
+        reedline::Suggestion {
+            value: candidate,
+            description: None, // TODO: fill in description
+            style: Some(style),
+            extra: None,
+            span: reedline::Span {
+                start: insertion_index,
+                end: insertion_index + delete_count,
+            },
+            append_whitespace: false, // TODO: compute this
+        }
     }
 }

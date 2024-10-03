@@ -222,7 +222,7 @@ async fn instantiate_shell(
 fn get_default_input_backend() -> InputBackend {
     #[cfg(any(windows, unix))]
     {
-        InputBackend::Rustyline
+        InputBackend::Reedline
     }
     #[cfg(not(any(windows, unix)))]
     {

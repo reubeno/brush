@@ -405,7 +405,7 @@ pub fn tokenize_str(input: &str) -> Result<Vec<Token>, TokenizerError> {
     cacheable_tokenize_str(input.to_owned())
 }
 
-#[cached::proc_macro::cached(size = 32, result = true)]
+#[cached::proc_macro::cached(size = 64, result = true)]
 pub fn cacheable_tokenize_str(input: String) -> Result<Vec<Token>, TokenizerError> {
     let mut reader = std::io::BufReader::new(input.as_bytes());
     let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &TokenizerOptions::default());

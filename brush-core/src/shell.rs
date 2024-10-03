@@ -745,7 +745,7 @@ impl Shell {
 
     /// Returns the options that should be used for parsing shell programs; reflects
     /// the current configuration state of the shell and may change over time.
-    pub(crate) fn parser_options(&self) -> brush_parser::ParserOptions {
+    pub fn parser_options(&self) -> brush_parser::ParserOptions {
         brush_parser::ParserOptions {
             enable_extended_globbing: self.options.extended_globbing,
             posix_mode: self.options.posix_mode,
@@ -880,7 +880,7 @@ impl Shell {
     ///
     /// * `required_glob_pattern` - The glob pattern to match against.
     #[allow(clippy::manual_flatten)]
-    pub(crate) fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
+    pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
         let is_executable = |path: &Path| path.executable();
 
         let mut executables = vec![];
@@ -1055,6 +1055,19 @@ impl Shell {
         }
     }
 
+    /// Checks if the given string is a keyword reserved in this shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to check.
+    pub fn is_keyword(&self, s: &str) -> bool {
+        if self.options.sh_mode {
+            keywords::SH_MODE_KEYWORDS.contains(s)
+        } else {
+            keywords::KEYWORDS.contains(s)
+        }
+    }
+
     /// Checks for completed jobs in the shell, reporting any changes found.
     pub fn check_for_completed_jobs(&mut self) -> Result<(), error::Error> {
         let results = self.jobs.poll()?;
@@ -1078,7 +1091,7 @@ impl Shell {
     }
 }
 
-#[cached::proc_macro::cached(size = 32, result = true)]
+#[cached::proc_macro::cached(size = 64, result = true)]
 fn parse_string_impl(
     s: String,
     parser_options: brush_parser::ParserOptions,

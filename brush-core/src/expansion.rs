@@ -420,7 +420,7 @@ impl<'a> WordExpander<'a> {
 
         let mut expansions = vec![];
         for piece in pieces {
-            let piece_expansion = self.expand_word_piece(piece).await?;
+            let piece_expansion = self.expand_word_piece(piece.piece).await?;
             expansions.push(piece_expansion);
         }
 
@@ -540,7 +540,7 @@ impl<'a> WordExpander<'a> {
                         fields: this_fields,
                         concatenate,
                         undefined: _undefined,
-                    } = self.expand_word_piece(piece).await?;
+                    } = self.expand_word_piece(piece.piece).await?;
 
                     let fields_to_append = if concatenate {
                         #[allow(unstable_name_collisions)]
@@ -603,7 +603,8 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::WordPiece::ParameterExpansion(p) => {
                 self.expand_parameter_expr(p).await?
             }
-            brush_parser::word::WordPiece::CommandSubstitution(s) => {
+            brush_parser::word::WordPiece::BackquotedCommandSubstitution(s)
+            | brush_parser::word::WordPiece::CommandSubstitution(s) => {
                 // Insantiate a subshell to run the command in.
                 let mut subshell = self.shell.clone();
 
