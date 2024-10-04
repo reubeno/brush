@@ -36,6 +36,9 @@ impl ReedlineShell {
         let validator = validator::ReedlineValidator {
             shell: shell_ref.clone(),
         };
+        let highlighter = highlighter::ReedlineHighlighter {
+            shell: shell_ref.clone(),
+        };
 
         // Set up completion menu. Set an empty marker to avoid the
         // line's text horizontally shifting around during/after completion.
@@ -57,9 +60,6 @@ impl ReedlineShell {
                     .fg(nu_ansi_term::Color::DarkGray),
             );
         }
-
-        // Highlighter.
-        let highlighter = highlighter::ReedlineHighlighter {};
 
         // Instantiate reedline with some defaults and hand it ownership of
         // the helpers.
@@ -125,7 +125,7 @@ impl InteractiveShell for ReedlineShell {
 
     /// Update history, if relevant.
     fn update_history(&mut self) -> Result<(), ShellError> {
-        // TODO: Do something useful here.
+        // N.B. With our current usage, reedline auto-updates the history file.
         Ok(())
     }
 }
@@ -166,7 +166,6 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
             reedline::ReedlineEvent::Edit(vec![
                 reedline::EditCommand::MoveToStart { select: false },
                 reedline::EditCommand::InsertChar('#'),
-                reedline::EditCommand::InsertChar(' '),
             ]),
             reedline::ReedlineEvent::Enter,
         ]),

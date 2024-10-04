@@ -21,12 +21,22 @@ impl reedline::Prompt for InteractivePrompt {
         self.continuation_prompt.as_str().into()
     }
 
-    // TODO: Decide what to display.
     fn render_prompt_history_search_indicator(
         &self,
-        _history_search: reedline::PromptHistorySearch,
+        history_search: reedline::PromptHistorySearch,
     ) -> std::borrow::Cow<str> {
-        "(hist-search) ".into()
+        match history_search.status {
+            reedline::PromptHistorySearchStatus::Passing => {
+                if history_search.term.is_empty() {
+                    "(rev search) ".into()
+                } else {
+                    std::format!("(rev search: {}) ", history_search.term).into()
+                }
+            }
+            reedline::PromptHistorySearchStatus::Failing => {
+                std::format!("(failing rev search: {}) ", history_search.term).into()
+            }
+        }
     }
 
     fn get_prompt_color(&self) -> reedline::Color {
