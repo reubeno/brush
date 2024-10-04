@@ -214,3 +214,11 @@ cases:
       check " "   && echo "2. Only space"
       check $'\t' && echo "3. Only space"
       check " a " && echo "4. Only space"
+
+  - name: "Newlines in test expression"
+    stdin: |
+      [[
+        "a" == "a"
+        &&
+        "b" == "b"
+      ]] && echo "Succeeded"

@@ -344,12 +344,12 @@ peg::parser! {
             }
 
         rule extended_test_command() -> ast::ExtendedTestExpr =
-            specific_word("[[") e:extended_test_expression() specific_word("]]") { e }
+            specific_word("[[") linebreak() e:extended_test_expression() linebreak() specific_word("]]") { e }
 
         rule extended_test_expression() -> ast::ExtendedTestExpr = precedence! {
-            left:(@) specific_operator("||") right:@ { ast::ExtendedTestExpr::Or(Box::from(left), Box::from(right)) }
+            left:(@) linebreak() specific_operator("||") linebreak() right:@ { ast::ExtendedTestExpr::Or(Box::from(left), Box::from(right)) }
             --
-            left:(@) specific_operator("&&") right:@ { ast::ExtendedTestExpr::And(Box::from(left), Box::from(right)) }
+            left:(@) linebreak() specific_operator("&&") linebreak() right:@ { ast::ExtendedTestExpr::And(Box::from(left), Box::from(right)) }
             --
             specific_word("!") e:@ { ast::ExtendedTestExpr::Not(Box::from(e)) }
             --
