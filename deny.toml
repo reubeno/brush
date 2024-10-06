@@ -84,7 +84,7 @@ deny = []
 #exact = true
 
 # Certain crates/versions that will be skipped when doing duplicate detection.
-skip = [{ crate = "nu-ansi-term" }, { crate = "itertools" }]
+skip = [{ crate = "nu-ansi-term" }, { crate = "itertools" }, { crate = "hashbrown" }]
 skip-tree = [
     { crate = "windows-sys", reason = "several crates use outdated versions" },
     { crate = "windows-core", reason = "several crates use outdated versions" },
