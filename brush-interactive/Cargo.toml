@@ -27,6 +27,7 @@ workspace = true
 async-trait = "0.1.83"
 brush-parser = { version = "^0.2.8", path = "../brush-parser" }
 brush-core = { version = "^0.2.10", path = "../brush-core" }
+indexmap = "2.6.0"
 nu-ansi-term = { version = "0.50.1", optional = true }
 reedline = { version = "0.35.0", optional = true }
 rustyline = { package = "brush-rustyline-fork", version = "14.0.1", optional = true, features = [

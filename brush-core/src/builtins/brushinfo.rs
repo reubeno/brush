@@ -15,6 +15,9 @@ pub(crate) struct BrushInfoCommand {
 enum CommandGroup {
     #[clap(subcommand)]
     Process(ProcessCommand),
+
+    #[clap(subcommand)]
+    Complete(CompleteCommand),
 }
 
 /// Commands for configuring tracing events.
@@ -35,23 +38,39 @@ enum ProcessCommand {
     ShowParentProcessId,
 }
 
+/// Commands for generating completions.
+#[derive(Subcommand)]
+enum CompleteCommand {
+    /// Generate completions for an input line.
+    #[clap(name = "line")]
+    Line {
+        /// The 0-indexed cursor position for generation.
+        #[arg(long = "cursor", short = 'c')]
+        cursor_index: Option<usize>,
+
+        /// The input line to generate completions for.
+        line: String,
+    },
+}
+
 #[async_trait::async_trait]
 impl builtins::Command for BrushInfoCommand {
     async fn execute(
         &self,
-        context: commands::ExecutionContext<'_>,
+        mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        self.command_group.execute(&context)
+        self.command_group.execute(&mut context).await
     }
 }
 
 impl CommandGroup {
-    fn execute(
+    async fn execute(
         &self,
-        context: &commands::ExecutionContext<'_>,
+        context: &mut commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         match self {
             CommandGroup::Process(process) => process.execute(context),
+            CommandGroup::Complete(complete) => complete.execute(context).await,
         }
     }
 }
@@ -92,6 +111,26 @@ impl ProcessCommand {
                     writeln!(context.stderr(), "failed to get parent process ID")?;
                     Ok(builtins::ExitCode::Custom(1))
                 }
+            }
+        }
+    }
+}
+
+impl CompleteCommand {
+    async fn execute(
+        &self,
+        context: &mut commands::ExecutionContext<'_>,
+    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        match self {
+            CompleteCommand::Line { cursor_index, line } => {
+                let completions = context
+                    .shell
+                    .get_completions(line, cursor_index.unwrap_or(line.len()))
+                    .await?;
+                for candidate in completions.candidates {
+                    writeln!(context.stdout(), "{candidate}")?;
+                }
+                Ok(builtins::ExitCode::Success)
             }
         }
     }
