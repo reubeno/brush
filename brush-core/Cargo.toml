@@ -24,7 +24,7 @@ cached = "0.53.0"
 cfg-if = "1.0.0"
 clap = { version = "4.5.17", features = ["derive", "wrap_help"] }
 fancy-regex = "0.13.0"
-futures = "0.3.30"
+futures = "0.3.31"
 indexmap = "2.6.0"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
