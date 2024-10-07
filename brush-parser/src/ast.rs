@@ -1137,6 +1137,12 @@ impl From<&tokenizer::Token> for Word {
     }
 }
 
+impl From<String> for Word {
+    fn from(s: String) -> Word {
+        Word { value: s }
+    }
+}
+
 impl Word {
     /// Constructs a new `Word` from a given string.
     pub fn new(s: &str) -> Self {

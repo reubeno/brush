@@ -111,7 +111,15 @@ impl builtins::Command for ReadCommand {
             } else if !self.variable_names.is_empty() {
                 for (i, name) in self.variable_names.iter().enumerate() {
                     if fields.is_empty() {
-                        break;
+                        // Ensure the var is empty.
+                        context.shell.env.update_or_add(
+                            name,
+                            variables::ShellValueLiteral::Scalar(String::new()),
+                            |_| Ok(()),
+                            env::EnvironmentLookup::Anywhere,
+                            env::EnvironmentScope::Global,
+                        )?;
+                        continue;
                     }
 
                     let last = i == self.variable_names.len() - 1;
@@ -155,6 +163,13 @@ impl builtins::Command for ReadCommand {
     }
 }
 
+enum ReadTermination {
+    Delimiter,
+    EndOfInput,
+    CtrlC,
+    Limit,
+}
+
 impl ReadCommand {
     fn read_line(
         &self,
@@ -183,23 +198,26 @@ impl ReadCommand {
         let mut line = String::new();
         let mut buffer = [0; 1]; // 1-byte buffer
 
-        loop {
+        let reason = loop {
             let n = input_file.read(&mut buffer)?;
             if n == 0 {
-                break; // EOF reached.
+                break ReadTermination::EndOfInput; // EOF reached.
             }
 
             let ch = buffer[0] as char;
 
             // Check for Ctrl+C.
             if ch == '\x03' {
-                return Ok(None);
+                break ReadTermination::CtrlC;
+            } else if ch == '\x04' {
+                // Ctrl+D is EOF.
+                break ReadTermination::EndOfInput;
             }
 
             // Check for a delimiter that indicates end-of-input.
             if let Some(delimiter) = delimiter {
                 if ch == delimiter {
-                    break;
+                    break ReadTermination::Delimiter;
                 }
             }
 
@@ -213,19 +231,28 @@ impl ReadCommand {
             // Check to see if we've hit a character limit.
             if let Some(char_limit) = char_limit {
                 if line.len() >= char_limit {
-                    break;
+                    break ReadTermination::Limit;
                 }
             }
-        }
+        };
 
         if let Some(orig_term_attr) = &orig_term_attr {
             input_file.set_term_attr(orig_term_attr)?;
         }
 
-        if line.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(line))
+        match reason {
+            ReadTermination::EndOfInput => {
+                if line.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(line))
+                }
+            }
+            ReadTermination::CtrlC => {
+                // Discard the input and return.
+                Ok(None)
+            }
+            ReadTermination::Delimiter | ReadTermination::Limit => Ok(Some(line)),
         }
     }
 

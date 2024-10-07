@@ -129,7 +129,8 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
 
             if options.list_tests_only {
                 for test_case in &test_case_set.cases {
-                    if test_case.skip == options.skipped_tests_only {
+                    let case_is_skipped = test_case.should_skip(&test_case_set, test_config)?;
+                    if case_is_skipped == options.skipped_tests_only {
                         println!(
                             "{}::{}: test",
                             test_case_set.name.as_deref().unwrap_or("unnamed"),
@@ -411,38 +412,20 @@ impl TestCaseSet {
         };
         let mut test_case_results = vec![];
         for test_case in &self.cases {
-            // Make sure it's compatible.
-            if test_case.incompatible_configs.contains(&test_config.name) {
-                continue;
-            }
-
-            // Make sure the oracle meets any min version listed.
-            if let Some(min_oracle_version_str) = &test_case.min_oracle_version {
-                if let Some(actual_oracle_version_str) = &test_config.oracle_version_str {
-                    let actual_oracle_version =
-                        version_compare::Version::from(actual_oracle_version_str.as_str())
-                            .ok_or_else(|| anyhow::anyhow!("failed to parse oracle version"))?;
-
-                    let min_oracle_version = version_compare::Version::from(min_oracle_version_str)
-                        .ok_or_else(|| anyhow::anyhow!("failed to parse min oracle version"))?;
-
-                    if matches!(
-                        actual_oracle_version.compare(min_oracle_version),
-                        version_compare::Cmp::Lt
-                    ) {
-                        continue;
-                    }
+            let case_is_skipped = test_case.should_skip(self, &test_config)?;
+            let test_case_result = if case_is_skipped == test_config.options.skipped_tests_only {
+                test_case.run(self, &test_config).await?
+            } else {
+                TestCaseResult {
+                    success: true,
+                    comparison: RunComparison::ignored(),
+                    name: self.name.clone(),
+                    skip: true,
+                    known_failure: test_case.known_failure,
                 }
-            }
+            };
 
-            // Make sure it passes filters.
-            if !test_config.options.should_run_test(self, test_case) {
-                continue;
-            }
-
-            let test_case_result = test_case.run(self, &test_config).await?;
-
-            if test_case_result.skip != test_config.options.skipped_tests_only {
+            if test_case_result.skip {
                 skip_count += 1;
             } else if test_case_result.success {
                 if test_case.known_failure {
@@ -714,16 +697,6 @@ impl TestCase {
         test_case_set: &TestCaseSet,
         test_config: &TestConfig,
     ) -> Result<TestCaseResult> {
-        if self.skip != test_config.options.skipped_tests_only {
-            return Ok(TestCaseResult {
-                success: true,
-                comparison: RunComparison::ignored(),
-                name: self.name.clone(),
-                skip: true,
-                known_failure: self.known_failure,
-            });
-        }
-
         let comparison = self
             .run_with_oracle_and_test(test_case_set, test_config)
             .await?;
@@ -735,6 +708,43 @@ impl TestCase {
             skip: false,
             known_failure: self.known_failure,
         })
+    }
+
+    pub fn should_skip(
+        &self,
+        test_case_set: &TestCaseSet,
+        test_config: &TestConfig,
+    ) -> Result<bool> {
+        // Make sure it's compatible.
+        if self.incompatible_configs.contains(&test_config.name) {
+            return Ok(true);
+        }
+
+        // Make sure the oracle meets any min version listed.
+        if let Some(min_oracle_version_str) = &self.min_oracle_version {
+            if let Some(actual_oracle_version_str) = &test_config.oracle_version_str {
+                let actual_oracle_version =
+                    version_compare::Version::from(actual_oracle_version_str.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("failed to parse oracle version"))?;
+
+                let min_oracle_version = version_compare::Version::from(min_oracle_version_str)
+                    .ok_or_else(|| anyhow::anyhow!("failed to parse min oracle version"))?;
+
+                if matches!(
+                    actual_oracle_version.compare(min_oracle_version),
+                    version_compare::Cmp::Lt
+                ) {
+                    return Ok(true);
+                }
+            }
+        }
+
+        // Make sure it passes filters.
+        if !test_config.options.should_run_test(test_case_set, self) {
+            return Ok(true);
+        }
+
+        Ok(self.skip)
     }
 
     fn create_test_files_in(

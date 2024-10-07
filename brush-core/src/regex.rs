@@ -48,7 +48,7 @@ impl Regex {
             .collect();
 
         // TODO: Evaluate how compatible the `fancy_regex` crate is with POSIX EREs.
-        let re = fancy_regex::Regex::new(regex_pattern.as_str())?;
+        let re = compile_regex(regex_pattern)?;
 
         Ok(re.captures(value)?.map(|captures| {
             captures
@@ -56,6 +56,15 @@ impl Regex {
                 .map(|c| c.map(|m| m.as_str().to_owned()))
                 .collect()
         }))
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[cached::proc_macro::cached(size = 64, result = true)]
+pub(crate) fn compile_regex(regex_str: String) -> Result<fancy_regex::Regex, error::Error> {
+    match fancy_regex::Regex::new(regex_str.as_str()) {
+        Ok(re) => Ok(re),
+        Err(e) => Err(error::Error::InvalidRegexError(e, regex_str)),
     }
 }
 

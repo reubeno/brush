@@ -19,28 +19,28 @@ pub(crate) struct CommonCompleteCommandArgs {
     actions: Vec<CompleteAction>,
 
     /// File glob pattern to be expanded to generate completions.
-    #[arg(short = 'G')]
+    #[arg(short = 'G', allow_hyphen_values = true)]
     glob_pattern: Option<String>,
 
     /// List of words that will be considered as completions.
-    #[arg(short = 'W')]
+    #[arg(short = 'W', allow_hyphen_values = true)]
     word_list: Option<String>,
 
     /// Name of a shell function to invoke to generate completions.
-    #[arg(short = 'F')]
+    #[arg(short = 'F', allow_hyphen_values = true)]
     function_name: Option<String>,
 
     /// Command to execute to generate completions.
-    #[arg(short = 'C')]
+    #[arg(short = 'C', allow_hyphen_values = true)]
     command: Option<String>,
 
-    #[arg(short = 'X')]
+    #[arg(short = 'X', allow_hyphen_values = true)]
     filter_pattern: Option<String>,
 
-    #[arg(short = 'P')]
+    #[arg(short = 'P', allow_hyphen_values = true)]
     prefix: Option<String>,
 
-    #[arg(short = 'S')]
+    #[arg(short = 'S', allow_hyphen_values = true)]
     suffix: Option<String>,
 
     /// Complete with valid aliases.
@@ -431,6 +431,7 @@ pub(crate) struct CompGenCommand {
     #[clap(flatten)]
     common_args: CommonCompleteCommandArgs,
 
+    #[clap(allow_hyphen_values = true)]
     word: Option<String>,
 }
 

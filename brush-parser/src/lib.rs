@@ -15,4 +15,4 @@ mod tokenizer;
 
 pub use error::{ParseError, TestCommandParseError, WordParseError};
 pub use parser::{parse_tokens, Parser, ParserOptions, SourceInfo};
-pub use tokenizer::{tokenize_str, Token, TokenLocation};
+pub use tokenizer::{tokenize_str, SourcePosition, Token, TokenLocation};

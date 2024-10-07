@@ -11,12 +11,9 @@ pub(crate) struct PrintfCommand {
     #[arg(short = 'v')]
     output_variable: Option<String>,
 
-    /// Format string.
-    format: String,
-
-    /// Arguments to the format string.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
+    /// Format string + arguments to the format string.
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
+    format_and_args: Vec<String>,
 }
 
 #[async_trait::async_trait]
@@ -44,11 +41,10 @@ impl PrintfCommand {
         context: &commands::ExecutionContext<'_>,
     ) -> Result<String, crate::error::Error> {
         // Special-case common format string: "%s".
-        if self.format == "%s" && self.args.len() == 1 {
-            return Ok(self.args[0].clone());
+        match self.format_and_args.as_slice() {
+            [fmt, arg] if fmt == "%s" => Ok(arg.clone()),
+            _ => self.evaluate_via_external_command(context),
         }
-
-        self.evaluate_via_external_command(context)
     }
 
     #[allow(clippy::unwrap_in_result)]
@@ -59,8 +55,7 @@ impl PrintfCommand {
         // TODO: Don't call external printf command.
         let mut cmd = std::process::Command::new("printf");
         cmd.env_clear();
-        cmd.arg(&self.format);
-        cmd.args(&self.args);
+        cmd.args(&self.format_and_args);
 
         let output = cmd.output()?;
 

@@ -56,3 +56,7 @@ cases:
       compgen -W "one two three" -- t | sort
       echo "2. compgen -W with expansion"
       myvar=value compgen -W '${myvar}'
+
+  - name: "compgen -W with options"
+    stdin: |
+      compgen -W '--abc --def' -- '--ab'

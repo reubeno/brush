@@ -37,3 +37,4 @@ pub use error::Error;
 pub use interp::{ExecutionParameters, ExecutionResult};
 pub use shell::{CreateOptions, Shell};
 pub use terminal::TerminalControl;
+pub use variables::{ShellValue, ShellVariable};

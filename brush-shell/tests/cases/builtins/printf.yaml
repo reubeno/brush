@@ -18,3 +18,7 @@ cases:
       declare -a myarray=()
       printf -v 'myarray[5]' "%s, %s" "Hello" "world"
       declare | grep myarray
+
+  - name: "printf with -v as a format arg"
+    stdin: |
+      printf "%s\n" "-v"

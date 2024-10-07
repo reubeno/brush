@@ -27,6 +27,16 @@ cases:
       echo "var[*]: ${var[*]}"
       declare -p var
 
+  - name: "Define array with expansion"
+    stdin: |
+      body='a b'
+
+      var=($body)
+      declare -p var
+
+      declare -a var2=($body)
+      declare -p var2
+
   - name: "Arrays with empty values"
     stdin: |
       var1=(a "" c)
