@@ -48,6 +48,17 @@ impl CommandLineArgs {
 /// Main entry point for the `brush` shell.
 fn main() {
     //
+    // Set up panic handler. On release builds, it will capture panic details to a
+    // temporary .toml file and report a human-readable message to the screen.
+    //
+    human_panic::setup_panic!(human_panic::Metadata::new(
+        env!("CARGO_BIN_NAME"),
+        env!("CARGO_PKG_VERSION")
+    )
+    .homepage(env!("CARGO_PKG_HOMEPAGE"))
+    .support("please post a GitHub issue at https://github.com/reubeno/brush/issues/new"));
+
+    //
     // Parse args.
     //
     let mut args: Vec<_> = std::env::args().collect();
