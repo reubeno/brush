@@ -712,8 +712,8 @@ impl Config {
         const MAX_RESTARTS: u32 = 10;
 
         // Make a best-effort attempt to tokenize.
-        // TODO: Should we incorporate current shell settings into tokenizer settings?
-        if let Ok(tokens) = brush_parser::tokenize_str(input) {
+        let tokens = Self::tokenize_input_for_completion(shell, input);
+        {
             let cursor: i32 = i32::try_from(position)?;
             let mut preceding_token = None;
             let mut completion_prefix = "";
@@ -766,7 +766,9 @@ impl Config {
             // token for the new token to be generated.
             let empty_token =
                 brush_parser::Token::Word(String::new(), brush_parser::TokenLocation::default());
-            adjusted_tokens.push(&empty_token);
+            if completion_token_index == tokens.len() {
+                adjusted_tokens.push(&empty_token);
+            }
 
             // Get the completions.
             let mut result = Answer::RestartCompletionProcess;
@@ -808,14 +810,31 @@ impl Config {
                     options: ProcessingOptions::default(),
                 }),
             }
-        } else {
-            Ok(Completions {
-                insertion_index: position,
-                delete_count: 0,
-                candidates: IndexSet::new(),
-                options: ProcessingOptions::default(),
-            })
         }
+        // else {
+        //     tracing::debug!(target: trace_categories::COMPLETION, "failed to tokenize input line");
+
+        //     Ok(Completions {
+        //         insertion_index: position,
+        //         delete_count: 0,
+        //         candidates: IndexSet::new(),
+        //         options: ProcessingOptions::default(),
+        //     })
+        // }
+    }
+
+    fn tokenize_input_for_completion(_shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
+        // Best-effort tokenization.
+        // TODO: Use shell options for tokenization.
+        if let Ok(tokens) = brush_parser::tokenize_str(input) {
+            return tokens;
+        }
+
+        // TODO: This isn't right; we need a better fallback, but this is better than nothing.
+        let default_delimiters = [
+            ' ', '\t', '\n', '"', '\'', '>', '<', '=', ';', '|', '&', '(', ':',
+        ];
+        simple_tokenize_by_delimiters(input, &default_delimiters)
     }
 
     async fn get_completions_for_token<'a>(
@@ -968,4 +987,41 @@ fn get_completions_using_basic_lookup(shell: &Shell, context: &Context) -> Answe
     }
 
     Answer::Candidates(candidates, ProcessingOptions::default())
+}
+
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_wrap)]
+fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_parser::Token> {
+    //
+    // This is an overly naive tokenization.
+    //
+
+    let mut tokens = vec![];
+    let mut start: i32 = 0;
+
+    for piece in input.split_inclusive(delimiters) {
+        let next_start = start + piece.len() as i32;
+
+        let piece = piece.strip_suffix(delimiters).unwrap_or(piece);
+        let end: i32 = start + piece.len() as i32;
+        tokens.push(brush_parser::Token::Word(
+            piece.to_string(),
+            brush_parser::TokenLocation {
+                start: brush_parser::SourcePosition {
+                    index: start,
+                    line: 1,
+                    column: start + 1,
+                },
+                end: brush_parser::SourcePosition {
+                    index: end,
+                    line: 1,
+                    column: end + 1,
+                },
+            },
+        ));
+
+        start = next_start;
+    }
+
+    tokens
 }

@@ -79,7 +79,7 @@ peg::parser! {
             range:$([_] "-" [_]) { range.to_owned() }
 
         rule char_list() -> String =
-            chars:$([c if c != ']']+) { chars.to_owned() }
+            chars:$([c if c != ']']+) { escape_char_class_char_list(chars) }
 
         rule wildcard() -> String =
             "?" { String::from(".") } /
@@ -144,6 +144,10 @@ pub fn regex_char_needs_escaping(c: char) -> bool {
         c,
         '[' | ']' | '(' | ')' | '{' | '}' | '*' | '?' | '.' | '+' | '^' | '$' | '|' | '\\'
     )
+}
+
+fn escape_char_class_char_list(s: &str) -> String {
+    s.replace('[', r"\[")
 }
 
 #[cfg(test)]

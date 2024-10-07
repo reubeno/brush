@@ -103,9 +103,13 @@ pub enum Error {
     #[error("invalid pattern: '{0}'")]
     InvalidPattern(String),
 
-    /// An invalid regular expression was provided.
-    #[error("invalid regex: {0}")]
+    /// A regular expression error occurred
+    #[error("regex error: {0}")]
     RegexError(#[from] fancy_regex::Error),
+
+    /// An invalid regular expression was provided.
+    #[error("invalid regex: {0}; expression: '{1}'")]
+    InvalidRegexError(fancy_regex::Error, String),
 
     /// An I/O error occurred.
     #[error("i/o error: {0}")]

@@ -409,7 +409,7 @@ impl Shell {
     /// * `source_info` - Information about the source of the script.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    pub async fn source_file<F: Read, S: AsRef<str>>(
+    async fn source_file<F: Read, S: AsRef<str>>(
         &mut self,
         file: F,
         source_info: &brush_parser::SourceInfo,
@@ -950,7 +950,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `target_dir` - The path to set as the working directory.
-    pub(crate) fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
+    pub fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
         let abs_path = self.get_absolute_path(target_dir);
 
         match std::fs::metadata(&abs_path) {

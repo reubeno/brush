@@ -828,8 +828,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             // This looks like an assignment, and the command being invoked is a
                             // well-known builtin that takes arguments that need to function like
                             // assignments (but which are processed by the builtin).
-                            let expanded =
-                                basic_expand_assignment(context.shell, assignment).await?;
+                            let expanded = expand_assignment(context.shell, assignment).await?;
                             args.push(CommandArg::Assignment(expanded));
                         } else {
                             // This *looks* like an assignment, but it's really a string we should
@@ -990,11 +989,11 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     }
 }
 
-async fn basic_expand_assignment(
+async fn expand_assignment(
     shell: &mut Shell,
     assignment: &ast::Assignment,
 ) -> Result<ast::Assignment, error::Error> {
-    let value = basic_expand_assignment_value(shell, &assignment.value).await?;
+    let value = expand_assignment_value(shell, &assignment.value).await?;
     Ok(ast::Assignment {
         name: basic_expand_assignment_name(shell, &assignment.name).await?,
         value,
@@ -1022,7 +1021,7 @@ async fn basic_expand_assignment_name(
     }
 }
 
-async fn basic_expand_assignment_value(
+async fn expand_assignment_value(
     shell: &mut Shell,
     value: &ast::AssignmentValue,
 ) -> Result<ast::AssignmentValue, error::Error> {
@@ -1036,20 +1035,21 @@ async fn basic_expand_assignment_value(
         ast::AssignmentValue::Array(arr) => {
             let mut expanded_values = vec![];
             for (key, value) in arr {
-                let expanded_key = match key {
-                    Some(k) => Some(ast::Word {
-                        value: expansion::basic_expand_word(shell, k).await?,
-                    }),
-                    None => None,
-                };
-
-                let expanded_value = expansion::basic_expand_word(shell, value).await?;
-                expanded_values.push((
-                    expanded_key,
-                    ast::Word {
-                        value: expanded_value,
-                    },
-                ));
+                match key {
+                    Some(k) => {
+                        let expanded_key = expansion::basic_expand_word(shell, k).await?.into();
+                        let expanded_value =
+                            expansion::basic_expand_word(shell, value).await?.into();
+                        expanded_values.push((Some(expanded_key), expanded_value));
+                    }
+                    None => {
+                        let split_expanded_value =
+                            expansion::full_expand_and_split_word(shell, value).await?;
+                        for expanded_value in split_expanded_value {
+                            expanded_values.push((None, expanded_value.into()));
+                        }
+                    }
+                }
             }
 
             ast::AssignmentValue::Array(expanded_values)

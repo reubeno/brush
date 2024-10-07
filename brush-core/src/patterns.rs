@@ -1,4 +1,4 @@
-use crate::error;
+use crate::{error, regex};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -288,7 +288,7 @@ impl Pattern {
 
         tracing::debug!("pattern: '{self:?}' => regex: '{regex_str}'");
 
-        let re = compile_regex(regex_str)?;
+        let re = regex::compile_regex(regex_str)?;
         Ok(re)
     }
 
@@ -347,7 +347,8 @@ pub(crate) fn pattern_to_regex(
         enable_extended_globbing,
     )?;
 
-    let re = fancy_regex::Regex::new(regex_str.as_str())?;
+    let re = regex::compile_regex(regex_str)?;
+
     Ok(re)
 }
 
@@ -468,11 +469,6 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
     Ok(s)
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
-fn compile_regex(regex_str: String) -> fancy_regex::Result<fancy_regex::Regex> {
-    fancy_regex::Regex::new(regex_str.as_str())
-}
-
 #[cfg(test)]
 #[allow(clippy::panic_in_result_fn)]
 mod tests {
@@ -509,6 +505,14 @@ mod tests {
             "^a(ab|ac)+$"
         );
         assert_eq!(ext_pattern_to_exact_regex_str("[ab]")?.as_str(), "^[ab]$");
+        assert_eq!(
+            ext_pattern_to_exact_regex_str("[ab]*")?.as_str(),
+            "^[ab].*$"
+        );
+        assert_eq!(
+            ext_pattern_to_exact_regex_str("[<{().[]*")?.as_str(),
+            r"^[<{().\[].*$"
+        );
         assert_eq!(ext_pattern_to_exact_regex_str("[a-d]")?.as_str(), "^[a-d]$");
         assert_eq!(ext_pattern_to_exact_regex_str(r"\*")?.as_str(), r"^\*$");
 
