@@ -246,13 +246,15 @@ impl Execute for ast::AndOrList {
         let mut result = self.first.execute(shell, params).await?;
 
         for next_ao in &self.additional {
+            // Check for exit/return
             if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
 
             // Check for continue/break
+            // TODO: Validate that we're in a loop?
             if result.continue_loop.is_some() || result.break_loop.is_some() {
-                return error::unimp("continue || break in and-or list");
+                break;
             }
 
             let (is_and, pipeline) = match next_ao {
@@ -260,12 +262,16 @@ impl Execute for ast::AndOrList {
                 ast::AndOr::Or(p) => (false, p),
             };
 
+            // If we short-circuit, then we don't break out of the whole loop
+            // but we skip evaluating the current pipeline. We'll then continue
+            // on and possibly evaluate a subsequent one (depending on the
+            // operator before it).
             if is_and {
                 if !result.is_success() {
-                    break;
+                    continue;
                 }
             } else if result.is_success() {
-                break;
+                continue;
             }
 
             result = pipeline.execute(shell, params).await?;

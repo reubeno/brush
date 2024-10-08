@@ -176,6 +176,10 @@ pub enum Error {
     /// Printf failure
     #[error("printf failure: {0}")]
     PrintfFailure(i32),
+
+    /// Interrupted
+    #[error("interrupted")]
+    Interrupted,
 }
 
 /// Convenience function for returning an error for unimplemented functionality.

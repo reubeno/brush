@@ -617,6 +617,11 @@ cases:
       echo "\${arr[@]//world/WORLD}: ${arr[@]//world/WORLD}"
       echo "\${arr[*]//world/WORLD}: ${arr[*]//world/WORLD}"
 
+  - name: "Global substring removal"
+    stdin: |
+      var="That is not all"
+      echo "\${var//not }: ${var//not}"
+
   - name: "Substring from offset"
     stdin: |
       var="Hello, world!"

@@ -11,6 +11,17 @@ cases:
         break
       done
 
+  - name: "break 2 in nested loops"
+    stdin: |
+      while false; do
+        echo 'Starting inner loop'
+        while true; do
+          echo 'In loop'
+          break 2
+        done
+        echo 'Finished inner loop'
+      done
+
   - name: "Arithmetic in while loop"
     stdin: |
       i=5

@@ -14,3 +14,9 @@ cases:
     stdin: |
       false || false || false || echo "Got to the end"
       echo "1" && echo "2" && echo "3" && echo "4"
+
+  - name: "Mixed chains"
+    stdin: |
+      false && true  || echo "1. Got to the end"
+      false && false || echo "2. Got to the end"
+      true  && false || echo "3. Got to the end"

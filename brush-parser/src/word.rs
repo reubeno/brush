@@ -304,7 +304,7 @@ pub enum ParameterExpr {
         /// Pattern to match.
         pattern: String,
         /// Replacement string.
-        replacement: String,
+        replacement: Option<String>,
         /// Kind of match to perform.
         match_kind: SubstringMatchKind,
     },
@@ -593,16 +593,16 @@ peg::parser! {
             indirect:parameter_indirection() parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
                 ParameterExpr::Transform { parameter, indirect, op }
             } /
-            indirect:parameter_indirection() parameter:parameter() "/#" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+            indirect:parameter_indirection() parameter:parameter() "/#" pattern:parameter_search_pattern() replacement:parameter_replacement_str()? {
                 ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::Prefix }
             } /
-            indirect:parameter_indirection() parameter:parameter() "/%" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+            indirect:parameter_indirection() parameter:parameter() "/%" pattern:parameter_search_pattern() replacement:parameter_replacement_str()? {
                 ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::Suffix }
             } /
-            indirect:parameter_indirection() parameter:parameter() "//" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+            indirect:parameter_indirection() parameter:parameter() "//" pattern:parameter_search_pattern() replacement:parameter_replacement_str()? {
                 ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::Anywhere }
             } /
-            indirect:parameter_indirection() parameter:parameter() "/" pattern:parameter_search_pattern() "/" replacement:parameter_replacement_str() {
+            indirect:parameter_indirection() parameter:parameter() "/" pattern:parameter_search_pattern() replacement:parameter_replacement_str()? {
                 ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::FirstOccurrence }
             } /
             indirect:parameter_indirection() parameter:parameter() "^^" pattern:parameter_expression_word()? {
@@ -697,7 +697,7 @@ peg::parser! {
             s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
 
         rule parameter_replacement_str() -> String =
-            s:$(word(<['}' | '/']>)) { s.to_owned() }
+            "/" s:$(word(<['}' | '/']>)) { s.to_owned() }
 
         rule parameter_search_pattern() -> String =
             s:$(word(<['}' | '/']>)) { s.to_owned() }
