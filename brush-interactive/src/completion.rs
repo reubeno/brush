@@ -16,14 +16,13 @@ pub(crate) async fn complete_async(
     tokio::pin!(completion_future);
 
     // Wait for the completions to come back or interruption, whichever happens first.
-    let result = loop {
-        tokio::select! {
-            result = &mut completion_future => {
-                break result;
-            }
-            _ = tokio::signal::ctrl_c() => {
-            },
+    let result = tokio::select! {
+        result = &mut completion_future => {
+            result
         }
+        _ = tokio::signal::ctrl_c() => {
+            Err(brush_core::Error::Interrupted)
+        },
     };
 
     let mut completions = result.unwrap_or_else(|_| brush_core::completion::Completions {

@@ -1005,6 +1005,9 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_to_str(&pattern).await?;
+
+                // If no replacement was provided, then we replace with an empty string.
+                let replacement = replacement.unwrap_or(String::new());
                 let expanded_replacement = self.basic_expand_to_str(&replacement).await?;
 
                 let regex = patterns::pattern_to_regex(
