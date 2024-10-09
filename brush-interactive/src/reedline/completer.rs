@@ -1,8 +1,8 @@
+use nu_ansi_term::{Color, Style};
 use std::borrow::BorrowMut;
 
-use crate::completion;
-
 use super::refs;
+use crate::completion;
 
 pub(crate) struct ReedlineCompleter {
     pub shell: refs::ShellRef,
@@ -24,27 +24,47 @@ impl ReedlineCompleter {
         let completions = completion::complete_async(shell, line, pos).await;
         let insertion_index = completions.insertion_index;
         let delete_count = completions.delete_count;
+        let options = completions.options;
 
         completions
             .candidates
             .into_iter()
-            .map(|candidate| Self::to_suggestion(candidate, insertion_index, delete_count))
+            .map(|candidate| {
+                Self::to_suggestion(line, candidate, insertion_index, delete_count, &options)
+            })
             .collect()
     }
 
     fn to_suggestion(
-        candidate: String,
-        insertion_index: usize,
-        delete_count: usize,
+        line: &str,
+        mut candidate: String,
+        mut insertion_index: usize,
+        mut delete_count: usize,
+        options: &brush_core::completion::ProcessingOptions,
     ) -> reedline::Suggestion {
-        let mut style = nu_ansi_term::Style::new();
-        if candidate.ends_with(std::path::MAIN_SEPARATOR) {
-            style = style.fg(nu_ansi_term::Color::Green);
+        let mut style = Style::new();
+
+        // Special handling for filename completions.
+        if options.treat_as_filenames {
+            if candidate.ends_with(std::path::MAIN_SEPARATOR) {
+                style = style.fg(Color::Green);
+            }
+
+            if insertion_index + delete_count <= line.len() {
+                let removed = &line[insertion_index..insertion_index + delete_count];
+                if let Some(last_sep_index) = removed.rfind(std::path::MAIN_SEPARATOR) {
+                    if candidate.starts_with(removed) {
+                        candidate = candidate.split_off(last_sep_index + 1);
+                        insertion_index += last_sep_index + 1;
+                        delete_count -= last_sep_index + 1;
+                    }
+                }
+            }
         }
 
         reedline::Suggestion {
             value: candidate,
-            description: None, // TODO: fill in description
+            description: None,
             style: Some(style),
             extra: None,
             span: reedline::Span {
