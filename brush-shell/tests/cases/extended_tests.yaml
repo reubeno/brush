@@ -125,7 +125,6 @@ cases:
       [[ a* != "abc" ]] && echo "3. Pass"
 
   - name: "Binary string matching with expansion"
-    known_failure: true
     stdin: |
       exclude="0123456789"
       [[ "clue" == +([$exclude]) ]] && echo "1. Fail"

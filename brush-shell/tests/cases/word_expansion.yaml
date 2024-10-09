@@ -56,6 +56,11 @@ cases:
       echo "$(var="updated"; echo ${var})"
       echo "var=${var}"
 
+  - name: "Command substitution with embedded parens"
+    stdin: |
+      x=$(echo foo | (wc -l; echo hi))
+      echo "\$x: $x"
+
   - name: "Backtick command substitution"
     stdin: |
       echo `echo hi`

@@ -1,3 +1,4 @@
+use nu_ansi_term::Color;
 use reedline::MenuBuilder;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -45,7 +46,9 @@ impl ReedlineShell {
         let completion_menu = Box::new(
             reedline::ColumnarMenu::default()
                 .with_name(COMPLETION_MENU_NAME)
-                .with_marker(""),
+                .with_marker("")
+                .with_selected_text_style(Color::Blue.bold().reverse())
+                .with_selected_match_text_style(Color::Blue.bold().reverse()),
         );
 
         // Set up key bindings.
@@ -54,11 +57,7 @@ impl ReedlineShell {
         // Set up default history-based hinter.
         let mut hinter = reedline::DefaultHinter::default();
         if !options.disable_color {
-            hinter = hinter.with_style(
-                nu_ansi_term::Style::new()
-                    .italic()
-                    .fg(nu_ansi_term::Color::DarkGray),
-            );
+            hinter = hinter.with_style(nu_ansi_term::Style::new().italic().fg(Color::DarkGray));
         }
 
         // Instantiate reedline with some defaults and hand it ownership of
