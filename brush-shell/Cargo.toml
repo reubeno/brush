@@ -26,7 +26,7 @@ name = "brush-interactive-tests"
 path = "tests/interactive_tests.rs"
 
 [features]
-default = ["basic", "reedline", "rustyline"]
+default = ["basic", "reedline"]
 basic = []
 reedline = []
 rustyline = []
