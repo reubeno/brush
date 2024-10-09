@@ -386,7 +386,7 @@ fn cacheable_parse(
     let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
 
-    tracing::debug!("Parsed word '{}' => {{{:?}}}", word, pieces);
+    tracing::debug!(target: "parse", "Parsed word '{}' => {{{:?}}}", word, pieces);
 
     Ok(pieces)
 }
@@ -411,7 +411,7 @@ peg::parser! {
         pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = word(<![_]>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
-            tilde:tilde_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>)* {
+            tilde:tilde_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>, false /*in_command*/)* {
                 let mut all_pieces = Vec::new();
                 if let Some(tilde) = tilde {
                     all_pieces.push(tilde);
@@ -427,7 +427,7 @@ peg::parser! {
 
         rule arithmetic_word_piece<T>(stop_condition: rule<T>) =
             "(" arithmetic_word_plus_right_paren() {} /
-            word_piece(<param_rule_or_open_paren(<stop_condition()>)>) {}
+            word_piece(<param_rule_or_open_paren(<stop_condition()>)>, false /*in_command*/) {}
 
         rule param_rule_or_open_paren<T>(stop_condition: rule<T>) -> () =
             stop_condition() {} /
@@ -435,18 +435,18 @@ peg::parser! {
 
         rule arithmetic_word_plus_right_paren() =
             "(" arithmetic_word_plus_right_paren() ")" /
-            word_piece(<[')']>)* ")" {}
+            word_piece(<[')']>, false /*in_command*/)* ")" {}
 
-        rule word_piece_with_source<T>(stop_condition: rule<T>) -> WordPieceWithSource =
-            start_index:position!() piece:word_piece(<stop_condition()>) end_index:position!() {
+        rule word_piece_with_source<T>(stop_condition: rule<T>, in_command: bool) -> WordPieceWithSource =
+            start_index:position!() piece:word_piece(<stop_condition()>, in_command) end_index:position!() {
                 WordPieceWithSource { piece, start_index, end_index }
             }
 
-        rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
+        rule word_piece<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
             arithmetic_expansion() /
             command_substitution() /
             parameter_expansion() /
-            unquoted_text(<stop_condition()>)
+            unquoted_text(<stop_condition()>, in_command)
 
         rule double_quoted_word_piece() -> WordPiece =
             arithmetic_expansion() /
@@ -455,12 +455,12 @@ peg::parser! {
             double_quoted_escape_sequence() /
             double_quoted_text()
 
-        rule unquoted_text<T>(stop_condition: rule<T>) -> WordPiece =
+        rule unquoted_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
             s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
             s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
             s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
             normal_escape_sequence() /
-            unquoted_literal_text(<stop_condition()>)
+            unquoted_literal_text(<stop_condition()>, in_command)
 
         rule double_quoted_sequence() -> Vec<WordPieceWithSource> =
             "\"" i:double_quoted_sequence_inner()* "\"" { i }
@@ -480,18 +480,25 @@ peg::parser! {
         rule ansi_c_quoted_text() -> &'input str =
             "$\'" inner:$([^'\'']*) "\'" { inner }
 
-        rule unquoted_literal_text<T>(stop_condition: rule<T>) -> WordPiece =
-            s:$(unquoted_literal_text_piece(<stop_condition()>)+) { WordPiece::Text(s.to_owned()) }
+        rule unquoted_literal_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
+            s:$(unquoted_literal_text_piece(<stop_condition()>, in_command)+) { WordPiece::Text(s.to_owned()) }
 
-        rule unquoted_literal_text_piece<T>(stop_condition: rule<T>) =
-            extglob_pattern() /
+        // TODO: Find a way to remove the special-case logic for extglob + subshell commands
+        rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
+            is_true(in_command) extglob_pattern() /
+            is_true(in_command) subshell_command() /
             !stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"'] {}
+
+        rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
 
         rule extglob_pattern() =
             ("@" / "!" / "?" / "+" / "*") "(" extglob_body_piece()* ")" {}
 
         rule extglob_body_piece() =
-            word_piece(<[')']>) {}
+            word_piece(<[')']>, true /*in_command*/) {}
+
+        rule subshell_command() =
+            "(" command() ")" {}
 
         rule double_quoted_text() -> WordPiece =
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
@@ -677,7 +684,7 @@ peg::parser! {
             $(command_piece()*)
 
         pub(crate) rule command_piece() -> () =
-            word_piece(<[')']>) {} /
+            word_piece(<[')']>, true /*in_command*/) {} /
             ([' ' | '\t'])+ {}
 
         rule backquoted_command() -> String =
@@ -763,6 +770,19 @@ mod tests {
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo !(x)"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_extglob_with_embedded_parameter() -> Result<()> {
+        let parsed = super::parse("+([$var])", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[..],
+            [WordPieceWithSource { piece: WordPiece::Text(s1), .. },
+             WordPieceWithSource { piece: WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter: Parameter::Named(s2), .. }), ..},
+             WordPieceWithSource { piece: WordPiece::Text(s3), .. }] if s1 == "+([" && s2 == "var" && s3 == "])"
         );
 
         Ok(())

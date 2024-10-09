@@ -37,7 +37,7 @@ impl ReedlineCompleter {
         insertion_index: usize,
         delete_count: usize,
     ) -> reedline::Suggestion {
-        let mut style = nu_ansi_term::Style::new().dimmed();
+        let mut style = nu_ansi_term::Style::new();
         if candidate.ends_with(std::path::MAIN_SEPARATOR) {
             style = style.fg(nu_ansi_term::Color::Green);
         }

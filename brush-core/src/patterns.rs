@@ -247,15 +247,37 @@ impl Pattern {
             regex_str.push('^');
         }
 
+        let mut current_pattern = String::new();
         for piece in &self.pieces {
-            let next_part = match piece {
+            match piece {
                 PatternPiece::Pattern(s) => {
-                    pattern_to_regex_str(s, false, false, enable_extended_globbing)?
+                    current_pattern.push_str(s);
                 }
-                PatternPiece::Literal(s) => escape_for_regex(s),
-            };
+                PatternPiece::Literal(s) => {
+                    if !current_pattern.is_empty() {
+                        let regex_piece = pattern_to_regex_str(
+                            current_pattern.as_str(),
+                            false,
+                            false,
+                            enable_extended_globbing,
+                        )?;
+                        regex_str.push_str(regex_piece.as_str());
+                        current_pattern = String::new();
+                    }
 
-            regex_str.push_str(next_part.as_str());
+                    regex_str.push_str(escape_for_regex(s).as_str());
+                }
+            }
+        }
+
+        if !current_pattern.is_empty() {
+            let regex_piece = pattern_to_regex_str(
+                current_pattern.as_str(),
+                false,
+                false,
+                enable_extended_globbing,
+            )?;
+            regex_str.push_str(regex_piece.as_str());
         }
 
         if strict_suffix_match {
