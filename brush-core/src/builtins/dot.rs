@@ -15,7 +15,7 @@ pub(crate) struct DotCommand {
     pub script_args: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for DotCommand {
     async fn execute(
         &self,

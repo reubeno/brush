@@ -24,7 +24,7 @@ pub(crate) struct EchoCommand {
     args: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for EchoCommand {
     /// Override the default [builtins::Command::new] function to handle clap's limitation related to `--`.
     /// See [crate::builtins::parse_known] for more information

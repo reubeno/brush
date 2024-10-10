@@ -16,7 +16,7 @@ pub(crate) struct PushdCommand {
     //
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for PushdCommand {
     async fn execute(
         &self,

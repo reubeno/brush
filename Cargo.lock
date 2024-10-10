@@ -252,7 +252,6 @@ version = "0.2.10"
 dependencies = [
  "anyhow",
  "async-recursion",
- "async-trait",
  "brush-parser",
  "cached",
  "cfg-if",

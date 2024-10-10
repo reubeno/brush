@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use crate::{env, expansion, variables, Shell};
 use brush_parser::ast;
+use futures::future::{BoxFuture, FutureExt};
 
 /// Represents an error that occurs during evaluation of an arithmetic expression.
 #[derive(Debug, thiserror::Error)]
@@ -40,7 +41,7 @@ pub enum EvalError {
 }
 
 /// Trait implemented by arithmetic expressions that can be evaluated.
-#[async_trait::async_trait]
+
 pub trait ExpandAndEvaluate {
     /// Evaluate the given expression, returning the resulting numeric value.
     ///
@@ -51,7 +52,6 @@ pub trait ExpandAndEvaluate {
     async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError>;
 }
 
-#[async_trait::async_trait]
 impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
     async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError> {
         // Per documentation, first shell-expand it.
@@ -76,58 +76,60 @@ impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
 }
 
 /// Trait implemented by evaluatable arithmetic expressions.
-#[async_trait::async_trait]
+
 pub trait Evaluatable {
     /// Evaluate the given arithmetic expression, returning the resulting numeric value.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell to use for evaluation.
-    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
+    fn eval<'a>(&'a self, shell: &'a mut Shell) -> BoxFuture<'a, Result<i64, EvalError>>;
 }
 
-#[async_trait::async_trait]
 impl Evaluatable for ast::ArithmeticExpr {
-    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
-        let value = match self {
-            ast::ArithmeticExpr::Literal(l) => *l,
-            ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue).await?,
-            ast::ArithmeticExpr::UnaryOp(op, operand) => {
-                apply_unary_op(shell, *op, operand).await?
-            }
-            ast::ArithmeticExpr::BinaryOp(op, left, right) => {
-                apply_binary_op(shell, *op, left, right).await?
-            }
-            ast::ArithmeticExpr::Conditional(condition, then_expr, else_expr) => {
-                let conditional_eval = condition.eval(shell).await?;
-
-                // Ensure we only evaluate the branch indicated by the condition.
-                if conditional_eval != 0 {
-                    then_expr.eval(shell).await?
-                } else {
-                    else_expr.eval(shell).await?
+    fn eval<'a>(&'a self, shell: &'a mut Shell) -> BoxFuture<'a, Result<i64, EvalError>> {
+        async move {
+            let value = match self {
+                ast::ArithmeticExpr::Literal(l) => *l,
+                ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue).await?,
+                ast::ArithmeticExpr::UnaryOp(op, operand) => {
+                    apply_unary_op(shell, *op, operand).await?
                 }
-            }
-            ast::ArithmeticExpr::Assignment(lvalue, expr) => {
-                let expr_eval = expr.eval(shell).await?;
-                assign(shell, lvalue, expr_eval).await?
-            }
-            ast::ArithmeticExpr::UnaryAssignment(op, lvalue) => {
-                apply_unary_assignment_op(shell, lvalue, *op).await?
-            }
-            ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
-                let value = apply_binary_op(
-                    shell,
-                    *op,
-                    &ast::ArithmeticExpr::Reference(lvalue.clone()),
-                    operand,
-                )
-                .await?;
-                assign(shell, lvalue, value).await?
-            }
-        };
+                ast::ArithmeticExpr::BinaryOp(op, left, right) => {
+                    apply_binary_op(shell, *op, left, right).await?
+                }
+                ast::ArithmeticExpr::Conditional(condition, then_expr, else_expr) => {
+                    let conditional_eval = condition.eval(shell).await?;
 
-        Ok(value)
+                    // Ensure we only evaluate the branch indicated by the condition.
+                    if conditional_eval != 0 {
+                        then_expr.eval(shell).await?
+                    } else {
+                        else_expr.eval(shell).await?
+                    }
+                }
+                ast::ArithmeticExpr::Assignment(lvalue, expr) => {
+                    let expr_eval = expr.eval(shell).await?;
+                    assign(shell, lvalue, expr_eval).await?
+                }
+                ast::ArithmeticExpr::UnaryAssignment(op, lvalue) => {
+                    apply_unary_assignment_op(shell, lvalue, *op).await?
+                }
+                ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
+                    let value = apply_binary_op(
+                        shell,
+                        *op,
+                        &ast::ArithmeticExpr::Reference(lvalue.clone()),
+                        operand,
+                    )
+                    .await?;
+                    assign(shell, lvalue, value).await?
+                }
+            };
+
+            Ok(value)
+        }
+        .boxed()
     }
 }
 
