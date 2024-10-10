@@ -18,7 +18,6 @@ cargo-fuzz = true
 [dependencies]
 anyhow = "1.0.89"
 assert_cmd = "2.0.15"
-lazy_static = "1.5.0"
 libfuzzer-sys = "0.4"
 tokio = { version = "1.40.0", features = ["rt"] }
 
