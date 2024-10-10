@@ -10,7 +10,7 @@ pub(crate) struct BreakCommand {
     which_loop: i8,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for BreakCommand {
     async fn execute(
         &self,

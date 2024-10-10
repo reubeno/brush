@@ -18,7 +18,7 @@ pub(crate) struct GetOptsCommand {
     args: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for GetOptsCommand {
     async fn execute(
         &self,

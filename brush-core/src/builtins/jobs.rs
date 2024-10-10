@@ -31,7 +31,7 @@ pub(crate) struct JobsCommand {
     job_specs: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for JobsCommand {
     async fn execute(
         &self,

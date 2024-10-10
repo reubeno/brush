@@ -23,7 +23,7 @@ pub(crate) struct ExecCommand {
     args: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for ExecCommand {
     async fn execute(
         &self,

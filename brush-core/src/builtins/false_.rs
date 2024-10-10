@@ -6,7 +6,7 @@ use crate::{builtins, commands};
 #[derive(Parser)]
 pub(crate) struct FalseCommand {}
 
-#[async_trait::async_trait]
+
 impl builtins::Command for FalseCommand {
     async fn execute(
         &self,

@@ -22,7 +22,7 @@ pub(crate) struct HelpCommand {
     topic_patterns: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for HelpCommand {
     async fn execute(
         &self,

@@ -11,7 +11,7 @@ pub(crate) struct LetCommand {
     exprs: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for LetCommand {
     async fn execute(
         &self,

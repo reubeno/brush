@@ -25,7 +25,7 @@ pub(crate) struct KillCommand {
     args: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for KillCommand {
     async fn execute(
         &self,

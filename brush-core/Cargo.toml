@@ -18,7 +18,6 @@ workspace = true
 
 [dependencies]
 async-recursion = "1.1.0"
-async-trait = "0.1.83"
 brush-parser = { version = "^0.2.8", path = "../brush-parser" }
 cached = "0.53.0"
 cfg-if = "1.0.0"

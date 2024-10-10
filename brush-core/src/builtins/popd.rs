@@ -14,7 +14,7 @@ pub(crate) struct PopdCommand {
     //
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for PopdCommand {
     async fn execute(
         &self,

@@ -10,7 +10,7 @@ pub(crate) struct BgCommand {
     job_specs: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for BgCommand {
     async fn execute(
         &self,

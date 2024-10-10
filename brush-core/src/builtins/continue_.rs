@@ -10,7 +10,7 @@ pub(crate) struct ContinueCommand {
     which_loop: i8,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for ContinueCommand {
     async fn execute(
         &self,

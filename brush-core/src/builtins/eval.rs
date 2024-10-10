@@ -9,7 +9,7 @@ pub(crate) struct EvalCommand {
     pub args: Vec<String>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for EvalCommand {
     async fn execute(
         &self,

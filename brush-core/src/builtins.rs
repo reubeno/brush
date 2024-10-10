@@ -170,7 +170,7 @@ pub type CommandExecuteFunc = fn(
 pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Error>;
 
 /// Trait implemented by built-in shell commands.
-#[async_trait::async_trait]
+
 pub trait Command: Parser {
     /// Instantiates the built-in command with the given arguments.
     ///
@@ -208,10 +208,10 @@ pub trait Command: Parser {
     /// # Arguments
     ///
     /// * `context` - The context in which the command is being executed.
-    async fn execute(
+    fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<ExitCode, error::Error>;
+    ) -> impl std::future::Future<Output = Result<ExitCode, error::Error>> + std::marker::Send;
 
     /// Returns the textual help content associated with the command.
     ///
@@ -236,7 +236,7 @@ pub trait Command: Parser {
 
 /// Trait implemented by built-in shell commands that take specially handled declarations
 /// as arguments.
-#[async_trait::async_trait]
+
 pub trait DeclarationCommand: Command {
     /// Stores the declarations within the command instance.
     ///
