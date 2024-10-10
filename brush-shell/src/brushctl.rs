@@ -42,7 +42,7 @@ enum EventsCommand {
     },
 }
 
-#[async_trait::async_trait]
+
 impl brush_core::builtins::Command for BrushCtlCommand {
     async fn execute(
         &self,
@@ -53,6 +53,7 @@ impl brush_core::builtins::Command for BrushCtlCommand {
         }
     }
 }
+
 
 impl EventsCommand {
     fn execute(

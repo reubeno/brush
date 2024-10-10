@@ -37,7 +37,7 @@ impl builtins::DeclarationCommand for ExportCommand {
     }
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for ExportCommand {
     async fn execute(
         &self,

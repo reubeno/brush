@@ -9,7 +9,7 @@ pub(crate) struct ReturnCommand {
     code: Option<i32>,
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for ReturnCommand {
     async fn execute(
         &self,

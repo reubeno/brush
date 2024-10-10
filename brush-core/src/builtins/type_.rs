@@ -44,7 +44,7 @@ enum ResolvedType {
     File(PathBuf),
 }
 
-#[async_trait::async_trait]
+
 impl builtins::Command for TypeCommand {
     async fn execute(
         &self,
