@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use terminfo::capability as cap;
 
 use crate::{error, interfaces};
@@ -61,9 +62,8 @@ fn build_terminfo_key_map() -> HashMap<Vec<u8>, interfaces::Key> {
     map
 }
 
-lazy_static::lazy_static! {
-    pub(crate) static ref TERMINFO_KEY_MAP: HashMap<Vec<u8>, interfaces::Key> = build_terminfo_key_map();
-}
+pub(crate) static TERMINFO_KEY_MAP: LazyLock<HashMap<Vec<u8>, interfaces::Key>> =
+    LazyLock::new(build_terminfo_key_map);
 
 pub(crate) fn get_key_from_key_code(key_code: &[u8]) -> Result<interfaces::Key, error::Error> {
     if let Some(key) = TERMINFO_KEY_MAP.get(key_code) {

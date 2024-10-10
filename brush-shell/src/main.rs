@@ -10,15 +10,14 @@ mod shell_factory;
 
 use crate::args::{CommandLineArgs, InputBackend};
 use brush_interactive::InteractiveShell;
+use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
 
 #[cfg(any(unix, windows))]
 use std::io::IsTerminal;
 
-lazy_static::lazy_static! {
-    static ref TRACE_EVENT_CONFIG: Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> =
-        Arc::new(tokio::sync::Mutex::new(None));
-}
+static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
 
 // WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
 // after the `use clap::Parser`

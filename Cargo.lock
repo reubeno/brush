@@ -277,7 +277,6 @@ dependencies = [
  "hostname",
  "indexmap",
  "itertools 0.14.0",
- "lazy_static",
  "nix 0.30.1",
  "normalize-path",
  "os_pipe",
@@ -304,7 +303,6 @@ dependencies = [
  "assert_cmd",
  "brush-core",
  "brush-parser",
- "lazy_static",
  "libfuzzer-sys",
  "tokio",
 ]
@@ -371,7 +369,6 @@ dependencies = [
  "human-panic",
  "indent",
  "junit-report",
- "lazy_static",
  "regex",
  "serde",
  "serde_yaml",

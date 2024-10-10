@@ -2,18 +2,19 @@
 
 use anyhow::Result;
 use libfuzzer_sys::fuzz_target;
+use std::sync::LazyLock;
 
-lazy_static::lazy_static! {
-    static ref TOKIO_RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-    static ref SHELL_TEMPLATE: brush_core::Shell = {
-        let options = brush_core::CreateOptions {
-            no_profile: true,
-            no_rc: true,
-            ..Default::default()
-        };
-        TOKIO_RT.block_on(brush_core::Shell::new(&options)).unwrap()
+static TOKIO_RT: LazyLock<tokio::runtime::Runtime> =
+    LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
+
+static SHELL_TEMPLATE: LazyLock<brush_core::Shell> = LazyLock::new(|| {
+    let options = brush_core::CreateOptions {
+        no_profile: true,
+        no_rc: true,
+        ..Default::default()
     };
-}
+    TOKIO_RT.block_on(brush_core::Shell::new(&options)).unwrap()
+});
 
 #[allow(clippy::unused_async)]
 async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
