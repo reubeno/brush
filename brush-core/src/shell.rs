@@ -1291,12 +1291,35 @@ impl Shell {
     /// # Arguments
     ///
     /// * `required_glob_pattern` - The glob pattern to match against.
-    #[allow(clippy::manual_flatten)]
     pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
+        self.find_executables_in(
+            self.env
+                .get_str("PATH", self)
+                .unwrap_or_default()
+                .split(':'),
+            required_glob_pattern,
+        )
+    }
+
+    /// Finds executables in the given paths, matching the given glob pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - The paths to search in
+    /// * `required_glob_pattern` - The glob pattern to match against.
+    #[allow(clippy::manual_flatten)]
+    pub fn find_executables_in<T: AsRef<str>>(
+        &self,
+        paths: impl Iterator<Item = T>,
+        required_glob_pattern: &str,
+    ) -> Vec<PathBuf> {
         let is_executable = |path: &Path| path.is_file() && path.executable();
 
         let mut executables = vec![];
-        for dir_str in self.get_env_str("PATH").unwrap_or_default().split(':') {
+
+        for dir_str in paths {
+            let dir_str = dir_str.as_ref();
+
             let pattern =
                 patterns::Pattern::from(std::format!("{dir_str}/{required_glob_pattern}"))
                     .set_extended_globbing(self.options.extended_globbing)
