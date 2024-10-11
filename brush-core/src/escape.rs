@@ -3,7 +3,7 @@ use itertools::Itertools;
 use crate::error;
 
 #[derive(Clone, Copy)]
-pub(crate) enum EscapeMode {
+pub(crate) enum EscapeExpansionMode {
     EchoBuiltin,
     AnsiCQuotes,
 }
@@ -11,7 +11,7 @@ pub(crate) enum EscapeMode {
 #[allow(clippy::too_many_lines)]
 pub(crate) fn expand_backslash_escapes(
     s: &str,
-    mode: EscapeMode,
+    mode: EscapeExpansionMode,
 ) -> Result<(Vec<u8>, bool), crate::error::Error> {
     let mut result: Vec<u8> = vec![];
     let mut it = s.chars();
@@ -27,11 +27,11 @@ pub(crate) fn expand_backslash_escapes(
             Some('b') => result.push(b'\x08'),
             Some('c') => {
                 match mode {
-                    EscapeMode::EchoBuiltin => {
+                    EscapeExpansionMode::EchoBuiltin => {
                         // Stop all additional output!
                         return Ok((result, false));
                     }
-                    EscapeMode::AnsiCQuotes => {
+                    EscapeExpansionMode::AnsiCQuotes => {
                         if let Some(_next_next) = it.next() {
                             return error::unimp("control character in ANSI C quotes");
                         } else {
@@ -48,9 +48,9 @@ pub(crate) fn expand_backslash_escapes(
             Some('t') => result.push(b'\t'),
             Some('v') => result.push(b'\x0b'),
             Some('\\') => result.push(b'\\'),
-            Some('\'') if matches!(mode, EscapeMode::AnsiCQuotes) => result.push(b'\''),
-            Some('\"') if matches!(mode, EscapeMode::AnsiCQuotes) => result.push(b'\"'),
-            Some('?') if matches!(mode, EscapeMode::AnsiCQuotes) => result.push(b'?'),
+            Some('\'') if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'\''),
+            Some('\"') if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'\"'),
+            Some('?') if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'?'),
             Some('0') => {
                 // Consume 0-3 valid octal chars
                 let mut taken_so_far = 0;
@@ -165,14 +165,85 @@ pub(crate) fn expand_backslash_escapes(
     Ok((result, true))
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum QuoteMode {
+    BackslashEscape,
+    Quote,
+}
+
+pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> String {
+    match mode {
+        QuoteMode::BackslashEscape => escape_with_backslash(s),
+        QuoteMode::Quote => escape_with_quoting(s),
+    }
+}
+
+fn escape_with_backslash(s: &str) -> String {
+    let mut output = String::new();
+
+    // TODO: Handle other interesting sequences.
+    for c in s.chars() {
+        match c {
+            c if needs_escaping(c) => {
+                output.push('\\');
+                output.push(c);
+            }
+            c => output.push(c),
+        }
+    }
+
+    output
+}
+
+fn escape_with_quoting(s: &str) -> String {
+    // TODO: Handle single-quote!
+    if s.chars().any(needs_escaping) {
+        std::format!("'{s}'")
+    } else {
+        s.to_owned()
+    }
+}
+
+fn needs_escaping(c: char) -> bool {
+    matches!(
+        c,
+        '(' | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '$'
+            | '*'
+            | '?'
+            | '|'
+            | '&'
+            | ';'
+            | '<'
+            | '>'
+            | '`'
+            | '\\'
+            | '"'
+            | '!'
+            | '^'
+            | ','
+            | ' '
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_escape() {
+        assert_eq!(quote_if_needed("a", QuoteMode::BackslashEscape), "a");
+        assert_eq!(quote_if_needed("a b", QuoteMode::BackslashEscape), r"a\ b");
+    }
+
     fn assert_echo_expands_to(unexpanded: &str, expected: &str) {
         assert_eq!(
             String::from_utf8(
-                expand_backslash_escapes(unexpanded, EscapeMode::EchoBuiltin)
+                expand_backslash_escapes(unexpanded, EscapeExpansionMode::EchoBuiltin)
                     .unwrap()
                     .0
             )

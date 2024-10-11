@@ -87,6 +87,147 @@ async fn complete_relative_dir_path() -> Result<()> {
 }
 
 #[tokio::test]
+async fn complete_under_empty_dir() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    // Create file and dir.
+    test_shell.temp_dir.child("empty").create_dir_all()?;
+
+    // Complete; expect to see nothing.
+    let input = "ls empty/";
+    let results = test_shell.complete(input, input.len()).await?;
+
+    assert_eq!(results, Vec::<String>::new());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn complete_nonexistent_relative_path() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    // Complete; expect to see nothing.
+    let input = "ls item";
+    let results = test_shell.complete(input, input.len()).await?;
+
+    assert_eq!(results, Vec::<String>::new());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn complete_absolute_paths() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    // Create file and dir.
+    test_shell.temp_dir.child("item1").touch()?;
+    test_shell.temp_dir.child("item2").create_dir_all()?;
+
+    // Complete; expect to see just the dir.
+    let input = std::format!("ls {}", test_shell.temp_dir.path().join("item").display());
+    let results = test_shell.complete(input.as_str(), input.len()).await?;
+
+    assert_eq!(
+        results,
+        [
+            test_shell
+                .temp_dir
+                .child("item1")
+                .path()
+                .display()
+                .to_string(),
+            test_shell
+                .temp_dir
+                .child("item2")
+                .path()
+                .display()
+                .to_string(),
+        ]
+    );
+
+    Ok(())
+}
+
+#[ignore] // TODO: Fix this for newer versions of bash-completion
+#[tokio::test]
+async fn complete_path_with_var() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    // Create file and dir.
+    test_shell.temp_dir.child("item1").touch()?;
+    test_shell.temp_dir.child("item2").create_dir_all()?;
+
+    // Complete; expect to see the two files.
+    let input = "ls $PWD/item";
+    let results = test_shell.complete(input, input.len()).await?;
+
+    assert_eq!(
+        results,
+        [
+            test_shell
+                .temp_dir
+                .child("item1")
+                .path()
+                .display()
+                .to_string(),
+            test_shell
+                .temp_dir
+                .child("item2")
+                .path()
+                .display()
+                .to_string(),
+        ]
+    );
+
+    Ok(())
+}
+
+#[ignore] // TODO: Fix this for newer versions of bash-completion
+#[tokio::test]
+async fn complete_path_with_tilde() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    // Set HOME to the temp dir so we can use ~ to reference it.
+    test_shell.set_var(
+        "HOME",
+        test_shell
+            .temp_dir
+            .path()
+            .to_string_lossy()
+            .to_string()
+            .as_str(),
+    )?;
+
+    // Create file and dir.
+    test_shell.temp_dir.child("item1").touch()?;
+    test_shell.temp_dir.child("item2").create_dir_all()?;
+
+    // Complete; expect to see the two files.
+    let input = "ls ~/item";
+    let results = test_shell.complete(input, input.len()).await?;
+
+    assert_eq!(
+        results,
+        [
+            test_shell
+                .temp_dir
+                .child("item1")
+                .path()
+                .display()
+                .to_string(),
+            test_shell
+                .temp_dir
+                .child("item2")
+                .path()
+                .display()
+                .to_string(),
+        ]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn complete_variable_names() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 

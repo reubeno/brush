@@ -8,7 +8,7 @@ use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
 
 use crate::{
-    builtins, error,
+    builtins, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     processes, sys, trace_categories, ExecutionParameters, ExecutionResult, Shell,
@@ -174,6 +174,24 @@ impl From<String> for CommandArg {
 impl From<&String> for CommandArg {
     fn from(value: &String) -> Self {
         CommandArg::String(value.clone())
+    }
+}
+
+impl CommandArg {
+    pub fn quote_for_tracing(&self) -> String {
+        match self {
+            CommandArg::String(s) => escape::quote_if_needed(s, escape::QuoteMode::Quote),
+            CommandArg::Assignment(a) => {
+                let mut s = a.name.to_string();
+                let op = if a.append { "+=" } else { "=" };
+                s.push_str(op);
+                s.push_str(&escape::quote_if_needed(
+                    a.value.to_string().as_str(),
+                    escape::QuoteMode::Quote,
+                ));
+                s
+            }
+        }
     }
 }
 

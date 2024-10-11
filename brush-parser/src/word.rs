@@ -381,12 +381,12 @@ fn cacheable_parse(
     word: String,
     options: ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    tracing::debug!("Parsing word '{}'", word);
+    tracing::debug!(target: "expansion", "Parsing word '{}'", word);
 
     let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
 
-    tracing::debug!(target: "parse", "Parsed word '{}' => {{{:?}}}", word, pieces);
+    tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word, pieces);
 
     Ok(pieces)
 }

@@ -235,12 +235,125 @@ impl Spec {
         shell: &mut Shell,
         context: &Context<'_>,
     ) -> Result<Answer, crate::error::Error> {
-        let mut candidates: IndexSet<String> = IndexSet::new();
-
         // Store the current options in the shell; this is needed since the compopt
         // built-in has the ability of modifying the options for an in-flight
         // completion process.
         shell.completion_config.current_completion_options = Some(self.options.clone());
+
+        // Generate completions based on any provided actions (and on words).
+        let mut candidates = self.generate_action_completions(shell, context)?;
+        if let Some(word_list) = &self.word_list {
+            let words = crate::expansion::full_expand_and_split_str(shell, word_list).await?;
+            for word in words {
+                candidates.insert(word);
+            }
+        }
+
+        // Only keep generated completions that match the token being completed. Further
+        // generations below don't get filtered.
+        if !context.token_to_complete.is_empty() {
+            candidates.retain(|candidate| candidate.starts_with(context.token_to_complete));
+        }
+
+        if let Some(glob_pattern) = &self.glob_pattern {
+            let pattern = patterns::Pattern::from(glob_pattern.as_str());
+            let expansions = pattern.expand(
+                shell.working_dir.as_path(),
+                shell.parser_options().enable_extended_globbing,
+                Some(&patterns::Pattern::accept_all_expand_filter),
+            )?;
+
+            for expansion in expansions {
+                candidates.insert(expansion);
+            }
+        }
+        if let Some(function_name) = &self.function_name {
+            let call_result = self
+                .call_completion_function(shell, function_name.as_str(), context)
+                .await?;
+
+            match call_result {
+                Answer::RestartCompletionProcess => return Ok(call_result),
+                Answer::Candidates(mut new_candidates, _options) => {
+                    candidates.append(&mut new_candidates);
+                }
+            }
+        }
+        if let Some(command) = &self.command {
+            tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -C({command})");
+        }
+
+        // Apply filter pattern, if present.
+        if let Some(filter_pattern) = &self.filter_pattern {
+            if !filter_pattern.is_empty() {
+                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -X (filter pattern): '{filter_pattern}'");
+            }
+        }
+
+        // Add prefix and/or suffix, if present.
+        if self.prefix.is_some() || self.suffix.is_some() {
+            let empty = String::new();
+            let prefix = self.prefix.as_ref().unwrap_or(&empty);
+            let suffix = self.suffix.as_ref().unwrap_or(&empty);
+
+            let mut updated = IndexSet::new();
+            for candidate in candidates {
+                updated.insert(std::format!("{prefix}{candidate}{suffix}"));
+            }
+
+            candidates = updated;
+        }
+
+        //
+        // Now apply options
+        //
+
+        let options = if let Some(options) = &shell.completion_config.current_completion_options {
+            options
+        } else {
+            &self.options
+        };
+
+        let processing_options = ProcessingOptions {
+            treat_as_filenames: options.file_names,
+            no_autoquote_filenames: options.no_quote,
+            no_trailing_space_at_end_of_line: options.no_space,
+        };
+
+        if candidates.is_empty() {
+            if options.bash_default {
+                // TODO: if we have no completions, then fall back to default "bash" completion
+                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o bashdefault");
+            }
+            if options.default {
+                // TODO: if we have no completions, then fall back to default file name completion
+                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o default");
+            }
+            if options.dir_names {
+                // TODO: if we have no completions, then fall back to performing dir name completion
+                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o dirnames");
+            }
+        }
+        if options.plus_dirs {
+            // Also add dir name completion.
+            tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o plusdirs");
+        }
+
+        // Sort, unless blocked by options.
+        if !self.options.no_sort {
+            candidates.sort();
+        }
+
+        Ok(Answer::Candidates(candidates, processing_options))
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn generate_action_completions(
+        &self,
+        shell: &mut Shell,
+        context: &Context<'_>,
+    ) -> Result<IndexSet<String>, error::Error> {
+        let mut candidates = IndexSet::new();
 
         for action in &self.actions {
             match action {
@@ -256,7 +369,9 @@ impl Spec {
                         }
                     }
                 }
-                CompleteAction::Binding => tracing::debug!("UNIMPLEMENTED: complete -A binding"),
+                CompleteAction::Binding => {
+                    tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -A binding");
+                }
                 CompleteAction::Builtin => {
                     for name in shell.builtins.keys() {
                         candidates.insert(name.to_owned());
@@ -334,7 +449,9 @@ impl Spec {
                         }
                     }
                 }
-                CompleteAction::Service => tracing::debug!("UNIMPLEMENTED: complete -A service"),
+                CompleteAction::Service => {
+                    tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -A service");
+                }
                 CompleteAction::SetOpt => {
                     for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
                         candidates.insert((*name).to_owned());
@@ -370,107 +487,7 @@ impl Spec {
             }
         }
 
-        if let Some(glob_pattern) = &self.glob_pattern {
-            let pattern = patterns::Pattern::from(glob_pattern.as_str());
-            let expansions = pattern.expand(
-                shell.working_dir.as_path(),
-                shell.parser_options().enable_extended_globbing,
-                Some(&patterns::Pattern::accept_all_expand_filter),
-            )?;
-
-            for expansion in expansions {
-                candidates.insert(expansion);
-            }
-        }
-        if let Some(word_list) = &self.word_list {
-            let words = crate::expansion::full_expand_and_split_str(shell, word_list).await?;
-            for word in words {
-                candidates.insert(word);
-            }
-        }
-        if let Some(function_name) = &self.function_name {
-            let call_result = self
-                .call_completion_function(shell, function_name.as_str(), context)
-                .await?;
-
-            match call_result {
-                Answer::RestartCompletionProcess => return Ok(call_result),
-                Answer::Candidates(mut new_candidates, _options) => {
-                    candidates.append(&mut new_candidates);
-                }
-            }
-        }
-        if let Some(command) = &self.command {
-            tracing::debug!("UNIMPLEMENTED: complete -C({command})");
-        }
-
-        // Make sure the token we have (if non-empty) is a prefix.
-        if !context.token_to_complete.is_empty() {
-            candidates.retain(|candidate| candidate.starts_with(context.token_to_complete));
-        }
-
-        // Apply filter pattern, if present.
-        if let Some(filter_pattern) = &self.filter_pattern {
-            if !filter_pattern.is_empty() {
-                tracing::debug!("UNIMPLEMENTED: complete -X (filter pattern): '{filter_pattern}'");
-            }
-        }
-
-        // Add prefix and/or suffix, if present.
-        if self.prefix.is_some() || self.suffix.is_some() {
-            let empty = String::new();
-            let prefix = self.prefix.as_ref().unwrap_or(&empty);
-            let suffix = self.suffix.as_ref().unwrap_or(&empty);
-
-            let mut updated = IndexSet::new();
-            for candidate in candidates {
-                updated.insert(std::format!("{prefix}{candidate}{suffix}"));
-            }
-
-            candidates = updated;
-        }
-
-        //
-        // Now apply options
-        //
-
-        let options = if let Some(options) = &shell.completion_config.current_completion_options {
-            options
-        } else {
-            &self.options
-        };
-
-        let processing_options = ProcessingOptions {
-            treat_as_filenames: options.file_names,
-            no_autoquote_filenames: options.no_quote,
-            no_trailing_space_at_end_of_line: options.no_space,
-        };
-
-        if candidates.is_empty() {
-            if options.bash_default {
-                // TODO: if we have no completions, then fall back to default "bash" completion
-                tracing::debug!("UNIMPLEMENTED: complete -o bashdefault");
-            }
-            if options.default {
-                // TODO: if we have no completions, then fall back to default file name completion
-                tracing::debug!("UNIMPLEMENTED: complete -o default");
-            }
-            if options.dir_names {
-                // TODO: if we have no completions, then fall back to performing dir name completion
-                tracing::debug!("UNIMPLEMENTED: complete -o dirnames");
-            }
-        }
-        if options.plus_dirs {
-            // Also add dir name completion.
-            tracing::debug!("UNIMPLEMENTED: complete -o plusdirs");
-        }
-
-        // Sort, unless blocked by options.
-        if !self.options.no_sort {
-            candidates.sort();
-        }
-
-        Ok(Answer::Candidates(candidates, processing_options))
+        Ok(candidates)
     }
 
     async fn call_completion_function(
@@ -713,114 +730,102 @@ impl Config {
 
         // Make a best-effort attempt to tokenize.
         let tokens = Self::tokenize_input_for_completion(shell, input);
-        {
-            let cursor: i32 = i32::try_from(position)?;
-            let mut preceding_token = None;
-            let mut completion_prefix = "";
-            let mut insertion_index = cursor;
-            let mut completion_token_index = tokens.len();
 
-            // Copy a set of references to the tokens; we will adjust this list as
-            // we find we need to insert an empty token.
-            let mut adjusted_tokens: Vec<&brush_parser::Token> = tokens.iter().collect();
+        let cursor: i32 = i32::try_from(position)?;
+        let mut preceding_token = None;
+        let mut completion_prefix = "";
+        let mut insertion_index = cursor;
+        let mut completion_token_index = tokens.len();
 
-            // Try to find which token we are in.
-            for (i, token) in tokens.iter().enumerate() {
-                // If the cursor is before the start of the token, then it's between
-                // this token and the one that preceded it (or it's before the first
-                // token if this is the first token).
-                if cursor < token.location().start.index {
-                    // TODO: Should insert an empty token here; the position looks to have
-                    // been between this token and the preceding one.
-                    completion_token_index = i;
-                    break;
-                }
-                // If the cursor is anywhere from the first char of the token up to
-                // (and including) the first char after the token, then this we need
-                // to generate completions to replace/update this token. We'll pay
-                // attention to the position to figure out the prefix that we should
-                // be completing.
-                else if cursor >= token.location().start.index
-                    && cursor <= token.location().end.index
-                {
-                    // Update insertion index.
-                    insertion_index = token.location().start.index;
+        // Copy a set of references to the tokens; we will adjust this list as
+        // we find we need to insert an empty token.
+        let mut adjusted_tokens: Vec<&brush_parser::Token> = tokens.iter().collect();
 
-                    // Update prefix.
-                    let offset_into_token = (cursor - insertion_index) as usize;
-                    let token_str = token.to_str();
-                    completion_prefix = &token_str[..offset_into_token];
+        // Try to find which token we are in.
+        for (i, token) in tokens.iter().enumerate() {
+            // If the cursor is before the start of the token, then it's between
+            // this token and the one that preceded it (or it's before the first
+            // token if this is the first token).
+            if cursor < token.location().start.index {
+                // TODO: Should insert an empty token here; the position looks to have
+                // been between this token and the preceding one.
+                completion_token_index = i;
+                break;
+            }
+            // If the cursor is anywhere from the first char of the token up to
+            // (and including) the first char after the token, then this we need
+            // to generate completions to replace/update this token. We'll pay
+            // attention to the position to figure out the prefix that we should
+            // be completing.
+            else if cursor >= token.location().start.index && cursor <= token.location().end.index
+            {
+                // Update insertion index.
+                insertion_index = token.location().start.index;
 
-                    // Update token index.
-                    completion_token_index = i;
+                // Update prefix.
+                let offset_into_token = (cursor - insertion_index) as usize;
+                let token_str = token.to_str();
+                completion_prefix = &token_str[..offset_into_token];
 
-                    break;
-                }
+                // Update token index.
+                completion_token_index = i;
 
-                // Otherwise, we need to keep looking. Update what we think the
-                // preceding token may be.
-                preceding_token = Some(token);
+                break;
             }
 
-            // If the position is after the last token, then we need to insert an empty
-            // token for the new token to be generated.
-            let empty_token =
-                brush_parser::Token::Word(String::new(), brush_parser::TokenLocation::default());
-            if completion_token_index == tokens.len() {
-                adjusted_tokens.push(&empty_token);
-            }
-
-            // Get the completions.
-            let mut result = Answer::RestartCompletionProcess;
-            let mut restart_count = 0;
-            while matches!(result, Answer::RestartCompletionProcess) {
-                if restart_count > MAX_RESTARTS {
-                    tracing::error!("possible infinite loop detected in completion process");
-                    break;
-                }
-
-                let completion_context = Context {
-                    token_to_complete: completion_prefix,
-                    preceding_token: preceding_token.map(|t| t.to_str()),
-                    command_name: adjusted_tokens.first().map(|token| token.to_str()),
-                    input_line: input,
-                    token_index: completion_token_index,
-                    tokens: adjusted_tokens.as_slice(),
-                    cursor_index: position,
-                };
-
-                result = self
-                    .get_completions_for_token(shell, completion_context)
-                    .await;
-
-                restart_count += 1;
-            }
-
-            match result {
-                Answer::Candidates(candidates, options) => Ok(Completions {
-                    insertion_index: insertion_index as usize,
-                    delete_count: completion_prefix.len(),
-                    candidates,
-                    options,
-                }),
-                Answer::RestartCompletionProcess => Ok(Completions {
-                    insertion_index: insertion_index as usize,
-                    delete_count: 0,
-                    candidates: IndexSet::new(),
-                    options: ProcessingOptions::default(),
-                }),
-            }
+            // Otherwise, we need to keep looking. Update what we think the
+            // preceding token may be.
+            preceding_token = Some(token);
         }
-        // else {
-        //     tracing::debug!(target: trace_categories::COMPLETION, "failed to tokenize input line");
 
-        //     Ok(Completions {
-        //         insertion_index: position,
-        //         delete_count: 0,
-        //         candidates: IndexSet::new(),
-        //         options: ProcessingOptions::default(),
-        //     })
-        // }
+        // If the position is after the last token, then we need to insert an empty
+        // token for the new token to be generated.
+        let empty_token =
+            brush_parser::Token::Word(String::new(), brush_parser::TokenLocation::default());
+        if completion_token_index == tokens.len() {
+            adjusted_tokens.push(&empty_token);
+        }
+
+        // Get the completions.
+        let mut result = Answer::RestartCompletionProcess;
+        let mut restart_count = 0;
+        while matches!(result, Answer::RestartCompletionProcess) {
+            if restart_count > MAX_RESTARTS {
+                tracing::error!("possible infinite loop detected in completion process");
+                break;
+            }
+
+            let completion_context = Context {
+                token_to_complete: completion_prefix,
+                preceding_token: preceding_token.map(|t| t.to_str()),
+                command_name: adjusted_tokens.first().map(|token| token.to_str()),
+                input_line: input,
+                token_index: completion_token_index,
+                tokens: adjusted_tokens.as_slice(),
+                cursor_index: position,
+            };
+
+            result = self
+                .get_completions_for_token(shell, completion_context)
+                .await;
+
+            restart_count += 1;
+        }
+
+        match result {
+            Answer::Candidates(candidates, options) => Ok(Completions {
+                insertion_index: insertion_index as usize,
+                delete_count: completion_prefix.len(),
+                candidates,
+                options,
+            }),
+            Answer::RestartCompletionProcess => Ok(Completions {
+                insertion_index: insertion_index as usize,
+                delete_count: 0,
+                candidates: IndexSet::new(),
+                options: ProcessingOptions::default(),
+            }),
+        }
     }
 
     fn tokenize_input_for_completion(_shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
@@ -840,16 +845,8 @@ impl Config {
     async fn get_completions_for_token<'a>(
         &self,
         shell: &mut Shell,
-        mut context: Context<'a>,
+        context: Context<'a>,
     ) -> Answer {
-        // N.B. We basic-expand the token-to-be-completed first.
-        let mut throwaway_shell = shell.clone();
-        let expanded_token_to_complete = throwaway_shell
-            .basic_expand_string(context.token_to_complete)
-            .await
-            .unwrap_or_else(|_| context.token_to_complete.to_owned());
-        context.token_to_complete = expanded_token_to_complete.as_str();
-
         // See if we can find a completion spec matching the current command.
         let mut found_spec: Option<&Spec> = None;
 

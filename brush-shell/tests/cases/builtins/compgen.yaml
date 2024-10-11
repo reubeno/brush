@@ -60,3 +60,44 @@ cases:
   - name: "compgen -W with options"
     stdin: |
       compgen -W '--abc --def' -- '--ab'
+
+  - name: "compgen with no matches"
+    stdin: |
+      compgen -W yes no && echo "1. Result"
+
+  - name: "compgen -f with tilde"
+    stdin: |
+      touch item1
+      HOME=$(pwd)
+
+      echo "[0]"
+      for p in $(compgen -f ~); do
+        echo ${p//$HOME/HOME}
+      done
+
+      echo "[1]"
+      for p in $(compgen -f ~/); do
+        echo ${p//$HOME/HOME}
+      done
+
+  - name: "compgen -f with quoted tilde"
+    known_failure: true
+    stdin: |
+      touch item1
+      HOME=$(pwd)
+
+      echo "[0]"
+      for p in $(compgen -f '~/'); do
+        echo ${p//$HOME/HOME}
+      done
+
+  - name: "compgen -f with quoted var"
+    known_failure: true
+    stdin: |
+      touch item1
+      HOME=$(pwd)
+
+      echo "[0]"
+      for p in $(compgen -f '$HOME/'); do
+        echo ${p//$HOME/HOME}
+      done

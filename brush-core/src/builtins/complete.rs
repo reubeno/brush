@@ -442,7 +442,6 @@ impl builtins::Command for CompGenCommand {
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let spec = self.common_args.create_spec();
-
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
         // N.B. We basic-expand the token-to-be-completed first.
@@ -471,6 +470,12 @@ impl builtins::Command for CompGenCommand {
 
         match result {
             completion::Answer::Candidates(candidates, _options) => {
+                // We are expected to return 1 if there are no candidates, even if no errors
+                // occurred along the way.
+                if candidates.is_empty() {
+                    return Ok(builtins::ExitCode::Custom(1));
+                }
+
                 for candidate in candidates {
                     writeln!(context.stdout(), "{candidate}")?;
                 }

@@ -9,7 +9,7 @@ use crate::error;
 ///
 /// * `input` - The arithmetic expression to parse, in string form.
 pub fn parse(input: &str) -> Result<ast::ArithmeticExpr, crate::error::WordParseError> {
-    tracing::debug!("parsing arithmetic expression: '{input}'");
+    tracing::debug!(target: "arithmetic", "parsing arithmetic expression: '{input}'");
 
     // Special-case the empty string.
 

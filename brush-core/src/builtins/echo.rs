@@ -55,7 +55,7 @@ impl builtins::Command for EchoCommand {
 
                 let (expanded_arg, keep_going) = escape::expand_backslash_escapes(
                     arg.as_str(),
-                    escape::EscapeMode::EchoBuiltin,
+                    escape::EscapeExpansionMode::EchoBuiltin,
                 )?;
                 s.push_str(&String::from_utf8_lossy(expanded_arg.as_slice()));
 
