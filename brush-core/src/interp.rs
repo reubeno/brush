@@ -18,7 +18,6 @@ use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
 use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, traps};
-use futures::future::{BoxFuture, FutureExt};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -127,14 +126,16 @@ pub enum ProcessGroupPolicy {
     SameProcessGroup,
 }
 
+#[async_trait::async_trait]
 pub trait Execute {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>>;
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error>;
 }
 
+#[async_trait::async_trait]
 trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
@@ -142,72 +143,68 @@ trait ExecuteInPipeline {
     ) -> Result<CommandSpawnResult, error::Error>;
 }
 
+#[async_trait::async_trait]
 impl Execute for ast::Program {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let mut result = ExecutionResult::success();
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut result = ExecutionResult::success();
 
-            for command in &self.complete_commands {
-                result = command.execute(shell, params).await?;
-                if result.exit_shell || result.return_from_function_or_script {
-                    break;
-                }
+        for command in &self.complete_commands {
+            result = command.execute(shell, params).await?;
+            if result.exit_shell || result.return_from_function_or_script {
+                break;
             }
-
-            shell.last_exit_status = result.exit_code;
-            Ok(result)
         }
-        .boxed()
+
+        shell.last_exit_status = result.exit_code;
+        Ok(result)
     }
 }
 
+#[async_trait::async_trait]
 impl Execute for ast::CompoundList {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let mut result = ExecutionResult::success();
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut result = ExecutionResult::success();
 
-            for ast::CompoundListItem(ao_list, sep) in &self.0 {
-                let run_async = matches!(sep, ast::SeparatorOperator::Async);
+        for ast::CompoundListItem(ao_list, sep) in &self.0 {
+            let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
-                if run_async {
-                    // TODO: Reenable launching in child process?
-                    // let job = spawn_ao_list_in_child(ao_list, shell, params).await?;
+            if run_async {
+                // TODO: Reenable launching in child process?
+                // let job = spawn_ao_list_in_child(ao_list, shell, params).await?;
 
-                    let job = spawn_ao_list_in_task(ao_list, shell, params);
-                    let job_formatted = job.to_pid_style_string();
+                let job = spawn_ao_list_in_task(ao_list, shell, params);
+                let job_formatted = job.to_pid_style_string();
 
-                    if shell.options.interactive {
-                        writeln!(shell.stderr(), "{job_formatted}")?;
-                    }
-
-                    result = ExecutionResult::success();
-                } else {
-                    result = ao_list.execute(shell, params).await?;
+                if shell.options.interactive {
+                    writeln!(shell.stderr(), "{job_formatted}")?;
                 }
 
-                // Check for early return.
-                if result.return_from_function_or_script {
-                    break;
-                }
-
-                // TODO: Check for continue/break being in for/while/until loop.
-                if result.continue_loop.is_some() || result.break_loop.is_some() {
-                    break;
-                }
+                result = ExecutionResult::success();
+            } else {
+                result = ao_list.execute(shell, params).await?;
             }
 
-            shell.last_exit_status = result.exit_code;
-            Ok(result)
+            // Check for early return.
+            if result.return_from_function_or_script {
+                break;
+            }
+
+            // TODO: Check for continue/break being in for/while/until loop.
+            if result.continue_loop.is_some() || result.break_loop.is_some() {
+                break;
+            }
         }
-        .boxed()
+
+        shell.last_exit_status = result.exit_code;
+        Ok(result)
     }
 }
 
@@ -239,77 +236,73 @@ fn spawn_ao_list_in_task<'a>(
     job
 }
 
+#[async_trait::async_trait]
 impl Execute for ast::AndOrList {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let mut result = self.first.execute(shell, params).await?;
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut result = self.first.execute(shell, params).await?;
 
-            for next_ao in &self.additional {
-                // Check for exit/return
-                if result.exit_shell || result.return_from_function_or_script {
-                    break;
-                }
-
-                // Check for continue/break
-                // TODO: Validate that we're in a loop?
-                if result.continue_loop.is_some() || result.break_loop.is_some() {
-                    break;
-                }
-
-                let (is_and, pipeline) = match next_ao {
-                    ast::AndOr::And(p) => (true, p),
-                    ast::AndOr::Or(p) => (false, p),
-                };
-
-                // If we short-circuit, then we don't break out of the whole loop
-                // but we skip evaluating the current pipeline. We'll then continue
-                // on and possibly evaluate a subsequent one (depending on the
-                // operator before it).
-                if is_and {
-                    if !result.is_success() {
-                        continue;
-                    }
-                } else if result.is_success() {
-                    continue;
-                }
-
-                result = pipeline.execute(shell, params).await?;
+        for next_ao in &self.additional {
+            // Check for exit/return
+            if result.exit_shell || result.return_from_function_or_script {
+                break;
             }
 
-            Ok(result)
+            // Check for continue/break
+            // TODO: Validate that we're in a loop?
+            if result.continue_loop.is_some() || result.break_loop.is_some() {
+                break;
+            }
+
+            let (is_and, pipeline) = match next_ao {
+                ast::AndOr::And(p) => (true, p),
+                ast::AndOr::Or(p) => (false, p),
+            };
+
+            // If we short-circuit, then we don't break out of the whole loop
+            // but we skip evaluating the current pipeline. We'll then continue
+            // on and possibly evaluate a subsequent one (depending on the
+            // operator before it).
+            if is_and {
+                if !result.is_success() {
+                    continue;
+                }
+            } else if result.is_success() {
+                continue;
+            }
+
+            result = pipeline.execute(shell, params).await?;
         }
-        .boxed()
+
+        Ok(result)
     }
 }
 
+#[async_trait::async_trait]
 impl Execute for ast::Pipeline {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            // Spawn all the processes required for the pipeline, connecting outputs/inputs with
-            // pipes as needed.
-            let spawn_results = spawn_pipeline_processes(self, shell, params).await?;
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        // Spawn all the processes required for the pipeline, connecting outputs/inputs with pipes
+        // as needed.
+        let spawn_results = spawn_pipeline_processes(self, shell, params).await?;
 
-            // Wait for the processes.
-            let mut result = wait_for_pipeline_processes(self, spawn_results, shell).await?;
+        // Wait for the processes.
+        let mut result = wait_for_pipeline_processes(self, spawn_results, shell).await?;
 
-            // Invert the exit code if requested.
-            if self.bang {
-                result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
-            }
-
-            shell.last_exit_status = result.exit_code;
-
-            Ok(result)
+        // Invert the exit code if requested.
+        if self.bang {
+            result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
         }
-        .boxed()
+
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
     }
 }
 
@@ -408,10 +401,11 @@ async fn wait_for_pipeline_processes(
     Ok(result)
 }
 
+#[async_trait::async_trait]
 impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
-        pipeline_context: &mut PipelineExecutionContext<'_>,
+        pipeline_context: &mut PipelineExecutionContext,
     ) -> Result<CommandSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
             return Ok(CommandSpawnResult::ImmediateExit(0));
@@ -472,217 +466,73 @@ enum WhileOrUntil {
     Until,
 }
 
+#[async_trait::async_trait]
 impl Execute for ast::CompoundCommand {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            match self {
-                ast::CompoundCommand::BraceGroup(ast::BraceGroupCommand(g)) => {
-                    g.execute(shell, params).await
-                }
-                ast::CompoundCommand::Subshell(ast::SubshellCommand(s)) => {
-                    // Clone off a new subshell, and run the body of the subshell there.
-                    let mut subshell = shell.clone();
-                    s.execute(&mut subshell, params).await
-                }
-                ast::CompoundCommand::ForClause(f) => f.execute(shell, params).await,
-                ast::CompoundCommand::CaseClause(c) => c.execute(shell, params).await,
-                ast::CompoundCommand::IfClause(i) => i.execute(shell, params).await,
-                ast::CompoundCommand::WhileClause(w) => {
-                    (WhileOrUntil::While, w).execute(shell, params).await
-                }
-                ast::CompoundCommand::UntilClause(u) => {
-                    (WhileOrUntil::Until, u).execute(shell, params).await
-                }
-                ast::CompoundCommand::Arithmetic(a) => a.execute(shell, params).await,
-                ast::CompoundCommand::ArithmeticForClause(a) => a.execute(shell, params).await,
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        match self {
+            ast::CompoundCommand::BraceGroup(ast::BraceGroupCommand(g)) => {
+                g.execute(shell, params).await
             }
+            ast::CompoundCommand::Subshell(ast::SubshellCommand(s)) => {
+                // Clone off a new subshell, and run the body of the subshell there.
+                let mut subshell = shell.clone();
+                s.execute(&mut subshell, params).await
+            }
+            ast::CompoundCommand::ForClause(f) => f.execute(shell, params).await,
+            ast::CompoundCommand::CaseClause(c) => c.execute(shell, params).await,
+            ast::CompoundCommand::IfClause(i) => i.execute(shell, params).await,
+            ast::CompoundCommand::WhileClause(w) => {
+                (WhileOrUntil::While, w).execute(shell, params).await
+            }
+            ast::CompoundCommand::UntilClause(u) => {
+                (WhileOrUntil::Until, u).execute(shell, params).await
+            }
+            ast::CompoundCommand::Arithmetic(a) => a.execute(shell, params).await,
+            ast::CompoundCommand::ArithmeticForClause(a) => a.execute(shell, params).await,
         }
-        .boxed()
     }
 }
 
+#[async_trait::async_trait]
 impl Execute for ast::ForClauseCommand {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let mut result = ExecutionResult::success();
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut result = ExecutionResult::success();
 
-            if let Some(unexpanded_values) = &self.values {
-                // Expand all values, with splitting enabled.
-                let mut expanded_values = vec![];
-                for value in unexpanded_values {
-                    let mut expanded = expansion::full_expand_and_split_word(shell, value).await?;
-                    expanded_values.append(&mut expanded);
-                }
-
-                for value in expanded_values {
-                    if shell.options.print_commands_and_arguments {
-                        shell.trace_command(std::format!(
-                            "for {} in {}",
-                            self.variable_name,
-                            unexpanded_values.iter().join(" ")
-                        ))?;
-                    }
-
-                    // Update the variable.
-                    shell.env.update_or_add(
-                        &self.variable_name,
-                        ShellValueLiteral::Scalar(value),
-                        |_| Ok(()),
-                        EnvironmentLookup::Anywhere,
-                        EnvironmentScope::Global,
-                    )?;
-
-                    result = self.body.0.execute(shell, params).await?;
-                    if result.return_from_function_or_script {
-                        break;
-                    }
-
-                    if let Some(continue_count) = &result.continue_loop {
-                        if *continue_count > 0 {
-                            return error::unimp("continue with count > 0");
-                        }
-
-                        result.continue_loop = None;
-                    }
-                    if let Some(break_count) = &result.break_loop {
-                        if *break_count == 0 {
-                            result.break_loop = None;
-                        } else {
-                            result.break_loop = Some(*break_count - 1);
-                        }
-                        break;
-                    }
-                }
+        if let Some(unexpanded_values) = &self.values {
+            // Expand all values, with splitting enabled.
+            let mut expanded_values = vec![];
+            for value in unexpanded_values {
+                let mut expanded = expansion::full_expand_and_split_word(shell, value).await?;
+                expanded_values.append(&mut expanded);
             }
 
-            shell.last_exit_status = result.exit_code;
-            Ok(result)
-        }
-        .boxed()
-    }
-}
-
-impl Execute for ast::CaseClauseCommand {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            // N.B. One would think it makes sense to trace the expanded value being switched
-            // on, but that's not it.
-            if shell.options.print_commands_and_arguments {
-                shell.trace_command(std::format!("case {} in", &self.value))?;
-            }
-
-            let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
-
-            for case in &self.cases {
-                let mut matches = false;
-
-                for pattern in &case.patterns {
-                    let expanded_pattern = expansion::basic_expand_pattern(shell, pattern).await?;
-                    if expanded_pattern
-                        .exactly_matches(expanded_value.as_str(), shell.options.extended_globbing)?
-                    {
-                        matches = true;
-                        break;
-                    }
+            for value in expanded_values {
+                if shell.options.print_commands_and_arguments {
+                    shell.trace_command(std::format!(
+                        "for {} in {}",
+                        self.variable_name,
+                        unexpanded_values.iter().join(" ")
+                    ))?;
                 }
 
-                if matches {
-                    if let Some(case_cmd) = &case.cmd {
-                        return case_cmd.execute(shell, params).await;
-                    } else {
-                        break;
-                    }
-                }
-            }
+                // Update the variable.
+                shell.env.update_or_add(
+                    &self.variable_name,
+                    ShellValueLiteral::Scalar(value),
+                    |_| Ok(()),
+                    EnvironmentLookup::Anywhere,
+                    EnvironmentScope::Global,
+                )?;
 
-            let result = ExecutionResult::success();
-            shell.last_exit_status = result.exit_code;
-
-            Ok(result)
-        }
-        .boxed()
-    }
-}
-
-impl Execute for ast::IfClauseCommand {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let condition = self.condition.execute(shell, params).await?;
-
-            if condition.is_success() {
-                return self.then.execute(shell, params).await;
-            }
-
-            if let Some(elses) = &self.elses {
-                for else_clause in elses {
-                    match &else_clause.condition {
-                        Some(else_condition) => {
-                            let else_condition_result =
-                                else_condition.execute(shell, params).await?;
-                            if else_condition_result.is_success() {
-                                return else_clause.body.execute(shell, params).await;
-                            }
-                        }
-                        None => {
-                            return else_clause.body.execute(shell, params).await;
-                        }
-                    }
-                }
-            }
-
-            let result = ExecutionResult::success();
-            shell.last_exit_status = result.exit_code;
-
-            Ok(result)
-        }
-        .boxed()
-    }
-}
-
-impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let is_while = match self.0 {
-                WhileOrUntil::While => true,
-                WhileOrUntil::Until => false,
-            };
-            let test_condition = &self.1 .0;
-            let body = &self.1 .1;
-
-            let mut result = ExecutionResult::success();
-
-            loop {
-                let condition_result = test_condition.execute(shell, params).await?;
-
-                if condition_result.is_success() != is_while {
-                    break;
-                }
-
-                if condition_result.return_from_function_or_script {
-                    break;
-                }
-
-                result = body.0.execute(shell, params).await?;
+                result = self.body.0.execute(shell, params).await?;
                 if result.return_from_function_or_script {
                     break;
                 }
@@ -703,96 +553,224 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
                     break;
                 }
             }
-
-            Ok(result)
         }
-        .boxed()
+
+        shell.last_exit_status = result.exit_code;
+        Ok(result)
     }
 }
 
-impl Execute for ast::ArithmeticCommand {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        _params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let value = self.expr.eval(shell, true).await?;
-            let result = if value != 0 {
-                ExecutionResult::success()
-            } else {
-                ExecutionResult::new(1)
-            };
-
-            shell.last_exit_status = result.exit_code;
-
-            Ok(result)
+#[async_trait::async_trait]
+impl Execute for ast::CaseClauseCommand {
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        // N.B. One would think it makes sense to trace the expanded value being switched
+        // on, but that's not it.
+        if shell.options.print_commands_and_arguments {
+            shell.trace_command(std::format!("case {} in", &self.value))?;
         }
-        .boxed()
-    }
-}
 
-impl Execute for ast::ArithmeticForClauseCommand {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            let mut result = ExecutionResult::success();
-            if let Some(initializer) = &self.initializer {
-                initializer.eval(shell, true).await?;
-            }
+        let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
 
-            loop {
-                if let Some(condition) = &self.condition {
-                    if condition.eval(shell, true).await? == 0 {
-                        break;
-                    }
-                }
+        for case in &self.cases {
+            let mut matches = false;
 
-                result = self.body.0.execute(shell, params).await?;
-                if result.return_from_function_or_script {
+            for pattern in &case.patterns {
+                let expanded_pattern = expansion::basic_expand_pattern(shell, pattern).await?;
+                if expanded_pattern
+                    .exactly_matches(expanded_value.as_str(), shell.options.extended_globbing)?
+                {
+                    matches = true;
                     break;
                 }
+            }
 
-                if let Some(updater) = &self.updater {
-                    updater.eval(shell, true).await?;
+            if matches {
+                if let Some(case_cmd) = &case.cmd {
+                    return case_cmd.execute(shell, params).await;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        let result = ExecutionResult::success();
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::IfClauseCommand {
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let condition = self.condition.execute(shell, params).await?;
+
+        if condition.is_success() {
+            return self.then.execute(shell, params).await;
+        }
+
+        if let Some(elses) = &self.elses {
+            for else_clause in elses {
+                match &else_clause.condition {
+                    Some(else_condition) => {
+                        let else_condition_result = else_condition.execute(shell, params).await?;
+                        if else_condition_result.is_success() {
+                            return else_clause.body.execute(shell, params).await;
+                        }
+                    }
+                    None => {
+                        return else_clause.body.execute(shell, params).await;
+                    }
+                }
+            }
+        }
+
+        let result = ExecutionResult::success();
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let is_while = match self.0 {
+            WhileOrUntil::While => true,
+            WhileOrUntil::Until => false,
+        };
+        let test_condition = &self.1 .0;
+        let body = &self.1 .1;
+
+        let mut result = ExecutionResult::success();
+
+        loop {
+            let condition_result = test_condition.execute(shell, params).await?;
+
+            if condition_result.is_success() != is_while {
+                break;
+            }
+
+            if condition_result.return_from_function_or_script {
+                break;
+            }
+
+            result = body.0.execute(shell, params).await?;
+            if result.return_from_function_or_script {
+                break;
+            }
+
+            if let Some(continue_count) = &result.continue_loop {
+                if *continue_count > 0 {
+                    return error::unimp("continue with count > 0");
+                }
+
+                result.continue_loop = None;
+            }
+            if let Some(break_count) = &result.break_loop {
+                if *break_count == 0 {
+                    result.break_loop = None;
+                } else {
+                    result.break_loop = Some(*break_count - 1);
+                }
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::ArithmeticCommand {
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        _params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let value = self.expr.eval(shell, true).await?;
+        let result = if value != 0 {
+            ExecutionResult::success()
+        } else {
+            ExecutionResult::new(1)
+        };
+
+        shell.last_exit_status = result.exit_code;
+
+        Ok(result)
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::ArithmeticForClauseCommand {
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut result = ExecutionResult::success();
+        if let Some(initializer) = &self.initializer {
+            initializer.eval(shell, true).await?;
+        }
+
+        loop {
+            if let Some(condition) = &self.condition {
+                if condition.eval(shell, true).await? == 0 {
+                    break;
                 }
             }
 
-            shell.last_exit_status = result.exit_code;
-            Ok(result)
+            result = self.body.0.execute(shell, params).await?;
+            if result.return_from_function_or_script {
+                break;
+            }
+
+            if let Some(updater) = &self.updater {
+                updater.eval(shell, true).await?;
+            }
         }
-        .boxed()
+
+        shell.last_exit_status = result.exit_code;
+        Ok(result)
     }
 }
 
+#[async_trait::async_trait]
 impl Execute for ast::FunctionDefinition {
-    fn execute<'a>(
-        &'a self,
-        shell: &'a mut Shell,
-        _params: &'a ExecutionParameters,
-    ) -> BoxFuture<'a, Result<ExecutionResult, error::Error>> {
-        async move {
-            shell
-                .funcs
-                .update(self.fname.clone(), Arc::new(self.clone()));
+    async fn execute(
+        &self,
+        shell: &mut Shell,
+        _params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        shell
+            .funcs
+            .update(self.fname.clone(), Arc::new(self.clone()));
 
-            let result = ExecutionResult::success();
-            shell.last_exit_status = result.exit_code;
+        let result = ExecutionResult::success();
+        shell.last_exit_status = result.exit_code;
 
-            Ok(result)
-        }
-        .boxed()
+        Ok(result)
     }
 }
 
+#[async_trait::async_trait]
 impl ExecuteInPipeline for ast::SimpleCommand {
     #[allow(clippy::too_many_lines)] // TODO: refactor this function
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext<'_>,
+        context: &mut PipelineExecutionContext,
     ) -> Result<CommandSpawnResult, error::Error> {
         let default_prefix = ast::CommandPrefix::default();
         let prefix_items = self.prefix.as_ref().unwrap_or(&default_prefix);
