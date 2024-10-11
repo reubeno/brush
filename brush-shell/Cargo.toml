@@ -42,7 +42,6 @@ cfg-if = "1.0.0"
 clap = { version = "4.5.17", features = ["derive", "wrap_help"] }
 const_format = "0.2.33"
 git-version = "0.3.9"
-lazy_static = "1.5.0"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 human-panic = "2.0.1"

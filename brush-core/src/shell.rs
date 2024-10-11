@@ -156,11 +156,10 @@ pub struct FunctionCall {
     function_definition: Arc<brush_parser::ast::FunctionDefinition>,
 }
 
-lazy_static::lazy_static! {
-    // NOTE: We have difficulty with xterm escape sequences going through rustyline;
-    // so we compile a regex that can be used to strip them out.
-    static ref PROMPT_XTERM_ESCAPE_SEQ_REGEX: fancy_regex::Regex = fancy_regex::Regex::new("\x1b][0-2];[^\x07]*\x07").unwrap();
-}
+// NOTE: We have difficulty with xterm escape sequences going through rustyline;
+// so we compile a regex that can be used to strip them out.
+static PROMPT_XTERM_ESCAPE_SEQ_REGEX: std::sync::LazyLock<fancy_regex::Regex> =
+    std::sync::LazyLock::new(|| fancy_regex::Regex::new("\x1b][0-2];[^\x07]*\x07").unwrap());
 
 impl Shell {
     /// Returns a new shell instance created with the given options.
