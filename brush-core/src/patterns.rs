@@ -1,4 +1,4 @@
-use crate::{error, regex};
+use crate::{error, regex, trace_categories};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -110,7 +110,7 @@ impl Pattern {
             return Ok(vec![concatenated]);
         }
 
-        tracing::debug!("expanding pattern: {self:?}");
+        tracing::debug!(target: trace_categories::PATTERN, "expanding pattern: {self:?}");
 
         let mut components: Vec<PatternWord> = vec![];
         for piece in &self.pieces {
@@ -221,7 +221,7 @@ impl Pattern {
             })
             .collect();
 
-        tracing::debug!("  => results: {results:?}");
+        tracing::debug!(target: trace_categories::PATTERN, "  => results: {results:?}");
 
         Ok(results)
     }
@@ -308,7 +308,7 @@ impl Pattern {
             enable_extended_globbing,
         )?;
 
-        tracing::debug!("pattern: '{self:?}' => regex: '{regex_str}'");
+        tracing::debug!(target: trace_categories::PATTERN, "pattern: '{self:?}' => regex: '{regex_str}'");
 
         let re = regex::compile_regex(regex_str)?;
         Ok(re)

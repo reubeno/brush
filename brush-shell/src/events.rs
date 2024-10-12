@@ -96,17 +96,13 @@ impl TraceEventConfig {
 
         for event in &self.enabled_trace_events {
             let targets = match event {
-                TraceEvent::Arithmetic => vec!["parser::arithmetic"],
+                TraceEvent::Arithmetic => vec!["arithmetic"],
                 TraceEvent::Commands => vec!["commands"],
-                TraceEvent::Complete => vec![
-                    "completion",
-                    "shell::completion",
-                    "shell::builtins::complete",
-                ],
-                TraceEvent::Expand => vec!["parser::word", "shell::expansion"],
+                TraceEvent::Complete => vec!["completion"],
+                TraceEvent::Expand => vec!["expansion"],
                 TraceEvent::Jobs => vec!["jobs"],
                 TraceEvent::Parse => vec!["parse"],
-                TraceEvent::Pattern => vec!["shell::pattern"],
+                TraceEvent::Pattern => vec!["pattern"],
                 TraceEvent::Tokenize => vec!["tokenize"],
             };
 

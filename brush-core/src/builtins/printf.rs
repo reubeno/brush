@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtins, commands, expansion};
+use crate::{builtins, commands, escape, expansion};
 
 /// Format a string.
 #[derive(Parser)]
@@ -40,11 +40,28 @@ impl PrintfCommand {
         &self,
         context: &commands::ExecutionContext<'_>,
     ) -> Result<String, crate::error::Error> {
-        // Special-case common format string: "%s".
         match self.format_and_args.as_slice() {
+            // Special-case common format string: "%s".
             [fmt, arg] if fmt == "%s" => Ok(arg.clone()),
+            // Special-case invocation of printf with %q-based format string from bash-completion.
+            // It has hard-coded expectation of backslash-style escaping instead of quoting.
+            [fmt, arg] if fmt == "%q" || fmt == "~%q" => {
+                Ok(Self::evaluate_format_with_percent_q(None, arg))
+            }
+            [fmt, arg] if fmt == "~%q" => Ok(Self::evaluate_format_with_percent_q(Some("~"), arg)),
+            // Fallback to external command.
             _ => self.evaluate_via_external_command(context),
         }
+    }
+
+    fn evaluate_format_with_percent_q(prefix: Option<&str>, arg: &str) -> String {
+        let mut result = escape::quote_if_needed(arg, escape::QuoteMode::BackslashEscape);
+
+        if let Some(prefix) = prefix {
+            result.insert_str(0, prefix);
+        }
+
+        result
     }
 
     #[allow(clippy::unwrap_in_result)]

@@ -914,7 +914,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             if context.shell.options.print_commands_and_arguments {
                 context
                     .shell
-                    .trace_command(args.iter().map(|arg| arg.to_string()).join(" "))?;
+                    .trace_command(args.iter().map(|arg| arg.quote_for_tracing()).join(" "))?;
             }
 
             // TODO: This is adding more complexity here; should be factored out into an appropriate
@@ -978,6 +978,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             execution_result
         } else {
+            // Reset last status.
+            context.shell.last_exit_status = 0;
+
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
                 apply_assignment(
@@ -990,7 +993,11 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 .await?;
             }
 
-            Ok(CommandSpawnResult::ImmediateExit(0))
+            // Return the last exit status we have; in some cases, an expansion
+            // might result in a non-zero exit status stored in the shell.
+            Ok(CommandSpawnResult::ImmediateExit(
+                context.shell.last_exit_status,
+            ))
         }
     }
 }
@@ -1121,7 +1128,7 @@ async fn apply_assignment(
 
     if shell.options.print_commands_and_arguments {
         let op = if assignment.append { "+=" } else { "=" };
-        shell.trace_command(std::format!("{}{}{}", assignment.name, op, new_value))?;
+        shell.trace_command(std::format!("{}{op}{new_value}", assignment.name))?;
     }
 
     // See if we need to eval an array index.

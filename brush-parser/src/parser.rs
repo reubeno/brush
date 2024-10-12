@@ -132,7 +132,7 @@ pub fn parse_tokens(
             Ok(program)
         }
         Err(parse_error) => {
-            tracing::debug!("Parse error: {:?}", parse_error);
+            tracing::debug!(target: "parse", "Parse error: {:?}", parse_error);
             Err(error::convert_peg_parse_error(
                 parse_error,
                 tokens.as_slice(),

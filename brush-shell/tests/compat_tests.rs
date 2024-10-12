@@ -419,7 +419,7 @@ impl TestCaseSet {
                 TestCaseResult {
                     success: true,
                     comparison: RunComparison::ignored(),
-                    name: self.name.clone(),
+                    name: test_case.name.clone(),
                     skip: true,
                     known_failure: test_case.known_failure,
                 }
@@ -495,6 +495,10 @@ impl TestCaseResult {
         mut writer: W,
         options: &TestOptions,
     ) -> Result<()> {
+        if self.skip {
+            return Ok(());
+        }
+
         if !options.verbose {
             if (!self.comparison.is_failure() && !self.known_failure)
                 || (self.comparison.is_failure() && self.known_failure)
@@ -596,7 +600,19 @@ impl TestCaseResult {
                     indent::indent_all_by(8, make_expectrl_output_readable(test_string))
                 )?;
             }
-            StringComparison::Same(_) => writeln!(writer, "    stdout matches {}", "✔️".green())?,
+            StringComparison::Same(s) => {
+                writeln!(writer, "    stdout matches {}", "✔️".green())?;
+
+                if options.verbose {
+                    writeln!(
+                        writer,
+                        "        {}",
+                        "------ Oracle <> Test: stdout ---------------------------------".cyan()
+                    )?;
+
+                    writeln!(writer, "{}", indent::indent_all_by(8, s))?;
+                }
+            }
             StringComparison::TestDiffers {
                 test_string: t,
                 oracle_string: o,
@@ -624,7 +640,19 @@ impl TestCaseResult {
                 test_string: _,
                 oracle_string: _,
             } => writeln!(writer, "    stderr {}", "ignored".cyan())?,
-            StringComparison::Same(_) => writeln!(writer, "    stderr matches {}", "✔️".green())?,
+            StringComparison::Same(s) => {
+                writeln!(writer, "    stderr matches {}", "✔️".green())?;
+
+                if options.verbose {
+                    writeln!(
+                        writer,
+                        "        {}",
+                        "------ Oracle <> Test: stderr ---------------------------------".cyan()
+                    )?;
+
+                    writeln!(writer, "{}", indent::indent_all_by(8, s))?;
+                }
+            }
             StringComparison::TestDiffers {
                 test_string: t,
                 oracle_string: o,

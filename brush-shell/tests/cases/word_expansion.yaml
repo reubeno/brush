@@ -61,6 +61,11 @@ cases:
       x=$(echo foo | (wc -l; echo hi))
       echo "\$x: $x"
 
+  - name: "Command substitution exit code"
+    stdin: |
+      x=$(false) && echo "1. Made it past false"
+      y=$(true) && echo "2. Made it past true"
+
   - name: "Backtick command substitution"
     stdin: |
       echo `echo hi`

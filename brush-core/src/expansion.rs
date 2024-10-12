@@ -15,6 +15,7 @@ use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
 use crate::sys;
+use crate::trace_categories;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
@@ -406,7 +407,7 @@ impl<'a> WordExpander<'a> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// yield pieces that could be further processed.
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        tracing::debug!("Basic expanding: '{word}'");
+        tracing::debug!(target: trace_categories::EXPANSION, "Basic expanding: '{word}'");
 
         //
         // TODO: Brace expansion in unquoted pieces
@@ -512,6 +513,7 @@ impl<'a> WordExpander<'a> {
     }
 
     #[async_recursion::async_recursion]
+    #[allow(clippy::too_many_lines)]
     async fn expand_word_piece(
         &mut self,
         word_piece: brush_parser::word::WordPiece,
@@ -524,8 +526,10 @@ impl<'a> WordExpander<'a> {
                 Expansion::from(ExpansionPiece::Unsplittable(s))
             }
             brush_parser::word::WordPiece::AnsiCQuotedText(s) => {
-                let (expanded, _) =
-                    escape::expand_backslash_escapes(s.as_str(), escape::EscapeMode::AnsiCQuotes)?;
+                let (expanded, _) = escape::expand_backslash_escapes(
+                    s.as_str(),
+                    escape::EscapeExpansionMode::AnsiCQuotes,
+                )?;
                 Expansion::from(ExpansionPiece::Unsplittable(
                     String::from_utf8_lossy(expanded.as_slice()).into_owned(),
                 ))
@@ -619,13 +623,15 @@ impl<'a> WordExpander<'a> {
                 params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
                 // Run the command.
-                // TODO: inspect result?
-                let _cmd_result = subshell.run_string(s, &params).await?;
+                let result = subshell.run_string(s, &params).await?;
 
                 // Make sure the subshell and params are closed; among other things, this
                 // ensures they're not holding onto the write end of the pipe.
                 drop(subshell);
                 drop(params);
+
+                // Store the status.
+                self.shell.last_exit_status = result.exit_code;
 
                 // Extract output.
                 let output_str = std::io::read_to_string(reader)?;
@@ -1478,7 +1484,7 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::ParameterTransformOp::ExpandEscapeSequences => {
                 let (result, _) =
-                    escape::expand_backslash_escapes(s, escape::EscapeMode::AnsiCQuotes)?;
+                    escape::expand_backslash_escapes(s, escape::EscapeExpansionMode::AnsiCQuotes)?;
                 Ok(String::from_utf8_lossy(result.as_slice()).into_owned())
             }
             brush_parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
