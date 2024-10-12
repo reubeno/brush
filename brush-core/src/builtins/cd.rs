@@ -5,7 +5,7 @@ use clap::Parser;
 
 use crate::{builtins, commands};
 
-/// Change the current working directory.
+/// Change the current shell working directory.
 #[derive(Parser)]
 pub(crate) struct CdCommand {
     /// Force following symlinks.
@@ -16,7 +16,7 @@ pub(crate) struct CdCommand {
     #[arg(short = 'P')]
     use_physical_dir: bool,
 
-    /// Exit if current working dir resolution fails.
+    /// Exit with non zero exit status if current working directory resolution fails.
     #[arg(short = 'e')]
     exit_on_failed_cwd_resolution: bool,
 
@@ -25,6 +25,8 @@ pub(crate) struct CdCommand {
     #[arg(short = '@')]
     file_with_xattr_as_dir: bool,
 
+    /// By default it is the value of the HOME shell variable. If TARGET_DIR is "-", it is converted
+    /// to $OLDPWD.
     target_dir: Option<PathBuf>,
 }
 
@@ -44,10 +46,22 @@ impl builtins::Command for CdCommand {
         }
 
         let target_dir = if let Some(target_dir) = &self.target_dir {
-            target_dir.clone()
+            // `cd -', equivalent to `cd $OLDPWD'
+            if target_dir.as_os_str() == "-" {
+                if let Some(oldpwd) = context.shell.env.get_str("OLDPWD") {
+                    &PathBuf::from(oldpwd.to_string())
+                } else {
+                    writeln!(context.stderr(), "OLDPWD not set")?;
+                    return Ok(builtins::ExitCode::Custom(1));
+                }
+            } else {
+                target_dir
+            }
+        // `cd' without arguments is equivalent to `cd $HOME'
         } else {
             if let Some(home_var) = context.shell.env.get_str("HOME") {
-                PathBuf::from(home_var.to_string())
+                // temporary lifetime extension
+                &PathBuf::from(home_var.to_string())
             } else {
                 writeln!(context.stderr(), "HOME not set")?;
                 return Ok(builtins::ExitCode::Custom(1));
