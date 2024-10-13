@@ -1048,19 +1048,15 @@ async fn expand_assignment_value(
         ast::AssignmentValue::Array(arr) => {
             let mut expanded_values = vec![];
             for (key, value) in arr {
-                match key {
-                    Some(k) => {
-                        let expanded_key = expansion::basic_expand_word(shell, k).await?.into();
-                        let expanded_value =
-                            expansion::basic_expand_word(shell, value).await?.into();
-                        expanded_values.push((Some(expanded_key), expanded_value));
-                    }
-                    None => {
-                        let split_expanded_value =
-                            expansion::full_expand_and_split_word(shell, value).await?;
-                        for expanded_value in split_expanded_value {
-                            expanded_values.push((None, expanded_value.into()));
-                        }
+                if let Some(k) = key {
+                    let expanded_key = expansion::basic_expand_word(shell, k).await?.into();
+                    let expanded_value = expansion::basic_expand_word(shell, value).await?.into();
+                    expanded_values.push((Some(expanded_key), expanded_value));
+                } else {
+                    let split_expanded_value =
+                        expansion::full_expand_and_split_word(shell, value).await?;
+                    for expanded_value in split_expanded_value {
+                        expanded_values.push((None, expanded_value.into()));
                     }
                 }
             }

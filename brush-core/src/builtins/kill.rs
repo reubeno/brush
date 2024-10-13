@@ -37,7 +37,7 @@ impl builtins::Command for KillCommand {
         }
 
         if self.list_signals {
-            return error::unimp("kill -l");
+            error::unimp("kill -l")
         } else {
             if self.args.len() != 1 {
                 writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;

@@ -30,7 +30,7 @@ impl builtins::Command for PrintfCommand {
             context.stdout().flush()?;
         }
 
-        return Ok(builtins::ExitCode::Success);
+        Ok(builtins::ExitCode::Success)
     }
 }
 

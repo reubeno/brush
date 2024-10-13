@@ -25,8 +25,8 @@ pub(crate) struct EchoCommand {
 }
 
 impl builtins::Command for EchoCommand {
-    /// Override the default [builtins::Command::new] function to handle clap's limitation related
-    /// to `--`. See [crate::builtins::parse_known] for more information
+    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
+    /// to `--`. See [`builtins::parse_known`] for more information
     /// TODO: we can safely remove this after the issue is resolved
     fn new<I>(args: I) -> Result<Self, clap::Error>
     where
@@ -74,6 +74,6 @@ impl builtins::Command for EchoCommand {
         write!(context.stdout(), "{s}")?;
         context.stdout().flush()?;
 
-        return Ok(builtins::ExitCode::Success);
+        Ok(builtins::ExitCode::Success)
     }
 }
