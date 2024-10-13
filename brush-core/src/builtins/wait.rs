@@ -22,7 +22,6 @@ pub(crate) struct WaitCommand {
     job_specs: Vec<String>,
 }
 
-
 impl builtins::Command for WaitCommand {
     async fn execute(
         &self,

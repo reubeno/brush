@@ -9,7 +9,6 @@ pub(crate) struct ExitCommand {
     code: Option<i32>,
 }
 
-
 impl builtins::Command for ExitCommand {
     async fn execute(
         &self,

@@ -18,7 +18,6 @@ pub(crate) struct GetOptsCommand {
     args: Vec<String>,
 }
 
-
 impl builtins::Command for GetOptsCommand {
     async fn execute(
         &self,

@@ -34,7 +34,6 @@ impl UnsetNameInterpretation {
     }
 }
 
-
 impl builtins::Command for UnsetCommand {
     async fn execute(
         &self,

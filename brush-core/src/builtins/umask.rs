@@ -20,7 +20,6 @@ pub(crate) struct UmaskCommand {
     mode: Option<String>,
 }
 
-
 impl builtins::Command for UmaskCommand {
     async fn execute(
         &self,

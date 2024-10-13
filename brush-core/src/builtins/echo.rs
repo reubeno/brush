@@ -24,10 +24,9 @@ pub(crate) struct EchoCommand {
     args: Vec<String>,
 }
 
-
 impl builtins::Command for EchoCommand {
-    /// Override the default [builtins::Command::new] function to handle clap's limitation related to `--`.
-    /// See [crate::builtins::parse_known] for more information
+    /// Override the default [builtins::Command::new] function to handle clap's limitation related
+    /// to `--`. See [crate::builtins::parse_known] for more information
     /// TODO: we can safely remove this after the issue is resolved
     fn new<I>(args: I) -> Result<Self, clap::Error>
     where

@@ -210,7 +210,6 @@ pub(crate) struct CompleteCommand {
     names: Vec<String>,
 }
 
-
 impl builtins::Command for CompleteCommand {
     async fn execute(
         &self,
@@ -435,7 +434,6 @@ pub(crate) struct CompGenCommand {
     word: Option<String>,
 }
 
-
 impl builtins::Command for CompGenCommand {
     async fn execute(
         &self,
@@ -513,7 +511,6 @@ pub(crate) struct CompOptCommand {
     /// If specified, scopes updates to completions of the named commands.
     names: Vec<String>,
 }
-
 
 impl builtins::Command for CompOptCommand {
     async fn execute(

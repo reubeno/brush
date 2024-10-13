@@ -31,7 +31,6 @@ pub(crate) struct ShoptCommand {
     options: Vec<String>,
 }
 
-
 impl builtins::Command for ShoptCommand {
     async fn execute(
         &self,

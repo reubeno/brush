@@ -16,7 +16,6 @@ pub(crate) struct KillCommand {
 
     //
     // TODO: implement -sigspec syntax
-    //
     /// List known signal names.
     #[arg(short = 'l', short_alias = 'L')]
     list_signals: bool,
@@ -24,7 +23,6 @@ pub(crate) struct KillCommand {
     // Interpretation of these depends on whether -l is present.
     args: Vec<String>,
 }
-
 
 impl builtins::Command for KillCommand {
     async fn execute(

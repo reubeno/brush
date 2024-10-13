@@ -26,7 +26,6 @@ pub(crate) struct CommandCommand {
     args: Vec<String>,
 }
 
-
 impl builtins::Command for CommandCommand {
     async fn execute(
         &self,

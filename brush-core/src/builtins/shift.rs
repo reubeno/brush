@@ -9,7 +9,6 @@ pub(crate) struct ShiftCommand {
     n: Option<i32>,
 }
 
-
 impl builtins::Command for ShiftCommand {
     async fn execute(
         &self,

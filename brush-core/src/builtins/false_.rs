@@ -6,7 +6,6 @@ use crate::{builtins, commands};
 #[derive(Parser)]
 pub(crate) struct FalseCommand {}
 
-
 impl builtins::Command for FalseCommand {
     async fn execute(
         &self,

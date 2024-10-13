@@ -15,7 +15,6 @@ pub(crate) struct AliasCommand {
     aliases: Vec<String>,
 }
 
-
 impl builtins::Command for AliasCommand {
     async fn execute(
         &self,

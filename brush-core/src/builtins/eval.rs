@@ -9,7 +9,6 @@ pub(crate) struct EvalCommand {
     pub args: Vec<String>,
 }
 
-
 impl builtins::Command for EvalCommand {
     async fn execute(
         &self,

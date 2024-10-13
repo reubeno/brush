@@ -31,7 +31,6 @@ pub(crate) struct JobsCommand {
     job_specs: Vec<String>,
 }
 
-
 impl builtins::Command for JobsCommand {
     async fn execute(
         &self,

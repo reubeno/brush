@@ -16,7 +16,6 @@ pub(crate) struct PrintfCommand {
     format_and_args: Vec<String>,
 }
 
-
 impl builtins::Command for PrintfCommand {
     async fn execute(
         &self,

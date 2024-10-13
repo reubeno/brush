@@ -9,7 +9,6 @@ pub(crate) struct ReturnCommand {
     code: Option<i32>,
 }
 
-
 impl builtins::Command for ReturnCommand {
     async fn execute(
         &self,

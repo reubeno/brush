@@ -14,7 +14,6 @@ pub(crate) struct BuiltinCommand {
     args: Vec<String>,
 }
 
-
 impl builtins::Command for BuiltinCommand {
     async fn execute(
         &self,

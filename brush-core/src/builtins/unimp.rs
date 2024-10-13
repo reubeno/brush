@@ -13,7 +13,6 @@ pub(crate) struct UnimplementedCommand {
     declarations: Vec<commands::CommandArg>,
 }
 
-
 impl builtins::Command for UnimplementedCommand {
     async fn execute(
         &self,

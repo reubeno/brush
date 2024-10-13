@@ -44,7 +44,6 @@ enum ResolvedType {
     File(PathBuf),
 }
 
-
 impl builtins::Command for TypeCommand {
     async fn execute(
         &self,

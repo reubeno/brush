@@ -11,9 +11,7 @@ pub(crate) struct PopdCommand {
     no_directory_change: bool,
     //
     // TODO: implement +N and -N
-    //
 }
-
 
 impl builtins::Command for PopdCommand {
     async fn execute(

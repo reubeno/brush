@@ -37,7 +37,6 @@ pub(crate) struct EnableCommand {
     names: Vec<String>,
 }
 
-
 impl builtins::Command for EnableCommand {
     async fn execute(
         &self,
