@@ -53,6 +53,7 @@ pub trait InteractiveShell {
     /// Runs the interactive shell loop, reading commands from standard input and writing
     /// results to standard output and standard error. Continues until the shell
     /// normally exits or until a fatal error occurs.
+    // NOTE: we use desugared async here because [async_fn_in_trait] "warning: use of `async fn` in public traits is discouraged as auto trait bounds cannot be specified"
     fn run_interactively(&mut self) -> impl std::future::Future<Output = Result<(), ShellError>> {
         async {
             // TODO: Consider finding a better place for this.

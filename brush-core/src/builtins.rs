@@ -208,6 +208,7 @@ pub trait Command: Parser {
     /// # Arguments
     ///
     /// * `context` - The context in which the command is being executed.
+    // NOTE: we use desugared async here because we need a Send marker
     fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
