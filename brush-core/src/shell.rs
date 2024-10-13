@@ -969,11 +969,21 @@ impl Shell {
 
         let pwd = cleaned_path.to_string_lossy().to_string();
 
-        // TODO: handle updating PWD
-        self.working_dir = cleaned_path;
         self.env.update_or_add(
             "PWD",
             variables::ShellValueLiteral::Scalar(pwd),
+            |var| {
+                var.export();
+                Ok(())
+            },
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+        let oldpwd = std::mem::replace(&mut self.working_dir, cleaned_path);
+
+        self.env.update_or_add(
+            "OLDPWD",
+            variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
             |var| {
                 var.export();
                 Ok(())

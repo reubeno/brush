@@ -28,3 +28,16 @@ cases:
       cd file
       echo $?
       ls -1
+
+  - name: "cd -"
+    ignore_stderr: true
+    stdin: |
+      cd /
+      echo "pwd: $PWD"
+      cd usr
+      echo "pwd: $PWD"
+      echo "oldpwd: $OLDPWD"
+      cd -
+      echo $?
+      echo "pwd: $PWD"
+
