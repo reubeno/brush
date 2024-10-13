@@ -25,7 +25,7 @@ pub(crate) struct CdCommand {
     #[arg(short = '@')]
     file_with_xattr_as_dir: bool,
 
-    /// By default it is the value of the HOME shell variable. If TARGET_DIR is "-", it is
+    /// By default it is the value of the HOME shell variable. If `TARGET_DIR` is "-", it is
     /// converted to $OLDPWD.
     target_dir: Option<PathBuf>,
 }
@@ -45,11 +45,11 @@ impl builtins::Command for CdCommand {
             return crate::error::unimp("options to cd");
         }
 
-        let mut is_cd_oldpwd = false;
+        let mut should_print = false;
         let target_dir = if let Some(target_dir) = &self.target_dir {
             // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
-                is_cd_oldpwd = true;
+                should_print = true;
                 if let Some(oldpwd) = context.shell.env.get_str("OLDPWD") {
                     PathBuf::from(oldpwd.to_string())
                 } else {
@@ -63,7 +63,6 @@ impl builtins::Command for CdCommand {
         // `cd' without arguments is equivalent to `cd $HOME'
         } else {
             if let Some(home_var) = context.shell.env.get_str("HOME") {
-                // temporary lifetime extension
                 PathBuf::from(home_var.to_string())
             } else {
                 writeln!(context.stderr(), "HOME not set")?;
@@ -77,7 +76,11 @@ impl builtins::Command for CdCommand {
         }
 
         // Bash compatibility
-        if is_cd_oldpwd {
+        // https://www.gnu.org/software/bash/manual/bash.html#index-cd
+        // If a non-empty directory name from CDPATH is used, or if '-' is the first argument, and
+        // the directory change is successful, the absolute pathname of the new working
+        // directory is written to the standard output.
+        if should_print {
             writeln!(context.stdout(), "{}", target_dir.display())?;
         }
 
