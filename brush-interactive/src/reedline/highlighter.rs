@@ -244,7 +244,8 @@ impl<'a> StyledInputLine<'a> {
     }
 
     fn skip_ahead(&mut self, dest: usize) {
-        // Append a no-op style to make sure we cover any trailing gaps in the input line not otherwise styled.
+        // Append a no-op style to make sure we cover any trailing gaps in the input line not
+        // otherwise styled.
         self.append_style(Style::new(), dest, dest);
     }
 

@@ -190,4 +190,3 @@ pub enum Error {
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {
     Err(Error::Unimplemented(msg))
 }
-
