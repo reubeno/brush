@@ -45,9 +45,11 @@ impl builtins::Command for CdCommand {
             return crate::error::unimp("options to cd");
         }
 
+        let mut is_cd_oldpwd = false;
         let target_dir = if let Some(target_dir) = &self.target_dir {
             // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
+                is_cd_oldpwd = true;
                 if let Some(oldpwd) = context.shell.env.get_str("OLDPWD") {
                     PathBuf::from(oldpwd.to_string())
                 } else {
@@ -69,12 +71,14 @@ impl builtins::Command for CdCommand {
             }
         };
 
-        match context.shell.set_working_dir(&target_dir) {
-            Ok(()) => {}
-            Err(e) => {
-                writeln!(context.stderr(), "cd: {e}")?;
-                return Ok(builtins::ExitCode::Custom(1));
-            }
+        if let Err(e) = context.shell.set_working_dir(&target_dir) {
+            writeln!(context.stderr(), "cd: {e}")?;
+            return Ok(builtins::ExitCode::Custom(1));
+        }
+
+        // Bash compatibility
+        if is_cd_oldpwd {
+            writeln!(context.stdout(), "{}", target_dir.display())?;
         }
 
         Ok(builtins::ExitCode::Success)
