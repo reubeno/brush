@@ -11,7 +11,6 @@ pub(crate) struct TestCommand {
     args: Vec<String>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for TestCommand {
     async fn execute(
         &self,

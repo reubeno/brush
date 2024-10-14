@@ -14,7 +14,6 @@ pub(crate) struct PwdCommand {
     allow_symlinks: bool,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for PwdCommand {
     async fn execute(
         &self,

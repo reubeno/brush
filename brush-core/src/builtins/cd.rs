@@ -30,7 +30,6 @@ pub(crate) struct CdCommand {
     target_dir: Option<PathBuf>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for CdCommand {
     async fn execute(
         &self,

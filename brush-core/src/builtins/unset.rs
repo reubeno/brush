@@ -34,7 +34,6 @@ impl UnsetNameInterpretation {
     }
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for UnsetCommand {
     async fn execute(
         &self,

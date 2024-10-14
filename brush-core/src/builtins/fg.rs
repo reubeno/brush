@@ -10,7 +10,6 @@ pub(crate) struct FgCommand {
     job_spec: Option<String>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for FgCommand {
     async fn execute(
         &self,

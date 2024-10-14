@@ -170,7 +170,7 @@ pub type CommandExecuteFunc = fn(
 pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Error>;
 
 /// Trait implemented by built-in shell commands.
-#[async_trait::async_trait]
+
 pub trait Command: Parser {
     /// Instantiates the built-in command with the given arguments.
     ///
@@ -208,10 +208,11 @@ pub trait Command: Parser {
     /// # Arguments
     ///
     /// * `context` - The context in which the command is being executed.
-    async fn execute(
+    // NOTE: we use desugared async here because we need a Send marker
+    fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<ExitCode, error::Error>;
+    ) -> impl std::future::Future<Output = Result<ExitCode, error::Error>> + std::marker::Send;
 
     /// Returns the textual help content associated with the command.
     ///
@@ -236,7 +237,7 @@ pub trait Command: Parser {
 
 /// Trait implemented by built-in shell commands that take specially handled declarations
 /// as arguments.
-#[async_trait::async_trait]
+
 pub trait DeclarationCommand: Command {
     /// Stores the declarations within the command instance.
     ///
@@ -395,8 +396,7 @@ fn brush_help_styles() -> clap::builder::Styles {
 /// # Returns
 ///
 /// * a parsed struct T from [`clap::Parser::parse_from`]
-/// * the remain iterator `args` with `--` and the rest arguments if they present
-///   othervise None
+/// * the remain iterator `args` with `--` and the rest arguments if they present othervise None
 ///
 /// # Examples
 /// ```
@@ -420,8 +420,8 @@ where
     S: Into<std::ffi::OsString> + Clone + PartialEq<&'static str>,
 {
     let mut args = args.into_iter();
-    // the best way to save `--` is to get it out with a side effect while `clap` iterates over the args
-    // this way we can be 100% sure that we have '--' and the remaining args
+    // the best way to save `--` is to get it out with a side effect while `clap` iterates over the
+    // args this way we can be 100% sure that we have '--' and the remaining args
     // and we will iterate only once
     let mut hyphen = None;
     let args_before_hyphen = args.by_ref().take_while(|a| {
@@ -437,7 +437,8 @@ where
 }
 
 /// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
-/// This function is used to parse arguments in builtins such as [`crate::builtins::echo::EchoCommand`]
+/// This function is used to parse arguments in builtins such as
+/// [`crate::builtins::echo::EchoCommand`]
 pub fn try_parse_known<T: Parser>(
     args: impl IntoIterator<Item = String>,
 ) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {

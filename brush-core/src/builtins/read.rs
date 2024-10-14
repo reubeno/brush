@@ -59,7 +59,6 @@ pub(crate) struct ReadCommand {
     variable_names: Vec<String>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for ReadCommand {
     async fn execute(
         &self,

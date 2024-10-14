@@ -20,7 +20,6 @@ pub(crate) struct UmaskCommand {
     mode: Option<String>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for UmaskCommand {
     async fn execute(
         &self,
@@ -28,7 +27,7 @@ impl builtins::Command for UmaskCommand {
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
-                let parsed = u32::from_str_radix(mode.as_str(), 8)?;
+                let parsed = nix::sys::stat::mode_t::from_str_radix(mode.as_str(), 8)?;
                 set_umask(parsed)?;
             } else {
                 return crate::error::unimp("umask setting mode from symbolic value");
@@ -64,17 +63,18 @@ cfg_if! {
             status.umask.ok_or_else(|| error::Error::InvalidUmask)
         }
     } else {
+        #[allow(clippy::unnecessary_wraps)]
         fn get_umask() -> Result<u32, error::Error> {
             let u = nix::sys::stat::umask(Mode::empty());
             nix::sys::stat::umask(u);
-            Ok(u.bits() as u32)
+            Ok(u32::from(u.bits()))
         }
     }
 }
 
-fn set_umask(value: u32) -> Result<(), error::Error> {
-    let mode =
-        nix::sys::stat::Mode::from_bits(value as _).ok_or_else(|| error::Error::InvalidUmask)?;
+fn set_umask(value: nix::sys::stat::mode_t) -> Result<(), error::Error> {
+    // value of mode_t can be platform dependent
+    let mode = nix::sys::stat::Mode::from_bits(value).ok_or_else(|| error::Error::InvalidUmask)?;
     nix::sys::stat::umask(mode);
     Ok(())
 }

@@ -10,7 +10,6 @@ pub(crate) struct ColonCommand {
     args: Vec<String>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for ColonCommand {
     async fn execute(
         &self,

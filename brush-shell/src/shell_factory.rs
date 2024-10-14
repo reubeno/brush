@@ -1,4 +1,3 @@
-#[async_trait::async_trait]
 pub(crate) trait ShellFactory {
     type ShellType: brush_interactive::InteractiveShell + Send;
 
@@ -53,7 +52,6 @@ impl AsMut<brush_core::Shell> for StubShell {
 
 pub(crate) struct RustylineShellFactory;
 
-#[async_trait::async_trait]
 impl ShellFactory for RustylineShellFactory {
     #[cfg(all(feature = "rustyline", any(windows, unix)))]
     type ShellType = brush_interactive::RustylineShell;
@@ -78,7 +76,6 @@ impl ShellFactory for RustylineShellFactory {
 
 pub(crate) struct ReedlineShellFactory;
 
-#[async_trait::async_trait]
 impl ShellFactory for ReedlineShellFactory {
     #[cfg(all(feature = "reedline", any(windows, unix)))]
     type ShellType = brush_interactive::ReedlineShell;
@@ -103,7 +100,6 @@ impl ShellFactory for ReedlineShellFactory {
 
 pub(crate) struct BasicShellFactory;
 
-#[async_trait::async_trait]
 impl ShellFactory for BasicShellFactory {
     #[cfg(feature = "basic")]
     type ShellType = brush_interactive::BasicShell;

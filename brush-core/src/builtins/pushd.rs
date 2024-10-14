@@ -13,10 +13,8 @@ pub(crate) struct PushdCommand {
     dir: String,
     //
     // TODO: implement +N and -N
-    //
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for PushdCommand {
     async fn execute(
         &self,

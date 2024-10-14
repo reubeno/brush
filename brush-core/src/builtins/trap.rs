@@ -17,7 +17,6 @@ pub(crate) struct TrapCommand {
     args: Vec<String>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for TrapCommand {
     async fn execute(
         &self,

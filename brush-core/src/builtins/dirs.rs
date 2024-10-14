@@ -25,7 +25,6 @@ pub(crate) struct DirsCommand {
     // TODO: implement +N and -N
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for DirsCommand {
     async fn execute(
         &self,

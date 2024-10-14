@@ -53,7 +53,6 @@ enum CompleteCommand {
     },
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for BrushInfoCommand {
     async fn execute(
         &self,

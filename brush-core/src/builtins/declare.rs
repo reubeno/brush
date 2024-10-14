@@ -110,7 +110,6 @@ impl builtins::DeclarationCommand for DeclareCommand {
 }
 
 #[allow(clippy::too_many_lines)]
-#[async_trait::async_trait]
 impl builtins::Command for DeclareCommand {
     fn takes_plus_options() -> bool {
         true

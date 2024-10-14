@@ -130,7 +130,6 @@ pub(crate) struct SetCommand {
     positional_args: Vec<String>,
 }
 
-#[async_trait::async_trait]
 impl builtins::Command for SetCommand {
     fn takes_plus_options() -> bool {
         true
