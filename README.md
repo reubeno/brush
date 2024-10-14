@@ -74,18 +74,20 @@ For more details, please consult the [reference documentation on integration tes
 
 There's a long list of OSS crates whose shoulders this project rests on. Notably, the following crates are directly relied on for major portions of shell functionality:
 
-* [`rustyline`](https://github.com/kkawakam/rustyline) - for readline input and interactive usage
-* [`clap`]() - command-line parsing, used both by the top-level brush CLI as well as built-in commands
-* [`fancy-regex`]() - relied on for everything regex
-* [`tokio`]() - async, well, everything
+* [`reedline`](https://github.com/nushell/reedline) and [`rustyline`](https://github.com/kkawakam/rustyline) - for readline-like input and interactive usage
+* [`clap`](https://github.com/clap-rs/clap) - command-line parsing, used both by the top-level brush CLI as well as built-in commands
+* [`fancy-regex`](https://github.com/fancy-regex/fancy-regex) - relied on for everything regex
+* [`tokio`](https://github.com/tokio-rs/tokio) - async, well, everything
+* [`nix` rust crate](https://github.com/nix-rust/nix) - higher-level APIs for Unix/POSIX system APIs
 
 Huge kudos and thanks also to `pprof` and `criterion` projects for enabling awesome flamegraphs in smooth integration with `cargo bench`'s standard benchmarking facilities.
 
 ## Links: other shell implementations
 
-This is certainly not the first attempt to implement a feature-rich POSIX-ish shell in a non-C/C++ implementation language. Some examples include:
+There are a number of other POSIX-ish shells implemented in a non-C/C++ implementation language. Some inspirational examples include:
 
-* https://github.com/shellgei/rusty_bash
-* https://github.com/mvdan/sh
+* [Nushell](https://www.nushell.sh/) - modern Rust-implemented shell (which also provides the `reedline` crate we use!)
+* [Rusty Bash](https://github.com/shellgei/rusty_bash)
+* [mvdan/sh](https://github.com/mvdan/sh)
 
 We're sure there are plenty more; we're happy to include links to them as well.
