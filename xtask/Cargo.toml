@@ -15,5 +15,5 @@ rust-version.workspace = true
 anyhow = "1.0.89"
 brush-shell = { version = "^0.2.10", path = "../brush-shell" }
 clap = { version = "4.5.17", features = ["derive"] }
-clap_mangen = "0.2.23"
+clap_mangen = "0.2.24"
 clap-markdown = "0.1.4"
