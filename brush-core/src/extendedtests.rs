@@ -2,8 +2,11 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    env, error, expansion, namedoptions, patterns,
-    sys::{fs::MetadataExt, fs::PathExt, users},
+    env, error, escape, expansion, namedoptions, patterns,
+    sys::{
+        fs::{MetadataExt, PathExt},
+        users,
+    },
     variables::{self, ArrayLiteral},
     Shell,
 };
@@ -47,7 +50,10 @@ async fn apply_unary_predicate(
     let expanded_operand = expansion::basic_expand_word(shell, operand).await?;
 
     if shell.options.print_commands_and_arguments {
-        shell.trace_command(std::format!("[[ {op} {expanded_operand} ]]"))?;
+        shell.trace_command(std::format!(
+            "[[ {op} {} ]]",
+            escape::quote_if_needed(&expanded_operand, escape::QuoteMode::Quote)
+        ))?;
     }
 
     apply_unary_predicate_to_str(op, expanded_operand.as_str(), shell)

@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
 
-use crate::error;
+use crate::{error, escape};
 
 /// A shell variable.
 #[derive(Clone, Debug)]
@@ -510,11 +510,10 @@ pub enum ShellValueLiteral {
     Array(ArrayLiteral),
 }
 
-impl Display for ShellValueLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ShellValueLiteral {
+    pub(crate) fn fmt_for_tracing(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            // TODO: Decide if it needs to be quoted.
-            ShellValueLiteral::Scalar(s) => write!(f, "{s}"),
+            ShellValueLiteral::Scalar(s) => Self::fmt_scalar_for_tracing(s.as_str(), f),
             ShellValueLiteral::Array(elements) => {
                 write!(f, "(")?;
                 for (i, (key, value)) in elements.0.iter().enumerate() {
@@ -522,13 +521,26 @@ impl Display for ShellValueLiteral {
                         write!(f, " ")?;
                     }
                     if let Some(key) = key {
-                        write!(f, "[{key}]=")?;
+                        write!(f, "[")?;
+                        Self::fmt_scalar_for_tracing(key.as_str(), f)?;
+                        write!(f, "]=")?;
                     }
-                    write!(f, "{value}")?;
+                    Self::fmt_scalar_for_tracing(value.as_str(), f)?;
                 }
                 write!(f, ")")
             }
         }
+    }
+
+    fn fmt_scalar_for_tracing(s: &str, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let processed = escape::quote_if_needed(s, escape::QuoteMode::Quote);
+        write!(f, "{processed}")
+    }
+}
+
+impl Display for ShellValueLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_for_tracing(f)
     }
 }
 
