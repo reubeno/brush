@@ -1,0 +1,63 @@
+name: "Builtins: hash"
+cases:
+  - name: "Non-existent program"
+    ignore_stderr: true
+    stdin: |
+      hash non-existent-program
+      echo "Result: $?"
+
+  - name: "Re-hash non-existent program"
+    ignore_stderr: true
+    stdin: |
+      hash -p /some/path non-existent-program
+      hash -t non-existent-program && echo "1. Result: $?"
+      hash non-existent-program && echo "2. Result: $?"
+      hash -t non-existent-program && echo "3. Result: $?"
+
+  - name: "Existent program"
+    stdin: |
+      hash ls
+      echo "Result: $?"
+
+  - name: "Display not-yet-hashed program"
+    ignore_stderr: true
+    stdin: |
+      hash -t ls
+      echo "1. Result: $?"
+      ls >/dev/null 2>&1
+      hash -t ls
+      echo "2. Result: $?"
+
+  - name: "Display hashed program"
+    stdin: |
+      hash -p /some/path somecmd && echo "1. Result: $?"
+      hash -t somecmd && echo "2. Result: $?"
+
+  - name: "Display multiple hashed programs"
+    stdin: |
+      hash -p /some/path somecmd1 && echo "1. Result: $?"
+      hash -p /some/path somecmd2 && echo "2. Result: $?"
+      hash -t somecmd1 somecmd2 && echo "3. Result: $?"
+
+  - name: "Display -l path"
+    stdin: |
+      hash -p "/some/spaces path" somecmd && echo "1. Result: $?"
+      hash -t somecmd && echo "2. Result: $?"
+      hash -t -l somecmd && echo "3. Result: $?"
+
+  - name: "Remove"
+    ignore_stderr: true
+    stdin: |
+      hash -p /some/path somecmd && echo "1. Result: $?"
+      hash -t somecmd && echo "2. Result: $?"
+      hash -d somecmd && echo "3. Result: $?"
+      hash -t somecmd && echo "4. Result: $?"
+
+  - name: "Remove all"
+    ignore_stderr: true
+    stdin: |
+      hash -p /some/path somecmd1 && echo "1. Result: $?"
+      hash -p /some/path somecmd2 && echo "2. Result: $?"
+      hash -r && echo "3. Result: $?"
+      hash -t somecmd1 && echo "4. Result: $?"
+      hash -t somecmd2 && echo "5. Result: $?"

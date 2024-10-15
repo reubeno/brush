@@ -41,7 +41,7 @@ enum ResolvedType {
     Keyword,
     Function(Arc<ast::FunctionDefinition>),
     Builtin,
-    File(PathBuf),
+    File { path: PathBuf, hashed: bool },
 }
 
 impl builtins::Command for TypeCommand {
@@ -64,7 +64,7 @@ impl builtins::Command for TypeCommand {
             }
 
             for resolved_type in resolved_types {
-                if self.show_path_only && !matches!(resolved_type, ResolvedType::File(_)) {
+                if self.show_path_only && !matches!(resolved_type, ResolvedType::File { .. }) {
                     // Do nothing.
                 } else if self.type_only {
                     match resolved_type {
@@ -80,7 +80,7 @@ impl builtins::Command for TypeCommand {
                         ResolvedType::Builtin => {
                             writeln!(context.stdout(), "builtin")?;
                         }
-                        ResolvedType::File(path) => {
+                        ResolvedType::File { path, .. } => {
                             if self.show_path_only || self.force_path_search {
                                 writeln!(context.stdout(), "{}", path.to_string_lossy())?;
                             } else {
@@ -103,9 +103,21 @@ impl builtins::Command for TypeCommand {
                         ResolvedType::Builtin => {
                             writeln!(context.stdout(), "{name} is a shell builtin")?;
                         }
-                        ResolvedType::File(path) => {
-                            if self.show_path_only || self.force_path_search {
+                        ResolvedType::File { path, hashed } => {
+                            if hashed && self.all_locations && !self.force_path_search {
+                                // Do nothing.
+                            } else if self.show_path_only || self.force_path_search {
                                 writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                                if hashed {
+                                    break;
+                                }
+                            } else if hashed {
+                                writeln!(
+                                    context.stdout(),
+                                    "{name} is hashed ({path})",
+                                    name = name,
+                                    path = path.to_string_lossy()
+                                )?;
                             } else {
                                 writeln!(
                                     context.stdout(),
@@ -160,11 +172,21 @@ impl TypeCommand {
         // Look in path.
         if name.contains(std::path::MAIN_SEPARATOR) {
             if shell.get_absolute_path(Path::new(name)).executable() {
-                types.push(ResolvedType::File(PathBuf::from(name)));
+                types.push(ResolvedType::File {
+                    path: PathBuf::from(name),
+                    hashed: false,
+                });
             }
         } else {
+            if let Some(path) = shell.program_location_cache.get(name) {
+                types.push(ResolvedType::File { path, hashed: true });
+            }
+
             for item in shell.find_executables_in_path(name) {
-                types.push(ResolvedType::File(item));
+                types.push(ResolvedType::File {
+                    path: item,
+                    hashed: false,
+                });
             }
         }
 

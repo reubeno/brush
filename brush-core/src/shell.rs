@@ -10,12 +10,12 @@ use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::sys::fs::PathExt;
-use crate::trace_categories;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     patterns, prompt, sys::users, traps,
 };
+use crate::{pathcache, trace_categories};
 
 /// Represents an instance of a shell.
 pub struct Shell {
@@ -72,6 +72,9 @@ pub struct Shell {
 
     /// Shell built-in commands.
     pub builtins: HashMap<String, builtins::Registration>,
+
+    /// Shell program location cache.
+    pub program_location_cache: pathcache::PathCache,
 }
 
 impl Clone for Shell {
@@ -95,6 +98,7 @@ impl Clone for Shell {
             current_line_number: self.current_line_number,
             completion_config: self.completion_config.clone(),
             builtins: self.builtins.clone(),
+            program_location_cache: self.program_location_cache.clone(),
             depth: self.depth + 1,
         }
     }
@@ -189,6 +193,7 @@ impl Shell {
             current_line_number: 0,
             completion_config: completion::Config::default(),
             builtins: builtins::get_default_builtins(options),
+            program_location_cache: pathcache::PathCache::default(),
             depth: 0,
         };
 
@@ -899,6 +904,47 @@ impl Shell {
         }
 
         executables
+    }
+
+    /// Determines whether the given filename is the name of an executable in one of the
+    /// directories in the shell's current PATH. If found, returns the path.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidate_name` - The name of the file to look for.
+    pub fn find_first_executable_in_path<S: AsRef<str>>(
+        &self,
+        candidate_name: S,
+    ) -> Option<PathBuf> {
+        for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
+            let candidate_path = Path::new(dir_str).join(candidate_name.as_ref());
+            if candidate_path.executable() {
+                return Some(candidate_path);
+            }
+        }
+        None
+    }
+
+    /// Uses the shell's hash-based path cache to check whether the given filename is the name
+    /// of an executable in one of the directories in the shell's current PATH. If found,
+    /// ensures the path is in the cache and returns it.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidate_name` - The name of the file to look for.
+    pub fn find_first_executable_in_path_using_cache<S: AsRef<str>>(
+        &mut self,
+        candidate_name: S,
+    ) -> Option<PathBuf> {
+        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+            Some(cached_path)
+        } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
+            self.program_location_cache
+                .set(&candidate_name, found_path.clone());
+            Some(found_path)
+        } else {
+            None
+        }
     }
 
     /// Gets the absolute form of the given path.

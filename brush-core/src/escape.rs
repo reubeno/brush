@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use itertools::Itertools;
 
 use crate::error;
@@ -171,14 +173,18 @@ pub(crate) enum QuoteMode {
     Quote,
 }
 
-pub(crate) fn quote_if_needed<S: AsRef<str>>(s: S, mode: QuoteMode) -> String {
+pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
     match mode {
-        QuoteMode::BackslashEscape => escape_with_backslash(s.as_ref()),
-        QuoteMode::Quote => escape_with_quoting(s.as_ref()),
+        QuoteMode::BackslashEscape => escape_with_backslash(s),
+        QuoteMode::Quote => escape_with_quoting(s),
     }
 }
 
-fn escape_with_backslash(s: &str) -> String {
+fn escape_with_backslash(s: &str) -> Cow<'_, str> {
+    if !s.chars().any(needs_escaping) {
+        return s.into();
+    }
+
     let mut output = String::new();
 
     // TODO: Handle other interesting sequences.
@@ -192,15 +198,15 @@ fn escape_with_backslash(s: &str) -> String {
         }
     }
 
-    output
+    output.into()
 }
 
-fn escape_with_quoting(s: &str) -> String {
+fn escape_with_quoting(s: &str) -> Cow<'_, str> {
     // TODO: Handle single-quote!
     if s.is_empty() || s.chars().any(needs_escaping) {
-        std::format!("'{s}'")
+        std::format!("'{s}'").into()
     } else {
-        s.to_owned()
+        s.into()
     }
 }
 

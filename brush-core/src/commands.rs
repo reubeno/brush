@@ -1,6 +1,6 @@
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
-use std::{ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
+use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
 
 use brush_parser::ast;
 #[cfg(unix)]
@@ -178,7 +178,7 @@ impl From<&String> for CommandArg {
 }
 
 impl CommandArg {
-    pub fn quote_for_tracing(&self) -> String {
+    pub fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             CommandArg::String(s) => escape::quote_if_needed(s, escape::QuoteMode::Quote),
             CommandArg::Assignment(a) => {
@@ -189,7 +189,7 @@ impl CommandArg {
                     a.value.to_string().as_str(),
                     escape::QuoteMode::Quote,
                 ));
-                s
+                s.into()
             }
         }
     }
@@ -320,15 +320,39 @@ pub(crate) async fn execute(
                 return execute_builtin_command(&builtin, cmd_context, args).await;
             }
         }
-    }
 
-    // Strip the command name off args.
-    execute_external_command(cmd_context, process_group_id, &args[1..])
+        if let Some(path) = cmd_context
+            .shell
+            .find_first_executable_in_path_using_cache(&cmd_context.command_name)
+        {
+            let resolved_path = path.to_string_lossy();
+            execute_external_command(
+                cmd_context,
+                resolved_path.as_ref(),
+                process_group_id,
+                &args[1..],
+            )
+        } else {
+            tracing::error!("{}: command not found", cmd_context.command_name);
+            Ok(CommandSpawnResult::ImmediateExit(127))
+        }
+    } else {
+        let resolved_path = cmd_context.command_name.clone();
+
+        // Strip the command name off args.
+        execute_external_command(
+            cmd_context,
+            resolved_path.as_str(),
+            process_group_id,
+            &args[1..],
+        )
+    }
 }
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
+    executable_path: &str,
     process_group_id: &mut Option<i32>,
     args: &[CommandArg],
 ) -> Result<CommandSpawnResult, error::Error> {
@@ -355,7 +379,7 @@ pub(crate) fn execute_external_command(
     #[allow(unused_mut)]
     let mut cmd = compose_std_command(
         context.shell,
-        context.command_name.as_str(),
+        executable_path,
         context.command_name.as_str(),
         cmd_args.as_slice(),
         context.params.open_files,

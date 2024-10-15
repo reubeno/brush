@@ -82,7 +82,7 @@ impl Display for FoundCommand {
 
 impl CommandCommand {
     #[allow(clippy::unwrap_in_result)]
-    fn try_find_command(&self, shell: &shell::Shell) -> Option<FoundCommand> {
+    fn try_find_command(&self, shell: &mut shell::Shell) -> Option<FoundCommand> {
         // Look in path.
         if self.command_name.contains(std::path::MAIN_SEPARATOR) {
             let candidate_path = shell.get_absolute_path(Path::new(&self.command_name));
@@ -105,8 +105,7 @@ impl CommandCommand {
             }
 
             shell
-                .find_executables_in_path(self.command_name.as_str())
-                .first()
+                .find_first_executable_in_path_using_cache(&self.command_name)
                 .map(|path| FoundCommand::External(path.to_string_lossy().to_string()))
         }
     }
