@@ -39,9 +39,8 @@ cases:
         echo "Math checks"
       fi
 
-      # TODO: Re-enable these
-      # var=" "
-      # [[ ${var} && ! ${var//[[:space:]]/} ]]
+      var="x"
+      [[ ${var} && ${var//[[:space:]]/} ]]
 
       for ((i = 0; i < 3; i++)); do
         echo $i

@@ -171,10 +171,10 @@ pub(crate) enum QuoteMode {
     Quote,
 }
 
-pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> String {
+pub(crate) fn quote_if_needed<S: AsRef<str>>(s: S, mode: QuoteMode) -> String {
     match mode {
-        QuoteMode::BackslashEscape => escape_with_backslash(s),
-        QuoteMode::Quote => escape_with_quoting(s),
+        QuoteMode::BackslashEscape => escape_with_backslash(s.as_ref()),
+        QuoteMode::Quote => escape_with_quoting(s.as_ref()),
     }
 }
 
@@ -197,7 +197,7 @@ fn escape_with_backslash(s: &str) -> String {
 
 fn escape_with_quoting(s: &str) -> String {
     // TODO: Handle single-quote!
-    if s.chars().any(needs_escaping) {
+    if s.is_empty() || s.chars().any(needs_escaping) {
         std::format!("'{s}'")
     } else {
         s.to_owned()
@@ -235,9 +235,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_escape() {
+    fn test_backslash_escape() {
         assert_eq!(quote_if_needed("a", QuoteMode::BackslashEscape), "a");
         assert_eq!(quote_if_needed("a b", QuoteMode::BackslashEscape), r"a\ b");
+        assert_eq!(quote_if_needed("", QuoteMode::BackslashEscape), "");
+    }
+
+    #[test]
+    fn test_quote_escape() {
+        assert_eq!(quote_if_needed("a", QuoteMode::Quote), "a");
+        assert_eq!(quote_if_needed("a b", QuoteMode::Quote), "'a b'");
+        assert_eq!(quote_if_needed("", QuoteMode::Quote), "''");
     }
 
     fn assert_echo_expands_to(unexpanded: &str, expected: &str) {
