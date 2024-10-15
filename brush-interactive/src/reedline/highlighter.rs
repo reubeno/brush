@@ -317,7 +317,7 @@ impl<'a> StyledInputLine<'a> {
                 CommandType::NotFound
             }
         } else {
-            if !self.shell.find_executables_in_path(name).is_empty() {
+            if self.shell.find_first_executable_in_path(name).is_some() {
                 CommandType::External
             } else {
                 CommandType::NotFound

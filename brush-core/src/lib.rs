@@ -20,6 +20,7 @@ mod keywords;
 mod namedoptions;
 mod openfiles;
 mod options;
+mod pathcache;
 mod patterns;
 mod processes;
 mod prompt;

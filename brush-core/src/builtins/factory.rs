@@ -235,6 +235,7 @@ pub(crate) fn get_default_builtins(
     m.insert("false".into(), builtin::<false_::FalseCommand>());
     m.insert("fg".into(), builtin::<fg::FgCommand>());
     m.insert("getopts".into(), builtin::<getopts::GetOptsCommand>());
+    m.insert("hash".into(), builtin::<hash::HashCommand>());
     m.insert("help".into(), builtin::<help::HelpCommand>());
     m.insert("jobs".into(), builtin::<jobs::JobsCommand>());
     #[cfg(unix)]
@@ -251,7 +252,6 @@ pub(crate) fn get_default_builtins(
 
     // TODO: Unimplemented non-special builtins
     m.insert("fc".into(), builtin::<unimp::UnimplementedCommand>());
-    m.insert("hash".into(), builtin::<unimp::UnimplementedCommand>());
     m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
 
     if !options.sh_mode {

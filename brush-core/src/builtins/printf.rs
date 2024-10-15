@@ -54,7 +54,8 @@ impl PrintfCommand {
     }
 
     fn evaluate_format_with_percent_q(prefix: Option<&str>, arg: &str) -> String {
-        let mut result = escape::quote_if_needed(arg, escape::QuoteMode::BackslashEscape);
+        let mut result =
+            escape::quote_if_needed(arg, escape::QuoteMode::BackslashEscape).to_string();
 
         if let Some(prefix) = prefix {
             result.insert_str(0, prefix);

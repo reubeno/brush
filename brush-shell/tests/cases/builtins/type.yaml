@@ -48,3 +48,28 @@ cases:
     stdin: |
       function myfunc() { echo "Hello, world!"; }
       type -a myfunc
+
+  - name: Test type with hashed path
+    stdin: |
+      hash -p /some/ls ls
+      type ls
+
+  - name: Test type -a with hashed path
+    stdin: |
+      hash -p /some/ls ls
+      type -a ls
+
+  - name: Test type -P with hashed path
+    stdin: |
+      hash -p /some/ls ls
+      type -P ls
+
+  - name: Test type -P -a with hashed path
+    stdin: |
+      hash -p /some/ls ls
+      type -P -a ls
+
+  - name: Test type -p -a with hashed path
+    stdin: |
+      hash -p /some/ls ls
+      type -p -a ls

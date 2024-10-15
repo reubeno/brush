@@ -43,6 +43,10 @@ pub enum Error {
     #[error("function not found: {0}")]
     FunctionNotFound(String),
 
+    /// Command was not found.
+    #[error("command not found: {0}")]
+    CommandNotFound(String),
+
     /// The requested functionality has not yet been implemented in this shell.
     #[error("UNIMPLEMENTED: {0}")]
     Unimplemented(&'static str),

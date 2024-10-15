@@ -32,6 +32,7 @@ mod factory;
 mod false_;
 mod fg;
 mod getopts;
+mod hash;
 mod help;
 mod jobs;
 #[cfg(unix)]
