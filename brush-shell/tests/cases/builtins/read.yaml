@@ -29,3 +29,10 @@ cases:
     stdin: |
       read myvar < <(echo hello)
       echo "myvar: ${myvar}"
+
+  - name: "read with custom IFS"
+    stdin: |
+      content="    a    b    c "
+      while IFS= read line; do
+          echo "LINE: '$line'"
+      done <<<"${content}"
