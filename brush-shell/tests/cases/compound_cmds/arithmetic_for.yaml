@@ -4,3 +4,19 @@ cases:
     stdin: |
       for ((i = 0; i < 5; i++)); do echo $i; done
       echo "Result: $?"
+
+  - name: "Break in arithmetic for loop"
+    stdin: |
+      for ((i = 0; i < 5; i++)); do
+        echo $i
+        break
+      done
+      echo "Result: $?"
+
+  - name: "Continue in arithmetic for loop"
+    stdin: |
+      for ((i = 0; i < 5; i++)); do
+        continue
+        echo "Should not print"
+      done
+      echo "Result: $?"

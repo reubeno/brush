@@ -735,6 +735,22 @@ impl Execute for ast::ArithmeticForClauseCommand {
                 break;
             }
 
+            if let Some(continue_count) = &result.continue_loop {
+                if *continue_count > 0 {
+                    return error::unimp("continue with count > 0");
+                }
+
+                result.continue_loop = None;
+            }
+            if let Some(break_count) = &result.break_loop {
+                if *break_count == 0 {
+                    result.break_loop = None;
+                } else {
+                    result.break_loop = Some(*break_count - 1);
+                }
+                break;
+            }
+
             if let Some(updater) = &self.updater {
                 updater.eval(shell, true).await?;
             }
