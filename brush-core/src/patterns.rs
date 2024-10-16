@@ -28,11 +28,26 @@ type PatternWord = Vec<PatternPiece>;
 #[derive(Clone, Debug)]
 pub struct Pattern {
     pieces: PatternWord,
+    enable_extended_globbing: bool,
+    multiline: bool,
+}
+
+impl Default for Pattern {
+    fn default() -> Self {
+        Self {
+            pieces: vec![],
+            enable_extended_globbing: false,
+            multiline: true,
+        }
+    }
 }
 
 impl From<PatternWord> for Pattern {
     fn from(pieces: PatternWord) -> Self {
-        Self { pieces }
+        Self {
+            pieces,
+            ..Default::default()
+        }
     }
 }
 
@@ -40,6 +55,7 @@ impl From<&PatternWord> for Pattern {
     fn from(value: &PatternWord) -> Self {
         Self {
             pieces: value.clone(),
+            ..Default::default()
         }
     }
 }
@@ -48,6 +64,7 @@ impl From<&str> for Pattern {
     fn from(value: &str) -> Self {
         Self {
             pieces: vec![PatternPiece::Pattern(value.to_owned())],
+            ..Default::default()
         }
     }
 }
@@ -56,11 +73,33 @@ impl From<String> for Pattern {
     fn from(value: String) -> Self {
         Self {
             pieces: vec![PatternPiece::Pattern(value)],
+            ..Default::default()
         }
     }
 }
 
 impl Pattern {
+    /// Enables (or disables) extended globbing support for this pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Whether or not to enable extended globbing (extglob).
+    pub fn set_extended_globbing(mut self, value: bool) -> Pattern {
+        self.enable_extended_globbing = value;
+        self
+    }
+
+    /// Enables (or disables) multiline support for this pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Whether or not to enable multiline matching.
+    #[allow(dead_code)]
+    pub fn set_multiline(mut self, value: bool) -> Pattern {
+        self.multiline = value;
+        self
+    }
+
     /// Returns whether or not the pattern is empty.
     pub fn is_empty(&self) -> bool {
         self.pieces.iter().all(|p| p.as_str().is_empty())
@@ -76,14 +115,12 @@ impl Pattern {
     /// # Arguments
     ///
     /// * `working_dir` - The current working directory, used for relative paths.
-    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     /// * `path_filter` - Optionally provides a function that filters paths after expansion.
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::unwrap_in_result)]
     pub(crate) fn expand<PF>(
         &self,
         working_dir: &Path,
-        enable_extended_globbing: bool,
         path_filter: Option<&PF>,
     ) -> Result<Vec<String>, error::Error>
     where
@@ -177,8 +214,10 @@ impl Pattern {
 
             let current_paths = std::mem::take(&mut paths_so_far);
             for current_path in current_paths {
-                let subpattern = Pattern::from(&component);
-                let regex = subpattern.to_regex(true, true, enable_extended_globbing)?;
+                let subpattern =
+                    Pattern::from(&component).set_extended_globbing(self.enable_extended_globbing);
+
+                let regex = subpattern.to_regex(true, true)?;
 
                 let matches_regex = |dir_entry: &std::fs::DirEntry| {
                     regex
@@ -234,17 +273,20 @@ impl Pattern {
     ///   the string.
     /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the
     ///   string.
-    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     pub(crate) fn to_regex_str(
         &self,
         strict_prefix_match: bool,
         strict_suffix_match: bool,
-        enable_extended_globbing: bool,
     ) -> Result<String, error::Error> {
         let mut regex_str = String::new();
 
         if strict_prefix_match {
             regex_str.push('^');
+        }
+
+        if self.multiline {
+            // Set option for multiline matching + set option for allowing '.' pattern to match newline.
+            regex_str.push_str("(?ms)");
         }
 
         let mut current_pattern = String::new();
@@ -257,9 +299,7 @@ impl Pattern {
                     if !current_pattern.is_empty() {
                         let regex_piece = pattern_to_regex_str(
                             current_pattern.as_str(),
-                            false,
-                            false,
-                            enable_extended_globbing,
+                            self.enable_extended_globbing,
                         )?;
                         regex_str.push_str(regex_piece.as_str());
                         current_pattern = String::new();
@@ -271,12 +311,8 @@ impl Pattern {
         }
 
         if !current_pattern.is_empty() {
-            let regex_piece = pattern_to_regex_str(
-                current_pattern.as_str(),
-                false,
-                false,
-                enable_extended_globbing,
-            )?;
+            let regex_piece =
+                pattern_to_regex_str(current_pattern.as_str(), self.enable_extended_globbing)?;
             regex_str.push_str(regex_piece.as_str());
         }
 
@@ -295,18 +331,12 @@ impl Pattern {
     ///   the string.
     /// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the
     ///   string.
-    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
     pub(crate) fn to_regex(
         &self,
         strict_prefix_match: bool,
         strict_suffix_match: bool,
-        enable_extended_globbing: bool,
     ) -> Result<fancy_regex::Regex, error::Error> {
-        let regex_str = self.to_regex_str(
-            strict_prefix_match,
-            strict_suffix_match,
-            enable_extended_globbing,
-        )?;
+        let regex_str = self.to_regex_str(strict_prefix_match, strict_suffix_match)?;
 
         tracing::debug!(target: trace_categories::PATTERN, "pattern: '{self:?}' => regex: '{regex_str}'");
 
@@ -319,13 +349,8 @@ impl Pattern {
     /// # Arguments
     ///
     /// * `value` - The string to check for a match.
-    /// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
-    pub(crate) fn exactly_matches(
-        &self,
-        value: &str,
-        enable_extended_globbing: bool,
-    ) -> Result<bool, error::Error> {
-        let re = self.to_regex(true, true, enable_extended_globbing)?;
+    pub(crate) fn exactly_matches(&self, value: &str) -> Result<bool, error::Error> {
+        let re = self.to_regex(true, true)?;
         Ok(re.is_match(value)?)
     }
 }
@@ -346,38 +371,8 @@ fn escape_for_regex(s: &str) -> String {
     escaped
 }
 
-/// Converts a shell pattern to a regular expression.
-///
-/// # Arguments
-///
-/// * `pattern` - The shell pattern to convert.
-/// * `strict_prefix_match` - Whether or not the pattern should strictly match the beginning of the
-///   string.
-/// * `strict_suffix_match` - Whether or not the pattern should strictly match the end of the
-///   string.
-/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
-pub(crate) fn pattern_to_regex(
-    pattern: &str,
-    strict_prefix_match: bool,
-    strict_suffix_match: bool,
-    enable_extended_globbing: bool,
-) -> Result<fancy_regex::Regex, error::Error> {
-    let regex_str = pattern_to_regex_str(
-        pattern,
-        strict_prefix_match,
-        strict_suffix_match,
-        enable_extended_globbing,
-    )?;
-
-    let re = regex::compile_regex(regex_str)?;
-
-    Ok(re)
-}
-
 fn pattern_to_regex_str(
     pattern: &str,
-    strict_prefix_match: bool,
-    strict_suffix_match: bool,
     enable_extended_globbing: bool,
 ) -> Result<String, error::Error> {
     // TODO: pattern matching with **
@@ -385,18 +380,10 @@ fn pattern_to_regex_str(
         return error::unimp("pattern matching with '**' pattern");
     }
 
-    let mut regex_str =
-        brush_parser::pattern::pattern_to_regex_str(pattern, enable_extended_globbing)?;
-
-    if strict_prefix_match {
-        regex_str.insert(0, '^');
-    }
-
-    if strict_suffix_match {
-        regex_str.push('$');
-    }
-
-    Ok(regex_str)
+    Ok(brush_parser::pattern::pattern_to_regex_str(
+        pattern,
+        enable_extended_globbing,
+    )?)
 }
 
 /// Removes the largest matching prefix from a string that matches the given pattern.
@@ -409,12 +396,11 @@ fn pattern_to_regex_str(
 pub(crate) fn remove_largest_matching_prefix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
-    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         for i in (0..s.len()).rev() {
             let prefix = &s[0..=i];
-            if pattern.exactly_matches(prefix, enable_extended_globbing)? {
+            if pattern.exactly_matches(prefix)? {
                 return Ok(&s[i + 1..]);
             }
         }
@@ -432,12 +418,11 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
 pub(crate) fn remove_smallest_matching_prefix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
-    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         for i in 0..s.len() {
             let prefix = &s[0..=i];
-            if pattern.exactly_matches(prefix, enable_extended_globbing)? {
+            if pattern.exactly_matches(prefix)? {
                 return Ok(&s[i + 1..]);
             }
         }
@@ -455,12 +440,11 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 pub(crate) fn remove_largest_matching_suffix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
-    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         for i in 0..s.len() {
             let suffix = &s[i..];
-            if pattern.exactly_matches(suffix, enable_extended_globbing)? {
+            if pattern.exactly_matches(suffix)? {
                 return Ok(&s[..i]);
             }
         }
@@ -478,12 +462,11 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
 pub(crate) fn remove_smallest_matching_suffix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
-    enable_extended_globbing: bool,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         for i in (0..s.len()).rev() {
             let suffix = &s[i..];
-            if pattern.exactly_matches(suffix, enable_extended_globbing)? {
+            if pattern.exactly_matches(suffix)? {
                 return Ok(&s[..i]);
             }
         }
@@ -497,46 +480,41 @@ mod tests {
     use super::*;
     use anyhow::Result;
 
-    fn ext_pattern_to_exact_regex_str(pattern: &str) -> Result<String, error::Error> {
-        pattern_to_regex_str(pattern, true, true, true)
-    }
+    fn pattern_to_exact_regex_str<P>(pattern: P) -> Result<String, error::Error>
+    where
+        P: Into<Pattern>,
+    {
+        let pattern: Pattern = pattern
+            .into()
+            .set_extended_globbing(true)
+            .set_multiline(false);
 
-    fn ext_pattern_str_to_exact_regex_str(word: &PatternWord) -> Result<String, error::Error> {
-        Pattern::from(word).to_regex_str(true, true, true)
+        pattern.to_regex_str(true, true)
     }
 
     #[test]
     fn test_pattern_translation() -> Result<()> {
-        assert_eq!(ext_pattern_to_exact_regex_str("a")?.as_str(), "^a$");
-        assert_eq!(ext_pattern_to_exact_regex_str("a*")?.as_str(), "^a.*$");
-        assert_eq!(ext_pattern_to_exact_regex_str("a?")?.as_str(), "^a.$");
+        assert_eq!(pattern_to_exact_regex_str("a")?.as_str(), "^a$");
+        assert_eq!(pattern_to_exact_regex_str("a*")?.as_str(), "^a.*$");
+        assert_eq!(pattern_to_exact_regex_str("a?")?.as_str(), "^a.$");
+        assert_eq!(pattern_to_exact_regex_str("a@(b|c)")?.as_str(), "^a(b|c)$");
+        assert_eq!(pattern_to_exact_regex_str("a?(b|c)")?.as_str(), "^a(b|c)?$");
         assert_eq!(
-            ext_pattern_to_exact_regex_str("a@(b|c)")?.as_str(),
-            "^a(b|c)$"
-        );
-        assert_eq!(
-            ext_pattern_to_exact_regex_str("a?(b|c)")?.as_str(),
-            "^a(b|c)?$"
-        );
-        assert_eq!(
-            ext_pattern_to_exact_regex_str("a*(ab|ac)")?.as_str(),
+            pattern_to_exact_regex_str("a*(ab|ac)")?.as_str(),
             "^a(ab|ac)*$"
         );
         assert_eq!(
-            ext_pattern_to_exact_regex_str("a+(ab|ac)")?.as_str(),
+            pattern_to_exact_regex_str("a+(ab|ac)")?.as_str(),
             "^a(ab|ac)+$"
         );
-        assert_eq!(ext_pattern_to_exact_regex_str("[ab]")?.as_str(), "^[ab]$");
+        assert_eq!(pattern_to_exact_regex_str("[ab]")?.as_str(), "^[ab]$");
+        assert_eq!(pattern_to_exact_regex_str("[ab]*")?.as_str(), "^[ab].*$");
         assert_eq!(
-            ext_pattern_to_exact_regex_str("[ab]*")?.as_str(),
-            "^[ab].*$"
-        );
-        assert_eq!(
-            ext_pattern_to_exact_regex_str("[<{().[]*")?.as_str(),
+            pattern_to_exact_regex_str("[<{().[]*")?.as_str(),
             r"^[<{().\[].*$"
         );
-        assert_eq!(ext_pattern_to_exact_regex_str("[a-d]")?.as_str(), "^[a-d]$");
-        assert_eq!(ext_pattern_to_exact_regex_str(r"\*")?.as_str(), r"^\*$");
+        assert_eq!(pattern_to_exact_regex_str("[a-d]")?.as_str(), "^[a-d]$");
+        assert_eq!(pattern_to_exact_regex_str(r"\*")?.as_str(), r"^\*$");
 
         Ok(())
     }
@@ -544,12 +522,11 @@ mod tests {
     #[test]
     fn test_pattern_word_translation() -> Result<()> {
         assert_eq!(
-            ext_pattern_str_to_exact_regex_str(&vec![PatternPiece::Pattern("a*".to_owned())])?
-                .as_str(),
+            pattern_to_exact_regex_str(&vec![PatternPiece::Pattern("a*".to_owned())])?.as_str(),
             "^a.*$"
         );
         assert_eq!(
-            ext_pattern_str_to_exact_regex_str(&vec![
+            pattern_to_exact_regex_str(&vec![
                 PatternPiece::Pattern("a*".to_owned()),
                 PatternPiece::Literal("b".to_owned()),
             ])?
@@ -557,7 +534,7 @@ mod tests {
             "^a.*b$"
         );
         assert_eq!(
-            ext_pattern_str_to_exact_regex_str(&vec![
+            pattern_to_exact_regex_str(&vec![
                 PatternPiece::Literal("a*".to_owned()),
                 PatternPiece::Pattern("b".to_owned()),
             ])?
@@ -571,23 +548,23 @@ mod tests {
     #[test]
     fn test_remove_largest_matching_prefix() -> Result<()> {
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("")), true)?,
+            remove_largest_matching_prefix("ooof", &Some(Pattern::from("")))?,
             "ooof"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("x")), true)?,
+            remove_largest_matching_prefix("ooof", &Some(Pattern::from("x")))?,
             "ooof"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o")), true)?,
+            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o")))?,
             "oof"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o*o")), true)?,
+            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o*o")))?,
             "f"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o*")), true)?,
+            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o*")))?,
             ""
         );
         Ok(())
@@ -596,27 +573,27 @@ mod tests {
     #[test]
     fn test_remove_smallest_matching_prefix() -> Result<()> {
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("")), true)?,
+            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("")))?,
             "ooof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("x")), true)?,
+            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("x")))?,
             "ooof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o")), true)?,
+            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o")))?,
             "oof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o*o")), true)?,
+            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o*o")))?,
             "of"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o*")), true)?,
+            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o*")))?,
             "oof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("ooof")), true)?,
+            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("ooof")))?,
             ""
         );
         Ok(())
@@ -625,23 +602,23 @@ mod tests {
     #[test]
     fn test_remove_largest_matching_suffix() -> Result<()> {
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("")), true)?,
+            remove_largest_matching_suffix("foo", &Some(Pattern::from("")))?,
             "foo"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("x")), true)?,
+            remove_largest_matching_suffix("foo", &Some(Pattern::from("x")))?,
             "foo"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("o")), true)?,
+            remove_largest_matching_suffix("foo", &Some(Pattern::from("o")))?,
             "fo"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("o*")), true)?,
+            remove_largest_matching_suffix("foo", &Some(Pattern::from("o*")))?,
             "f"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("foo")), true)?,
+            remove_largest_matching_suffix("foo", &Some(Pattern::from("foo")))?,
             ""
         );
         Ok(())
@@ -650,27 +627,27 @@ mod tests {
     #[test]
     fn test_remove_smallest_matching_suffix() -> Result<()> {
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("")), true)?,
+            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("")))?,
             "fooo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("x")), true)?,
+            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("x")))?,
             "fooo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o")), true)?,
+            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o")))?,
             "foo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o*o")), true)?,
+            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o*o")))?,
             "fo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o*")), true)?,
+            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o*")))?,
             "foo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("fooo")), true)?,
+            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("fooo")))?,
             ""
         );
         Ok(())

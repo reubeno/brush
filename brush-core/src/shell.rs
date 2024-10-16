@@ -890,13 +890,12 @@ impl Shell {
 
         let mut executables = vec![];
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
-            let pattern = std::format!("{dir_str}/{required_glob_pattern}");
+            let pattern =
+                patterns::Pattern::from(std::format!("{dir_str}/{required_glob_pattern}"))
+                    .set_extended_globbing(self.options.extended_globbing);
+
             // TODO: Pass through quoting.
-            if let Ok(entries) = patterns::Pattern::from(pattern).expand(
-                &self.working_dir,
-                self.options.extended_globbing,
-                Some(&is_executable),
-            ) {
+            if let Ok(entries) = pattern.expand(&self.working_dir, Some(&is_executable)) {
                 for entry in entries {
                     executables.push(PathBuf::from(entry));
                 }

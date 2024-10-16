@@ -580,9 +580,7 @@ impl Execute for ast::CaseClauseCommand {
 
             for pattern in &case.patterns {
                 let expanded_pattern = expansion::basic_expand_pattern(shell, pattern).await?;
-                if expanded_pattern
-                    .exactly_matches(expanded_value.as_str(), shell.options.extended_globbing)?
-                {
+                if expanded_pattern.exactly_matches(expanded_value.as_str())? {
                     matches = true;
                     break;
                 }

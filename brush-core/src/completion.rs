@@ -256,10 +256,11 @@ impl Spec {
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
-            let pattern = patterns::Pattern::from(glob_pattern.as_str());
+            let pattern = patterns::Pattern::from(glob_pattern.as_str())
+                .set_extended_globbing(shell.options.extended_globbing);
+
             let expansions = pattern.expand(
                 shell.working_dir.as_path(),
-                shell.parser_options().enable_extended_globbing,
                 Some(&patterns::Pattern::accept_all_expand_filter),
             )?;
 
@@ -901,12 +902,11 @@ fn get_file_completions(shell: &Shell, context: &Context, must_be_dir: bool) -> 
     let path_filter = |path: &Path| !must_be_dir || shell.get_absolute_path(path).is_dir();
 
     // TODO: Pass through quoting.
-    patterns::Pattern::from(glob)
-        .expand(
-            shell.working_dir.as_path(),
-            shell.options.extended_globbing,
-            Some(&path_filter),
-        )
+    let pattern =
+        patterns::Pattern::from(glob).set_extended_globbing(shell.options.extended_globbing);
+
+    pattern
+        .expand(shell.working_dir.as_path(), Some(&path_filter))
         .unwrap_or_default()
         .into_iter()
         .collect()
