@@ -9,6 +9,13 @@ cases:
           esac
     args: ["./script.sh"]
 
+  - name: "Basic catch-all pattern against multi-line input"
+    stdin: |
+      case "$(echo hi; echo there)" in
+      "not-it") echo "did not work" ;;
+      *) echo "caught it" ;;
+      esac
+
   - name: "One-line case statement with double semi"
     stdin: |
       case x in x) echo "hi";; esac

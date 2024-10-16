@@ -80,7 +80,7 @@ impl HelpCommand {
 
         let mut found_count = 0;
         for (builtin_name, builtin_registration) in get_builtins_sorted_by_name(context) {
-            if pattern.exactly_matches(builtin_name.as_str(), false)? {
+            if pattern.exactly_matches(builtin_name.as_str())? {
                 self.display_help_for_builtin(
                     context,
                     builtin_name.as_str(),

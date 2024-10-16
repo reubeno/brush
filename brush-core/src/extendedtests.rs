@@ -358,7 +358,7 @@ async fn apply_binary_predicate(
                 shell.trace_command(std::format!("[[ {s} {op} {expanded_right} ]]"))?;
             }
 
-            pattern.exactly_matches(s.as_str(), shell.options.extended_globbing)
+            pattern.exactly_matches(s.as_str())
         }
         ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
             let s = expansion::basic_expand_word(shell, left).await?;
@@ -369,7 +369,7 @@ async fn apply_binary_predicate(
                 shell.trace_command(std::format!("[[ {s} {op} {expanded_right} ]]"))?;
             }
 
-            let eq = pattern.exactly_matches(s.as_str(), shell.options.extended_globbing)?;
+            let eq = pattern.exactly_matches(s.as_str())?;
             Ok(!eq)
         }
     }
@@ -428,12 +428,16 @@ pub(crate) fn apply_binary_predicate_to_strs(
             apply_binary_arithmetic_predicate(left, right, |left, right| left >= right),
         ),
         ast::BinaryPredicate::StringExactlyMatchesPattern => {
-            let pattern = patterns::Pattern::from(right);
-            pattern.exactly_matches(left, shell.options.extended_globbing)
+            let pattern = patterns::Pattern::from(right)
+                .set_extended_globbing(shell.options.extended_globbing);
+
+            pattern.exactly_matches(left)
         }
         ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
-            let pattern = patterns::Pattern::from(right);
-            let eq = pattern.exactly_matches(left, shell.options.extended_globbing)?;
+            let pattern = patterns::Pattern::from(right)
+                .set_extended_globbing(shell.options.extended_globbing);
+
+            let eq = pattern.exactly_matches(left)?;
             Ok(!eq)
         }
         _ => error::unimp("unsupported test binary predicate"),

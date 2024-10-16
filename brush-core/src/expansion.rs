@@ -376,7 +376,10 @@ impl<'a> WordExpander<'a> {
             .flatten()
             .collect();
 
-        Ok(patterns::Pattern::from(pattern_pieces))
+        let pattern = patterns::Pattern::from(pattern_pieces)
+            .set_extended_globbing(self.parser_options.enable_extended_globbing);
+
+        Ok(pattern)
     }
 
     async fn basic_expand_regex(
@@ -496,11 +499,12 @@ impl<'a> WordExpander<'a> {
     }
 
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
-        let pattern = patterns::Pattern::from(field.clone());
+        let pattern = patterns::Pattern::from(field.clone())
+            .set_extended_globbing(self.parser_options.enable_extended_globbing);
+
         let expansions = pattern
             .expand(
                 self.shell.working_dir.as_path(),
-                self.parser_options.enable_extended_globbing,
                 Some(&patterns::Pattern::accept_all_expand_filter),
             )
             .unwrap_or_default();
@@ -779,7 +783,6 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_smallest_matching_suffix(
                     expanded_parameter.as_str(),
                     &expanded_pattern,
-                    self.parser_options.enable_extended_globbing,
                 )?;
                 Ok(Expansion::from(result.to_owned()))
             }
@@ -794,7 +797,6 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_largest_matching_suffix(
                     expanded_parameter.as_str(),
                     &expanded_pattern,
-                    self.parser_options.enable_extended_globbing,
                 )?;
 
                 Ok(Expansion::from(result.to_owned()))
@@ -810,7 +812,6 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_smallest_matching_prefix(
                     expanded_parameter.as_str(),
                     &expanded_pattern,
-                    self.parser_options.enable_extended_globbing,
                 )?;
 
                 Ok(Expansion::from(result.to_owned()))
@@ -826,7 +827,6 @@ impl<'a> WordExpander<'a> {
                 let result = patterns::remove_largest_matching_prefix(
                     expanded_parameter.as_str(),
                     &expanded_pattern,
-                    self.parser_options.enable_extended_globbing,
                 )?;
 
                 Ok(Expansion::from(result.to_owned()))
@@ -963,7 +963,7 @@ impl<'a> WordExpander<'a> {
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
                 transform_expansion(expanded_parameter, |s| {
-                    self.uppercase_first_char(s, &expanded_pattern)
+                    Self::uppercase_first_char(s, &expanded_pattern)
                 })
             }
             brush_parser::word::ParameterExpr::UppercasePattern {
@@ -975,7 +975,7 @@ impl<'a> WordExpander<'a> {
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
                 transform_expansion(expanded_parameter, |s| {
-                    self.uppercase_pattern(s.as_str(), &expanded_pattern)
+                    Self::uppercase_pattern(s.as_str(), &expanded_pattern)
                 })
             }
             brush_parser::word::ParameterExpr::LowercaseFirstChar {
@@ -987,7 +987,7 @@ impl<'a> WordExpander<'a> {
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
                 Ok(transform_expansion(expanded_parameter, |s| {
-                    self.lowercase_first_char(s, &expanded_pattern)
+                    Self::lowercase_first_char(s, &expanded_pattern)
                 })?)
             }
             brush_parser::word::ParameterExpr::LowercasePattern {
@@ -999,7 +999,7 @@ impl<'a> WordExpander<'a> {
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
                 Ok(transform_expansion(expanded_parameter, |s| {
-                    self.lowercase_pattern(s.as_str(), &expanded_pattern)
+                    Self::lowercase_pattern(s.as_str(), &expanded_pattern)
                 })?)
             }
             brush_parser::word::ParameterExpr::ReplaceSubstring {
@@ -1016,11 +1016,12 @@ impl<'a> WordExpander<'a> {
                 let replacement = replacement.unwrap_or(String::new());
                 let expanded_replacement = self.basic_expand_to_str(&replacement).await?;
 
-                let regex = patterns::pattern_to_regex(
-                    expanded_pattern.as_str(),
+                let pattern = patterns::Pattern::from(expanded_pattern.as_str())
+                    .set_extended_globbing(self.parser_options.enable_extended_globbing);
+
+                let regex = pattern.to_regex(
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Prefix),
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Suffix),
-                    self.parser_options.enable_extended_globbing,
                 )?;
 
                 transform_expansion(expanded_parameter, |s| {
@@ -1350,17 +1351,12 @@ impl<'a> WordExpander<'a> {
 
     #[allow(clippy::unwrap_in_result)]
     fn uppercase_first_char(
-        &mut self,
         s: String,
         pattern: &Option<patterns::Pattern>,
     ) -> Result<String, error::Error> {
         if let Some(first_char) = s.chars().next() {
             let applicable = if let Some(pattern) = pattern {
-                pattern.is_empty()
-                    || pattern.exactly_matches(
-                        first_char.to_string().as_str(),
-                        self.shell.options.extended_globbing,
-                    )?
+                pattern.is_empty() || pattern.exactly_matches(first_char.to_string().as_str())?
             } else {
                 true
             };
@@ -1380,17 +1376,12 @@ impl<'a> WordExpander<'a> {
 
     #[allow(clippy::unwrap_in_result)]
     fn lowercase_first_char(
-        &mut self,
         s: String,
         pattern: &Option<patterns::Pattern>,
     ) -> Result<String, error::Error> {
         if let Some(first_char) = s.chars().next() {
             let applicable = if let Some(pattern) = pattern {
-                pattern.is_empty()
-                    || pattern.exactly_matches(
-                        first_char.to_string().as_str(),
-                        self.shell.options.extended_globbing,
-                    )?
+                pattern.is_empty() || pattern.exactly_matches(first_char.to_string().as_str())?
             } else {
                 true
             };
@@ -1409,14 +1400,12 @@ impl<'a> WordExpander<'a> {
     }
 
     fn uppercase_pattern(
-        &mut self,
         s: &str,
         pattern: &Option<patterns::Pattern>,
     ) -> Result<String, error::Error> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
-                let regex =
-                    pattern.to_regex(false, false, self.parser_options.enable_extended_globbing)?;
+                let regex = pattern.to_regex(false, false)?;
                 let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
                     caps[0].to_uppercase()
                 });
@@ -1430,14 +1419,12 @@ impl<'a> WordExpander<'a> {
     }
 
     fn lowercase_pattern(
-        &mut self,
         s: &str,
         pattern: &Option<patterns::Pattern>,
     ) -> Result<String, error::Error> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
-                let regex =
-                    pattern.to_regex(false, false, self.parser_options.enable_extended_globbing)?;
+                let regex = pattern.to_regex(false, false)?;
                 let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
                     caps[0].to_lowercase()
                 });
