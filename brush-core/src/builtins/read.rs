@@ -91,10 +91,7 @@ impl builtins::Command for ReadCommand {
         let input_line = self.read_line(input_stream, context.stdout())?;
 
         if let Some(input_line) = input_line {
-            let mut fields: VecDeque<_> = input_line
-                .split_ascii_whitespace()
-                .map(|field| field.to_owned())
-                .collect();
+            let mut fields: VecDeque<_> = split_line_by_ifs(&context, input_line.as_str());
 
             // If -a was specified, then place the fields as elements into the array.
             if let Some(array_variable) = &self.array_variable {
@@ -273,4 +270,14 @@ impl ReadCommand {
         }
         Ok(orig_term_attr)
     }
+}
+
+fn split_line_by_ifs(context: &commands::ExecutionContext<'_>, line: &str) -> VecDeque<String> {
+    // Retrieve effective value of IFS for splitting.
+    let ifs = context.shell.get_ifs();
+    let split_chars: Vec<char> = ifs.chars().collect();
+
+    line.split(split_chars.as_slice())
+        .map(|field| field.to_owned())
+        .collect()
 }
