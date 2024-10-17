@@ -785,6 +785,7 @@ impl Display for IoRedirect {
                     remove_tabs,
                     here_end,
                     doc,
+                    ..
                 },
             ) => {
                 if let Some(fd_num) = fd_num {
@@ -879,6 +880,8 @@ impl Display for IoFileRedirectTarget {
 pub struct IoHereDocument {
     /// Whether to remove leading tabs from the here document.
     pub remove_tabs: bool,
+    /// Whether to basic-expand the contents of the here document.
+    pub requires_expansion: bool,
     /// The delimiter marking the end of the here document.
     pub here_end: Word,
     /// The contents of the here document.
