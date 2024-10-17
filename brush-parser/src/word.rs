@@ -653,7 +653,7 @@ peg::parser! {
             p:special_parameter() { Parameter::Special(p) } /
             non_posix_extensions_enabled() p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
             non_posix_extensions_enabled() p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: true } } /
-            non_posix_extensions_enabled() p:variable_name() "[" index:$((!"]" [_])*) "]" {?
+            non_posix_extensions_enabled() p:variable_name() "[" index:$(arithmetic_word(<"]">)) "]" {?
                 Ok(Parameter::NamedWithIndex { name: p.to_owned(), index: index.to_owned() })
             } /
             p:variable_name() { Parameter::Named(p.to_owned()) }

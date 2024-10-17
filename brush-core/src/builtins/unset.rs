@@ -60,11 +60,14 @@ impl builtins::Command for UnsetCommand {
                         context.shell.env.unset(name.as_str())?
                     }
                     brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                        // TODO: Evaluate index?
+                        // First evaluate the index expression.
+                        let index_as_expr = brush_parser::arithmetic::parse(index.as_str())?;
+                        let evaluated_index = context.shell.eval_arithmetic(index_as_expr).await?;
+
                         context
                             .shell
                             .env
-                            .unset_index(name.as_str(), index.as_str())?
+                            .unset_index(name.as_str(), evaluated_index.to_string().as_str())?
                     }
                     brush_parser::word::Parameter::NamedWithAllIndices {
                         name: _,
