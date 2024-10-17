@@ -57,7 +57,7 @@ impl builtins::Command for UnsetCommand {
                     brush_parser::word::Parameter::Positional(_) => continue,
                     brush_parser::word::Parameter::Special(_) => continue,
                     brush_parser::word::Parameter::Named(name) => {
-                        context.shell.env.unset(name.as_str())?
+                        context.shell.env.unset(name.as_str())?.is_some()
                     }
                     brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                         // First evaluate the index expression.
