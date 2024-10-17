@@ -43,10 +43,16 @@ impl ReedlineShell {
 
         // Set up completion menu. Set an empty marker to avoid the
         // line's text horizontally shifting around during/after completion.
+        // We set a max column count of 10 to ensure it's larger than the
+        // hard-coded default (4 last we checked); if there's not enough
+        // horizontal space in the terminal to fit that many columns, given
+        // the actual text to be displayed, it will get effectively dereased
+        // anyhow.
         let completion_menu = Box::new(
             reedline::ColumnarMenu::default()
                 .with_name(COMPLETION_MENU_NAME)
                 .with_marker("")
+                .with_columns(10)
                 .with_selected_text_style(Color::Blue.bold().reverse())
                 .with_selected_match_text_style(Color::Blue.bold().reverse()),
         );
