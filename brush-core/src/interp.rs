@@ -1393,8 +1393,12 @@ pub(crate) async fn setup_redirect<'a>(
             // If not specified, default to stdin (fd 0).
             let fd_num = fd_num.unwrap_or(0);
 
-            // TODO: figure out if we need to expand?
-            let io_here_doc = io_here.doc.flatten();
+            // Expand if required.
+            let io_here_doc = if io_here.requires_expansion {
+                expansion::basic_expand_word(shell, &io_here.doc).await?
+            } else {
+                io_here.doc.flatten()
+            };
 
             let f = setup_open_file_with_contents(io_here_doc.as_str())?;
 

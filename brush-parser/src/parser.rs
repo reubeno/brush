@@ -618,8 +618,24 @@ peg::parser! {
             word()
 
         rule io_here() -> ast::IoHereDocument =
-            specific_operator("<<") here_end:here_end() doc:[_] { ast::IoHereDocument { remove_tabs: false, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } } /
-            specific_operator("<<-") here_end:here_end() doc:[_] { ast::IoHereDocument { remove_tabs: true, here_end: ast::Word::from(here_end), doc: ast::Word::from(doc) } }
+           specific_operator("<<-") here_end:here_end() doc:[_] {
+                let requires_expansion = !here_end.to_str().contains(['\'', '"', '\\']);
+                ast::IoHereDocument {
+                    remove_tabs: true,
+                    requires_expansion,
+                    here_end: ast::Word::from(here_end),
+                    doc: ast::Word::from(doc)
+                }
+            } /
+            specific_operator("<<") here_end:here_end() doc:[_] {
+                let requires_expansion = !here_end.to_str().contains(['\'', '"', '\\']);
+                ast::IoHereDocument {
+                    remove_tabs: false,
+                    requires_expansion,
+                    here_end: ast::Word::from(here_end),
+                    doc: ast::Word::from(doc)
+                }
+            }
 
         rule here_end() -> &'input Token =
             word()

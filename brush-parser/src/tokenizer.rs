@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Display;
 use utf8_chars::BufReadCharsExt;
 
@@ -132,10 +133,6 @@ pub enum TokenizerError {
     /// An I/O error occurred while reading from the input stream.
     #[error("failed to read input")]
     ReadError(#[from] std::io::Error),
-
-    /// An unimplemented tokenization feature was encountered.
-    #[error("unimplemented tokenization: {0}")]
-    Unimplemented(&'static str),
 }
 
 impl TokenizerError {
@@ -187,6 +184,7 @@ enum HereState {
 #[derive(Clone, Debug)]
 struct HereTag {
     tag: String,
+    tag_was_escaped_or_quoted: bool,
     remove_tabs: bool,
     position: SourcePosition,
     pending_tokens_after: Vec<TokenizeResult>,
@@ -333,16 +331,12 @@ impl TokenParseState {
 
                 cross_token_state.here_state = HereState::NextLineIsHereDoc;
 
-                if self.current_token().contains('\"')
-                    || self.current_token().contains('\'')
-                    || self.current_token().contains('\\')
-                {
-                    return Err(TokenizerError::Unimplemented("quoted or escaped here tag"));
-                }
+                let tag = self.current_token();
 
                 // Include the \n in the here tag so it's easier to check against.
                 cross_token_state.current_here_tags.push(HereTag {
-                    tag: std::format!("\n{}\n", self.current_token()),
+                    tag: std::format!("\n{}\n", tag),
+                    tag_was_escaped_or_quoted: tag.contains(is_quoting_char),
                     remove_tabs,
                     position: cross_token_state.cursor.clone(),
                     pending_tokens_after: vec![],
@@ -557,9 +551,16 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     self.consume_char()?;
                     state.append_char(c);
 
+                    let next_here_tag = &self.cross_state.current_here_tags[0];
+                    let tag_str: Cow<'_, str> = if next_here_tag.tag_was_escaped_or_quoted {
+                        remove_quotes_from(next_here_tag.tag.as_str()).into()
+                    } else {
+                        next_here_tag.tag.as_str().into()
+                    };
+
                     let without_suffix = state
                         .current_token()
-                        .strip_suffix(self.cross_state.current_here_tags[0].tag.as_str())
+                        .strip_suffix(tag_str.as_ref())
                         .map(|s| s.to_owned());
 
                     if let Some(mut without_suffix) = without_suffix {
@@ -1009,6 +1010,25 @@ fn is_quoting_char(c: char) -> bool {
     matches!(c, '\\' | '\'' | '\"')
 }
 
+fn remove_quotes_from(s: &str) -> String {
+    let mut result = String::new();
+
+    let mut in_escape = false;
+    for c in s.chars() {
+        match c {
+            c if in_escape => {
+                result.push(c);
+                in_escape = false;
+            }
+            '\\' => in_escape = true,
+            c if is_quoting_char(c) => (),
+            c => result.push(c),
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1368,5 +1388,13 @@ SOMETHING
                 t1.to_str() == r#"x"$((1+2))"y"#
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_quote_removal() {
+        assert_eq!(remove_quotes_from(r#""hello""#), "hello");
+        assert_eq!(remove_quotes_from(r#"'hello'"#), "hello");
+        assert_eq!(remove_quotes_from(r#""hel\"lo""#), r#"hel"lo"#);
+        assert_eq!(remove_quotes_from(r#"'hel\'lo'"#), r#"hel'lo"#);
     }
 }
