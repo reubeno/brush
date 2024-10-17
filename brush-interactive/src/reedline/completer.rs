@@ -62,6 +62,12 @@ impl ReedlineCompleter {
             }
         }
 
+        // See if there's whitespace at the end.
+        let append_whitespace = candidate.ends_with(' ');
+        if append_whitespace {
+            candidate.pop();
+        }
+
         reedline::Suggestion {
             value: candidate,
             description: None,
@@ -71,7 +77,7 @@ impl ReedlineCompleter {
                 start: insertion_index,
                 end: insertion_index + delete_count,
             },
-            append_whitespace: false, // TODO: compute this
+            append_whitespace,
         }
     }
 }
