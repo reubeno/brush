@@ -22,12 +22,6 @@ mod reedline;
 #[cfg(feature = "reedline")]
 pub use reedline::ReedlineShell;
 
-// Rustyline-based shell
-#[cfg(feature = "rustyline")]
-mod rustyline;
-#[cfg(feature = "rustyline")]
-pub use rustyline::RustylineShell;
-
 // Basic shell
 #[cfg(feature = "basic")]
 mod basic;

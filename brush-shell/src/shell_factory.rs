@@ -50,30 +50,6 @@ impl AsMut<brush_core::Shell> for StubShell {
     }
 }
 
-pub(crate) struct RustylineShellFactory;
-
-impl ShellFactory for RustylineShellFactory {
-    #[cfg(all(feature = "rustyline", any(windows, unix)))]
-    type ShellType = brush_interactive::RustylineShell;
-    #[cfg(any(not(feature = "rustyline"), not(any(windows, unix))))]
-    type ShellType = StubShell;
-
-    #[allow(unused)]
-    async fn create(
-        &self,
-        options: &brush_interactive::Options,
-    ) -> Result<Self::ShellType, brush_interactive::ShellError> {
-        #[cfg(all(feature = "rustyline", any(windows, unix)))]
-        {
-            brush_interactive::RustylineShell::new(options).await
-        }
-        #[cfg(any(not(feature = "rustyline"), not(any(windows, unix))))]
-        {
-            Err(brush_interactive::ShellError::InputBackendNotSupported)
-        }
-    }
-}
-
 pub(crate) struct ReedlineShellFactory;
 
 impl ShellFactory for ReedlineShellFactory {
