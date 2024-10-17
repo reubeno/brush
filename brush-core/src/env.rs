@@ -204,14 +204,16 @@ impl ShellEnvironment {
     /// # Arguments
     ///
     /// * `name` - The name of the variable to unset.
-    pub fn unset(&mut self, name: &str) -> Result<bool, error::Error> {
+    pub fn unset(&mut self, name: &str) -> Result<Option<ShellVariable>, error::Error> {
         let mut local_count = 0;
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if matches!(scope_type, EnvironmentScope::Local) {
                 local_count += 1;
             }
 
-            if Self::try_unset_in_map(map, name)? {
+            let unset_result = Self::try_unset_in_map(map, name)?;
+
+            if unset_result.is_some() {
                 // If we end up finding a local in the top-most local frame, then we replace
                 // it with a placeholder.
                 if matches!(scope_type, EnvironmentScope::Local) && local_count == 1 {
@@ -221,11 +223,11 @@ impl ShellEnvironment {
                     );
                 }
 
-                return Ok(true);
+                return Ok(unset_result);
             }
         }
 
-        Ok(false)
+        Ok(None)
     }
 
     /// Tries to unset an array element from the environment, using the given name and
@@ -243,11 +245,14 @@ impl ShellEnvironment {
         }
     }
 
-    fn try_unset_in_map(map: &mut ShellVariableMap, name: &str) -> Result<bool, error::Error> {
+    fn try_unset_in_map(
+        map: &mut ShellVariableMap,
+        name: &str,
+    ) -> Result<Option<ShellVariable>, error::Error> {
         match map.get(name).map(|v| v.is_readonly()) {
             Some(true) => Err(error::Error::ReadonlyVariable),
             Some(false) => Ok(map.unset(name)),
-            None => Ok(false),
+            None => Ok(None),
         }
     }
 
@@ -506,14 +511,14 @@ impl ShellVariableMap {
     // Setters
     //
 
-    /// Tries to unset the variable with the given name, returning whether or not
-    /// such a variable existed.
+    /// Tries to unset the variable with the given name, returning the removed
+    /// variable or None if it was not already set.
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the variable to unset.
-    pub fn unset(&mut self, name: &str) -> bool {
-        self.variables.remove(name).is_some()
+    pub fn unset(&mut self, name: &str) -> Option<ShellVariable> {
+        self.variables.remove(name)
     }
 
     /// Sets a variable in the map.

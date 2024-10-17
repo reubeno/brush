@@ -10,7 +10,7 @@ use std::{
 use crate::{
     env, error, jobs, namedoptions, patterns,
     sys::{self, users},
-    trace_categories, traps,
+    trace_categories, traps, variables,
     variables::ShellValueLiteral,
     Shell,
 };
@@ -515,6 +515,7 @@ impl Spec {
             ("COMP_CWORD", context.token_index.to_string().into()),
         ];
 
+        let mut vars_to_remove = vec![];
         for (var, value) in vars_and_values {
             shell.env.update_or_add(
                 var,
@@ -523,6 +524,8 @@ impl Spec {
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
             )?;
+
+            vars_to_remove.push(var);
         }
 
         let mut args = vec![
@@ -543,27 +546,40 @@ impl Spec {
 
         tracing::debug!(target: trace_categories::COMPLETION, "[called completion func '{function_name}' => {result}]");
 
+        // Unset any of the temporary variables.
+        for var_name in vars_to_remove {
+            shell.env.unset(var_name)?;
+        }
+
         // When the function returns the special value 124, then it's a request
         // for us to restart the completion process.
         if result == 124 {
             Ok(Answer::RestartCompletionProcess)
         } else {
-            if let Some((_, reply)) = shell.env.get("COMPREPLY") {
+            if let Some(reply) = shell.env.unset("COMPREPLY")? {
                 tracing::debug!(target: trace_categories::COMPLETION, "[completion function yielded: {reply:?}]");
 
                 match reply.value() {
-                    crate::variables::ShellValue::IndexedArray(values) => Ok(Answer::Candidates(
-                        values.values().map(|v| v.to_owned()).collect(),
-                        ProcessingOptions::default(),
-                    )),
-                    _ => error::unimp("unexpected COMPREPLY value type"),
+                    variables::ShellValue::IndexedArray(values) => {
+                        return Ok(Answer::Candidates(
+                            values.values().map(|v| v.to_owned()).collect(),
+                            ProcessingOptions::default(),
+                        ));
+                    }
+                    variables::ShellValue::String(s) => {
+                        let mut candidates = IndexSet::new();
+                        candidates.insert(s.to_owned());
+
+                        return Ok(Answer::Candidates(candidates, ProcessingOptions::default()));
+                    }
+                    _ => (),
                 }
-            } else {
-                Ok(Answer::Candidates(
-                    IndexSet::new(),
-                    ProcessingOptions::default(),
-                ))
             }
+
+            Ok(Answer::Candidates(
+                IndexSet::new(),
+                ProcessingOptions::default(),
+            ))
         }
     }
 }
