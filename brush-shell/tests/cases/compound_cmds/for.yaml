@@ -15,6 +15,16 @@ cases:
         break
       done
 
+  - name: "Break in nested for loop"
+    stdin: |
+      for f in 1 2 3; do
+        for g in a b c; do
+          echo "f=$f g=$g"
+          true && break
+        done
+        echo "Left inner loop"
+      done
+
   - name: "Break 1 in nested for loops"
     stdin: |
       for f in 1 2 3; do
