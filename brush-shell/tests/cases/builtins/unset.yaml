@@ -48,12 +48,23 @@ cases:
       declare -p myarray
 
   - name: "Unset array element with interesting expression"
-    known_failure: true # TODO: case needs implementing
     stdin: |
       declare -a myarray=(a b c d e)
 
-      unset myarray[6/2]
+      echo "Initial array:"
       declare -p myarray
+      echo
+
+      i=4
+      unset myarray[i]
+      echo "After removing element at index 4:"
+      declare -p myarray
+      echo
+
+      unset myarray[6/2]
+      echo "After removing element at index 3:"
+      declare -p myarray
+      echo
 
   - name: "Unset local in same function"
     stdin: |

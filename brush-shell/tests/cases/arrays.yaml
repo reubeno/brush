@@ -270,3 +270,8 @@ cases:
     stdin: |
       declare -A myarray=([0]="default" ["a"]="other")
       echo "Value: ${myarray[$non_existent_var]}"
+
+  - name: "Nested array reference"
+    stdin: |
+      x=(2 3 4)
+      echo ${x[${x[0]}]}
