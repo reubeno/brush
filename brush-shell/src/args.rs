@@ -20,7 +20,6 @@ const VERSION: &str = const_format::concatcp!(
 
 #[derive(Clone, clap::ValueEnum)]
 pub enum InputBackend {
-    Rustyline,
     Reedline,
     Basic,
 }
