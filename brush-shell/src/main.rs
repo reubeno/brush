@@ -112,9 +112,6 @@ async fn run(
     let default_backend = get_default_input_backend();
 
     match args.input_backend.as_ref().unwrap_or(&default_backend) {
-        InputBackend::Rustyline => {
-            run_impl(cli_args, args, shell_factory::RustylineShellFactory).await
-        }
         InputBackend::Reedline => {
             run_impl(cli_args, args, shell_factory::ReedlineShellFactory).await
         }

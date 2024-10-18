@@ -74,7 +74,7 @@ For more details, please consult the [reference documentation on integration tes
 
 There's a long list of OSS crates whose shoulders this project rests on. Notably, the following crates are directly relied on for major portions of shell functionality:
 
-* [`reedline`](https://github.com/nushell/reedline) and [`rustyline`](https://github.com/kkawakam/rustyline) - for readline-like input and interactive usage
+* [`reedline`](https://github.com/nushell/reedline) - for readline-like input and interactive usage
 * [`clap`](https://github.com/clap-rs/clap) - command-line parsing, used both by the top-level brush CLI as well as built-in commands
 * [`fancy-regex`](https://github.com/fancy-regex/fancy-regex) - relied on for everything regex
 * [`tokio`](https://github.com/tokio-rs/tokio) - async, well, everything
