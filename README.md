@@ -14,8 +14,8 @@ implemented in Rust. It's built and tested on Linux and macOS, with experimental
 ![screenshot](./docs/extras/brush-screenshot.png)
 
 `brush` is functional for interactive use as a daily driver! It can execute most `sh` and `bash` scripts we've
-encountered, but has known limitations we're iteratively working to address. Out of an abundance of caution, 
-we do not yet recommend using it in production scenarios due to the risk that it may not behave identically
+encountered. Known limitations are tracked with filed issues. Out of an abundance of caution, 
+we wouldn't recommend using it yet in _production_ scenarios in case it doesn't behave identically
 to your existing stable shell. (If you do find any behavioral differences, though, please report them with an
 issue!)
 
@@ -23,8 +23,8 @@ Contributions and feedback of all kinds are welcome! For more guidance, please c
 [contribution guidelines](CONTRIBUTING.md). For more technical details, please consult the
 [documentation](docs/README.md) in this repo.
 
-This project was originally borne out of curiosity and a desire to learn. If it proves over time to be useful, then
-that's a bonus :).
+This project was originally borne out of curiosity and a desire to learn. We're doing our best to keep that
+attitude :).
 
 ### License
 
@@ -43,11 +43,14 @@ greatest bits, you can clone this repo and execute `cargo run`.
 
 If you don't have `rust` installed, we recommend installing it via [`rustup`](https://rustup.rs/).
 
+(If you *are* interested in having a binary release, then please let us know in the 'Discussions' area of this
+project or by filing a feature request in 'Issues'.)
+
 When you run `brush`, it should look exactly as `bash` would on your system since it processes `.bashrc` and
 other usual configuration. If you'd like to customize the look of `brush` to distinguish it from the other shells
 installed on your system, then you can also author a `~/.brushrc` file.
 
-### <strike>Known limitations</strike> Where you can help!
+### Known limitations
 
 There are some known gaps in compatibility. Most notably:
 
@@ -55,14 +58,10 @@ There are some known gaps in compatibility. Most notably:
   The `set` builtin is implemented, as is `set -x` and a few other options, but most of the options aren't fully implemented. `set -e`, for example, will execute but its semantics aren't applied across execution.
 * **Curly brace expansion.**
   Almost all forms of expansion are implemented; for some reason, we never got around to implementing an expansion that turns `{a,b}` into `a b`. There's even a test for this, but it's marked as a known failing test.
-* **Tokenizer and parser edge cases.**
-  For simplicity, the tokenizer for `brush` was hand-implemented and the parsers were implemented using [`rust-peg`](https://github.com/kevinmehall/rust-peg). (Huge shout out to that project!) There are some edge cases that got tricky and may not be implemented with 100% fidelity (e.g., complex nested parenthetical expressions in arithmetic expressions, further nested inside command substitutions). All of our tests are passing in these areas, but coverage is limited. Augmenting test coverage would be a great starting point for contributing in this area.
 * **Anything tagged with a `TODO` comment or where `error::unimp()` is used to return a "not implemented" error**.
-  These aren't all tracked with GitHub issues right now, but there's a number of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may be more complicated. These include some shell built-ins. Some are completely and fully implemented (e.g. echo), a number of them support only their most commonly used options, and a decreasingly small minority of them aren't implemented at all.
+  These aren't all tracked with GitHub issues right now, but there's a number of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may be more complicated.
 
-There's certainly more gaps; with time we'll find a way to represent the gaps in some understandable way. Ideally, we'd like to evolve the test suites to add tests for all known missing pieces. That will let us focus on just "fixing the tests". 
-
-We'd absolutely love your help with any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help make this project better.
+If you feel so inclined, we'd love contributions toward any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help make this project better.
 
 ## Testing strategy
 
