@@ -9,7 +9,7 @@ pub(crate) async fn complete_async(
     line: &str,
     pos: usize,
 ) -> brush_core::completion::Completions {
-    let working_dir = shell.working_dir.clone();
+    let working_dir = shell.working_dir.physical().to_path_buf();
 
     // Intentionally ignore any errors that arise.
     let completion_future = shell.get_completions(line, pos);

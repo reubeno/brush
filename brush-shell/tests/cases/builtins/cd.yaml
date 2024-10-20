@@ -41,3 +41,78 @@ cases:
       echo $?
       echo "pwd: $PWD"
 
+
+  - name: "cd ~"
+    ignore_stderr: true
+    stdin: |
+      mkdir ./my_home
+      export HOME="$(realpath ./my_home)"
+      (
+        cd ~
+        echo "pwd: $(basename $PWD)"
+      )
+      (
+        cd -L ~
+        echo "pwd: $(basename $PWD)"
+      )
+      (
+        cd -P ~
+        echo "pwd: $(basename $PWD)"
+      )
+
+
+  - name: "cd -LP"
+    ignore_stderr: true
+    stdin: |
+      mkdir -p ./level1/level2/level3
+      cd level1
+      ln -s ./level2/level3 ./symlink
+
+      # -L by default
+      (
+        cd ./symlink
+        echo "$(basename $PWD)"
+        cd ..
+        echo "$(basename $PWD)"
+      )
+      (
+        cd ./symlink
+        echo "$(basename $PWD)"
+        cd -L ..
+        echo "$(basename $PWD)"
+      )
+      (
+        cd ./symlink
+        echo "$(basename $PWD)"
+        cd -P ..
+        echo "$(basename $PWD)"
+      )
+      (
+        cd -P ./symlink
+        echo "$(basename $PWD)"
+        cd ..
+        echo "$(basename $PWD)"
+      )
+      (
+        cd -L ./symlink
+        echo "$(basename $PWD)"
+        cd ..
+        echo "$(basename $PWD)"
+      )
+      # without pwd
+      (
+        cd -L ./symlink
+        echo "$(basename $PWD)"
+        export PWD=
+        cd -L ..
+        echo "$(basename $PWD)"
+      )
+      (
+        cd -L ./symlink
+        export PWD=
+        # start a shell without $PWD
+        (
+          cd .
+          echo "$(basename $PWD)"
+        )
+      )

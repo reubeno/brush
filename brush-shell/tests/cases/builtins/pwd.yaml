@@ -9,3 +9,39 @@ cases:
       cd usr
       pwd
       echo "Result: $?"
+
+  - name: "pwd -LP"
+    ignore_stderr: true
+    stdin: |
+      mkdir -p ./level1/level2/level3
+      cd level1
+      ln -s ./level2/level3 ./symlink
+
+      (
+        cd -L ./symlink
+        basename $(pwd)
+        basename $(pwd -L)
+        basename $(pwd -P)
+      )
+      (
+        cd -L ./symlink
+        export PWD=
+        basename $(pwd)
+        basename $(pwd -L)
+        basename $(pwd -P)
+      )
+      (
+        cd -L ./symlink
+        export PWD=
+        # start a shell without $PWD
+        (
+          basename $(pwd)
+          basename $(pwd -L)
+          basename $(pwd -P)
+        )
+      )
+
+      cd ~
+      pwd
+      pwd -L
+      pwd -P

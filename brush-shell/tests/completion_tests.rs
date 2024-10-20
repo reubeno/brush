@@ -34,7 +34,7 @@ impl TestShellWithBashCompletion {
             return Err(anyhow::anyhow!("failed to source bash completion script"));
         }
 
-        shell.set_working_dir(temp_dir.path())?;
+        shell.set_current_working_dir(temp_dir.path())?;
 
         Ok(Self { shell, temp_dir })
     }

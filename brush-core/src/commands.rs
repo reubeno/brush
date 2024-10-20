@@ -216,7 +216,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Use the shell's current working dir.
-    cmd.current_dir(shell.working_dir.as_path());
+    cmd.current_dir(shell.working_dir.physical());
 
     // Start with a clear environment.
     cmd.env_clear();
