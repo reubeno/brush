@@ -59,7 +59,7 @@ brush-interactive = { version = "^0.2.11", path = "../brush-interactive", featur
 tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
-anyhow = "1.0.89"
+anyhow = "1.0.90"
 assert_cmd = "2.0.15"
 assert_fs = "1.1.1"
 colored = "2.1.0"
