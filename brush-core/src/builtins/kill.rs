@@ -1,5 +1,7 @@
 use clap::Parser;
+use nix::sys::signal::Signal;
 use std::io::Write;
+use std::str::FromStr;
 
 use crate::{builtins, commands, error};
 
@@ -37,14 +39,12 @@ impl builtins::Command for KillCommand {
         }
 
         if self.list_signals {
-            error::unimp("kill -l")
+            return print_signals(&context, self.args.as_ref());
         } else {
             if self.args.len() != 1 {
                 writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
                 return Ok(builtins::ExitCode::InvalidUsage);
             }
-
-            let exit_code = builtins::ExitCode::Success;
 
             let pid_or_job_spec = &self.args[0];
             if pid_or_job_spec.starts_with('%') {
@@ -67,8 +67,77 @@ impl builtins::Command for KillCommand {
                 nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGKILL)
                     .map_err(|_errno| error::Error::FailedToSendSignal)?;
             }
+        }
+        Ok(builtins::ExitCode::Success)
+    }
+}
 
-            Ok(exit_code)
+fn print_signals(
+    context: &commands::ExecutionContext<'_>,
+    signals: &[String],
+) -> Result<builtins::ExitCode, error::Error> {
+    let mut exit_code = builtins::ExitCode::Success;
+    // TODO: `0 EXIT` signal is missing. It is not in the posix spec, but it exists in Bash
+    // https://man7.org/linux/man-pages/man7/signal.7.html
+    // https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/signal.h.html
+    if !signals.is_empty() {
+        for s in signals {
+            // If the user gives us a code, we print the name; if they give a name, we print its
+            // code.
+            enum Sigspec {
+                Sigspec(&'static str),
+                Signum(i32),
+            }
+            let signal = s
+                .parse::<i32>()
+                .ok()
+                .map(|code| {
+                    Signal::try_from(code)
+                        .map(|s| {
+                            // bash compatinility. `SIGHUP` -> `HUP`
+                            Sigspec::Sigspec(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
+                        })
+                        .ok()
+                })
+                .flatten()
+                .or_else(|| {
+                    // bash compatibility:
+                    // support for names without `SIG`, for example `HUP` -> `SIGHUP`
+                    let mut sig_str = String::with_capacity(3 + s.len());
+                    if s.len() >= 3 && s[..3] != *"SIG" {
+                        sig_str.push_str("SIG");
+                        sig_str.push_str(s.as_str());
+                    } else {
+                        sig_str.push_str(s.as_str());
+                    }
+                    Signal::from_str(sig_str.as_str())
+                        .ok()
+                        .map(|s| Sigspec::Signum(s as i32))
+                });
+            if let Some(signal) = signal {
+                match signal {
+                    Sigspec::Signum(n) => {
+                        writeln!(context.stdout(), "{}", n)?;
+                    }
+                    Sigspec::Sigspec(s) => {
+                        writeln!(context.stdout(), "{}", s)?;
+                    }
+                }
+            } else {
+                writeln!(
+                    context.stderr(),
+                    "{}: {}: invalid signal specification",
+                    context.command_name,
+                    s
+                )?;
+                exit_code = builtins::ExitCode::Custom(1);
+            }
+        }
+    } else {
+        for i in Signal::iterator() {
+            writeln!(context.stdout(), "{}", i)?;
         }
     }
+
+    Ok(exit_code)
 }
