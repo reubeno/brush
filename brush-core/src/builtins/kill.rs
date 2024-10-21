@@ -91,7 +91,7 @@ fn print_signals(
             let signal = s
                 .parse::<i32>()
                 .ok()
-                .map(|code| {
+                .and_then(|code| {
                     Signal::try_from(code)
                         .map(|s| {
                             // bash compatinility. `SIGHUP` -> `HUP`
@@ -99,7 +99,6 @@ fn print_signals(
                         })
                         .ok()
                 })
-                .flatten()
                 .or_else(|| {
                     // bash compatibility:
                     // support for names without `SIG`, for example `HUP` -> `SIGHUP`
@@ -117,10 +116,10 @@ fn print_signals(
             if let Some(signal) = signal {
                 match signal {
                     Sigspec::Signum(n) => {
-                        writeln!(context.stdout(), "{}", n)?;
+                        writeln!(context.stdout(), "{n}")?;
                     }
                     Sigspec::Sigspec(s) => {
-                        writeln!(context.stdout(), "{}", s)?;
+                        writeln!(context.stdout(), "{s}")?;
                     }
                 }
             } else {
@@ -135,7 +134,7 @@ fn print_signals(
         }
     } else {
         for i in Signal::iterator() {
-            writeln!(context.stdout(), "{}", i)?;
+            writeln!(context.stdout(), "{i}")?;
         }
     }
 
