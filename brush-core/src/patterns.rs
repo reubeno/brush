@@ -285,7 +285,8 @@ impl Pattern {
         }
 
         if self.multiline {
-            // Set option for multiline matching + set option for allowing '.' pattern to match newline.
+            // Set option for multiline matching + set option for allowing '.' pattern to match
+            // newline.
             regex_str.push_str("(?ms)");
         }
 

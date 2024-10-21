@@ -260,7 +260,7 @@ impl Spec {
                 .set_extended_globbing(shell.options.extended_globbing);
 
             let expansions = pattern.expand(
-                shell.working_dir.as_path(),
+                shell.working_dir.physical(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
             )?;
 
@@ -922,7 +922,7 @@ fn get_file_completions(shell: &Shell, context: &Context, must_be_dir: bool) -> 
         patterns::Pattern::from(glob).set_extended_globbing(shell.options.extended_globbing);
 
     pattern
-        .expand(shell.working_dir.as_path(), Some(&path_filter))
+        .expand(shell.working_dir.physical(), Some(&path_filter))
         .unwrap_or_default()
         .into_iter()
         .collect()

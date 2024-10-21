@@ -504,7 +504,7 @@ impl<'a> WordExpander<'a> {
 
         let expansions = pattern
             .expand(
-                self.shell.working_dir.as_path(),
+                self.shell.working_dir.physical(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
             )
             .unwrap_or_default();

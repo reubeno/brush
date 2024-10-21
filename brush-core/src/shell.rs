@@ -9,7 +9,7 @@ use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
-use crate::sys::fs::PathExt;
+use crate::sys::fs::{AbsolutePath, PathExt};
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -26,7 +26,7 @@ pub struct Shell {
     /// Manages files opened and accessible via redirection operators.
     pub open_files: openfiles::OpenFiles,
     /// The current working directory.
-    pub working_dir: PathBuf,
+    pub working_dir: Cwd,
     /// The shell environment, containing shell variables.
     pub env: ShellEnvironment,
     /// Shell function definitions.
@@ -174,11 +174,43 @@ impl Shell {
     /// * `options` - The options to use when creating the shell.
     pub async fn new(options: &CreateOptions) -> Result<Shell, error::Error> {
         // Instantiate the shell with some defaults.
+
+        let mut env = Self::initialize_vars(options)?;
+
+        // shortcut for resetting the pwd to a good state
+        let resetpwd = |env: &mut ShellEnvironment, path: String| {
+            env.update_or_add(
+                "PWD",
+                variables::ShellValueLiteral::Scalar(path),
+                |var| {
+                    var.export();
+                    Ok(())
+                },
+                EnvironmentLookup::Anywhere,
+                EnvironmentScope::Global,
+            )
+        };
+
+        let physical_working_dir = std::env::current_dir()?;
+        let pwd = env.get_str("PWD");
+        let logical_working_dir = {
+            // logical path is mainteined by the parent shell in the PWD environment variable
+            if let Some(pwd) = &pwd {
+                let home = Self::get_home_dir_with_env(&env).unwrap_or_default();
+                let pwd = crate::sys::fs::expand_tilde_with_home(&**pwd, home);
+                AbsolutePath::new(&physical_working_dir, pwd)
+            } else {
+                resetpwd(&mut env, physical_working_dir.to_string_lossy().to_string())?;
+                AbsolutePath::try_from_absolute(&physical_working_dir).unwrap()
+            }
+        };
+        let cwd = Cwd::from_logical(logical_working_dir)?;
+
         let mut shell = Shell {
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
-            working_dir: std::env::current_dir()?,
-            env: Self::initialize_vars(options)?,
+            working_dir: cwd,
+            env,
             funcs: functions::FunctionEnv::default(),
             options: RuntimeOptions::defaults_from(options),
             jobs: jobs::JobManager::new(),
@@ -301,7 +333,7 @@ impl Shell {
             //
             self.source_if_exists(Path::new("/etc/profile"), &params)
                 .await?;
-            if let Some(home_path) = self.get_home_dir() {
+            if let Some(home_path) = self.get_home_dir().map(|h| h.to_path_buf()) {
                 if options.sh_mode {
                     self.source_if_exists(home_path.join(".profile").as_path(), &params)
                         .await?;
@@ -335,7 +367,7 @@ impl Shell {
                 //
                 self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
                     .await?;
-                if let Some(home_path) = self.get_home_dir() {
+                if let Some(home_path) = self.get_home_dir().map(|h| h.to_path_buf()) {
                     self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
                         .await?;
                     self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
@@ -895,7 +927,7 @@ impl Shell {
                     .set_extended_globbing(self.options.extended_globbing);
 
             // TODO: Pass through quoting.
-            if let Ok(entries) = pattern.expand(&self.working_dir, Some(&is_executable)) {
+            if let Ok(entries) = pattern.expand(self.working_dir.physical(), Some(&is_executable)) {
                 for entry in entries {
                     executables.push(PathBuf::from(entry));
                 }
@@ -946,19 +978,6 @@ impl Shell {
         }
     }
 
-    /// Gets the absolute form of the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to get the absolute form of.
-    pub fn get_absolute_path(&self, path: &Path) -> PathBuf {
-        if path.is_absolute() {
-            path.to_owned()
-        } else {
-            self.working_dir.join(path)
-        }
-    }
-
     /// Opens the given file.
     ///
     /// # Arguments
@@ -970,7 +989,9 @@ impl Shell {
         path: &Path,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, error::Error> {
-        let path_to_open = self.get_absolute_path(path);
+        let home = self.get_home_dir().unwrap_or_default();
+        let path = crate::sys::fs::expand_tilde_with_home(path, home);
+        let path_to_open = crate::sys::fs::make_absolute(self.working_dir.physical(), path);
 
         // See if this is a reference to a file descriptor, in which case the actual
         // /dev/fd* file path for this process may not match with what's in the execution
@@ -988,84 +1009,6 @@ impl Shell {
         }
 
         Ok(std::fs::File::open(path_to_open)?.into())
-    }
-
-    /// Sets the shell's current working directory to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `target_dir` - The path to set as the working directory.
-    pub fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
-        let abs_path = self.get_absolute_path(target_dir);
-
-        match std::fs::metadata(&abs_path) {
-            Ok(m) => {
-                if !m.is_dir() {
-                    return Err(error::Error::NotADirectory(abs_path));
-                }
-            }
-            Err(e) => {
-                return Err(e.into());
-            }
-        }
-
-        // TODO: Don't canonicalize, just normalize.
-        let cleaned_path = abs_path.canonicalize()?;
-
-        let pwd = cleaned_path.to_string_lossy().to_string();
-
-        self.env.update_or_add(
-            "PWD",
-            variables::ShellValueLiteral::Scalar(pwd),
-            |var| {
-                var.export();
-                Ok(())
-            },
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
-        let oldpwd = std::mem::replace(&mut self.working_dir, cleaned_path);
-
-        self.env.update_or_add(
-            "OLDPWD",
-            variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
-            |var| {
-                var.export();
-                Ok(())
-            },
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
-
-        Ok(())
-    }
-
-    /// Tilde-shortens the given string, replacing the user's home directory with a tilde.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The string to shorten.
-    pub(crate) fn tilde_shorten(&self, s: String) -> String {
-        if let Some(home_dir) = self.get_home_dir() {
-            if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
-                return format!("~{stripped}");
-            }
-        }
-        s
-    }
-
-    /// Returns the shell's current home directory, if available.
-    pub(crate) fn get_home_dir(&self) -> Option<PathBuf> {
-        Self::get_home_dir_with_env(&self.env)
-    }
-
-    fn get_home_dir_with_env(env: &ShellEnvironment) -> Option<PathBuf> {
-        if let Some((_, home)) = env.get("HOME") {
-            Some(PathBuf::from(home.value().to_cow_string().to_string()))
-        } else {
-            // HOME isn't set, so let's sort it out ourselves.
-            users::get_current_user_home_dir()
-        }
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
@@ -1160,4 +1103,176 @@ fn parse_string_impl(
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse(true)
+}
+
+// The part of the shell that manages paths and the cwd
+impl Shell {
+    /// Tilde-shortens the given string, replacing the user's home directory with a tilde.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to shorten.
+    pub(crate) fn tilde_shorten(&self, s: String) -> String {
+        if let Some(home_dir) = self.get_home_dir() {
+            if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
+                return format!("~{stripped}");
+            }
+        }
+        s
+    }
+
+    /// Returns the shell's current home directory, if available.
+    pub(crate) fn get_home_dir(&self) -> Option<Cow<'_, Path>> {
+        Self::get_home_dir_with_env(&self.env)
+    }
+
+    fn get_home_dir_with_env(env: &ShellEnvironment) -> Option<Cow<'_, Path>> {
+        if let Some(home) = env.get_str("HOME") {
+            match home {
+                Cow::Borrowed(home) => Some(Cow::from(Path::new(home))),
+                Cow::Owned(home) => Some(Cow::from(PathBuf::from(home))),
+            }
+        } else {
+            // HOME isn't set, so let's sort it out ourselves.
+            users::get_current_user_home_dir().map(Cow::from)
+        }
+    }
+
+    /// Gets the absolute form of the given path.
+    ///
+    /// Note that this functions uses the physical cwd
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to get the absolute form of.
+    ///
+    /// returns the reference of the `path` if it is already absolute, or the new absolute path
+    pub fn get_absolute_path<'a>(&'a self, path: &'a Path) -> AbsolutePath<'a> {
+        let home = self.get_home_dir().unwrap_or_default();
+        let path = crate::sys::fs::expand_tilde_with_home(path, home);
+        AbsolutePath::new(self.working_dir.physical(), path)
+    }
+
+    /// Gets the shell physical current working directory
+    pub fn get_current_working_dir(&self) -> &Path {
+        self.working_dir.physical()
+    }
+    /// Gets the shell logical current working directory
+    pub fn get_current_logical_working_dir(&self) -> &Path {
+        self.working_dir.logical()
+    }
+
+    /// Sets the shell working directory from a physical path.
+    ///
+    /// If the current working directory needs to be set from the logical path, use
+    /// [`Shell::set_current_working_dir_from_logical`] instead.
+    ///
+    /// Note that the logical cwd will be equal to the physical one.
+    ///
+    /// # Arguments
+    ///
+    /// * `physical` - The path to set cwd from.
+    pub fn set_current_working_dir(&mut self, physical: &Path) -> Result<(), error::Error> {
+        // NOTE: need to be careful with the system api such as [`std::fs::canonicalize`] because it
+        // implicitly uses the process cwd when expands ./, ../, ~/. So we need to make out
+        // path absolute asap
+        let physical = self.get_absolute_path(physical);
+        let cwd = Cwd::from_physical(physical)?;
+        self.set_current_working_dir_impl(cwd)
+    }
+
+    /// Sets the shell working directory from a logical path.
+    ///
+    /// If the current working directory needs to be set from the physical path, use
+    /// [`Shell::set_current_working_dir`] instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `logical` - The path to set cwd from.
+    pub fn set_current_working_dir_from_logical(
+        &mut self,
+        logical: &Path,
+    ) -> Result<(), error::Error> {
+        let home = self.get_home_dir().unwrap_or_default();
+        let logical = crate::sys::fs::expand_tilde_with_home(logical, home);
+        let logical = AbsolutePath::new(self.working_dir.logical(), logical);
+        let cwd = Cwd::from_logical(logical)?;
+        self.set_current_working_dir_impl(cwd)
+    }
+
+    fn set_current_working_dir_impl(&mut self, cwd: Cwd) -> Result<(), error::Error> {
+        // first, update the pwd because we can get an error
+        self.env.update_or_add(
+            "PWD",
+            variables::ShellValueLiteral::Scalar(cwd.logical().to_string_lossy().to_string()),
+            |var| {
+                var.export();
+                Ok(())
+            },
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+
+        let old_cwd = std::mem::replace(&mut self.working_dir, cwd);
+
+        // not the most important thing, so assign it at the end
+        self.env.update_or_add(
+            "OLDPWD",
+            variables::ShellValueLiteral::Scalar(old_cwd.logical().to_string_lossy().to_string()),
+            |var| {
+                var.export();
+                Ok(())
+            },
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+
+        Ok(())
+    }
+}
+
+/// The shell's current working directory.
+///
+/// Consists of the physical path where symlinks are resolved and the logical path, which
+/// contains symlinks and is maintained by the shell.
+#[derive(Debug, Clone)]
+pub struct Cwd {
+    physical: PathBuf,
+    logical: PathBuf,
+}
+
+impl Cwd {
+    /// Gets the physical cwd
+    pub fn physical(&self) -> &Path {
+        &self.physical
+    }
+
+    /// Gets the logical cwd
+    pub fn logical(&self) -> &Path {
+        &self.logical
+    }
+
+    fn from_physical(physical: AbsolutePath) -> Result<Self, error::Error> {
+        let physical = std::fs::canonicalize(physical.into_inner())?;
+
+        if !std::fs::metadata(&physical)?.is_dir() {
+            return Err(error::Error::NotADirectory(physical));
+        }
+
+        Ok(Cwd {
+            logical: physical.clone(),
+            physical,
+        })
+    }
+
+    fn from_logical(logical: AbsolutePath) -> Result<Self, error::Error> {
+        let logical = crate::sys::fs::normalize_lexically(logical).to_path_buf();
+        let physical = std::fs::canonicalize(&logical)?;
+
+        if !std::fs::metadata(&physical)?.is_dir() {
+            return Err(error::Error::NotADirectory(logical));
+        }
+
+        Ok(Cwd { physical, logical })
+    }
 }
