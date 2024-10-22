@@ -487,10 +487,9 @@ impl Spec {
                     }
                 }
                 CompleteAction::Signal => {
-                    for signal in traps::TrapSignal::all_values() {
-                        let signal_str = signal.to_string();
-                        if signal_str.starts_with(token) {
-                            candidates.insert(signal_str);
+                    for signal in traps::TrapSignal::iterator() {
+                        if signal.as_str().starts_with(token) {
+                            candidates.insert(signal.as_str().to_string());
                         }
                     }
                 }

@@ -148,8 +148,8 @@ pub enum Error {
     ThreadingError(#[from] tokio::task::JoinError),
 
     /// An invalid signal was referenced.
-    #[error("invalid signal")]
-    InvalidSignal,
+    #[error("{0}: invalid signal specification")]
+    InvalidSignal(String),
 
     /// A system error occurred.
     #[cfg(unix)]
