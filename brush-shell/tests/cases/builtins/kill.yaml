@@ -6,7 +6,6 @@ cases:
     # 1) .. 2) .. 3)  .. etc. instead of just a simple list
     stdin: |
       # kill -l
-      # kill -l 0 # TODO: EXIT signal
       kill -l 1
       kill -l 2
       kill -l 3
@@ -36,8 +35,14 @@ cases:
       kill -l 28
       kill -l 29
       kill -l 30
+      kill -l 31
       # invalid option
       kill -l 9999
       kill -l HUP
+      kill -l iNt
+      kill -l int
       kill -l SIGHUP
+      kill -l EXIT
+      kill -l ERR
+      kill -l DEBUG
 
