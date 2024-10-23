@@ -43,6 +43,4 @@ cases:
       kill -l int
       kill -l SIGHUP
       kill -l EXIT
-      kill -l ERR
-      kill -l DEBUG
 

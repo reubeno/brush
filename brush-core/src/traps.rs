@@ -63,8 +63,9 @@ pub fn format_signals(
     it: impl Iterator<Item = TrapSignal>,
 ) -> Result<(), error::Error> {
     let it = it
-        .sorted_by(|a, b| Ord::cmp(&i32::from(*a), &i32::from(*b)))
-        .format_with("\n", |s, f| f(&format_args!("{}) {s}", i32::from(s))));
+        .filter_map(|s| i32::try_from(s).ok().map(|n| (s, n)))
+        .sorted_by(|a, b| Ord::cmp(&a.1, &b.1))
+        .format_with("\n", |s, f| f(&format_args!("{}) {}", s.1, s.0)));
     write!(f, "{it}")?;
     Ok(())
 }
@@ -85,9 +86,10 @@ impl FromStr for TrapSignal {
 impl TryFrom<i32> for TrapSignal {
     type Error = error::Error;
     fn try_from(value: i32) -> Result<Self, Self::Error> {
+        // NOTE: DEBUG and ERR are real-time signals, defined based on NSIG or SIGRTMAX (is not
+        // available on bsd-like systems),
+        // and don't have persistent numbers across platforms, so we skip them here.
         Ok(match value {
-            32 => TrapSignal::Debug,
-            33 => TrapSignal::Err,
             0 => TrapSignal::Exit,
             #[cfg(unix)]
             value => TrapSignal::Signal(
@@ -104,37 +106,43 @@ impl TryFrom<i32> for TrapSignal {
 impl TryFrom<&str> for TrapSignal {
     type Error = error::Error;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
+        #[allow(unused_mut)] // on not unix platforms
         let mut s = value.to_ascii_uppercase();
-        // Bash compatibility:
-        // support for signal names without the `SIG` prefix, for example `HUP` -> `SIGHUP`
-        if !s.starts_with("SIG") {
-            s.insert_str(0, "SIG");
-        }
 
         Ok(match s.as_str() {
-            "SIGDEBUG" => TrapSignal::Debug,
-            "SIGERR" => TrapSignal::Err,
-            "SIGEXIT" => TrapSignal::Exit,
+            "DEBUG" => TrapSignal::Debug,
+            "ERR" => TrapSignal::Err,
+            "EXIT" => TrapSignal::Exit,
 
             #[cfg(unix)]
-            _ => nix::sys::signal::Signal::from_str(s.as_str())
-                .map(TrapSignal::Signal)
-                .map_err(|_| error::Error::InvalidSignal(value.into()))?,
+            _ => {
+                // Bash compatibility:
+                // support for signal names without the `SIG` prefix, for example `HUP` -> `SIGHUP`
+                if !s.starts_with("SIG") {
+                    s.insert_str(0, "SIG");
+                }
+                nix::sys::signal::Signal::from_str(s.as_str())
+                    .map(TrapSignal::Signal)
+                    .map_err(|_| error::Error::InvalidSignal(value.into()))?
+            }
             #[cfg(not(unix))]
             _ => return Err(error::Error::InvalidSignal(value.into())),
         })
     }
 }
 
-impl From<TrapSignal> for i32 {
-    fn from(value: TrapSignal) -> Self {
-        match value {
+#[derive(Debug, Clone, Copy)]
+pub struct DoesntHaveANumber;
+
+impl TryFrom<TrapSignal> for i32 {
+    type Error = DoesntHaveANumber;
+    fn try_from(value: TrapSignal) -> Result<Self, Self::Error> {
+        Ok(match value {
             #[cfg(unix)]
             TrapSignal::Signal(s) => s as i32,
-            TrapSignal::Debug => 32,
-            TrapSignal::Err => 33,
             TrapSignal::Exit => 0,
-        }
+            _ => return Err(DoesntHaveANumber),
+        })
     }
 }
 

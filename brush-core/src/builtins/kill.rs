@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::traps::{self, TrapSignal};
+use crate::traps::TrapSignal;
 use crate::{builtins, commands, error};
 
 /// Signal a job or process.
@@ -91,7 +91,9 @@ fn print_signals(
                     PrintSignal::Name(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
                 })
             } else {
-                TrapSignal::try_from(s.as_str()).map(|s| PrintSignal::Num(i32::from(s)))
+                TrapSignal::try_from(s.as_str()).map(|sig| {
+                    i32::try_from(sig).map_or(PrintSignal::Name(sig.as_str()), PrintSignal::Num)
+                })
             };
 
             match signal {
@@ -108,12 +110,8 @@ fn print_signals(
             }
         }
     } else {
-        return traps::format_signals(
-            context.stdout(),
-            TrapSignal::iterator()
-                .filter(|s| !matches!(s, TrapSignal::Err | TrapSignal::Debug | TrapSignal::Exit)),
-        )
-        .map(|()| builtins::ExitCode::Success);
+        return crate::traps::format_signals(context.stdout(), TrapSignal::iterator())
+            .map(|()| builtins::ExitCode::Success);
     }
 
     Ok(exit_code)
