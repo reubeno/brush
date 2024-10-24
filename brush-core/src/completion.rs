@@ -464,7 +464,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Signal => {
-                    for signal in traps::TrapSignal::all_values() {
+                    for signal in traps::TrapSignal::iterator() {
                         candidates.insert(signal.to_string());
                     }
                 }
