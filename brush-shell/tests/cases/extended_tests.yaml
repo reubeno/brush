@@ -215,6 +215,11 @@ cases:
         echo "Matches"
       fi
 
+  - name: "Regex with special chars in parens"
+    stdin: |
+      [[ "<" =~ (<) ]] && echo "1. Matched"
+      [[ ">" =~ (<) ]] && echo "2. Matched"
+
   - name: "Empty and space checks"
     stdin: |
       check() {
