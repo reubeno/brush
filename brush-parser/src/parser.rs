@@ -420,7 +420,11 @@ peg::parser! {
         rule regex_word_piece() =
             word() {} /
             specific_operator("|") {} /
-            specific_operator("(") inner:regex_word() specific_operator(")") {}
+            specific_operator("(") parenthesized_regex_word()* specific_operator(")") {}
+
+        rule parenthesized_regex_word() =
+            regex_word_piece() /
+            !specific_operator(")") !specific_operator("]]") [_]
 
         rule name() -> &'input str =
             w:[Token::Word(_, _)] { w.to_str() }
