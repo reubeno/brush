@@ -704,7 +704,7 @@ peg::parser! {
             s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
 
         rule parameter_replacement_str() -> String =
-            "/" s:$(word(<['}' | '/']>)) { s.to_owned() }
+            "/" s:$(word(<['}']>)) { s.to_owned() }
 
         rule parameter_search_pattern() -> String =
             s:$(word(<['}' | '/']>)) { s.to_owned() }
