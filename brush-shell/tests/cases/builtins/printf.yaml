@@ -33,3 +33,14 @@ cases:
 
       echo "[3]"
       printf "%q" '"'; echo
+
+  - name: "printf ~%q"
+    stdin: |
+      echo "[1]"
+      printf "~%q" 'TEXT'; echo
+
+      echo "[2]"
+      printf "~%q" '$VAR'; echo
+
+      echo "[3]"
+      printf "~%q" '"'; echo

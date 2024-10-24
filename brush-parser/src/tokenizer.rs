@@ -553,7 +553,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                     let next_here_tag = &self.cross_state.current_here_tags[0];
                     let tag_str: Cow<'_, str> = if next_here_tag.tag_was_escaped_or_quoted {
-                        remove_quotes_from(next_here_tag.tag.as_str()).into()
+                        unquote_str(next_here_tag.tag.as_str()).into()
                     } else {
                         next_here_tag.tag.as_str().into()
                     };
@@ -1010,7 +1010,12 @@ fn is_quoting_char(c: char) -> bool {
     matches!(c, '\\' | '\'' | '\"')
 }
 
-fn remove_quotes_from(s: &str) -> String {
+/// Return a string with all the quoting removed.
+///
+/// # Arguments
+///
+/// * `s` - The string to unquote.
+pub fn unquote_str(s: &str) -> String {
     let mut result = String::new();
 
     let mut in_escape = false;
@@ -1392,9 +1397,9 @@ SOMETHING
 
     #[test]
     fn test_quote_removal() {
-        assert_eq!(remove_quotes_from(r#""hello""#), "hello");
-        assert_eq!(remove_quotes_from(r#"'hello'"#), "hello");
-        assert_eq!(remove_quotes_from(r#""hel\"lo""#), r#"hel"lo"#);
-        assert_eq!(remove_quotes_from(r#"'hel\'lo'"#), r#"hel'lo"#);
+        assert_eq!(unquote_str(r#""hello""#), "hello");
+        assert_eq!(unquote_str(r#"'hello'"#), "hello");
+        assert_eq!(unquote_str(r#""hel\"lo""#), r#"hel"lo"#);
+        assert_eq!(unquote_str(r#"'hel\'lo'"#), r#"hel'lo"#);
     }
 }

@@ -12,6 +12,7 @@ cases:
           esac
           echo "OPTIND is now ${OPTIND}"
           echo "OPTERR is now ${OPTERR}"
+        echo "----------------"
         done
         echo "Result: $?"
         echo "option: ${option}"
@@ -39,6 +40,7 @@ cases:
         echo "OPTARG: ${OPTARG}"
         echo "OPTIND: ${OPTIND}"
         echo "OPTERR: ${OPTERR}"
+        echo "----------------"
       done
       echo "Done; result: $?"
       echo "myvar: ${myvar}"
@@ -54,6 +56,7 @@ cases:
         echo "OPTARG: ${OPTARG}"
         echo "OPTIND: ${OPTIND}"
         echo "OPTERR: ${OPTERR}"
+        echo "----------------"
       done
       echo "Done; result: $?"
       echo "myvar: ${myvar}"
@@ -69,6 +72,7 @@ cases:
         echo "OPTARG: ${OPTARG}"
         echo "OPTIND: ${OPTIND}"
         echo "OPTERR: ${OPTERR}"
+        echo "----------------"
       done
       echo "Done; result: $?"
       echo "myvar: ${myvar}"
@@ -90,6 +94,22 @@ cases:
     stdin: |
       getopts "a:" myvar -b value
       echo "Result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: multiple options in one token"
+    stdin: |
+      while getopts "a:bcdefg" myvar -fedcba something -g; do
+        echo "Result: $?"
+        echo "myvar: ${myvar}"
+        echo "OPTARG: ${OPTARG}"
+        echo "OPTIND: ${OPTIND}"
+        echo "OPTERR: ${OPTERR}"
+        echo "----------------"
+      done
+      echo "Done; result: $?"
       echo "myvar: ${myvar}"
       echo "OPTARG: ${OPTARG}"
       echo "OPTIND: ${OPTIND}"

@@ -233,12 +233,20 @@ impl Shell {
         random_var.treat_as_integer();
         env.set_global("RANDOM", random_var)?;
 
+        // Parsing and completion vars
         env.set_global("IFS", ShellVariable::new(" \t\n".into()))?;
         env.set_global(
             "COMP_WORDBREAKS",
             ShellVariable::new(" \t\n\"\'><=;|&(:".into()),
         )?;
 
+        // getopts vars
+        env.set_global("OPTERR", ShellVariable::new("1".into()))?;
+        let mut optind_var = ShellVariable::new("1".into());
+        optind_var.treat_as_integer();
+        env.set_global("OPTIND", optind_var)?;
+
+        // OS info vars
         let os_type = match std::env::consts::OS {
             "linux" => "linux-gnu",
             "windows" => "windows",
@@ -256,6 +264,7 @@ impl Shell {
                 )?;
             }
         }
+
         #[cfg(unix)]
         if !env.is_set("PATH") {
             env.set_global(
@@ -273,7 +282,7 @@ impl Shell {
             env.set_global(
                 "BASH_VERSINFO",
                 ShellVariable::new(ShellValue::indexed_array_from_slice(
-                    ["5", "1", "1", "1", "release", "unknown"].as_slice(),
+                    ["5", "2", "15", "1", "release", "unknown"].as_slice(),
                 )),
             )?;
         }

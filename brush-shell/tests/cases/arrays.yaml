@@ -275,3 +275,13 @@ cases:
     stdin: |
       x=(2 3 4)
       echo ${x[${x[0]}]}
+
+  - name: "Append array-resulting expansion to array"
+    skip: true # Need to asses on different bash versions
+    stdin: |
+      declare -a otherarray=("a" "b" "c")
+      declare -a ourarray=()
+
+      ourarray+=("${otherarray[@]/a/x}")
+      declare -p otherarray
+      declare -p ourarray

@@ -18,6 +18,8 @@ pub(crate) struct GetOptsCommand {
     args: Vec<String>,
 }
 
+const VAR_GETOPTS_NEXT_CHAR_INDEX: &str = "__GETOPTS_NEXT_CHAR";
+
 impl builtins::Command for GetOptsCommand {
     #[allow(clippy::too_many_lines)]
     async fn execute(
@@ -48,7 +50,7 @@ impl builtins::Command for GetOptsCommand {
             last_char = Some(c);
         }
 
-        // TODO: OPTIND is supposed to be initialized to 1 in each shell/script.
+        // If unset, assume OPTIND is 1.
         let mut next_index: usize = context
             .shell
             .env
@@ -60,9 +62,9 @@ impl builtins::Command for GetOptsCommand {
             return Ok(builtins::ExitCode::InvalidUsage);
         }
 
-        let new_optarg;
+        let mut new_optarg = None;
         let new_optind;
-        let variable_value;
+        let mut variable_value;
         let exit_code;
 
         // See if there are any args left to parse.
@@ -71,27 +73,52 @@ impl builtins::Command for GetOptsCommand {
             let arg = self.args[next_index_zero_based].as_str();
 
             // See if this is an option.
-            if arg.starts_with('-') && arg.len() == 2 && arg != "--" {
-                // Single character option
-                let c = arg.chars().nth(1).unwrap();
+            if arg.starts_with('-') && arg != "--" {
+                // Figure out how far into this option we are.
+                const DEFAULT_NEXT_CHAR_INDEX: usize = 1;
+                let next_char_index = context
+                    .shell
+                    .env
+                    .get_str(VAR_GETOPTS_NEXT_CHAR_INDEX)
+                    .map_or(DEFAULT_NEXT_CHAR_INDEX, |s| {
+                        s.parse().unwrap_or(DEFAULT_NEXT_CHAR_INDEX)
+                    });
+
+                // Find the char.
+                let c = arg.chars().nth(next_char_index).unwrap();
+                let is_last_char_in_option = next_char_index == arg.len() - 1;
 
                 // Look up the char.
+                let mut is_error = false;
                 if let Some(takes_arg) = args.get(&c) {
                     variable_value = String::from(c);
 
                     if *takes_arg {
-                        next_index += 1;
-                        next_index_zero_based += 1;
+                        // If the option takes a value but it's not the last option in this
+                        // argument, then this is an error.
+                        if is_last_char_in_option {
+                            next_index += 1;
+                            next_index_zero_based += 1;
 
-                        if next_index_zero_based >= self.args.len() {
-                            return Ok(builtins::ExitCode::Custom(1));
+                            if next_index_zero_based >= self.args.len() {
+                                return Ok(builtins::ExitCode::Custom(1));
+                            }
+
+                            new_optarg = Some(self.args[next_index_zero_based].clone());
+                        } else {
+                            is_error = true;
                         }
-
-                        new_optarg = Some(self.args[next_index_zero_based].clone());
                     } else {
                         new_optarg = None;
                     }
                 } else {
+                    // Set to satisfy compiler.
+                    variable_value = String::from("?");
+
+                    is_error = true;
+                }
+
+                if is_error {
                     // Unknown option; set variable to '?' and OPTARG to the unknown option (sans
                     // hyphen).
                     variable_value = String::from("?");
@@ -101,21 +128,43 @@ impl builtins::Command for GetOptsCommand {
                         new_optarg = None;
                     }
 
+                    // TODO: honor OPTERR=0 indicating suppression of error messages
                     if treat_unknown_options_as_failure {
                         writeln!(context.stderr(), "getopts: illegal option -- {c}")?;
                     }
                 }
 
-                new_optind = next_index + 1;
+                if is_last_char_in_option {
+                    // We're done with this argument, so unset the internal char index variable
+                    // and request an update to OPTIND.
+                    new_optind = next_index + 1;
+                    context.shell.env.unset(VAR_GETOPTS_NEXT_CHAR_INDEX)?;
+                } else {
+                    // We have more to go in this argument, so update the internal char index
+                    // and request that OPTIND not be updated.
+                    new_optind = next_index;
+                    context.shell.env.update_or_add(
+                        VAR_GETOPTS_NEXT_CHAR_INDEX,
+                        variables::ShellValueLiteral::Scalar((next_char_index + 1).to_string()),
+                        |_| Ok(()),
+                        crate::env::EnvironmentLookup::Anywhere,
+                        crate::env::EnvironmentScope::Global,
+                    )?;
+                }
+
                 exit_code = builtins::ExitCode::Success;
             } else {
                 variable_value = String::from("?");
                 new_optarg = None;
+
+                // If it was "--" we encountered, then skip past it.
                 if arg == "--" {
                     new_optind = next_index + 1;
                 } else {
                     new_optind = next_index;
                 }
+
+                // Note that we're done parsing options.
                 exit_code = builtins::ExitCode::Custom(1);
             }
         } else {
@@ -151,16 +200,6 @@ impl builtins::Command for GetOptsCommand {
         context.shell.env.update_or_add(
             "OPTIND",
             variables::ShellValueLiteral::Scalar(new_optind.to_string()),
-            |_| Ok(()),
-            crate::env::EnvironmentLookup::Anywhere,
-            crate::env::EnvironmentScope::Global,
-        )?;
-
-        // Initialize OPTERR
-        // TODO: honor OPTERR=0 indicating suppression of error messages
-        context.shell.env.update_or_add(
-            "OPTERR",
-            variables::ShellValueLiteral::Scalar("1".to_string()),
             |_| Ok(()),
             crate::env::EnvironmentLookup::Anywhere,
             crate::env::EnvironmentScope::Global,
