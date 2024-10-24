@@ -777,59 +777,48 @@ impl<'a> WordExpander<'a> {
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                let result = patterns::remove_smallest_matching_suffix(
-                    expanded_parameter.as_str(),
-                    &expanded_pattern,
-                )?;
-                Ok(Expansion::from(result.to_owned()))
+                transform_expansion(expanded_parameter, |s| {
+                    patterns::remove_smallest_matching_suffix(s.as_str(), &expanded_pattern)
+                        .map(|s| s.to_owned())
+                })
             }
             brush_parser::word::ParameterExpr::RemoveLargestSuffixPattern {
                 parameter,
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                let result = patterns::remove_largest_matching_suffix(
-                    expanded_parameter.as_str(),
-                    &expanded_pattern,
-                )?;
-
-                Ok(Expansion::from(result.to_owned()))
+                transform_expansion(expanded_parameter, |s| {
+                    patterns::remove_largest_matching_suffix(s.as_str(), &expanded_pattern)
+                        .map(|s| s.to_owned())
+                })
             }
             brush_parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
                 parameter,
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                let result = patterns::remove_smallest_matching_prefix(
-                    expanded_parameter.as_str(),
-                    &expanded_pattern,
-                )?;
-
-                Ok(Expansion::from(result.to_owned()))
+                transform_expansion(expanded_parameter, |s| {
+                    patterns::remove_smallest_matching_prefix(s.as_str(), &expanded_pattern)
+                        .map(|s| s.to_owned())
+                })
             }
             brush_parser::word::ParameterExpr::RemoveLargestPrefixPattern {
                 parameter,
                 indirect,
                 pattern,
             } => {
-                let expanded_parameter: String =
-                    self.expand_parameter(&parameter, indirect).await?.into();
+                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                let result = patterns::remove_largest_matching_prefix(
-                    expanded_parameter.as_str(),
-                    &expanded_pattern,
-                )?;
-
-                Ok(Expansion::from(result.to_owned()))
+                transform_expansion(expanded_parameter, |s| {
+                    patterns::remove_largest_matching_prefix(s.as_str(), &expanded_pattern)
+                        .map(|s| s.to_owned())
+                })
             }
             brush_parser::word::ParameterExpr::Substring {
                 parameter,
