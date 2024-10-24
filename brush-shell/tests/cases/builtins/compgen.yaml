@@ -101,3 +101,14 @@ cases:
       for p in $(compgen -f '$HOME/'); do
         echo ${p//$HOME/HOME}
       done
+
+  - name: "compgen -f with quoted + escaped var"
+    known_failure: true
+    stdin: |
+      touch item1
+      HOME=$(pwd)
+
+      echo "[0]"
+      for p in $(compgen -f '\$HOME/'); do
+        echo ${p//$HOME/HOME}
+      done

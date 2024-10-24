@@ -241,18 +241,14 @@ impl Spec {
         shell.completion_config.current_completion_options = Some(self.options.clone());
 
         // Generate completions based on any provided actions (and on words).
-        let mut candidates = self.generate_action_completions(shell, context)?;
+        let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
             let words = crate::expansion::full_expand_and_split_str(shell, word_list).await?;
             for word in words {
-                candidates.insert(word);
+                if word.starts_with(context.token_to_complete) {
+                    candidates.insert(word);
+                }
             }
-        }
-
-        // Only keep generated completions that match the token being completed. Further
-        // generations below don't get filtered.
-        if !context.token_to_complete.is_empty() {
-            candidates.retain(|candidate| candidate.starts_with(context.token_to_complete));
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
@@ -349,23 +345,27 @@ impl Spec {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn generate_action_completions(
+    async fn generate_action_completions(
         &self,
         shell: &mut Shell,
         context: &Context<'_>,
     ) -> Result<IndexSet<String>, error::Error> {
         let mut candidates = IndexSet::new();
 
+        let token = context.token_to_complete;
+
         for action in &self.actions {
             match action {
                 CompleteAction::Alias => {
                     for name in shell.aliases.keys() {
-                        candidates.insert(name.to_string());
+                        if name.starts_with(token) {
+                            candidates.insert(name.to_string());
+                        }
                     }
                 }
                 CompleteAction::ArrayVar => {
                     for (name, var) in shell.env.iter() {
-                        if var.value().is_array() {
+                        if var.value().is_array() && name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
                     }
@@ -375,7 +375,9 @@ impl Spec {
                 }
                 CompleteAction::Builtin => {
                     for name in shell.builtins.keys() {
-                        candidates.insert(name.to_owned());
+                        if name.starts_with(token) {
+                            candidates.insert(name.to_owned());
+                        }
                     }
                 }
                 CompleteAction::Command => {
@@ -383,32 +385,34 @@ impl Spec {
                     candidates.append(&mut command_completions);
                 }
                 CompleteAction::Directory => {
-                    let mut file_completions = get_file_completions(shell, context, true);
+                    let mut file_completions =
+                        get_file_completions(shell, context.token_to_complete, true).await;
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Disabled => {
                     for (name, registration) in &shell.builtins {
-                        if registration.disabled {
+                        if registration.disabled && name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Enabled => {
                     for (name, registration) in &shell.builtins {
-                        if !registration.disabled {
+                        if !registration.disabled && name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Export => {
                     for (key, value) in shell.env.iter() {
-                        if value.is_exported() {
+                        if value.is_exported() && key.starts_with(token) {
                             candidates.insert(key.to_owned());
                         }
                     }
                 }
                 CompleteAction::File => {
-                    let mut file_completions = get_file_completions(shell, context, false);
+                    let mut file_completions =
+                        get_file_completions(shell, context.token_to_complete, false).await;
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Function => {
@@ -418,35 +422,50 @@ impl Spec {
                 }
                 CompleteAction::Group => {
                     for group_name in users::get_all_groups()? {
-                        candidates.insert(group_name);
+                        if group_name.starts_with(token) {
+                            candidates.insert(group_name);
+                        }
                     }
                 }
                 CompleteAction::HelpTopic => {
                     // For now, we only have help topics for built-in commands.
                     for name in shell.builtins.keys() {
-                        candidates.insert(name.to_owned());
+                        if name.starts_with(token) {
+                            candidates.insert(name.to_owned());
+                        }
                     }
                 }
                 CompleteAction::HostName => {
                     // N.B. We only retrieve one hostname.
                     if let Ok(name) = sys::network::get_hostname() {
-                        candidates.insert(name.to_string_lossy().to_string());
+                        let name = name.to_string_lossy();
+                        if name.starts_with(token) {
+                            candidates.insert(name.to_string());
+                        }
                     }
                 }
                 CompleteAction::Job => {
                     for job in &shell.jobs.jobs {
-                        candidates.insert(job.get_command_name().to_owned());
+                        let command_name = job.get_command_name();
+                        if command_name.starts_with(token) {
+                            candidates.insert(command_name.to_owned());
+                        }
                     }
                 }
                 CompleteAction::Keyword => {
                     for keyword in shell.get_keywords() {
-                        candidates.insert(keyword.clone());
+                        if keyword.starts_with(token) {
+                            candidates.insert(keyword.clone());
+                        }
                     }
                 }
                 CompleteAction::Running => {
                     for job in &shell.jobs.jobs {
                         if matches!(job.state, jobs::JobState::Running) {
-                            candidates.insert(job.get_command_name().to_owned());
+                            let command_name = job.get_command_name();
+                            if command_name.starts_with(token) {
+                                candidates.insert(command_name.to_owned());
+                            }
                         }
                     }
                 }
@@ -455,34 +474,48 @@ impl Spec {
                 }
                 CompleteAction::SetOpt => {
                     for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
-                        candidates.insert((*name).to_owned());
+                        if name.starts_with(token) {
+                            candidates.insert((*name).to_owned());
+                        }
                     }
                 }
                 CompleteAction::ShOpt => {
                     for (name, _) in namedoptions::SHOPT_OPTIONS.iter() {
-                        candidates.insert((*name).to_owned());
+                        if name.starts_with(token) {
+                            candidates.insert((*name).to_owned());
+                        }
                     }
                 }
                 CompleteAction::Signal => {
                     for signal in traps::TrapSignal::all_values() {
-                        candidates.insert(signal.to_string());
+                        let signal_str = signal.to_string();
+                        if signal_str.starts_with(token) {
+                            candidates.insert(signal_str);
+                        }
                     }
                 }
                 CompleteAction::Stopped => {
                     for job in &shell.jobs.jobs {
                         if matches!(job.state, jobs::JobState::Stopped) {
-                            candidates.insert(job.get_command_name().to_owned());
+                            let command_name = job.get_command_name();
+                            if command_name.starts_with(token) {
+                                candidates.insert(job.get_command_name().to_owned());
+                            }
                         }
                     }
                 }
                 CompleteAction::User => {
                     for user_name in users::get_all_users()? {
-                        candidates.insert(user_name);
+                        if user_name.starts_with(token) {
+                            candidates.insert(user_name);
+                        }
                     }
                 }
                 CompleteAction::Variable => {
                     for (key, _) in shell.env.iter() {
-                        candidates.insert(key.to_owned());
+                        if key.starts_with(token) {
+                            candidates.insert(key.to_owned());
+                        }
                     }
                 }
             }
@@ -907,17 +940,27 @@ impl Config {
                 })
         } else {
             // If we didn't find a spec, then fall back to basic completion.
-            get_completions_using_basic_lookup(shell, &context)
+            get_completions_using_basic_lookup(shell, &context).await
         }
     }
 }
 
-fn get_file_completions(shell: &Shell, context: &Context, must_be_dir: bool) -> IndexSet<String> {
-    let glob = std::format!("{}*", context.token_to_complete);
+async fn get_file_completions(
+    shell: &Shell,
+    token_to_complete: &str,
+    must_be_dir: bool,
+) -> IndexSet<String> {
+    // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
+    let mut throwaway_shell = shell.clone();
+    let expanded_token = throwaway_shell
+        .basic_expand_string(token_to_complete)
+        .await
+        .unwrap_or_else(|_err| token_to_complete.to_owned());
+
+    let glob = std::format!("{expanded_token}*");
 
     let path_filter = |path: &Path| !must_be_dir || shell.get_absolute_path(path).is_dir();
 
-    // TODO: Pass through quoting.
     let pattern =
         patterns::Pattern::from(glob).set_extended_globbing(shell.options.extended_globbing);
 
@@ -942,8 +985,8 @@ fn get_command_completions(shell: &Shell, context: &Context) -> IndexSet<String>
     candidates.into_iter().collect()
 }
 
-fn get_completions_using_basic_lookup(shell: &Shell, context: &Context) -> Answer {
-    let mut candidates = get_file_completions(shell, context, false);
+async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>) -> Answer {
+    let mut candidates = get_file_completions(shell, context.token_to_complete, false).await;
 
     // If this appears to be the command token (and if there's *some* prefix without
     // a path separator) then also consider whether we should search the path for

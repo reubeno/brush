@@ -148,7 +148,6 @@ async fn complete_absolute_paths() -> Result<()> {
     Ok(())
 }
 
-#[ignore] // TODO: Fix this for newer versions of bash-completion
 #[tokio::test]
 async fn complete_path_with_var() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -182,7 +181,6 @@ async fn complete_path_with_var() -> Result<()> {
     Ok(())
 }
 
-#[ignore] // TODO: Fix this for newer versions of bash-completion
 #[tokio::test]
 async fn complete_path_with_tilde() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;

@@ -44,9 +44,7 @@ impl PrintfCommand {
             [fmt, arg] if fmt == "%s" => Ok(arg.clone()),
             // Special-case invocation of printf with %q-based format string from bash-completion.
             // It has hard-coded expectation of backslash-style escaping instead of quoting.
-            [fmt, arg] if fmt == "%q" || fmt == "~%q" => {
-                Ok(Self::evaluate_format_with_percent_q(None, arg))
-            }
+            [fmt, arg] if fmt == "%q" => Ok(Self::evaluate_format_with_percent_q(None, arg)),
             [fmt, arg] if fmt == "~%q" => Ok(Self::evaluate_format_with_percent_q(Some("~"), arg)),
             // Fallback to external command.
             _ => self.evaluate_via_external_command(context),

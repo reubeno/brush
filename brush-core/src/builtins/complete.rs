@@ -442,15 +442,11 @@ impl builtins::Command for CompGenCommand {
         let spec = self.common_args.create_spec();
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
-        // N.B. We basic-expand the token-to-be-completed first.
-        let mut throwaway_shell = context.shell.clone();
-        let expanded_token_to_complete = throwaway_shell
-            .basic_expand_string(token_to_complete)
-            .await
-            .unwrap_or_else(|_| token_to_complete.to_owned());
+        // We unquote the token-to-be-completed before passing it to the completion system.
+        let unquoted_token = brush_parser::unquote_str(token_to_complete);
 
         let completion_context = completion::Context {
-            token_to_complete: expanded_token_to_complete.as_str(),
+            token_to_complete: unquoted_token.as_str(),
             preceding_token: None,
             command_name: None,
             token_index: 0,
