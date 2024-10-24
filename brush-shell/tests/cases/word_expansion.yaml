@@ -813,3 +813,17 @@ cases:
 
       echo "{2..9..2}"
       echo {2..9..2}
+
+  - name: "Iterate through modified array"
+    stdin: |
+      array=("aa" "ba" "ca")
+
+      echo "With quotes:"
+      for i in "${array[@]%a}"; do
+          echo "Element: '$i'"
+      done
+
+      echo "Without quotes:"
+      for i in ${array[@]%a}; do
+          echo "Element: '$i'"
+      done
