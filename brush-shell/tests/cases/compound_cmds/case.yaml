@@ -61,3 +61,55 @@ cases:
       a) echo "a";;
       b) echo "b"
       esac
+
+  - name: "Case with fall-through"
+    stdin: |
+      case "b" in
+      a) echo "a";;
+      b) echo "b";&
+      c) echo "c";;
+      d) echo "d";;
+      esac
+
+  - name: "Case with resuming switch"
+    stdin: |
+      case "b" in
+      a) echo "a";;
+      b) echo "b";;&
+      c) echo "c";;
+      *) echo "*";;
+      d) echo "d";;
+      esac
+
+  - name: "Case status values"
+    stdin: |
+      function yield() {
+        return $1
+      }
+
+      case "a" in
+      x) yield 10;;
+      a) yield 11;;
+      b) yield 12;;
+      esac
+      echo "1: $?"
+
+      case "a" in
+      b) yield 10;;
+      c) yield 11;;
+      esac
+      echo "2: $?"
+
+      case "a" in
+      a) yield 10;&
+      b) yield 11;;
+      c) yield 12;;
+      esac
+      echo "3: $?"
+
+      case "a" in
+      a) yield 10;;&
+      *) yield 11;;
+      x) yield 12;;
+      esac
+      echo "4: $?"

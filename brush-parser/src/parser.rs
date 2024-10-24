@@ -446,18 +446,29 @@ peg::parser! {
 
         pub(crate) rule case_item_ns() -> ast::CaseItem =
             specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
-                ast::CaseItem { patterns: p, cmd: Some(c) }
+                ast::CaseItem { patterns: p, cmd: Some(c), post_action: ast::CaseItemPostAction::ExitCase }
             } /
             specific_operator("(")? p:pattern() specific_operator(")") linebreak() {
-                ast::CaseItem { patterns: p, cmd: None }
+                ast::CaseItem { patterns: p, cmd: None, post_action: ast::CaseItemPostAction::ExitCase }
             }
 
         pub(crate) rule case_item() -> ast::CaseItem =
-            specific_operator("(")? p:pattern() specific_operator(")") linebreak() specific_operator(";;") linebreak() {
-                ast::CaseItem { patterns: p, cmd: None }
+            specific_operator("(")? p:pattern() specific_operator(")") linebreak() post_action:case_item_post_action() linebreak() {
+                ast::CaseItem { patterns: p, cmd: None, post_action }
             } /
-            specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() specific_operator(";;") linebreak() {
-                ast::CaseItem { patterns: p, cmd: Some(c) }
+            specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() post_action:case_item_post_action() linebreak() {
+                ast::CaseItem { patterns: p, cmd: Some(c), post_action }
+            }
+
+        rule case_item_post_action() -> ast::CaseItemPostAction =
+            specific_operator(";;") {
+                ast::CaseItemPostAction::ExitCase
+            } /
+            non_posix_extensions_enabled() specific_operator(";;&") {
+                ast::CaseItemPostAction::ContinueEvaluatingCases
+            } /
+            non_posix_extensions_enabled() specific_operator(";&") {
+                ast::CaseItemPostAction::UnconditionallyExecuteNextCaseItem
             }
 
         // TODO: validate if this should call non_reserved_word() or word()
