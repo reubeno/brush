@@ -11,9 +11,86 @@ cases:
             *) echo "Unknown option: ${option}";;
           esac
           echo "OPTIND is now ${OPTIND}"
+          echo "OPTERR is now ${OPTERR}"
         done
+        echo "Result: $?"
+        echo "option: ${option}"
         echo "End of args"
       }
 
       func -a -b my_b_arg
+      echo "OPTARG: ${OPTARG}"
       echo "OPTIND: ${OPTIND}"
+
+  - name: "getopts: no args given"
+    stdin: |
+      getopts "a:b:" myvar
+      echo "Result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: no options given"
+    stdin: |
+      while getopts "a:b:" myvar notoption; do
+        echo "Result: $?"
+        echo "myvar: ${myvar}"
+        echo "OPTARG: ${OPTARG}"
+        echo "OPTIND: ${OPTIND}"
+        echo "OPTERR: ${OPTERR}"
+      done
+      echo "Done; result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: options and non-options"
+    stdin: |
+      while getopts "ab:" myvar -a -b value notoption; do
+        echo "Result: $?"
+        echo "myvar: ${myvar}"
+        echo "OPTARG: ${OPTARG}"
+        echo "OPTIND: ${OPTIND}"
+        echo "OPTERR: ${OPTERR}"
+      done
+      echo "Done; result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: --"
+    stdin: |
+      while getopts "ab:" myvar -a -b value -- -c notoption; do
+        echo "Result: $?"
+        echo "myvar: ${myvar}"
+        echo "OPTARG: ${OPTARG}"
+        echo "OPTIND: ${OPTIND}"
+        echo "OPTERR: ${OPTERR}"
+      done
+      echo "Done; result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: invalid option when optstr starts with colon"
+    stdin: |
+      getopts ":a:" myvar -b value
+      echo "Result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: invalid option when optstr does not start with colon"
+    ignore_stderr: true
+    stdin: |
+      getopts "a:" myvar -b value
+      echo "Result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
