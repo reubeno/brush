@@ -595,6 +595,11 @@ cases:
       echo "\${arr[@]/world/WORLD}: ${arr[@]/world/WORLD}"
       echo "\${arr[*]/world/WORLD}: ${arr[*]/world/WORLD}"
 
+  - name: "Substring replacement with slashes"
+    stdin: |
+      var="Hello, world!"
+      echo "\${var/world//world}: ${var/world//world}"
+
   - name: "Prefix substring replacement"
     stdin: |
       var="Hello, world!"
