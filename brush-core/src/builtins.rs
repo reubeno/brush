@@ -171,7 +171,6 @@ pub type CommandExecuteFunc = fn(
 pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Error>;
 
 /// Trait implemented by built-in shell commands.
-
 pub trait Command: Parser {
     /// Instantiates the built-in command with the given arguments.
     ///
@@ -238,7 +237,6 @@ pub trait Command: Parser {
 
 /// Trait implemented by built-in shell commands that take specially handled declarations
 /// as arguments.
-
 pub trait DeclarationCommand: Command {
     /// Stores the declarations within the command instance.
     ///

@@ -434,6 +434,8 @@ pub struct CaseItem {
     pub patterns: Vec<Word>,
     /// The commands to execute if this case branch is selected.
     pub cmd: Option<CompoundList>,
+    /// When the case branch is selected, the action to take after the command is executed.
+    pub post_action: CaseItemPostAction,
 }
 
 impl Display for CaseItem {
@@ -451,7 +453,31 @@ impl Display for CaseItem {
             write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", cmd)?;
         }
         writeln!(f)?;
-        write!(f, ";;")
+        write!(f, "{}", self.post_action)
+    }
+}
+
+/// Describes the action to take after executing the body command of a case clause.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+pub enum CaseItemPostAction {
+    /// The containing case should be exited.
+    ExitCase,
+    /// If one is present, the command body of the succeeding case item should be
+    /// executed (without evaluating its pattern).
+    UnconditionallyExecuteNextCaseItem,
+    /// The case should continue evaluating the remaining case items, as if this
+    /// item had not been executed.
+    ContinueEvaluatingCases,
+}
+
+impl Display for CaseItemPostAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CaseItemPostAction::ExitCase => write!(f, ";;"),
+            CaseItemPostAction::UnconditionallyExecuteNextCaseItem => write!(f, ";&"),
+            CaseItemPostAction::ContinueEvaluatingCases => write!(f, ";;&"),
+        }
     }
 }
 

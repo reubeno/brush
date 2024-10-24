@@ -574,28 +574,42 @@ impl Execute for ast::CaseClauseCommand {
         }
 
         let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
+        let mut result: ExecutionResult = ExecutionResult::success();
+        let mut force_execute_next_case = false;
 
         for case in &self.cases {
-            let mut matches = false;
+            if force_execute_next_case {
+                force_execute_next_case = false;
+            } else {
+                let mut matches = false;
+                for pattern in &case.patterns {
+                    let expanded_pattern = expansion::basic_expand_pattern(shell, pattern).await?;
+                    if expanded_pattern.exactly_matches(expanded_value.as_str())? {
+                        matches = true;
+                        break;
+                    }
+                }
 
-            for pattern in &case.patterns {
-                let expanded_pattern = expansion::basic_expand_pattern(shell, pattern).await?;
-                if expanded_pattern.exactly_matches(expanded_value.as_str())? {
-                    matches = true;
-                    break;
+                if !matches {
+                    continue;
                 }
             }
 
-            if matches {
-                if let Some(case_cmd) = &case.cmd {
-                    return case_cmd.execute(shell, params).await;
-                } else {
-                    break;
+            result = if let Some(case_cmd) = &case.cmd {
+                case_cmd.execute(shell, params).await?
+            } else {
+                ExecutionResult::success()
+            };
+
+            match case.post_action {
+                ast::CaseItemPostAction::ExitCase => break,
+                ast::CaseItemPostAction::UnconditionallyExecuteNextCaseItem => {
+                    force_execute_next_case = true;
                 }
+                ast::CaseItemPostAction::ContinueEvaluatingCases => (),
             }
         }
 
-        let result = ExecutionResult::success();
         shell.last_exit_status = result.exit_code;
 
         Ok(result)

@@ -32,7 +32,6 @@ pub struct InteractivePrompt {
 }
 
 /// Represents a shell capable of taking commands from standard input.
-
 pub trait InteractiveShell {
     /// Returns an immutable reference to the inner shell object.
     fn shell(&self) -> impl AsRef<brush_core::Shell> + Send;
