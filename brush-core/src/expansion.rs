@@ -853,9 +853,7 @@ impl<'a> WordExpander<'a> {
                 let expanded_offset = usize::try_from(expanded_offset)?;
 
                 let expanded_parameter_len = expanded_parameter.polymorphic_len();
-                if expanded_offset >= expanded_parameter_len {
-                    return Ok(Expansion::from(String::new()));
-                }
+                let expanded_offset = min(expanded_offset, expanded_parameter_len);
 
                 let end_offset = if let Some(length) = length {
                     let mut expanded_length = length.eval(self.shell, false).await?;
