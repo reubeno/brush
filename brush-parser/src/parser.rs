@@ -899,6 +899,7 @@ mod tests {
     use super::*;
     use crate::tokenizer::tokenize_str;
     use anyhow::Result;
+    use assert_matches::assert_matches;
 
     #[test]
     fn parse_case() -> Result<()> {
@@ -964,13 +965,17 @@ esac\
         )?;
 
         assert_eq!(seq.len(), 2);
-        assert!(matches!(seq[0], ast::Command::Simple(..)));
+        assert_matches!(seq[0], ast::Command::Simple(..));
         if let ast::Command::Simple(c) = &seq[0] {
             let c = c.suffix.as_ref().unwrap();
-            assert!(matches!(
+            assert_matches!(
                 c.0[0],
-                ast::CommandPrefixOrSuffixItem::IoRedirect(..)
-            ))
+                ast::CommandPrefixOrSuffixItem::IoRedirect(ast::IoRedirect::File(
+                    Some(2),
+                    ast::IoFileRedirectKind::DuplicateOutput,
+                    ast::IoFileRedirectTarget::Fd(1)
+                ))
+            )
         }
         Ok(())
     }
