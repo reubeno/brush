@@ -254,8 +254,37 @@ peg::parser! {
             bang:bang()? seq:pipe_sequence() { ast::Pipeline { bang: bang.is_some(), seq } }
         rule bang() -> bool = specific_word("!") { true }
 
-        rule pipe_sequence() -> Vec<ast::Command> =
-            c:command() ++ ((non_posix_extensions_enabled() specific_operator("|&")) / specific_operator("|") linebreak()) { c }
+        pub(crate) rule pipe_sequence() -> Vec<ast::Command> =
+            c:(c:command() r:input_output_pipe_extension()? {
+                let mut c = c;
+                if let Some(r) = r {
+                    match &mut c {
+                        ast::Command::Simple(c) => {
+                            let r = ast::CommandPrefixOrSuffixItem::IoRedirect(r);
+                            if let Some(suffix) = &mut c.suffix {
+                                suffix.0.push(r);
+                            } else {
+                                let v = vec![r];
+                                c.suffix = Some(ast::CommandSuffix(v));
+                            }
+                        }
+                        ast::Command::Compound(c, l) => {
+                            if let Some(r_list) = l {
+                                r_list.0.push(r);
+                            } else {
+                                let v = vec![r];
+                                *l = Some(ast::RedirectList(v));
+                            }
+
+                        }
+                        _ => { // TODO: syntax error!
+                        }
+                    };
+                }
+                c
+            }) ++ ((non_posix_extensions_enabled() specific_operator("|&")) / specific_operator("|") linebreak()) {
+            c
+        }
 
         // N.B. We needed to move the function definition branch up to avoid conflicts with array assignment syntax.
         rule command() -> ast::Command =
@@ -587,20 +616,12 @@ peg::parser! {
                 w:word() {
                     ast::CommandPrefixOrSuffixItem::Word(ast::Word::from(w))
                 }
-            )+ e:input_output_pipe_extension()? {
-                let mut s = s;
-                if let Some(e) = e {
-                    s.push(ast::CommandPrefixOrSuffixItem::IoRedirect(e))
-                }
+            )+ {
                 ast::CommandSuffix(s)
             }
 
         rule redirect_list() -> ast::RedirectList =
-            r:io_redirect()+ e:input_output_pipe_extension()? {
-                let mut r = r;
-                if let Some(e) = e {
-                    r.push(e)
-                }
+            r:io_redirect()+ {
                 ast::RedirectList(r)
             } /
             expected!("redirect list")
@@ -874,6 +895,7 @@ fn parse_array_assignment(
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::tokenizer::tokenize_str;
     use anyhow::Result;
@@ -933,15 +955,23 @@ esac\
         let input = r"echo |& wc";
 
         let tokens = tokenize_str(input)?;
-        let program = super::token_parser::program(
+        let seq = super::token_parser::pipe_sequence(
             &Tokens {
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
             &SourceInfo::default(),
         )?;
-        let snapshot = r#"Program { complete_commands: [CompoundList([CompoundListItem(AndOrList { first: Pipeline { bang: false, seq: [Simple(SimpleCommand { prefix: None, word_or_name: Some(Word { value: "echo" }), suffix: None }), Simple(SimpleCommand { prefix: None, word_or_name: Some(Word { value: "wc" }), suffix: None })] }, additional: [] }, Sequence)])] }"#;
-        assert_eq!(snapshot, format!("{:?}", program));
+
+        assert_eq!(seq.len(), 2);
+        assert!(matches!(seq[0], ast::Command::Simple(..)));
+        if let ast::Command::Simple(c) = &seq[0] {
+            let c = c.suffix.as_ref().unwrap();
+            assert!(matches!(
+                c.0[0],
+                ast::CommandPrefixOrSuffixItem::IoRedirect(..)
+            ))
+        }
         Ok(())
     }
 }
