@@ -25,6 +25,10 @@ harness = false
 name = "brush-interactive-tests"
 path = "tests/interactive_tests.rs"
 
+[[test]]
+name = "brush-completion-tests"
+path = "tests/completion_tests.rs"
+
 [features]
 default = ["basic", "reedline"]
 basic = []

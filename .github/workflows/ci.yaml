@@ -164,6 +164,17 @@ jobs:
           ${BASH_PATH} --version
           echo "BASH_PATH=${BASH_PATH}">>$GITHUB_ENV
 
+      - name: "Download recent bash-completion sources for tests"
+        uses: actions/checkout@v4
+        with:
+          repository: "scop/bash-completion"
+          ref: "2.14.0"
+          path: "bash-completion"
+
+      - name: "Setup bash-completion"
+        run: |
+          echo "BASH_COMPLETION_PATH=${GITHUB_WORKSPACE}/bash-completion/bash_completion">>$GITHUB_ENV
+
       - name: Test
         run: |
           set -euxo pipefail

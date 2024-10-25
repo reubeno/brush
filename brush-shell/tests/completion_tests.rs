@@ -4,14 +4,14 @@
 
 use anyhow::Result;
 use assert_fs::prelude::*;
-use std::path::Path;
+use std::path::PathBuf;
 
 struct TestShellWithBashCompletion {
     shell: brush_core::Shell,
     temp_dir: assert_fs::TempDir,
 }
 
-const BASH_COMPLETION_SCRIPT: &str = "/usr/share/bash-completion/bash_completion";
+const DEFAULT_BASH_COMPLETION_SCRIPT: &str = "/usr/share/bash-completion/bash_completion";
 
 impl TestShellWithBashCompletion {
     async fn new() -> Result<Self> {
@@ -23,11 +23,12 @@ impl TestShellWithBashCompletion {
             ..Default::default()
         };
 
-        let mut shell = brush_core::Shell::new(&create_options).await?;
+        let bash_completion_script_path = Self::find_bash_completion_script()?;
 
+        let mut shell = brush_core::Shell::new(&create_options).await?;
         let exec_params = shell.default_exec_params();
         let source_result = shell
-            .source::<String>(Path::new(BASH_COMPLETION_SCRIPT), &[], &exec_params)
+            .source::<String>(bash_completion_script_path.as_path(), &[], &exec_params)
             .await?;
 
         if source_result.exit_code != 0 {
@@ -37,6 +38,22 @@ impl TestShellWithBashCompletion {
         shell.set_working_dir(temp_dir.path())?;
 
         Ok(Self { shell, temp_dir })
+    }
+
+    fn find_bash_completion_script() -> Result<PathBuf> {
+        // See if an environmental override was provided.
+        let script_path = std::env::var("BASH_COMPLETION_PATH")
+            .map(PathBuf::from)
+            .unwrap_or(PathBuf::from(DEFAULT_BASH_COMPLETION_SCRIPT));
+
+        if script_path.exists() {
+            Ok(script_path)
+        } else {
+            Err(anyhow::anyhow!(
+                "bash completion script not found: {}",
+                script_path.display()
+            ))
+        }
     }
 
     pub async fn complete(&mut self, line: &str, pos: usize) -> Result<Vec<String>> {
@@ -277,6 +294,25 @@ async fn complete_command_option() -> Result<()> {
     let input = "ls --hel";
     let results = test_shell.complete(input, input.len()).await?;
     assert_eq!(results, ["--help"]);
+
+    Ok(())
+}
+
+/// Tests completion with some well-known programs that have been good manual test cases
+/// for us in the past.
+#[tokio::test]
+async fn complete_path_args_to_well_known_programs() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    // Create file and dir.
+    test_shell.temp_dir.child("item1").touch()?;
+    test_shell.temp_dir.child("item2").create_dir_all()?;
+
+    // Complete.
+    let input = "tar tvf ./item";
+    let results = test_shell.complete(input, input.len()).await?;
+
+    assert_eq!(results, ["./item1", "./item2"]);
 
     Ok(())
 }
