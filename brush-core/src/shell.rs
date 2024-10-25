@@ -685,11 +685,31 @@ impl Shell {
 
     /// Composes the shell's prompt, applying all appropriate expansions.
     pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
+        self.prompt_from_var_or_default("PS1", self.default_prompt())
+            .await
+    }
+
+    /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
+    #[allow(clippy::unused_async)]
+    pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
+        Ok(String::new())
+    }
+
+    /// Composes the shell's continuation prompt.
+    pub async fn compose_continuation_prompt(&mut self) -> Result<String, error::Error> {
+        self.prompt_from_var_or_default("PS2", "> ").await
+    }
+
+    async fn prompt_from_var_or_default(
+        &mut self,
+        var_name: &str,
+        default: &str,
+    ) -> Result<String, error::Error> {
         // Retrieve the spec.
-        let ps1 = self.parameter_or_default("PS1", self.default_prompt());
+        let prompt_spec = self.parameter_or_default(var_name, default);
 
         // Expand it.
-        let formatted_prompt = prompt::expand_prompt(self, ps1.as_ref())?;
+        let formatted_prompt = prompt::expand_prompt(self, prompt_spec.as_ref())?;
 
         // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
         // so we strip them here.
@@ -701,18 +721,6 @@ impl Shell {
         let formatted_prompt = expansion::basic_expand_str(self, &formatted_prompt).await?;
 
         Ok(formatted_prompt)
-    }
-
-    /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
-    #[allow(clippy::unused_async)]
-    pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
-        Ok(String::new())
-    }
-
-    /// Retrieve's the shell's continuation prompt.
-    pub fn continuation_prompt(&self) -> Result<String, error::Error> {
-        // TODO: Evaluate expansion?
-        Ok(self.parameter_or_default("PS2", "> "))
     }
 
     /// Returns the exit status of the last command executed in this shell.

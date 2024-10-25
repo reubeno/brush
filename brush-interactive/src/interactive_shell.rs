@@ -126,7 +126,7 @@ pub trait InteractiveShell {
             let prompt = InteractivePrompt {
                 prompt: shell_mut.as_mut().compose_prompt().await?,
                 alt_side_prompt: shell_mut.as_mut().compose_alt_side_prompt().await?,
-                continuation_prompt: shell_mut.as_mut().continuation_prompt()?,
+                continuation_prompt: shell_mut.as_mut().compose_continuation_prompt().await?,
             };
 
             drop(shell_mut);
