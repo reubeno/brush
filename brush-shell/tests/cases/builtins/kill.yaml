@@ -2,40 +2,9 @@ name: "Builtins: kill"
 cases:
   - name: "kill -l"
     ignore_stderr: true
-    # note that we dont use 'kill -l' because of the shape of the bash list
-    # 1) .. 2) .. 3)  .. etc. instead of just a simple list
     stdin: |
-      # kill -l
-      kill -l 1
-      kill -l 2
-      kill -l 3
-      kill -l 4
-      kill -l 5
-      kill -l 6
-      kill -l 7
-      kill -l 9
-      kill -l 10
-      kill -l 11
-      kill -l 12
-      kill -l 13
-      kill -l 14
-      kill -l 15
-      kill -l 16
-      kill -l 17
-      kill -l 18
-      kill -l 19
-      kill -l 20
-      kill -l 21
-      kill -l 22
-      kill -l 23
-      kill -l 24
-      kill -l 25
-      kill -l 26
-      kill -l 27
-      kill -l 28
-      kill -l 29
-      kill -l 30
-      kill -l 31
+      for i in $(seq 1 31); do kill -l $i; done
+      for i in $(kill -l | sed -e "s/[[:digit:]]*)//g"); do echo $i; done
       # invalid option
       kill -l 9999
       kill -l HUP
@@ -43,4 +12,5 @@ cases:
       kill -l int
       kill -l SIGHUP
       kill -l EXIT
+
 
