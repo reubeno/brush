@@ -80,6 +80,22 @@ cases:
       echo "OPTIND: ${OPTIND}"
       echo "OPTERR: ${OPTERR}"
 
+  - name: "getopts: -- as first arg"
+    stdin: |
+      while getopts "ab:" myvar -- -a; do
+        echo "Result: $?"
+        echo "myvar: ${myvar}"
+        echo "OPTARG: ${OPTARG}"
+        echo "OPTIND: ${OPTIND}"
+        echo "OPTERR: ${OPTERR}"
+        echo "----------------"
+      done
+      echo "Done; result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
   - name: "getopts: invalid option when optstr starts with colon"
     stdin: |
       getopts ":a:" myvar -b value

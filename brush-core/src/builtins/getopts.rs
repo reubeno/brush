@@ -21,6 +21,20 @@ pub(crate) struct GetOptsCommand {
 const VAR_GETOPTS_NEXT_CHAR_INDEX: &str = "__GETOPTS_NEXT_CHAR";
 
 impl builtins::Command for GetOptsCommand {
+    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
+    /// to `--`. See [`builtins::parse_known`] for more information
+    /// TODO: we can safely remove this after the issue is resolved
+    fn new<I>(args: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let (mut this, rest_args) = crate::builtins::try_parse_known::<GetOptsCommand>(args)?;
+        if let Some(args) = rest_args {
+            this.args.extend(args);
+        }
+        Ok(this)
+    }
+
     #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
