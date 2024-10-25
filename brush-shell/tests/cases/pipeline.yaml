@@ -36,3 +36,7 @@ cases:
       echo "var: ${var}"
       echo hi | { var=3; cat; }
       echo "var: ${var}"
+
+  - name: "pipeline extension"
+    stdin: |
+      echo -e "hello" |& wc

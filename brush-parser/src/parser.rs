@@ -255,7 +255,7 @@ peg::parser! {
         rule bang() -> bool = specific_word("!") { true }
 
         rule pipe_sequence() -> Vec<ast::Command> =
-            c:command() ++ (specific_operator("|") linebreak()) { c }
+            c:command() ++ ((non_posix_extensions_enabled() specific_operator("|&")) / specific_operator("|") linebreak()) { c }
 
         // N.B. We needed to move the function definition branch up to avoid conflicts with array assignment syntax.
         rule command() -> ast::Command =
@@ -587,11 +587,27 @@ peg::parser! {
                 w:word() {
                     ast::CommandPrefixOrSuffixItem::Word(ast::Word::from(w))
                 }
-            )+ { ast::CommandSuffix(s) }
+            )+ e:input_output_pipe_extension()? {
+                let mut s = s;
+                if let Some(e) = e {
+                    s.push(ast::CommandPrefixOrSuffixItem::IoRedirect(e))
+                }
+                ast::CommandSuffix(s)
+            }
 
         rule redirect_list() -> ast::RedirectList =
-            r:io_redirect()+ { ast::RedirectList(r) } /
+            r:io_redirect()+ e:input_output_pipe_extension()? {
+                let mut r = r;
+                if let Some(e) = e {
+                    r.push(e)
+                }
+                ast::RedirectList(r)
+            } /
             expected!("redirect list")
+
+
+        rule input_output_pipe_extension() -> ast::IoRedirect =
+            non_posix_extensions_enabled() &specific_operator("|&") { ast::IoRedirect::File(Some(2), ast::IoFileRedirectKind::DuplicateOutput, ast::IoFileRedirectTarget::Fd(1)) }
 
         // N.B. here strings are extensions to the POSIX standard.
         rule io_redirect() -> ast::IoRedirect =
@@ -909,6 +925,23 @@ esac\
         assert_eq!(command.cases[0].patterns.len(), 1);
         assert_eq!(command.cases[0].patterns[0].flatten(), "x");
 
+        Ok(())
+    }
+
+    #[test]
+    fn parse_redirection() -> Result<()> {
+        let input = r"echo |& wc";
+
+        let tokens = tokenize_str(input)?;
+        let program = super::token_parser::program(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+        let snapshot = r#"Program { complete_commands: [CompoundList([CompoundListItem(AndOrList { first: Pipeline { bang: false, seq: [Simple(SimpleCommand { prefix: None, word_or_name: Some(Word { value: "echo" }), suffix: None }), Simple(SimpleCommand { prefix: None, word_or_name: Some(Word { value: "wc" }), suffix: None })] }, additional: [] }, Sequence)])] }"#;
+        assert_eq!(snapshot, format!("{:?}", program));
         Ok(())
     }
 }

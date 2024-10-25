@@ -936,7 +936,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
     fn is_operator(&self, s: &str) -> bool {
         // Handle non-POSIX operators.
-        if !self.options.posix_mode && matches!(s, "<<<" | "&>" | "&>>" | ";;&" | ";&") {
+        if !self.options.posix_mode && matches!(s, "<<<" | "&>" | "&>>" | ";;&" | ";&" | "|&") {
             return true;
         }
 
