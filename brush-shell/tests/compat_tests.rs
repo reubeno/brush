@@ -1,5 +1,9 @@
 //! The test harness for brush shell integration tests.
 
+// Only compile this for Unix-like platforms (Linux, macOS) because they have an oracle to compare
+// against.
+#![cfg(unix)]
+
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
 use clap::Parser;
@@ -35,6 +39,9 @@ impl TestConfig {
     pub fn for_bash_testing(options: &TestOptions) -> Result<Self> {
         // Check for bash version.
         let bash_version_str = get_bash_version_str(Path::new(&options.bash_path))?;
+        if options.verbose {
+            eprintln!("Detected bash version: {bash_version_str}");
+        }
 
         // Skip rc file and profile for deterministic behavior across systems/distros.
         Ok(Self {
@@ -45,7 +52,7 @@ impl TestConfig {
             },
             oracle_version_str: Some(bash_version_str),
             test_shell: ShellConfig {
-                which: WhichShell::ShellUnderTest(String::from("brush")),
+                which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
                 // Disable a few fancy UI options for shells under test.
                 default_args: vec![
                     "--norc".into(),
@@ -65,12 +72,12 @@ impl TestConfig {
         Ok(Self {
             name: String::from(SH_CONFIG_NAME),
             oracle_shell: ShellConfig {
-                which: WhichShell::NamedShell(String::from("sh")),
+                which: WhichShell::NamedShell(PathBuf::from("sh")),
                 default_args: vec![],
             },
             oracle_version_str: None,
             test_shell: ShellConfig {
-                which: WhichShell::ShellUnderTest(String::from("brush")),
+                which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
                 // Disable a few fancy UI options for shells under test.
                 default_args: vec![
                     String::from("--sh"),
@@ -85,9 +92,7 @@ impl TestConfig {
 }
 
 #[allow(clippy::too_many_lines)]
-async fn cli_integration_tests(options: TestOptions) -> Result<()> {
-    let dir = env!("CARGO_MANIFEST_DIR");
-
+async fn cli_integration_tests(mut options: TestOptions) -> Result<()> {
     let mut success_count = 0;
     let mut skip_count = 0;
     let mut known_failure_count = 0;
@@ -98,18 +103,46 @@ async fn cli_integration_tests(options: TestOptions) -> Result<()> {
         test: std::time::Duration::default(),
     };
 
-    let mut test_configs = vec![];
+    // Resolve paths.
+    let test_cases_dir = options.test_cases_path.as_deref().map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases"),
+        |p| p.to_owned(),
+    );
 
+    // Resolve path to the shell-under-test.
+    if options.brush_path.is_empty() {
+        options.brush_path = assert_cmd::cargo::cargo_bin("brush")
+            .to_string_lossy()
+            .to_string();
+    }
+    if !Path::new(&options.brush_path).exists() {
+        return Err(anyhow::anyhow!(
+            "brush binary not found: {}",
+            options.brush_path
+        ));
+    }
+
+    // Set up test configs
+    let mut test_configs = vec![];
     if options.should_enable_config(BASH_CONFIG_NAME) {
         test_configs.push(TestConfig::for_bash_testing(&options)?);
     }
-
     if options.should_enable_config(SH_CONFIG_NAME) {
         test_configs.push(TestConfig::for_sh_testing(&options)?);
     }
 
+    // Generate a glob pattern to find all the YAML test case files.
+    let glob_pattern = test_cases_dir
+        .join("**/*.yaml")
+        .to_string_lossy()
+        .to_string();
+
+    if options.verbose {
+        eprintln!("Running test cases: {glob_pattern}");
+    }
+
     // Spawn each test case set separately.
-    for entry in glob::glob(format!("{dir}/tests/cases/**/*.yaml").as_ref()).unwrap() {
+    for entry in glob::glob(glob_pattern.as_ref()).unwrap() {
         let entry = entry.unwrap();
 
         let yaml_file = std::fs::File::open(entry.as_path())?;
@@ -472,8 +505,8 @@ impl Default for ShellInvocation {
 
 #[derive(Clone)]
 enum WhichShell {
-    ShellUnderTest(String),
-    NamedShell(String),
+    ShellUnderTest(PathBuf),
+    NamedShell(PathBuf),
 }
 
 struct TestCaseResult {
@@ -943,10 +976,7 @@ impl TestCase {
                     let target_dir = std::env::var("CARGO_TARGET_DIR")
                         .ok()
                         .map_or_else(default_target_dir, PathBuf::from);
-                    (
-                        std::process::Command::new(assert_cmd::cargo::cargo_bin(name)),
-                        Some(target_dir),
-                    )
+                    (std::process::Command::new(name), Some(target_dir))
                 }
                 WhichShell::NamedShell(name) => (std::process::Command::new(name), None),
             },
@@ -964,6 +994,11 @@ impl TestCase {
         test_cmd.env("PS1", "test$ ");
         // Try to get decent backtraces when problems get hit.
         test_cmd.env("RUST_BACKTRACE", "1");
+        // Hard-code a well-known PATH that isn't dependent on the system's configuration.
+        test_cmd.env(
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        );
 
         // Set up any env vars needed for collecting coverage data.
         if let Some(coverage_target_dir) = &coverage_target_dir {
@@ -1278,7 +1313,7 @@ struct TestOptions {
     pub display_known_failure_details: bool,
 
     /// Display details regarding successful test cases
-    #[clap(short = 'v', long = "verbose")]
+    #[clap(short = 'v', long = "verbose", env = "BRUSH_VERBOSE")]
     pub verbose: bool,
 
     /// Enable a specific configuration
@@ -1294,8 +1329,16 @@ struct TestOptions {
     pub exact_match: bool,
 
     /// Optionaly specify a non-default path for bash
-    #[clap(long = "bash-path", default_value = "bash")]
-    pub bash_path: String,
+    #[clap(long = "bash-path", default_value = "bash", env = "BASH_PATH")]
+    pub bash_path: PathBuf,
+
+    /// Optionally specify a non-default path for brush
+    #[clap(long = "brush-path", default_value = "", env = "BRUSH_PATH")]
+    pub brush_path: String,
+
+    /// Optionally specify path to test cases
+    #[clap(long = "test-cases-path", env = "BRUSH_COMPAT_TEST_CASES")]
+    pub test_cases_path: Option<PathBuf>,
 
     //
     // Compat-only options
@@ -1421,14 +1464,7 @@ fn get_bash_version_str(bash_path: &Path) -> Result<String> {
 
 fn main() -> Result<()> {
     let unparsed_args: Vec<_> = std::env::args().collect();
-    let mut options = TestOptions::parse_from(unparsed_args);
-
-    // Allow overriding the bash path for invocations where custom arguments
-    // can't be used (because other tests get run too and they don't support
-    // those arguments).
-    if let Ok(value) = std::env::var("BASH_PATH") {
-        options.bash_path = value;
-    }
+    let options = TestOptions::parse_from(unparsed_args);
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

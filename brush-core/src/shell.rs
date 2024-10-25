@@ -135,6 +135,8 @@ pub struct CreateOptions {
     pub no_profile: bool,
     /// Whether to skip sourcing the user's rc file.
     pub no_rc: bool,
+    /// Whether to skip inheriting environment variables from the calling process.
+    pub do_not_inherit_env: bool,
     /// Whether the shell is in POSIX compliance mode.
     pub posix: bool,
     /// Whether to print commands and arguments as they are read.
@@ -210,11 +212,13 @@ impl Shell {
     fn initialize_vars(options: &CreateOptions) -> Result<ShellEnvironment, error::Error> {
         let mut env = ShellEnvironment::new();
 
-        // Seed parameters from environment.
-        for (k, v) in std::env::vars() {
-            let mut var = ShellVariable::new(ShellValue::String(v));
-            var.export();
-            env.set_global(k, var)?;
+        // Seed parameters from environment (unless requested not to do so).
+        if !options.do_not_inherit_env {
+            for (k, v) in std::env::vars() {
+                let mut var = ShellVariable::new(ShellValue::String(v));
+                var.export();
+                env.set_global(k, var)?;
+            }
         }
 
         // Set some additional ones.

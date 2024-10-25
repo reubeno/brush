@@ -42,7 +42,7 @@ async-trait = "0.1.83"
 brush-parser = { version = "^0.2.9", path = "../brush-parser" }
 brush-core = { version = "^0.2.11", path = "../brush-core" }
 cfg-if = "1.0.0"
-clap = { version = "4.5.17", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.17", features = ["derive", "env", "wrap_help"] }
 const_format = "0.2.33"
 git-version = "0.3.9"
 lazy_static = "1.5.0"
