@@ -30,6 +30,7 @@ utf8-chars = "3.0.5"
 anyhow = "1.0.91"
 assert_matches = "1.5.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }

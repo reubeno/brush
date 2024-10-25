@@ -50,15 +50,7 @@ impl<R: std::io::BufRead> Parser<R> {
     }
 
     /// Parses the input into an abstract syntax tree (AST) of a shell program.
-    ///
-    /// # Arguments
-    ///
-    /// * `stop_on_unescaped_newline` - Whether or not to stop parsing when an unescaped newline is
-    ///   encountered.
-    pub fn parse(
-        &mut self,
-        stop_on_unescaped_newline: bool,
-    ) -> Result<ast::Program, error::ParseError> {
+    pub fn parse(&mut self) -> Result<ast::Program, error::ParseError> {
         //
         // References:
         //   * https://www.gnu.org/software/bash/manual/bash.html#Shell-Syntax
@@ -90,18 +82,13 @@ impl<R: std::io::BufRead> Parser<R> {
                 }
             };
 
+            let reason = result.reason;
             if let Some(token) = result.token {
-                tracing::debug!(target: "tokenize", "TOKEN {}: {:?}", tokens.len(), token);
+                tracing::debug!(target: "tokenize", "TOKEN {}: {:?} {reason:?}", tokens.len(), token);
                 tokens.push(token);
             }
 
-            if matches!(result.reason, TokenEndReason::EndOfInput) {
-                break;
-            }
-
-            if stop_on_unescaped_newline
-                && matches!(result.reason, TokenEndReason::UnescapedNewLine)
-            {
+            if matches!(reason, TokenEndReason::EndOfInput) {
                 break;
             }
         }
@@ -646,27 +633,27 @@ peg::parser! {
         rule filename() -> &'input Token =
             word()
 
-        rule io_here() -> ast::IoHereDocument =
-           specific_operator("<<-") here_end:here_end() doc:[_] {
-                let requires_expansion = !here_end.to_str().contains(['\'', '"', '\\']);
+        pub(crate) rule io_here() -> ast::IoHereDocument =
+           specific_operator("<<-") here_tag:here_tag() doc:[_] closing_tag:here_tag() {
+                let requires_expansion = !here_tag.to_str().contains(['\'', '"', '\\']);
                 ast::IoHereDocument {
                     remove_tabs: true,
                     requires_expansion,
-                    here_end: ast::Word::from(here_end),
+                    here_end: ast::Word::from(here_tag),
                     doc: ast::Word::from(doc)
                 }
             } /
-            specific_operator("<<") here_end:here_end() doc:[_] {
-                let requires_expansion = !here_end.to_str().contains(['\'', '"', '\\']);
+            specific_operator("<<") here_tag:here_tag() doc:[_] closing_tag:here_tag() {
+                let requires_expansion = !here_tag.to_str().contains(['\'', '"', '\\']);
                 ast::IoHereDocument {
                     remove_tabs: false,
                     requires_expansion,
-                    here_end: ast::Word::from(here_end),
+                    here_end: ast::Word::from(here_tag),
                     doc: ast::Word::from(doc)
                 }
             }
 
-        rule here_end() -> &'input Token =
+        rule here_tag() -> &'input Token =
             word()
 
         rule process_substitution() -> (ast::ProcessSubstitutionKind, ast::SubshellCommand) =

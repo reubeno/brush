@@ -1,6 +1,14 @@
 name: "Here docs/strings"
 cases:
   - name: "Basic here doc"
+    stdin: |
+      cat <<END-MARKER
+      Something here...
+      ...and here.
+      END-MARKER
+      echo "This is after"
+
+  - name: "Basic here doc in a script"
     test_files:
       - path: "script.sh"
         contents: |
@@ -39,3 +47,56 @@ cases:
       shopt -ou posix
       cat <<<"Something here."
       wc -l <<<"Something"
+
+  - name: "Empty here doc"
+    stdin: |
+      wc -l <<EOF
+      EOF
+
+  - name: "Here doc with other tokens after tag"
+    stdin: |
+      wc -l <<EOF | wc -l
+      A B C
+      1 2 3
+      EOF
+
+  - name: "Multiple here docs"
+    stdin: |
+      cat <<EOF1 <<EOF2
+      A B C
+      EOF1
+      1 2 3
+      EOF2
+
+  - name: "Here doc in a command substitution"
+    stdin: |
+      test1=$(cat <<EOF
+      1
+      2 3
+      4 5 6
+      EOF
+      )
+
+      echo "${test1}"
+
+  - name: "Multiple here docs in a command substitution"
+    stdin: |
+      test1=$(cat <<EOF1 <<EOF2
+      A B C
+      EOF1
+      D E F
+      EOF2
+      )
+
+      echo "${test1}"
+
+  - name: "Complex here docs in a command substitution"
+    stdin: |
+      test1=$(cat <<EOF1 <<EOF2 | wc -l
+      A B C
+      EOF1
+      D E F
+      EOF2
+      )
+
+      echo "${test1}"
