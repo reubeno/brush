@@ -39,4 +39,5 @@ cases:
 
   - name: "pipeline extension"
     stdin: |
-      echo -e "hello" |& wc
+      echo -e "hello" |& wc -l
+      cat dfdfgdfgdf |& wc -l
