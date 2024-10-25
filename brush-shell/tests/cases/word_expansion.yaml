@@ -668,6 +668,16 @@ cases:
       echo "\${myarray[@]:2:2}: ${myarray[@]:2:2}"
       echo "\${myarray[@]:2}: ${myarray[@]:2}"
 
+  - name: "Substring operator past end of array"
+    stdin: |
+      set a b c
+      declare -a result1=("${@:3}")
+      declare -p result1
+
+      myarray=(a b c)
+      declare -a result2=("${myarray[@]:3}")
+      declare -p result2
+
   - name: "Substring with length (with nested expressions)"
     stdin: |
       var="Hello, world!"
