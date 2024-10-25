@@ -110,8 +110,11 @@ fn print_signals(
             }
         }
     } else {
-        return crate::traps::format_signals(context.stdout(), TrapSignal::iterator())
-            .map(|()| builtins::ExitCode::Success);
+        return crate::traps::format_signals(
+            context.stdout(),
+            TrapSignal::iterator().filter(|s| !matches!(s, TrapSignal::Exit)),
+        )
+        .map(|()| builtins::ExitCode::Success);
     }
 
     Ok(exit_code)
