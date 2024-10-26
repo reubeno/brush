@@ -24,6 +24,7 @@ pub(crate) mod os_pipe;
 pub(crate) mod tokio_process;
 
 pub(crate) mod fs;
+pub(crate) mod io;
 
 pub(crate) use platform::network;
 pub(crate) use platform::pipes;

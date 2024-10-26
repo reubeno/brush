@@ -33,7 +33,7 @@ thiserror = "1.0.64"
 tracing = "0.1.40"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.40.0", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.40.0", features = ["io-util", "macros", "rt", "time"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.0"
@@ -45,11 +45,24 @@ tokio = { version = "1.40.0", features = [
     "rt",
     "rt-multi-thread",
     "signal",
+    "time"
 ] }
 
 [target.'cfg(windows)'.dependencies]
 homedir = "0.3.3"
 whoami = "1.5.2"
+windows = { version = "0.56", features = [
+        "Win32_Storage",
+        "Win32_Storage_FileSystem",
+        "Win32_Foundation",
+        "Win32_Networking_WinHttp",
+        "Win32_Security",
+        "Win32_System_Threading",
+        "Win32_System_IO",
+        "Win32_Networking_HttpServer",
+        "Win32_Networking_WinSock",
+        "Win32_System_Console",
+] }
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.0"
@@ -59,6 +72,7 @@ nix = { version = "0.29.0", features = [
     "signal",
     "term",
     "user",
+    "poll",
 ] }
 uzers = "0.12.1"
 

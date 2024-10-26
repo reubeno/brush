@@ -1,7 +1,8 @@
 use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
-use std::io::{Read, Write};
+use std::io::Write;
+use std::time::Duration;
 
 use crate::{builtins, commands, env, error, openfiles, sys, variables};
 
@@ -48,8 +49,8 @@ pub(crate) struct ReadCommand {
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[clap(short = 't')]
-    timeout_in_seconds: Option<usize>,
+    #[clap(short = 't', value_parser = parse_duration)]
+    timeout_in_seconds: Option<Duration>,
 
     /// File descriptor to read from instead of stdin.
     #[clap(short = 'u', name = "FD")]
@@ -57,6 +58,11 @@ pub(crate) struct ReadCommand {
 
     /// Optionally, names of variables to receive read input.
     variable_names: Vec<String>,
+}
+
+fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseIntError> {
+    let seconds = arg.parse()?;
+    Ok(std::time::Duration::from_secs(seconds))
 }
 
 impl builtins::Command for ReadCommand {
@@ -73,13 +79,10 @@ impl builtins::Command for ReadCommand {
         if self.raw_mode {
             tracing::debug!("read -r is not implemented");
         }
-        if self.timeout_in_seconds.is_some() {
-            return error::unimp("read -t");
-        }
 
         // Find the input stream to use.
         #[allow(clippy::cast_lossless)]
-        let input_stream = if let Some(fd_num) = self.fd_num_to_read {
+        let mut input_stream = if let Some(fd_num) = self.fd_num_to_read {
             let fd_num = fd_num as u32;
             context
                 .fd(fd_num)
@@ -88,7 +91,22 @@ impl builtins::Command for ReadCommand {
             context.stdin()
         };
 
-        let input_line = self.read_line(input_stream, context.stdout())?;
+        let orig_term_attr = self.setup_terminal_settings(&input_stream)?;
+        let input_line = if let Some(timeout) = self.timeout_in_seconds {
+            if !matches!(input_stream, openfiles::OpenFile::Stdin) {
+                return error::unimp("reat -t with a regular file (e.g. from input redirection)");
+            }
+            let mut input_stream = TimeoutStdinReader::new(timeout);
+            self.read_line(&mut input_stream, context.stdout()).await
+        } else {
+            self.read_line(&mut input_stream, context.stdout()).await
+        };
+
+        if let Some(orig_term_attr) = &orig_term_attr {
+            input_stream.set_term_attr(orig_term_attr)?;
+        }
+
+        let input_line = input_line?;
 
         if let Some(input_line) = input_line {
             let mut fields: VecDeque<_> = split_line_by_ifs(&context, input_line.as_str());
@@ -164,16 +182,15 @@ enum ReadTermination {
     EndOfInput,
     CtrlC,
     Limit,
+    Timeout,
 }
 
 impl ReadCommand {
-    fn read_line(
+    async fn read_line(
         &self,
-        mut input_file: openfiles::OpenFile,
+        input_file: &mut impl AsyncRead,
         mut output_file: openfiles::OpenFile,
     ) -> Result<Option<String>, error::Error> {
-        let orig_term_attr = self.setup_terminal_settings(&input_file)?;
-
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
             None
         } else if let Some(delimiter_str) = &self.delimiter {
@@ -195,12 +212,23 @@ impl ReadCommand {
         let mut buffer = [0; 1]; // 1-byte buffer
 
         let reason = loop {
-            let n = input_file.read(&mut buffer)?;
-            if n == 0 {
+            let n = input_file.read(&mut buffer).await;
+            if let Err(err) = &n {
+                if matches!(err.kind(), std::io::ErrorKind::TimedOut) {
+                    break ReadTermination::Timeout;
+                }
+            }
+            if n? == 0 {
                 break ReadTermination::EndOfInput; // EOF reached.
             }
 
             let ch = buffer[0] as char;
+
+            // TODO: fix this (in io.rs)
+            #[cfg(windows)]
+            if ch == '\r' {
+                break ReadTermination::EndOfInput;
+            }
 
             // Check for Ctrl+C.
             if ch == '\x03' {
@@ -224,6 +252,10 @@ impl ReadCommand {
 
             line.push(ch);
 
+            // TODO: fix this disabled ECHO_INPUT (in io.rs)
+            #[cfg(windows)]
+            eprint!("{ch}");
+
             // Check to see if we've hit a character limit.
             if let Some(char_limit) = char_limit {
                 if line.len() >= char_limit {
@@ -231,10 +263,6 @@ impl ReadCommand {
                 }
             }
         };
-
-        if let Some(orig_term_attr) = &orig_term_attr {
-            input_file.set_term_attr(orig_term_attr)?;
-        }
 
         match reason {
             ReadTermination::EndOfInput => {
@@ -244,7 +272,7 @@ impl ReadCommand {
                     Ok(Some(line))
                 }
             }
-            ReadTermination::CtrlC => {
+            ReadTermination::CtrlC | ReadTermination::Timeout => {
                 // Discard the input and return.
                 Ok(None)
             }
@@ -280,4 +308,31 @@ fn split_line_by_ifs(context: &commands::ExecutionContext<'_>, line: &str) -> Ve
     line.split(split_chars.as_slice())
         .map(|field| field.to_owned())
         .collect()
+}
+
+trait AsyncRead {
+    async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
+}
+
+pub struct TimeoutStdinReader {
+    timeout: Duration,
+}
+
+impl TimeoutStdinReader {
+    pub fn new(timeout: Duration) -> TimeoutStdinReader {
+        TimeoutStdinReader { timeout }
+    }
+}
+
+impl AsyncRead for TimeoutStdinReader {
+    async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        crate::sys::io::read_stdin_timeout(buf, self.timeout).await
+    }
+}
+
+// TODO: without timeout, blocking read for now
+impl AsyncRead for openfiles::OpenFile {
+    async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        (self as &mut dyn std::io::Read).read(buf)
+    }
 }
