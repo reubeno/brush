@@ -1,18 +1,4 @@
-use std::str::FromStr;
-
-use crate::{error, sys, traps};
-
-pub(crate) fn parse_numeric_signal(signal: i32) -> Result<traps::TrapSignal, error::Error> {
-    Ok(traps::TrapSignal::Signal(
-        nix::sys::signal::Signal::try_from(signal).map_err(|_| error::Error::InvalidSignal)?,
-    ))
-}
-
-pub(crate) fn parse_os_signal_name(signal: &str) -> Result<traps::TrapSignal, error::Error> {
-    Ok(traps::TrapSignal::Signal(
-        nix::sys::signal::Signal::from_str(signal).map_err(|_| error::Error::InvalidSignal)?,
-    ))
-}
+use crate::{error, sys};
 
 pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
     #[allow(clippy::cast_possible_wrap)]

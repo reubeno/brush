@@ -1,0 +1,17 @@
+name: "Builtins: kill"
+cases:
+  - name: "kill -l"
+    ignore_stderr: true
+    stdin: |
+      for i in $(seq 1 31); do kill -l $i; done
+      # limit the number of signals to 31. Realtime signals are not implemented yet.
+      for i in $(kill -l | sed -e "s/[[:digit:]]*)//g"); do echo $i; done | head -31
+      # invalid option
+      kill -l 9999
+      kill -l HUP
+      kill -l iNt
+      kill -l int
+      kill -l SIGHUP
+      kill -l EXIT
+
+

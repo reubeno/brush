@@ -1,6 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
+use crate::traps::TrapSignal;
 use crate::{builtins, commands, error};
 
 /// Signal a job or process.
@@ -37,14 +38,12 @@ impl builtins::Command for KillCommand {
         }
 
         if self.list_signals {
-            error::unimp("kill -l")
+            return print_signals(&context, self.args.as_ref());
         } else {
             if self.args.len() != 1 {
                 writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
                 return Ok(builtins::ExitCode::InvalidUsage);
             }
-
-            let exit_code = builtins::ExitCode::Success;
 
             let pid_or_job_spec = &self.args[0];
             if pid_or_job_spec.starts_with('%') {
@@ -67,8 +66,56 @@ impl builtins::Command for KillCommand {
                 nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGKILL)
                     .map_err(|_errno| error::Error::FailedToSendSignal)?;
             }
-
-            Ok(exit_code)
         }
+        Ok(builtins::ExitCode::Success)
     }
+}
+
+fn print_signals(
+    context: &commands::ExecutionContext<'_>,
+    signals: &[String],
+) -> Result<builtins::ExitCode, error::Error> {
+    let mut exit_code = builtins::ExitCode::Success;
+    if !signals.is_empty() {
+        for s in signals {
+            // If the user gives us a code, we print the name; if they give a name, we print its
+            // code.
+            enum PrintSignal {
+                Name(&'static str),
+                Num(i32),
+            }
+
+            let signal = if let Ok(n) = s.parse::<i32>() {
+                // bash compatibility. `SIGHUP` -> `HUP`
+                TrapSignal::try_from(n).map(|s| {
+                    PrintSignal::Name(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
+                })
+            } else {
+                TrapSignal::try_from(s.as_str()).map(|sig| {
+                    i32::try_from(sig).map_or(PrintSignal::Name(sig.as_str()), PrintSignal::Num)
+                })
+            };
+
+            match signal {
+                Ok(PrintSignal::Num(n)) => {
+                    writeln!(context.stdout(), "{n}")?;
+                }
+                Ok(PrintSignal::Name(s)) => {
+                    writeln!(context.stdout(), "{s}")?;
+                }
+                Err(e) => {
+                    writeln!(context.stderr(), "{e}")?;
+                    exit_code = builtins::ExitCode::Custom(1);
+                }
+            }
+        }
+    } else {
+        return crate::traps::format_signals(
+            context.stdout(),
+            TrapSignal::iterator().filter(|s| !matches!(s, TrapSignal::Exit)),
+        )
+        .map(|()| builtins::ExitCode::Success);
+    }
+
+    Ok(exit_code)
 }
