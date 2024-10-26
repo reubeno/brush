@@ -265,8 +265,8 @@ peg::parser! {
             c
         }
         rule pipe_operator() =
-            pipe_extension_redirection() /
-            specific_operator("|")
+            specific_operator("|") /
+            pipe_extension_redirection()
 
         rule pipe_extension_redirection() -> &'input Token  =
             non_posix_extensions_enabled() p:specific_operator("|&") { p }
