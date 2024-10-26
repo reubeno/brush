@@ -254,8 +254,22 @@ peg::parser! {
             bang:bang()? seq:pipe_sequence() { ast::Pipeline { bang: bang.is_some(), seq } }
         rule bang() -> bool = specific_word("!") { true }
 
-        rule pipe_sequence() -> Vec<ast::Command> =
-            c:command() ++ (specific_operator("|") linebreak()) { c }
+        pub(crate) rule pipe_sequence() -> Vec<ast::Command> =
+            c:(c:command() r:&pipe_extension_redirection()? {? // check for `|&` without consuming the stream.
+                let mut c = c;
+                if r.is_some() {
+                    add_pipe_extension_redirection(&mut c)?;
+                }
+                Ok(c)
+            }) ++ (pipe_operator() linebreak()) {
+            c
+        }
+        rule pipe_operator() =
+            specific_operator("|") /
+            pipe_extension_redirection()
+
+        rule pipe_extension_redirection() -> &'input Token  =
+            non_posix_extensions_enabled() p:specific_operator("|&") { p }
 
         // N.B. We needed to move the function definition branch up to avoid conflicts with array assignment syntax.
         rule command() -> ast::Command =
@@ -826,6 +840,37 @@ fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
     parse_result.map_err(|_| "not assignment word")
 }
 
+// add `2>&1` to the command if the pipeline is `|&`
+fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static str> {
+    let r = ast::IoRedirect::File(
+        Some(2),
+        ast::IoFileRedirectKind::DuplicateOutput,
+        ast::IoFileRedirectTarget::Fd(1),
+    );
+    match c {
+        ast::Command::Simple(c) => {
+            let r = ast::CommandPrefixOrSuffixItem::IoRedirect(r);
+            if let Some(suffix) = &mut c.suffix {
+                suffix.0.push(r);
+            } else {
+                let v = vec![r];
+                c.suffix = Some(ast::CommandSuffix(v));
+            }
+        }
+        ast::Command::Compound(_, l) => {
+            if let Some(r_list) = l {
+                r_list.0.push(r);
+            } else {
+                let v = vec![r];
+                *l = Some(ast::RedirectList(v));
+            }
+        }
+        ast::Command::ExtendedTest(_) => return Err("|& unimplemented for extended tests"),
+        ast::Command::Function(_) => return Err("|& unimplemented for functions"),
+    };
+    Ok(())
+}
+
 fn parse_array_assignment(
     word: &str,
     elements: &[&String],
@@ -858,9 +903,11 @@ fn parse_array_assignment(
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::tokenizer::tokenize_str;
     use anyhow::Result;
+    use assert_matches::assert_matches;
 
     #[test]
     fn parse_case() -> Result<()> {
@@ -909,6 +956,35 @@ esac\
         assert_eq!(command.cases[0].patterns.len(), 1);
         assert_eq!(command.cases[0].patterns[0].flatten(), "x");
 
+        Ok(())
+    }
+
+    #[test]
+    fn parse_redirection() -> Result<()> {
+        let input = r"echo |& wc";
+
+        let tokens = tokenize_str(input)?;
+        let seq = super::token_parser::pipe_sequence(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+
+        assert_eq!(seq.len(), 2);
+        assert_matches!(seq[0], ast::Command::Simple(..));
+        if let ast::Command::Simple(c) = &seq[0] {
+            let c = c.suffix.as_ref().unwrap();
+            assert_matches!(
+                c.0[0],
+                ast::CommandPrefixOrSuffixItem::IoRedirect(ast::IoRedirect::File(
+                    Some(2),
+                    ast::IoFileRedirectKind::DuplicateOutput,
+                    ast::IoFileRedirectTarget::Fd(1)
+                ))
+            )
+        }
         Ok(())
     }
 }
