@@ -93,7 +93,7 @@ jobs:
 
       - name: "Build (native)"
         if: ${{ matrix.target == '' }}
-        run: cargo build --release
+        run: cargo build --release --all-targets
 
       - name: "Build (cross)"
         if: ${{ matrix.target != '' }}
@@ -104,6 +104,15 @@ jobs:
         with:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+
+      - name: "Upload integration test binaries"
+        if: ${{ matrix.target == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-tests-${{ matrix.arch }}-${{ matrix.os }}
+          path: |
+            target/${{ matrix.target }}/release/deps/brush_*_tests-*
+            !**/*.d
 
   # Test functional correctness
   test:
@@ -317,3 +326,76 @@ jobs:
             pr/benchmarks.txt
             main/benchmarks.txt
             benchmark-results.md
+
+  # Test release binary on a variety of OS platforms.
+  os-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # N.B. We don't include Ubuntu because it's already covered by the initial test job.
+          - container: "fedora:latest"
+            description: "Fedora/latest"
+            prereqs_command: "dnf install -y bash-completion iputils grep less sed util-linux"
+          - container: "debian:latest"
+            description: "Debian/latest"
+            prereqs_command: "apt-get update -y && apt-get install -y bash-completion bsdmainutils iputils-ping grep less sed"
+          - container: "archlinux:latest"
+            description: "Arch Linux/latest"
+            prereqs_command: "pacman -Sy --noconfirm bash-completion iputils grep less sed util-linux"
+
+    name: "OS target tests (${{ matrix.description }})"
+    runs-on: ubuntu-latest
+    container: ${{ matrix.container }}
+    needs: build
+    steps:
+      # Checkout sources for YAML-based test cases
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: sources
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-x86_64-linux
+          path: binaries
+
+      - name: Download integration test binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-tests-x86_64-linux
+          path: binaries
+
+      - name: Setup downloads
+        run: |
+          # N.B. Can't use -o pipefail because it's not supported on Debian.
+          set -eux
+          chmod +x binaries/*
+          ls -l -R sources/brush-shell/tests
+          ls -l binaries
+
+      - name: Install prerequisites
+        if: ${{ matrix.prereqs_command != '' }}
+        run: ${{ matrix.prereqs_command }}
+
+      - name: Run tests
+        run: |
+          export BRUSH_PATH=$PWD/binaries/brush
+          export BRUSH_COMPAT_TEST_CASES=$PWD/sources/brush-shell/tests/cases
+          export BRUSH_VERBOSE=true
+
+          result=0
+          for test_name in binaries/*tests*; do
+            # TODO: Re-enable interactive tests.
+            if [[ ${test_name} == *interactive* ]]; then
+              echo "WARNING: skipping interactive test: ${test_name}"
+              continue
+            fi
+
+            echo "Running test: ${test_name}"
+            chmod +x ${test_name}
+            ${test_name} || result=$?
+          done
+
+          exit ${result}

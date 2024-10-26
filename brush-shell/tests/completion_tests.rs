@@ -1,3 +1,5 @@
+//! Completion integration tests for brush shell.
+
 // For now, only compile this for Linux.
 #![cfg(target_os = "linux")]
 #![allow(clippy::panic_in_result_fn)]

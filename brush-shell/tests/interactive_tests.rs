@@ -1,3 +1,7 @@
+//! Interactive integration tests for brush shell
+
+// For now, only compile this for Unix-like platforms (Linux, macOS).
+#![cfg(unix)]
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Context;

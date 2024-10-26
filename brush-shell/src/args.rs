@@ -73,6 +73,10 @@ pub struct CommandLineArgs {
     #[clap(long = "norc")]
     pub no_rc: bool,
 
+    /// Don't inherit environment variables from the calling process.
+    #[clap(long = "noenv")]
+    pub do_not_inherit_env: bool,
+
     /// Enable shell option.
     #[clap(short = 'O', value_name = "OPTION")]
     pub enabled_shopt_options: Vec<String>,
