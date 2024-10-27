@@ -26,3 +26,40 @@ jobs:
         with:
           args: ". --offline --verbose --no-progress"
           fail: true
+
+  # Generate docs content
+  generate-docs:
+    name: "Generate usage docs"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Enable cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Create dirs
+        run: mkdir -p ./md ./man
+
+      - name: Build markdown info
+        run: cargo xtask generate-markdown --out ./md/brush.md
+
+      - name: Upload markdown docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-markdown
+          path: md
+
+      - name: Build man pages
+        run: cargo xtask generate-man --output-dir ./man
+
+      - name: Upload man pages
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-man
+          path: man
