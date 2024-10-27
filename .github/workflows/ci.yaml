@@ -399,3 +399,12 @@ jobs:
           done
 
           exit ${result}
+
+  runrudra:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rudra
+        uses: sslab-gatech/Rudra@master
