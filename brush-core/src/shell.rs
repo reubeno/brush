@@ -79,11 +79,17 @@ pub struct Shell {
 
 impl Clone for Shell {
     fn clone(&self) -> Self {
+        let mut env = self.env.clone();
+
+        if !self.options.sh_mode {
+            increment_level_var(&mut env, "BASH_SUBSHELL", 1, false).unwrap();
+        }
+
         Self {
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
-            env: self.env.clone(),
+            env,
             funcs: self.funcs.clone(),
             options: self.options.clone(),
             jobs: jobs::JobManager::new(),
@@ -279,7 +285,13 @@ impl Shell {
             )?;
         }
 
+        increment_level_var(&mut env, "SHLVL", 1, true)?;
+
         if !options.sh_mode {
+            let mut lvl = ShellVariable::new("0".into());
+            lvl.export();
+            env.set_global("BASH_SUBSHELL", lvl)?;
+
             if let Some(shell_name) = &options.shell_name {
                 env.set_global("BASH", ShellVariable::new(shell_name.into()))?;
             }
@@ -1181,4 +1193,22 @@ fn parse_string_impl(
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse(true)
+}
+
+// parse a numeric variable from a string, increment it by 1, then re-export
+fn increment_level_var(
+    env: &mut ShellEnvironment,
+    var: &str,
+    default: usize,
+    export: bool,
+) -> Result<(), error::Error> {
+    let lvl = env
+        .get_str(var)
+        .and_then(|s| s.parse::<usize>().ok().map(|n| n + 1))
+        .unwrap_or(default);
+    let mut lvl = ShellVariable::new(ShellValue::String(lvl.to_string()));
+    if export {
+        lvl.export();
+    }
+    env.set_global(var, lvl)
 }

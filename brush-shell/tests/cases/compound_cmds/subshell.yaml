@@ -23,3 +23,37 @@ cases:
   - name: "Piped subshell usage"
     stdin: |
       (echo hi) | wc -l
+
+  - name: "SHLVL subshell"
+    stdin: |
+      initial="$SHLVL"
+      function rec_subshell {
+          if [ "$1" -ge "$2" ]; then
+              exit
+          else
+              (
+                  test $initial -eq $SHLVL; echo $?
+                  rec_subshell $(($1 + 1)) $2
+              )
+          fi
+      }
+      rec_subshell 1 10
+
+
+  - name: "BASH_SUBSHELL"
+    stdin: |
+      initial="$BASH_SUBSHELL"
+
+      function rec_subshell {
+          if [ "$1" -ge "$2" ]; then
+              exit
+          else
+              (
+                  test $initial -ne $BASH_SUBSHELL; echo $?
+                  echo $BASH_SUBSHELL
+                  initial=$BASH_SUBSHELL
+                  rec_subshell $(($1 + 1)) $2
+              )
+          fi
+      }
+      rec_subshell 1 10
