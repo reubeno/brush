@@ -17,28 +17,28 @@ bench = false
 workspace = true
 
 [dependencies]
-async-recursion = "1.1.0"
+async-recursion = "1.1.1"
 async-trait = "0.1.83"
 brush-parser = { version = "^0.2.9", path = "../brush-parser" }
-cached = "0.53.0"
+cached = "0.53.1"
 cfg-if = "1.0.0"
-clap = { version = "4.5.17", features = ["derive", "wrap_help"] }
-fancy-regex = "0.13.0"
+clap = { version = "4.5.20", features = ["derive", "wrap_help"] }
+fancy-regex = "0.14.0"
 futures = "0.3.31"
 indexmap = "2.6.0"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 rand = "0.8.5"
-thiserror = "1.0.64"
+thiserror = "1.0.65"
 tracing = "0.1.40"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.40.0", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.41.0", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.0"
 os_pipe = { version = "1.2.1", features = ["io_safety"] }
-tokio = { version = "1.40.0", features = [
+tokio = { version = "1.41.0", features = [
     "io-util",
     "macros",
     "process",
@@ -48,7 +48,7 @@ tokio = { version = "1.40.0", features = [
 ] }
 
 [target.'cfg(windows)'.dependencies]
-homedir = "0.3.3"
+homedir = "0.3.4"
 whoami = "1.5.2"
 
 [target.'cfg(unix)'.dependencies]
@@ -66,7 +66,7 @@ uzers = "0.12.1"
 procfs = "0.17.0"
 
 [dev-dependencies]
-anyhow = "1.0.90"
+anyhow = "1.0.91"
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
 
 [target.'cfg(unix)'.dev-dependencies]

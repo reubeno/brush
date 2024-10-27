@@ -19,15 +19,15 @@ fuzz-testing = ["dep:arbitrary"]
 
 [dependencies]
 arbitrary = { version = "1.3.2", optional = true, features = ["derive"] }
-cached = "0.53.0"
+cached = "0.53.1"
 indenter = "0.3.3"
 peg = "0.8.4"
-thiserror = "1.0.64"
+thiserror = "1.0.65"
 tracing = "0.1.40"
 utf8-chars = "3.0.5"
 
 [dev-dependencies]
-anyhow = "1.0.90"
+anyhow = "1.0.91"
 assert_matches = "1.5.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
