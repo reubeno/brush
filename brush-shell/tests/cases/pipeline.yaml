@@ -41,3 +41,4 @@ cases:
     stdin: |
       echo -e "hello" |& wc -l
       cat dfdfgdfgdf |& wc -l
+      foo() { cat dfgdfg; } |& wc -l

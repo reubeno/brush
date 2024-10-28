@@ -847,27 +847,30 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
         ast::IoFileRedirectKind::DuplicateOutput,
         ast::IoFileRedirectTarget::Fd(1),
     );
+
+    fn add_to_redirect_list(l: &mut Option<ast::RedirectList>, r: ast::IoRedirect) {
+        if let Some(l) = l {
+            l.0.push(r);
+        } else {
+            let v = vec![r];
+            *l = Some(ast::RedirectList(v));
+        }
+    }
+
     match c {
         ast::Command::Simple(c) => {
             let r = ast::CommandPrefixOrSuffixItem::IoRedirect(r);
-            if let Some(suffix) = &mut c.suffix {
-                suffix.0.push(r);
+            if let Some(l) = &mut c.suffix {
+                l.0.push(r);
             } else {
-                let v = vec![r];
-                c.suffix = Some(ast::CommandSuffix(v));
+                c.suffix = Some(ast::CommandSuffix(vec![r]));
             }
         }
-        ast::Command::Compound(_, l) => {
-            if let Some(r_list) = l {
-                r_list.0.push(r);
-            } else {
-                let v = vec![r];
-                *l = Some(ast::RedirectList(v));
-            }
-        }
+        ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
+        ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
         ast::Command::ExtendedTest(_) => return Err("|& unimplemented for extended tests"),
-        ast::Command::Function(_) => return Err("|& unimplemented for functions"),
     };
+
     Ok(())
 }
 
@@ -984,6 +987,37 @@ esac\
                     ast::IoFileRedirectTarget::Fd(1)
                 ))
             )
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_function_with_pipe_redirection() -> Result<()> {
+        let inputs = [r"foo() { echo 1; } 2>&1 | cat", r"foo() { echo 1; } |& cat"];
+
+        for input in inputs {
+            let tokens = tokenize_str(input)?;
+            let seq = super::token_parser::pipe_sequence(
+                &Tokens {
+                    tokens: tokens.as_slice(),
+                },
+                &ParserOptions::default(),
+                &SourceInfo::default(),
+            )?;
+            assert_eq!(seq.len(), 2);
+            assert_matches!(seq[0], ast::Command::Function(..));
+            if let ast::Command::Function(f) = &seq[0] {
+                let l = &f.body.1;
+                assert!(l.is_some());
+                assert_matches!(
+                    l.as_ref().unwrap().0[0],
+                    ast::IoRedirect::File(
+                        Some(2),
+                        ast::IoFileRedirectKind::DuplicateOutput,
+                        ast::IoFileRedirectTarget::Fd(1)
+                    )
+                )
+            }
         }
         Ok(())
     }
