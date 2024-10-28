@@ -1021,4 +1021,90 @@ esac\
         }
         Ok(())
     }
+
+    #[test]
+    fn parse_subshell_with_heredoc() -> Result<()> {
+        let input = r"$(cat <<EOF
+1
+2 3
+4 5 6
+EOF
+)";
+
+        let tokens = tokenize_str(input)?;
+        let seq = super::token_parser::pipe_sequence(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+        assert_matches!(seq[0], ast::Command::Simple(..));
+        if let ast::Command::Simple(c) = &seq[0] {
+            let s = c.word_or_name.as_ref().unwrap().value.as_str();
+            assert_eq!(s, "$(cat <<EOF1\n2 3\n4 5 6\n\n)");
+
+            // taken from expansion.rs
+            let r = crate::word::parse(s, &ParserOptions::default())?;
+            assert_eq!(r.len(), 1);
+            assert_matches!(&r[0].piece, crate::word::WordPiece::CommandSubstitution(..));
+
+            if let crate::word::WordPiece::CommandSubstitution(c) = &r[0].piece {
+                // taken from `Shell::parse_string_impl`
+                let mut reader = std::io::BufReader::new(c.as_bytes());
+                let source_info = SourceInfo {
+                    source: String::from("main"),
+                };
+                let mut parser: Parser<&mut std::io::BufReader<&[u8]>> =
+                    Parser::new(&mut reader, &ParserOptions::default(), &source_info);
+                let r = parser.parse(true);
+                dbg!(&r);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_here_doc_in_substitution() -> Result<()> {
+        let input = r"test1=$(cat <<EOF
+1
+2 3
+4 5 6
+EOF
+)";
+
+        let tokens = tokenize_str(input)?;
+        let seq = super::token_parser::pipe_sequence(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+
+        assert_eq!(seq.len(), 1);
+        assert_matches!(seq[0], ast::Command::Simple(..));
+        if let ast::Command::Simple(c) = &seq[0] {
+            let c = c.prefix.as_ref();
+            assert_matches!(c, Some(ast::CommandPrefix(..)));
+
+            if let Some(ast::CommandPrefix(prefixes)) = c {
+                assert_eq!(prefixes.len(), 1);
+                assert_matches!(
+                    &prefixes[0],
+                    ast::CommandPrefixOrSuffixItem::AssignmentWord(
+                        ast::Assignment {
+                            name: ast::AssignmentName::VariableName(var_name),
+                            value: ast::AssignmentValue::Scalar(ast::Word { value: var_value }),
+                            append: false
+                        },
+                        ast::Word { value: word }
+                    ) if var_name == "test1" && var_value == "$(cat <<EOF1\n2 3\n4 5 6\n\n)" && word == "test1=$(cat <<EOF1\n2 3\n4 5 6\n\n)"
+                );
+            }
+        }
+
+        // dbg!(seq);
+        Ok(())
+    }
 }
