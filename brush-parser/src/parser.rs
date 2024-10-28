@@ -848,7 +848,6 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
         ast::IoFileRedirectTarget::Fd(1),
     );
 
-    #[inline]
     fn add_to_redirect_list(l: &mut Option<ast::RedirectList>, r: ast::IoRedirect) {
         if let Some(l) = l {
             l.0.push(r);
