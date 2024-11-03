@@ -13,7 +13,17 @@ pub(crate) enum TokenEndReason {
     SpecifiedTerminatingChar,
     /// A non-newline blank char was reached.
     NonNewLineBlank,
-    /// A non-newline token-delimiting char was encountered.
+    /// A here-document's body is starting.
+    HereDocumentBodyStart,
+    /// A here-document's body was terminated.
+    HereDocumentBodyEnd,
+    /// A here-document's end tag was reached.
+    HereDocumentEndTag,
+    /// An operator was started.
+    OperatorStart,
+    /// An operator was terminated.
+    OperatorEnd,
+    /// Some other condition was reached.
     Other,
 }
 
@@ -127,8 +137,8 @@ pub enum TokenizerError {
     MissingHereTag(String),
 
     /// An unterminated here document sequence was encountered at the end of the input stream.
-    #[error("unterminated here document sequence; tag(s) found at: [{0}]")]
-    UnterminatedHereDocuments(String),
+    #[error("unterminated here document sequence; tag(s) [{0}] found at: [{1}]")]
+    UnterminatedHereDocuments(String, String),
 
     /// An I/O error occurred while reading from the input stream.
     #[error("failed to read input")]
@@ -140,13 +150,13 @@ impl TokenizerError {
         matches!(
             self,
             Self::UnterminatedEscapeSequence
-                | Self::UnterminatedSingleQuote(_)
-                | Self::UnterminatedDoubleQuote(_)
-                | Self::UnterminatedBackquote(_)
+                | Self::UnterminatedSingleQuote(..)
+                | Self::UnterminatedDoubleQuote(..)
+                | Self::UnterminatedBackquote(..)
                 | Self::UnterminatedCommandSubstitution
                 | Self::UnterminatedVariable
-                | Self::UnterminatedExtendedGlob(_)
-                | Self::UnterminatedHereDocuments(_)
+                | Self::UnterminatedExtendedGlob(..)
+                | Self::UnterminatedHereDocuments(..)
         )
     }
 }
@@ -165,14 +175,18 @@ enum QuoteMode {
     Double(SourcePosition),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 enum HereState {
     /// In this state, we are not currently tracking any here-documents.
+    #[default]
     None,
     /// In this state, we expect that the next token will be a here tag.
     NextTokenIsHereTag { remove_tabs: bool },
     /// In this state, the *current* token is a here tag.
-    CurrentTokenIsHereTag { remove_tabs: bool },
+    CurrentTokenIsHereTag {
+        remove_tabs: bool,
+        operator_token_result: TokenizeResult,
+    },
     /// In this state, we expect that the *next line* will be the body of
     /// a here-document.
     NextLineIsHereDoc,
@@ -187,6 +201,7 @@ struct HereTag {
     tag_was_escaped_or_quoted: bool,
     remove_tabs: bool,
     position: SourcePosition,
+    tokens: Vec<TokenizeResult>,
     pending_tokens_after: Vec<TokenizeResult>,
 }
 
@@ -310,7 +325,9 @@ impl TokenParseState {
         reason: TokenEndReason,
         cross_token_state: &mut CrossTokenParseState,
     ) -> Result<Option<TokenizeResult>, TokenizerError> {
-        if !self.started_token() {
+        // If we don't have anything in the token, then don't yield an empty string token
+        // *unless* it's the body of a here document.
+        if !self.started_token() && !matches!(reason, TokenEndReason::HereDocumentBodyEnd) {
             return Ok(Some(TokenizeResult {
                 reason,
                 token: None,
@@ -318,11 +335,27 @@ impl TokenParseState {
         }
 
         // TODO: Make sure the here-tag meets criteria (and isn't a newline).
-        match cross_token_state.here_state {
+        let current_here_state = std::mem::take(&mut cross_token_state.here_state);
+        match current_here_state {
             HereState::NextTokenIsHereTag { remove_tabs } => {
-                cross_token_state.here_state = HereState::CurrentTokenIsHereTag { remove_tabs };
+                // Don't yield the operator as a token yet. We need to make sure we collect
+                // up everything we need for all the here-documents with tags on this line.
+                let operator_token_result = TokenizeResult {
+                    reason,
+                    token: Some(self.pop(&cross_token_state.cursor)),
+                };
+
+                cross_token_state.here_state = HereState::CurrentTokenIsHereTag {
+                    remove_tabs,
+                    operator_token_result,
+                };
+
+                return Ok(None);
             }
-            HereState::CurrentTokenIsHereTag { remove_tabs } => {
+            HereState::CurrentTokenIsHereTag {
+                remove_tabs,
+                operator_token_result,
+            } => {
                 if self.is_newline() {
                     return Err(TokenizerError::MissingHereTag(
                         self.current_token().to_owned(),
@@ -331,24 +364,33 @@ impl TokenParseState {
 
                 cross_token_state.here_state = HereState::NextLineIsHereDoc;
 
-                let tag = self.current_token();
+                // Include the trailing \n in the here tag so it's easier to check against.
+                let tag = std::format!("{}\n", self.current_token());
+                let tag_was_escaped_or_quoted = tag.contains(is_quoting_char);
 
-                // Include the \n in the here tag so it's easier to check against.
+                let tag_token_result = TokenizeResult {
+                    reason,
+                    token: Some(self.pop(&cross_token_state.cursor)),
+                };
+
                 cross_token_state.current_here_tags.push(HereTag {
-                    tag: std::format!("\n{}\n", tag),
-                    tag_was_escaped_or_quoted: tag.contains(is_quoting_char),
+                    tag,
+                    tag_was_escaped_or_quoted,
                     remove_tabs,
                     position: cross_token_state.cursor.clone(),
+                    tokens: vec![operator_token_result, tag_token_result],
                     pending_tokens_after: vec![],
                 });
+
+                return Ok(None);
             }
             HereState::NextLineIsHereDoc => {
                 if self.is_newline() {
                     cross_token_state.here_state = HereState::InHereDocs;
+                } else {
+                    cross_token_state.here_state = HereState::NextLineIsHereDoc;
                 }
 
-                // We need to queue it up for later so we can get the here-document
-                // body to show up in the token stream right after the here tag.
                 if let Some(last_here_tag) = cross_token_state.current_here_tags.last_mut() {
                     let token = self.pop(&cross_token_state.cursor);
                     let result = TokenizeResult {
@@ -367,7 +409,31 @@ impl TokenParseState {
                 // We hit the end of the current here-document.
                 let completed_here_tag = cross_token_state.current_here_tags.remove(0);
 
-                // Now we're ready to start serving up any tokens that came between the completed
+                // First queue the redirection operator and (start) here-tag.
+                for here_token in completed_here_tag.tokens {
+                    cross_token_state.queued_tokens.push(here_token);
+                }
+
+                // Leave a hint that we are about to start a here-document.
+                cross_token_state.queued_tokens.push(TokenizeResult {
+                    reason: TokenEndReason::HereDocumentBodyStart,
+                    token: None,
+                });
+
+                // Then queue the body document we just finished.
+                cross_token_state.queued_tokens.push(TokenizeResult {
+                    reason,
+                    token: Some(self.pop(&cross_token_state.cursor)),
+                });
+
+                // Then queue up the (end) here-tag.
+                self.append_str(completed_here_tag.tag.trim_end_matches('\n'));
+                cross_token_state.queued_tokens.push(TokenizeResult {
+                    reason: TokenEndReason::HereDocumentEndTag,
+                    token: Some(self.pop(&cross_token_state.cursor)),
+                });
+
+                // Now we're ready to queue up any tokens that came between the completed
                 // here tag and the next here tag (or newline after it if it was the last).
                 for pending_token in completed_here_tag.pending_tokens_after {
                     cross_token_state.queued_tokens.push(pending_token);
@@ -375,7 +441,11 @@ impl TokenParseState {
 
                 if cross_token_state.current_here_tags.is_empty() {
                     cross_token_state.here_state = HereState::None;
+                } else {
+                    cross_token_state.here_state = HereState::InHereDocs;
                 }
+
+                return Ok(None);
             }
             HereState::None => (),
         }
@@ -405,8 +475,15 @@ pub fn cacheable_tokenize_str(input: String) -> Result<Vec<Token>, TokenizerErro
     let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &TokenizerOptions::default());
 
     let mut tokens = vec![];
-    while let Some(token) = tokenizer.next_token()?.token {
-        tokens.push(token);
+    loop {
+        let tokenize_result = tokenizer.next_token()?;
+        if let Some(token) = tokenize_result.token {
+            tokens.push(token);
+        }
+
+        if matches!(tokenize_result.reason, TokenEndReason::EndOfInput) {
+            break;
+        }
     }
 
     Ok(tokens)
@@ -479,16 +556,16 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         &mut self,
         terminating_char: Option<char>,
     ) -> Result<TokenizeResult, TokenizerError> {
-        // First satisfy token results from our queue. Once we exhaust the queue then
-        // we'll look at the input stream.
-        if !self.cross_state.queued_tokens.is_empty() {
-            return Ok(self.cross_state.queued_tokens.remove(0));
-        }
-
         let mut state = TokenParseState::new(&self.cross_state.cursor);
         let mut result: Option<TokenizeResult> = None;
 
         while result.is_none() {
+            // First satisfy token results from our queue. Once we exhaust the queue then
+            // we'll look at the input stream.
+            if !self.cross_state.queued_tokens.is_empty() {
+                return Ok(self.cross_state.queued_tokens.remove(0));
+            }
+
             let next = self.peek_char()?;
             let c = next.unwrap_or('\0');
 
@@ -512,6 +589,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                 // Verify we're not in a here document.
                 if !matches!(self.cross_state.here_state, HereState::None) {
+                    let tag_names = self
+                        .cross_state
+                        .current_here_tags
+                        .iter()
+                        .map(|tag| tag.tag.trim())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     let tag_positions = self
                         .cross_state
                         .current_here_tags
@@ -519,7 +603,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         .map(|tag| std::format!("{}", tag.position))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    return Err(TokenizerError::UnterminatedHereDocuments(tag_positions));
+                    return Err(TokenizerError::UnterminatedHereDocuments(
+                        tag_names,
+                        tag_positions,
+                    ));
                 }
 
                 result = state
@@ -551,25 +638,35 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     self.consume_char()?;
                     state.append_char(c);
 
-                    let next_here_tag = &self.cross_state.current_here_tags[0];
-                    let tag_str: Cow<'_, str> = if next_here_tag.tag_was_escaped_or_quoted {
-                        unquote_str(next_here_tag.tag.as_str()).into()
-                    } else {
-                        next_here_tag.tag.as_str().into()
-                    };
+                    // See if this was a newline character following the terminating here tag.
+                    if c == '\n' {
+                        let next_here_tag = &self.cross_state.current_here_tags[0];
+                        let tag_str: Cow<'_, str> = if next_here_tag.tag_was_escaped_or_quoted {
+                            unquote_str(next_here_tag.tag.as_str()).into()
+                        } else {
+                            next_here_tag.tag.as_str().into()
+                        };
 
-                    let without_suffix = state
-                        .current_token()
-                        .strip_suffix(tag_str.as_ref())
-                        .map(|s| s.to_owned());
+                        if let Some(current_token_without_here_tag) =
+                            state.current_token().strip_suffix(tag_str.as_ref())
+                        {
+                            // Make sure that was either the start of the here document, or there
+                            // was a newline between the preceding part
+                            // and the tag.
+                            if current_token_without_here_tag.is_empty()
+                                || current_token_without_here_tag.ends_with('\n')
+                            {
+                                state.replace_with_here_doc(
+                                    current_token_without_here_tag.to_owned(),
+                                );
 
-                    if let Some(mut without_suffix) = without_suffix {
-                        without_suffix.push('\n');
-
-                        state.replace_with_here_doc(without_suffix);
-
-                        result = state
-                            .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
+                                // Delimit the end of the here-document body.
+                                result = state.delimit_current_token(
+                                    TokenEndReason::HereDocumentBodyEnd,
+                                    &mut self.cross_state,
+                                )?;
+                            }
+                        }
                     }
                 }
             } else if state.in_operator() {
@@ -603,8 +700,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             HereState::NextTokenIsHereTag { remove_tabs: true };
                     }
 
-                    result = state
-                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
+                    let reason = if state.current_token() == "\n" {
+                        TokenEndReason::UnescapedNewLine
+                    } else {
+                        TokenEndReason::OperatorEnd
+                    };
+
+                    result = state.delimit_current_token(reason, &mut self.cross_state)?;
                 }
             //
             // See if this is a character that changes the current escaping/quoting state.
@@ -692,8 +794,45 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 self.cross_state.arithmetic_expansion = true;
                             }
 
+                            let mut pending_here_doc_tokens = vec![];
+                            let mut drain_here_doc_tokens = false;
+
                             loop {
-                                let cur_token = self.next_token_until(Some(')'))?;
+                                let cur_token = if drain_here_doc_tokens
+                                    && !pending_here_doc_tokens.is_empty()
+                                {
+                                    if pending_here_doc_tokens.len() == 1 {
+                                        drain_here_doc_tokens = false;
+                                    }
+
+                                    pending_here_doc_tokens.remove(0)
+                                } else {
+                                    let cur_token = self.next_token_until(Some(')'))?;
+
+                                    // See if this is a here-document-related token we need to hold
+                                    // onto until after we've seen all the tokens that need to show
+                                    // up before we get to the body.
+                                    if matches!(
+                                        cur_token.reason,
+                                        TokenEndReason::HereDocumentBodyStart
+                                            | TokenEndReason::HereDocumentBodyEnd
+                                            | TokenEndReason::HereDocumentEndTag
+                                    ) {
+                                        pending_here_doc_tokens.push(cur_token);
+                                        continue;
+                                    }
+
+                                    cur_token
+                                };
+
+                                if matches!(cur_token.reason, TokenEndReason::UnescapedNewLine)
+                                    && !pending_here_doc_tokens.is_empty()
+                                {
+                                    pending_here_doc_tokens.push(cur_token);
+                                    drain_here_doc_tokens = true;
+                                    continue;
+                                }
+
                                 if let Some(cur_token_value) = cur_token.token {
                                     state.append_str(cur_token_value.to_str());
 
@@ -708,10 +847,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 }
 
                                 match cur_token.reason {
-                                    TokenEndReason::UnescapedNewLine
-                                    | TokenEndReason::NonNewLineBlank => {
-                                        state.append_char(' ');
+                                    TokenEndReason::HereDocumentBodyStart => {
+                                        state.append_char('\n')
                                     }
+                                    TokenEndReason::NonNewLineBlank => state.append_char(' '),
                                     TokenEndReason::SpecifiedTerminatingChar => {
                                         // We hit the ')' we were looking for. If this is the last
                                         // end parenthesis we needed to find, then we'll exit the
@@ -729,7 +868,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     TokenEndReason::EndOfInput => {
                                         return Err(TokenizerError::UnterminatedCommandSubstitution)
                                     }
-                                    TokenEndReason::Other => (),
+                                    _ => (),
                                 }
                             }
 
@@ -745,17 +884,54 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             // Consume the '{' and add it to the token.
                             state.append_char(self.next_char()?.unwrap());
 
+                            let mut pending_here_doc_tokens = vec![];
+                            let mut drain_here_doc_tokens = false;
+
                             loop {
-                                let cur_token = self.next_token_until(Some('}'))?;
+                                let cur_token = if drain_here_doc_tokens
+                                    && !pending_here_doc_tokens.is_empty()
+                                {
+                                    if pending_here_doc_tokens.len() == 1 {
+                                        drain_here_doc_tokens = false;
+                                    }
+
+                                    pending_here_doc_tokens.remove(0)
+                                } else {
+                                    let cur_token = self.next_token_until(Some('}'))?;
+
+                                    // See if this is a here-document-related token we need to hold
+                                    // onto until after we've seen all the tokens that need to show
+                                    // up before we get to the body.
+                                    if matches!(
+                                        cur_token.reason,
+                                        TokenEndReason::HereDocumentBodyStart
+                                            | TokenEndReason::HereDocumentBodyEnd
+                                            | TokenEndReason::HereDocumentEndTag
+                                    ) {
+                                        pending_here_doc_tokens.push(cur_token);
+                                        continue;
+                                    }
+
+                                    cur_token
+                                };
+
+                                if matches!(cur_token.reason, TokenEndReason::UnescapedNewLine)
+                                    && !pending_here_doc_tokens.is_empty()
+                                {
+                                    pending_here_doc_tokens.push(cur_token);
+                                    drain_here_doc_tokens = true;
+                                    continue;
+                                }
+
                                 if let Some(cur_token_value) = cur_token.token {
                                     state.append_str(cur_token_value.to_str())
                                 }
 
-                                if matches!(cur_token.reason, TokenEndReason::NonNewLineBlank) {
-                                    state.append_char(' ');
-                                }
-
                                 match cur_token.reason {
+                                    TokenEndReason::HereDocumentBodyStart => {
+                                        state.append_char('\n')
+                                    }
+                                    TokenEndReason::NonNewLineBlank => state.append_char(' '),
                                     TokenEndReason::SpecifiedTerminatingChar => {
                                         // We hit the end brace we were looking for but did not
                                         // yet consume it. Do so now.
@@ -765,9 +941,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     TokenEndReason::EndOfInput => {
                                         return Err(TokenizerError::UnterminatedVariable)
                                     }
-                                    TokenEndReason::UnescapedNewLine
-                                    | TokenEndReason::NonNewLineBlank
-                                    | TokenEndReason::Other => (),
+                                    _ => (),
                                 }
                             }
                         }
@@ -855,8 +1029,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             } else if state.unquoted() && self.can_start_operator(c) {
                 if state.started_token() {
-                    result = state
-                        .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
+                    result = state.delimit_current_token(
+                        TokenEndReason::OperatorStart,
+                        &mut self.cross_state,
+                    )?;
                 } else {
                     state.token_is_operator = true;
                     self.consume_char()?;
@@ -1038,7 +1214,8 @@ pub fn unquote_str(s: &str) -> String {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use assert_matches::assert_matches;
+    // use assert_matches::assert_matches;
+    use pretty_assertions::{assert_eq, assert_matches};
 
     #[test]
     fn tokenize_empty() -> Result<()> {
@@ -1055,7 +1232,7 @@ bc",
         )?;
         assert_matches!(
             &tokens[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "abc"
+            [t1 @ Token::Word(..)] if t1.to_str() == "abc"
         );
         Ok(())
     }
@@ -1064,7 +1241,7 @@ bc",
     fn tokenize_operators() -> Result<()> {
         assert_matches!(
             &tokenize_str("a>>b")?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Operator(_, _), t3 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Operator(..), t3 @ Token::Word(..)] if
                 t1.to_str() == "a" &&
                 t2.to_str() == ">>" &&
                 t3.to_str() == "b"
@@ -1080,7 +1257,7 @@ bc",
         )?;
         assert_matches!(
             &tokens[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Operator(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Operator(..)] if
                 t1.to_str() == "a" &&
                 t2.to_str() == "\n"
         );
@@ -1091,7 +1268,32 @@ bc",
     fn tokenize_comment_at_eof() -> Result<()> {
         assert_matches!(
             &tokenize_str(r#"a #comment"#)?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "a"
+            [t1 @ Token::Word(..)] if t1.to_str() == "a"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_empty_here_doc() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"cat <<HERE
+HERE
+"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(..),
+             t2 @ Token::Operator(..),
+             t3 @ Token::Word(..),
+             t4 @ Token::Word(..),
+             t5 @ Token::Word(..),
+             t6 @ Token::Operator(..)] if
+                t1.to_str() == "cat" &&
+                t2.to_str() == "<<" &&
+                t3.to_str() == "HERE" &&
+                t4.to_str() == "" &&
+                t5.to_str() == "HERE" &&
+                t6.to_str() == "\n"
         );
         Ok(())
     }
@@ -1107,22 +1309,24 @@ echo after
         )?;
         assert_matches!(
             &tokens[..],
-            [t1 @ Token::Word(_, _),
-             t2 @ Token::Operator(_, _),
-             t3 @ Token::Word(_, _),
-             t4 @ Token::Word(_, _),
-             t5 @ Token::Operator(_, _),
-             t6 @ Token::Word(_, _),
-             t7 @ Token::Word(_, _),
-             t8 @ Token::Operator(_, _)] if
+            [t1 @ Token::Word(..),
+             t2 @ Token::Operator(..),
+             t3 @ Token::Word(..),
+             t4 @ Token::Word(..),
+             t5 @ Token::Word(..),
+             t6 @ Token::Operator(..),
+             t7 @ Token::Word(..),
+             t8 @ Token::Word(..),
+             t9 @ Token::Operator(..)] if
                 t1.to_str() == "cat" &&
                 t2.to_str() == "<<" &&
                 t3.to_str() == "HERE" &&
                 t4.to_str() == "SOMETHING\n" &&
-                t5.to_str() == "\n" &&
-                t6.to_str() == "echo" &&
-                t7.to_str() == "after" &&
-                t8.to_str() == "\n"
+                t5.to_str() == "HERE" &&
+                t6.to_str() == "\n" &&
+                t7.to_str() == "echo" &&
+                t8.to_str() == "after" &&
+                t9.to_str() == "\n"
         );
         Ok(())
     }
@@ -1137,16 +1341,96 @@ echo after
         )?;
         assert_matches!(
             &tokens[..],
-            [t1 @ Token::Word(_, _),
-             t2 @ Token::Operator(_, _),
-             t3 @ Token::Word(_, _),
-             t4 @ Token::Word(_, _),
-             t5 @ Token::Operator(_, _)] if
+            [t1 @ Token::Word(..),
+             t2 @ Token::Operator(..),
+             t3 @ Token::Word(..),
+             t4 @ Token::Word(..),
+             t5 @ Token::Word(..),
+             t6 @ Token::Operator(..)] if
                 t1.to_str() == "cat" &&
                 t2.to_str() == "<<-" &&
                 t3.to_str() == "HERE" &&
                 t4.to_str() == "SOMETHING\n" &&
-                t5.to_str() == "\n"
+                t5.to_str() == "HERE" &&
+                t6.to_str() == "\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_here_doc_with_other_tokens() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"cat <<EOF | wc -l
+A B C
+1 2 3
+D E F
+EOF
+"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(..),
+             t2 @ Token::Operator(..),
+             t3 @ Token::Word(..),
+             t4 @ Token::Word(..),
+             t5 @ Token::Word(..),
+             t6 @ Token::Operator(..),
+             t7 @ Token::Word(..),
+             t8 @ Token::Word(..),
+             t9 @ Token::Operator(..)] if
+                t1.to_str() == "cat" &&
+                t2.to_str() == "<<" &&
+                t3.to_str() == "EOF" &&
+                t4.to_str() == "A B C\n1 2 3\nD E F\n" &&
+                t5.to_str() == "EOF" &&
+                t6.to_str() == "|" &&
+                t7.to_str() == "wc" &&
+                t8.to_str() == "-l" &&
+                t9.to_str() == "\n"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_multiple_here_docs() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"cat <<HERE1 <<HERE2
+SOMETHING
+HERE1
+OTHER
+HERE2
+echo after
+"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(..),
+             t2 @ Token::Operator(..),
+             t3 @ Token::Word(..),
+             t4 @ Token::Word(..),
+             t5 @ Token::Word(..),
+             t6 @ Token::Operator(..),
+             t7 @ Token::Word(..),
+             t8 @ Token::Word(..),
+             t9 @ Token::Word(..),
+             t10 @ Token::Operator(..),
+             t11 @ Token::Word(..),
+             t12 @ Token::Word(..),
+             t13 @ Token::Operator(..)] if
+                t1.to_str() == "cat" &&
+                t2.to_str() == "<<" &&
+                t3.to_str() == "HERE1" &&
+                t4.to_str() == "SOMETHING\n" &&
+                t5.to_str() == "HERE1" &&
+                t6.to_str() == "<<" &&
+                t7.to_str() == "HERE2" &&
+                t8.to_str() == "OTHER\n" &&
+                t9.to_str() == "HERE2" &&
+                t10.to_str() == "\n" &&
+                t11.to_str() == "echo" &&
+                t12.to_str() == "after" &&
+                t13.to_str() == "\n"
         );
         Ok(())
     }
@@ -1173,10 +1457,48 @@ SOMETHING
     }
 
     #[test]
+    fn tokenize_here_doc_in_command_substitution() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"echo $(cat <<HERE
+TEXT
+HERE
+)"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(..),
+             t2 @ Token::Word(..)] if
+                t1.to_str() == "echo" &&
+                t2.to_str() == "$(cat <<HERE\nTEXT\nHERE\n)"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_complex_here_docs_in_command_substitution() -> Result<()> {
+        let tokens = tokenize_str(
+            r#"echo $(cat <<HERE1 <<HERE2 | wc -l
+TEXT
+HERE1
+OTHER
+HERE2
+)"#,
+        )?;
+        assert_matches!(
+            &tokens[..],
+            [t1 @ Token::Word(..),
+             t2 @ Token::Word(..)] if
+                t1.to_str() == "echo" &&
+                t2.to_str() == "$(cat <<HERE1 <<HERE2 |wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn tokenize_simple_backquote() -> Result<()> {
         assert_matches!(
             &tokenize_str(r#"echo `echo hi`"#)?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
                 t1.to_str() == "echo" &&
                 t2.to_str() == "`echo hi`"
         );
@@ -1187,7 +1509,7 @@ SOMETHING
     fn tokenize_backquote_with_escape() -> Result<()> {
         assert_matches!(
             &tokenize_str(r"echo `echo\`hi`")?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
                 t1.to_str() == "echo" &&
                 t2.to_str() == r"`echo\`hi`"
         );
@@ -1214,7 +1536,7 @@ SOMETHING
     fn tokenize_command_substitution() -> Result<()> {
         assert_matches!(
             &tokenize_str("a$(echo hi)b c")?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
                 t1.to_str() == "a$(echo hi)b" &&
                 t2.to_str() == "c"
         );
@@ -1225,7 +1547,7 @@ SOMETHING
     fn tokenize_command_substitution_containing_extglob() -> Result<()> {
         assert_matches!(
             &tokenize_str("echo $(echo !(x))")?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
                 t1.to_str() == "echo" &&
                 t2.to_str() == "$(echo !(x))"
         );
@@ -1236,7 +1558,7 @@ SOMETHING
     fn tokenize_arithmetic_expression() -> Result<()> {
         assert_matches!(
             &tokenize_str("a$((1+2))b c")?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
                 t1.to_str() == "a$((1+2))b" &&
                 t2.to_str() == "c"
         );
@@ -1249,7 +1571,7 @@ SOMETHING
         // by later stages.
         assert_matches!(
             &tokenize_str("$(( 1 ))")?[..],
-            [t1 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..)] if
                 t1.to_str() == "$((1 ))"
         );
         Ok(())
@@ -1258,7 +1580,7 @@ SOMETHING
     fn tokenize_arithmetic_expression_with_parens() -> Result<()> {
         assert_matches!(
             &tokenize_str("$(( (0) ))")?[..],
-            [t1 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..)] if
                 t1.to_str() == "$(((0)))"
         );
         Ok(())
@@ -1268,23 +1590,23 @@ SOMETHING
     fn tokenize_special_parameters() -> Result<()> {
         assert_matches!(
             &tokenize_str("$$")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "$$"
+            [t1 @ Token::Word(..)] if t1.to_str() == "$$"
         );
         assert_matches!(
             &tokenize_str("$@")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "$@"
+            [t1 @ Token::Word(..)] if t1.to_str() == "$@"
         );
         assert_matches!(
             &tokenize_str("$!")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "$!"
+            [t1 @ Token::Word(..)] if t1.to_str() == "$!"
         );
         assert_matches!(
             &tokenize_str("$?")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "$?"
+            [t1 @ Token::Word(..)] if t1.to_str() == "$?"
         );
         assert_matches!(
             &tokenize_str("$*")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "$*"
+            [t1 @ Token::Word(..)] if t1.to_str() == "$*"
         );
         Ok(())
     }
@@ -1293,11 +1615,11 @@ SOMETHING
     fn tokenize_unbraced_parameter_expansion() -> Result<()> {
         assert_matches!(
             &tokenize_str("$x")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "$x"
+            [t1 @ Token::Word(..)] if t1.to_str() == "$x"
         );
         assert_matches!(
             &tokenize_str("a$x")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "a$x"
+            [t1 @ Token::Word(..)] if t1.to_str() == "a$x"
         );
         Ok(())
     }
@@ -1314,11 +1636,11 @@ SOMETHING
     fn tokenize_braced_parameter_expansion() -> Result<()> {
         assert_matches!(
             &tokenize_str("${x}")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "${x}"
+            [t1 @ Token::Word(..)] if t1.to_str() == "${x}"
         );
         assert_matches!(
             &tokenize_str("a${x}b")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == "a${x}b"
+            [t1 @ Token::Word(..)] if t1.to_str() == "a${x}b"
         );
         Ok(())
     }
@@ -1327,7 +1649,7 @@ SOMETHING
     fn tokenize_braced_parameter_expansion_with_escaping() -> Result<()> {
         assert_matches!(
             &tokenize_str(r"a${x\}}b")?[..],
-            [t1 @ Token::Word(_, _)] if t1.to_str() == r"a${x\}}b"
+            [t1 @ Token::Word(..)] if t1.to_str() == r"a${x\}}b"
         );
         Ok(())
     }
@@ -1336,7 +1658,7 @@ SOMETHING
     fn tokenize_whitespace() -> Result<()> {
         assert_matches!(
             &tokenize_str("1 2 3")?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _), t3 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Word(..), t3 @ Token::Word(..)] if
                 t1.to_str() == "1" &&
                 t2.to_str() == "2" &&
                 t3.to_str() == "3"
@@ -1348,7 +1670,7 @@ SOMETHING
     fn tokenize_escaped_whitespace() -> Result<()> {
         assert_matches!(
             &tokenize_str(r"1\ 2 3")?[..],
-            [t1 @ Token::Word(_, _), t2 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
                 t1.to_str() == r"1\ 2" &&
                 t2.to_str() == "3"
         );
@@ -1359,7 +1681,7 @@ SOMETHING
     fn tokenize_single_quote() -> Result<()> {
         assert_matches!(
             &tokenize_str(r"x'a b'y")?[..],
-            [t1 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..)] if
                 t1.to_str() == r"x'a b'y"
         );
         Ok(())
@@ -1369,7 +1691,7 @@ SOMETHING
     fn tokenize_double_quote() -> Result<()> {
         assert_matches!(
             &tokenize_str(r#"x"a b"y"#)?[..],
-            [t1 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..)] if
                 t1.to_str() == r#"x"a b"y"#
         );
         Ok(())
@@ -1379,7 +1701,7 @@ SOMETHING
     fn tokenize_double_quoted_command_substitution() -> Result<()> {
         assert_matches!(
             &tokenize_str(r#"x"$(echo hi)"y"#)?[..],
-            [t1 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..)] if
                 t1.to_str() == r#"x"$(echo hi)"y"#
         );
         Ok(())
@@ -1389,7 +1711,7 @@ SOMETHING
     fn tokenize_double_quoted_arithmetic_expression() -> Result<()> {
         assert_matches!(
             &tokenize_str(r#"x"$((1+2))"y"#)?[..],
-            [t1 @ Token::Word(_, _)] if
+            [t1 @ Token::Word(..)] if
                 t1.to_str() == r#"x"$((1+2))"y"#
         );
         Ok(())

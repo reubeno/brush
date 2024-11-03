@@ -439,7 +439,7 @@ impl Shell {
             brush_parser::Parser::new(&mut reader, &self.parser_options(), source_info);
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
-        let parse_result = parser.parse(false);
+        let parse_result = parser.parse();
 
         let mut other_positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
         let mut other_shell_name = Some(source_info.source.clone());
@@ -1180,5 +1180,5 @@ fn parse_string_impl(
         brush_parser::Parser::new(&mut reader, &parser_options, &source_info);
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
-    parser.parse(true)
+    parser.parse()
 }
