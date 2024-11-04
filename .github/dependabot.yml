@@ -8,13 +8,6 @@ updates:
       github-actions:
         patterns:
           - "*"
-    ignore:
-      # For now, ignore updates to clap/assert_cmd to avoid requiring an MSRV update.
-      # Once we're okay bumping past 1.72.0, then we should remove these lines.
-      # Until then, we should carefully review upstream changes for these dependencies
-      # to identify any critical issues.
-      - dependency-name: "clap"
-      - dependency-name: "assert_cmd"
 
   - package-ecosystem: "cargo"
     directory: "/"
