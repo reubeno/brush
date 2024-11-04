@@ -63,7 +63,7 @@ brush-interactive = { version = "^0.2.12", path = "../brush-interactive", featur
 tokio = { version = "1.41.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
-anyhow = "1.0.91"
+anyhow = "1.0.92"
 assert_cmd = "2.0.16"
 assert_fs = "1.1.2"
 colored = "2.1.0"
@@ -76,7 +76,7 @@ indent = "0.1.1"
 junit-report = "0.8.3"
 pathdiff = "0.2.2"
 regex = "1.11.1"
-serde = { version = "1.0.213", features = ["derive"] }
+serde = { version = "1.0.214", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.0"
 version-compare = "0.2.0"
