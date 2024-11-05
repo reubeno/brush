@@ -66,6 +66,7 @@ tokio = { version = "1.41.0", features = ["rt", "rt-multi-thread", "sync"] }
 anyhow = "1.0.92"
 assert_cmd = "2.0.16"
 assert_fs = "1.1.2"
+alacritty_terminal = { git = "https://github.com/39555/alacritty", branch = "spawn-for-testing" }
 colored = "2.1.0"
 descape = "2.0.3"
 diff = "0.1.13"
