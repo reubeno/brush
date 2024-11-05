@@ -1008,4 +1008,77 @@ esac\
         }
         Ok(())
     }
+
+    #[test]
+    fn test_parse_program() -> Result<()> {
+        let input = r#"
+
+#!/usr/bin/env bash
+
+for f in A B C; do
+
+    # sdfsdf
+    echo "${f@L}" >&2
+
+   done
+
+"#;
+        use ast::*;
+        let expected = Program {
+            complete_commands: vec![CompoundList(vec![CompoundListItem(
+                AndOrList {
+                    first: Pipeline {
+                        bang: false,
+                        seq: vec![Command::Compound(
+                            CompoundCommand::ForClause(ForClauseCommand {
+                                variable_name: "f".into(),
+                                values: Some(vec![Word::new("A"), Word::new("B"), Word::new("C")]),
+                                body: DoGroupCommand(CompoundList(vec![CompoundListItem(
+                                    AndOrList {
+                                        first: Pipeline {
+                                            bang: false,
+                                            seq: vec![Command::Simple(SimpleCommand {
+                                                prefix: None,
+                                                word_or_name: Some(Word::new("echo")),
+                                                suffix: Some(CommandSuffix(vec![
+                                                    CommandPrefixOrSuffixItem::Word(Word::new(
+                                                        r#""${f@L}""#,
+                                                    )),
+                                                    CommandPrefixOrSuffixItem::IoRedirect(
+                                                        IoRedirect::File(
+                                                            None,
+                                                            IoFileRedirectKind::DuplicateOutput,
+                                                            IoFileRedirectTarget::Fd(2),
+                                                        ),
+                                                    ),
+                                                ])),
+                                            })],
+                                        },
+                                        additional: vec![],
+                                    },
+                                    SeparatorOperator::Sequence,
+                                )])),
+                            }),
+                            None,
+                        )],
+                    },
+                    additional: vec![],
+                },
+                SeparatorOperator::Sequence,
+            )])],
+        };
+
+        let tokens = tokenize_str(input)?;
+        let result = super::token_parser::program(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+
+        assert_eq!(result, expected);
+
+        Ok(())
+    }
 }
