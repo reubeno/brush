@@ -3,7 +3,7 @@ use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 
 /// Options used to control the behavior of the parser.
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct ParserOptions {
     /// Whether or not to enable extended globbing (a.k.a. `extglob`).
     pub enable_extended_globbing: bool,
