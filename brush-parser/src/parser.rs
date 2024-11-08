@@ -1,3 +1,4 @@
+
 use crate::ast::{self, SeparatorOperator};
 use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
@@ -1081,4 +1082,89 @@ for f in A B C; do
 
         Ok(())
     }
+
+    fn parse(input: &str) -> Result<ast::Program> {
+        let tokens = tokenize_str(input)?;
+        let result = super::token_parser::program(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+        Ok(result)
+    }
+
+    fn check_file(actual: ast::Program, expect: ExpectFile) -> Result<()> {
+        expect.assert_eq(&serde_yaml::to_string(&actual)?);
+        Ok(())
+    }
+    fn check(actual: ast::Program, expect: Expect) -> Result<()> {
+        expect.assert_eq(&serde_yaml::to_string(&actual)?);
+        Ok(())
+    }
+
+    use expect_test::{expect, expect_file, Expect, ExpectFile};
+    #[test]
+    fn basic() -> Result<()> {
+        let r = parse(
+            r#"
+
+    #!/usr/bin/env bash
+
+    for f in A B C; do
+
+        # sdfsdf
+        echo "${f@L}" >&2
+
+       done
+
+    "#,
+        )?;
+        check_file(r, expect_file!["./snapshots/basic.yaml"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_noop() -> Result<()> {
+        let r = parse(
+            r#":;"#,
+        )?;
+        check(r, expect![[r#"
+            complete_commands:
+            - - - first:
+                    bang: false
+                    seq:
+                    - Simple:
+                        prefix: null
+                        word_or_name:
+                          value: ':'
+                        suffix: null
+                  additional: []
+                - Sequence
+        "#]])?;
+        Ok(())
+    }
+
+    macro_rules! case {
+        ($case:ident($parser:ident($input:literal))) => {
+            #[test]
+            fn $case() -> Result<()> {
+                let ast = parse($input)?;
+                check_file(
+                    ast,
+                    expect_file![concat!(
+                        "./snapshots/",
+                        stringify!($parser),
+                        "_",
+                        stringify!($case),
+                        ".yaml"
+                    )],
+                )?;
+                Ok(())
+            }
+        };
+    }
+
+    case![basic2(parser("echo hello; echo  world;"))];
 }
