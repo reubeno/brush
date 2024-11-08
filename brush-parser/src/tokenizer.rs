@@ -30,6 +30,7 @@ pub(crate) enum TokenEndReason {
 /// Represents a position in a source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
     pub index: i32,
@@ -48,6 +49,7 @@ impl Display for SourcePosition {
 /// Represents the location of a token in its source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct TokenLocation {
     /// The start position of the token.
     pub start: SourcePosition,
@@ -58,6 +60,7 @@ pub struct TokenLocation {
 /// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum Token {
     /// An operator token.
     Operator(String, TokenLocation),

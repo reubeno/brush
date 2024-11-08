@@ -4,6 +4,7 @@ use crate::error;
 
 /// A piece of a prompt string.
 #[derive(Clone)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum PromptPiece {
     /// An ASCII character.
     AsciiCharacter(u32),
@@ -61,6 +62,7 @@ pub enum PromptPiece {
 
 /// Format for a date in a prompt.
 #[derive(Clone)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum PromptDateFormat {
     /// A format including weekday, month, and date.
     WeekdayMonthDate,
@@ -70,6 +72,7 @@ pub enum PromptDateFormat {
 
 /// Format for a time in a prompt.
 #[derive(Clone)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum PromptTimeFormat {
     /// A twelve-hour time format with AM/PM.
     TwelveHourAM,
