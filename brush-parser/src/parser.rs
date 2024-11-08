@@ -1081,4 +1081,42 @@ for f in A B C; do
 
         Ok(())
     }
+
+    macro_rules! case {
+        ($case:ident($parser:ident($input:literal))) => {
+            #[test]
+            fn $case() -> Result<()> {
+                let tokens = tokenize_str($input)?;
+                let ast = $parser(
+                    &Tokens {
+                        tokens: tokens.as_slice(),
+                    },
+                    &ParserOptions::default(),
+                    &SourceInfo::default(),
+                )?;
+                insta::with_settings!({
+                    description => $input,
+                    omit_expression => true,
+                }, {
+                    insta::assert_yaml_snapshot!(&ast);
+                });
+                Ok(())
+            }
+        };
+    }
+
+    use super::token_parser::program;
+
+    case! {test_ambiguous_for_loop(program(r#"for for in for; do for=for; done; echo $for"#))}
+    case! {sample_program(program( r#"
+#!/usr/bin/env bash
+
+for f in A B C; do
+
+    # sdfsdf
+    echo "${f@L}" >&2
+
+   done
+
+"#))}
 }
