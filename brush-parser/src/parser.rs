@@ -1,4 +1,3 @@
-
 use crate::ast::{self, SeparatorOperator};
 use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
@@ -1095,12 +1094,21 @@ for f in A B C; do
         Ok(result)
     }
 
+    fn serialize(p: ast::Program) -> Result<String> {
+        let c = ron::ser::PrettyConfig::new()
+            .compact_arrays(false)
+            .indentor("  ".into())
+            .separate_tuple_members(false)
+            .struct_names(true);
+        Ok(ron::ser::to_string_pretty(&p, c)?)
+    }
+
     fn check_file(actual: ast::Program, expect: ExpectFile) -> Result<()> {
-        expect.assert_eq(&serde_yaml::to_string(&actual)?);
+        expect.assert_eq(&serialize(actual)?);
         Ok(())
     }
     fn check(actual: ast::Program, expect: Expect) -> Result<()> {
-        expect.assert_eq(&serde_yaml::to_string(&actual)?);
+        expect.assert_eq(&serialize(actual)?);
         Ok(())
     }
 
@@ -1121,28 +1129,38 @@ for f in A B C; do
 
     "#,
         )?;
-        check_file(r, expect_file!["./snapshots/basic.yaml"])?;
+        check_file(r, expect_file!["./snapshots/basic.ron"])?;
         Ok(())
     }
 
     #[test]
     fn test_noop() -> Result<()> {
-        let r = parse(
-            r#":;"#,
+        let r = parse(r#":;"#)?;
+        check(
+            r,
+            expect![[r#"
+                Program(
+                  complete_commands: [
+                    CompoundList([
+                      CompoundListItem(AndOrList(
+                        first: Pipeline(
+                          bang: false,
+                          seq: [
+                            Simple(SimpleCommand(
+                              prefix: None,
+                              word_or_name: Some(Word(
+                                value: ":",
+                              )),
+                              suffix: None,
+                            )),
+                          ],
+                        ),
+                        additional: [],
+                      ), Sequence),
+                    ]),
+                  ],
+                )"#]],
         )?;
-        check(r, expect![[r#"
-            complete_commands:
-            - - - first:
-                    bang: false
-                    seq:
-                    - Simple:
-                        prefix: null
-                        word_or_name:
-                          value: ':'
-                        suffix: null
-                  additional: []
-                - Sequence
-        "#]])?;
         Ok(())
     }
 
@@ -1158,7 +1176,7 @@ for f in A B C; do
                         stringify!($parser),
                         "_",
                         stringify!($case),
-                        ".yaml"
+                        ".ron"
                     )],
                 )?;
                 Ok(())
@@ -1166,5 +1184,5 @@ for f in A B C; do
         };
     }
 
-    case![basic2(parser("echo hello; echo  world;"))];
+    case![basic2(parser("echo helo; echo  world;"))];
 }

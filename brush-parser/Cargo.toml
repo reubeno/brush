@@ -33,7 +33,7 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 expect-test = "1.5.0"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 serde = { version = "1.0.214", features = ["derive"] }
-serde_yaml = "0.9.34"
+ron = "0.8"
 
 [target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }

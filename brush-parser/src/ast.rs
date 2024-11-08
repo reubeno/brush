@@ -12,8 +12,6 @@ const DISPLAY_INDENT: &str = "    ";
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct Program {
-    // Workaround for nested enums https://github.com/dtolnay/serde-yaml/issues/363
-    #[cfg_attr(test, serde(with = "serde_yaml::with::singleton_map_recursive"))]
     /// A sequence of complete shell commands.
     pub complete_commands: Vec<CompleteCommand>,
 }
