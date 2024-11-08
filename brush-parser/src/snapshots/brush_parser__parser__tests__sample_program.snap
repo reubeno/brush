@@ -1,0 +1,36 @@
+---
+source: brush-parser/src/parser.rs
+description: "\n#!/usr/bin/env bash\n\nfor f in A B C; do\n\n    # sdfsdf\n    echo \"${f@L}\" >&2\n\n   done\n\n"
+---
+complete_commands:
+  - - - first:
+          bang: false
+          seq:
+            - Compound:
+                - ForClause:
+                    variable_name: f
+                    values:
+                      - value: A
+                      - value: B
+                      - value: C
+                    body:
+                      - - first:
+                            bang: false
+                            seq:
+                              - Simple:
+                                  prefix: ~
+                                  word_or_name:
+                                    value: echo
+                                  suffix:
+                                    - Word:
+                                        value: "\"${f@L}\""
+                                    - IoRedirect:
+                                        File:
+                                          - ~
+                                          - DuplicateOutput
+                                          - Fd: 2
+                          additional: []
+                        - Sequence
+                - ~
+        additional: []
+      - Sequence
