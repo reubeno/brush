@@ -1081,4 +1081,108 @@ for f in A B C; do
 
         Ok(())
     }
+
+    fn parse(input: &str) -> Result<ast::Program> {
+        let tokens = tokenize_str(input)?;
+        let result = super::token_parser::program(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+        Ok(result)
+    }
+
+    fn serialize(p: ast::Program) -> Result<String> {
+        let c = ron::ser::PrettyConfig::new()
+            .compact_arrays(false)
+            .indentor("  ".into())
+            .separate_tuple_members(false)
+            .struct_names(true);
+        Ok(ron::ser::to_string_pretty(&p, c)?)
+    }
+
+    fn check_file(actual: ast::Program, expect: ExpectFile) -> Result<()> {
+        expect.assert_eq(&serialize(actual)?);
+        Ok(())
+    }
+    fn check(actual: ast::Program, expect: Expect) -> Result<()> {
+        expect.assert_eq(&serialize(actual)?);
+        Ok(())
+    }
+
+    use expect_test::{expect, expect_file, Expect, ExpectFile};
+    #[test]
+    fn basic() -> Result<()> {
+        let r = parse(
+            r#"
+
+    #!/usr/bin/env bash
+
+    for f in A B C; do
+
+        # sdfsdf
+        echo "${f@L}" >&2
+
+       done
+
+    "#,
+        )?;
+        check_file(r, expect_file!["./snapshots/basic.ron"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_noop() -> Result<()> {
+        let r = parse(r#":;"#)?;
+        check(
+            r,
+            expect![[r#"
+                Program(
+                  complete_commands: [
+                    CompoundList([
+                      CompoundListItem(AndOrList(
+                        first: Pipeline(
+                          bang: false,
+                          seq: [
+                            Simple(SimpleCommand(
+                              prefix: None,
+                              word_or_name: Some(Word(
+                                value: ":",
+                              )),
+                              suffix: None,
+                            )),
+                          ],
+                        ),
+                        additional: [],
+                      ), Sequence),
+                    ]),
+                  ],
+                )"#]],
+        )?;
+        Ok(())
+    }
+
+    macro_rules! case {
+        ($case:ident($parser:ident($input:literal))) => {
+            #[test]
+            fn $case() -> Result<()> {
+                let ast = parse($input)?;
+                check_file(
+                    ast,
+                    expect_file![concat!(
+                        "./snapshots/",
+                        stringify!($parser),
+                        "_",
+                        stringify!($case),
+                        ".ron"
+                    )],
+                )?;
+                Ok(())
+            }
+        };
+    }
+
+    case![basic2(parser("echo helo; echo  world;"))];
 }
