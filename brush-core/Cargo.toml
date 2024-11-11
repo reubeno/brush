@@ -20,7 +20,7 @@ workspace = true
 async-recursion = "1.1.1"
 async-trait = "0.1.83"
 brush-parser = { version = "^0.2.10", path = "../brush-parser" }
-cached = "0.53.1"
+cached = "0.54.0"
 cfg-if = "1.0.0"
 clap = { version = "4.5.20", features = ["derive", "wrap_help"] }
 fancy-regex = "0.14.0"
@@ -29,11 +29,11 @@ indexmap = "2.6.0"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 rand = "0.8.5"
-thiserror = "1.0.67"
+thiserror = "2.0.3"
 tracing = "0.1.40"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.41.0", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.41.1", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.0"
@@ -66,11 +66,11 @@ uzers = "0.12.1"
 procfs = "0.17.0"
 
 [dev-dependencies]
-anyhow = "1.0.92"
+anyhow = "1.0.93"
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-pprof = { version = "0.13.0", features = ["criterion", "flamegraph"] }
+pprof = { version = "0.14.0", features = ["criterion", "flamegraph"] }
 
 [[bench]]
 name = "shell"
