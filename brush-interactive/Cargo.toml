@@ -29,8 +29,8 @@ brush-core = { version = "^0.2.12", path = "../brush-core" }
 indexmap = "2.6.0"
 nu-ansi-term = { version = "0.50.1", optional = true }
 reedline = { version = "0.36.0", optional = true }
-thiserror = "1.0.67"
+thiserror = "2.0.3"
 tracing = "0.1.40"
 
 [target.'cfg(any(windows, unix))'.dependencies]
-tokio = { version = "1.41.0", features = ["macros", "signal"] }
+tokio = { version = "1.41.1", features = ["macros", "signal"] }

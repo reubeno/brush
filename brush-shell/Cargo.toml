@@ -54,7 +54,7 @@ human-panic = "2.0.2"
 brush-interactive = { version = "^0.2.12", path = "../brush-interactive", features = [
     "basic",
 ] }
-tokio = { version = "1.41.0", features = ["rt", "sync"] }
+tokio = { version = "1.41.1", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.12", path = "../brush-interactive", features = [
@@ -63,7 +63,7 @@ brush-interactive = { version = "^0.2.12", path = "../brush-interactive", featur
 tokio = { version = "1.41.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
-anyhow = "1.0.92"
+anyhow = "1.0.93"
 assert_cmd = "2.0.16"
 assert_fs = "1.1.2"
 colored = "2.1.0"
