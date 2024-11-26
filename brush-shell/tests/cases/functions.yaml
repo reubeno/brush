@@ -163,3 +163,36 @@ cases:
       myfunc
       myvar="overridden" myfunc
       myfunc
+
+  - name: "Function definition without braces"
+    stdin: |
+      myfunc()
+      if true; then
+        echo true
+      else
+        echo false
+      fi
+
+      myfunc
+
+  - name: "Nested function definition"
+    stdin: |
+      outer() {
+        echo "Entered outer"
+
+        inner() {
+          echo "In inner"
+        }
+
+        echo "Invoking inner"
+
+        inner
+
+        echo "Returning from outer"
+      }
+
+      echo "Calling outer from toplevel"
+      outer
+
+      echo "Calling inner from toplevel"
+      inner
