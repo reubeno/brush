@@ -269,7 +269,7 @@ peg::parser! {
 
         // N.B. The arithmetic command is a non-sh extension.
         // N.B. The arithmetic for clause command is a non-sh extension.
-        rule compound_command() -> ast::CompoundCommand =
+        pub(crate) rule compound_command() -> ast::CompoundCommand =
             non_posix_extensions_enabled() a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
             b:brace_group() { ast::CompoundCommand::BraceGroup(b) } /
             s:subshell() { ast::CompoundCommand::Subshell(s) } /
@@ -281,16 +281,16 @@ peg::parser! {
             non_posix_extensions_enabled() c:arithmetic_for_clause() { ast::CompoundCommand::ArithmeticForClause(c) } /
             expected!("compound command")
 
-        rule arithmetic_command() -> ast::ArithmeticCommand =
+        pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
             specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") specific_operator(")") {
                 ast::ArithmeticCommand { expr }
             }
 
-        rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
+        pub(crate) rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
             raw_expr:$(arithmetic_expression_piece()*) { ast::UnexpandedArithmeticExpr { value: raw_expr } }
 
         rule arithmetic_expression_piece() =
-            specific_operator("(") arithmetic_expression_piece()* specific_operator(")") {} /
+            specific_operator("(") (!specific_operator(")") arithmetic_expression_piece())* specific_operator(")") {} /
             !arithmetic_end() [_] {}
 
         // TODO: evaluate arithmetic end; the semicolon is used in arithmetic for loops.
