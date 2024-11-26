@@ -284,3 +284,16 @@ cases:
       ourarray+=("${otherarray[@]/a/x}")
       declare -p otherarray
       declare -p ourarray
+
+  - name: "Array declaration in a function"
+    stdin: |
+      outer() {
+        inner=()
+        if test true; then
+          echo true
+        else
+          echo false
+        fi
+      }
+
+      outer

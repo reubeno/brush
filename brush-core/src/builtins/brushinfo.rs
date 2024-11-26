@@ -15,7 +15,6 @@ pub(crate) struct BrushInfoCommand {
 enum CommandGroup {
     #[clap(subcommand)]
     Process(ProcessCommand),
-
     #[clap(subcommand)]
     Complete(CompleteCommand),
 }

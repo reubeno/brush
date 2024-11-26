@@ -534,7 +534,10 @@ peg::parser! {
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
 
         rule fname() -> &'input str =
-            name()
+            // Special-case: don't allow it to end with an equals sign, to avoid the challenge of
+            // misinterpreting certain declaration assignments as function definitions.
+            // TODO: Find a way to make this still work without requiring this targeted exception.
+            w:[Token::Word(word, _) if !word.ends_with('=')] { w.to_str() }
 
         rule brace_group() -> ast::BraceGroupCommand =
             specific_word("{") c:compound_list() specific_word("}") { ast::BraceGroupCommand(c) }
