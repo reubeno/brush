@@ -226,6 +226,12 @@ impl ShellVariable {
                 ) => {
                     self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
                 }
+                // If we're appending a scalar to a declared-but-unset variable, then
+                // start with the empty string. This will result in the right thing happening,
+                // even in treat-as-integer cases.
+                (ShellValue::Unset(_), ShellValueLiteral::Scalar(_)) => {
+                    self.assign(ShellValueLiteral::Scalar(String::new()), false)?;
+                }
                 // If we're trying to append an array to a string, we first promote the string to be
                 // an array with the string being present at index 0.
                 (ShellValue::String(_), ShellValueLiteral::Array(_)) => {
@@ -273,7 +279,7 @@ impl ShellVariable {
                         )
                     }
                 },
-                ShellValue::Unset(_) => error::unimp("appending to unset variable"),
+                ShellValue::Unset(_) => unreachable!("covered in conversion above"),
                 ShellValue::Random => Ok(()),
             }
         } else {
@@ -826,6 +832,12 @@ impl From<&str> for ShellValue {
 impl From<&String> for ShellValue {
     fn from(value: &String) -> Self {
         ShellValue::String(value.clone())
+    }
+}
+
+impl From<String> for ShellValue {
+    fn from(value: String) -> Self {
+        ShellValue::String(value)
     }
 }
 

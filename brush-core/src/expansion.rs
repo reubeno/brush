@@ -543,6 +543,7 @@ impl<'a> WordExpander<'a> {
                 let mut fields: Vec<WordField> = vec![];
 
                 let pieces_is_empty = pieces.is_empty();
+                let concatenation_joiner = self.shell.get_ifs_first_char();
 
                 for piece in pieces {
                     let Expansion {
@@ -561,7 +562,9 @@ impl<'a> WordExpander<'a> {
                                     .map(|piece| piece.make_unsplittable())
                                     .collect()
                             })
-                            .intersperse(vec![ExpansionPiece::Unsplittable(String::from(" "))])
+                            .intersperse(vec![ExpansionPiece::Unsplittable(
+                                concatenation_joiner.to_string(),
+                            )])
                             .flatten()
                             .collect();
 

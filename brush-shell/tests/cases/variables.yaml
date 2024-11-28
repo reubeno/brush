@@ -5,3 +5,13 @@ cases:
       x=something
       x+=here
       echo "x: ${x}"
+
+  - name: "Append to an unset variable"
+    stdin: |
+      declare -a myvar
+      myvar+=abc
+      echo "myvar: ${myvar}"
+
+      declare -i myint
+      myint+=abc
+      echo "myint: ${myint}"

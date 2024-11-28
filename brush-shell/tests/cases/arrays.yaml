@@ -297,3 +297,13 @@ cases:
       }
 
       outer
+
+  - name: "Array element expansion with non-standard IFS"
+    stdin: |
+      IFS='|'
+
+      declare -a myarray=(abc 1 f)
+      echo "\"\${myarray[@]}\": ${myarray[@]}"
+      echo "\"\${myarray[*]}\": ${myarray[*]}"
+      echo "\${myarray[@]}:" ${myarray[@]}
+      echo "\${myarray[*]}:" ${myarray[*]}
