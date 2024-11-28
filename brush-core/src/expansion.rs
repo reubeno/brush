@@ -343,6 +343,7 @@ impl<'a> WordExpander<'a> {
         Ok(expanded)
     }
 
+    #[allow(clippy::ref_option)]
     async fn basic_expand_opt_pattern(
         &mut self,
         word: &Option<String>,
@@ -1337,6 +1338,7 @@ impl<'a> WordExpander<'a> {
     }
 
     #[allow(clippy::unwrap_in_result)]
+    #[allow(clippy::ref_option)]
     fn uppercase_first_char(
         s: String,
         pattern: &Option<patterns::Pattern>,
@@ -1362,6 +1364,7 @@ impl<'a> WordExpander<'a> {
     }
 
     #[allow(clippy::unwrap_in_result)]
+    #[allow(clippy::ref_option)]
     fn lowercase_first_char(
         s: String,
         pattern: &Option<patterns::Pattern>,
@@ -1386,6 +1389,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
+    #[allow(clippy::ref_option)]
     fn uppercase_pattern(
         s: &str,
         pattern: &Option<patterns::Pattern>,
@@ -1405,6 +1409,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
+    #[allow(clippy::ref_option)]
     fn lowercase_pattern(
         s: &str,
         pattern: &Option<patterns::Pattern>,

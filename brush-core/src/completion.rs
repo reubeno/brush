@@ -891,11 +891,7 @@ impl Config {
         simple_tokenize_by_delimiters(input, &default_delimiters)
     }
 
-    async fn get_completions_for_token<'a>(
-        &self,
-        shell: &mut Shell,
-        context: Context<'a>,
-    ) -> Answer {
+    async fn get_completions_for_token(&self, shell: &mut Shell, context: Context<'_>) -> Answer {
         // See if we can find a completion spec matching the current command.
         let mut found_spec: Option<&Spec> = None;
 
