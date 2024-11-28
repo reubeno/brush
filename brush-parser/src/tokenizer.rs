@@ -1139,7 +1139,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     }
 }
 
-impl<'a, R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'a, R> {
+impl<R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'_, R> {
     type Item = Result<TokenizeResult, TokenizerError>;
 
     fn next(&mut self) -> Option<Self::Item> {

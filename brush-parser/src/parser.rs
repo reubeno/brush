@@ -130,7 +130,7 @@ pub fn parse_tokens(
     result
 }
 
-impl<'a> peg::Parse for Tokens<'a> {
+impl peg::Parse for Tokens<'_> {
     type PositionRepr = usize;
 
     #[inline]

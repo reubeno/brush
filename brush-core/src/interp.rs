@@ -1259,8 +1259,8 @@ fn setup_pipeline_redirection(
 }
 
 #[allow(clippy::too_many_lines)]
-pub(crate) async fn setup_redirect<'a>(
-    open_files: &'a mut OpenFiles,
+pub(crate) async fn setup_redirect(
+    open_files: &'_ mut OpenFiles,
     shell: &mut Shell,
     redirect: &ast::IoRedirect,
 ) -> Result<Option<u32>, error::Error> {
