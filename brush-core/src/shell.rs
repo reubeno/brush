@@ -883,6 +883,11 @@ impl Shell {
         )
     }
 
+    /// Returns the first character of the IFS variable, or a space if it is not set.
+    pub(crate) fn get_ifs_first_char(&self) -> char {
+        self.get_ifs().chars().next().unwrap_or(' ')
+    }
+
     /// Generates command completions for the shell.
     ///
     /// # Arguments
