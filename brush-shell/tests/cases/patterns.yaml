@@ -3,6 +3,14 @@ cases:
   - name: "Single file expansion"
     stdin: "echo file1.txt"
 
+  - name: "Expansion with noglob"
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
+    stdin: |
+      set -f
+      echo "*.txt:" *.txt
+
   - name: "Multiple file expansion"
     test_files:
       - path: "file1.txt"
@@ -25,6 +33,13 @@ cases:
     test_files:
       - path: "file1.txt"
     stdin: "echo *.jpg"
+
+  - name: "Expansion with no matches + nullglob"
+    test_files:
+      - path: "file1.txt"
+    stdin: |
+      shopt -s nullglob
+      echo "*.jpg:" *.jpg
 
   - name: "Expansion with special characters"
     test_files:

@@ -510,7 +510,7 @@ impl<'a> WordExpander<'a> {
             )
             .unwrap_or_default();
 
-        if expansions.is_empty() {
+        if expansions.is_empty() && !self.shell.options.expand_non_matching_patterns_to_null {
             vec![String::from(field)]
         } else {
             expansions
