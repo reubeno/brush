@@ -1,3 +1,5 @@
+use std::str::Chars;
+
 use super::refs;
 use nu_ansi_term::{Color, Style};
 
@@ -98,10 +100,10 @@ enum CommandType {
 
 struct StyledInputLine<'a> {
     shell: &'a brush_core::Shell,
-    input_line: &'a str,
     cursor: usize,
     styled: reedline::StyledText,
-    current_index: usize,
+    remaining_chars: Chars<'a>,
+    current_char_index: usize,
     next_missing_style: Option<Style>,
 }
 
@@ -109,10 +111,10 @@ impl<'a> StyledInputLine<'a> {
     fn new(shell: &'a brush_core::Shell, input_line: &'a str, cursor: usize) -> Self {
         Self {
             shell,
-            input_line,
             cursor,
             styled: reedline::StyledText::new(),
-            current_index: 0,
+            remaining_chars: input_line.chars(),
+            current_char_index: 0,
             next_missing_style: None,
         }
     }
@@ -229,18 +231,21 @@ impl<'a> StyledInputLine<'a> {
 
     fn append_style(&mut self, style: Style, start: usize, end: usize) {
         // See if we need to cover a gap between this substring and the one that preceded it.
-        if start > self.current_index {
+        if start > self.current_char_index {
             let missing_style = self.next_missing_style.map_or_else(styles::comment, |s| s);
-            let missing_text = &self.input_line[self.current_index..start];
-            self.styled.push((missing_style, missing_text.to_owned()));
+            let missing_text: String = (&mut self.remaining_chars)
+                .take(start - self.current_char_index)
+                .collect();
+            self.styled.push((missing_style, missing_text));
+            self.current_char_index = start;
         }
 
         if end > start {
-            self.styled
-                .push((style, self.input_line[start..end].to_string()));
+            let text: String = (&mut self.remaining_chars).take(end - start).collect();
+            self.styled.push((style, text));
         }
 
-        self.current_index = end;
+        self.current_char_index = end;
     }
 
     fn skip_ahead(&mut self, dest: usize) {
