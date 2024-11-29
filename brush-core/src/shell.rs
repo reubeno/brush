@@ -162,12 +162,6 @@ pub struct FunctionCall {
     function_definition: Arc<brush_parser::ast::FunctionDefinition>,
 }
 
-lazy_static::lazy_static! {
-    // NOTE: We have difficulty with xterm escape sequences going through rustyline;
-    // so we compile a regex that can be used to strip them out.
-    static ref PROMPT_XTERM_ESCAPE_SEQ_REGEX: fancy_regex::Regex = fancy_regex::Regex::new("\x1b][0-2];[^\x07]*\x07").unwrap();
-}
-
 impl Shell {
     /// Returns a new shell instance created with the given options.
     ///
@@ -280,14 +274,38 @@ impl Shell {
         }
 
         if !options.sh_mode {
+            const BASH_MAJOR: u32 = 5;
+            const BASH_MINOR: u32 = 2;
+            const BASH_PATCH: u32 = 15;
+            const BASH_BUILD: u32 = 1;
+            const BASH_RELEASE: &str = "release";
+            const BASH_MACHINE: &str = "unknown";
+
             if let Some(shell_name) = &options.shell_name {
                 env.set_global("BASH", ShellVariable::new(shell_name.into()))?;
             }
             env.set_global(
                 "BASH_VERSINFO",
                 ShellVariable::new(ShellValue::indexed_array_from_slice(
-                    ["5", "2", "15", "1", "release", "unknown"].as_slice(),
+                    [
+                        BASH_MAJOR.to_string().as_str(),
+                        BASH_MINOR.to_string().as_str(),
+                        BASH_PATCH.to_string().as_str(),
+                        BASH_BUILD.to_string().as_str(),
+                        BASH_RELEASE,
+                        BASH_MACHINE,
+                    ]
+                    .as_slice(),
                 )),
+            )?;
+            env.set_global(
+                "BASH_VERSION",
+                ShellVariable::new(
+                    std::format!(
+                        "{BASH_MAJOR}.{BASH_MINOR}.{BASH_PATCH}({BASH_BUILD})-{BASH_RELEASE}"
+                    )
+                    .into(),
+                ),
             )?;
         }
 
@@ -687,6 +705,11 @@ impl Shell {
         }
     }
 
+    /// Composes the shell's post-input, pre-command prompt, applying all appropriate expansions.
+    pub async fn compose_precmd_prompt(&mut self) -> Result<String, error::Error> {
+        self.prompt_from_var_or_default("PS0", "").await
+    }
+
     /// Composes the shell's prompt, applying all appropriate expansions.
     pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
         self.prompt_from_var_or_default("PS1", self.default_prompt())
@@ -696,7 +719,8 @@ impl Shell {
     /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
     #[allow(clippy::unused_async)]
     pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
-        Ok(String::new())
+        // This is a brush extension.
+        self.prompt_from_var_or_default("BRUSH_PS_ALT", "").await
     }
 
     /// Composes the shell's continuation prompt.
@@ -711,15 +735,12 @@ impl Shell {
     ) -> Result<String, error::Error> {
         // Retrieve the spec.
         let prompt_spec = self.parameter_or_default(var_name, default);
+        if prompt_spec.is_empty() {
+            return Ok(prompt_spec);
+        }
 
         // Expand it.
-        let formatted_prompt = prompt::expand_prompt(self, prompt_spec.as_ref())?;
-
-        // NOTE: We're having difficulty with xterm escape sequences going through rustyline;
-        // so we strip them here.
-        let formatted_prompt = PROMPT_XTERM_ESCAPE_SEQ_REGEX
-            .replace_all(formatted_prompt.as_str(), "")
-            .to_string();
+        let formatted_prompt = prompt::expand_prompt(self, prompt_spec)?;
 
         // Now expand.
         let formatted_prompt = expansion::basic_expand_str(self, &formatted_prompt).await?;

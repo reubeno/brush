@@ -9,16 +9,15 @@ const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 const VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
 const VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
-pub(crate) fn expand_prompt(shell: &Shell, spec: &str) -> Result<String, error::Error> {
+pub(crate) fn expand_prompt(shell: &Shell, spec: String) -> Result<String, error::Error> {
     // Now parse.
-    let prompt_pieces = parse_prompt(spec.to_owned())?;
+    let prompt_pieces = parse_prompt(spec)?;
 
     // Now render.
     let formatted_prompt = prompt_pieces
-        .iter()
+        .into_iter()
         .map(|p| format_prompt_piece(shell, p))
-        .collect::<Result<Vec<_>, error::Error>>()?
-        .join("");
+        .collect::<Result<String, error::Error>>()?;
 
     Ok(formatted_prompt)
 }
@@ -32,12 +31,12 @@ fn parse_prompt(
 
 pub(crate) fn format_prompt_piece(
     shell: &Shell,
-    piece: &brush_parser::prompt::PromptPiece,
+    piece: brush_parser::prompt::PromptPiece,
 ) -> Result<String, error::Error> {
     let formatted = match piece {
-        brush_parser::prompt::PromptPiece::Literal(l) => l.to_owned(),
+        brush_parser::prompt::PromptPiece::Literal(l) => l,
         brush_parser::prompt::PromptPiece::AsciiCharacter(c) => {
-            char::from_u32(*c).map_or_else(String::new, |c| c.to_string())
+            char::from_u32(c).map_or_else(String::new, |c| c.to_string())
         }
         brush_parser::prompt::PromptPiece::Backslash => "\\".to_owned(),
         brush_parser::prompt::PromptPiece::BellCharacter => "\x07".to_owned(),
@@ -52,7 +51,7 @@ pub(crate) fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::CurrentWorkingDirectory {
             tilde_replaced,
             basename,
-        } => format_current_working_directory(shell, *tilde_replaced, *basename),
+        } => format_current_working_directory(shell, tilde_replaced, basename),
         brush_parser::prompt::PromptPiece::Date(_) => return error::unimp("prompt: date"),
         brush_parser::prompt::PromptPiece::DollarOrPound => {
             if users::is_root() {
@@ -70,7 +69,7 @@ pub(crate) fn format_prompt_piece(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            if *only_up_to_first_dot {
+            if only_up_to_first_dot {
                 if let Some((first, _)) = hn.split_once('.') {
                     return Ok(first.to_owned());
                 }
