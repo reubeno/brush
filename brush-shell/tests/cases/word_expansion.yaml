@@ -658,6 +658,12 @@ cases:
       echo "\${var:-1:1}: ${var:-1:1}"
       echo "\${var:-3:1}: ${var:-3:1}"
 
+  - name: "Substring on string with multi-byte chars"
+    known_failure: true
+    stdin: |
+      var="7❌🖌️✅😂🔴⛔ABC"
+      echo "${var:2}" | hexdump -C
+
   - name: "Substring operator on arrays"
     stdin: |
       set abcde fghij klmno pqrst uvwxy z

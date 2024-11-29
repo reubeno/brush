@@ -1122,8 +1122,8 @@ impl TestCase {
 
         Ok(RunResult {
             exit_status: cmd_result.status,
-            stdout: String::from_utf8(cmd_result.stdout)?,
-            stderr: String::from_utf8(cmd_result.stderr)?,
+            stdout: String::from_utf8_lossy(cmd_result.stdout.as_slice()).to_string(),
+            stderr: String::from_utf8_lossy(cmd_result.stderr.as_slice()).to_string(),
             duration,
         })
     }

@@ -401,9 +401,8 @@ pub fn parse_parameter(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Parameter, error::WordParseError> {
-    let pieces = expansion_parser::parameter(word, options)
-        .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err))?;
-    Ok(pieces)
+    expansion_parser::parameter(word, options)
+        .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err))
 }
 
 peg::parser! {

@@ -97,6 +97,8 @@ impl Expansion {
     pub(crate) fn polymorphic_subslice(&self, index: usize, end: usize) -> Self {
         let len = end - index;
 
+        // If there are multiple fields, then interpret `index` and `end` as indices
+        // into the vector of fields.
         if self.fields.len() > 1 {
             let actual_len = min(len, self.fields.len() - index);
             let fields = self.fields[index..(index + actual_len)].to_vec();
@@ -107,37 +109,62 @@ impl Expansion {
                 undefined: self.undefined,
             }
         } else {
+            // Otherwise, interpret `index` and `end` as indices into the string contents.
             let mut fields = vec![];
 
-            let mut offset = index;
+            // Keep track of how far away the interesting data is from the current read offset.
+            let mut dist_to_slice = index;
+            // Keep track of how many characters are left to be copied.
             let mut left = len;
+
+            // Go through fields, copying the interesting parts.
             for field in &self.fields {
                 let mut pieces = vec![];
 
                 for piece in &field.0 {
+                    // Stop once we've extracted enough characters.
                     if left == 0 {
                         break;
                     }
 
+                    // Get the inner string of the piece, and figure out how many
+                    // characters are in it; make sure to get the *character count*
+                    // and not just call `.len()` to get the byte count.
                     let piece_str = piece.as_str();
-                    if offset < piece_str.len() {
-                        let len_from_this_piece = min(left, piece_str.len() - offset);
+                    let piece_char_count = piece_str.chars().count();
 
-                        let new_piece = match piece {
-                            ExpansionPiece::Unsplittable(s) => ExpansionPiece::Unsplittable(
-                                s[offset..(offset + len_from_this_piece)].to_owned(),
-                            ),
-                            ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
-                                s[offset..(offset + len_from_this_piece)].to_owned(),
-                            ),
-                        };
-
-                        pieces.push(new_piece);
-
-                        left -= len_from_this_piece;
+                    // If the interesting data isn't even in this piece yet, then
+                    // continue until we find it.
+                    if dist_to_slice >= piece_char_count {
+                        dist_to_slice -= piece_char_count;
+                        continue;
                     }
 
-                    offset += piece_str.len();
+                    // Figure out how far into this piece we're interested in copying.
+                    let desired_offset_into_this_piece = dist_to_slice;
+                    // Figure out how many characters we're going to use from *this* piece.
+                    let len_from_this_piece =
+                        min(left, piece_char_count - desired_offset_into_this_piece);
+
+                    let new_piece = match piece {
+                        ExpansionPiece::Unsplittable(s) => ExpansionPiece::Unsplittable(
+                            s.chars()
+                                .skip(desired_offset_into_this_piece)
+                                .take(len_from_this_piece)
+                                .collect(),
+                        ),
+                        ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
+                            s.chars()
+                                .skip(desired_offset_into_this_piece)
+                                .take(len_from_this_piece)
+                                .collect(),
+                        ),
+                    };
+
+                    pieces.push(new_piece);
+
+                    left -= len_from_this_piece;
+                    dist_to_slice = 0;
                 }
 
                 if !pieces.is_empty() {
