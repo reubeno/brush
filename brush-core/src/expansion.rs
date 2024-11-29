@@ -940,10 +940,7 @@ impl<'a> WordExpander<'a> {
                 op,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-
-                transform_expansion(expanded_parameter, |s| {
-                    self.apply_transform_to(&op, s.as_str())
-                })
+                transform_expansion(expanded_parameter, |s| self.apply_transform_to(&op, s))
             }
             brush_parser::word::ParameterExpr::UppercaseFirstChar {
                 parameter,
@@ -1455,18 +1452,20 @@ impl<'a> WordExpander<'a> {
     fn apply_transform_to(
         &self,
         op: &ParameterTransformOp,
-        s: &str,
+        s: String,
     ) -> Result<String, error::Error> {
         match op {
             brush_parser::word::ParameterTransformOp::PromptExpand => {
                 prompt::expand_prompt(self.shell, s)
             }
             brush_parser::word::ParameterTransformOp::CapitalizeInitial => {
-                Ok(to_initial_capitals(s))
+                Ok(to_initial_capitals(s.as_str()))
             }
             brush_parser::word::ParameterTransformOp::ExpandEscapeSequences => {
-                let (result, _) =
-                    escape::expand_backslash_escapes(s, escape::EscapeExpansionMode::AnsiCQuotes)?;
+                let (result, _) = escape::expand_backslash_escapes(
+                    s.as_str(),
+                    escape::EscapeExpansionMode::AnsiCQuotes,
+                )?;
                 Ok(String::from_utf8_lossy(result.as_slice()).into_owned())
             }
             brush_parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
@@ -1474,10 +1473,10 @@ impl<'a> WordExpander<'a> {
             } => {
                 // TODO: This isn't right for arrays.
                 // TODO: This doesn't honor 'separate_words'
-                Ok(variables::quote_str_for_assignment(s))
+                Ok(variables::quote_str_for_assignment(s.as_str()))
             }
             brush_parser::word::ParameterTransformOp::Quoted => {
-                Ok(variables::quote_str_for_assignment(s))
+                Ok(variables::quote_str_for_assignment(s.as_str()))
             }
             brush_parser::word::ParameterTransformOp::ToLowerCase => Ok(s.to_lowercase()),
             brush_parser::word::ParameterTransformOp::ToUpperCase => Ok(s.to_uppercase()),

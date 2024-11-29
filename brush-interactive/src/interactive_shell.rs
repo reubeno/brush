@@ -134,6 +134,12 @@ pub trait InteractiveShell {
             match self.read_line(prompt)? {
                 ReadResult::Input(read_result) => {
                     let mut shell_mut = self.shell_mut();
+
+                    let precmd_prompt = shell_mut.as_mut().compose_precmd_prompt().await?;
+                    if !precmd_prompt.is_empty() {
+                        print!("{precmd_prompt}");
+                    }
+
                     let params = shell_mut.as_mut().default_exec_params();
                     match shell_mut.as_mut().run_string(read_result, &params).await {
                         Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),

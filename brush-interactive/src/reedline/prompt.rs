@@ -2,7 +2,15 @@ use crate::interactive_shell::InteractivePrompt;
 
 impl reedline::Prompt for InteractivePrompt {
     fn render_prompt_left(&self) -> std::borrow::Cow<str> {
-        self.prompt.as_str().into()
+        // [Workaround: see https://github.com/nushell/reedline/issues/707]
+        // If the prompt starts with a newline character, then there's a chance
+        // that it won't be rendered correctly. For this specific case, insert
+        // an extra space character before the newline.
+        if self.prompt.starts_with('\n') {
+            std::format!(" {}", self.prompt).into()
+        } else {
+            self.prompt.as_str().into()
+        }
     }
 
     fn render_prompt_right(&self) -> std::borrow::Cow<str> {
