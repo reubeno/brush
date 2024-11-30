@@ -30,6 +30,7 @@ pub struct Pattern {
     pieces: PatternWord,
     enable_extended_globbing: bool,
     multiline: bool,
+    case_insensitive: bool,
 }
 
 impl Default for Pattern {
@@ -38,6 +39,7 @@ impl Default for Pattern {
             pieces: vec![],
             enable_extended_globbing: false,
             multiline: true,
+            case_insensitive: false,
         }
     }
 }
@@ -97,6 +99,16 @@ impl Pattern {
     #[allow(dead_code)]
     pub fn set_multiline(mut self, value: bool) -> Pattern {
         self.multiline = value;
+        self
+    }
+
+    /// Enables (or disables) case-insensitive matching for this pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Whether or not to enable case-insensitive matching.
+    pub fn set_case_insensitive(mut self, value: bool) -> Pattern {
+        self.case_insensitive = value;
         self
     }
 
@@ -214,8 +226,9 @@ impl Pattern {
 
             let current_paths = std::mem::take(&mut paths_so_far);
             for current_path in current_paths {
-                let subpattern =
-                    Pattern::from(&component).set_extended_globbing(self.enable_extended_globbing);
+                let subpattern = Pattern::from(&component)
+                    .set_extended_globbing(self.enable_extended_globbing)
+                    .set_case_insensitive(self.case_insensitive);
 
                 let regex = subpattern.to_regex(true, true)?;
 
@@ -333,7 +346,7 @@ impl Pattern {
 
         tracing::debug!(target: trace_categories::PATTERN, "pattern: '{self:?}' => regex: '{regex_str}'");
 
-        let re = regex::compile_regex(regex_str)?;
+        let re = regex::compile_regex(regex_str, self.case_insensitive)?;
         Ok(re)
     }
 

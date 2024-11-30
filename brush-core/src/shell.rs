@@ -939,7 +939,8 @@ impl Shell {
         for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
             let pattern =
                 patterns::Pattern::from(std::format!("{dir_str}/{required_glob_pattern}"))
-                    .set_extended_globbing(self.options.extended_globbing);
+                    .set_extended_globbing(self.options.extended_globbing)
+                    .set_case_insensitive(self.options.case_insensitive_pathname_expansion);
 
             // TODO: Pass through quoting.
             if let Ok(entries) = pattern.expand(&self.working_dir, Some(&is_executable)) {

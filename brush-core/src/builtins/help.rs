@@ -76,7 +76,9 @@ impl HelpCommand {
         context: &commands::ExecutionContext<'_>,
         topic_pattern: &str,
     ) -> Result<(), crate::error::Error> {
-        let pattern = crate::patterns::Pattern::from(topic_pattern);
+        let pattern = crate::patterns::Pattern::from(topic_pattern)
+            .set_extended_globbing(context.shell.options.extended_globbing)
+            .set_case_insensitive(context.shell.options.case_insensitive_pathname_expansion);
 
         let mut found_count = 0;
         for (builtin_name, builtin_registration) in get_builtins_sorted_by_name(context) {

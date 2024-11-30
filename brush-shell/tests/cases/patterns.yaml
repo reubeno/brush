@@ -19,6 +19,15 @@ cases:
       echo *.txt
       echo *."txt"
 
+  - name: "File expansion with nocaseglob"
+    test_files:
+      - path: "FILE1.TXT"
+      - path: "file2.txt"
+    stdin: |
+      shopt -s nocaseglob
+      echo "*.txt:" *.txt
+      echo "*.TXT:" *.txt
+
   - name: "Nested directory expansion"
     test_files:
       - path: "dir/file1.txt"
@@ -274,3 +283,13 @@ cases:
       [[ "x" == [xyz] ]]       && echo "2. Matched"
       [[ "1" == [[:digit:]] ]] && echo "3. Matched"
       [[ "(" == [\(]  ]]       && echo "4. Matched"
+
+  - name: "Pattern matching: case sensitivity"
+    stdin: |
+      shopt -u nocasematch
+      [[ "abc" == "ABC" ]]     && echo "1. Matched"
+      [[ "abc" == "[A-Z]BC" ]] && echo "2. Matched"
+
+      shopt -s nocasematch
+      [[ "abc" == "ABC" ]]     && echo "3. Matched"
+      [[ "abc" == "[A-Z]BC" ]] && echo "4. Matched"

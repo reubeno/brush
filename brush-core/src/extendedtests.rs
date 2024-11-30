@@ -351,7 +351,10 @@ async fn apply_binary_predicate(
         // TODO: implement case-insensitive matching if relevant via shopt options (nocasematch).
         ast::BinaryPredicate::StringExactlyMatchesPattern => {
             let s = expansion::basic_expand_word(shell, left).await?;
-            let pattern = expansion::basic_expand_pattern(shell, right).await?;
+            let pattern = expansion::basic_expand_pattern(shell, right)
+                .await?
+                .set_extended_globbing(shell.options.extended_globbing)
+                .set_case_insensitive(shell.options.case_insensitive_conditionals);
 
             if shell.options.print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, right).await?;
@@ -362,7 +365,10 @@ async fn apply_binary_predicate(
         }
         ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
             let s = expansion::basic_expand_word(shell, left).await?;
-            let pattern = expansion::basic_expand_pattern(shell, right).await?;
+            let pattern = expansion::basic_expand_pattern(shell, right)
+                .await?
+                .set_extended_globbing(shell.options.extended_globbing)
+                .set_case_insensitive(shell.options.case_insensitive_conditionals);
 
             if shell.options.print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, right).await?;
@@ -429,13 +435,15 @@ pub(crate) fn apply_binary_predicate_to_strs(
         ),
         ast::BinaryPredicate::StringExactlyMatchesPattern => {
             let pattern = patterns::Pattern::from(right)
-                .set_extended_globbing(shell.options.extended_globbing);
+                .set_extended_globbing(shell.options.extended_globbing)
+                .set_case_insensitive(shell.options.case_insensitive_conditionals);
 
             pattern.exactly_matches(left)
         }
         ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
             let pattern = patterns::Pattern::from(right)
-                .set_extended_globbing(shell.options.extended_globbing);
+                .set_extended_globbing(shell.options.extended_globbing)
+                .set_case_insensitive(shell.options.case_insensitive_conditionals);
 
             let eq = pattern.exactly_matches(left)?;
             Ok(!eq)

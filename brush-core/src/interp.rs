@@ -583,7 +583,11 @@ impl Execute for ast::CaseClauseCommand {
             } else {
                 let mut matches = false;
                 for pattern in &case.patterns {
-                    let expanded_pattern = expansion::basic_expand_pattern(shell, pattern).await?;
+                    let expanded_pattern = expansion::basic_expand_pattern(shell, pattern)
+                        .await?
+                        .set_extended_globbing(shell.options.extended_globbing)
+                        .set_case_insensitive(shell.options.case_insensitive_conditionals);
+
                     if expanded_pattern.exactly_matches(expanded_value.as_str())? {
                         matches = true;
                         break;
