@@ -297,25 +297,17 @@ impl Pattern {
                     current_pattern.push_str(s);
                 }
                 PatternPiece::Literal(s) => {
-                    if !current_pattern.is_empty() {
-                        let regex_piece = pattern_to_regex_str(
-                            current_pattern.as_str(),
-                            self.enable_extended_globbing,
-                        )?;
-                        regex_str.push_str(regex_piece.as_str());
-                        current_pattern = String::new();
+                    for c in s.chars() {
+                        current_pattern.push('\\');
+                        current_pattern.push(c);
                     }
-
-                    regex_str.push_str(escape_for_regex(s).as_str());
                 }
             }
         }
 
-        if !current_pattern.is_empty() {
-            let regex_piece =
-                pattern_to_regex_str(current_pattern.as_str(), self.enable_extended_globbing)?;
-            regex_str.push_str(regex_piece.as_str());
-        }
+        let regex_piece =
+            pattern_to_regex_str(current_pattern.as_str(), self.enable_extended_globbing)?;
+        regex_str.push_str(regex_piece.as_str());
 
         if strict_suffix_match {
             regex_str.push('$');
@@ -361,26 +353,10 @@ fn requires_expansion(s: &str) -> bool {
     s.contains(['*', '?', '[', ']', '(', ')'])
 }
 
-fn escape_for_regex(s: &str) -> String {
-    let mut escaped = String::new();
-    for c in s.chars() {
-        if brush_parser::pattern::regex_char_needs_escaping(c) {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
-    escaped
-}
-
 fn pattern_to_regex_str(
     pattern: &str,
     enable_extended_globbing: bool,
 ) -> Result<String, error::Error> {
-    // TODO: pattern matching with **
-    if pattern.contains("**") {
-        return error::unimp("pattern matching with '**' pattern");
-    }
-
     Ok(brush_parser::pattern::pattern_to_regex_str(
         pattern,
         enable_extended_globbing,

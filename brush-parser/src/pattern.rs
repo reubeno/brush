@@ -156,6 +156,18 @@ mod tests {
     use anyhow::Result;
 
     #[test]
+    fn test_bracket_exprs() -> Result<()> {
+        assert_eq!(pattern_to_regex_str("[a-z]", true)?, "[a-z]");
+        assert_eq!(pattern_to_regex_str("[abc]", true)?, "[abc]");
+        assert_eq!(pattern_to_regex_str(r"[\(]", true)?, r"[\(]");
+        assert_eq!(pattern_to_regex_str(r"[(]", true)?, "[(]");
+        assert_eq!(pattern_to_regex_str("[[:digit:]]", true)?, "[[:digit:]]");
+        assert_eq!(pattern_to_regex_str(r"[-(),!]*", true)?, r"[-(),!].*");
+        assert_eq!(pattern_to_regex_str(r"[-\(\),\!]*", true)?, r"[-\(\),\!].*");
+        Ok(())
+    }
+
+    #[test]
     fn test_extended_glob() -> Result<()> {
         assert_eq!(
             pattern_to_regex_translator::extended_glob_pattern("@(a|b)", true)?,
