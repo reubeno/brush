@@ -27,6 +27,14 @@ cases:
       *) echo "unhandled case" ;;
       esac
 
+  - name: "Case with case insensitive pattern"
+    stdin: |
+      shopt -s nocasematch
+      case "A" in
+      a) echo "matched" ;;
+      *) echo "did not match" ;;
+      esac
+
   - name: "Interesting patterns in cases"
     stdin: |
       for word in "-a" "!b" "*c" "(d" "{e" ":f" "'g"; do

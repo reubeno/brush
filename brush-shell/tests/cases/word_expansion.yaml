@@ -436,24 +436,40 @@ cases:
       var="prepre-abc-sufsuf"
 
       # Smallest suffix
+      shopt -u nocasematch
       echo "\${var%}:    ${var%}"
       echo "\${var%pre}: ${var%pre}"
       echo "\${var%suf}: ${var%suf}"
+      echo "\${var%SUF}: ${var%SUF}"
+      shopt -s nocasematch
+      echo "\${var%SUF}(nocasematch): ${var%SUF}"
 
       # Largest suffix
+      shopt -u nocasematch
       echo "\${var%%}:    ${var%%}"
       echo "\${var%%pre}: ${var%%pre}"
       echo "\${var%%suf}: ${var%%suf}"
+      echo "\${var%%SUF}: ${var%%SUF}"
+      shopt -s nocasematch
+      echo "\${var%%SUF}(nocasematch): ${var%%SUF}"
 
       # Smallest prefix
+      shopt -u nocasematch
       echo "\${var#}:     ${var#}"
       echo "\${var#pre}:  ${var#pre}"
       echo "\${var#suf}:  ${var#suf}"
+      echo "\${var#PRE}:  ${var#PRE}"
+      shopt -s nocasematch
+      echo "\${var#PRE}(nocasematch):  ${var#PRE}"
 
       # Largest prefix
+      shopt -u nocasematch
       echo "\${var##}:    ${var##}"
       echo "\${var##pre}: ${var##pre}"
       echo "\${var##suf}: ${var##suf}"
+      echo "\${var##PRE}: ${var##PRE}"
+      shopt -s nocasematch
+      echo "\${var##PRE}(nocasematch): ${var##PRE}"
 
   - name: "Indirect variable references"
     stdin: |
@@ -532,13 +548,19 @@ cases:
   - name: "Uppercase first character"
     stdin: |
       var="hello"
+
+      shopt -u nocasematch
       echo "\${var^}:   ${var^}"
       echo "\${var^h}:  ${var^h}"
+      echo "\${var^H}:  ${var^H}"
       echo "\${var^l}:  ${var^l}"
       echo "\${var^h*}: ${var^h*}"
       echo "\${var^he}: ${var^he}"
       echo "\${var^?}:  ${var^?}"
       echo "\${var^*}:  ${var^*}"
+
+      shopt -s nocasematch
+      echo "\${var^H}(nocasematch): ${var^H}"
 
       arr=("hello" "world")
       echo "\${arr^}: ${arr^}"
@@ -548,9 +570,15 @@ cases:
   - name: "Uppercase matching pattern"
     stdin: |
       var="hello"
+
+      shopt -u nocasematch
       echo "\${var^^}:  ${var^^}"
       echo "\${var^^l}: ${var^^l}"
+      echo "\${var^^L}: ${var^^L}"
       echo "\${var^^m}: ${var^^m}"
+
+      shopt -s nocasematch
+      echo "\${var^^L}(nocasematch): ${var^^L}"
 
       arr=("hello" "world")
       echo "\${arr^^}: ${arr^^}"
@@ -560,13 +588,19 @@ cases:
   - name: "Lowercase first character"
     stdin: |
       var="HELLO"
+
+      shopt -u nocasematch
       echo "\${var,}:   ${var,}"
+      echo "\${var,h}:  ${var,h}"
       echo "\${var,H}:  ${var,H}"
       echo "\${var,L}:  ${var,L}"
       echo "\${var,H*}: ${var,H*}"
       echo "\${var,HE}: ${var,HE}"
       echo "\${var,?}:  ${var,?}"
       echo "\${var,*}:  ${var,*}"
+
+      shopt -s nocasematch
+      echo "\${var,h}(nocasematch):  ${var,h}"
 
       arr=("HELLO" "WORLD")
       echo "\${arr,}: ${arr,}"
@@ -576,9 +610,15 @@ cases:
   - name: "Lowercase matching pattern"
     stdin: |
       var="HELLO"
+
+      shopt -u nocasematch
       echo "\${var,,}:  ${var,,}"
       echo "\${var,,M}: ${var,,M}"
       echo "\${var,,L}: ${var,,L}"
+      echo "\${var,,l}: ${var,,l}"
+
+      shopt -s nocasematch
+      echo "\${var,,l}(nocasematch): ${var,,l}"
 
       arr=("HELLO" "WORLD")
       echo "\${arr,,}: ${arr,,}"
@@ -635,7 +675,12 @@ cases:
   - name: "Global substring removal"
     stdin: |
       var="That is not all"
+
+      shopt -u nocasematch
       echo "\${var//not }: ${var//not}"
+
+      shopt -s nocasematch
+      echo "\${var//NOT }: ${var//NOT }"
 
   - name: "Substring from offset"
     stdin: |

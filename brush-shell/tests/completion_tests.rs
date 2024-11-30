@@ -89,6 +89,24 @@ async fn complete_relative_file_path() -> Result<()> {
 }
 
 #[tokio::test]
+async fn complete_relative_file_path_ignoring_case() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+    test_shell.shell.options.case_insensitive_pathname_expansion = true;
+
+    // Create file and dir.
+    test_shell.temp_dir.child("ITEM1").touch()?;
+    test_shell.temp_dir.child("item2").create_dir_all()?;
+
+    // Complete; expect to see the two files.
+    let input = "ls item";
+    let results = test_shell.complete(input, input.len()).await?;
+
+    assert_eq!(results, ["ITEM1", "item2"]);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn complete_relative_dir_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 

@@ -253,7 +253,8 @@ impl Spec {
 
         if let Some(glob_pattern) = &self.glob_pattern {
             let pattern = patterns::Pattern::from(glob_pattern.as_str())
-                .set_extended_globbing(shell.options.extended_globbing);
+                .set_extended_globbing(shell.options.extended_globbing)
+                .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
 
             let expansions = pattern.expand(
                 shell.working_dir.as_path(),
@@ -956,8 +957,9 @@ async fn get_file_completions(
 
     let path_filter = |path: &Path| !must_be_dir || shell.get_absolute_path(path).is_dir();
 
-    let pattern =
-        patterns::Pattern::from(glob).set_extended_globbing(shell.options.extended_globbing);
+    let pattern = patterns::Pattern::from(glob)
+        .set_extended_globbing(shell.options.extended_globbing)
+        .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
 
     pattern
         .expand(shell.working_dir.as_path(), Some(&path_filter))

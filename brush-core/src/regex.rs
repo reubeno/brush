@@ -26,15 +26,29 @@ type RegexWord = Vec<RegexPiece>;
 #[derive(Clone, Debug)]
 pub struct Regex {
     pieces: RegexWord,
+    case_insensitive: bool,
 }
 
 impl From<RegexWord> for Regex {
     fn from(pieces: RegexWord) -> Self {
-        Self { pieces }
+        Self {
+            pieces,
+            case_insensitive: false,
+        }
     }
 }
 
 impl Regex {
+    /// Sets the regular expression's case sensitivity.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The new case sensitivity value.
+    pub fn set_case_insensitive(mut self, value: bool) -> Self {
+        self.case_insensitive = value;
+        self
+    }
+
     /// Computes if the regular expression matches the given string.
     ///
     /// # Arguments
@@ -48,7 +62,7 @@ impl Regex {
             .collect();
 
         // TODO: Evaluate how compatible the `fancy_regex` crate is with POSIX EREs.
-        let re = compile_regex(regex_pattern)?;
+        let re = compile_regex(regex_pattern, self.case_insensitive)?;
 
         Ok(re.captures(value)?.map(|captures| {
             captures
@@ -61,8 +75,14 @@ impl Regex {
 
 #[allow(clippy::needless_pass_by_value)]
 #[cached::proc_macro::cached(size = 64, result = true)]
-pub(crate) fn compile_regex(regex_str: String) -> Result<fancy_regex::Regex, error::Error> {
-    match fancy_regex::Regex::new(regex_str.as_str()) {
+pub(crate) fn compile_regex(
+    regex_str: String,
+    case_insensitive: bool,
+) -> Result<fancy_regex::Regex, error::Error> {
+    let mut builder = fancy_regex::RegexBuilder::new(regex_str.as_str());
+    builder.case_insensitive(case_insensitive);
+
+    match builder.build() {
         Ok(re) => Ok(re),
         Err(e) => Err(error::Error::InvalidRegexError(e, regex_str)),
     }

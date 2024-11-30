@@ -404,8 +404,7 @@ impl<'a> WordExpander<'a> {
             .flatten()
             .collect();
 
-        let pattern = patterns::Pattern::from(pattern_pieces)
-            .set_extended_globbing(self.parser_options.enable_extended_globbing);
+        let pattern = patterns::Pattern::from(pattern_pieces);
 
         Ok(pattern)
     }
@@ -432,7 +431,8 @@ impl<'a> WordExpander<'a> {
             .flatten()
             .collect();
 
-        Ok(crate::regex::Regex::from(regex_pieces))
+        Ok(crate::regex::Regex::from(regex_pieces)
+            .set_case_insensitive(self.shell.options.case_insensitive_conditionals))
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -528,7 +528,8 @@ impl<'a> WordExpander<'a> {
 
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
         let pattern = patterns::Pattern::from(field.clone())
-            .set_extended_globbing(self.parser_options.enable_extended_globbing);
+            .set_extended_globbing(self.parser_options.enable_extended_globbing)
+            .set_case_insensitive(self.shell.options.case_insensitive_pathname_expansion);
 
         let expansions = pattern
             .expand(
@@ -1032,7 +1033,8 @@ impl<'a> WordExpander<'a> {
                 let expanded_replacement = self.basic_expand_to_str(&replacement).await?;
 
                 let pattern = patterns::Pattern::from(expanded_pattern.as_str())
-                    .set_extended_globbing(self.parser_options.enable_extended_globbing);
+                    .set_extended_globbing(self.parser_options.enable_extended_globbing)
+                    .set_case_insensitive(self.shell.options.case_insensitive_conditionals);
 
                 let regex = pattern.to_regex(
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Prefix),

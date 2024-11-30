@@ -172,6 +172,14 @@ cases:
       [[ a =~ ^(a|b)$ ]] && echo "4. Pass"
       [[ a =~ c ]]       && echo "5. Pass"
 
+  - name: "Regex with case insensitivity"
+    stdin: |
+      shopt -u nocasematch
+      [[ "a" =~ A ]] && echo "1. Pass"
+
+      shopt -s nocasematch
+      [[ "a" =~ A ]] && echo "1. Pass"
+
   - name: "Regex with capture"
     stdin: |
       pattern='(Hello), ([a-z]+)\.'
