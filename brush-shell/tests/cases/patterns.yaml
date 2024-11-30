@@ -267,3 +267,10 @@ cases:
 
       myfunc abc
       myfunc "*"
+
+  - name: "Pattern matching: character sets"
+    stdin: |
+      [[ "x" == [a-z] ]]       && echo "1. Matched"
+      [[ "x" == [xyz] ]]       && echo "2. Matched"
+      [[ "1" == [[:digit:]] ]] && echo "3. Matched"
+      [[ "(" == [\(]  ]]       && echo "4. Matched"
