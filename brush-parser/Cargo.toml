@@ -15,11 +15,14 @@ rust-version.workspace = true
 bench = false
 
 [features]
+default = ["debug"]
 fuzz-testing = ["dep:arbitrary"]
+debug = ["winnow/debug"]
 
 [dependencies]
 arbitrary = { version = "1.4.1", optional = true, features = ["derive"] }
 cached = "0.54.0"
+winnow = { version = "0.6.20", features = ["simd"] }
 indenter = "0.3.3"
 peg = "0.8.4"
 thiserror = "2.0.3"
