@@ -26,11 +26,11 @@ workspace = true
 async-trait = "0.1.83"
 brush-parser = { version = "^0.2.11", path = "../brush-parser" }
 brush-core = { version = "^0.2.13", path = "../brush-core" }
-indexmap = "2.6.0"
+indexmap = "2.7.0"
 nu-ansi-term = { version = "0.50.1", optional = true }
 reedline = { version = "0.37.0", optional = true }
 thiserror = "2.0.3"
-tracing = "0.1.40"
+tracing = "0.1.41"
 
 [target.'cfg(any(windows, unix))'.dependencies]
 tokio = { version = "1.41.1", features = ["macros", "signal"] }
