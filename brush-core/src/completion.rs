@@ -257,7 +257,7 @@ impl Spec {
                 .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
 
             let expansions = pattern.expand(
-                shell.working_dir.as_path(),
+                shell.working_dir.physical(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
             )?;
 
@@ -962,7 +962,7 @@ async fn get_file_completions(
         .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
 
     pattern
-        .expand(shell.working_dir.as_path(), Some(&path_filter))
+        .expand(shell.working_dir.physical(), Some(&path_filter))
         .unwrap_or_default()
         .into_iter()
         .collect()
