@@ -408,9 +408,9 @@ impl Job {
     }
 
     /// Kills the job.
-    pub fn kill(&mut self) -> Result<(), error::Error> {
+    pub fn kill(&mut self, signal: Option<nix::sys::signal::Signal>) -> Result<(), error::Error> {
         if let Some(pid) = self.get_process_group_id() {
-            sys::signal::kill_process(pid)
+            sys::signal::kill_process(pid, signal)
         } else {
             Err(error::Error::FailedToSendSignal)
         }

@@ -7,8 +7,8 @@ pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error
     Ok(())
 }
 
-pub(crate) fn kill_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGKILL)
+pub(crate) fn kill_process(pid: sys::process::ProcessId, signal: Option<nix::sys::signal::Signal>) -> Result<(), error::Error> {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal.unwrap_or_else(|| nix::sys::signal::SIGKILL))
         .map_err(|_errno| error::Error::FailedToSendSignal)?;
 
     Ok(())
