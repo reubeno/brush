@@ -14,6 +14,10 @@ impl builtins::Command for ExitCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        if !context.shell.jobs.jobs.is_empty() && context.shell.user_tried_exiting == 0 {
+            context.shell.user_tried_exiting = 2; // get's decreased this input too so next input will be 1
+        }
+
         let code_8bit: u8;
 
         #[allow(clippy::cast_sign_loss)]

@@ -135,6 +135,10 @@ pub trait InteractiveShell {
                 ReadResult::Input(read_result) => {
                     let mut shell_mut = self.shell_mut();
 
+                    if shell_mut.as_mut().user_tried_exiting > 0 {
+                        shell_mut.as_mut().user_tried_exiting -= 1;
+                    }
+
                     let precmd_prompt = shell_mut.as_mut().compose_precmd_prompt().await?;
                     if !precmd_prompt.is_empty() {
                         print!("{precmd_prompt}");
