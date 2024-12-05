@@ -135,7 +135,7 @@ pub trait InteractiveShell {
                 ReadResult::Input(read_result) => {
                     let mut shell_mut = self.shell_mut();
 
-                    if shell_mut.as_mut().user_tried_exiting > 0 {
+                    if shell_mut.as_mut().user_tried_exiting > 0 && !read_result.is_empty() {
                         shell_mut.as_mut().user_tried_exiting -= 1;
                     }
 
