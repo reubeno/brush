@@ -213,6 +213,7 @@ async fn instantiate_shell(
             shell_product_display_str: Some(productinfo::get_product_display_str()),
             sh_mode: args.sh_mode,
             verbose: args.verbose,
+            max_function_call_depth: None,
         },
         disable_bracketed_paste: args.disable_bracketed_paste,
         disable_color: args.disable_color,
