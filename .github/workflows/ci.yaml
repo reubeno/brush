@@ -35,6 +35,7 @@ jobs:
             os: "linux"
             arch: "x86_64"
             binary_name: "brush"
+            extra_build_args: ""
           # Build for aarch64/macos target on native host.
           - host: "macos-latest"
             target: ""
@@ -42,6 +43,7 @@ jobs:
             arch: "aarch64"
             required_tools: ""
             binary_name: "brush"
+            extra_build_args: ""
           # Build for aarch64/linux target on x86_64/linux host.
           - host: "ubuntu-latest"
             target: "aarch64-unknown-linux-gnu"
@@ -49,13 +51,15 @@ jobs:
             arch: "aarch64"
             required_tools: "gcc-aarch64-linux-gnu"
             binary_name: "brush"
-          # Build for WASI-0.1 target on x86_64/linux host.
+            extra_build_args: ""
+          # Build for WASI-0.2 target on x86_64/linux host.
           - host: "ubuntu-latest"
-            target: "wasm32-wasip1"
-            os: "wasi-0.1"
+            target: "wasm32-wasip2"
+            os: "wasi-0.2"
             arch: "wasm32"
             required_tools: ""
             binary_name: "brush.wasm"
+            extra_build_args: "--no-default-features --features minimal"
           # Build for x86_64/windows target on x86_64/linux host.
           - host: "ubuntu-latest"
             target: "x86_64-pc-windows-gnu"
@@ -63,6 +67,7 @@ jobs:
             arch: "x86_64"
             required_tools: ""
             binary_name: "brush.exe"
+            extra_build_args: ""
 
     name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ${{ matrix.host }}
@@ -93,11 +98,11 @@ jobs:
 
       - name: "Build (native)"
         if: ${{ matrix.target == '' }}
-        run: cargo build --release --all-targets
+        run: cargo build --release --all-targets ${{ matrix.extra_build_args }}
 
       - name: "Build (cross)"
         if: ${{ matrix.target != '' }}
-        run: cross build --release --target=${{ matrix.target }}
+        run: cross build --release --target=${{ matrix.target }} ${{ matrix.extra_build_args }}
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@v4
