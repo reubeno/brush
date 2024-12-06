@@ -260,6 +260,7 @@ pub(crate) fn get_default_builtins(
         m.insert("echo".into(), builtin::<echo::EchoCommand>());
         m.insert("enable".into(), builtin::<enable::EnableCommand>());
         m.insert("let".into(), builtin::<let_::LetCommand>());
+        m.insert("mapfile".into(), builtin::<mapfile::MapFileCommand>());
         m.insert("printf".into(), builtin::<printf::PrintfCommand>());
         m.insert("shopt".into(), builtin::<shopt::ShoptCommand>());
         m.insert("source".into(), special_builtin::<dot::DotCommand>());
@@ -277,13 +278,14 @@ pub(crate) fn get_default_builtins(
         m.insert("popd".into(), builtin::<popd::PopdCommand>());
         m.insert("pushd".into(), builtin::<pushd::PushdCommand>());
 
+        // Input configuration builtins
+        m.insert("bind".into(), builtin::<bind::BindCommand>());
+
         // TODO: Unimplemented builtins
-        m.insert("bind".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("history".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
-        m.insert("mapfile".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("readarray".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("suspend".into(), builtin::<unimp::UnimplementedCommand>());
     }
