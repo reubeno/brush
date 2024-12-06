@@ -225,7 +225,10 @@ pub struct TokenizerOptions {
     /// Whether or not to enable extended globbing patterns (extglob).
     pub enable_extended_globbing: bool,
     /// Whether or not to operate in POSIX compliance mode.
+    #[allow(unused)]
     pub posix_mode: bool,
+    /// Whether or not we're running in SH emulation mode.
+    pub sh_mode: bool,
 }
 
 impl Default for TokenizerOptions {
@@ -233,6 +236,7 @@ impl Default for TokenizerOptions {
         Self {
             enable_extended_globbing: true,
             posix_mode: false,
+            sh_mode: false,
         }
     }
 }
@@ -1112,7 +1116,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
     fn is_operator(&self, s: &str) -> bool {
         // Handle non-POSIX operators.
-        if !self.options.posix_mode && matches!(s, "<<<" | "&>" | "&>>" | ";;&" | ";&" | "|&") {
+        if !self.options.sh_mode && matches!(s, "<<<" | "&>" | "&>>" | ";;&" | ";&" | "|&") {
             return true;
         }
 
