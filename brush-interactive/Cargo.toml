@@ -33,4 +33,5 @@ thiserror = "2.0.3"
 tracing = "0.1.41"
 
 [target.'cfg(any(windows, unix))'.dependencies]
+crossterm = { version = "0.28.1", features = ["serde"] }
 tokio = { version = "1.41.1", features = ["macros", "signal"] }

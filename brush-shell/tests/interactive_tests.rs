@@ -82,7 +82,7 @@ fn run_in_bg_then_fg() -> anyhow::Result<()> {
 
     // Make sure the jobs are gone.
     let jobs_output = session.exec_output("jobs")?;
-    assert!(jobs_output.trim().is_empty());
+    assert_eq!(jobs_output.trim(), "");
 
     // Exit the shell.
     session.exit()?;
@@ -171,7 +171,8 @@ fn start_shell_session() -> anyhow::Result<ShellSession> {
     // above).
     let session = expectrl::session::log(session, std::io::stdout())?;
 
-    let session = expectrl::repl::ReplSession::new(session, DEFAULT_PROMPT);
+    let mut session = expectrl::repl::ReplSession::new(session, DEFAULT_PROMPT);
+    session.set_echo(true);
 
     Ok(session)
 }

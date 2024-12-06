@@ -1,0 +1,61 @@
+name: "Builtins: complete"
+cases:
+  - name: "Roundtrip: complete -W"
+    stdin: |
+      complete -W foo mycmd
+      complete -p mycmd
+
+      complete -W 'foo bar' mycmd
+      complete -p mycmd
+
+  - name: "Roundtrip: complete -P"
+    stdin: |
+      complete -P myprefix mycmd
+      complete -p mycmd
+
+      complete -P 'my prefix' mycmd
+      complete -p mycmd
+
+  - name: "Roundtrip: complete -S"
+    stdin: |
+      complete -S mysuffix mycmd
+      complete -p mycmd
+
+      complete -S 'my suffix' mycmd
+      complete -p mycmd
+
+  - name: "Roundtrip: complete -F"
+    stdin: |
+      complete -Fmyfunc mycmd
+      complete -p mycmd
+
+  - name: "Roundtrip: complete -F"
+    stdin: |
+      complete -G pattern mycmd
+      complete -p mycmd
+
+      complete -G 'pat tern' mycmd
+      complete -p mycmd
+
+  - name: "Roundtrip: complete -X"
+    stdin: |
+      complete -X pattern mycmd
+      complete -p mycmd
+
+      complete -X 'pat tern' mycmd
+      complete -p mycmd
+
+  - name: "Roundtrip: complete -C"
+    stdin: |
+      complete -C cmd mycmd
+      complete -p mycmd
+
+      complete -C 'c md' mycmd
+      complete -p mycmd
+
+  - name: "Roundtrip: complete -A"
+    stdin: |
+      for action in alias arrayvar binding builtin command directory disabled enabled export file 'function' group helptopic hostname job keyword running service setopt shopt signal stopped user variable; do
+        complete -A ${action} mycmd
+        complete -p mycmd
+      done

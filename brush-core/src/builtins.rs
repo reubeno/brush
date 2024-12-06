@@ -10,6 +10,7 @@ use crate::ExecutionResult;
 
 mod alias;
 mod bg;
+mod bind;
 mod break_;
 mod brushinfo;
 mod builtin_;
@@ -38,6 +39,7 @@ mod jobs;
 #[cfg(unix)]
 mod kill;
 mod let_;
+mod mapfile;
 mod popd;
 mod printf;
 mod pushd;

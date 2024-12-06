@@ -7,6 +7,7 @@ use crate::builtins;
 use crate::commands;
 use crate::completion::{self, CompleteAction, CompleteOption, Spec};
 use crate::error;
+use crate::escape;
 
 #[derive(Parser)]
 pub(crate) struct CommonCompleteCommandArgs {
@@ -302,6 +303,7 @@ impl CompleteCommand {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn display_spec(
         context: &commands::ExecutionContext<'_>,
         special_name: Option<&str>,
@@ -316,35 +318,36 @@ impl CompleteCommand {
         }
 
         for action in &spec.actions {
+            s.push(' ');
+
             let action_str = match action {
-                CompleteAction::Alias => "alias",
-                CompleteAction::ArrayVar => "arrayvar",
-                CompleteAction::Binding => "binding",
-                CompleteAction::Builtin => "builtin",
-                CompleteAction::Command => "command",
-                CompleteAction::Directory => "directory",
-                CompleteAction::Disabled => "disabled",
-                CompleteAction::Enabled => "enabled",
-                CompleteAction::Export => "export",
-                CompleteAction::File => "file",
-                CompleteAction::Function => "function",
-                CompleteAction::Group => "group",
-                CompleteAction::HelpTopic => "helptopic",
-                CompleteAction::HostName => "hostname",
-                CompleteAction::Job => "job",
-                CompleteAction::Keyword => "keyword",
-                CompleteAction::Running => "running",
-                CompleteAction::Service => "service",
-                CompleteAction::SetOpt => "setopt",
-                CompleteAction::ShOpt => "shopt",
-                CompleteAction::Signal => "signal",
-                CompleteAction::Stopped => "stopped",
-                CompleteAction::User => "user",
-                CompleteAction::Variable => "variable",
+                CompleteAction::Alias => "-a",
+                CompleteAction::ArrayVar => "-A arrayvar",
+                CompleteAction::Binding => "-A binding",
+                CompleteAction::Builtin => "-b",
+                CompleteAction::Command => "-c",
+                CompleteAction::Directory => "-d",
+                CompleteAction::Disabled => "-A disabled",
+                CompleteAction::Enabled => "-A enabled",
+                CompleteAction::Export => "-e",
+                CompleteAction::File => "-f",
+                CompleteAction::Function => "-A function",
+                CompleteAction::Group => "-g",
+                CompleteAction::HelpTopic => "-A helptopic",
+                CompleteAction::HostName => "-A hostname",
+                CompleteAction::Job => "-j",
+                CompleteAction::Keyword => "-k",
+                CompleteAction::Running => "-A running",
+                CompleteAction::Service => "-s",
+                CompleteAction::SetOpt => "-A setopt",
+                CompleteAction::ShOpt => "-A shopt",
+                CompleteAction::Signal => "-A signal",
+                CompleteAction::Stopped => "-A stopped",
+                CompleteAction::User => "-u",
+                CompleteAction::Variable => "-v",
             };
 
-            let piece = std::format!(" -A {action_str}");
-            s.push_str(&piece);
+            s.push_str(action_str);
         }
 
         if spec.options.bash_default {
@@ -373,25 +376,49 @@ impl CompleteCommand {
         }
 
         if let Some(glob_pattern) = &spec.glob_pattern {
-            write!(s, " -G {glob_pattern}")?;
+            write!(
+                s,
+                " -G {}",
+                escape::force_quote(glob_pattern, escape::QuoteMode::Quote)
+            )?;
         }
         if let Some(word_list) = &spec.word_list {
-            write!(s, " -W {word_list}")?;
+            write!(
+                s,
+                " -W {}",
+                escape::force_quote(word_list, escape::QuoteMode::Quote)
+            )?;
         }
         if let Some(function_name) = &spec.function_name {
             write!(s, " -F {function_name}")?;
         }
         if let Some(command) = &spec.command {
-            write!(s, " -C {command}")?;
+            write!(
+                s,
+                " -C {}",
+                escape::force_quote(command, escape::QuoteMode::Quote)
+            )?;
         }
         if let Some(filter_pattern) = &spec.filter_pattern {
-            write!(s, " -X {filter_pattern}")?;
+            write!(
+                s,
+                " -X {}",
+                escape::force_quote(filter_pattern, escape::QuoteMode::Quote)
+            )?;
         }
         if let Some(prefix) = &spec.prefix {
-            write!(s, " -P {prefix}")?;
+            write!(
+                s,
+                " -P {}",
+                escape::force_quote(prefix, escape::QuoteMode::Quote)
+            )?;
         }
         if let Some(suffix) = &spec.suffix {
-            write!(s, " -S {suffix}")?;
+            write!(
+                s,
+                " -S {}",
+                escape::force_quote(suffix, escape::QuoteMode::Quote)
+            )?;
         }
 
         if let Some(command_name) = command_name {
@@ -430,7 +457,7 @@ pub(crate) struct CompGenCommand {
     #[clap(flatten)]
     common_args: CommonCompleteCommandArgs,
 
-    #[clap(allow_hyphen_values = true)]
+    // N.B. The word can only start with a hyphen if it's after a --.
     word: Option<String>,
 }
 
@@ -439,7 +466,9 @@ impl builtins::Command for CompGenCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        let spec = self.common_args.create_spec();
+        let mut spec = self.common_args.create_spec();
+        spec.options.no_sort = true;
+
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
         // We unquote the token-to-be-completed before passing it to the completion system.
