@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::io::Write;
 
 use clap::Parser;
+use itertools::Itertools;
 
-use crate::{builtins, commands, error, namedoptions};
+use crate::{builtins, commands, error, namedoptions, variables};
 
 builtins::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
@@ -70,10 +72,10 @@ builtins::minus_or_plus_flag_arg!(
 
 #[derive(clap::Parser)]
 pub(crate) struct SetOption {
-    #[arg(short = 'o', name = "setopt_enable")]
-    enable: Vec<String>,
-    #[arg(long = concat!("+o"), name = "setopt_disable", hide = true)]
-    disable: Vec<String>,
+    #[arg(short = 'o', name = "setopt_enable", num_args=0..=1)]
+    enable: Option<Vec<String>>,
+    #[arg(long = concat!("+o"), name = "setopt_disable", hide = true, num_args=0..=1)]
+    disable: Option<Vec<String>>,
 }
 
 /// Manage set-based shell options.
@@ -142,28 +144,36 @@ impl builtins::Command for SetCommand {
     ) -> Result<builtins::ExitCode, error::Error> {
         let mut result = builtins::ExitCode::Success;
 
+        let mut saw_option = false;
+
         if let Some(value) = self.print_commands_and_arguments.to_bool() {
             context.shell.options.print_commands_and_arguments = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.export_variables_on_modification.to_bool() {
             context.shell.options.export_variables_on_modification = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.notify_job_termination_immediately.to_bool() {
             context.shell.options.notify_job_termination_immediately = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.exit_on_nonzero_command_exit.to_bool() {
             context.shell.options.exit_on_nonzero_command_exit = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.disable_filename_globbing.to_bool() {
             context.shell.options.disable_filename_globbing = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.remember_command_locations.to_bool() {
             context.shell.options.remember_command_locations = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.place_all_assignment_args_in_command_env.to_bool() {
@@ -171,38 +181,47 @@ impl builtins::Command for SetCommand {
                 .shell
                 .options
                 .place_all_assignment_args_in_command_env = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.enable_job_control.to_bool() {
             context.shell.options.enable_job_control = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.do_not_execute_commands.to_bool() {
             context.shell.options.do_not_execute_commands = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.real_effective_uid_mismatch.to_bool() {
             context.shell.options.real_effective_uid_mismatch = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.exit_after_one_command.to_bool() {
             context.shell.options.exit_after_one_command = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.treat_unset_variables_as_error.to_bool() {
             context.shell.options.treat_unset_variables_as_error = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.print_shell_input_lines.to_bool() {
             context.shell.options.print_shell_input_lines = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.print_commands_and_arguments.to_bool() {
             context.shell.options.print_commands_and_arguments = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.perform_brace_expansion.to_bool() {
             context.shell.options.perform_brace_expansion = value;
+            saw_option = true;
         }
 
         if let Some(value) = self
@@ -213,14 +232,17 @@ impl builtins::Command for SetCommand {
                 .shell
                 .options
                 .disallow_overwriting_regular_files_via_output_redirection = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.shell_functions_inherit_err_trap.to_bool() {
             context.shell.options.shell_functions_inherit_err_trap = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.enable_bang_style_history_substitution.to_bool() {
             context.shell.options.enable_bang_style_history_substitution = value;
+            saw_option = true;
         }
 
         if let Some(value) = self.do_not_resolve_symlinks_when_changing_dir.to_bool() {
@@ -228,6 +250,7 @@ impl builtins::Command for SetCommand {
                 .shell
                 .options
                 .do_not_resolve_symlinks_when_changing_dir = value;
+            saw_option = true;
         }
 
         if let Some(value) = self
@@ -238,14 +261,43 @@ impl builtins::Command for SetCommand {
                 .shell
                 .options
                 .shell_functions_inherit_debug_and_return_traps = value;
+            saw_option = true;
         }
 
         let mut named_options: HashMap<String, bool> = HashMap::new();
-        for option_name in &self.set_option.disable {
-            named_options.insert(option_name.to_owned(), false);
+        if let Some(option_names) = &self.set_option.disable {
+            saw_option = true;
+            if option_names.is_empty() {
+                for (option_name, option_definition) in crate::namedoptions::SET_O_OPTIONS
+                    .iter()
+                    .sorted_by_key(|(k, _)| *k)
+                {
+                    let option_value = (option_definition.getter)(&context.shell.options);
+                    let option_value_str = if option_value { "-o" } else { "+o" };
+                    writeln!(context.stdout(), "set {option_value_str} {option_name}")?;
+                }
+            } else {
+                for option_name in option_names {
+                    named_options.insert(option_name.to_owned(), false);
+                }
+            }
         }
-        for option_name in &self.set_option.enable {
-            named_options.insert(option_name.to_owned(), true);
+        if let Some(option_names) = &self.set_option.enable {
+            saw_option = true;
+            if option_names.is_empty() {
+                for (option_name, option_definition) in crate::namedoptions::SET_O_OPTIONS
+                    .iter()
+                    .sorted_by_key(|(k, _)| *k)
+                {
+                    let option_value = (option_definition.getter)(&context.shell.options);
+                    let option_value_str = if option_value { "on" } else { "off" };
+                    writeln!(context.stdout(), "{option_name:15}\t{option_value_str}")?;
+                }
+            } else {
+                for option_name in option_names {
+                    named_options.insert(option_name.to_owned(), true);
+                }
+            }
         }
 
         for (option_name, value) in named_options {
@@ -268,6 +320,34 @@ impl builtins::Command for SetCommand {
             }
         }
 
+        saw_option = saw_option || !self.positional_args.is_empty();
+
+        // If we *still* haven't seen any options, then we need to display all variables and
+        // functions.
+        if !saw_option {
+            display_all(&context)?;
+        }
+
         Ok(result)
     }
+}
+
+fn display_all(context: &commands::ExecutionContext<'_>) -> Result<(), error::Error> {
+    // Display variables.
+    for (name, var) in context.shell.env.iter().sorted_by_key(|v| v.0) {
+        writeln!(
+            context.stdout(),
+            "{name}={}",
+            var.value().format(variables::FormatStyle::Basic)?,
+        )?;
+    }
+
+    // Display functions... unless we're in posix compliance mode.
+    if !context.shell.options.posix_mode {
+        for (_name, registration) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
+            writeln!(context.stdout(), "{}", registration.definition)?;
+        }
+    }
+
+    Ok(())
 }
