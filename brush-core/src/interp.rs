@@ -317,10 +317,20 @@ async fn spawn_pipeline_processes(
     let mut process_group_id: Option<i32> = None;
 
     for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
-        // If there's only one command in the pipeline, then we run directly in the current
-        // shell. Otherwise, we spawn a separate subshell for each command in the
-        // pipeline.
-        if pipeline_len > 1 {
+        //
+        // We run a command directly in the current shell if either of the following is true:
+        //     * There's only one command in the pipeline.
+        //     * This is the *last* command in the pipeline, the lastpipe option is enabled, and job
+        //       monitoring is disabled.
+        // Otherwise, we spawn a separate subshell for each command in the pipeline.
+        //
+
+        let run_in_current_shell = pipeline_len == 1
+            || (current_pipeline_index == pipeline_len - 1
+                && shell.options.run_last_pipeline_cmd_in_current_shell
+                && !shell.options.enable_job_control);
+
+        if !run_in_current_shell {
             let mut subshell = shell.clone();
             let mut pipeline_context = PipelineExecutionContext {
                 shell: &mut subshell,
