@@ -184,6 +184,10 @@ pub enum Error {
     /// Interrupted
     #[error("interrupted")]
     Interrupted,
+
+    /// Maximum function call depth was exceeded.
+    #[error("maximum function call depth exceeded")]
+    MaxFunctionCallDepthExceeded,
 }
 
 /// Convenience function for returning an error for unimplemented functionality.

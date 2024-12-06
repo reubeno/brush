@@ -151,6 +151,8 @@ pub struct CreateOptions {
     pub sh_mode: bool,
     /// Whether to print verbose output.
     pub verbose: bool,
+    /// Maximum function call depth.
+    pub max_function_call_depth: Option<usize>,
 }
 
 /// Represents an active shell function call.
@@ -818,6 +820,18 @@ impl Shell {
         name: &str,
         function_def: &Arc<brush_parser::ast::FunctionDefinition>,
     ) -> Result<(), error::Error> {
+        if let Some(max_call_depth) = self.options.max_function_call_depth {
+            if self.function_call_stack.len() >= max_call_depth {
+                return Err(error::Error::MaxFunctionCallDepthExceeded);
+            }
+        }
+
+        if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
+            let depth = self.function_call_stack.len();
+            let prefix = repeated_char_str(' ', depth);
+            tracing::debug!(target: trace_categories::FUNCTIONS, "Entering func [depth={depth}]: {prefix}{name}");
+        }
+
         self.function_call_stack.push_front(FunctionCall {
             function_name: name.to_owned(),
             function_definition: function_def.clone(),
@@ -831,7 +845,15 @@ impl Shell {
     /// has exited the top-most function on its call stack.
     pub(crate) fn leave_function(&mut self) -> Result<(), error::Error> {
         self.env.pop_scope(env::EnvironmentScope::Local)?;
-        self.function_call_stack.pop_front();
+
+        if let Some(exited_call) = self.function_call_stack.pop_front() {
+            if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
+                let depth = self.function_call_stack.len();
+                let prefix = repeated_char_str(' ', depth);
+                tracing::debug!(target: trace_categories::FUNCTIONS, "Exiting func  [depth={depth}]: {prefix}{}", exited_call.function_name);
+            }
+        }
+
         self.update_funcname_var()?;
         Ok(())
     }
@@ -1208,4 +1230,8 @@ fn parse_string_impl(
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse()
+}
+
+fn repeated_char_str(c: char, count: usize) -> String {
+    (0..count).map(|_| c).collect()
 }
