@@ -640,6 +640,13 @@ cases:
       var="Hello, world!"
       echo "\${var/world//world}: ${var/world//world}"
 
+  - name: "Substring replacement with patterns"
+    stdin: |
+      var="a[bc]d"
+      pattern="[bc]"
+      echo "Replacement 1: ${var/${pattern}/}"
+      echo "Replacement 2: ${var/"${pattern}"/}"
+
   - name: "Prefix substring replacement"
     stdin: |
       var="Hello, world!"

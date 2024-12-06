@@ -1026,17 +1026,17 @@ impl<'a> WordExpander<'a> {
                 match_kind,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_to_str(&pattern).await?;
+                let expanded_pattern = self
+                    .basic_expand_pattern(pattern.as_str())
+                    .await?
+                    .set_extended_globbing(self.parser_options.enable_extended_globbing)
+                    .set_case_insensitive(self.shell.options.case_insensitive_conditionals);
 
                 // If no replacement was provided, then we replace with an empty string.
                 let replacement = replacement.unwrap_or(String::new());
                 let expanded_replacement = self.basic_expand_to_str(&replacement).await?;
 
-                let pattern = patterns::Pattern::from(expanded_pattern.as_str())
-                    .set_extended_globbing(self.parser_options.enable_extended_globbing)
-                    .set_case_insensitive(self.shell.options.case_insensitive_conditionals);
-
-                let regex = pattern.to_regex(
+                let regex = expanded_pattern.to_regex(
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Prefix),
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Suffix),
                 )?;
