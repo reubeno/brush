@@ -42,14 +42,14 @@ pub(crate) fn get_current_username() -> Result<String, error::Error> {
 
 #[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
-    // TODO: implement this
+    // TODO: uzers::all_users() is available but unsafe
     tracing::debug!("UNIMPLEMENTED: get_all_users");
     Ok(vec![])
 }
 
 #[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
-    // TODO: implement this
+    // TODO: uzers::all_groups() is available but unsafe
     tracing::debug!("UNIMPLEMENTED: get_all_groups");
     Ok(vec![])
 }
