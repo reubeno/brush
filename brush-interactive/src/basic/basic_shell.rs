@@ -5,6 +5,15 @@ use crate::{
     ShellError,
 };
 
+#[cfg(any(unix, windows))]
+use crate::completion;
+
+#[cfg(any(unix, windows))]
+use super::term_utils::read_input_line_from_terminal;
+
+#[cfg(target_family = "wasm")]
+use super::term_stubs::read_input_line_from_terminal;
+
 /// Represents a minimal shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.
 pub struct BasicShell {
@@ -35,25 +44,21 @@ impl InteractiveShell for BasicShell {
     }
 
     fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
-        if self.should_display_prompt() {
-            print!("{}", prompt.prompt);
-            let _ = std::io::stdout().flush();
-        }
+        self.display_prompt(&prompt)?;
 
-        let stdin = std::io::stdin();
         let mut result = String::new();
 
-        while result.is_empty() || !self.is_valid_input(result.as_str()) {
-            let mut read_buffer = String::new();
-            let bytes_read = stdin
-                .read_line(&mut read_buffer)
-                .map_err(|_err| ShellError::InputError)?;
-
-            if bytes_read == 0 {
-                break;
+        loop {
+            match self.read_input_line(&prompt)? {
+                ReadResult::Input(s) => {
+                    result.push_str(s.as_str());
+                    if self.is_valid_input(result.as_str()) {
+                        break;
+                    }
+                }
+                ReadResult::Eof => break,
+                ReadResult::Interrupted => return Ok(ReadResult::Interrupted),
             }
-
-            result.push_str(read_buffer.as_str());
         }
 
         if result.is_empty() {
@@ -74,6 +79,34 @@ impl BasicShell {
         std::io::stdin().is_terminal()
     }
 
+    fn display_prompt(&self, prompt: &InteractivePrompt) -> Result<(), ShellError> {
+        if self.should_display_prompt() {
+            eprint!("{}", prompt.prompt);
+            std::io::stderr().flush()?;
+        }
+
+        Ok(())
+    }
+
+    fn read_input_line(&mut self, prompt: &InteractivePrompt) -> Result<ReadResult, ShellError> {
+        if std::io::stdin().is_terminal() {
+            read_input_line_from_terminal(prompt, |line, cursor| {
+                self.generate_completions(line, cursor)
+            })
+        } else {
+            let mut input = String::new();
+            let bytes_read = std::io::stdin()
+                .read_line(&mut input)
+                .map_err(|_err| ShellError::InputError)?;
+
+            if bytes_read == 0 {
+                Ok(ReadResult::Eof)
+            } else {
+                Ok(ReadResult::Input(input))
+            }
+        }
+    }
+
     fn is_valid_input(&self, input: &str) -> bool {
         match self.shell.parse_string(input.to_owned()) {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
@@ -84,5 +117,38 @@ impl BasicShell {
             Err(brush_parser::ParseError::ParsingAtEndOfInput) => false,
             _ => true,
         }
+    }
+}
+
+#[cfg(any(unix, windows))]
+impl BasicShell {
+    fn generate_completions(
+        &mut self,
+        line: &str,
+        cursor: usize,
+    ) -> Result<brush_core::completion::Completions, ShellError> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(self.generate_completions_async(line, cursor))
+        })
+    }
+
+    async fn generate_completions_async(
+        &mut self,
+        line: &str,
+        cursor: usize,
+    ) -> Result<brush_core::completion::Completions, ShellError> {
+        Ok(completion::complete_async(&mut self.shell, line, cursor).await)
+    }
+}
+
+#[cfg(target_family = "wasm")]
+impl BasicShell {
+    fn generate_completions(
+        &mut self,
+        _line: &str,
+        _cursor: usize,
+    ) -> Result<brush_core::completion::Completions, ShellError> {
+        Ok(Default::default())
     }
 }
