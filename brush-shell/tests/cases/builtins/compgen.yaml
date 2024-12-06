@@ -57,6 +57,10 @@ cases:
       echo "2. compgen -W with expansion"
       myvar=value compgen -W '${myvar}'
 
+  - name: "compgen -W with unsorted values"
+    stdin: |
+      compgen -W 'c b d a'
+
   - name: "compgen -W with options"
     stdin: |
       compgen -W '--abc --def' -- '--ab'
@@ -112,3 +116,23 @@ cases:
       for p in $(compgen -f '\$HOME/'); do
         echo ${p//$HOME/HOME}
       done
+
+  - name: "compgen with interesting hyphens"
+    stdin: |
+      compgen -P-before -S-after -W "one two three" -- t | sort
+
+  - name: "compgen -X"
+    stdin: |
+      echo "[Take 1]"
+      compgen -W 'foo bar' -X 'foo' ''
+
+      echo "[Take 2]"
+      compgen -W 'foo bar' -X 'f*' ''
+
+      echo "[Take 3]"
+      compgen -W '&1 foo' -X '\&*' ''
+
+  - name: "compgen -X with replacement"
+    stdin: |
+      echo "[Take 1]"
+      compgen -W 'somebody something' -X '&b*' some
