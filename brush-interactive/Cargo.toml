@@ -15,8 +15,9 @@ rust-version.workspace = true
 bench = false
 
 [features]
-default = ["basic"]
-basic = []
+default = []
+basic = ["dep:crossterm"]
+minimal = []
 reedline = ["dep:reedline", "dep:nu-ansi-term"]
 
 [lints]
@@ -26,6 +27,7 @@ workspace = true
 async-trait = "0.1.83"
 brush-parser = { version = "^0.2.11", path = "../brush-parser" }
 brush-core = { version = "^0.2.13", path = "../brush-core" }
+crossterm = { version = "0.28.1", features = ["serde"], optional = true }
 indexmap = "2.7.0"
 nu-ansi-term = { version = "0.50.1", optional = true }
 reedline = { version = "0.37.0", optional = true }

@@ -116,6 +116,7 @@ async fn run(
             run_impl(cli_args, args, shell_factory::ReedlineShellFactory).await
         }
         InputBackend::Basic => run_impl(cli_args, args, shell_factory::BasicShellFactory).await,
+        InputBackend::Minimal => run_impl(cli_args, args, shell_factory::MinimalShellFactory).await,
     }
 }
 

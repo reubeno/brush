@@ -307,6 +307,7 @@ dependencies = [
  "async-trait",
  "brush-core",
  "brush-parser",
+ "crossterm",
  "indexmap",
  "nu-ansi-term 0.50.1",
  "reedline",

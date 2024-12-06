@@ -28,4 +28,10 @@ mod basic;
 #[cfg(feature = "basic")]
 pub use basic::BasicShell;
 
+// Minimal shell
+#[cfg(feature = "minimal")]
+mod minimal;
+#[cfg(feature = "minimal")]
+pub use minimal::MinimalShell;
+
 mod trace_categories;

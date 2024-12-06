@@ -355,6 +355,7 @@ pub(crate) async fn execute(
 }
 
 #[allow(clippy::too_many_lines)]
+#[allow(unused_variables)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
