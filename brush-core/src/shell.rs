@@ -237,7 +237,7 @@ impl Shell {
         env.set_global("IFS", ShellVariable::new(" \t\n".into()))?;
         env.set_global(
             "COMP_WORDBREAKS",
-            ShellVariable::new(" \t\n\"\'><=;|&(:".into()),
+            ShellVariable::new(" \t\n\"\'@><=;|&(:".into()),
         )?;
 
         // getopts vars
