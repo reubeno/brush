@@ -26,6 +26,17 @@ impl Default for ParserOptions {
     }
 }
 
+impl ParserOptions {
+    /// Returns the tokenizer options implied by these parser options.
+    pub fn tokenizer_options(&self) -> TokenizerOptions {
+        TokenizerOptions {
+            enable_extended_globbing: self.enable_extended_globbing,
+            posix_mode: self.posix_mode,
+            sh_mode: self.sh_mode,
+        }
+    }
+}
+
 /// Implements parsing for shell programs.
 pub struct Parser<R> {
     reader: R,
@@ -60,14 +71,7 @@ impl<R: std::io::BufRead> Parser<R> {
         //
 
         // First we tokenize the input, according to the policy implied by provided options.
-        let mut tokenizer = Tokenizer::new(
-            &mut self.reader,
-            &TokenizerOptions {
-                enable_extended_globbing: self.options.enable_extended_globbing,
-                posix_mode: self.options.posix_mode,
-                sh_mode: self.options.sh_mode,
-            },
-        );
+        let mut tokenizer = Tokenizer::new(&mut self.reader, &self.options.tokenizer_options());
 
         tracing::debug!(target: "tokenize", "Tokenizing...");
 

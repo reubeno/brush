@@ -121,7 +121,10 @@ impl<'a> StyledInputLine<'a> {
 
     fn style_and_append_program(&mut self, line: &str, global_offset: usize) {
         #[allow(clippy::cast_sign_loss)]
-        if let Ok(tokens) = brush_parser::tokenize_str(line) {
+        if let Ok(tokens) = brush_parser::tokenize_str_with_options(
+            line,
+            &(self.shell.parser_options().tokenizer_options()),
+        ) {
             let mut saw_command_token = false;
             for token in tokens {
                 match token {

@@ -961,10 +961,12 @@ impl Config {
         }
     }
 
-    fn tokenize_input_for_completion(_shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
+    fn tokenize_input_for_completion(shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
         // Best-effort tokenization.
-        // TODO: Use shell options for tokenization.
-        if let Ok(tokens) = brush_parser::tokenize_str(input) {
+        if let Ok(tokens) = brush_parser::tokenize_str_with_options(
+            input,
+            &(shell.parser_options().tokenizer_options()),
+        ) {
             return tokens;
         }
 
