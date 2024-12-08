@@ -626,6 +626,11 @@ impl Spec {
             ("COMP_CWORD", context.token_index.to_string().into()),
         ];
 
+        if tracing::enabled!(target: trace_categories::COMPLETION, tracing::Level::DEBUG) {
+            tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
+                vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
+        }
+
         let mut vars_to_remove = vec![];
         for (var, value) in vars_and_values {
             shell.env.update_or_add(
@@ -661,8 +666,6 @@ impl Spec {
         }
 
         let result = invoke_result?;
-
-        tracing::debug!(target: trace_categories::COMPLETION, "[called completion func '{function_name}' => {result}]");
 
         // When the function returns the special value 124, then it's a request
         // for us to restart the completion process.
