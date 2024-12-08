@@ -382,7 +382,6 @@ fn pattern_to_regex_str(
 ///
 /// * `s` - The string to remove the prefix from.
 /// * `pattern` - The pattern to match.
-/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 #[allow(clippy::ref_option)]
 pub(crate) fn remove_largest_matching_prefix<'a>(
     s: &'a str,
@@ -405,7 +404,6 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
 ///
 /// * `s` - The string to remove the prefix from.
 /// * `pattern` - The pattern to match.
-/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 #[allow(clippy::ref_option)]
 pub(crate) fn remove_smallest_matching_prefix<'a>(
     s: &'a str,
@@ -428,7 +426,6 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 ///
 /// * `s` - The string to remove the suffix from.
 /// * `pattern` - The pattern to match.
-/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 #[allow(clippy::ref_option)]
 pub(crate) fn remove_largest_matching_suffix<'a>(
     s: &'a str,
@@ -451,7 +448,6 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
 ///
 /// * `s` - The string to remove the suffix from.
 /// * `pattern` - The pattern to match.
-/// * `enable_extended_globbing` - Whether or not to enable extended globbing (extglob).
 #[allow(clippy::ref_option)]
 pub(crate) fn remove_smallest_matching_suffix<'a>(
     s: &'a str,

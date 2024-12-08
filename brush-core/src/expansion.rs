@@ -375,7 +375,12 @@ impl<'a> WordExpander<'a> {
         word: &Option<String>,
     ) -> Result<Option<patterns::Pattern>, error::Error> {
         if let Some(word) = word {
-            Ok(Some(self.basic_expand_pattern(word).await?))
+            let pattern = self
+                .basic_expand_pattern(word)
+                .await?
+                .set_extended_globbing(self.parser_options.enable_extended_globbing);
+
+            Ok(Some(pattern))
         } else {
             Ok(None)
         }
@@ -810,6 +815,7 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
+
                 transform_expansion(expanded_parameter, |s| {
                     patterns::remove_smallest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
@@ -822,6 +828,7 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
+
                 transform_expansion(expanded_parameter, |s| {
                     patterns::remove_largest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
