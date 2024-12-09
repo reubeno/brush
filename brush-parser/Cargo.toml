@@ -22,12 +22,12 @@ arbitrary = { version = "1.4.1", optional = true, features = ["derive"] }
 cached = "0.54.0"
 indenter = "0.3.3"
 peg = "0.8.4"
-thiserror = "2.0.3"
+thiserror = "2.0.6"
 tracing = "0.1.41"
 utf8-chars = "3.0.5"
 
 [dev-dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.94"
 assert_matches = "1.5.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
