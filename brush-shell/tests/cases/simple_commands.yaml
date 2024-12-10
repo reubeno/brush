@@ -20,3 +20,8 @@ cases:
     stdin: |
       ./non-existent-command
       echo "Result: $?"
+
+  - name: "Redirection of errors"
+    stdin: |
+      ./non-existent-command 2>/dev/null
+      echo "Result: $?"

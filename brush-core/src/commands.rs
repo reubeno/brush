@@ -1,3 +1,4 @@
+use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
@@ -333,7 +334,11 @@ pub(crate) async fn execute(
                 &args[1..],
             )
         } else {
-            tracing::error!("{}: command not found", cmd_context.command_name);
+            writeln!(
+                cmd_context.stderr(),
+                "{}: command not found",
+                cmd_context.command_name
+            )?;
             Ok(CommandSpawnResult::ImmediateExit(127))
         }
     } else {
@@ -374,6 +379,9 @@ pub(crate) fn execute_external_command(
 
     // Figure out if we should be setting up a new process group.
     let new_pg = context.should_cmd_lead_own_process_group();
+
+    // Save copy of stderr for errors.
+    let mut stderr = context.stderr();
 
     // Compose the std::process::Command that encapsulates what we want to launch.
     #[allow(unused_mut)]
@@ -439,14 +447,15 @@ pub(crate) fn execute_external_command(
             }
 
             if context.shell.options.sh_mode {
-                tracing::error!(
+                writeln!(
+                    stderr,
                     "{}: {}: {}: not found",
                     context.shell.shell_name.as_ref().unwrap_or(&String::new()),
                     context.shell.get_current_input_line_number(),
                     context.command_name
-                );
+                )?;
             } else {
-                tracing::error!("{}: not found", context.command_name);
+                writeln!(stderr, "{}: not found", context.command_name)?;
             }
             Ok(CommandSpawnResult::ImmediateExit(127))
         }
