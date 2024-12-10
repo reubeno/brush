@@ -350,6 +350,7 @@ pub(crate) async fn execute(
 }
 
 #[allow(clippy::too_many_lines)]
+#[allow(unused_variables)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
@@ -538,4 +539,38 @@ pub(crate) async fn invoke_shell_function(
     context.shell.positional_parameters = prior_positional_params;
 
     Ok(CommandSpawnResult::ImmediateExit(result?.exit_code))
+}
+
+pub(crate) async fn invoke_command_in_subshell_and_get_output(
+    shell: &mut Shell,
+    s: String,
+) -> Result<String, error::Error> {
+    // Instantiate a subshell to run the command in.
+    let mut subshell = shell.clone();
+
+    // Set up pipe so we can read the output.
+    let (reader, writer) = sys::pipes::pipe()?;
+    subshell
+        .open_files
+        .files
+        .insert(1, openfiles::OpenFile::PipeWriter(writer));
+
+    let mut params = subshell.default_exec_params();
+    params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
+    // Run the command.
+    let result = subshell.run_string(s, &params).await?;
+
+    // Make sure the subshell and params are closed; among other things, this
+    // ensures they're not holding onto the write end of the pipe.
+    drop(subshell);
+    drop(params);
+
+    // Store the status.
+    shell.last_exit_status = result.exit_code;
+
+    // Extract output.
+    let output_str = std::io::read_to_string(reader)?;
+
+    Ok(output_str)
 }

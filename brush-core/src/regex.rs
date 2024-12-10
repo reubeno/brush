@@ -1,3 +1,5 @@
+#![allow(clippy::needless_pass_by_value)]
+
 use std::borrow::Cow;
 
 use crate::error;
@@ -73,19 +75,62 @@ impl Regex {
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[cached::proc_macro::cached(size = 64, result = true)]
 pub(crate) fn compile_regex(
     regex_str: String,
     case_insensitive: bool,
 ) -> Result<fancy_regex::Regex, error::Error> {
-    let mut builder = fancy_regex::RegexBuilder::new(regex_str.as_str());
+    // Handle identified cases where a shell-supported regex isn't supported directly by
+    // `fancy_regex` -- specifically, adding missing escape characters.
+    let regex_str = add_missing_escape_chars_to_regex(regex_str.as_str());
+
+    let mut builder = fancy_regex::RegexBuilder::new(regex_str.as_ref());
     builder.case_insensitive(case_insensitive);
 
     match builder.build() {
         Ok(re) => Ok(re),
-        Err(e) => Err(error::Error::InvalidRegexError(e, regex_str)),
+        Err(e) => Err(error::Error::InvalidRegexError(e, regex_str.to_string())),
     }
+}
+
+fn add_missing_escape_chars_to_regex(s: &str) -> Cow<str> {
+    // We may see a character class with an unescaped '[' (open bracket) character. We need
+    // to escape that character.
+    let mut in_escape = false;
+    let mut in_brackets = false;
+    let mut insertion_positions = vec![];
+
+    let mut peekable = s.char_indices().peekable();
+    while let Some((byte_offset, c)) = peekable.next() {
+        let next_is_colon = peekable.peek().is_some_and(|(_, c)| *c == ':');
+
+        match c {
+            '[' if !in_escape && !in_brackets => {
+                in_brackets = true;
+            }
+            '[' if !in_escape && in_brackets && !next_is_colon => {
+                // Need to escape.
+                insertion_positions.push(byte_offset);
+            }
+            ']' if !in_escape && in_brackets => {
+                in_brackets = false;
+            }
+            _ => (),
+        }
+
+        in_escape = !in_escape && c == '\\';
+    }
+
+    if insertion_positions.is_empty() {
+        return s.into();
+    }
+
+    let mut updated = s.to_owned();
+    for pos in insertion_positions.iter().rev() {
+        updated.insert(*pos, '\\');
+    }
+
+    updated.into()
 }
 
 fn escape_literal_regex_piece(s: &str) -> Cow<str> {
@@ -109,4 +154,21 @@ fn regex_char_is_special(c: char) -> bool {
         c,
         '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '[' | ']' | '{' | '}'
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add_missing_escape_chars_to_regex() {
+        // Negative cases -- where we don't need to escape.
+        assert_eq!(add_missing_escape_chars_to_regex("a[b]"), "a[b]");
+        assert_eq!(add_missing_escape_chars_to_regex(r"a\[b\]"), r"a\[b\]");
+        assert_eq!(add_missing_escape_chars_to_regex(r"a[b\[]"), r"a[b\[]");
+
+        // Positive case -- where we need to escape.
+        assert_eq!(add_missing_escape_chars_to_regex(r"a[b[]"), r"a[b\[]");
+        assert_eq!(add_missing_escape_chars_to_regex(r"a[[]"), r"a[\[]");
+    }
 }

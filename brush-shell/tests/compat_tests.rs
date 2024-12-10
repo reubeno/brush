@@ -8,10 +8,8 @@ use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
 use clap::Parser;
 use colored::Colorize;
-#[cfg(unix)]
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
-#[cfg(unix)]
 use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
 use std::{
     collections::{HashMap, HashSet},
@@ -845,7 +843,6 @@ impl TestCase {
                 test_file_path.write_str(test_file.contents.as_str())?;
             }
 
-            #[cfg(unix)]
             if test_file.executable {
                 // chmod u+x
                 let mut perms = test_file_path.metadata()?.permissions();
@@ -947,15 +944,7 @@ impl TestCase {
         let test_cmd = self.create_command_for_shell(shell_config, working_dir);
 
         let result = if self.pty {
-            #[cfg(unix)]
-            {
-                self.run_command_with_pty(test_cmd).await?
-            }
-
-            #[cfg(not(unix))]
-            {
-                panic!("PTY tests are only supported on Unix-like systems");
-            }
+            self.run_command_with_pty(test_cmd).await?
         } else {
             self.run_command_with_stdin(test_cmd).await?
         };
@@ -1019,7 +1008,6 @@ impl TestCase {
     }
 
     #[allow(clippy::unused_async)]
-    #[cfg(unix)]
     async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
         use expectrl::Expect;
 

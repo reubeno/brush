@@ -97,3 +97,27 @@ impl ShellFactory for BasicShellFactory {
         }
     }
 }
+
+pub(crate) struct MinimalShellFactory;
+
+impl ShellFactory for MinimalShellFactory {
+    #[cfg(feature = "minimal")]
+    type ShellType = brush_interactive::MinimalShell;
+    #[cfg(not(feature = "minimal"))]
+    type ShellType = StubShell;
+
+    #[allow(unused)]
+    async fn create(
+        &self,
+        options: &brush_interactive::Options,
+    ) -> Result<Self::ShellType, brush_interactive::ShellError> {
+        #[cfg(feature = "minimal")]
+        {
+            brush_interactive::MinimalShell::new(options).await
+        }
+        #[cfg(not(feature = "minimal"))]
+        {
+            Err(brush_interactive::ShellError::InputBackendNotSupported)
+        }
+    }
+}

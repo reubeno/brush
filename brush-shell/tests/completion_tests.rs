@@ -58,6 +58,10 @@ impl TestShellWithBashCompletion {
         }
     }
 
+    pub async fn complete_end_of_line(&mut self, line: &str) -> Result<Vec<String>> {
+        self.complete(line, line.len()).await
+    }
+
     pub async fn complete(&mut self, line: &str, pos: usize) -> Result<Vec<String>> {
         let completions = self.shell.get_completions(line, pos).await?;
         Ok(completions.candidates.into_iter().collect())
@@ -80,8 +84,7 @@ async fn complete_relative_file_path() -> Result<()> {
     test_shell.temp_dir.child("item2").create_dir_all()?;
 
     // Complete; expect to see the two files.
-    let input = "ls item";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("ls item").await?;
 
     assert_eq!(results, ["item1", "item2"]);
 
@@ -98,8 +101,7 @@ async fn complete_relative_file_path_ignoring_case() -> Result<()> {
     test_shell.temp_dir.child("item2").create_dir_all()?;
 
     // Complete; expect to see the two files.
-    let input = "ls item";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("ls item").await?;
 
     assert_eq!(results, ["ITEM1", "item2"]);
 
@@ -115,8 +117,7 @@ async fn complete_relative_dir_path() -> Result<()> {
     test_shell.temp_dir.child("item2").create_dir_all()?;
 
     // Complete; expect to see just the dir.
-    let input = "cd item";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("cd item").await?;
 
     assert_eq!(results, ["item2"]);
 
@@ -131,8 +132,7 @@ async fn complete_under_empty_dir() -> Result<()> {
     test_shell.temp_dir.child("empty").create_dir_all()?;
 
     // Complete; expect to see nothing.
-    let input = "ls empty/";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("ls empty/").await?;
 
     assert_eq!(results, Vec::<String>::new());
 
@@ -144,8 +144,7 @@ async fn complete_nonexistent_relative_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
     // Complete; expect to see nothing.
-    let input = "ls item";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("ls item").await?;
 
     assert_eq!(results, Vec::<String>::new());
 
@@ -162,7 +161,7 @@ async fn complete_absolute_paths() -> Result<()> {
 
     // Complete; expect to see just the dir.
     let input = std::format!("ls {}", test_shell.temp_dir.path().join("item").display());
-    let results = test_shell.complete(input.as_str(), input.len()).await?;
+    let results = test_shell.complete_end_of_line(input.as_str()).await?;
 
     assert_eq!(
         results,
@@ -194,8 +193,7 @@ async fn complete_path_with_var() -> Result<()> {
     test_shell.temp_dir.child("item2").create_dir_all()?;
 
     // Complete; expect to see the two files.
-    let input = "ls $PWD/item";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("ls $PWD/item").await?;
 
     assert_eq!(
         results,
@@ -238,8 +236,7 @@ async fn complete_path_with_tilde() -> Result<()> {
     test_shell.temp_dir.child("item2").create_dir_all()?;
 
     // Complete; expect to see the two files.
-    let input = "ls ~/item";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("ls ~/item").await?;
 
     assert_eq!(
         results,
@@ -271,8 +268,7 @@ async fn complete_variable_names() -> Result<()> {
     test_shell.set_var("TESTVAR2", "")?;
 
     // Complete.
-    let input = "echo $TESTVAR";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("echo $TESTVAR").await?;
     assert_eq!(results, ["$TESTVAR1", "$TESTVAR2"]);
 
     Ok(())
@@ -287,8 +283,7 @@ async fn complete_variable_names_with_braces() -> Result<()> {
     test_shell.set_var("TESTVAR2", "")?;
 
     // Complete.
-    let input = "echo ${TESTVAR";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("echo ${TESTVAR").await?;
     assert_eq!(results, ["${TESTVAR1}", "${TESTVAR2}"]);
 
     Ok(())
@@ -299,8 +294,7 @@ async fn complete_help_topic() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
     // Complete.
-    let input = "help expor";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("help expor").await?;
     assert_eq!(results, ["export"]);
 
     Ok(())
@@ -311,8 +305,7 @@ async fn complete_command_option() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
     // Complete.
-    let input = "ls --hel";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("ls --hel").await?;
     assert_eq!(results, ["--help"]);
 
     Ok(())
@@ -329,10 +322,22 @@ async fn complete_path_args_to_well_known_programs() -> Result<()> {
     test_shell.temp_dir.child("item2").create_dir_all()?;
 
     // Complete.
-    let input = "tar tvf ./item";
-    let results = test_shell.complete(input, input.len()).await?;
+    let results = test_shell.complete_end_of_line("tar tvf ./item").await?;
 
     assert_eq!(results, ["./item1", "./item2"]);
+
+    Ok(())
+}
+
+/// Tests some 'find' completion.
+#[tokio::test]
+async fn complete_find_command() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    // Complete.
+    let results = test_shell.complete_end_of_line("find . -na").await?;
+
+    assert_eq!(results, ["-name"]);
 
     Ok(())
 }

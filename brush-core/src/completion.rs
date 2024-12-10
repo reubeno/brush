@@ -3,15 +3,16 @@
 use clap::ValueEnum;
 use indexmap::IndexSet;
 use std::{
+    borrow::Cow,
     collections::HashMap,
     path::{Path, PathBuf},
 };
 
 use crate::{
-    env, error, jobs, namedoptions, patterns,
+    commands, env, error, escape, jobs, namedoptions, patterns,
     sys::{self, users},
-    trace_categories, traps, variables,
-    variables::ShellValueLiteral,
+    trace_categories, traps,
+    variables::{self, ShellValueLiteral},
     Shell,
 };
 
@@ -278,13 +279,29 @@ impl Spec {
             }
         }
         if let Some(command) = &self.command {
-            tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -C({command})");
+            let mut new_candidates = self
+                .call_completion_command(shell, command.as_str(), context)
+                .await?;
+            candidates.append(&mut new_candidates);
         }
 
-        // Apply filter pattern, if present.
+        // Apply filter pattern, if present. Anything the filter selects gets removed.
         if let Some(filter_pattern) = &self.filter_pattern {
             if !filter_pattern.is_empty() {
-                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -X (filter pattern): '{filter_pattern}'");
+                let mut updated = IndexSet::new();
+
+                for candidate in candidates {
+                    if !completion_filter_pattern_matches(
+                        filter_pattern.as_str(),
+                        candidate.as_str(),
+                        context.token_to_complete,
+                        shell,
+                    )? {
+                        updated.insert(candidate);
+                    }
+                }
+
+                candidates = updated;
             }
         }
 
@@ -524,6 +541,67 @@ impl Spec {
         Ok(candidates)
     }
 
+    async fn call_completion_command(
+        &self,
+        shell: &mut Shell,
+        command_name: &str,
+        context: &Context<'_>,
+    ) -> Result<IndexSet<String>, error::Error> {
+        // Move to a subshell so we can start filling out variables.
+        let mut shell = shell.clone();
+
+        let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
+            ("COMP_LINE", context.input_line.into()),
+            ("COMP_POINT", context.cursor_index.to_string().into()),
+            // TODO: add COMP_KEY
+            // TODO: add COMP_TYPE
+        ];
+
+        // Fill out variables.
+        for (var, value) in vars_and_values {
+            shell.env.update_or_add(
+                var,
+                value,
+                |v| {
+                    v.export();
+                    Ok(())
+                },
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+        }
+
+        // Compute args.
+        let mut args = vec![
+            context.command_name.unwrap_or(""),
+            context.token_to_complete,
+        ];
+        if let Some(preceding_token) = context.preceding_token {
+            args.push(preceding_token);
+        }
+
+        // Compose the full command line.
+        let mut command_line = command_name.to_owned();
+        for arg in args {
+            command_line.push(' ');
+
+            let escaped_arg = escape::quote_if_needed(arg, escape::QuoteMode::Quote);
+            command_line.push_str(escaped_arg.as_ref());
+        }
+
+        // Run the command.
+        let output =
+            commands::invoke_command_in_subshell_and_get_output(&mut shell, command_line).await?;
+
+        // Split results.
+        let mut candidates = IndexSet::new();
+        for line in output.lines() {
+            candidates.insert(line.to_owned());
+        }
+
+        Ok(candidates)
+    }
+
     async fn call_completion_function(
         &self,
         shell: &mut Shell,
@@ -534,8 +612,8 @@ impl Spec {
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
-            // TODO: ("COMP_KEY", String::from("???")),
-            // TODO: ("COMP_TYPE", String::from("???")),
+            // TODO: add COMP_KEY
+            // TODO: add COMP_TYPE
             (
                 "COMP_WORDS",
                 context
@@ -547,6 +625,11 @@ impl Spec {
             ),
             ("COMP_CWORD", context.token_index.to_string().into()),
         ];
+
+        if tracing::enabled!(target: trace_categories::COMPLETION, tracing::Level::DEBUG) {
+            tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
+                vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
+        }
 
         let mut vars_to_remove = vec![];
         for (var, value) in vars_and_values {
@@ -573,16 +656,16 @@ impl Spec {
         // handler depth count to suppress any debug traps.
         shell.traps.handler_depth += 1;
 
-        let result = shell.invoke_function(function_name, &args).await?;
+        let invoke_result = shell.invoke_function(function_name, &args).await;
 
         shell.traps.handler_depth -= 1;
 
-        tracing::debug!(target: trace_categories::COMPLETION, "[called completion func '{function_name}' => {result}]");
-
-        // Unset any of the temporary variables.
+        // Make a best-effort attempt to unset the temporary variables.
         for var_name in vars_to_remove {
-            shell.env.unset(var_name)?;
+            let _ = shell.env.unset(var_name);
         }
+
+        let result = invoke_result?;
 
         // When the function returns the special value 124, then it's a request
         // for us to restart the completion process.
@@ -878,10 +961,12 @@ impl Config {
         }
     }
 
-    fn tokenize_input_for_completion(_shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
+    fn tokenize_input_for_completion(shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
         // Best-effort tokenization.
-        // TODO: Use shell options for tokenization.
-        if let Ok(tokens) = brush_parser::tokenize_str(input) {
+        if let Ok(tokens) = brush_parser::tokenize_str_with_options(
+            input,
+            &(shell.parser_options().tokenizer_options()),
+        ) {
             return tokens;
         }
 
@@ -1077,4 +1162,57 @@ fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_
     }
 
     tokens
+}
+
+fn completion_filter_pattern_matches(
+    pattern: &str,
+    candidate: &str,
+    token_being_completed: &str,
+    shell: &mut Shell,
+) -> Result<bool, error::Error> {
+    let mut pattern = pattern;
+
+    let invert = if let Some(remaining_pattern) = pattern.strip_prefix('!') {
+        pattern = remaining_pattern;
+        true
+    } else {
+        false
+    };
+
+    let pattern = replace_unescaped_ampersands(pattern, token_being_completed);
+
+    //
+    // TODO: Replace unescaped '&' with the word being completed.
+    //
+
+    let pattern = patterns::Pattern::from(pattern.as_ref())
+        .set_extended_globbing(shell.options.extended_globbing)
+        .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
+
+    let matches = pattern.exactly_matches(candidate)?;
+
+    Ok(if invert { !matches } else { matches })
+}
+
+fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<'a, str> {
+    let mut in_escape = false;
+    let mut insertion_points = vec![];
+
+    for (i, c) in pattern.char_indices() {
+        if !in_escape && c == '&' {
+            insertion_points.push(i);
+        }
+        in_escape = !in_escape && c == '\\';
+    }
+
+    if insertion_points.is_empty() {
+        return pattern.into();
+    }
+
+    let mut result = pattern.to_owned();
+    for i in insertion_points.iter().rev() {
+        result.replace_range(*i..=*i, replacement);
+    }
+
+    result.into()
 }

@@ -20,6 +20,9 @@ pub enum TraceEvent {
     /// Traces word expansion.
     #[clap(name = "expand")]
     Expand,
+    /// Traces functions.
+    #[clap(name = "functions")]
+    Functions,
     /// Traces job management.
     #[clap(name = "jobs")]
     Jobs,
@@ -41,6 +44,7 @@ impl Display for TraceEvent {
             TraceEvent::Commands => write!(f, "commands"),
             TraceEvent::Complete => write!(f, "complete"),
             TraceEvent::Expand => write!(f, "expand"),
+            TraceEvent::Functions => write!(f, "functions"),
             TraceEvent::Jobs => write!(f, "jobs"),
             TraceEvent::Parse => write!(f, "parse"),
             TraceEvent::Pattern => write!(f, "pattern"),
@@ -100,6 +104,7 @@ impl TraceEventConfig {
                 TraceEvent::Commands => vec!["commands"],
                 TraceEvent::Complete => vec!["completion"],
                 TraceEvent::Expand => vec!["expansion"],
+                TraceEvent::Functions => vec!["functions"],
                 TraceEvent::Jobs => vec!["jobs"],
                 TraceEvent::Parse => vec!["parse"],
                 TraceEvent::Pattern => vec!["pattern"],
