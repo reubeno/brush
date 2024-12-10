@@ -49,7 +49,7 @@ impl builtins::Command for KillCommand {
             if pid_or_job_spec.starts_with('%') {
                 // It's a job spec.
                 if let Some(job) = context.shell.jobs.resolve_job_spec(pid_or_job_spec) {
-                    job.kill()?;
+                    job.kill(None)?;
                 } else {
                     writeln!(
                         context.stderr(),
