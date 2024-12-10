@@ -1,5 +1,5 @@
 use crate::{error, sys};
-use std::os::fd::{AsFd, AsRawFd};
+use std::{io::IsTerminal, os::fd::AsFd};
 
 #[derive(Clone)]
 pub(crate) struct TerminalSettings {
@@ -42,11 +42,6 @@ pub(crate) fn set_term_attr_now<Fd: AsFd>(
     Ok(())
 }
 
-pub(crate) fn is_stdin_a_terminal() -> Result<bool, error::Error> {
-    let result = nix::unistd::isatty(std::io::stdin().as_raw_fd())?;
-    Ok(result)
-}
-
 #[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_parent_process_id() -> Option<sys::process::ProcessId> {
     Some(nix::unistd::getppid().as_raw())
@@ -69,7 +64,7 @@ pub(crate) fn move_to_foreground(pid: sys::process::ProcessId) -> Result<(), err
 }
 
 pub(crate) fn move_self_to_foreground() -> Result<(), error::Error> {
-    if is_stdin_a_terminal()? {
+    if std::io::stdin().is_terminal() {
         let pgid = nix::unistd::getpgid(None)?;
 
         // TODO: jobs: This sometimes fails with ENOTTY even though we checked that stdin is a
