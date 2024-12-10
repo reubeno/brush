@@ -228,6 +228,10 @@ cases:
       [[ "<" =~ (<) ]] && echo "1. Matched"
       [[ ">" =~ (<) ]] && echo "2. Matched"
 
+  - name: "Regex with unescaped open bracket in character class"
+    stdin: |
+      [[ "[" =~ ^([x[]) ]] && echo "Matched"
+
   - name: "Empty and space checks"
     stdin: |
       check() {
@@ -247,3 +251,20 @@ cases:
         &&
         "b" == "b"
       ]] && echo "Succeeded"
+
+  - name: "Variable set checks"
+    stdin: |
+      declare set_but_no_value
+      [[ -v set_but_no_value ]] && echo "1. Set but no value"
+
+      declare set_with_value=xyz
+      [[ -v set_with_value ]] && echo "2. Set with value"
+
+      [[ -v not_set ]] || echo "3. Not set"
+
+  - name: "Variables in extended tests"
+    stdin: |
+      var=10
+
+      [[ $var -eq 10 ]] && echo "1. Pass"
+      [[ var -eq 10 ]] && echo "2. Pass"

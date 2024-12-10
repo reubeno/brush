@@ -28,10 +28,6 @@ pub(crate) fn set_term_attr_now<Fd>(
     Ok(())
 }
 
-pub(crate) fn is_stdin_a_terminal() -> Result<bool, error::Error> {
-    Ok(false)
-}
-
 pub(crate) fn get_parent_process_id() -> Option<sys::process::ProcessId> {
     None
 }

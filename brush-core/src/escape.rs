@@ -173,15 +173,22 @@ pub(crate) enum QuoteMode {
     Quote,
 }
 
-pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
+pub(crate) fn force_quote(s: &str, mode: QuoteMode) -> String {
     match mode {
-        QuoteMode::BackslashEscape => escape_with_backslash(s),
-        QuoteMode::Quote => escape_with_quoting(s),
+        QuoteMode::BackslashEscape => escape_with_backslash(s, true).to_string(),
+        QuoteMode::Quote => escape_with_quoting(s, true).to_string(),
     }
 }
 
-fn escape_with_backslash(s: &str) -> Cow<'_, str> {
-    if !s.chars().any(needs_escaping) {
+pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
+    match mode {
+        QuoteMode::BackslashEscape => escape_with_backslash(s, false),
+        QuoteMode::Quote => escape_with_quoting(s, false),
+    }
+}
+
+fn escape_with_backslash(s: &str, force: bool) -> Cow<'_, str> {
+    if !force && !s.chars().any(needs_escaping) {
         return s.into();
     }
 
@@ -201,9 +208,9 @@ fn escape_with_backslash(s: &str) -> Cow<'_, str> {
     output.into()
 }
 
-fn escape_with_quoting(s: &str) -> Cow<'_, str> {
+fn escape_with_quoting(s: &str, force: bool) -> Cow<'_, str> {
     // TODO: Handle single-quote!
-    if s.is_empty() || s.chars().any(needs_escaping) {
+    if force || s.is_empty() || s.chars().any(needs_escaping) {
         std::format!("'{s}'").into()
     } else {
         s.into()

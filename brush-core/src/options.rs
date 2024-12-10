@@ -147,11 +147,11 @@ pub struct RuntimeOptions {
     /// 'mailwarn'
     pub mail_warn: bool,
     /// `no_empty_cmd_completion`
-    pub case_insensitive_pathname_expansion: bool,
-    /// 'nocaseglob'
-    pub case_insensitive_conditionals: bool,
-    /// 'nocasematch'
     pub no_empty_cmd_completion: bool,
+    /// 'nocaseglob'
+    pub case_insensitive_pathname_expansion: bool,
+    /// 'nocasematch'
+    pub case_insensitive_conditionals: bool,
     /// 'nullglob'
     pub expand_non_matching_patterns_to_null: bool,
     /// 'progcomp'
@@ -177,6 +177,8 @@ pub struct RuntimeOptions {
     pub read_commands_from_stdin: bool,
     /// Whether or not the shell is in maximal `sh` compatibility mode.    
     pub sh_mode: bool,
+    /// Maximum function call depth.
+    pub max_function_call_depth: Option<usize>,
 }
 
 impl RuntimeOptions {
@@ -210,6 +212,7 @@ impl RuntimeOptions {
             quote_all_metachars_in_completion: true,
             programmable_completion: true,
             glob_ranges_use_c_locale: true,
+            max_function_call_depth: create_options.max_function_call_depth,
             ..Self::default()
         };
 

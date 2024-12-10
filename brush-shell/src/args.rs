@@ -22,6 +22,7 @@ const VERSION: &str = const_format::concatcp!(
 pub enum InputBackend {
     Reedline,
     Basic,
+    Minimal,
 }
 
 /// Parsed command-line arguments for the brush shell.

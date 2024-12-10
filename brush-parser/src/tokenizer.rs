@@ -220,12 +220,15 @@ struct CrossTokenParseState {
 }
 
 /// Options controlling how the tokenizer operates.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct TokenizerOptions {
     /// Whether or not to enable extended globbing patterns (extglob).
     pub enable_extended_globbing: bool,
     /// Whether or not to operate in POSIX compliance mode.
+    #[allow(unused)]
     pub posix_mode: bool,
+    /// Whether or not we're running in SH emulation mode.
+    pub sh_mode: bool,
 }
 
 impl Default for TokenizerOptions {
@@ -233,6 +236,7 @@ impl Default for TokenizerOptions {
         Self {
             enable_extended_globbing: true,
             posix_mode: false,
+            sh_mode: false,
         }
     }
 }
@@ -466,13 +470,29 @@ impl TokenParseState {
 ///
 /// * `input` - The shell script to tokenize.
 pub fn tokenize_str(input: &str) -> Result<Vec<Token>, TokenizerError> {
-    cacheable_tokenize_str(input.to_owned())
+    tokenize_str_with_options(input, &TokenizerOptions::default())
+}
+
+/// Break the given input shell script string into tokens, returning the tokens.
+///
+/// # Arguments
+///
+/// * `input` - The shell script to tokenize.
+/// * `options` - Options controlling how the tokenizer operates.
+pub fn tokenize_str_with_options(
+    input: &str,
+    options: &TokenizerOptions,
+) -> Result<Vec<Token>, TokenizerError> {
+    cacheable_tokenize_str(input.to_owned(), options.to_owned())
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]
-pub fn cacheable_tokenize_str(input: String) -> Result<Vec<Token>, TokenizerError> {
+fn cacheable_tokenize_str(
+    input: String,
+    options: TokenizerOptions,
+) -> Result<Vec<Token>, TokenizerError> {
     let mut reader = std::io::BufReader::new(input.as_bytes());
-    let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &TokenizerOptions::default());
+    let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &options);
 
     let mut tokens = vec![];
     loop {
@@ -1112,7 +1132,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
     fn is_operator(&self, s: &str) -> bool {
         // Handle non-POSIX operators.
-        if !self.options.posix_mode && matches!(s, "<<<" | "&>" | "&>>" | ";;&" | ";&" | "|&") {
+        if !self.options.sh_mode && matches!(s, "<<<" | "&>" | "&>>" | ";;&" | ";&" | "|&") {
             return true;
         }
 

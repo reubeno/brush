@@ -94,8 +94,9 @@ peg::parser! {
 
                 s.push('(');
 
+                // fancy_regex uses ?! to indicate a negative lookahead.
                 if matches!(kind, ExtendedGlobKind::Exclamation) {
-                    s.push_str("?!");
+                    s.push_str("(?!");
                 }
 
                 s.push_str(&branches.join("|"));
@@ -109,7 +110,7 @@ peg::parser! {
                 }
 
                 if matches!(kind, ExtendedGlobKind::Exclamation) {
-                    s.push_str(".*?");
+                    s.push_str(".)*?");
                 }
 
                 s

@@ -1,3 +1,4 @@
+use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
@@ -333,7 +334,11 @@ pub(crate) async fn execute(
                 &args[1..],
             )
         } else {
-            tracing::error!("{}: command not found", cmd_context.command_name);
+            writeln!(
+                cmd_context.stderr(),
+                "{}: command not found",
+                cmd_context.command_name
+            )?;
             Ok(CommandSpawnResult::ImmediateExit(127))
         }
     } else {
@@ -350,6 +355,7 @@ pub(crate) async fn execute(
 }
 
 #[allow(clippy::too_many_lines)]
+#[allow(unused_variables)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
@@ -374,6 +380,9 @@ pub(crate) fn execute_external_command(
 
     // Figure out if we should be setting up a new process group.
     let new_pg = context.should_cmd_lead_own_process_group();
+
+    // Save copy of stderr for errors.
+    let mut stderr = context.stderr();
 
     // Compose the std::process::Command that encapsulates what we want to launch.
     #[allow(unused_mut)]
@@ -439,14 +448,15 @@ pub(crate) fn execute_external_command(
             }
 
             if context.shell.options.sh_mode {
-                tracing::error!(
+                writeln!(
+                    stderr,
                     "{}: {}: {}: not found",
                     context.shell.shell_name.as_ref().unwrap_or(&String::new()),
                     context.shell.get_current_input_line_number(),
                     context.command_name
-                );
+                )?;
             } else {
-                tracing::error!("{}: not found", context.command_name);
+                writeln!(stderr, "{}: not found", context.command_name)?;
             }
             Ok(CommandSpawnResult::ImmediateExit(127))
         }
@@ -538,4 +548,38 @@ pub(crate) async fn invoke_shell_function(
     context.shell.positional_parameters = prior_positional_params;
 
     Ok(CommandSpawnResult::ImmediateExit(result?.exit_code))
+}
+
+pub(crate) async fn invoke_command_in_subshell_and_get_output(
+    shell: &mut Shell,
+    s: String,
+) -> Result<String, error::Error> {
+    // Instantiate a subshell to run the command in.
+    let mut subshell = shell.clone();
+
+    // Set up pipe so we can read the output.
+    let (reader, writer) = sys::pipes::pipe()?;
+    subshell
+        .open_files
+        .files
+        .insert(1, openfiles::OpenFile::PipeWriter(writer));
+
+    let mut params = subshell.default_exec_params();
+    params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
+    // Run the command.
+    let result = subshell.run_string(s, &params).await?;
+
+    // Make sure the subshell and params are closed; among other things, this
+    // ensures they're not holding onto the write end of the pipe.
+    drop(subshell);
+    drop(params);
+
+    // Store the status.
+    shell.last_exit_status = result.exit_code;
+
+    // Extract output.
+    let output_str = std::io::read_to_string(reader)?;
+
+    Ok(output_str)
 }

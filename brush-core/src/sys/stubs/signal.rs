@@ -1,4 +1,4 @@
-use crate::{error, sys, traps};
+use crate::{error, sys};
 
 pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     error::unimp("continue process")

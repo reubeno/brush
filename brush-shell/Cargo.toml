@@ -31,8 +31,9 @@ path = "tests/completion_tests.rs"
 
 [features]
 default = ["basic", "reedline"]
-basic = []
-reedline = []
+basic = ["brush-interactive/basic"]
+minimal = ["brush-interactive/minimal"]
+reedline = ["brush-interactive/reedline"]
 
 [lints]
 workspace = true
@@ -52,12 +53,13 @@ human-panic = "2.0.2"
 
 [target.'cfg(not(any(windows, unix)))'.dependencies]
 brush-interactive = { version = "^0.2.13", path = "../brush-interactive", features = [
-    "basic",
+    "minimal",
 ] }
 tokio = { version = "1.42.0", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.13", path = "../brush-interactive", features = [
+    "basic",
     "reedline",
 ] }
 tokio = { version = "1.41.1", features = ["rt", "rt-multi-thread", "sync"] }

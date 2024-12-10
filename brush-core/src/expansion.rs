@@ -6,11 +6,10 @@ use brush_parser::word::SubstringMatchKind;
 use itertools::Itertools;
 
 use crate::arithmetic::ExpandAndEvaluate;
+use crate::commands;
 use crate::env;
 use crate::error;
 use crate::escape;
-use crate::interp::ProcessGroupPolicy;
-use crate::openfiles;
 use crate::patterns;
 use crate::prompt;
 use crate::shell::Shell;
@@ -376,7 +375,12 @@ impl<'a> WordExpander<'a> {
         word: &Option<String>,
     ) -> Result<Option<patterns::Pattern>, error::Error> {
         if let Some(word) = word {
-            Ok(Some(self.basic_expand_pattern(word).await?))
+            let pattern = self
+                .basic_expand_pattern(word)
+                .await?
+                .set_extended_globbing(self.parser_options.enable_extended_globbing);
+
+            Ok(Some(pattern))
         } else {
             Ok(None)
         }
@@ -645,37 +649,13 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::WordPiece::BackquotedCommandSubstitution(s)
             | brush_parser::word::WordPiece::CommandSubstitution(s) => {
-                // Insantiate a subshell to run the command in.
-                let mut subshell = self.shell.clone();
-
-                // Set up pipe so we can read the output.
-                let (reader, writer) = sys::pipes::pipe()?;
-                subshell
-                    .open_files
-                    .files
-                    .insert(1, openfiles::OpenFile::PipeWriter(writer));
-
-                let mut params = subshell.default_exec_params();
-                params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
-
-                // Run the command.
-                let result = subshell.run_string(s, &params).await?;
-
-                // Make sure the subshell and params are closed; among other things, this
-                // ensures they're not holding onto the write end of the pipe.
-                drop(subshell);
-                drop(params);
-
-                // Store the status.
-                self.shell.last_exit_status = result.exit_code;
-
-                // Extract output.
-                let output_str = std::io::read_to_string(reader)?;
+                let output_str =
+                    commands::invoke_command_in_subshell_and_get_output(self.shell, s).await?;
 
                 // We trim trailing newlines, per spec.
-                let output_str = output_str.trim_end_matches('\n');
+                let trimmed = output_str.trim_end_matches('\n');
 
-                Expansion::from(ExpansionPiece::Splittable(output_str.to_owned()))
+                Expansion::from(ExpansionPiece::Splittable(trimmed.to_owned()))
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
                 let expanded = s.strip_prefix('\\').unwrap();
@@ -835,6 +815,7 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
+
                 transform_expansion(expanded_parameter, |s| {
                     patterns::remove_smallest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
@@ -847,6 +828,7 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
+
                 transform_expansion(expanded_parameter, |s| {
                     patterns::remove_largest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
@@ -1026,17 +1008,17 @@ impl<'a> WordExpander<'a> {
                 match_kind,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_to_str(&pattern).await?;
+                let expanded_pattern = self
+                    .basic_expand_pattern(pattern.as_str())
+                    .await?
+                    .set_extended_globbing(self.parser_options.enable_extended_globbing)
+                    .set_case_insensitive(self.shell.options.case_insensitive_conditionals);
 
                 // If no replacement was provided, then we replace with an empty string.
                 let replacement = replacement.unwrap_or(String::new());
                 let expanded_replacement = self.basic_expand_to_str(&replacement).await?;
 
-                let pattern = patterns::Pattern::from(expanded_pattern.as_str())
-                    .set_extended_globbing(self.parser_options.enable_extended_globbing)
-                    .set_case_insensitive(self.shell.options.case_insensitive_conditionals);
-
-                let regex = pattern.to_regex(
+                let regex = expanded_pattern.to_regex(
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Prefix),
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Suffix),
                 )?;
