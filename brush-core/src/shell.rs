@@ -275,6 +275,15 @@ impl Shell {
             )?;
         }
 
+        // Update PWD to reflect our actual working directory. There's a chance
+        // we inherited an out-of-sync version of the variable. Future updates
+        // will be handled by set_working_dir().
+        let pwd = std::env::current_dir()?.to_string_lossy().to_string();
+        let mut pwd_var = ShellVariable::new(pwd.into());
+        pwd_var.export();
+        env.set_global("PWD", pwd_var)?;
+
+        // Set version info.
         if !options.sh_mode {
             const BASH_MAJOR: u32 = 5;
             const BASH_MINOR: u32 = 2;
