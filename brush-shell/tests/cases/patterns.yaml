@@ -293,3 +293,8 @@ cases:
       shopt -s nocasematch
       [[ "abc" == "ABC" ]]     && echo "3. Matched"
       [[ "abc" == "[A-Z]BC" ]] && echo "4. Matched"
+
+  - name: "Pattern matching: stars in negative extglobs"
+    stdin: |
+      shopt -s extglob
+      [[ 'd' == !(*d)d ]] && echo "1. Matched"
