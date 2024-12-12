@@ -363,6 +363,86 @@ pub enum ParameterTransformOp {
     ToUpperCase,
 }
 
+/// Represents a sub-word that is either a brace expression or some other word text.
+#[derive(Clone, Debug)]
+pub enum BraceExpressionOrText {
+    /// A brace expression.
+    Expr(BraceExpression),
+    /// Other word text.
+    Text(String),
+}
+
+/// Represents a brace expression to be expanded.
+pub type BraceExpression = Vec<BraceExpressionMember>;
+
+impl BraceExpressionOrText {
+    /// Generates expansions for this value.
+    pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
+        match self {
+            BraceExpressionOrText::Expr(members) => {
+                let mut iters = vec![];
+                for m in members {
+                    iters.push(m.generate());
+                }
+                Box::new(iters.into_iter().flatten())
+            }
+            BraceExpressionOrText::Text(text) => Box::new(std::iter::once(text)),
+        }
+    }
+}
+
+/// Member of a brace expression.
+#[derive(Clone, Debug)]
+pub enum BraceExpressionMember {
+    /// An inclusive numerical sequence.
+    NumberSequence {
+        /// Start of the sequence.
+        low: i64,
+        /// Inclusive end of the sequence.
+        high: i64,
+        /// Increment value.
+        increment: i64,
+    },
+    /// An inclusive character sequence.
+    CharSequence {
+        /// Start of the sequence.
+        low: char,
+        /// Inclusive end of the sequence.
+        high: char,
+        /// Increment value.
+        increment: i64,
+    },
+    /// Text.
+    Text(String),
+}
+
+impl BraceExpressionMember {
+    /// Generates expansions for this member.
+    pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
+        match self {
+            BraceExpressionMember::NumberSequence {
+                low,
+                high,
+                increment,
+            } => Box::new(
+                (low..=high)
+                    .step_by(increment as usize)
+                    .map(|n| n.to_string()),
+            ),
+            BraceExpressionMember::CharSequence {
+                low,
+                high,
+                increment,
+            } => Box::new(
+                (low..=high)
+                    .step_by(increment as usize)
+                    .map(|c| c.to_string()),
+            ),
+            BraceExpressionMember::Text(text) => Box::new(std::iter::once(text)),
+        }
+    }
+}
+
 /// Parse a word into its constituent pieces.
 ///
 /// # Arguments
@@ -405,6 +485,20 @@ pub fn parse_parameter(
         .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err))
 }
 
+/// Parse brace expansion from a given word .
+///
+/// # Arguments
+///
+/// * `word` - The word to parse.
+/// * `options` - The parser options to use.
+pub fn parse_brace_expansions(
+    word: &str,
+    options: &ParserOptions,
+) -> Result<Option<Vec<BraceExpressionOrText>>, error::WordParseError> {
+    expansion_parser::brace_expansions(word, options)
+        .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err))
+}
+
 peg::parser! {
     grammar expansion_parser(parser_options: &ParserOptions) for str {
         pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = word(<![_]>)
@@ -418,6 +512,50 @@ peg::parser! {
                 all_pieces.extend(pieces);
                 all_pieces
             }
+
+        pub(crate) rule brace_expansions() -> Option<Vec<BraceExpressionOrText>> =
+            pieces:(brace_expansion_piece()+) { Some(pieces) } /
+            [_]* { None }
+
+        rule brace_expansion_piece() -> BraceExpressionOrText =
+            expr:brace_expr() {
+                BraceExpressionOrText::Expr(expr)
+            } /
+            text:$(non_brace_expr_text()+) { BraceExpressionOrText::Text(text.to_owned()) }
+
+        rule non_brace_expr_text() -> () =
+            !"{" word_piece(<['{']>, false) {} /
+            !brace_expr() "{" {}
+
+        rule brace_expr() -> BraceExpression =
+            "{" inner:brace_expr_inner() "}" { inner }
+
+        rule brace_expr_inner() -> BraceExpression =
+            brace_text_list_expr() /
+            seq:brace_sequence_expr() { vec![seq] }
+
+        rule brace_text_list_expr() -> BraceExpression =
+            members:(brace_text_list_member() **<2,> ",") {
+                members.into_iter().flatten().collect()
+            }
+
+        rule brace_text_list_member() -> BraceExpression =
+            &[',' | '}'] { vec![BraceExpressionMember::Text(String::new())] } /
+            brace_expr() /
+            text:$(word_piece(<[',' | '}']>, false)) {
+                vec![BraceExpressionMember::Text(text.to_owned())]
+            }
+
+        rule brace_sequence_expr() -> BraceExpressionMember =
+            low:number() ".." high:number() increment:(".." n:number() { n })? {
+                BraceExpressionMember::NumberSequence { low, high, increment: increment.unwrap_or(1) }
+            } /
+            low:character() ".." high:character() increment:(".." n:number() { n })? {
+                BraceExpressionMember::CharSequence { low, high, increment: increment.unwrap_or(1) }
+            }
+
+        rule number() -> i64 = n:$(['0'..='9']+) { n.parse().unwrap() }
+        rule character() -> char = ['a'..='z' | 'A'..='Z']
 
         // N.B. We don't bother returning the word pieces, as all users of this rule
         // only try to extract the consumed input string and not the parse result.

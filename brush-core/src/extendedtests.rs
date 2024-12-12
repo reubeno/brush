@@ -191,12 +191,12 @@ async fn apply_binary_predicate(
     #[allow(clippy::single_match_else)]
     match op {
         ast::BinaryPredicate::StringMatchesRegex => {
-            if shell.options.print_commands_and_arguments {
-                shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
-            }
-
             let s = expansion::basic_expand_word(shell, left).await?;
             let regex = expansion::basic_expand_regex(shell, right).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell.trace_command(std::format!("[[ {s} {op} {right} ]]"))?;
+            }
 
             let (matches, captures) = match regex.matches(s.as_str()) {
                 Ok(Some(captures)) => (true, captures),
