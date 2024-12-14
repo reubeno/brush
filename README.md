@@ -54,10 +54,9 @@ installed on your system, then you can also author a `~/.brushrc` file.
 
 There are some known gaps in compatibility. Most notably:
 
-* **Honoring `set` and `shopt` options (e.g., `set -e`).**
-  The `set` builtin is implemented, as is `set -x` and a few other options, but most of the options aren't fully implemented. `set -e`, for example, will execute but its semantics aren't applied across execution.
-* **Curly brace expansion.**
-  Almost all forms of expansion are implemented; for some reason, we never got around to implementing an expansion that turns `{a,b}` into `a b`. There's even a test for this, but it's marked as a known failing test.
+* **Honoring all `set` and `shopt` options (e.g., `set -e`).**
+  The `set` builtin is implemented, as is `set -x` and some other options, but many of the options aren't fully implemented. `set -e`, for example, will execute but its semantics aren't applied across execution.
+
 * **Anything tagged with a `TODO` comment or where `error::unimp()` is used to return a "not implemented" error**.
   These aren't all tracked with GitHub issues right now, but there's a number of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may be more complicated.
 

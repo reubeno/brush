@@ -268,3 +268,9 @@ cases:
 
       [[ $var -eq 10 ]] && echo "1. Pass"
       [[ var -eq 10 ]] && echo "2. Pass"
+
+  - name: "Regex with min/max counts"
+    stdin: |
+      [[ z =~ ^z{2,6}$ ]] && echo "1. Matches"
+      [[ zzzz =~ ^z{2,6}$ ]] && echo "2. Matches"
+      [[ zzzzzzzzz =~ ^z{2,6}$ ]] && echo "3. Matches"
