@@ -20,7 +20,7 @@ impl builtins::Command for PopdCommand {
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if let Some(popped) = context.shell.directory_stack.pop() {
             if !self.no_directory_change {
-                context.shell.set_working_dir(&popped)?;
+                context.shell.set_current_working_dir(&popped)?;
             }
 
             // Display dirs.

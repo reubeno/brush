@@ -9,11 +9,11 @@ use crate::{builtins, commands};
 #[derive(Parser)]
 pub(crate) struct CdCommand {
     /// Force following symlinks.
-    #[arg(short = 'L')]
+    #[arg(short = 'L', overrides_with = "use_physical_dir")]
     force_follow_symlinks: bool,
 
     /// Use physical dir structure without following symlinks.
-    #[arg(short = 'P')]
+    #[arg(short = 'P', overrides_with = "force_follow_symlinks")]
     use_physical_dir: bool,
 
     /// Exit with non zero exit status if current working directory resolution fails.
@@ -35,16 +35,12 @@ impl builtins::Command for CdCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        // TODO: implement options
-        if self.force_follow_symlinks
-            || self.use_physical_dir
-            || self.exit_on_failed_cwd_resolution
-            || self.file_with_xattr_as_dir
-        {
+        if self.exit_on_failed_cwd_resolution || self.file_with_xattr_as_dir {
             return crate::error::unimp("options to cd");
         }
 
         let mut should_print = false;
+
         let target_dir = if let Some(target_dir) = &self.target_dir {
             // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
@@ -69,16 +65,28 @@ impl builtins::Command for CdCommand {
             }
         };
 
-        if let Err(e) = context.shell.set_working_dir(&target_dir) {
+        // TODO: CDPATH, LCD_PRINTPATH, LCD_DOSPELL and LCD_DOVARS
+
+        let result = if self.use_physical_dir {
+            context.shell.set_current_working_dir(&target_dir)
+        // the logical dir by default
+        } else {
+            context
+                .shell
+                .set_current_working_dir_from_logical(&target_dir)
+        };
+
+        if let Err(e) = result {
             writeln!(context.stderr(), "cd: {e}")?;
             return Ok(builtins::ExitCode::Custom(1));
         }
 
         // Bash compatibility
         // https://www.gnu.org/software/bash/manual/bash.html#index-cd
-        // If a non-empty directory name from CDPATH is used, or if '-' is the first argument, and
-        // the directory change is successful, the absolute pathname of the new working
-        // directory is written to the standard output.
+        // If a non-empty directory name from CDPATH is used, or if '-' is the first
+        // argument, and the directory change is successful, the absolute
+        // pathname of the new working directory is written to the standard
+        // output.
         if should_print {
             writeln!(context.stdout(), "{}", target_dir.display())?;
         }
