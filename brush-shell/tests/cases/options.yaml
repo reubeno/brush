@@ -14,6 +14,32 @@ cases:
       env | grep newvar
       env | grep unexported
 
+  - name: "set -C"
+    ignore_stderr: true
+    stdin: |
+      touch existing-file
+
+      set -C
+
+      echo hi > non-existing-file
+      echo "Result (non existing): $?"
+      echo "File contents: $(cat non-existing-file)"
+      echo
+
+      echo hi > /dev/null
+      echo "Result (device file): $?"
+      echo
+
+      echo hi > existing-file
+      echo "Result (existing file): $?"
+      echo "File contents: $(cat existing-file)"
+      echo
+
+      echo hi >| existing-file
+      echo "Result (clobber): $?"
+      echo "File contents: $(cat existing-file)"
+      echo
+
   - name: "set -x"
     stdin: |
       set -x

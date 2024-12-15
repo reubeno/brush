@@ -1316,16 +1316,39 @@ pub(crate) async fn setup_redirect(
                 ast::IoFileRedirectTarget::Filename(f) => {
                     let mut options = std::fs::File::options();
 
+                    let mut expanded_fields =
+                        expansion::full_expand_and_split_word(shell, f).await?;
+
+                    if expanded_fields.len() != 1 {
+                        return Err(error::Error::InvalidRedirection);
+                    }
+
+                    let expanded_file_path: PathBuf =
+                        shell.get_absolute_path(Path::new(expanded_fields.remove(0).as_str()));
+
                     let default_fd_if_unspecified = get_default_fd_for_redirect_kind(kind);
                     match kind {
                         ast::IoFileRedirectKind::Read => {
                             options.read(true);
                         }
                         ast::IoFileRedirectKind::Write => {
-                            // TODO: honor noclobber options
-                            options.create(true);
-                            options.write(true);
-                            options.truncate(true);
+                            if shell
+                                .options
+                                .disallow_overwriting_regular_files_via_output_redirection
+                            {
+                                // First check to see if the path points to an existing regular
+                                // file.
+                                if !expanded_file_path.is_file() {
+                                    options.create(true);
+                                } else {
+                                    options.create_new(true);
+                                }
+                                options.write(true);
+                            } else {
+                                options.create(true);
+                                options.write(true);
+                                options.truncate(true);
+                            }
                         }
                         ast::IoFileRedirectKind::Append => {
                             options.create(true);
@@ -1351,16 +1374,6 @@ pub(crate) async fn setup_redirect(
                     }
 
                     fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
-
-                    let mut expanded_fields =
-                        expansion::full_expand_and_split_word(shell, f).await?;
-
-                    if expanded_fields.len() != 1 {
-                        return Err(error::Error::InvalidRedirection);
-                    }
-
-                    let expanded_file_path: PathBuf =
-                        shell.get_absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
                     let opened_file =
                         options.open(expanded_file_path.as_path()).map_err(|err| {
