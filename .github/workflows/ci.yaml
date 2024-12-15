@@ -383,9 +383,10 @@ jobs:
 
       - name: Install prerequisites for running tests
         run: |
+          set -x
           sudo apt-get update -y
-          sudo apt-get install -y python3 python3-pytest
-          python3 -m pip install --user pytest-report-md
+          sudo apt-get install -y python3
+          python3 -m pip install --user pytest pytest-md-report
 
       - name: Run suite
         env:
