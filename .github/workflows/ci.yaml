@@ -357,6 +357,50 @@ jobs:
             main/benchmarks.txt
             benchmark-results.md
 
+  # Run bash-completion test suite
+  bash-completion-tests:
+    name: "bash-completion tests"
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: "scop/bash-completion"
+          ref: "2.15.0"
+          path: "bash-completion"
+
+      - name: Download prebuilt brush binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: "binaries-x86_64-linux"
+          path: "binaries"
+
+      - name: Setup downloads
+        run: |
+          chmod +x binaries/*
+          ls -l binaries
+
+      - name: Install prerequisites for running tests
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y python3 pytest
+          python3 -m pip install --user pytest-report-md
+
+      - name: Run suite
+        env:
+          BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
+        working-directory: bash-completion
+        run: |
+          pytest ./test/t -n 128 -v --md-report --md-report-flavor gfm --md-report-output ${{ github.workspace }}/bash-completion-results.md
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bash-completion-test-reports
+          path: |
+            bash-completion-results.md
+
   # Test release binary on a variety of OS platforms.
   os-tests:
     strategy:
@@ -385,7 +429,7 @@ jobs:
         with:
           path: sources
 
-      - name: Download binaries
+      - name: Download prebuilt brush binaries
         uses: actions/download-artifact@v4
         with:
           name: binaries-x86_64-linux
