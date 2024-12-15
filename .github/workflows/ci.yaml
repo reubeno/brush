@@ -368,6 +368,71 @@ jobs:
             main/benchmarks.txt
             benchmark-results.md
 
+  # Run bash-completion test suite
+  bash-completion-tests:
+    name: "External tests / bash-completion test suite"
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout brush
+        uses: actions/checkout@v4
+        with:
+          path: "brush"
+
+      - name: Checkout bash-completion
+        uses: actions/checkout@v4
+        with:
+          repository: "scop/bash-completion"
+          ref: "2.15.0"
+          path: "bash-completion"
+
+      - name: Download prebuilt brush binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: "binaries-x86_64-linux"
+          path: "binaries"
+
+      - name: Setup downloads
+        run: |
+          chmod +x binaries/*
+          ls -l binaries
+
+      - name: Install prerequisites for running tests
+        run: |
+          set -x
+          sudo apt-get update -y
+          sudo apt-get install -y python3
+          python3 -m pip install --user pytest pytest-xdist pytest-md-report pytest-json-report
+
+      - name: "Run test suite (oracle)"
+        working-directory: bash-completion/test
+        run: |
+          pytest -n 128 --no-summary ./t || true
+
+      - name: "Run test suite (brush)"
+        env:
+          BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
+        working-directory: bash-completion/test
+        run: |
+          pytest -n 128 \
+              --json-report \
+              --json-report-file=${{ github.workspace }}/test-results-bash-completion.json \
+              ./t || true
+
+      - name: "Generate report summary"
+        run: |
+          python3 brush/scripts/summarize-pytest-results.py \
+            -r ${{ github.workspace }}/test-results-bash-completion.json \
+            --title="Test Summary: bash-completion test suite" \
+            >${{ github.workspace }}/test-results-bash-completion.md
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-bash-completion
+          path: |
+            test-results-bash-completion.md
+
   # Test release binary on a variety of OS platforms.
   os-tests:
     strategy:
@@ -396,7 +461,7 @@ jobs:
         with:
           path: sources
 
-      - name: Download binaries
+      - name: Download prebuilt brush binaries
         uses: actions/download-artifact@v4
         with:
           name: binaries-x86_64-linux
@@ -421,6 +486,7 @@ jobs:
         run: ${{ matrix.prereqs_command }}
 
       - name: Run tests
+        shell: bash
         run: |
           export BRUSH_PATH=$PWD/binaries/brush
           export BRUSH_COMPAT_TEST_CASES=$PWD/sources/brush-shell/tests/cases
