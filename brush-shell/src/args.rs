@@ -45,6 +45,10 @@ pub struct CommandLineArgs {
     #[clap(long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
 
+    /// Enable noclobber shell option.
+    #[arg(short = 'C')]
+    pub disallow_overwriting_regular_files_via_output_redirection: bool,
+
     /// Execute the provided command and then exit.
     #[arg(short = 'c', value_name = "COMMAND")]
     pub command: Option<String>,

@@ -191,6 +191,8 @@ impl RuntimeOptions {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {
             interactive: create_options.interactive,
+            disallow_overwriting_regular_files_via_output_redirection: create_options
+                .disallow_overwriting_regular_files_via_output_redirection,
             do_not_execute_commands: create_options.do_not_execute_commands,
             enable_command_history: create_options.interactive,
             enable_job_control: create_options.interactive,

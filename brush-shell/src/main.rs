@@ -199,6 +199,8 @@ async fn instantiate_shell(
     let options = brush_interactive::Options {
         shell: brush_core::CreateOptions {
             disabled_shopt_options: args.disabled_shopt_options.clone(),
+            disallow_overwriting_regular_files_via_output_redirection: args
+                .disallow_overwriting_regular_files_via_output_redirection,
             enabled_shopt_options: args.enabled_shopt_options.clone(),
             do_not_execute_commands: args.do_not_execute_commands,
             login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),

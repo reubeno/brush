@@ -123,6 +123,8 @@ pub struct CreateOptions {
     pub disabled_shopt_options: Vec<String>,
     /// Enabled shopt options.
     pub enabled_shopt_options: Vec<String>,
+    /// Disallow overwriting regular files via output redirection.
+    pub disallow_overwriting_regular_files_via_output_redirection: bool,
     /// Do not execute commands.
     pub do_not_execute_commands: bool,
     /// Whether the shell is interactive.
