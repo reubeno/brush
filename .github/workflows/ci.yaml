@@ -393,7 +393,7 @@ jobs:
           BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
         working-directory: bash-completion
         run: |
-          pytest -n 128 -v --junit-xml=test-results-bash-completion.xml ./test/t/unit || true
+          pytest -n 128 -v --junit-xml=${{ github.workspace }}/test-results-bash-completion.xml ./test/t/unit || true
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
