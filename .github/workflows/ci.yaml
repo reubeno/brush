@@ -398,7 +398,7 @@ jobs:
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: bash-completion-test-reports
+          name: test-reports-bash-completion
           path: |
             bash-completion-results.md
 
