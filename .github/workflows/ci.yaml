@@ -393,14 +393,14 @@ jobs:
           BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
         working-directory: bash-completion
         run: |
-          pytest -n 128 -v --md-report --md-report-flavor gfm --md-report-output ${{ github.workspace }}/bash-completion-results.md ./test/t || true
+          pytest -n 128 -v --junit-xml=test-results-bash-completion.xml ./test/t/unit || true
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
           name: test-reports-bash-completion
           path: |
-            bash-completion-results.md
+            test-results-bash-completion.xml
 
   # Test release binary on a variety of OS platforms.
   os-tests:
