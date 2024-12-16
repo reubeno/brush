@@ -1,5 +1,6 @@
 //! Implements a tokenizer and parsers for POSIX / bash shell syntax.
 
+// #![feature(test)]
 #![deny(missing_docs)]
 
 pub mod arithmetic;
@@ -11,8 +12,10 @@ pub mod word;
 
 mod error;
 mod parser;
+mod parser2;
 mod tokenizer;
 
+pub use parser2::{parse_program, cacheable_parse_program};
 pub use error::{ParseError, TestCommandParseError, WordParseError};
 pub use parser::{parse_tokens, Parser, ParserOptions, SourceInfo};
 pub use tokenizer::{
