@@ -393,14 +393,24 @@ jobs:
           BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
         working-directory: bash-completion
         run: |
-          pytest -n 128 -v --junit-xml=${{ github.workspace }}/test-results-bash-completion.xml ./test/t/unit || true
+          pytest -n 128 -v --junit-xml=${{ github.workspace }}/test-results-bash-completion.xml ./test/t || true
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
+      # - name: Upload test results
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: test-reports-bash-completion
+      #     path: |
+      #       test-results-bash-completion.xml
+
+      - name: Generate test report
+        if: always()
+        uses: pmeier/pytest-results-action@main
         with:
-          name: test-reports-bash-completion
-          path: |
-            test-results-bash-completion.xml
+          path: test-results-bash-completion.xml
+          summary: true
+          display-options: fEX
+          fail-on-empty: true
+          title: "Test Results: bash-completion"
 
   # Test release binary on a variety of OS platforms.
   os-tests:
