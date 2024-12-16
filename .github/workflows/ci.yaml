@@ -30,7 +30,11 @@ jobs:
       matrix:
         include:
           # Build for x86_64/linux target on native host.
-          - host: "ubuntu-24.04"
+          # N.B. We intentionally pin to Ubuntu 22.04 for now to increase
+          # the range of distros that will be able to run the produced binaries.
+          # Newer release of Ubuntu upgrade glibc to a point not yet supported
+          # by some latest stable versions of distros.
+          - host: "ubuntu-22.04"
             target: ""
             os: "linux"
             arch: "x86_64"
