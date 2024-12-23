@@ -12,7 +12,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 brush-shell = { version = "^0.2.13", path = "../brush-shell" }
 clap = { version = "4.5.21", features = ["derive"] }
 clap_mangen = "0.2.24"
