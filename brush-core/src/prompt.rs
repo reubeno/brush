@@ -52,7 +52,9 @@ pub(crate) fn format_prompt_piece(
             tilde_replaced,
             basename,
         } => format_current_working_directory(shell, tilde_replaced, basename),
-        brush_parser::prompt::PromptPiece::Date(_) => return error::unimp("prompt: date"),
+        brush_parser::prompt::PromptPiece::Date(format) => {
+            format_date(&chrono::Local::now(), &format)
+        }
         brush_parser::prompt::PromptPiece::DollarOrPound => {
             if users::is_root() {
                 "#".to_owned()
@@ -77,9 +79,7 @@ pub(crate) fn format_prompt_piece(
             hn
         }
         brush_parser::prompt::PromptPiece::Newline => "\n".to_owned(),
-        brush_parser::prompt::PromptPiece::NumberOfManagedJobs => {
-            return error::unimp("prompt: number of managed jobs")
-        }
+        brush_parser::prompt::PromptPiece::NumberOfManagedJobs => shell.jobs.jobs.len().to_string(),
         brush_parser::prompt::PromptPiece::ShellBaseName => {
             if let Some(shell_name) = &shell.shell_name {
                 Path::new(shell_name)
@@ -100,7 +100,9 @@ pub(crate) fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::TerminalDeviceBaseName => {
             return error::unimp("prompt: terminal device base name")
         }
-        brush_parser::prompt::PromptPiece::Time(_) => return error::unimp("prompt: time"),
+        brush_parser::prompt::PromptPiece::Time(time_fmt) => {
+            format_time(&chrono::Local::now(), &time_fmt)
+        }
     };
 
     Ok(formatted)
@@ -124,4 +126,102 @@ fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basenam
     }
 
     working_dir_str
+}
+
+fn format_time<Tz: chrono::TimeZone>(
+    datetime: &chrono::DateTime<Tz>,
+    format: &brush_parser::prompt::PromptTimeFormat,
+) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let formatted = match format {
+        brush_parser::prompt::PromptTimeFormat::TwelveHourAM => datetime.format("%I:%M %p"),
+        brush_parser::prompt::PromptTimeFormat::TwelveHourHHMMSS => datetime.format("%I:%M:%S"),
+        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMMSS => datetime.format("%H:%M:%S"),
+    };
+
+    formatted.to_string()
+}
+
+fn format_date<Tz: chrono::TimeZone>(
+    datetime: &chrono::DateTime<Tz>,
+    format: &brush_parser::prompt::PromptDateFormat,
+) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    match format {
+        brush_parser::prompt::PromptDateFormat::WeekdayMonthDate => {
+            datetime.format("%a %b %d").to_string()
+        }
+        brush_parser::prompt::PromptDateFormat::Custom(fmt) => {
+            let fmt_items = chrono::format::StrftimeItems::new(fmt);
+            datetime.format_with_items(fmt_items).to_string()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_time() {
+        // Create a well-known test date/time.
+        let dt = chrono::DateTime::parse_from_rfc3339("2024-12-25T13:34:56.789Z").unwrap();
+
+        assert_eq!(
+            format_time(&dt, &brush_parser::prompt::PromptTimeFormat::TwelveHourAM),
+            "01:34 PM"
+        );
+
+        assert_eq!(
+            format_time(
+                &dt,
+                &brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMMSS
+            ),
+            "13:34:56"
+        );
+
+        assert_eq!(
+            format_time(
+                &dt,
+                &brush_parser::prompt::PromptTimeFormat::TwelveHourHHMMSS
+            ),
+            "01:34:56"
+        );
+    }
+
+    #[test]
+    fn test_format_date() {
+        // Create a well-known test date/time.
+        let dt = chrono::DateTime::parse_from_rfc3339("2024-12-25T12:34:56.789Z").unwrap();
+
+        assert_eq!(
+            format_date(
+                &dt,
+                &brush_parser::prompt::PromptDateFormat::WeekdayMonthDate
+            ),
+            "Wed Dec 25"
+        );
+
+        assert_eq!(
+            format_date(
+                &dt,
+                &brush_parser::prompt::PromptDateFormat::Custom(String::from("%Y-%m-%d"))
+            ),
+            "2024-12-25"
+        );
+
+        assert_eq!(
+            format_date(
+                &dt,
+                &brush_parser::prompt::PromptDateFormat::Custom(String::from(
+                    "%Y-%m-%d %H:%M:%S.%f"
+                ))
+            ),
+            "2024-12-25 12:34:56.789000000"
+        );
+    }
 }

@@ -76,6 +76,13 @@ mod unix {
         c.bench_function("expand_one_string", |b| {
             b.iter(|| black_box(expand_one_string()));
         });
+        c.bench_function("for_loop", |b| {
+            b.to_async(tokio()).iter(|| {
+                black_box(run_one_command(
+                    "for ((i = 0; i < 100000; i++)); do :; done",
+                ))
+            });
+        });
     }
 }
 
