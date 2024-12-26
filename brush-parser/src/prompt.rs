@@ -123,7 +123,7 @@ peg::parser! {
             s:$((!special_sequence() [c])+) { PromptPiece::Literal(s.to_owned()) }
 
         rule date_format() -> String =
-            s:$(!"}" [c]+) { s.to_owned() }
+            s:$([c if c != '}']*) { s.to_owned() }
 
         rule octal_number() -> u32 =
             s:$(['0'..='9']*<3,3>) {? u32::from_str_radix(s, 8).or(Err("invalid octal number")) }

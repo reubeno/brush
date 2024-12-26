@@ -54,3 +54,39 @@ cases:
 
       prompt='\V'
       [[ "${prompt@P}" == ^\d+\.\d+\.\d+$ ]] && echo "Release is correct"
+
+  - name: "Simple date"
+    stdin: |
+      prompt='\d'
+      [[ "${prompt@P}" == $(date +'%a %b %d') ]] && echo '\d date matches'
+
+  - name: "Date format with plain string"
+    stdin: |
+      prompt='\D{something}'
+      echo "Date format with plain string: '${prompt@P}'"
+
+  - name: "Date format with year"
+    stdin: |
+      prompt='\d{%Y}'
+      echo "Date format with year: '${prompt@P}'"
+
+  - name: "Time format: @"
+    stdin: |
+      prompt='\@'
+      expanded=${prompt@P}
+      roundtripped=$(date --date="${expanded}" +'%I:%M %p')
+      [[ ${expanded} == ${roundtripped} ]] && echo "Time matches"
+
+  - name: "Time format: T"
+    stdin: |
+      prompt='\T'
+      expanded=${prompt@P}
+      roundtripped=$(date --date="${expanded}" +'%I:%M:%S')
+      [[ ${expanded} == ${roundtripped} ]] && echo "Time matches"
+
+  - name: "Time format: t"
+    stdin: |
+      prompt='\t'
+      expanded=${prompt@P}
+      roundtripped=$(date --date="${expanded}" +'%H:%M:%S')
+      [[ ${expanded} == ${roundtripped} ]] && echo "Time matches"
