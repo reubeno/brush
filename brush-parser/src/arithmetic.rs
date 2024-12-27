@@ -8,14 +8,14 @@ use crate::error;
 /// # Arguments
 ///
 /// * `input` - The arithmetic expression to parse, in string form.
-pub fn parse(input: &str) -> Result<ast::ArithmeticExpr, crate::error::WordParseError> {
+pub fn parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseError> {
+    cacheable_parse(input.to_owned())
+}
+
+#[cached::proc_macro::cached(size = 64, result = true)]
+fn cacheable_parse(input: String) -> Result<ast::ArithmeticExpr, error::WordParseError> {
     tracing::debug!(target: "arithmetic", "parsing arithmetic expression: '{input}'");
-
-    // Special-case the empty string.
-
-    let expr =
-        arithmetic::full_expression(input).map_err(error::WordParseError::ArithmeticExpression)?;
-    Ok(expr)
+    arithmetic::full_expression(input.as_str()).map_err(error::WordParseError::ArithmeticExpression)
 }
 
 peg::parser! {

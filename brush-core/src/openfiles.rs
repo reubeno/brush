@@ -29,6 +29,12 @@ pub enum OpenFile {
     PipeWriter(sys::pipes::PipeWriter),
 }
 
+impl Clone for OpenFile {
+    fn clone(&self) -> Self {
+        self.try_dup().unwrap()
+    }
+}
+
 impl OpenFile {
     /// Tries to duplicate the open file.
     pub fn try_dup(&self) -> Result<OpenFile, error::Error> {
@@ -206,15 +212,10 @@ impl std::io::Write for OpenFile {
 }
 
 /// Represents the open files in a shell context.
+#[derive(Clone)]
 pub struct OpenFiles {
     /// Maps shell file descriptors to open files.
     pub files: HashMap<u32, OpenFile>,
-}
-
-impl Clone for OpenFiles {
-    fn clone(&self) -> Self {
-        self.try_clone().unwrap()
-    }
 }
 
 impl Default for OpenFiles {
