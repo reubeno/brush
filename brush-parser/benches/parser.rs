@@ -1,7 +1,14 @@
 #[cfg(unix)]
 mod unix {
-    use brush_parser::{parse_tokens, tokenize_str};
+    use brush_parser::parse_tokens;
     use criterion::{black_box, Criterion};
+
+    fn tokenize_str(input: &str) -> Result<Vec<brush_parser::Token>, brush_parser::TokenizerError> {
+        brush_parser::tokenize_str_with_options(
+            &input.into(),
+            &brush_parser::TokenizerOptions::default(),
+        )
+    }
 
     fn parse_script(contents: &str) -> brush_parser::ast::Program {
         let tokens = tokenize_str(contents).unwrap();

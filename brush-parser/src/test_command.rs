@@ -1,5 +1,9 @@
 //! Parser for shell test commands.
 
+//
+// TODO(IMSTR): figure out how to convert this over.
+//
+
 use crate::{ast, error};
 
 /// Parses a test command expression.
@@ -27,17 +31,17 @@ peg::parser! {
             expression()
 
         rule one_arg_expr() -> ast::TestExpr =
-            [s] { ast::TestExpr::Literal(s.to_owned()) }
+            [s] { ast::TestExpr::Literal(s.into()) }
 
         rule two_arg_expr() -> ast::TestExpr =
             ["!"] e:one_arg_expr() { ast::TestExpr::Not(Box::from(e)) } /
-            op:unary_op() [s] { ast::TestExpr::UnaryTest(op, s.to_owned()) } /
+            op:unary_op() [s] { ast::TestExpr::UnaryTest(op, s.into()) } /
             [_] [_] { ast::TestExpr::False }
 
         rule three_arg_expr() -> ast::TestExpr =
-            [left] ["-a"] [right] { ast::TestExpr::And(Box::from(ast::TestExpr::Literal(left.to_owned())), Box::from(ast::TestExpr::Literal(right.to_owned()))) } /
-            [left] ["-o"] [right] { ast::TestExpr::Or(Box::from(ast::TestExpr::Literal(left.to_owned())), Box::from(ast::TestExpr::Literal(right.to_owned()))) } /
-            [left] op:binary_op() [right] { ast::TestExpr::BinaryTest(op, left.to_owned(), right.to_owned()) } /
+            [left] ["-a"] [right] { ast::TestExpr::And(Box::from(ast::TestExpr::Literal(left.into())), Box::from(ast::TestExpr::Literal(right.into()))) } /
+            [left] ["-o"] [right] { ast::TestExpr::Or(Box::from(ast::TestExpr::Literal(left.into())), Box::from(ast::TestExpr::Literal(right.into()))) } /
+            [left] op:binary_op() [right] { ast::TestExpr::BinaryTest(op, left.into(), right.into()) } /
             ["!"] e:two_arg_expr() { ast::TestExpr::Not(Box::from(e)) } /
             ["("] e:one_arg_expr() [")"] { e } /
             [_] [_] [_] { ast::TestExpr::False }
@@ -53,11 +57,11 @@ peg::parser! {
             --
             ["!"] e:@ { ast::TestExpr::Not(Box::from(e)) }
             --
-            [left] op:binary_op() [right] { ast::TestExpr::BinaryTest(op, left.to_owned(), right.to_owned()) }
+            [left] op:binary_op() [right] { ast::TestExpr::BinaryTest(op, left.into(), right.into()) }
             --
-            op:unary_op() [operand] { ast::TestExpr::UnaryTest(op, operand.to_owned()) }
+            op:unary_op() [operand] { ast::TestExpr::UnaryTest(op, operand.into()) }
             --
-            [s] { ast::TestExpr::Literal(s.to_owned()) }
+            [s] { ast::TestExpr::Literal(s.into()) }
         }
 
         rule unary_op() -> ast::UnaryPredicate =

@@ -1,4 +1,5 @@
 use crate::tokenizer;
+use crate::word::WordString;
 use crate::Token;
 
 /// Represents an error that occurred while parsing tokens.
@@ -39,11 +40,11 @@ pub enum WordParseError {
 
     /// An error occurred while parsing a parameter.
     #[error("failed to parse parameter '{0}'")]
-    Parameter(String, peg::error::ParseError<peg::str::LineCol>),
+    Parameter(WordString, peg::error::ParseError<peg::str::LineCol>),
 
     /// An error occurred while parsing for brace expansion.
     #[error("failed to parse for brace expansion: '{0}'")]
-    BraceExpansion(String, peg::error::ParseError<peg::str::LineCol>),
+    BraceExpansion(WordString, peg::error::ParseError<peg::str::LineCol>),
 
     /// An error occurred while parsing a word.
     #[error("failed to parse word '{0}'")]

@@ -443,7 +443,7 @@ impl Shell {
         }
 
         let source_info = brush_parser::SourceInfo {
-            source: path.to_string_lossy().to_string(),
+            source: path.to_string_lossy().into(),
         };
 
         self.source_file(opened_file, &source_info, args, params)
@@ -473,7 +473,7 @@ impl Shell {
         let parse_result = parser.parse();
 
         let mut other_positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
-        let mut other_shell_name = Some(source_info.source.clone());
+        let mut other_shell_name = Some(source_info.source.clone().into_std_string());
 
         // TODO: Find a cleaner way to change args.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -483,7 +483,7 @@ impl Shell {
         );
 
         self.script_call_stack
-            .push_front(source_info.source.clone());
+            .push_front(source_info.source.clone().into_std_string());
         self.update_bash_source_var()?;
 
         let result = self
@@ -565,7 +565,7 @@ impl Shell {
 
         let parse_result = self.parse_string(command);
         let source_info = brush_parser::SourceInfo {
-            source: String::from("main"),
+            source: "main".into(),
         };
         self.run_parsed_result(parse_result, &source_info, params)
             .await
@@ -901,7 +901,7 @@ impl Shell {
         } else {
             self.function_call_stack
                 .iter()
-                .map(|s| (None, s.function_definition.source.clone()))
+                .map(|s| (None, s.function_definition.source.clone().into_std_string()))
                 .collect::<Vec<_>>()
         };
 
@@ -1234,7 +1234,7 @@ fn parse_string_impl(
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
     let mut reader = std::io::BufReader::new(s.as_bytes());
     let source_info = brush_parser::SourceInfo {
-        source: String::from("main"),
+        source: "main".into(),
     };
     let mut parser: brush_parser::Parser<&mut std::io::BufReader<&[u8]>> =
         brush_parser::Parser::new(&mut reader, &parser_options, &source_info);

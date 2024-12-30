@@ -16,5 +16,6 @@ mod tokenizer;
 pub use error::{ParseError, TestCommandParseError, WordParseError};
 pub use parser::{parse_tokens, Parser, ParserOptions, SourceInfo};
 pub use tokenizer::{
-    tokenize_str, tokenize_str_with_options, unquote_str, SourcePosition, Token, TokenLocation,
+    tokenize_str_with_options, unquote_str, SourcePosition, Token, TokenLocation, TokenString,
+    TokenizerError, TokenizerOptions,
 };

@@ -2,8 +2,7 @@ use std::borrow::Cow;
 use std::cmp::min;
 
 use brush_parser::ast;
-use brush_parser::word::ParameterTransformOp;
-use brush_parser::word::SubstringMatchKind;
+use brush_parser::word::{ParameterTransformOp, SubstringMatchKind, WordString};
 use itertools::Itertools;
 
 use crate::arithmetic::ExpandAndEvaluate;
@@ -349,7 +348,7 @@ pub(crate) async fn assign_to_named_parameter(
 ) -> Result<(), error::Error> {
     let parser_options = shell.parser_options();
     let mut expander = WordExpander::new(shell);
-    let parameter = brush_parser::word::parse_parameter(name, &parser_options)?;
+    let parameter = brush_parser::word::parse_parameter(&name.to_owned().into(), &parser_options)?;
     expander.assign_to_parameter(&parameter, value).await
 }
 
@@ -379,7 +378,7 @@ impl<'a> WordExpander<'a> {
     #[allow(clippy::ref_option)]
     async fn basic_expand_opt_pattern(
         &mut self,
-        word: &Option<String>,
+        word: &Option<WordString>,
     ) -> Result<Option<patterns::Pattern>, error::Error> {
         if let Some(word) = word {
             let pattern = self
@@ -461,7 +460,7 @@ impl<'a> WordExpander<'a> {
 
         // Expand: tildes, parameters, command substitutions, arithmetic.
         let mut expansions = vec![];
-        for piece in brush_parser::word::parse(brace_expanded.as_str(), &self.parser_options)? {
+        for piece in brush_parser::word::parse(&brace_expanded.into(), &self.parser_options)? {
             let piece_expansion = self.expand_word_piece(piece.piece).await?;
             expansions.push(piece_expansion);
         }
@@ -481,7 +480,8 @@ impl<'a> WordExpander<'a> {
             return Ok(vec![word.into()]);
         }
 
-        let parse_result = brush_parser::word::parse_brace_expansions(word, &self.parser_options);
+        let parse_result =
+            brush_parser::word::parse_brace_expansions(&word.into(), &self.parser_options);
         if parse_result.is_err() {
             tracing::error!("failed to parse for brace expansion: {parse_result:?}");
             return Ok(vec![word.into()]);
@@ -597,10 +597,10 @@ impl<'a> WordExpander<'a> {
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
             brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
+                Expansion::from(ExpansionPiece::Splittable(s.into_std_string()))
             }
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
-                Expansion::from(ExpansionPiece::Unsplittable(s))
+                Expansion::from(ExpansionPiece::Unsplittable(s.into_std_string()))
             }
             brush_parser::word::WordPiece::AnsiCQuotedText(s) => {
                 let (expanded, _) = escape::expand_backslash_escapes(
@@ -689,8 +689,11 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::WordPiece::BackquotedCommandSubstitution(s)
             | brush_parser::word::WordPiece::CommandSubstitution(s) => {
-                let output_str =
-                    commands::invoke_command_in_subshell_and_get_output(self.shell, s).await?;
+                let output_str = commands::invoke_command_in_subshell_and_get_output(
+                    self.shell,
+                    s.into_std_string(),
+                )
+                .await?;
 
                 // We trim trailing newlines, per spec.
                 let trimmed = output_str.trim_end_matches('\n');
@@ -1055,7 +1058,7 @@ impl<'a> WordExpander<'a> {
                     .set_case_insensitive(self.shell.options.case_insensitive_conditionals);
 
                 // If no replacement was provided, then we replace with an empty string.
-                let replacement = replacement.unwrap_or(String::new());
+                let replacement = replacement.unwrap_or(WordString::new());
                 let expanded_replacement = self.basic_expand_to_str(&replacement).await?;
 
                 let regex = expanded_pattern.to_regex(
@@ -1159,7 +1162,7 @@ impl<'a> WordExpander<'a> {
 
         if let Some(index) = index {
             self.shell.env.update_or_add_array_element(
-                variable_name,
+                variable_name.as_str(),
                 index,
                 value,
                 |_| Ok(()),
@@ -1168,7 +1171,7 @@ impl<'a> WordExpander<'a> {
             )
         } else {
             self.shell.env.update_or_add(
-                variable_name,
+                variable_name.as_str(),
                 variables::ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
@@ -1188,7 +1191,7 @@ impl<'a> WordExpander<'a> {
             let expansion = self.expand_parameter(parameter, true).await?;
             let parameter_str: String = expansion.into();
             let inner_parameter =
-                brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
+                brush_parser::word::parse_parameter(&parameter_str.into(), &self.parser_options)?;
             Ok(self.try_resolve_parameter_to_variable_without_indirect(&inner_parameter))
         }
     }
@@ -1200,14 +1203,17 @@ impl<'a> WordExpander<'a> {
         let (name, index) = match parameter {
             brush_parser::word::Parameter::Positional(_)
             | brush_parser::word::Parameter::Special(_) => (None, None),
-            brush_parser::word::Parameter::Named(name) => (Some(name.to_owned()), Some("0".into())),
-            brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                (Some(name.to_owned()), Some(index.to_owned()))
+            brush_parser::word::Parameter::Named(name) => {
+                (Some(name.clone().into_std_string()), Some("0".into()))
             }
+            brush_parser::word::Parameter::NamedWithIndex { name, index } => (
+                Some(name.clone().into_std_string()),
+                Some(index.clone().into_std_string()),
+            ),
             brush_parser::word::Parameter::NamedWithAllIndices {
                 name,
                 concatenate: _concatenate,
-            } => (Some(name.to_owned()), None),
+            } => (Some(name.clone().into_std_string()), None),
         };
 
         let var = name
@@ -1227,8 +1233,10 @@ impl<'a> WordExpander<'a> {
             Ok(expansion)
         } else {
             let parameter_str: String = expansion.into();
-            let inner_parameter =
-                brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
+            let inner_parameter = brush_parser::word::parse_parameter(
+                &parameter_str.clone().into(),
+                &self.parser_options,
+            )?;
 
             self.expand_parameter_without_indirect(&inner_parameter)
                 .await
@@ -1325,7 +1333,7 @@ impl<'a> WordExpander<'a> {
             self.basic_expand_to_str(index).await?
         } else {
             let index_expr = ast::UnexpandedArithmeticExpr {
-                value: index.to_owned(),
+                value: index.into(),
             };
             self.expand_arithmetic_expr(index_expr).await?
         };
@@ -1637,7 +1645,7 @@ fn generate_and_combine_brace_expansions(
 ) -> Vec<String> {
     let expansions: Vec<Vec<String>> = pieces
         .into_iter()
-        .map(|piece| piece.generate().collect())
+        .map(|piece| piece.generate().map(|x| x.into_std_string()).collect())
         .collect();
 
     expansions

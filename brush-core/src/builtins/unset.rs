@@ -50,8 +50,10 @@ impl builtins::Command for UnsetCommand {
 
         for name in &self.names {
             if unspecified || self.name_interpretation.shell_variables {
-                let parameter =
-                    brush_parser::word::parse_parameter(name, &context.shell.parser_options())?;
+                let parameter = brush_parser::word::parse_parameter(
+                    &name.to_owned().into(),
+                    &context.shell.parser_options(),
+                )?;
 
                 let result = match parameter {
                     brush_parser::word::Parameter::Positional(_) => continue,
@@ -61,7 +63,7 @@ impl builtins::Command for UnsetCommand {
                     }
                     brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                         // First evaluate the index expression.
-                        let index_as_expr = brush_parser::arithmetic::parse(index.as_str())?;
+                        let index_as_expr = brush_parser::arithmetic::parse(&index)?;
                         let evaluated_index = context.shell.eval_arithmetic(index_as_expr).await?;
 
                         context

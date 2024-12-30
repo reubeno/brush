@@ -24,7 +24,7 @@ impl builtins::Command for LetCommand {
         }
 
         for expr in &self.exprs {
-            let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
+            let parsed = brush_parser::arithmetic::parse(&expr.to_owned().into())?;
             let evaluated = parsed.eval(context.shell).await?;
 
             if evaluated == 0 {

@@ -1,6 +1,7 @@
 use crate::ast::{self, SeparatorOperator};
-use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
+use crate::word::WordString;
+use crate::{error, tokenizer};
 
 /// Options used to control the behavior of the parser.
 #[derive(Clone, Eq, Hash, PartialEq)]
@@ -167,10 +168,10 @@ impl<'a> peg::ParseElem<'a> for Tokens<'a> {
 }
 
 impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
-    type Slice = String;
+    type Slice = tokenizer::TokenString;
 
     fn parse_slice(&'a self, start: usize, end: usize) -> Self::Slice {
-        let mut result = String::new();
+        let mut result = tokenizer::TokenString::new();
         let mut last_token_was_word = false;
 
         for token in &self.tokens[start..end] {
@@ -199,7 +200,7 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
 #[derive(Clone, Default)]
 pub struct SourceInfo {
     /// The source of the tokens.
-    pub source: String,
+    pub source: tokenizer::TokenString,
 }
 
 peg::parser! {
@@ -330,10 +331,10 @@ peg::parser! {
 
         rule for_clause() -> ast::ForClauseCommand =
             specific_word("for") n:name() linebreak() _in() w:wordlist()? sequential_sep() d:do_group() {
-                ast::ForClauseCommand { variable_name: n.to_owned(), values: w, body: d }
+                ast::ForClauseCommand { variable_name: n.clone(), values: w, body: d }
             } /
             specific_word("for") n:name() sequential_sep()? d:do_group() {
-                ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d }
+                ast::ForClauseCommand { variable_name: n.clone(), values: None, body: d }
             }
 
         // N.B. The arithmetic for loop is a non-sh extension.
@@ -434,8 +435,8 @@ peg::parser! {
             regex_word_piece() /
             !specific_operator(")") !specific_operator("]]") [_]
 
-        rule name() -> &'input str =
-            w:[Token::Word(_, _)] { w.to_str() }
+        rule name() -> &'input tokenizer::TokenString =
+            [Token::Word(s, _)] { s }
 
         rule _in() -> () =
             specific_word("in") { }
@@ -530,21 +531,21 @@ peg::parser! {
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function")? fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname: fname.clone(), body, source: source_info.source.clone() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname: fname.clone(), body, source: source_info.source.clone() }
             } /
             expected!("function definition")
 
         rule function_body() -> ast::FunctionBody =
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
 
-        rule fname() -> &'input str =
+        rule fname() -> &'input tokenizer::TokenString =
             // Special-case: don't allow it to end with an equals sign, to avoid the challenge of
             // misinterpreting certain declaration assignments as function definitions.
             // TODO: Find a way to make this still work without requiring this targeted exception.
-            w:[Token::Word(word, _) if !word.ends_with('=')] { w.to_str() }
+            w:[Token::Word(word, _) if !word.ends_with('=')] { word }
 
         rule brace_group() -> ast::BraceGroupCommand =
             specific_word("{") c:compound_list() specific_word("}") { ast::BraceGroupCommand(c) }
@@ -735,9 +736,9 @@ peg::parser! {
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
             non_posix_extensions_enabled() [Token::Word(w, _)] specific_operator("(") elements:array_elements() specific_operator(")") {?
-                let parsed = parse_array_assignment(w.as_str(), elements.as_slice())?;
+                let parsed = parse_array_assignment(w, elements.as_slice())?;
 
-                let mut all_as_word = w.to_owned();
+                let mut all_as_word = w.clone();
                 all_as_word.push('(');
                 for (i, e) in elements.iter().enumerate() {
                     if i > 0 {
@@ -750,14 +751,14 @@ peg::parser! {
                 Ok((parsed, ast::Word { value: all_as_word }))
             } /
             [Token::Word(w, _)] {?
-                let parsed = parse_assignment_word(w.as_str())?;
-                Ok((parsed, ast::Word { value: w.to_owned() }))
+                let parsed = parse_assignment_word(w)?;
+                Ok((parsed, ast::Word { value: w.clone() }))
             }
 
-        rule array_elements() -> Vec<&'input String> =
+        rule array_elements() -> Vec<&'input tokenizer::TokenString> =
             e:array_element()*
 
-        rule array_element() -> &'input String =
+        rule array_element() -> &'input tokenizer::TokenString =
             linebreak() [Token::Word(e, _)] linebreak() { e }
 
         // N.B. An I/O number must be a string of only digits, and it must be
@@ -783,7 +784,7 @@ peg::parser! {
 }
 
 peg::parser! {
-    grammar assignments() for str {
+    grammar assignments() for crate::word::WordString {
         pub(crate) rule name_and_scalar_value() -> ast::Assignment =
             nae:name_and_equals() value:scalar_value() {
                 let (name, append) = nae;
@@ -795,30 +796,28 @@ peg::parser! {
                 (name, append.is_some())
             }
 
-        pub(crate) rule literal_array_element() -> (Option<String>, String) =
+        pub(crate) rule literal_array_element() -> (Option<WordString>, WordString) =
             "[" inner:$((!"]" [_])*) "]=" value:$([_]*) {
-                (Some(inner.to_owned()), value.to_owned())
+                (Some(inner), value)
             } /
-            value:$([_]+) {
-                (None, value.to_owned())
-            }
+            value:$([_]+) { (None, value) }
 
         rule name() -> ast::AssignmentName =
             aen:array_element_name() {
                 let (name, index) = aen;
-                ast::AssignmentName::ArrayElementName(name.to_owned(), index.to_owned())
+                ast::AssignmentName::ArrayElementName(name, index)
             } /
             name:scalar_name() {
-                ast::AssignmentName::VariableName(name.to_owned())
+                ast::AssignmentName::VariableName(name)
             }
 
-        rule array_element_name() -> (&'input str, &'input str) =
+        rule array_element_name() -> (WordString, WordString) =
             name:scalar_name() "[" ai:array_index() "]" { (name, ai) }
 
-        rule array_index() -> &'input str =
+        rule array_index() -> WordString =
             $((![']'] [_])*)
 
-        rule scalar_name() -> &'input str =
+        rule scalar_name() -> WordString =
             $(alpha_or_underscore() non_first_variable_char()*)
 
         rule non_first_variable_char() -> () =
@@ -828,11 +827,11 @@ peg::parser! {
             ['_' | 'a'..='z' | 'A'..='Z'] {}
 
         rule scalar_value() -> ast::AssignmentValue =
-            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word { value: v.to_owned() }) }
+            value:$([_]*) { ast::AssignmentValue::Scalar(ast::Word { value }) }
     }
 }
 
-fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
+fn parse_assignment_word(word: &tokenizer::TokenString) -> Result<ast::Assignment, &'static str> {
     let parse_result = assignments::name_and_scalar_value(word);
     parse_result.map_err(|_| "not assignment word")
 }
@@ -872,8 +871,8 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
 }
 
 fn parse_array_assignment(
-    word: &str,
-    elements: &[&String],
+    word: &tokenizer::TokenString,
+    elements: &[&tokenizer::TokenString],
 ) -> Result<ast::Assignment, &'static str> {
     let (assignment_name, append) =
         assignments::name_and_equals(word).map_err(|_| "not array assignment word")?;
@@ -886,12 +885,7 @@ fn parse_array_assignment(
 
     let elements_as_words = elements
         .into_iter()
-        .map(|(key, value)| {
-            (
-                key.map(|k| ast::Word::new(k.as_str())),
-                ast::Word::new(value.as_str()),
-            )
-        })
+        .map(|(key, value)| (key.map(ast::Word::from), ast::Word::from(value)))
         .collect();
 
     Ok(ast::Assignment {
@@ -908,6 +902,10 @@ mod tests {
     use crate::tokenizer::tokenize_str;
     use anyhow::Result;
     use assert_matches::assert_matches;
+
+    fn str_to_word(s: &str) -> ast::Word {
+        ast::Word { value: s.into() }
+    }
 
     #[test]
     fn parse_case() -> Result<()> {
@@ -1042,16 +1040,20 @@ for f in A B C; do
                         seq: vec![Command::Compound(
                             CompoundCommand::ForClause(ForClauseCommand {
                                 variable_name: "f".into(),
-                                values: Some(vec![Word::new("A"), Word::new("B"), Word::new("C")]),
+                                values: Some(vec![
+                                    str_to_word("A"),
+                                    str_to_word("B"),
+                                    str_to_word("C"),
+                                ]),
                                 body: DoGroupCommand(CompoundList(vec![CompoundListItem(
                                     AndOrList {
                                         first: Pipeline {
                                             bang: false,
                                             seq: vec![Command::Simple(SimpleCommand {
                                                 prefix: None,
-                                                word_or_name: Some(Word::new("echo")),
+                                                word_or_name: Some(str_to_word("echo")),
                                                 suffix: Some(CommandSuffix(vec![
-                                                    CommandPrefixOrSuffixItem::Word(Word::new(
+                                                    CommandPrefixOrSuffixItem::Word(str_to_word(
                                                         r#""${f@L}""#,
                                                     )),
                                                     CommandPrefixOrSuffixItem::IoRedirect(

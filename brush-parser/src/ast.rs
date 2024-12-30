@@ -3,9 +3,12 @@
 
 use std::fmt::{Display, Write};
 
-use crate::tokenizer;
+use crate::{tokenizer, word::WordString};
 
 const DISPLAY_INDENT: &str = "    ";
+
+/// Alias for the string used in AST types.
+pub type AstString = imstr::ImString;
 
 /// Represents a complete shell program.
 #[derive(Clone, Debug)]
@@ -247,11 +250,19 @@ impl Display for SubshellCommand {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct ForClauseCommand {
     /// The name of the iterator variable.
-    pub variable_name: String,
+    #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))]
+    pub variable_name: AstString,
     /// The values being iterated over.
     pub values: Option<Vec<Word>>,
     /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
+}
+
+#[cfg(feature = "fuzz-testing")]
+pub(crate) fn arbitrary_str(u: &mut arbitrary::Unstructured) -> arbitrary::Result<AstString> {
+    use arbitrary::Arbitrary;
+    let s = String::arbitrary(u)?;
+    Ok(s.into())
 }
 
 impl Display for ForClauseCommand {
@@ -517,11 +528,13 @@ impl Display for WhileOrUntilClauseCommand {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct FunctionDefinition {
     /// The name of the function.
-    pub fname: String,
+    #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))]
+    pub fname: AstString,
     /// The body of the function.
     pub body: FunctionBody,
     /// The source of the function definition.
-    pub source: String,
+    #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))]
+    pub source: AstString,
 }
 
 impl Display for FunctionDefinition {
@@ -743,9 +756,12 @@ impl Display for Assignment {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum AssignmentName {
     /// A named variable.
-    VariableName(String),
+    VariableName(#[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))] AstString),
     /// An element in a named array.
-    ArrayElementName(String, String),
+    ArrayElementName(
+        #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))] AstString,
+        #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))] AstString,
+    ),
 }
 
 impl Display for AssignmentName {
@@ -956,7 +972,7 @@ pub enum TestExpr {
     /// Always evaluates to false.
     False,
     /// A literal string.
-    Literal(String),
+    Literal(AstString),
     /// Logical AND operation on two nested expressions.
     And(Box<TestExpr>, Box<TestExpr>),
     /// Logical OR operation on two nested expressions.
@@ -966,9 +982,9 @@ pub enum TestExpr {
     /// A parenthesized expression.
     Parenthesized(Box<TestExpr>),
     /// A unary test operation.
-    UnaryTest(UnaryPredicate, String),
+    UnaryTest(UnaryPredicate, AstString),
     /// A binary test operation.
-    BinaryTest(BinaryPredicate, String, String),
+    BinaryTest(BinaryPredicate, AstString, AstString),
 }
 
 impl Display for TestExpr {
@@ -1184,7 +1200,8 @@ impl Display for BinaryPredicate {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct Word {
     /// Raw text of the word.
-    pub value: String,
+    #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))]
+    pub value: AstString,
 }
 
 impl Display for Word {
@@ -1206,22 +1223,22 @@ impl From<&tokenizer::Token> for Word {
     }
 }
 
+// TODO(IMSTR): remove this
 impl From<String> for Word {
     fn from(s: String) -> Word {
+        WordString::from(s).into()
+    }
+}
+
+impl From<WordString> for Word {
+    fn from(s: WordString) -> Word {
         Word { value: s }
     }
 }
 
 impl Word {
-    /// Constructs a new `Word` from a given string.
-    pub fn new(s: &str) -> Self {
-        Self {
-            value: s.to_owned(),
-        }
-    }
-
-    /// Returns the raw text of the word, consuming the `Word`.
-    pub fn flatten(&self) -> String {
+    /// Returns the raw text of the word without consuming the word.
+    pub fn flatten(&self) -> AstString {
         self.value.clone()
     }
 }
@@ -1232,7 +1249,8 @@ impl Word {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct UnexpandedArithmeticExpr {
     /// The raw text of the expression.
-    pub value: String,
+    #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))]
+    pub value: AstString,
 }
 
 impl Display for UnexpandedArithmeticExpr {
@@ -1473,9 +1491,12 @@ impl Display for UnaryAssignmentOperator {
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum ArithmeticTarget {
     /// A named variable.
-    Variable(String),
+    Variable(#[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))] AstString),
     /// An element in an array.
-    ArrayElement(String, Box<ArithmeticExpr>),
+    ArrayElement(
+        #[cfg_attr(feature = "fuzz-testing", arbitrary(with = arbitrary_str))] AstString,
+        Box<ArithmeticExpr>,
+    ),
 }
 
 impl Display for ArithmeticTarget {

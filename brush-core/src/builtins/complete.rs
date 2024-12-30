@@ -480,7 +480,7 @@ impl builtins::Command for CompGenCommand {
             command_name: None,
             token_index: 0,
             tokens: &[&brush_parser::Token::Word(
-                token_to_complete.to_owned(),
+                token_to_complete.to_owned().into(),
                 brush_parser::TokenLocation::default(),
             )],
             input_line: token_to_complete,

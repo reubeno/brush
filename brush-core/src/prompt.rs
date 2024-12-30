@@ -26,7 +26,7 @@ pub(crate) fn expand_prompt(shell: &Shell, spec: String) -> Result<String, error
 fn parse_prompt(
     spec: String,
 ) -> Result<Vec<brush_parser::prompt::PromptPiece>, brush_parser::WordParseError> {
-    brush_parser::prompt::parse(spec.as_str())
+    brush_parser::prompt::parse(&spec.into())
 }
 
 pub(crate) fn format_prompt_piece(
@@ -34,7 +34,7 @@ pub(crate) fn format_prompt_piece(
     piece: brush_parser::prompt::PromptPiece,
 ) -> Result<String, error::Error> {
     let formatted = match piece {
-        brush_parser::prompt::PromptPiece::Literal(l) => l,
+        brush_parser::prompt::PromptPiece::Literal(l) => l.into_std_string(),
         brush_parser::prompt::PromptPiece::AsciiCharacter(c) => {
             char::from_u32(c).map_or_else(String::new, |c| c.to_string())
         }
@@ -209,7 +209,7 @@ mod tests {
         assert_eq!(
             format_date(
                 &dt,
-                &brush_parser::prompt::PromptDateFormat::Custom(String::from("%Y-%m-%d"))
+                &brush_parser::prompt::PromptDateFormat::Custom("%Y-%m-%d".into())
             ),
             "2024-12-25"
         );
@@ -217,9 +217,7 @@ mod tests {
         assert_eq!(
             format_date(
                 &dt,
-                &brush_parser::prompt::PromptDateFormat::Custom(String::from(
-                    "%Y-%m-%d %H:%M:%S.%f"
-                ))
+                &brush_parser::prompt::PromptDateFormat::Custom("%Y-%m-%d %H:%M:%S.%f".into())
             ),
             "2024-12-25 12:34:56.789000000"
         );

@@ -927,8 +927,10 @@ impl Config {
 
         // If the position is after the last token, then we need to insert an empty
         // token for the new token to be generated.
-        let empty_token =
-            brush_parser::Token::Word(String::new(), brush_parser::TokenLocation::default());
+        let empty_token = brush_parser::Token::Word(
+            brush_parser::TokenString::new(),
+            brush_parser::TokenLocation::default(),
+        );
         if completion_token_index == tokens.len() {
             adjusted_tokens.push(&empty_token);
         }
@@ -978,7 +980,7 @@ impl Config {
     fn tokenize_input_for_completion(shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
         // Best-effort tokenization.
         if let Ok(tokens) = brush_parser::tokenize_str_with_options(
-            input,
+            &input.to_owned().into(),
             &(shell.parser_options().tokenizer_options()),
         ) {
             return tokens;
@@ -1157,7 +1159,7 @@ fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_
         let piece = piece.strip_suffix(delimiters).unwrap_or(piece);
         let end: i32 = start + piece.len() as i32;
         tokens.push(brush_parser::Token::Word(
-            piece.to_string(),
+            piece.into(),
             brush_parser::TokenLocation {
                 start: brush_parser::SourcePosition {
                     index: start,

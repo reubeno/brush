@@ -28,7 +28,7 @@ async fn eval_arithmetic_async(
     //
     // Instantiate a brush shell with defaults, then try to evaluate the expression.
     //
-    let parsed_expr = brush_parser::arithmetic::parse(input_str.as_str()).ok();
+    let parsed_expr = brush_parser::arithmetic::parse(&input_str.clone().into()).ok();
     let our_eval_result = if let Some(parsed_expr) = parsed_expr {
         shell.eval_arithmetic(parsed_expr).await.ok()
     } else {

@@ -30,7 +30,7 @@ mod unix {
     }
 
     async fn eval_arithmetic_expr(shell: &mut brush_core::Shell, expr: &str) {
-        let parsed_expr = brush_parser::arithmetic::parse(expr).unwrap();
+        let parsed_expr = brush_parser::arithmetic::parse(&expr.into()).unwrap();
         let _ = shell.eval_arithmetic(parsed_expr).await.unwrap();
     }
 
@@ -107,7 +107,7 @@ mod unix {
         shell.funcs.update(
             String::from("testfunc"),
             Arc::new(brush_parser::ast::FunctionDefinition {
-                fname: String::from("testfunc"),
+                fname: "testfunc".into(),
                 body: brush_parser::ast::FunctionBody(
                     brush_parser::ast::CompoundCommand::BraceGroup(
                         brush_parser::ast::BraceGroupCommand(brush_parser::ast::CompoundList(
@@ -116,7 +116,7 @@ mod unix {
                     ),
                     None,
                 ),
-                source: String::from("/some/path"),
+                source: "/some/path".into(),
             }),
         );
         c.bench_function("function_call", |b| {
