@@ -370,10 +370,10 @@ fn pattern_to_regex_str(
     pattern: &str,
     enable_extended_globbing: bool,
 ) -> Result<String, error::Error> {
-    Ok(brush_parser::pattern::pattern_to_regex_str(
-        pattern,
-        enable_extended_globbing,
-    )?)
+    Ok(
+        brush_parser::pattern::pattern_to_regex_str(&pattern.into(), enable_extended_globbing)?
+            .into_std_string(),
+    )
 }
 
 /// Removes the largest matching prefix from a string that matches the given pattern.

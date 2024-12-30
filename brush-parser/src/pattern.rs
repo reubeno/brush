@@ -1,6 +1,6 @@
 //! Implements parsing for shell glob and extglob patterns.
 
-use crate::error;
+use crate::{error, word::WordString};
 
 /// Represents the kind of an extended glob.
 pub enum ExtendedGlobKind {
@@ -23,74 +23,73 @@ pub enum ExtendedGlobKind {
 /// * `pattern` - The shell pattern to convert.
 /// * `enable_extended_globbing` - Whether to enable extended globbing (extglob).
 pub fn pattern_to_regex_str(
-    pattern: &str,
+    pattern: &WordString,
     enable_extended_globbing: bool,
-) -> Result<String, error::WordParseError> {
-    let regex_str = pattern_to_regex_translator::pattern(pattern, enable_extended_globbing)
-        .map_err(error::WordParseError::Pattern)?;
-    Ok(regex_str)
+) -> Result<WordString, error::WordParseError> {
+    pattern_to_regex_translator::pattern(pattern, enable_extended_globbing)
+        .map_err(error::WordParseError::Pattern)
 }
 
 peg::parser! {
-    grammar pattern_to_regex_translator(enable_extended_globbing: bool) for str {
-        pub(crate) rule pattern() -> String =
+    grammar pattern_to_regex_translator(enable_extended_globbing: bool) for WordString {
+        pub(crate) rule pattern() -> WordString =
             pieces:(pattern_piece()*) {
-                pieces.join("")
+                pieces.join("").into()
             }
 
-        rule pattern_piece() -> String =
+        rule pattern_piece() -> WordString =
             escape_sequence() /
             bracket_expression() /
             extglob_enabled() s:extended_glob_pattern() { s } /
             wildcard() /
             [c if regex_char_needs_escaping(c)] {
-                let mut s = '\\'.to_string();
+                let mut s: WordString = '\\'.into();
                 s.push(c);
                 s
             } /
-            [c] { c.to_string() }
+            [c] { c.into() }
 
-        rule escape_sequence() -> String =
-            sequence:$(['\\'] [c if regex_char_needs_escaping(c)]) { sequence.to_owned() } /
-            ['\\'] [c] { c.to_string() }
+        rule escape_sequence() -> WordString =
+            sequence:$(['\\'] [c if regex_char_needs_escaping(c)]) { sequence } /
+            ['\\'] [c] { c.into() }
 
-        rule bracket_expression() -> String =
+        rule bracket_expression() -> WordString =
             "[" invert:(("!")?) members:bracket_member()+ "]" {
                 let mut members = members;
                 if invert.is_some() {
-                    members.insert(0, String::from("^"));
+                    members.insert(0, WordString::from("^"));
                 }
 
-                std::format!("[{}]", members.join(""))
+                std::format!("[{}]", members.join("")).into()
             }
 
-        rule bracket_member() -> String =
+        rule bracket_member() -> WordString =
             char_class_expression() /
             char_range() /
             char_list()
 
-        rule char_class_expression() -> String =
-            e:$("[:" char_class() ":]") { e.to_owned() }
+        rule char_class_expression() -> WordString =
+            e:$("[:" char_class() ":]") { e }
 
         rule char_class() =
             "alnum" / "alpha" / "blank" / "cntrl" / "digit" / "graph" / "lower" / "print" / "punct" / "space" / "upper"/ "xdigit"
 
-        rule char_range() -> String =
-            range:$([_] "-" [_]) { range.to_owned() }
+        rule char_range() -> WordString =
+            range:$([_] "-" [_]) { range }
 
-        rule char_list() -> String =
-            chars:$([c if c != ']']+) { escape_char_class_char_list(chars) }
+        rule char_list() -> WordString =
+            chars:$([c if c != ']']+) { escape_char_class_char_list(&chars) }
 
-        rule wildcard() -> String =
-            "?" { String::from(".") } /
-            "*" { String::from(".*") }
+        rule wildcard() -> WordString =
+            "?" { WordString::from(".") } /
+            "*" { WordString::from(".*") }
 
         rule extglob_enabled() -> () =
             &[_] {? if enable_extended_globbing { Ok(()) } else { Err("extglob disabled") } }
 
-        pub(crate) rule extended_glob_pattern() -> String =
+        pub(crate) rule extended_glob_pattern() -> WordString =
             kind:extended_glob_prefix() "(" branches:extended_glob_body() ")" {
-                let mut s = String::new();
+                let mut s = WordString::new();
 
                 s.push('(');
 
@@ -123,15 +122,15 @@ peg::parser! {
             "?" { ExtendedGlobKind::Question } /
             "*" { ExtendedGlobKind::Star }
 
-        pub(crate) rule extended_glob_body() -> Vec<String> =
+        pub(crate) rule extended_glob_body() -> Vec<WordString> =
             first_branches:((b:extended_glob_branch() "|" { b })*) last_branch:extended_glob_branch() {
                 let mut branches = first_branches;
                 branches.push(last_branch);
                 branches
             }
 
-        rule extended_glob_branch() -> String =
-            pieces:(!['|' | ')'] piece:pattern_piece() { piece })* { pieces.join("") }
+        rule extended_glob_branch() -> WordString =
+            pieces:(!['|' | ')'] piece:pattern_piece() { piece })* { pieces.join("").into() }
     }
 }
 
@@ -147,8 +146,8 @@ pub fn regex_char_needs_escaping(c: char) -> bool {
     )
 }
 
-fn escape_char_class_char_list(s: &str) -> String {
-    s.replace('[', r"\[")
+fn escape_char_class_char_list(s: &WordString) -> WordString {
+    s.replace('[', r"\[").into()
 }
 
 #[cfg(test)]
@@ -158,30 +157,39 @@ mod tests {
 
     #[test]
     fn test_bracket_exprs() -> Result<()> {
-        assert_eq!(pattern_to_regex_str("[a-z]", true)?, "[a-z]");
-        assert_eq!(pattern_to_regex_str("[abc]", true)?, "[abc]");
-        assert_eq!(pattern_to_regex_str(r"[\(]", true)?, r"[\(]");
-        assert_eq!(pattern_to_regex_str(r"[(]", true)?, "[(]");
-        assert_eq!(pattern_to_regex_str("[[:digit:]]", true)?, "[[:digit:]]");
-        assert_eq!(pattern_to_regex_str(r"[-(),!]*", true)?, r"[-(),!].*");
-        assert_eq!(pattern_to_regex_str(r"[-\(\),\!]*", true)?, r"[-\(\),\!].*");
+        assert_eq!(pattern_to_regex_str(&"[a-z]".into(), true)?, "[a-z]");
+        assert_eq!(pattern_to_regex_str(&"[abc]".into(), true)?, "[abc]");
+        assert_eq!(pattern_to_regex_str(&r"[\(]".into(), true)?, r"[\(]");
+        assert_eq!(pattern_to_regex_str(&r"[(]".into(), true)?, "[(]");
+        assert_eq!(
+            pattern_to_regex_str(&"[[:digit:]]".into(), true)?,
+            "[[:digit:]]"
+        );
+        assert_eq!(
+            pattern_to_regex_str(&r"[-(),!]*".into(), true)?,
+            r"[-(),!].*"
+        );
+        assert_eq!(
+            pattern_to_regex_str(&r"[-\(\),\!]*".into(), true)?,
+            r"[-\(\),\!].*"
+        );
         Ok(())
     }
 
     #[test]
     fn test_extended_glob() -> Result<()> {
         assert_eq!(
-            pattern_to_regex_translator::extended_glob_pattern("@(a|b)", true)?,
+            pattern_to_regex_translator::extended_glob_pattern(&"@(a|b)".into(), true)?,
             "(a|b)"
         );
 
         assert_eq!(
-            pattern_to_regex_translator::extended_glob_body("ab|ac", true)?,
+            pattern_to_regex_translator::extended_glob_body(&"ab|ac".into(), true)?,
             vec!["ab", "ac"],
         );
 
         assert_eq!(
-            pattern_to_regex_translator::extended_glob_pattern("*(ab|ac)", true)?,
+            pattern_to_regex_translator::extended_glob_pattern(&"*(ab|ac)".into(), true)?,
             "(ab|ac)*"
         );
 

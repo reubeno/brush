@@ -13,6 +13,9 @@ use crate::ast;
 use crate::error;
 use crate::ParserOptions;
 
+/// Alias for string type used with words.
+pub type WordString = imstr::ImString;
+
 /// Encapsulates a `WordPiece` together with its position in the string it came from.
 #[derive(Clone, Debug)]
 pub struct WordPieceWithSource {
@@ -28,23 +31,23 @@ pub struct WordPieceWithSource {
 #[derive(Clone, Debug)]
 pub enum WordPiece {
     /// A simple unquoted, unescaped string.
-    Text(String),
+    Text(WordString),
     /// A string that is single-quoted.
-    SingleQuotedText(String),
+    SingleQuotedText(WordString),
     /// A string that is ANSI-C quoted.
-    AnsiCQuotedText(String),
+    AnsiCQuotedText(WordString),
     /// A sequence of pieces that are embedded in double quotes.
     DoubleQuotedSequence(Vec<WordPieceWithSource>),
     /// A tilde prefix.
-    TildePrefix(String),
+    TildePrefix(WordString),
     /// A parameter expansion.
     ParameterExpansion(ParameterExpr),
     /// A command substitution.
-    CommandSubstitution(String),
+    CommandSubstitution(WordString),
     /// A backquoted command substitution.
-    BackquotedCommandSubstitution(String),
+    BackquotedCommandSubstitution(WordString),
     /// An escape sequence.
-    EscapeSequence(String),
+    EscapeSequence(WordString),
     /// An arithmetic expression.
     ArithmeticExpression(ast::UnexpandedArithmeticExpr),
 }
@@ -66,18 +69,18 @@ pub enum Parameter {
     /// A special parameter.
     Special(SpecialParameter),
     /// A named variable.
-    Named(String),
+    Named(WordString),
     /// An index into a named variable.
     NamedWithIndex {
         /// Variable name.
-        name: String,
+        name: WordString,
         /// Index.
-        index: String,
+        index: WordString,
     },
     /// A named array variable with all indices.
     NamedWithAllIndices {
         /// Variable name.
-        name: String,
+        name: WordString,
         /// Whether to concatenate the values.
         concatenate: bool,
     },
@@ -128,7 +131,7 @@ pub enum ParameterExpr {
         /// The type of test to perform.
         test_type: ParameterTestType,
         /// Default value to conditionally use.
-        default_value: Option<String>,
+        default_value: Option<WordString>,
     },
     /// Conditionally assign default values.
     AssignDefaultValues {
@@ -141,7 +144,7 @@ pub enum ParameterExpr {
         /// The type of test to perform.
         test_type: ParameterTestType,
         /// Default value to conditionally assign.
-        default_value: Option<String>,
+        default_value: Option<WordString>,
     },
     /// Indicate error if null or unset.
     IndicateErrorIfNullOrUnset {
@@ -154,7 +157,7 @@ pub enum ParameterExpr {
         /// The type of test to perform.
         test_type: ParameterTestType,
         /// Error message to conditionally yield.
-        error_message: Option<String>,
+        error_message: Option<WordString>,
     },
     /// Conditionally use an alternative value.
     UseAlternativeValue {
@@ -167,7 +170,7 @@ pub enum ParameterExpr {
         /// The type of test to perform.
         test_type: ParameterTestType,
         /// Alternative value to conditionally use.
-        alternative_value: Option<String>,
+        alternative_value: Option<WordString>,
     },
     /// Compute the length of the given parameter.
     ParameterLength {
@@ -187,7 +190,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Remove the largest suffix from the given string matching the given pattern.
     RemoveLargestSuffixPattern {
@@ -198,7 +201,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Remove the smallest prefix from the given string matching the given pattern.
     RemoveSmallestPrefixPattern {
@@ -209,7 +212,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Remove the largest prefix from the given string matching the given pattern.
     RemoveLargestPrefixPattern {
@@ -220,7 +223,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Extract a substring from the given parameter.
     Substring {
@@ -258,7 +261,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Uppercase the portion of the given parameter matching the given pattern.
     UppercasePattern {
@@ -269,7 +272,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Lowercase the first character of the given parameter.
     LowercaseFirstChar {
@@ -280,7 +283,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Lowercase the portion of the given parameter matching the given pattern.
     LowercasePattern {
@@ -291,7 +294,7 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Optionally provides a pattern to match.
-        pattern: Option<String>,
+        pattern: Option<WordString>,
     },
     /// Replace occurrences of the given pattern in the given parameter.
     ReplaceSubstring {
@@ -302,23 +305,23 @@ pub enum ParameterExpr {
         /// for the expansion.
         indirect: bool,
         /// Pattern to match.
-        pattern: String,
+        pattern: WordString,
         /// Replacement string.
-        replacement: Option<String>,
+        replacement: Option<WordString>,
         /// Kind of match to perform.
         match_kind: SubstringMatchKind,
     },
     /// Select variable names from the environment with a given prefix.
     VariableNames {
         /// The prefix to match.
-        prefix: String,
+        prefix: WordString,
         /// Whether to concatenate the results.
         concatenate: bool,
     },
     /// Select member keys from the named array.
     MemberKeys {
         /// Name of the array variable.
-        variable_name: String,
+        variable_name: WordString,
         /// Whether to concatenate the results.
         concatenate: bool,
     },
@@ -369,7 +372,7 @@ pub enum BraceExpressionOrText {
     /// A brace expression.
     Expr(BraceExpression),
     /// Other word text.
-    Text(String),
+    Text(WordString),
 }
 
 /// Represents a brace expression to be expanded.
@@ -377,7 +380,7 @@ pub type BraceExpression = Vec<BraceExpressionMember>;
 
 impl BraceExpressionOrText {
     /// Generates expansions for this value.
-    pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
+    pub fn generate(self) -> Box<dyn Iterator<Item = WordString>> {
         match self {
             BraceExpressionOrText::Expr(members) => {
                 let mut iters = vec![];
@@ -413,12 +416,12 @@ pub enum BraceExpressionMember {
         increment: i64,
     },
     /// Text.
-    Text(String),
+    Text(WordString),
 }
 
 impl BraceExpressionMember {
     /// Generates expansions for this member.
-    pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
+    pub fn generate(self) -> Box<dyn Iterator<Item = WordString>> {
         match self {
             BraceExpressionMember::NumberSequence {
                 low,
@@ -427,17 +430,13 @@ impl BraceExpressionMember {
             } => Box::new(
                 (low..=high)
                     .step_by(increment as usize)
-                    .map(|n| n.to_string()),
+                    .map(|n| n.to_string().into()),
             ),
             BraceExpressionMember::CharSequence {
                 low,
                 high,
                 increment,
-            } => Box::new(
-                (low..=high)
-                    .step_by(increment as usize)
-                    .map(|c| c.to_string()),
-            ),
+            } => Box::new((low..=high).step_by(increment as usize).map(|c| c.into())),
             BraceExpressionMember::Text(text) => Box::new(std::iter::once(text)),
         }
     }
@@ -450,23 +449,23 @@ impl BraceExpressionMember {
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
 pub fn parse(
-    word: &str,
+    word: &WordString,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    cacheable_parse(word.to_owned(), options.to_owned())
+    cacheable_parse(word.clone(), options.to_owned())
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]
 fn cacheable_parse(
-    word: String,
+    word: WordString,
     options: ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
     tracing::debug!(target: "expansion", "Parsing word '{}'", word);
 
-    let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
-        .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
+    let pieces = expansion_parser::unexpanded_word(&word, &options)
+        .map_err(|err| error::WordParseError::Word(word.clone().into(), err))?;
 
-    tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word, pieces);
+    tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word.as_str(), pieces);
 
     Ok(pieces)
 }
@@ -478,11 +477,11 @@ fn cacheable_parse(
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
 pub fn parse_parameter(
-    word: &str,
+    word: &WordString,
     options: &ParserOptions,
 ) -> Result<Parameter, error::WordParseError> {
     expansion_parser::parameter(word, options)
-        .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err))
+        .map_err(|err| error::WordParseError::Parameter(word.clone(), err))
 }
 
 /// Parse brace expansion from a given word .
@@ -492,15 +491,15 @@ pub fn parse_parameter(
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
 pub fn parse_brace_expansions(
-    word: &str,
+    word: &WordString,
     options: &ParserOptions,
 ) -> Result<Option<Vec<BraceExpressionOrText>>, error::WordParseError> {
     expansion_parser::brace_expansions(word, options)
-        .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err))
+        .map_err(|err| error::WordParseError::BraceExpansion(word.clone(), err))
 }
 
 peg::parser! {
-    grammar expansion_parser(parser_options: &ParserOptions) for str {
+    grammar expansion_parser(parser_options: &ParserOptions) for WordString {
         pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = word(<![_]>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
@@ -521,7 +520,7 @@ peg::parser! {
             expr:brace_expr() {
                 BraceExpressionOrText::Expr(expr)
             } /
-            text:$(non_brace_expr_text()+) { BraceExpressionOrText::Text(text.to_owned()) }
+            text:$(non_brace_expr_text()+) { BraceExpressionOrText::Text(text) }
 
         rule non_brace_expr_text() -> () =
             !"{" word_piece(<['{']>, false) {} /
@@ -540,10 +539,10 @@ peg::parser! {
             }
 
         rule brace_text_list_member() -> BraceExpression =
-            &[',' | '}'] { vec![BraceExpressionMember::Text(String::new())] } /
+            &[',' | '}'] { vec![BraceExpressionMember::Text(WordString::new())] } /
             brace_expr() /
             text:$(word_piece(<[',' | '}']>, false)) {
-                vec![BraceExpressionMember::Text(text.to_owned())]
+                vec![BraceExpressionMember::Text(text)]
             }
 
         rule brace_sequence_expr() -> BraceExpressionMember =
@@ -594,8 +593,8 @@ peg::parser! {
 
         rule unquoted_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
             s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
-            s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
-            s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
+            s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s) } /
+            s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s) } /
             normal_escape_sequence() /
             unquoted_literal_text(<stop_condition()>, in_command)
 
@@ -611,14 +610,14 @@ peg::parser! {
                 }
             }
 
-        rule single_quoted_literal_text() -> &'input str =
+        rule single_quoted_literal_text() -> WordString =
             "\'" inner:$([^'\'']*) "\'" { inner }
 
-        rule ansi_c_quoted_text() -> &'input str =
+        rule ansi_c_quoted_text() -> WordString =
             "$\'" inner:$([^'\'']*) "\'" { inner }
 
         rule unquoted_literal_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
-            s:$(unquoted_literal_text_piece(<stop_condition()>, in_command)+) { WordPiece::Text(s.to_owned()) }
+            s:$(unquoted_literal_text_piece(<stop_condition()>, in_command)+) { WordPiece::Text(s) }
 
         // TODO: Find a way to remove the special-case logic for extglob + subshell commands
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
@@ -638,16 +637,16 @@ peg::parser! {
             "(" command() ")" {}
 
         rule double_quoted_text() -> WordPiece =
-            s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
+            s:double_quote_body_text() { WordPiece::Text(s) }
 
-        rule double_quote_body_text() -> &'input str =
+        rule double_quote_body_text() -> WordString =
             $((!double_quoted_escape_sequence() [^'$' | '\"'])+)
 
         rule normal_escape_sequence() -> WordPiece =
-            s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
+            s:$("\\" [c]) { WordPiece::EscapeSequence(s) }
 
         rule double_quoted_escape_sequence() -> WordPiece =
-            s:$("\\" ['$' | '`' | '\"' | '\'' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
+            s:$("\\" ['$' | '`' | '\"' | '\'' | '\\']) { WordPiece::EscapeSequence(s) }
 
         rule tilde_prefix_with_source() -> WordPieceWithSource =
             start_index:position!() piece:tilde_prefix() end_index:position!() {
@@ -660,7 +659,7 @@ peg::parser! {
 
         // TODO: Handle colon syntax
         rule tilde_prefix() -> WordPiece =
-            tilde_parsing_enabled() "~" cs:$((!['/' | ':' | ';'] [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
+            tilde_parsing_enabled() "~" cs:$((!['/' | ':' | ';'] [c])*) { WordPiece::TildePrefix(cs) }
 
         // TODO: Deal with fact that there may be a quoted word or escaped closing brace chars.
         // TODO: Improve on how we handle a '$' not followed by a valid variable name or parameter.
@@ -672,7 +671,7 @@ peg::parser! {
                 WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter, indirect: false })
             } /
             "$" !['\''] {
-                WordPiece::Text("$".to_owned())
+                WordPiece::Text("$".into())
             }
 
         rule parameter_expression() -> ParameterExpr =
@@ -720,16 +719,16 @@ peg::parser! {
 
         rule non_posix_parameter_expression() -> ParameterExpr =
             "!" variable_name:variable_name() "[*]" {
-                ParameterExpr::MemberKeys { variable_name: variable_name.to_owned(), concatenate: true }
+                ParameterExpr::MemberKeys { variable_name, concatenate: true }
             } /
             "!" variable_name:variable_name() "[@]" {
-                ParameterExpr::MemberKeys { variable_name: variable_name.to_owned(), concatenate: false }
+                ParameterExpr::MemberKeys { variable_name, concatenate: false }
             } /
             "!" prefix:variable_name() "*" {
-                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: true }
+                ParameterExpr::VariableNames { prefix, concatenate: true }
             } /
             "!" prefix:variable_name() "@" {
-                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: false }
+                ParameterExpr::VariableNames { prefix, concatenate: false }
             } /
             indirect:parameter_indirection() parameter:parameter() ":" offset:substring_offset() length:(":" l:substring_length() { l })? {
                 ParameterExpr::Substring { parameter, indirect, offset, length }
@@ -782,18 +781,18 @@ peg::parser! {
         rule unbraced_parameter() -> Parameter =
             p:unbraced_positional_parameter() { Parameter::Positional(p) } /
             p:special_parameter() { Parameter::Special(p) } /
-            p:variable_name() { Parameter::Named(p.to_owned()) }
+            p:variable_name() { Parameter::Named(p) }
 
         // N.B. The indexing syntax is not a standard sh-ism.
         pub(crate) rule parameter() -> Parameter =
             p:positional_parameter() { Parameter::Positional(p) } /
             p:special_parameter() { Parameter::Special(p) } /
-            non_posix_extensions_enabled() p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
-            non_posix_extensions_enabled() p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: true } } /
+            non_posix_extensions_enabled() p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p, concatenate: false } } /
+            non_posix_extensions_enabled() p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p, concatenate: true } } /
             non_posix_extensions_enabled() p:variable_name() "[" index:$(arithmetic_word(<"]">)) "]" {?
-                Ok(Parameter::NamedWithIndex { name: p.to_owned(), index: index.to_owned() })
+                Ok(Parameter::NamedWithIndex { name: p, index })
             } /
-            p:variable_name() { Parameter::Named(p.to_owned()) }
+            p:variable_name() { Parameter::Named(p) }
 
         rule positional_parameter() -> u32 =
             n:$(['1'..='9'](['0'..='9']*)) {? n.parse().or(Err("u32")) }
@@ -810,21 +809,20 @@ peg::parser! {
             "!" { SpecialParameter::LastBackgroundProcessId } /
             "0" { SpecialParameter::ShellName }
 
-        rule variable_name() -> &'input str =
+        rule variable_name() -> WordString =
             $(!['0'..='9'] ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z']+)
 
         pub(crate) rule command_substitution() -> WordPiece =
-            "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
+            "$(" c:command() ")" { WordPiece::CommandSubstitution(c) } /
             "`" c:backquoted_command() "`" { WordPiece::BackquotedCommandSubstitution(c) }
 
-        pub(crate) rule command() -> &'input str =
-            $(command_piece()*)
+        pub(crate) rule command() -> WordString = $(command_piece()*)
 
         pub(crate) rule command_piece() -> () =
             word_piece(<[')']>, true /*in_command*/) {} /
             ([' ' | '\t'])+ {}
 
-        rule backquoted_command() -> String =
+        rule backquoted_command() -> WordString =
             chars:(backquoted_char()*) { chars.into_iter().collect() }
 
         rule backquoted_char() -> char =
@@ -832,22 +830,22 @@ peg::parser! {
             [^'`']
 
         rule arithmetic_expansion() -> WordPiece =
-            "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+            "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e } ) }
 
         rule substring_offset() -> ast::UnexpandedArithmeticExpr =
-            s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
+            s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s } }
 
         rule substring_length() -> ast::UnexpandedArithmeticExpr =
-            s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
+            s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s } }
 
-        rule parameter_replacement_str() -> String =
-            "/" s:$(word(<['}']>)) { s.to_owned() }
+        rule parameter_replacement_str() -> WordString =
+            "/" s:$(word(<['}']>)) { s }
 
-        rule parameter_search_pattern() -> String =
-            s:$(word(<['}' | '/']>)) { s.to_owned() }
+        rule parameter_search_pattern() -> WordString =
+            s:$(word(<['}' | '/']>)) { s }
 
-        rule parameter_expression_word() -> String =
-            s:$(word(<['}']>)) { s.to_owned() }
+        rule parameter_expression_word() -> WordString =
+            s:$(word(<['}']>)) { s }
 
         rule extglob_enabled() -> () =
             &[_] {? if parser_options.enable_extended_globbing { Ok(()) } else { Err("no extglob") } }
@@ -868,12 +866,15 @@ mod tests {
 
     #[test]
     fn parse_command_substitution() -> Result<()> {
-        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
-        super::expansion_parser::command_piece("hi", &ParserOptions::default())?;
-        super::expansion_parser::command("echo hi", &ParserOptions::default())?;
-        super::expansion_parser::command_substitution("$(echo hi)", &ParserOptions::default())?;
+        super::expansion_parser::command_piece(&"echo".into(), &ParserOptions::default())?;
+        super::expansion_parser::command_piece(&"hi".into(), &ParserOptions::default())?;
+        super::expansion_parser::command(&"echo hi".into(), &ParserOptions::default())?;
+        super::expansion_parser::command_substitution(
+            &"$(echo hi)".into(),
+            &ParserOptions::default(),
+        )?;
 
-        let parsed = super::parse("$(echo hi)", &ParserOptions::default())?;
+        let parsed = super::parse(&"$(echo hi)".into(), &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo hi"
@@ -884,15 +885,15 @@ mod tests {
 
     #[test]
     fn parse_command_substitution_with_embedded_quotes() -> Result<()> {
-        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
-        super::expansion_parser::command_piece(r#""hi""#, &ParserOptions::default())?;
-        super::expansion_parser::command(r#"echo "hi""#, &ParserOptions::default())?;
+        super::expansion_parser::command_piece(&"echo".into(), &ParserOptions::default())?;
+        super::expansion_parser::command_piece(&r#""hi""#.into(), &ParserOptions::default())?;
+        super::expansion_parser::command(&r#"echo "hi""#.into(), &ParserOptions::default())?;
         super::expansion_parser::command_substitution(
-            r#"$(echo "hi")"#,
+            &r#"$(echo "hi")"#.into(),
             &ParserOptions::default(),
         )?;
 
-        let parsed = super::parse(r#"$(echo "hi")"#, &ParserOptions::default())?;
+        let parsed = super::parse(&r#"$(echo "hi")"#.into(), &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == r#"echo "hi""#
@@ -903,7 +904,7 @@ mod tests {
 
     #[test]
     fn parse_command_substitution_with_embedded_extglob() -> Result<()> {
-        let parsed = super::parse("$(echo !(x))", &ParserOptions::default())?;
+        let parsed = super::parse(&"$(echo !(x))".into(), &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo !(x)"
@@ -914,7 +915,7 @@ mod tests {
 
     #[test]
     fn parse_extglob_with_embedded_parameter() -> Result<()> {
-        let parsed = super::parse("+([$var])", &ParserOptions::default())?;
+        let parsed = super::parse(&"+([$var])".into(), &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::Text(s1), .. },

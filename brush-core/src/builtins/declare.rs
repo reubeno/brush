@@ -339,7 +339,7 @@ impl DeclareCommand {
             commands::CommandArg::Assignment(assignment) => {
                 match &assignment.name {
                     brush_parser::ast::AssignmentName::VariableName(var_name) => {
-                        name = var_name.to_owned();
+                        name = var_name.clone().into_std_string();
                         assigned_index = None;
                     }
                     brush_parser::ast::AssignmentName::ArrayElementName(var_name, index) => {
@@ -350,8 +350,8 @@ impl DeclareCommand {
                             return Err(error::Error::AssigningListToArrayMember);
                         }
 
-                        name = var_name.to_owned();
-                        assigned_index = Some(index.to_owned());
+                        name = var_name.clone().into_std_string();
+                        assigned_index = Some(index.clone().into_std_string());
                     }
                 }
 
@@ -360,11 +360,12 @@ impl DeclareCommand {
                         if let Some(index) = &assigned_index {
                             initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
                                 Some(index.to_owned()),
-                                s.value.clone(),
+                                s.value.to_string(),
                             )])));
                             name_is_array = true;
                         } else {
-                            initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
+                            initial_value =
+                                Some(ShellValueLiteral::Scalar(s.value.clone().into_std_string()));
                             name_is_array = false;
                         }
                     }
@@ -372,7 +373,10 @@ impl DeclareCommand {
                         initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
                             a.iter()
                                 .map(|(i, v)| {
-                                    (i.as_ref().map(|w| w.value.clone()), v.value.clone())
+                                    (
+                                        i.as_ref().map(|w| w.value.clone().into_std_string()),
+                                        v.value.clone().into_std_string(),
+                                    )
                                 })
                                 .collect(),
                         )));

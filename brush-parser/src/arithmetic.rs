@@ -3,23 +3,26 @@
 use crate::ast;
 use crate::error;
 
+/// Alias for string used by arithmetic parser.
+pub type ArithmeticString = imstr::ImString;
+
 /// Parses a shell arithmetic expression.
 ///
 /// # Arguments
 ///
 /// * `input` - The arithmetic expression to parse, in string form.
-pub fn parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseError> {
-    cacheable_parse(input.to_owned())
+pub fn parse(input: &ArithmeticString) -> Result<ast::ArithmeticExpr, error::WordParseError> {
+    cacheable_parse(input.clone())
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]
-fn cacheable_parse(input: String) -> Result<ast::ArithmeticExpr, error::WordParseError> {
+fn cacheable_parse(input: ArithmeticString) -> Result<ast::ArithmeticExpr, error::WordParseError> {
     tracing::debug!(target: "arithmetic", "parsing arithmetic expression: '{input}'");
-    arithmetic::full_expression(input.as_str()).map_err(error::WordParseError::ArithmeticExpression)
+    arithmetic::full_expression(&input).map_err(error::WordParseError::ArithmeticExpression)
 }
 
 peg::parser! {
-    grammar arithmetic() for str {
+    grammar arithmetic() for ArithmeticString {
         pub(crate) rule full_expression() -> ast::ArithmeticExpr =
             ![_] { ast::ArithmeticExpr::Literal(0) } /
             _ e:expression() _ { e }
@@ -89,21 +92,21 @@ peg::parser! {
 
         rule lvalue() -> ast::ArithmeticTarget =
             name:variable_name() "[" index:expression() "]" {
-                ast::ArithmeticTarget::ArrayElement(name.to_owned(), Box::new(index))
+                ast::ArithmeticTarget::ArrayElement(name, Box::new(index))
             } /
             name:variable_name() {
-                ast::ArithmeticTarget::Variable(name.to_owned())
+                ast::ArithmeticTarget::Variable(name)
             }
 
-        rule variable_name() -> &'input str =
+        rule variable_name() -> ArithmeticString =
             $(['a'..='z' | 'A'..='Z' | '_'](['a'..='z' | 'A'..='Z' | '_' | '0'..='9']*))
 
         rule _() -> () = quiet!{[' ' | '\t' | '\n' | '\r']*} {}
 
         rule literal_number() -> i64 =
             // TODO: handle explicit radix (e.g., <base>#<literal>) for bases 2 through 64
-            "0" ['x' | 'X'] s:$(['0'..='9' | 'a'..='f' | 'A'..='F']*) {? i64::from_str_radix(s, 16).or(Err("i64")) } /
-            s:$("0" ['0'..='8']*) {? i64::from_str_radix(s, 8).or(Err("i64")) } /
+            "0" ['x' | 'X'] s:$(['0'..='9' | 'a'..='f' | 'A'..='F']*) {? i64::from_str_radix(s.as_str(), 16).or(Err("i64")) } /
+            s:$("0" ['0'..='8']*) {? i64::from_str_radix(s.as_str(), 8).or(Err("i64")) } /
             s:$(['1'..='9'] ['0'..='9']*) {? s.parse().or(Err("i64")) }
     }
 }

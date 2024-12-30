@@ -63,13 +63,16 @@ impl builtins::Command for ExportCommand {
 
                         let value = match &assignment.value {
                             brush_parser::ast::AssignmentValue::Scalar(s) => {
-                                variables::ShellValueLiteral::Scalar(s.flatten())
+                                variables::ShellValueLiteral::Scalar(s.flatten().into_std_string())
                             }
                             brush_parser::ast::AssignmentValue::Array(a) => {
                                 variables::ShellValueLiteral::Array(variables::ArrayLiteral(
                                     a.iter()
                                         .map(|(k, v)| {
-                                            (k.as_ref().map(|k| k.flatten()), v.flatten())
+                                            (
+                                                k.as_ref().map(|k| k.flatten().into_std_string()),
+                                                v.flatten().into_std_string(),
+                                            )
                                         })
                                         .collect(),
                                 ))
@@ -78,7 +81,7 @@ impl builtins::Command for ExportCommand {
 
                         // Update the variable with the provided value and then mark it exported.
                         context.shell.env.update_or_add(
-                            name,
+                            name.as_str(),
                             value,
                             |var| {
                                 var.export();
