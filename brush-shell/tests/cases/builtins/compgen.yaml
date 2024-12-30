@@ -136,3 +136,40 @@ cases:
     stdin: |
       echo "[Take 1]"
       compgen -W 'somebody something' -X '&b*' some
+
+  - name: "compgen -o dirnames"
+    stdin: |
+      echo "[Take 1]"
+      compgen -W 'completion' -o dirnames -- c | sort
+
+      echo "[Take 2]"
+      mkdir subdir
+      touch subfile
+      compgen -W 'completion' -o dirnames -- s | sort
+
+  - name: "compgen -o default"
+    stdin: |
+      echo "[Take 1]"
+      compgen -W 'completion' -o default -- c | sort
+
+      echo "[Take 2]"
+      mkdir subdir
+      touch subfile
+      compgen -W 'completion' -o default -- s | sort
+
+  - name: "compgen -o bashdefault"
+    stdin: |
+      echo "[Take 1]"
+      compgen -W 'completion' -o bashdefault -- c | sort
+
+      echo "[Take 2]"
+      mkdir subdir
+      touch subfile
+      compgen -W 'completion' -o bashdefault -- s | sort
+
+  - name: "compgen -o plusdirs"
+    stdin: |
+      echo "[Take 1]"
+      touch cfile
+      mkdir cdir
+      compgen -W 'completion' -o plusdirs -o default -S suffix -- c | sort
