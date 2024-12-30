@@ -326,6 +326,7 @@ dependencies = [
  "assert_matches",
  "cached",
  "criterion",
+ "imstr",
  "indenter",
  "peg",
  "pprof",
@@ -1267,6 +1268,15 @@ dependencies = [
  "same-file",
  "walkdir",
  "winapi-util",
+]
+
+[[package]]
+name = "imstr"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d3441deb04ea9c6b472f313be54d585428cd6a68cdb8dcf40cf43744bec78fe"
+dependencies = [
+ "peg-runtime",
 ]
 
 [[package]]

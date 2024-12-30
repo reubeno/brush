@@ -45,6 +45,9 @@ impl Display for SourcePosition {
     }
 }
 
+/// Alias for the string type used in tokens.
+pub type TokenString = imstr::ImString;
+
 /// Represents the location of a token in its source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
@@ -60,9 +63,17 @@ pub struct TokenLocation {
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 pub enum Token {
     /// An operator token.
-    Operator(String, TokenLocation),
+    Operator(
+        #[cfg_attr(feature = "fuzz-testing", arbitrary(with = crate::ast::arbitrary_str))]
+        TokenString,
+        TokenLocation,
+    ),
     /// A word token.
-    Word(String, TokenLocation),
+    Word(
+        #[cfg_attr(feature = "fuzz-testing", arbitrary(with = crate::ast::arbitrary_str))]
+        TokenString,
+        TokenLocation,
+    ),
 }
 
 impl Token {
@@ -134,7 +145,7 @@ pub enum TokenizerError {
 
     /// The indicated I/O here tag was missing.
     #[error("missing here tag '{0}'")]
-    MissingHereTag(String),
+    MissingHereTag(TokenString),
 
     /// An unterminated here document sequence was encountered at the end of the input stream.
     #[error("unterminated here document sequence; tag(s) [{0}] found at: [{1}]")]
@@ -146,6 +157,7 @@ pub enum TokenizerError {
 }
 
 impl TokenizerError {
+    /// Returns whether or not the error indicates that the tokenization process is incomplete.
     pub fn is_incomplete(&self) -> bool {
         matches!(
             self,
@@ -252,7 +264,7 @@ pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
 #[derive(Clone, Debug)]
 struct TokenParseState {
     pub start_position: SourcePosition,
-    pub token_so_far: String,
+    pub token_so_far: TokenString,
     pub token_is_operator: bool,
     pub in_escape: bool,
     pub quote_mode: QuoteMode,
@@ -262,7 +274,7 @@ impl TokenParseState {
     pub fn new(start_position: &SourcePosition) -> Self {
         TokenParseState {
             start_position: start_position.clone(),
-            token_so_far: String::new(),
+            token_so_far: TokenString::new(),
             token_is_operator: false,
             in_escape: false,
             quote_mode: QuoteMode::None,
@@ -304,7 +316,7 @@ impl TokenParseState {
         !self.in_escape && matches!(self.quote_mode, QuoteMode::None)
     }
 
-    pub fn current_token(&self) -> &str {
+    pub fn current_token(&self) -> &TokenString {
         &self.token_so_far
     }
 
@@ -320,7 +332,7 @@ impl TokenParseState {
         self.token_so_far == "\n"
     }
 
-    fn replace_with_here_doc(&mut self, s: String) {
+    fn replace_with_here_doc(&mut self, s: TokenString) {
         self.token_so_far = s;
     }
 
@@ -361,9 +373,7 @@ impl TokenParseState {
                 operator_token_result,
             } => {
                 if self.is_newline() {
-                    return Err(TokenizerError::MissingHereTag(
-                        self.current_token().to_owned(),
-                    ));
+                    return Err(TokenizerError::MissingHereTag(self.current_token().clone()));
                 }
 
                 cross_token_state.here_state = HereState::NextLineIsHereDoc;
@@ -469,8 +479,9 @@ impl TokenParseState {
 /// # Arguments
 ///
 /// * `input` - The shell script to tokenize.
+#[cfg(test)]
 pub fn tokenize_str(input: &str) -> Result<Vec<Token>, TokenizerError> {
-    tokenize_str_with_options(input, &TokenizerOptions::default())
+    tokenize_str_with_options(&input.into(), &TokenizerOptions::default())
 }
 
 /// Break the given input shell script string into tokens, returning the tokens.
@@ -480,15 +491,15 @@ pub fn tokenize_str(input: &str) -> Result<Vec<Token>, TokenizerError> {
 /// * `input` - The shell script to tokenize.
 /// * `options` - Options controlling how the tokenizer operates.
 pub fn tokenize_str_with_options(
-    input: &str,
+    input: &TokenString,
     options: &TokenizerOptions,
 ) -> Result<Vec<Token>, TokenizerError> {
-    cacheable_tokenize_str(input.to_owned(), options.to_owned())
+    cacheable_tokenize_str(input.clone(), options.to_owned())
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]
 fn cacheable_tokenize_str(
-    input: String,
+    input: TokenString,
     options: TokenizerOptions,
 ) -> Result<Vec<Token>, TokenizerError> {
     let mut reader = std::io::BufReader::new(input.as_bytes());
@@ -676,9 +687,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             if current_token_without_here_tag.is_empty()
                                 || current_token_without_here_tag.ends_with('\n')
                             {
-                                state.replace_with_here_doc(
-                                    current_token_without_here_tag.to_owned(),
-                                );
+                                state.replace_with_here_doc(current_token_without_here_tag.into());
 
                                 // Delimit the end of the here-document body.
                                 result = state.delimit_current_token(
@@ -695,7 +704,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 // must be a separate token (because it wouldn't make a prefix of an operator).
                 //
 
-                let mut hypothetical_token = state.current_token().to_owned();
+                let mut hypothetical_token = state.current_token().clone();
                 hypothetical_token.push(c);
 
                 if state.unquoted() && self.is_operator(hypothetical_token.as_ref()) {

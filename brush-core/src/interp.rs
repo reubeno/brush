@@ -535,7 +535,7 @@ impl Execute for ast::ForClauseCommand {
 
                 // Update the variable.
                 shell.env.update_or_add(
-                    &self.variable_name,
+                    self.variable_name.as_str(),
                     ShellValueLiteral::Scalar(value),
                     |_| Ok(()),
                     EnvironmentLookup::Anywhere,
@@ -798,7 +798,7 @@ impl Execute for ast::FunctionDefinition {
     ) -> Result<ExecutionResult, error::Error> {
         shell
             .funcs
-            .update(self.fname.clone(), Arc::new(self.clone()));
+            .update(self.fname.as_str().to_owned(), Arc::new(self.clone()));
 
         let result = ExecutionResult::success();
         shell.last_exit_status = result.exit_code;
@@ -1063,14 +1063,14 @@ async fn basic_expand_assignment_name(
     match name {
         ast::AssignmentName::VariableName(name) => {
             let expanded = expansion::basic_expand_str(shell, name).await?;
-            Ok(ast::AssignmentName::VariableName(expanded))
+            Ok(ast::AssignmentName::VariableName(expanded.into()))
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
             let expanded_name = expansion::basic_expand_str(shell, name).await?;
             let expanded_index = expansion::basic_expand_str(shell, index).await?;
             Ok(ast::AssignmentName::ArrayElementName(
-                expanded_name,
-                expanded_index,
+                expanded_name.into(),
+                expanded_index.into(),
             ))
         }
     }
@@ -1083,9 +1083,7 @@ async fn expand_assignment_value(
     let expanded = match value {
         ast::AssignmentValue::Scalar(s) => {
             let expanded_word = expansion::basic_expand_word(shell, s).await?;
-            ast::AssignmentValue::Scalar(ast::Word {
-                value: expanded_word,
-            })
+            ast::AssignmentValue::Scalar(expanded_word.into())
         }
         ast::AssignmentValue::Array(arr) => {
             let mut expanded_values = vec![];
@@ -1184,10 +1182,12 @@ async fn apply_assignment(
 
         if will_be_indexed_array {
             array_index = Some(
-                ast::UnexpandedArithmeticExpr { value: idx.clone() }
-                    .eval(shell, false)
-                    .await?
-                    .to_string(),
+                ast::UnexpandedArithmeticExpr {
+                    value: idx.to_owned().into(),
+                }
+                .eval(shell, false)
+                .await?
+                .to_string(),
             );
         }
     }
@@ -1241,7 +1241,9 @@ async fn apply_assignment(
         new_var.export();
     }
 
-    shell.env.add(variable_name, new_var, creation_scope)
+    shell
+        .env
+        .add(variable_name.as_str(), new_var, creation_scope)
 }
 
 fn setup_pipeline_redirection(
@@ -1438,7 +1440,7 @@ pub(crate) async fn setup_redirect(
             let io_here_doc = if io_here.requires_expansion {
                 expansion::basic_expand_word(shell, &io_here.doc).await?
             } else {
-                io_here.doc.flatten()
+                io_here.doc.flatten().into_std_string()
             };
 
             let f = setup_open_file_with_contents(io_here_doc.as_str())?;
