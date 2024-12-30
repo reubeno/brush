@@ -147,7 +147,7 @@ pub struct GenerationOptions {
     // Options
     /// Perform rest of default completions if no completions are generated.
     pub bash_default: bool,
-    /// Use default filename completion if no completions are generated.
+    /// Use default readline-style filename completion if no completions are generated.
     pub default: bool,
     /// Treat completions as directory names.
     pub dir_names: bool,
@@ -335,23 +335,37 @@ impl Spec {
             no_trailing_space_at_end_of_line: options.no_space,
         };
 
-        if candidates.is_empty() {
-            if options.bash_default {
-                // TODO: if we have no completions, then fall back to default "bash" completion
-                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o bashdefault");
-            }
-            if options.default {
-                // TODO: if we have no completions, then fall back to default file name completion
-                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o default");
-            }
-            if options.dir_names {
-                // TODO: if we have no completions, then fall back to performing dir name completion
-                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o dirnames");
-            }
-        }
         if options.plus_dirs {
             // Also add dir name completion.
-            tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o plusdirs");
+            let mut dir_candidates = get_file_completions(
+                shell,
+                context.token_to_complete,
+                /* must_be_dir */ true,
+            )
+            .await;
+            candidates.append(&mut dir_candidates);
+        }
+
+        // If we still haven't found any completion candidates by now, then consider whether any
+        // requests were made for fallbacks.
+        if candidates.is_empty() {
+            if options.bash_default {
+                //
+                // TODO: if we have no completions, then fall back to default "bash" completions.
+                // It's not clear what exactly this means, though. From basic testing, it doesn't
+                // seem to include basic file and directory name completion.
+                //
+                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o bashdefault");
+            }
+            if options.default || options.dir_names {
+                // N.B. We approximate "default" readline completion behavior by getting file and
+                // dir completions.
+                let must_be_dir = options.dir_names;
+
+                let mut default_candidates =
+                    get_file_completions(shell, context.token_to_complete, must_be_dir).await;
+                candidates.append(&mut default_candidates);
+            }
         }
 
         // Sort, unless blocked by options.

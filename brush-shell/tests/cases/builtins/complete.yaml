@@ -59,3 +59,11 @@ cases:
         complete -A ${action} mycmd
         complete -p mycmd
       done
+
+  - name: "Roundtrip: complete -o options"
+    stdin: |
+      for opt in bashdefault default dirnames filenames noquote nosort nospace plusdirs; do
+        echo "--- Testing option: ${opt} ------------------"
+        complete -o ${opt} mycmd_${opt}
+        complete -p mycmd_${opt}
+      done
