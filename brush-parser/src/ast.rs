@@ -42,6 +42,12 @@ pub enum SeparatorOperator {
     Sequence,
 }
 
+impl Default for SeparatorOperator {
+    fn default() -> Self {
+        SeparatorOperator::Sequence
+    }
+}
+
 impl Display for SeparatorOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1031,7 +1037,7 @@ impl Display for ExtendedTestExpr {
 }
 
 /// A unary predicate usable in an extended test expression.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum UnaryPredicate {
@@ -1120,7 +1126,7 @@ impl Display for UnaryPredicate {
 }
 
 /// A binary predicate usable in an extended test expression.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum BinaryPredicate {
