@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::IsTerminal;
 #[cfg(unix)]
 use std::os::fd::AsFd;
@@ -7,11 +6,13 @@ use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::fd::OwnedFd;
 use std::process::Stdio;
+use std::sync::Arc;
 
 use crate::error;
 use crate::sys;
 
 /// Represents a file open in a shell context.
+#[derive(Clone)]
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin,
@@ -22,35 +23,14 @@ pub enum OpenFile {
     /// A null file that discards all input.
     Null,
     /// A file open for reading or writing.
-    File(std::fs::File),
+    File(Arc<std::fs::File>),
     /// A read end of a pipe.
-    PipeReader(sys::pipes::PipeReader),
+    PipeReader(Arc<sys::pipes::PipeReader>),
     /// A write end of a pipe.
-    PipeWriter(sys::pipes::PipeWriter),
-}
-
-impl Clone for OpenFile {
-    fn clone(&self) -> Self {
-        self.try_dup().unwrap()
-    }
+    PipeWriter(Arc<sys::pipes::PipeWriter>),
 }
 
 impl OpenFile {
-    /// Tries to duplicate the open file.
-    pub fn try_dup(&self) -> Result<OpenFile, error::Error> {
-        let result = match self {
-            OpenFile::Stdin => OpenFile::Stdin,
-            OpenFile::Stdout => OpenFile::Stdout,
-            OpenFile::Stderr => OpenFile::Stderr,
-            OpenFile::Null => OpenFile::Null,
-            OpenFile::File(f) => OpenFile::File(f.try_clone()?),
-            OpenFile::PipeReader(f) => OpenFile::PipeReader(f.try_clone()?),
-            OpenFile::PipeWriter(f) => OpenFile::PipeWriter(f.try_clone()?),
-        };
-
-        Ok(result)
-    }
-
     /// Converts the open file into an `OwnedFd`.
     #[cfg(unix)]
     pub(crate) fn into_owned_fd(self) -> Result<std::os::fd::OwnedFd, error::Error> {
@@ -59,9 +39,9 @@ impl OpenFile {
             OpenFile::Stdout => Ok(std::io::stdout().as_fd().try_clone_to_owned()?),
             OpenFile::Stderr => Ok(std::io::stderr().as_fd().try_clone_to_owned()?),
             OpenFile::Null => error::unimp("to_owned_fd for null open file"),
-            OpenFile::File(f) => Ok(f.into()),
-            OpenFile::PipeReader(r) => Ok(OwnedFd::from(r)),
-            OpenFile::PipeWriter(w) => Ok(OwnedFd::from(w)),
+            OpenFile::File(f) => Ok((*f).try_clone()?.into()),
+            OpenFile::PipeReader(r) => Ok(OwnedFd::from((*r).try_clone()?)),
+            OpenFile::PipeWriter(w) => Ok(OwnedFd::from((*w).try_clone()?)),
         }
     }
 
@@ -138,7 +118,7 @@ impl OpenFile {
 
 impl From<std::fs::File> for OpenFile {
     fn from(file: std::fs::File) -> Self {
-        OpenFile::File(file)
+        OpenFile::File(Arc::new(file))
     }
 }
 
@@ -149,9 +129,9 @@ impl From<OpenFile> for Stdio {
             OpenFile::Stdout => Stdio::inherit(),
             OpenFile::Stderr => Stdio::inherit(),
             OpenFile::Null => Stdio::null(),
-            OpenFile::File(f) => f.into(),
-            OpenFile::PipeReader(f) => f.into(),
-            OpenFile::PipeWriter(f) => f.into(),
+            OpenFile::File(f) => (*f).try_clone().unwrap().into(),
+            OpenFile::PipeReader(f) => (*f).try_clone().unwrap().into(),
+            OpenFile::PipeWriter(f) => (*f).try_clone().unwrap().into(),
         }
     }
 }
@@ -170,7 +150,7 @@ impl std::io::Read for OpenFile {
             )),
             OpenFile::Null => Ok(0),
             OpenFile::File(f) => f.read(buf),
-            OpenFile::PipeReader(reader) => reader.read(buf),
+            OpenFile::PipeReader(reader) => reader.as_ref().read(buf),
             OpenFile::PipeWriter(_) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 error::Error::OpenFileNotReadable("pipe writer"),
@@ -194,7 +174,7 @@ impl std::io::Write for OpenFile {
                 std::io::ErrorKind::Other,
                 error::Error::OpenFileNotWritable("pipe reader"),
             )),
-            OpenFile::PipeWriter(writer) => writer.write(buf),
+            OpenFile::PipeWriter(writer) => writer.as_ref().write(buf),
         }
     }
 
@@ -206,7 +186,7 @@ impl std::io::Write for OpenFile {
             OpenFile::Null => Ok(()),
             OpenFile::File(f) => f.flush(),
             OpenFile::PipeReader(_) => Ok(()),
-            OpenFile::PipeWriter(writer) => writer.flush(),
+            OpenFile::PipeWriter(writer) => writer.as_ref().flush(),
         }
     }
 }
@@ -215,32 +195,22 @@ impl std::io::Write for OpenFile {
 #[derive(Clone)]
 pub struct OpenFiles {
     /// Maps shell file descriptors to open files.
-    pub files: HashMap<u32, OpenFile>,
+    pub files: im::HashMap<u32, OpenFile>,
 }
 
 impl Default for OpenFiles {
     fn default() -> Self {
         Self {
-            files: HashMap::from([
-                (0, OpenFile::Stdin),
-                (1, OpenFile::Stdout),
-                (2, OpenFile::Stderr),
-            ]),
+            files: im::hashmap! {
+                0 => OpenFile::Stdin,
+                1 => OpenFile::Stdout,
+                2 => OpenFile::Stderr,
+            },
         }
     }
 }
 
 impl OpenFiles {
-    /// Tries to clone the open files.
-    pub fn try_clone(&self) -> Result<OpenFiles, error::Error> {
-        let mut files = HashMap::new();
-        for (fd, file) in &self.files {
-            files.insert(*fd, file.try_dup()?);
-        }
-
-        Ok(OpenFiles { files })
-    }
-
     /// Retrieves the file backing standard input in this context.
     pub fn stdin(&self) -> Option<&OpenFile> {
         self.files.get(&0)

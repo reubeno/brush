@@ -1,5 +1,4 @@
 use futures::future::BoxFuture;
-use std::collections::HashMap;
 use std::io::Write;
 
 #[allow(clippy::wildcard_imports)]
@@ -184,8 +183,8 @@ async fn exec_declaration_builtin_impl<T: builtins::DeclarationCommand + Send + 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn get_default_builtins(
     options: &crate::CreateOptions,
-) -> HashMap<String, builtins::Registration> {
-    let mut m = HashMap::<String, builtins::Registration>::new();
+) -> im::HashMap<String, builtins::Registration> {
+    let mut m = im::HashMap::<String, builtins::Registration>::new();
 
     //
     // POSIX special builtins

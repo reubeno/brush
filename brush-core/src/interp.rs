@@ -1254,7 +1254,7 @@ fn setup_pipeline_redirection(
             // Set up stdin of this process to take stdout of the preceding process.
             open_files
                 .files
-                .insert(0, OpenFile::PipeReader(preceding_output_reader));
+                .insert(0, OpenFile::PipeReader(Arc::new(preceding_output_reader)));
         } else {
             open_files.files.insert(0, OpenFile::Null);
         }
@@ -1266,7 +1266,9 @@ fn setup_pipeline_redirection(
         // Set up stdout of this process to go to stdin of the succeeding process.
         let (reader, writer) = sys::pipes::pipe()?;
         context.output_pipes.push(reader);
-        open_files.files.insert(1, OpenFile::PipeWriter(writer));
+        open_files
+            .files
+            .insert(1, OpenFile::PipeWriter(Arc::new(writer)));
     }
 
     Ok(())
@@ -1301,8 +1303,8 @@ pub(crate) async fn setup_redirect(
                     )
                 })?;
 
-            let stdout_file = OpenFile::File(opened_file);
-            let stderr_file = stdout_file.try_dup()?;
+            let stdout_file = OpenFile::File(Arc::new(opened_file));
+            let stderr_file = stdout_file.clone();
 
             open_files.files.insert(1, stdout_file);
             open_files.files.insert(2, stderr_file);
@@ -1382,7 +1384,7 @@ pub(crate) async fn setup_redirect(
                                 err,
                             )
                         })?;
-                    target_file = OpenFile::File(opened_file);
+                    target_file = OpenFile::File(Arc::new(opened_file));
                 }
                 ast::IoFileRedirectTarget::Fd(fd) => {
                     let default_fd_if_unspecified = match kind {
@@ -1396,7 +1398,7 @@ pub(crate) async fn setup_redirect(
                     fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
                     if let Some(f) = open_files.files.get(fd) {
-                        target_file = f.try_dup()?;
+                        target_file = f.clone();
                     } else {
                         tracing::error!("{}: Bad file descriptor", fd);
                         return Ok(None);
@@ -1416,7 +1418,7 @@ pub(crate) async fn setup_redirect(
                                 subshell_cmd,
                             )?;
 
-                            target_file = substitution_file.try_dup()?;
+                            target_file = substitution_file.clone();
                             open_files.files.insert(substitution_fd, substitution_file);
 
                             fd_num = specified_fd_num
@@ -1491,15 +1493,15 @@ fn setup_process_substitution(
             subshell
                 .open_files
                 .files
-                .insert(1, openfiles::OpenFile::PipeWriter(writer));
-            OpenFile::PipeReader(reader)
+                .insert(1, openfiles::OpenFile::PipeWriter(Arc::new(writer)));
+            OpenFile::PipeReader(Arc::new(reader))
         }
         ast::ProcessSubstitutionKind::Write => {
             subshell
                 .open_files
                 .files
-                .insert(0, openfiles::OpenFile::PipeReader(reader));
-            OpenFile::PipeWriter(writer)
+                .insert(0, openfiles::OpenFile::PipeReader(Arc::new(reader)));
+            OpenFile::PipeWriter(Arc::new(writer))
         }
     };
 
@@ -1545,5 +1547,5 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     writer.write_all(bytes)?;
     drop(writer);
 
-    Ok(OpenFile::PipeReader(reader))
+    Ok(OpenFile::PipeReader(Arc::new(reader)))
 }

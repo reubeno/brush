@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -36,7 +35,7 @@ pub struct Shell {
     /// State of managed jobs.
     pub jobs: jobs::JobManager,
     /// Shell aliases.
-    pub aliases: HashMap<String, String>,
+    pub aliases: im::HashMap<String, String>,
 
     //
     // Additional state
@@ -47,7 +46,7 @@ pub struct Shell {
     pub depth: usize,
 
     /// Positional parameters ($1 and beyond)
-    pub positional_parameters: Vec<String>,
+    pub positional_parameters: im::Vector<String>,
 
     /// Shell name
     pub shell_name: Option<String>,
@@ -56,13 +55,13 @@ pub struct Shell {
     pub shell_product_display_str: Option<String>,
 
     /// Script call stack.
-    pub script_call_stack: VecDeque<String>,
+    pub script_call_stack: im::Vector<String>,
 
     /// Function call stack.
-    pub function_call_stack: VecDeque<FunctionCall>,
+    pub function_call_stack: im::Vector<FunctionCall>,
 
     /// Directory stack used by pushd et al.
-    pub directory_stack: Vec<PathBuf>,
+    pub directory_stack: im::Vector<PathBuf>,
 
     /// Current line number being processed.
     pub current_line_number: u32,
@@ -71,7 +70,7 @@ pub struct Shell {
     pub completion_config: completion::Config,
 
     /// Shell built-in commands.
-    pub builtins: HashMap<String, builtins::Registration>,
+    pub builtins: im::HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
     pub program_location_cache: pathcache::PathCache,
@@ -182,14 +181,14 @@ impl Shell {
             funcs: functions::FunctionEnv::default(),
             options: RuntimeOptions::defaults_from(options),
             jobs: jobs::JobManager::new(),
-            aliases: HashMap::default(),
+            aliases: im::HashMap::default(),
             last_exit_status: 0,
-            positional_parameters: vec![],
+            positional_parameters: im::Vector::new(),
             shell_name: options.shell_name.clone(),
             shell_product_display_str: options.shell_product_display_str.clone(),
-            function_call_stack: VecDeque::new(),
-            script_call_stack: VecDeque::new(),
-            directory_stack: vec![],
+            function_call_stack: im::Vector::new(),
+            script_call_stack: im::Vector::new(),
+            directory_stack: im::Vector::new(),
             current_line_number: 0,
             completion_config: completion::Config::default(),
             builtins: builtins::get_default_builtins(options),
@@ -1061,7 +1060,7 @@ impl Shell {
                 if let Some(filename) = path_to_open.file_name() {
                     if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
                         if let Some(open_file) = params.open_files.files.get(&fd_num) {
-                            return open_file.try_dup();
+                            return Ok(open_file.clone());
                         }
                     }
                 }
@@ -1152,13 +1151,13 @@ impl Shell {
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> openfiles::OpenFile {
-        self.open_files.files.get(&1).unwrap().try_dup().unwrap()
+        self.open_files.files.get(&1).unwrap().clone()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> openfiles::OpenFile {
-        self.open_files.files.get(&2).unwrap().try_dup().unwrap()
+        self.open_files.files.get(&2).unwrap().clone()
     }
 
     /// Outputs `set -x` style trace output for a command.
