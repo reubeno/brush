@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::IsTerminal;
 #[cfg(unix)]
 use std::os::fd::AsFd;
@@ -215,17 +214,17 @@ impl std::io::Write for OpenFile {
 #[derive(Clone)]
 pub struct OpenFiles {
     /// Maps shell file descriptors to open files.
-    pub files: HashMap<u32, OpenFile>,
+    pub files: im::HashMap<u32, OpenFile>,
 }
 
 impl Default for OpenFiles {
     fn default() -> Self {
         Self {
-            files: HashMap::from([
-                (0, OpenFile::Stdin),
-                (1, OpenFile::Stdout),
-                (2, OpenFile::Stderr),
-            ]),
+            files: im::hashmap! {
+                0 => OpenFile::Stdin,
+                1 => OpenFile::Stdout,
+                2 => OpenFile::Stderr,
+            },
         }
     }
 }
@@ -233,7 +232,7 @@ impl Default for OpenFiles {
 impl OpenFiles {
     /// Tries to clone the open files.
     pub fn try_clone(&self) -> Result<OpenFiles, error::Error> {
-        let mut files = HashMap::new();
+        let mut files = im::HashMap::new();
         for (fd, file) in &self.files {
             files.insert(*fd, file.try_dup()?);
         }

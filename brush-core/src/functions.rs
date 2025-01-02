@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 /// An environment for defined, named functions.
 #[derive(Clone, Default)]
 pub struct FunctionEnv {
-    functions: HashMap<String, FunctionRegistration>,
+    functions: im::HashMap<String, FunctionRegistration>,
 }
 
 impl FunctionEnv {

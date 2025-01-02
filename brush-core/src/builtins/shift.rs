@@ -27,7 +27,7 @@ impl builtins::Command for ShiftCommand {
             return Ok(builtins::ExitCode::InvalidUsage);
         }
 
-        context.shell.positional_parameters.drain(0..n);
+        context.shell.positional_parameters = context.shell.positional_parameters.skip(n);
 
         Ok(builtins::ExitCode::Success)
     }

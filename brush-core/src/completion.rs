@@ -4,7 +4,6 @@ use clap::ValueEnum;
 use indexmap::IndexSet;
 use std::{
     borrow::Cow,
-    collections::HashMap,
     path::{Path, PathBuf},
 };
 
@@ -125,7 +124,7 @@ pub enum CompleteOption {
 /// Encapsulates the shell's programmable command completion configuration.
 #[derive(Clone, Default)]
 pub struct Config {
-    commands: HashMap<String, Spec>,
+    commands: im::HashMap<String, Spec>,
 
     /// Optionally, a completion spec to be used as a default, when earlier
     /// matches yield no candidates.

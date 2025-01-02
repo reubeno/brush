@@ -26,6 +26,7 @@ chrono = "0.4.39"
 clap = { version = "4.5.21", features = ["derive", "wrap_help"] }
 fancy-regex = "0.14.0"
 futures = "0.3.31"
+im = "15.1.0"
 indexmap = "2.7.0"
 itertools = "0.14.0"
 lazy_static = "1.5.0"

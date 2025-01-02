@@ -1,5 +1,5 @@
+use std::fmt::Display;
 use std::str::FromStr;
-use std::{collections::HashMap, fmt::Display};
 
 use itertools::Itertools as _;
 
@@ -150,7 +150,7 @@ impl TryFrom<TrapSignal> for i32 {
 #[derive(Clone, Default)]
 pub struct TrapHandlerConfig {
     /// Registered handlers for traps; maps signal type to command.
-    pub handlers: HashMap<TrapSignal, String>,
+    pub handlers: im::HashMap<TrapSignal, String>,
     /// Current depth of the handler stack.
     pub handler_depth: i32,
 }

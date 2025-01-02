@@ -146,7 +146,7 @@ async fn run_impl(
         if let Some(script_path) = args.script_path {
             shell.shell_mut().as_mut().shell_name = Some(script_path);
         }
-        shell.shell_mut().as_mut().positional_parameters = args.script_args;
+        shell.shell_mut().as_mut().positional_parameters = args.script_args.into();
 
         // Execute the command string.
         let params = shell.shell().as_ref().default_exec_params();

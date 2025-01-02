@@ -24,14 +24,14 @@ impl builtins::Command for PushdCommand {
             context
                 .shell
                 .directory_stack
-                .push(std::path::PathBuf::from(&self.dir));
+                .push_back(std::path::PathBuf::from(&self.dir));
         } else {
             let prev_working_dir = context.shell.working_dir.clone();
 
             let dir = std::path::Path::new(&self.dir);
             context.shell.set_working_dir(dir)?;
 
-            context.shell.directory_stack.push(prev_working_dir);
+            context.shell.directory_stack.push_back(prev_working_dir);
         }
 
         // Display dirs.
