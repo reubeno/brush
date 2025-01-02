@@ -1060,7 +1060,7 @@ impl Shell {
                 if let Some(filename) = path_to_open.file_name() {
                     if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
                         if let Some(open_file) = params.open_files.files.get(&fd_num) {
-                            return open_file.try_dup();
+                            return Ok(open_file.clone());
                         }
                     }
                 }
@@ -1151,13 +1151,13 @@ impl Shell {
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> openfiles::OpenFile {
-        self.open_files.files.get(&1).unwrap().try_dup().unwrap()
+        self.open_files.files.get(&1).unwrap().clone()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> openfiles::OpenFile {
-        self.open_files.files.get(&2).unwrap().try_dup().unwrap()
+        self.open_files.files.get(&2).unwrap().clone()
     }
 
     /// Outputs `set -x` style trace output for a command.

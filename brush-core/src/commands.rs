@@ -131,11 +131,7 @@ impl ExecutionContext<'_> {
     /// Returns the file descriptor with the given number.
     #[allow(clippy::unwrap_in_result)]
     pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
-        self.params
-            .open_files
-            .files
-            .get(&fd)
-            .map(|f| f.try_dup().unwrap())
+        self.params.open_files.files.get(&fd).cloned()
     }
 
     pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
@@ -562,7 +558,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     subshell
         .open_files
         .files
-        .insert(1, openfiles::OpenFile::PipeWriter(writer));
+        .insert(1, openfiles::OpenFile::PipeWriter(Arc::new(writer)));
 
     let mut params = subshell.default_exec_params();
     params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
