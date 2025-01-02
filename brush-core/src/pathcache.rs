@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(Clone, Default)]
 pub struct PathCache {
     /// The cache itself.
-    cache: std::collections::HashMap<String, PathBuf>,
+    cache: im::HashMap<String, PathBuf>,
 }
 
 impl PathCache {

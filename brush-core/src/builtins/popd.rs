@@ -18,7 +18,7 @@ impl builtins::Command for PopdCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        if let Some(popped) = context.shell.directory_stack.pop() {
+        if let Some(popped) = context.shell.directory_stack.pop_back() {
             if !self.no_directory_change {
                 context.shell.set_working_dir(&popped)?;
             }

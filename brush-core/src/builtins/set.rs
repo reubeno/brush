@@ -316,7 +316,10 @@ impl builtins::Command for SetCommand {
             if i < context.shell.positional_parameters.len() {
                 arg.clone_into(&mut context.shell.positional_parameters[i]);
             } else {
-                context.shell.positional_parameters.push(arg.to_owned());
+                context
+                    .shell
+                    .positional_parameters
+                    .push_back(arg.to_owned());
             }
         }
 
