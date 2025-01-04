@@ -30,7 +30,7 @@ name = "brush-completion-tests"
 path = "tests/completion_tests.rs"
 
 [features]
-default = ["basic", "reedline"]
+default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
