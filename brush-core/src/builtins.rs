@@ -193,10 +193,9 @@ pub trait Command: Parser {
         I: IntoIterator<Item = String>,
         Self: 'static,
     {
-        let uid = std::any::TypeId::of::<Self>();
-
         let cmd = {
             let mut cache_guard = CACHED_COMMANDS.write().unwrap();
+            let uid = std::any::TypeId::of::<Self>();
             let cmd = if let Some(cmd_template) = cache_guard.get(&uid) {
                 cmd_template.clone()
             } else {
@@ -206,6 +205,8 @@ pub trait Command: Parser {
             };
             cmd
         };
+
+        // let cmd = Self::command();
 
         let mut matches = if !Self::takes_plus_options() {
             cmd.try_get_matches_from(args)?
