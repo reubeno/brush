@@ -36,7 +36,7 @@ pub fn simple_builtin<B: SimpleCommand + Send + Sync>() -> builtins::Registratio
 
 /// Returns a built-in command registration, given an implementation of the
 /// `Command` trait.
-pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
+pub fn builtin<B: 'static + builtins::Command + Send + Sync>() -> builtins::Registration {
     builtins::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -46,7 +46,7 @@ pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
     }
 }
 
-fn special_builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
+fn special_builtin<B: 'static + builtins::Command + Send + Sync>() -> builtins::Registration {
     builtins::Registration {
         execute_func: exec_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -56,7 +56,8 @@ fn special_builtin<B: builtins::Command + Send + Sync>() -> builtins::Registrati
     }
 }
 
-fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
+fn decl_builtin<B: 'static + builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration
+{
     builtins::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -66,7 +67,8 @@ fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Re
     }
 }
 
-fn special_decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
+fn special_decl_builtin<B: 'static + builtins::DeclarationCommand + Send + Sync>(
+) -> builtins::Registration {
     builtins::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
@@ -108,14 +110,14 @@ async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
     T::execute(context, plain_args.as_slice())
 }
 
-fn exec_builtin<T: builtins::Command + Send + Sync>(
+fn exec_builtin<T: 'static + builtins::Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<builtins::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_builtin_impl<T: builtins::Command + Send + Sync>(
+async fn exec_builtin_impl<T: 'static + builtins::Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<builtins::BuiltinResult, error::Error> {
@@ -140,14 +142,14 @@ async fn exec_builtin_impl<T: builtins::Command + Send + Sync>(
     })
 }
 
-fn exec_declaration_builtin<T: builtins::DeclarationCommand + Send + Sync>(
+fn exec_declaration_builtin<T: 'static + builtins::DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<builtins::BuiltinResult, error::Error>> {
     Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
 }
 
-async fn exec_declaration_builtin_impl<T: builtins::DeclarationCommand + Send + Sync>(
+async fn exec_declaration_builtin_impl<T: 'static + builtins::DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<builtins::BuiltinResult, error::Error> {

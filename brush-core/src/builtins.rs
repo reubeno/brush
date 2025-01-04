@@ -1,5 +1,7 @@
 //! Infrastructure for shell built-in commands.
 
+use std::collections::HashMap;
+
 use clap::builder::styling;
 use clap::Parser;
 use futures::future::BoxFuture;
@@ -175,6 +177,10 @@ pub type CommandExecuteFunc = fn(
 /// * `content_type` - The type of content to retrieve.
 pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Error>;
 
+lazy_static::lazy_static! {
+    pub(crate) static ref CACHED_COMMANDS: std::sync::RwLock<HashMap<std::any::TypeId, clap::Command>> = std::sync::RwLock::new(HashMap::new());
+}
+
 /// Trait implemented by built-in shell commands.
 pub trait Command: Parser {
     /// Instantiates the built-in command with the given arguments.
@@ -185,9 +191,24 @@ pub trait Command: Parser {
     fn new<I>(args: I) -> Result<Self, clap::Error>
     where
         I: IntoIterator<Item = String>,
+        Self: 'static,
     {
-        if !Self::takes_plus_options() {
-            Self::try_parse_from(args)
+        let uid = std::any::TypeId::of::<Self>();
+
+        let cmd = {
+            let mut cache_guard = CACHED_COMMANDS.write().unwrap();
+            let cmd = if let Some(cmd_template) = cache_guard.get(&uid) {
+                cmd_template.clone()
+            } else {
+                let cmd = Self::command();
+                cache_guard.insert(uid, cmd.clone());
+                cmd
+            };
+            cmd
+        };
+
+        let mut matches = if !Self::takes_plus_options() {
+            cmd.try_get_matches_from(args)?
         } else {
             // N.B. clap doesn't support named options like '+x'. To work around this, we
             // establish a pattern of renaming them.
@@ -199,8 +220,10 @@ pub trait Command: Parser {
                 }
             });
 
-            Self::try_parse_from(args)
-        }
+            cmd.try_get_matches_from(args)?
+        };
+
+        <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
     }
 
     /// Returns whether or not the command takes options with a leading '+' or '-' character.
