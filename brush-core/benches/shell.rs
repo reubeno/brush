@@ -1,10 +1,8 @@
 #[cfg(unix)]
 mod unix {
-    use criterion::{black_box, Criterion};
+    use std::sync::Arc;
 
-    fn tokio() -> tokio::runtime::Runtime {
-        tokio::runtime::Runtime::new().unwrap()
-    }
+    use criterion::{black_box, Criterion};
 
     async fn instantiate_shell() -> brush_core::Shell {
         let options = brush_core::CreateOptions::default();
@@ -20,68 +18,127 @@ mod unix {
         brush_core::Shell::new(&options).await.unwrap()
     }
 
-    async fn run_one_command(command: &str) -> brush_core::ExecutionResult {
-        let options = brush_core::CreateOptions::default();
-        let mut shell = brush_core::Shell::new(&options).await.unwrap();
-        shell
+    async fn run_one_command(shell: &mut brush_core::Shell, command: &str) {
+        let _ = shell
             .run_string(command.to_owned(), &shell.default_exec_params())
             .await
-            .unwrap()
+            .unwrap();
     }
 
-    async fn run_command_directly(command: &str, args: &[&str]) -> std::process::ExitStatus {
-        let mut command = tokio::process::Command::new(command);
-        command
-            .args(args)
-            .stdout(std::process::Stdio::null())
-            .status()
-            .await
-            .unwrap()
+    async fn expand_string(shell: &mut brush_core::Shell, s: &str) {
+        let _ = shell.basic_expand_string(s).await.unwrap();
     }
 
-    async fn expand_one_string() -> String {
-        let options = brush_core::CreateOptions::default();
-        let mut shell = brush_core::Shell::new(&options).await.unwrap();
-        shell
-            .basic_expand_string("The answer is $((6 * 7))")
-            .await
-            .unwrap()
+    async fn eval_arithmetic_expr(shell: &mut brush_core::Shell, expr: &str) {
+        let parsed_expr = brush_parser::arithmetic::parse(expr).unwrap();
+        let _ = shell.eval_arithmetic(parsed_expr).await.unwrap();
     }
 
     /// This function defines core shell benchmarks.
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
+        // Construct a runtime for us to run async code on.
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        // Benchmark shell instantiation.
         c.bench_function("instantiate_shell", |b| {
-            b.to_async(tokio()).iter(|| black_box(instantiate_shell()));
+            b.to_async(&rt).iter(|| black_box(instantiate_shell()));
         });
         c.bench_function("instantiate_shell_with_init_scripts", |b| {
-            b.to_async(tokio())
+            b.to_async(&rt)
                 .iter(|| black_box(instantiate_shell_with_init_scripts()));
         });
-        c.bench_function("run_one_builtin_command", |b| {
-            b.to_async(tokio())
-                .iter(|| black_box(run_one_command("declare new-variable")));
+
+        // Benchmark: cloning a shell object.
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("clone_shell_object", |b| {
+            b.iter(|| black_box(shell.clone()));
         });
+
+        // Benchmark: parsing and evaluating an arithmetic expression..
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("eval_arithmetic", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| rt.block_on(eval_arithmetic_expr(s, "3 + 10 * 2")),
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        // Benchmark: running the echo built-in command.
+        let shell = rt.block_on(instantiate_shell());
         c.bench_function("run_echo_builtin_command", |b| {
-            b.to_async(tokio())
-                .iter(|| black_box(run_one_command("echo 'Hello, world!' >/dev/null")));
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| rt.block_on(run_one_command(s, "echo 'Hello, world!' >/dev/null")),
+                criterion::BatchSize::SmallInput,
+            );
         });
+
+        // Benchmark: running an external command.
+        let shell = rt.block_on(instantiate_shell());
         c.bench_function("run_one_external_command", |b| {
-            b.to_async(tokio())
-                .iter(|| black_box(run_one_command("/usr/bin/echo 'Hello, world!' >/dev/null")));
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(
+                        s,
+                        "/usr/bin/echo 'Hello, world!' >/dev/null",
+                    ));
+                },
+                criterion::BatchSize::SmallInput,
+            );
         });
-        c.bench_function("run_one_external_command_directly", |b| {
-            b.to_async(tokio())
-                .iter(|| black_box(run_command_directly("/usr/bin/echo", &["Hello, world!"])));
-        });
+
+        // Benchmark: word expansion.
+        let shell = rt.block_on(instantiate_shell());
         c.bench_function("expand_one_string", |b| {
-            b.iter(|| black_box(expand_one_string()));
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| rt.block_on(expand_string(s, "My version is ${BASH_VERSINFO[@]}")),
+                criterion::BatchSize::SmallInput,
+            );
         });
+
+        // Benchmark: function invocation.
+        let mut shell = rt.block_on(instantiate_shell());
+        shell.funcs.update(
+            String::from("testfunc"),
+            Arc::new(brush_parser::ast::FunctionDefinition {
+                fname: String::from("testfunc"),
+                body: brush_parser::ast::FunctionBody(
+                    brush_parser::ast::CompoundCommand::BraceGroup(
+                        brush_parser::ast::BraceGroupCommand(brush_parser::ast::CompoundList(
+                            vec![],
+                        )),
+                    ),
+                    None,
+                ),
+                source: String::from("/some/path"),
+            }),
+        );
+        c.bench_function("function_call", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(s, "testfunc"));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        // Benchmark: for loop.
+        let shell = rt.block_on(instantiate_shell());
         c.bench_function("for_loop", |b| {
-            b.to_async(tokio()).iter(|| {
-                black_box(run_one_command(
-                    "for ((i = 0; i < 100000; i++)); do :; done",
-                ))
-            });
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(s, "for ((i = 0; i < 10; i++)); do :; done"));
+                },
+                criterion::BatchSize::SmallInput,
+            );
         });
     }
 }
