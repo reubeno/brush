@@ -1,10 +1,13 @@
-use crate::{error, sys};
+use crate::{error, sys, traps};
 
 pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     error::unimp("continue process")
 }
 
-pub(crate) fn kill_process(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
+pub(crate) fn kill_process(
+    _pid: sys::process::ProcessId,
+    _signal: traps::TrapSignal,
+) -> Result<(), error::Error> {
     error::unimp("kill process")
 }
 

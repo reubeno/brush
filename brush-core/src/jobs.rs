@@ -7,6 +7,7 @@ use crate::error;
 use crate::processes;
 use crate::sys;
 use crate::trace_categories;
+use crate::traps;
 use crate::ExecutionResult;
 
 pub(crate) type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>;
@@ -409,9 +410,9 @@ impl Job {
     }
 
     /// Kills the job.
-    pub fn kill(&mut self) -> Result<(), error::Error> {
+    pub fn kill(&mut self, signal: traps::TrapSignal) -> Result<(), error::Error> {
         if let Some(pid) = self.get_process_group_id() {
-            sys::signal::kill_process(pid)
+            sys::signal::kill_process(pid, signal)
         } else {
             Err(error::Error::FailedToSendSignal)
         }

@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use crate::traps::TrapSignal;
-use crate::{builtins, commands, error};
+use crate::{builtins, commands, error, sys};
 
 /// Signal a job or process.
 #[derive(Parser)]
@@ -22,6 +22,7 @@ pub(crate) struct KillCommand {
     list_signals: bool,
 
     // Interpretation of these depends on whether -l is present.
+    #[arg(allow_hyphen_values = true)]
     args: Vec<String>,
 }
 
@@ -30,26 +31,82 @@ impl builtins::Command for KillCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        if self.signal_name.is_some() {
-            return error::unimp("kill -s");
+        // Default signal is SIGKILL.
+        let mut trap_signal = TrapSignal::Signal(nix::sys::signal::Signal::SIGKILL);
+
+        // Try parsing the signal name (if specified).
+        if let Some(signal_name) = &self.signal_name {
+            if let Ok(parsed_trap_signal) = TrapSignal::try_from(signal_name.as_str()) {
+                trap_signal = parsed_trap_signal;
+            } else {
+                writeln!(
+                    context.stderr(),
+                    "{}: invalid signal name: {}",
+                    context.command_name,
+                    signal_name
+                )?;
+                return Ok(builtins::ExitCode::InvalidUsage);
+            }
         }
-        if self.signal_number.is_some() {
-            return error::unimp("kill -n");
+
+        // Try parsing the signal number (if specified).
+        if let Some(signal_number) = &self.signal_number {
+            #[allow(clippy::cast_possible_truncation)]
+            #[allow(clippy::cast_possible_wrap)]
+            if let Ok(parsed_trap_signal) = TrapSignal::try_from(*signal_number as i32) {
+                trap_signal = parsed_trap_signal;
+            } else {
+                writeln!(
+                    context.stderr(),
+                    "{}: invalid signal number: {}",
+                    context.command_name,
+                    signal_number
+                )?;
+                return Ok(builtins::ExitCode::InvalidUsage);
+            }
+        }
+
+        // Look through the remaining args for a pid/job spec or a -sigspec style option.
+        let mut pid_or_job_spec = None;
+        for arg in &self.args {
+            // See if this is -sigspec syntax.
+            if let Some(possible_sigspec) = arg.strip_prefix("-") {
+                // See if this is -sigspec syntax.
+                if let Ok(parsed_trap_signal) = TrapSignal::try_from(possible_sigspec) {
+                    trap_signal = parsed_trap_signal;
+                } else {
+                    writeln!(
+                        context.stderr(),
+                        "{}: invalid signal name",
+                        context.command_name
+                    )?;
+                    return Ok(builtins::ExitCode::InvalidUsage);
+                }
+            } else if pid_or_job_spec.is_none() {
+                pid_or_job_spec = Some(arg);
+            } else {
+                writeln!(
+                    context.stderr(),
+                    "{}: too many jobs or processes specified",
+                    context.command_name
+                )?;
+                return Ok(builtins::ExitCode::InvalidUsage);
+            }
         }
 
         if self.list_signals {
             return print_signals(&context, self.args.as_ref());
         } else {
-            if self.args.len() != 1 {
+            if pid_or_job_spec.is_none() {
                 writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
                 return Ok(builtins::ExitCode::InvalidUsage);
             }
 
-            let pid_or_job_spec = &self.args[0];
+            let pid_or_job_spec = pid_or_job_spec.unwrap();
             if pid_or_job_spec.starts_with('%') {
                 // It's a job spec.
                 if let Some(job) = context.shell.jobs.resolve_job_spec(pid_or_job_spec) {
-                    job.kill()?;
+                    job.kill(trap_signal)?;
                 } else {
                     writeln!(
                         context.stderr(),
@@ -63,8 +120,7 @@ impl builtins::Command for KillCommand {
                 let pid = pid_or_job_spec.parse::<i32>()?;
 
                 // It's a pid.
-                nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGKILL)
-                    .map_err(|_errno| error::Error::FailedToSendSignal)?;
+                sys::signal::kill_process(pid, trap_signal)?;
             }
         }
         Ok(builtins::ExitCode::Success)

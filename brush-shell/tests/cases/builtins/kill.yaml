@@ -14,4 +14,14 @@ cases:
       kill -l SIGHUP
       kill -l EXIT
 
+  - name: "kill -s"
+    stdin: |
+      kill -s USR1 $$
 
+  - name: "kill -n"
+    stdin: |
+      kill -n 9 $$
+
+  - name: "kill -sigspec"
+    stdin: |
+      kill -USR1 $$
