@@ -364,11 +364,12 @@ impl Job {
                 }
                 JobTaskWaitResult::Stopped => {
                     self.state = JobState::Stopped;
-                    result = ExecutionResult::stopped();
-                    break;
+                    return Ok(ExecutionResult::stopped());
                 }
             }
         }
+
+        self.state = JobState::Done;
 
         Ok(result)
     }
