@@ -42,6 +42,9 @@ pub struct Shell {
     // Additional state
     /// The status of the last completed command.
     pub last_exit_status: u8,
+    
+    /// User tried exiting in the previous/current input if != 0.
+    pub user_tried_exiting: u8,
 
     /// Clone depth from the original ancestor shell.
     pub depth: usize,
@@ -100,6 +103,7 @@ impl Clone for Shell {
             builtins: self.builtins.clone(),
             program_location_cache: self.program_location_cache.clone(),
             depth: self.depth + 1,
+            user_tried_exiting: self.user_tried_exiting
         }
     }
 }
@@ -195,6 +199,7 @@ impl Shell {
             builtins: builtins::get_default_builtins(options),
             program_location_cache: pathcache::PathCache::default(),
             depth: 0,
+            user_tried_exiting: 0
         };
 
         // TODO: Without this a script that sets extglob will fail because we
