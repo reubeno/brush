@@ -219,10 +219,8 @@ pub(crate) fn get_default_builtins(
         "readonly".into(),
         special_decl_builtin::<declare::DeclareCommand>(),
     );
-    m.insert(
-        "times".into(),
-        special_builtin::<unimp::UnimplementedCommand>(),
-    );
+    #[cfg(unix)]
+    m.insert("times".into(), special_builtin::<times::TimesCommand>());
 
     //
     // Non-special builtins
