@@ -24,8 +24,10 @@ fn get_keywords(sh_mode_only: bool) -> HashSet<String> {
     if !sh_mode_only {
         keywords.insert(String::from("[["));
         keywords.insert(String::from("]]"));
+        keywords.insert(String::from("coproc"));
         keywords.insert(String::from("function"));
         keywords.insert(String::from("select"));
+        keywords.insert(String::from("time"));
     }
 
     keywords
