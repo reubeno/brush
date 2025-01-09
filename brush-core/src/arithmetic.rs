@@ -40,7 +40,6 @@ pub enum EvalError {
 }
 
 /// Trait implemented by arithmetic expressions that can be evaluated.
-#[async_trait::async_trait]
 pub trait ExpandAndEvaluate {
     /// Evaluate the given expression, returning the resulting numeric value.
     ///
@@ -51,7 +50,6 @@ pub trait ExpandAndEvaluate {
     async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError>;
 }
 
-#[async_trait::async_trait]
 impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
     async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError> {
         // Per documentation, first shell-expand it.
@@ -71,49 +69,45 @@ impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
         }
 
         // Now evaluate.
-        expr.eval(shell).await
+        expr.eval(shell)
     }
 }
 
 /// Trait implemented by evaluatable arithmetic expressions.
-#[async_trait::async_trait]
 pub trait Evaluatable {
     /// Evaluate the given arithmetic expression, returning the resulting numeric value.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell to use for evaluation.
-    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
+    fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
 }
 
-#[async_trait::async_trait]
 impl Evaluatable for ast::ArithmeticExpr {
-    async fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
+    fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
         let value = match self {
             ast::ArithmeticExpr::Literal(l) => *l,
-            ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue).await?,
-            ast::ArithmeticExpr::UnaryOp(op, operand) => {
-                apply_unary_op(shell, *op, operand).await?
-            }
+            ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue)?,
+            ast::ArithmeticExpr::UnaryOp(op, operand) => apply_unary_op(shell, *op, operand)?,
             ast::ArithmeticExpr::BinaryOp(op, left, right) => {
-                apply_binary_op(shell, *op, left, right).await?
+                apply_binary_op(shell, *op, left, right)?
             }
             ast::ArithmeticExpr::Conditional(condition, then_expr, else_expr) => {
-                let conditional_eval = condition.eval(shell).await?;
+                let conditional_eval = condition.eval(shell)?;
 
                 // Ensure we only evaluate the branch indicated by the condition.
                 if conditional_eval != 0 {
-                    then_expr.eval(shell).await?
+                    then_expr.eval(shell)?
                 } else {
-                    else_expr.eval(shell).await?
+                    else_expr.eval(shell)?
                 }
             }
             ast::ArithmeticExpr::Assignment(lvalue, expr) => {
-                let expr_eval = expr.eval(shell).await?;
-                assign(shell, lvalue, expr_eval).await?
+                let expr_eval = expr.eval(shell)?;
+                assign(shell, lvalue, expr_eval)?
             }
             ast::ArithmeticExpr::UnaryAssignment(op, lvalue) => {
-                apply_unary_assignment_op(shell, lvalue, *op).await?
+                apply_unary_assignment_op(shell, lvalue, *op)?
             }
             ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
                 let value = apply_binary_op(
@@ -121,9 +115,8 @@ impl Evaluatable for ast::ArithmeticExpr {
                     *op,
                     &ast::ArithmeticExpr::Reference(lvalue.clone()),
                     operand,
-                )
-                .await?;
-                assign(shell, lvalue, value).await?
+                )?;
+                assign(shell, lvalue, value)?
             }
         };
 
@@ -131,14 +124,14 @@ impl Evaluatable for ast::ArithmeticExpr {
     }
 }
 
-async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
+fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
     let value_str: Cow<'_, str> = match lvalue {
         ast::ArithmeticTarget::Variable(name) => shell
             .env
             .get(name)
             .map_or_else(|| Cow::Borrowed(""), |(_, v)| v.value().to_cow_string()),
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = index_expr.eval(shell).await?.to_string();
+            let index_str = index_expr.eval(shell)?.to_string();
 
             shell
                 .env
@@ -154,12 +147,12 @@ async fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Resu
 }
 
 #[allow(clippy::unnecessary_wraps)]
-async fn apply_unary_op(
+fn apply_unary_op(
     shell: &mut Shell,
     op: ast::UnaryOperator,
     operand: &ast::ArithmeticExpr,
 ) -> Result<i64, EvalError> {
-    let operand_eval = operand.eval(shell).await?;
+    let operand_eval = operand.eval(shell)?;
 
     match op {
         ast::UnaryOperator::UnaryPlus => Ok(operand_eval),
@@ -169,7 +162,7 @@ async fn apply_unary_op(
     }
 }
 
-async fn apply_binary_op(
+fn apply_binary_op(
     shell: &mut Shell,
     op: ast::BinaryOperator,
     left: &ast::ArithmeticExpr,
@@ -181,29 +174,29 @@ async fn apply_binary_op(
     // for the other operators.
     match op {
         ast::BinaryOperator::LogicalAnd => {
-            let left = left.eval(shell).await?;
+            let left = left.eval(shell)?;
             if left == 0 {
                 return Ok(bool_to_i64(false));
             }
 
-            let right = right.eval(shell).await?;
+            let right = right.eval(shell)?;
             return Ok(bool_to_i64(right != 0));
         }
         ast::BinaryOperator::LogicalOr => {
-            let left = left.eval(shell).await?;
+            let left = left.eval(shell)?;
             if left != 0 {
                 return Ok(bool_to_i64(true));
             }
 
-            let right = right.eval(shell).await?;
+            let right = right.eval(shell)?;
             return Ok(bool_to_i64(right != 0));
         }
         _ => (),
     }
 
     // The remaining operators unconditionally operate both operands.
-    let left = left.eval(shell).await?;
-    let right = right.eval(shell).await?;
+    let left = left.eval(shell)?;
+    let right = right.eval(shell)?;
 
     #[allow(clippy::cast_possible_truncation)]
     #[allow(clippy::cast_sign_loss)]
@@ -249,43 +242,39 @@ async fn apply_binary_op(
     }
 }
 
-async fn apply_unary_assignment_op(
+fn apply_unary_assignment_op(
     shell: &mut Shell,
     lvalue: &ast::ArithmeticTarget,
     op: ast::UnaryAssignmentOperator,
 ) -> Result<i64, EvalError> {
-    let value = deref_lvalue(shell, lvalue).await?;
+    let value = deref_lvalue(shell, lvalue)?;
 
     match op {
         ast::UnaryAssignmentOperator::PrefixIncrement => {
             let new_value = value + 1;
-            assign(shell, lvalue, new_value).await?;
+            assign(shell, lvalue, new_value)?;
             Ok(new_value)
         }
         ast::UnaryAssignmentOperator::PrefixDecrement => {
             let new_value = value - 1;
-            assign(shell, lvalue, new_value).await?;
+            assign(shell, lvalue, new_value)?;
             Ok(new_value)
         }
         ast::UnaryAssignmentOperator::PostfixIncrement => {
             let new_value = value + 1;
-            assign(shell, lvalue, new_value).await?;
+            assign(shell, lvalue, new_value)?;
             Ok(value)
         }
         ast::UnaryAssignmentOperator::PostfixDecrement => {
             let new_value = value - 1;
-            assign(shell, lvalue, new_value).await?;
+            assign(shell, lvalue, new_value)?;
             Ok(value)
         }
     }
 }
 
 #[allow(clippy::unnecessary_wraps)]
-async fn assign(
-    shell: &mut Shell,
-    lvalue: &ast::ArithmeticTarget,
-    value: i64,
-) -> Result<i64, EvalError> {
+fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Result<i64, EvalError> {
     match lvalue {
         ast::ArithmeticTarget::Variable(name) => {
             shell
@@ -300,7 +289,7 @@ async fn assign(
                 .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
         }
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = index_expr.eval(shell).await?.to_string();
+            let index_str = index_expr.eval(shell)?.to_string();
 
             shell
                 .env

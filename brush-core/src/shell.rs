@@ -1218,12 +1218,11 @@ impl Shell {
     }
 
     /// Evaluate the given arithmetic expression, returning the result.
-    pub async fn eval_arithmetic(
+    pub fn eval_arithmetic(
         &mut self,
-        expr: brush_parser::ast::ArithmeticExpr,
+        expr: &brush_parser::ast::ArithmeticExpr,
     ) -> Result<i64, error::Error> {
-        let result = expr.eval(self).await?;
-        Ok(result)
+        Ok(expr.eval(self)?)
     }
 }
 

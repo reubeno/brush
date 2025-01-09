@@ -16,10 +16,7 @@ lazy_static::lazy_static! {
     };
 }
 
-async fn eval_arithmetic_async(
-    mut shell: brush_core::Shell,
-    input: ast::ArithmeticExpr,
-) -> Result<()> {
+fn eval_arithmetic(mut shell: brush_core::Shell, input: ast::ArithmeticExpr) -> Result<()> {
     //
     // Turn it back into a string so we can pass it in on the command-line.
     //
@@ -30,7 +27,7 @@ async fn eval_arithmetic_async(
     //
     let parsed_expr = brush_parser::arithmetic::parse(input_str.as_str()).ok();
     let our_eval_result = if let Some(parsed_expr) = parsed_expr {
-        shell.eval_arithmetic(parsed_expr).await.ok()
+        shell.eval_arithmetic(&parsed_expr).ok()
     } else {
         None
     };
@@ -89,7 +86,5 @@ fuzz_target!(|input: ast::ArithmeticExpr| {
     }
 
     let shell = SHELL_TEMPLATE.clone();
-    TOKIO_RT
-        .block_on(eval_arithmetic_async(shell, input))
-        .unwrap();
+    eval_arithmetic(shell, input).unwrap();
 });

@@ -25,7 +25,7 @@ impl builtins::Command for LetCommand {
 
         for expr in &self.exprs {
             let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
-            let evaluated = parsed.eval(context.shell).await?;
+            let evaluated = parsed.eval(context.shell)?;
 
             if evaluated == 0 {
                 exit_code = builtins::ExitCode::Custom(1);
