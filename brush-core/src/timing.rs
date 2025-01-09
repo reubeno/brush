@@ -100,11 +100,11 @@ mod tests {
             "0m12.345s"
         );
         assert_eq!(
-            format_duration_non_posixly(&Duration::from_millis(123456)),
+            format_duration_non_posixly(&Duration::from_millis(123_456)),
             "2m3.456s"
         );
         assert_eq!(
-            format_duration_non_posixly(&Duration::from_millis(1234567)),
+            format_duration_non_posixly(&Duration::from_millis(1_234_567)),
             "20m34.567s"
         );
 
