@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["brush-shell", "brush-parser", "brush-core", "brush-interactive", "fuzz", "xtask"]
+members = [
+    "brush-shell",
+    "brush-parser",
+    "brush-core",
+    "brush-interactive",
+    "fuzz",
+    "xtask",
+]
 default-members = ["brush-shell"]
 
 [workspace.package]
@@ -42,6 +49,6 @@ struct_excessive_bools = "allow"
 
 [profile.release]
 strip = "debuginfo"
-opt-level = "z"
-lto = true
+lto = "fat"
 codegen-units = 1
+panic = "abort"
