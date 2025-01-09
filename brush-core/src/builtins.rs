@@ -50,6 +50,8 @@ mod set;
 mod shift;
 mod shopt;
 mod test;
+#[cfg(unix)]
+mod times;
 mod trap;
 mod true_;
 mod type_;

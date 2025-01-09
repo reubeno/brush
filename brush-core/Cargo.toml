@@ -57,6 +57,7 @@ command-fds = "0.3.0"
 nix = { version = "0.29.0", features = [
     "fs",
     "process",
+    "resource",
     "signal",
     "term",
     "user",
