@@ -46,32 +46,12 @@ pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
     }
 }
 
-fn special_builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
-    builtins::Registration {
-        execute_func: exec_builtin::<B>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: true,
-        declaration_builtin: false,
-    }
-}
-
 fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
     builtins::Registration {
         execute_func: exec_declaration_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
-        declaration_builtin: true,
-    }
-}
-
-fn special_decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
-    builtins::Registration {
-        execute_func: exec_declaration_builtin::<B>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: true,
         declaration_builtin: true,
     }
 }
@@ -194,32 +174,38 @@ pub(crate) fn get_default_builtins(
     // should be a special built-in.
     //
 
-    m.insert("break".into(), special_builtin::<break_::BreakCommand>());
-    m.insert(":".into(), special_builtin::<colon::ColonCommand>());
+    m.insert("break".into(), builtin::<break_::BreakCommand>().special());
+    m.insert(
+        ":".into(),
+        simple_builtin::<colon::ColonCommand>().special(),
+    );
     m.insert(
         "continue".into(),
-        special_builtin::<continue_::ContinueCommand>(),
+        builtin::<continue_::ContinueCommand>().special(),
     );
-    m.insert(".".into(), special_builtin::<dot::DotCommand>());
-    m.insert("eval".into(), special_builtin::<eval::EvalCommand>());
+    m.insert(".".into(), builtin::<dot::DotCommand>().special());
+    m.insert("eval".into(), builtin::<eval::EvalCommand>().special());
     #[cfg(unix)]
-    m.insert("exec".into(), special_builtin::<exec::ExecCommand>());
-    m.insert("exit".into(), special_builtin::<exit::ExitCommand>());
+    m.insert("exec".into(), builtin::<exec::ExecCommand>().special());
+    m.insert("exit".into(), builtin::<exit::ExitCommand>().special());
     m.insert(
         "export".into(),
-        special_decl_builtin::<export::ExportCommand>(),
+        decl_builtin::<export::ExportCommand>().special(),
     );
-    m.insert("return".into(), special_builtin::<return_::ReturnCommand>());
-    m.insert("set".into(), special_builtin::<set::SetCommand>());
-    m.insert("shift".into(), special_builtin::<shift::ShiftCommand>());
-    m.insert("trap".into(), special_builtin::<trap::TrapCommand>());
-    m.insert("unset".into(), special_builtin::<unset::UnsetCommand>());
+    m.insert(
+        "return".into(),
+        builtin::<return_::ReturnCommand>().special(),
+    );
+    m.insert("set".into(), builtin::<set::SetCommand>().special());
+    m.insert("shift".into(), builtin::<shift::ShiftCommand>().special());
+    m.insert("trap".into(), builtin::<trap::TrapCommand>().special());
+    m.insert("unset".into(), builtin::<unset::UnsetCommand>().special());
 
     m.insert(
         "readonly".into(),
-        special_decl_builtin::<declare::DeclareCommand>(),
+        decl_builtin::<declare::DeclareCommand>().special(),
     );
-    m.insert("times".into(), special_builtin::<times::TimesCommand>());
+    m.insert("times".into(), builtin::<times::TimesCommand>().special());
 
     //
     // Non-special builtins
@@ -260,7 +246,7 @@ pub(crate) fn get_default_builtins(
         m.insert("mapfile".into(), builtin::<mapfile::MapFileCommand>());
         m.insert("printf".into(), builtin::<printf::PrintfCommand>());
         m.insert("shopt".into(), builtin::<shopt::ShoptCommand>());
-        m.insert("source".into(), special_builtin::<dot::DotCommand>());
+        m.insert("source".into(), builtin::<dot::DotCommand>().special());
         #[cfg(unix)]
         m.insert("suspend".into(), builtin::<suspend::SuspendCommand>());
         m.insert("test".into(), builtin::<test::TestCommand>());
