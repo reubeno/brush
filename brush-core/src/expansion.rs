@@ -24,6 +24,7 @@ use crate::variables::{self, ShellValue};
 struct Expansion {
     fields: Vec<WordField>,
     concatenate: bool,
+    from_array: bool,
     undefined: bool,
 }
 
@@ -32,6 +33,7 @@ impl Default for Expansion {
         Self {
             fields: vec![],
             concatenate: true,
+            from_array: false,
             undefined: false,
         }
     }
@@ -83,11 +85,12 @@ impl Expansion {
             fields: vec![WordField::from(String::new())],
             concatenate: true,
             undefined: true,
+            from_array: false,
         }
     }
 
     pub(crate) fn polymorphic_len(&self) -> usize {
-        if self.fields.len() > 1 {
+        if self.from_array {
             self.fields.len()
         } else {
             self.fields.iter().fold(0, |acc, field| acc + field.len())
@@ -97,9 +100,9 @@ impl Expansion {
     pub(crate) fn polymorphic_subslice(&self, index: usize, end: usize) -> Self {
         let len = end - index;
 
-        // If there are multiple fields, then interpret `index` and `end` as indices
-        // into the vector of fields.
-        if self.fields.len() > 1 {
+        // If we came from an array, then interpret `index` and `end` as indices
+        // into the elements.
+        if self.from_array {
             let actual_len = min(len, self.fields.len() - index);
             let fields = self.fields[index..(index + actual_len)].to_vec();
 
@@ -107,6 +110,7 @@ impl Expansion {
                 fields,
                 concatenate: self.concatenate,
                 undefined: self.undefined,
+                from_array: self.from_array,
             }
         } else {
             // Otherwise, interpret `index` and `end` as indices into the string contents.
@@ -176,6 +180,7 @@ impl Expansion {
                 fields,
                 concatenate: self.concatenate,
                 undefined: self.undefined,
+                from_array: self.from_array,
             }
         }
     }
@@ -621,7 +626,7 @@ impl<'a> WordExpander<'a> {
                     let Expansion {
                         fields: this_fields,
                         concatenate,
-                        undefined: _undefined,
+                        ..
                     } = self.expand_word_piece(piece.piece).await?;
 
                     let fields_to_append = if concatenate {
@@ -679,6 +684,7 @@ impl<'a> WordExpander<'a> {
                     fields,
                     concatenate: false,
                     undefined: false,
+                    from_array: false,
                 }
             }
             brush_parser::word::WordPiece::TildePrefix(prefix) => Expansion::from(
@@ -1098,6 +1104,7 @@ impl<'a> WordExpander<'a> {
                             .map(|name| WordField(vec![ExpansionPiece::Splittable(name)]))
                             .collect(),
                         concatenate,
+                        from_array: true,
                         undefined: false,
                     })
                 }
@@ -1118,6 +1125,7 @@ impl<'a> WordExpander<'a> {
                         .map(|key| WordField(vec![ExpansionPiece::Splittable(key)]))
                         .collect(),
                     concatenate,
+                    from_array: true,
                     undefined: false,
                 })
             }
@@ -1303,12 +1311,14 @@ impl<'a> WordExpander<'a> {
                             .map(|value| WordField(vec![ExpansionPiece::Splittable(value)]))
                             .collect(),
                         concatenate: *concatenate,
+                        from_array: true,
                         undefined: false,
                     })
                 } else {
                     Ok(Expansion {
                         fields: vec![],
                         concatenate: *concatenate,
+                        from_array: true,
                         undefined: false,
                     })
                 }
@@ -1348,6 +1358,7 @@ impl<'a> WordExpander<'a> {
                         .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
                         .collect(),
                     concatenate: *concatenate,
+                    from_array: true,
                     undefined: false,
                 })
             }
@@ -1554,6 +1565,7 @@ fn coalesce_expansions(expansions: Vec<Expansion>) -> Expansion {
 
             // TODO: What if expansions have different concatenation values?
             acc.concatenate = expansion.concatenate;
+            acc.from_array = expansion.from_array;
 
             acc
         })
@@ -1600,6 +1612,7 @@ fn transform_expansion(
     Ok(Expansion {
         fields: transformed_fields,
         concatenate: expansion.concatenate,
+        from_array: expansion.from_array,
         undefined: expansion.undefined,
     })
 }
