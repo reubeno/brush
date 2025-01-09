@@ -203,7 +203,7 @@ async fn instantiate_shell(
                 .disallow_overwriting_regular_files_via_output_redirection,
             enabled_shopt_options: args.enabled_shopt_options.clone(),
             do_not_execute_commands: args.do_not_execute_commands,
-            login: args.login || argv0.as_ref().map_or(false, |a0| a0.starts_with('-')),
+            login: args.login || argv0.as_ref().is_some_and(|a0| a0.starts_with('-')),
             interactive,
             no_editing: args.no_editing,
             no_profile: args.no_profile,

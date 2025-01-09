@@ -1,20 +1,29 @@
-use clap::Parser;
-
-use crate::{builtins, commands};
+use crate::{builtins, commands, error};
 
 /// No-op command.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
-pub(crate) struct ColonCommand {
-    #[clap(allow_hyphen_values = true)]
-    args: Vec<String>,
-}
+pub(crate) struct ColonCommand {}
 
-impl builtins::Command for ColonCommand {
-    async fn execute(
-        &self,
+impl builtins::SimpleCommand for ColonCommand {
+    fn get_content(
+        _name: &str,
+        content_type: builtins::ContentType,
+    ) -> Result<String, crate::error::Error> {
+        match content_type {
+            builtins::ContentType::DetailedHelp => {
+                Ok("Null command; always returns success.".into())
+            }
+            builtins::ContentType::ShortUsage => Ok(":: :".into()),
+            builtins::ContentType::ShortDescription => Ok(": - Null command".into()),
+            builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
+        }
+    }
+
+    fn execute(
         _context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        Ok(builtins::ExitCode::Success)
+        _args: &[&str],
+    ) -> Result<builtins::BuiltinResult, crate::error::Error> {
+        Ok(builtins::BuiltinResult {
+            exit_code: builtins::ExitCode::Success,
+        })
     }
 }

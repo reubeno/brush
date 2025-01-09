@@ -282,6 +282,17 @@ pub struct Registration {
     pub declaration_builtin: bool,
 }
 
+impl Registration {
+    /// Updates the given registration to mark it for a special builtin.
+    #[must_use]
+    pub fn special(self) -> Self {
+        Self {
+            special_builtin: true,
+            ..self
+        }
+    }
+}
+
 fn get_builtin_man_page(_name: &str, _command: &clap::Command) -> Result<String, error::Error> {
     error::unimp("man page rendering is not yet implemented")
 }
