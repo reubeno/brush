@@ -173,6 +173,13 @@ cases:
       echo "len(y[*]) = ${#y[*]}"
       echo "len(y[@]) = ${#y[@]}"
 
+  - name: "Array length: single item"
+    stdin: |
+      z=("something here")
+      echo "len(z)    = ${#z}"
+      echo "len(z[*]) = ${#z[*]}"
+      echo "len(z[@]) = ${#z[@]}"
+
   - name: "Parameter expression: default value"
     stdin: |
       value="value"
@@ -725,6 +732,12 @@ cases:
       myarray=(abcde fghij klmno pqrst uvwxy z)
       echo "\${myarray[@]:2:2}: ${myarray[@]:2:2}"
       echo "\${myarray[@]:2}: ${myarray[@]:2}"
+
+  - name: "Substring operator on single-element array"
+    stdin: |
+      myarray=("abcde fghij klmno pqrst uvwxy z")
+      echo "\${myarray[@]:0:1}: ${myarray[@]:0:1}"
+      echo "\${myarray[@]:1}: ${myarray[@]:1}"
 
   - name: "Substring operator past end of array"
     stdin: |
