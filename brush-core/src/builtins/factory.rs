@@ -261,6 +261,8 @@ pub(crate) fn get_default_builtins(
         m.insert("printf".into(), builtin::<printf::PrintfCommand>());
         m.insert("shopt".into(), builtin::<shopt::ShoptCommand>());
         m.insert("source".into(), special_builtin::<dot::DotCommand>());
+        #[cfg(unix)]
+        m.insert("suspend".into(), builtin::<suspend::SuspendCommand>());
         m.insert("test".into(), builtin::<test::TestCommand>());
         m.insert("[".into(), builtin::<test::TestCommand>());
         m.insert("typeset".into(), builtin::<declare::DeclareCommand>());
@@ -284,7 +286,6 @@ pub(crate) fn get_default_builtins(
         m.insert("history".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
         m.insert("readarray".into(), builtin::<unimp::UnimplementedCommand>());
-        m.insert("suspend".into(), builtin::<unimp::UnimplementedCommand>());
     }
 
     //

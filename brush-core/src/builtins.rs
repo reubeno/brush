@@ -49,6 +49,8 @@ mod return_;
 mod set;
 mod shift;
 mod shopt;
+#[cfg(unix)]
+mod suspend;
 mod test;
 mod times;
 mod trap;
