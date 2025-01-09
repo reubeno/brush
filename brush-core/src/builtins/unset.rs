@@ -62,7 +62,7 @@ impl builtins::Command for UnsetCommand {
                     brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                         // First evaluate the index expression.
                         let index_as_expr = brush_parser::arithmetic::parse(index.as_str())?;
-                        let evaluated_index = context.shell.eval_arithmetic(index_as_expr).await?;
+                        let evaluated_index = context.shell.eval_arithmetic(&index_as_expr)?;
 
                         context
                             .shell

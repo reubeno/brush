@@ -29,9 +29,9 @@ mod unix {
         let _ = shell.basic_expand_string(s).await.unwrap();
     }
 
-    async fn eval_arithmetic_expr(shell: &mut brush_core::Shell, expr: &str) {
+    fn eval_arithmetic_expr(shell: &mut brush_core::Shell, expr: &str) {
         let parsed_expr = brush_parser::arithmetic::parse(expr).unwrap();
-        let _ = shell.eval_arithmetic(parsed_expr).await.unwrap();
+        let _ = shell.eval_arithmetic(&parsed_expr).unwrap();
     }
 
     /// This function defines core shell benchmarks.
@@ -62,7 +62,7 @@ mod unix {
         c.bench_function("eval_arithmetic", |b| {
             b.iter_batched_ref(
                 || shell.clone(),
-                |s| rt.block_on(eval_arithmetic_expr(s, "3 + 10 * 2")),
+                |s| eval_arithmetic_expr(s, "3 + 10 * 2"),
                 criterion::BatchSize::SmallInput,
             );
         });
