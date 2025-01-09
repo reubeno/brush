@@ -29,6 +29,7 @@ mod shell;
 mod sys;
 mod terminal;
 mod tests;
+mod timing;
 mod trace_categories;
 mod traps;
 mod variables;

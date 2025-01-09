@@ -96,12 +96,26 @@ impl Display for AndOr {
     }
 }
 
+/// The type of timing requested for a pipeline.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+pub enum PipelineTimed {
+    /// The pipeline should be timed with bash-like output.
+    Timed,
+    /// The pipeline should be timed with POSIX-like output.
+    TimedWithPosixOutput,
+}
+
 /// A pipeline of commands, where each command's output is passed as standard input
 /// to the command that follows it.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct Pipeline {
+    /// Indicates whether the pipeline's execution should be timed with reported
+    /// timings in output.
+    pub timed: Option<PipelineTimed>,
     /// Indicates whether the result of the overall pipeline should be the logical
     /// negation of the result of the pipeline.
     pub bang: bool,

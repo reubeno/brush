@@ -243,7 +243,17 @@ peg::parser! {
             specific_operator("||") { ast::AndOr::Or }
 
         rule pipeline() -> ast::Pipeline =
-            bang:bang()? seq:pipe_sequence() { ast::Pipeline { bang: bang.is_some(), seq } }
+            timed:pipeline_timed()? bang:bang()? seq:pipe_sequence() { ast::Pipeline { timed, bang: bang.is_some(), seq } }
+
+        rule pipeline_timed() -> ast::PipelineTimed =
+            non_posix_extensions_enabled() specific_word("time") posix_output:specific_word("-p")? {
+                if posix_output.is_some() {
+                    ast::PipelineTimed::TimedWithPosixOutput
+                } else {
+                    ast::PipelineTimed::Timed
+                }
+            }
+
         rule bang() -> bool = specific_word("!") { true }
 
         pub(crate) rule pipe_sequence() -> Vec<ast::Command> =
@@ -1038,6 +1048,7 @@ for f in A B C; do
             complete_commands: vec![CompoundList(vec![CompoundListItem(
                 AndOrList {
                     first: Pipeline {
+                        timed: None,
                         bang: false,
                         seq: vec![Command::Compound(
                             CompoundCommand::ForClause(ForClauseCommand {
@@ -1046,6 +1057,7 @@ for f in A B C; do
                                 body: DoGroupCommand(CompoundList(vec![CompoundListItem(
                                     AndOrList {
                                         first: Pipeline {
+                                            timed: None,
                                             bang: false,
                                             seq: vec![Command::Simple(SimpleCommand {
                                                 prefix: None,

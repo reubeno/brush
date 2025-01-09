@@ -17,7 +17,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, traps};
+use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, timing, traps};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -288,6 +288,13 @@ impl Execute for ast::Pipeline {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
+        // Capture current timing if so requested.
+        let stopwatch = self
+            .timed
+            .is_some()
+            .then(timing::start_timing)
+            .transpose()?;
+
         // Spawn all the processes required for the pipeline, connecting outputs/inputs with pipes
         // as needed.
         let spawn_results = spawn_pipeline_processes(self, shell, params).await?;
@@ -301,6 +308,34 @@ impl Execute for ast::Pipeline {
         }
 
         shell.last_exit_status = result.exit_code;
+
+        // If requested, report timing.
+        if let Some(timed) = &self.timed {
+            if let Some(stderr) = params.open_files.stderr() {
+                let timing = stopwatch.unwrap().stop()?;
+
+                match timed {
+                    ast::PipelineTimed::Timed => {
+                        std::write!(
+                            stderr.to_owned(),
+                            "\nreal\t{}\nuser\t{}\nsys\t{}\n",
+                            timing::format_duration_non_posixly(&timing.wall),
+                            timing::format_duration_non_posixly(&timing.user),
+                            timing::format_duration_non_posixly(&timing.system),
+                        )?;
+                    }
+                    ast::PipelineTimed::TimedWithPosixOutput => {
+                        std::write!(
+                            stderr.to_owned(),
+                            "real {}\nuser {}\nsys {}\n",
+                            timing::format_duration_posixly(&timing.wall),
+                            timing::format_duration_posixly(&timing.user),
+                            timing::format_duration_posixly(&timing.system),
+                        )?;
+                    }
+                }
+            }
+        }
 
         Ok(result)
     }

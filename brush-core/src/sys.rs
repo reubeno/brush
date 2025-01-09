@@ -28,6 +28,7 @@ pub(crate) mod fs;
 pub(crate) use platform::network;
 pub(crate) use platform::pipes;
 pub(crate) use platform::process;
+pub(crate) use platform::resource;
 pub(crate) use platform::signal;
 pub(crate) use platform::terminal;
 pub(crate) use platform::users;

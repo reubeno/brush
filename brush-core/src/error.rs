@@ -188,6 +188,10 @@ pub enum Error {
     /// Maximum function call depth was exceeded.
     #[error("maximum function call depth exceeded")]
     MaxFunctionCallDepthExceeded,
+
+    /// System time error.
+    #[error("system time error: {0}")]
+    TimeError(#[from] std::time::SystemTimeError),
 }
 
 /// Convenience function for returning an error for unimplemented functionality.
