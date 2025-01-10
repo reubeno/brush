@@ -211,7 +211,19 @@ cases:
       - path: "def.txt"
     stdin: |
       shopt -s extglob
-      echo !(a*)
+      echo "1: " !(a*)
+      echo "2: " !(abc.txt)
+      echo "3: " !(abc)
+      echo "4: " !(*)
+
+  - name: "Pathname expansion: Degenerate inverted pattern"
+    test_files:
+      - path: "abc.txt"
+      - path: "abd.txt"
+      - path: "def.txt"
+    stdin: |
+      shopt -s extglob
+      echo !()
 
   - name: "Pathname expansion: Extended patterns"
     ignore_stderr: true
@@ -220,7 +232,9 @@ cases:
       - path: "abd.txt"
     stdin: |
       shopt -s extglob
-      echo @(abc|abd).txt
+      echo "1: " @(abc|abd).txt
+      echo "2: " @(abc.txt)
+      echo "3: " @(abc)
 
   - name: "Pathname expansion: Optional patterns"
     ignore_stderr: true

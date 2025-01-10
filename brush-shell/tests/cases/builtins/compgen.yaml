@@ -137,6 +137,32 @@ cases:
       echo "[Take 1]"
       compgen -W 'somebody something' -X '&b*' some
 
+  - name: "compgen -X with extglob"
+    stdin: |
+      touch README
+      shopt -s extglob
+
+      echo "[Take 1]"
+      compgen -f READ
+
+      echo "[Take 2]"
+      compgen -f -X "READ" READ
+
+      echo "[Take 3]"
+      compgen -f -X "README" READ
+
+      echo "[Take 4]"
+      compgen -f -X "!(READ)" READ
+
+      echo "[Take 5]"
+      compgen -f -X "!(README)" READ
+
+      echo "[Take 6]"
+      compgen -f -X "!!(READ)" READ
+
+      echo "[Take 7]"
+      compgen -f -X "!!(README)" READ
+
   - name: "compgen -o dirnames"
     stdin: |
       echo "[Take 1]"

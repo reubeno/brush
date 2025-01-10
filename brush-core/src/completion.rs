@@ -291,12 +291,14 @@ impl Spec {
                 let mut updated = IndexSet::new();
 
                 for candidate in candidates {
-                    if !completion_filter_pattern_matches(
+                    let matches = completion_filter_pattern_matches(
                         filter_pattern.as_str(),
                         candidate.as_str(),
                         context.token_to_complete,
                         shell,
-                    )? {
+                    )?;
+
+                    if self.filter_pattern_excludes != matches {
                         updated.insert(candidate);
                     }
                 }
@@ -1184,15 +1186,6 @@ fn completion_filter_pattern_matches(
     token_being_completed: &str,
     shell: &mut Shell,
 ) -> Result<bool, error::Error> {
-    let mut pattern = pattern;
-
-    let invert = if let Some(remaining_pattern) = pattern.strip_prefix('!') {
-        pattern = remaining_pattern;
-        true
-    } else {
-        false
-    };
-
     let pattern = replace_unescaped_ampersands(pattern, token_being_completed);
 
     //
@@ -1205,7 +1198,7 @@ fn completion_filter_pattern_matches(
 
     let matches = pattern.exactly_matches(candidate)?;
 
-    Ok(if invert { !matches } else { matches })
+    Ok(matches)
 }
 
 fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<'a, str> {

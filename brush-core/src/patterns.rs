@@ -642,4 +642,174 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_matching() -> Result<()> {
+        assert!(Pattern::from("abc").exactly_matches("abc")?);
+
+        assert!(!Pattern::from("abc").exactly_matches("ABC")?);
+        assert!(!Pattern::from("abc").exactly_matches("xabcx")?);
+        assert!(!Pattern::from("abc").exactly_matches("")?);
+        assert!(!Pattern::from("abc").exactly_matches("abcd")?);
+        assert!(!Pattern::from("abc").exactly_matches("def")?);
+
+        assert!(Pattern::from("*").exactly_matches("")?);
+        assert!(Pattern::from("*").exactly_matches("abc")?);
+        assert!(Pattern::from("*").exactly_matches(" ")?);
+
+        assert!(Pattern::from("a*").exactly_matches("a")?);
+        assert!(Pattern::from("a*").exactly_matches("ab")?);
+        assert!(Pattern::from("a*").exactly_matches("a ")?);
+
+        assert!(!Pattern::from("a*").exactly_matches("A")?);
+        assert!(!Pattern::from("a*").exactly_matches("")?);
+        assert!(!Pattern::from("a*").exactly_matches("bc")?);
+        assert!(!Pattern::from("a*").exactly_matches("xax")?);
+        assert!(!Pattern::from("a*").exactly_matches(" a")?);
+
+        assert!(Pattern::from("*a").exactly_matches("a")?);
+        assert!(Pattern::from("*a").exactly_matches("ba")?);
+        assert!(Pattern::from("*a").exactly_matches("aa")?);
+        assert!(Pattern::from("*a").exactly_matches(" a")?);
+
+        assert!(!Pattern::from("*a").exactly_matches("BA")?);
+        assert!(!Pattern::from("*a").exactly_matches("")?);
+        assert!(!Pattern::from("*a").exactly_matches("ab")?);
+        assert!(!Pattern::from("*a").exactly_matches("xax")?);
+
+        Ok(())
+    }
+
+    fn make_extglob(s: &str) -> Pattern {
+        let pattern = Pattern::from(s).set_extended_globbing(true);
+        let regex_str = pattern.to_regex_str(true, true).unwrap();
+        eprintln!("pattern: '{s}' => regex: '{regex_str}'");
+
+        pattern
+    }
+
+    #[test]
+    fn test_extglob_or_matching() -> Result<()> {
+        assert!(make_extglob("@(a|b)").exactly_matches("a")?);
+        assert!(make_extglob("@(a|b)").exactly_matches("b")?);
+
+        assert!(!make_extglob("@(a|b)").exactly_matches("")?);
+        assert!(!make_extglob("@(a|b)").exactly_matches("c")?);
+        assert!(!make_extglob("@(a|b)").exactly_matches("ab")?);
+
+        assert!(!make_extglob("@(a|b)").exactly_matches("")?);
+        assert!(make_extglob("@(a*b|b)").exactly_matches("ab")?);
+        assert!(make_extglob("@(a*b|b)").exactly_matches("axb")?);
+        assert!(make_extglob("@(a*b|b)").exactly_matches("b")?);
+
+        assert!(!make_extglob("@(a*b|b)").exactly_matches("a")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extglob_not_matching() -> Result<()> {
+        // Basic cases.
+        assert!(make_extglob("!(a)").exactly_matches("")?);
+        assert!(make_extglob("!(a)").exactly_matches(" ")?);
+        assert!(make_extglob("!(a)").exactly_matches("x")?);
+        assert!(make_extglob("!(a)").exactly_matches(" a ")?);
+        assert!(make_extglob("!(a)").exactly_matches("a ")?);
+        assert!(make_extglob("!(a)").exactly_matches("aa")?);
+        assert!(!make_extglob("!(a)").exactly_matches("a")?);
+
+        assert!(make_extglob("a!(a)a").exactly_matches("aa")?);
+        assert!(make_extglob("a!(a)a").exactly_matches("aaaa")?);
+        assert!(make_extglob("a!(a)a").exactly_matches("aba")?);
+        assert!(!make_extglob("a!(a)a").exactly_matches("a")?);
+        assert!(!make_extglob("a!(a)a").exactly_matches("aaa")?);
+        assert!(!make_extglob("a!(a)a").exactly_matches("baaa")?);
+
+        // Alternates.
+        assert!(make_extglob("!(a|b)").exactly_matches("c")?);
+        assert!(make_extglob("!(a|b)").exactly_matches("ab")?);
+        assert!(make_extglob("!(a|b)").exactly_matches("aa")?);
+        assert!(make_extglob("!(a|b)").exactly_matches("bb")?);
+        assert!(!make_extglob("!(a|b)").exactly_matches("a")?);
+        assert!(!make_extglob("!(a|b)").exactly_matches("b")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extglob_advanced_not_matching() -> Result<()> {
+        assert!(make_extglob("!(a*)").exactly_matches("b")?);
+        assert!(make_extglob("!(a*)").exactly_matches("")?);
+        assert!(!make_extglob("!(a*)").exactly_matches("a")?);
+        assert!(!make_extglob("!(a*)").exactly_matches("abc")?);
+        assert!(!make_extglob("!(a*)").exactly_matches("aabc")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extglob_not_degenerate_matching() -> Result<()> {
+        // Degenerate case.
+        assert!(make_extglob("!()").exactly_matches("a")?);
+        assert!(!make_extglob("!()").exactly_matches("")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extglob_zero_or_more_matching() -> Result<()> {
+        assert!(make_extglob("x*(a)x").exactly_matches("xx")?);
+        assert!(make_extglob("x*(a)x").exactly_matches("xax")?);
+        assert!(make_extglob("x*(a)x").exactly_matches("xaax")?);
+
+        assert!(!make_extglob("x*(a)x").exactly_matches("x")?);
+        assert!(!make_extglob("x*(a)x").exactly_matches("xa")?);
+        assert!(!make_extglob("x*(a)x").exactly_matches("xxx")?);
+
+        assert!(make_extglob("*(a|b)").exactly_matches("")?);
+        assert!(make_extglob("*(a|b)").exactly_matches("a")?);
+        assert!(make_extglob("*(a|b)").exactly_matches("b")?);
+        assert!(make_extglob("*(a|b)").exactly_matches("aba")?);
+        assert!(make_extglob("*(a|b)").exactly_matches("aaa")?);
+
+        assert!(!make_extglob("*(a|b)").exactly_matches("c")?);
+        assert!(!make_extglob("*(a|b)").exactly_matches("ca")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extglob_one_or_more_matching() -> Result<()> {
+        fn make_extglob(s: &str) -> Pattern {
+            Pattern::from(s).set_extended_globbing(true)
+        }
+
+        assert!(make_extglob("x+(a)x").exactly_matches("xax")?);
+        assert!(make_extglob("x+(a)x").exactly_matches("xaax")?);
+
+        assert!(!make_extglob("x+(a)x").exactly_matches("xx")?);
+        assert!(!make_extglob("x+(a)x").exactly_matches("x")?);
+        assert!(!make_extglob("x+(a)x").exactly_matches("xa")?);
+        assert!(!make_extglob("x+(a)x").exactly_matches("xxx")?);
+
+        assert!(make_extglob("+(a|b)").exactly_matches("a")?);
+        assert!(make_extglob("+(a|b)").exactly_matches("b")?);
+        assert!(make_extglob("+(a|b)").exactly_matches("aba")?);
+        assert!(make_extglob("+(a|b)").exactly_matches("aaa")?);
+
+        assert!(!make_extglob("+(a|b)").exactly_matches("")?);
+        assert!(!make_extglob("+(a|b)").exactly_matches("c")?);
+        assert!(!make_extglob("+(a|b)").exactly_matches("ca")?);
+
+        assert!(make_extglob("+(x+(ab)y)").exactly_matches("xaby")?);
+        assert!(make_extglob("+(x+(ab)y)").exactly_matches("xababy")?);
+        assert!(make_extglob("+(x+(ab)y)").exactly_matches("xabababy")?);
+        assert!(make_extglob("+(x+(ab)y)").exactly_matches("xabababyxabababyxabababy")?);
+
+        assert!(!make_extglob("+(x+(ab)y)").exactly_matches("xy")?);
+        assert!(!make_extglob("+(x+(ab)y)").exactly_matches("xay")?);
+        assert!(!make_extglob("+(x+(ab)y)").exactly_matches("xyxy")?);
+
+        Ok(())
+    }
 }

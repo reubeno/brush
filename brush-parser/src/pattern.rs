@@ -92,25 +92,28 @@ peg::parser! {
             kind:extended_glob_prefix() "(" branches:extended_glob_body() ")" {
                 let mut s = String::new();
 
-                s.push('(');
-
                 // fancy_regex uses ?! to indicate a negative lookahead.
                 if matches!(kind, ExtendedGlobKind::Exclamation) {
-                    s.push_str("(?!");
-                }
+                    if !branches.is_empty() {
+                        s.push_str("(?:(?!");
+                        s.push_str(&branches.join("|"));
+                        s.push_str(").*|(?>");
+                        s.push_str(&branches.join("|"));
+                        s.push_str(").+?|)");
+                    } else {
+                        s.push_str("(?:.+)")
+                    }
+                } else {
+                    s.push('(');
+                    s.push_str(&branches.join("|"));
+                    s.push(')');
 
-                s.push_str(&branches.join("|"));
-                s.push(')');
-
-                match kind {
-                    ExtendedGlobKind::Plus => s.push('+'),
-                    ExtendedGlobKind::Question => s.push('?'),
-                    ExtendedGlobKind::Star => s.push('*'),
-                    ExtendedGlobKind::At | ExtendedGlobKind::Exclamation => (),
-                }
-
-                if matches!(kind, ExtendedGlobKind::Exclamation) {
-                    s.push_str(".)*?");
+                    match kind {
+                        ExtendedGlobKind::Plus => s.push('+'),
+                        ExtendedGlobKind::Question => s.push('?'),
+                        ExtendedGlobKind::Star => s.push('*'),
+                        ExtendedGlobKind::At | ExtendedGlobKind::Exclamation => (),
+                    }
                 }
 
                 s
@@ -124,14 +127,12 @@ peg::parser! {
             "*" { ExtendedGlobKind::Star }
 
         pub(crate) rule extended_glob_body() -> Vec<String> =
-            first_branches:((b:extended_glob_branch() "|" { b })*) last_branch:extended_glob_branch() {
-                let mut branches = first_branches;
-                branches.push(last_branch);
-                branches
-            }
+            extended_glob_branch() ** "|"
 
         rule extended_glob_branch() -> String =
-            pieces:(!['|' | ')'] piece:pattern_piece() { piece })* { pieces.join("") }
+            pieces:(!['|' | ')'] piece:pattern_piece() { piece })+ {
+                pieces.join("")
+            }
     }
 }
 
@@ -183,6 +184,11 @@ mod tests {
         assert_eq!(
             pattern_to_regex_translator::extended_glob_pattern("*(ab|ac)", true)?,
             "(ab|ac)*"
+        );
+
+        assert_eq!(
+            pattern_to_regex_translator::extended_glob_body("", true)?,
+            Vec::<String>::new(),
         );
 
         Ok(())
