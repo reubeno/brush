@@ -94,12 +94,19 @@ pub(crate) struct CommonCompleteCommandArgs {
 }
 
 impl CommonCompleteCommandArgs {
-    fn create_spec(&self) -> completion::Spec {
+    fn create_spec(&self, extglob_enabled: bool) -> completion::Spec {
         let filter_pattern_excludes;
         let filter_pattern = if let Some(filter_pattern) = self.filter_pattern.as_ref() {
-            if let Some(filter_pattern) = filter_pattern.strip_prefix('!') {
-                filter_pattern_excludes = false;
-                Some(filter_pattern.to_owned())
+            // If the pattern starts with a '!' that's not the start of an extglob pattern,
+            // then we invert.
+            if let Some(remaining_pattern) = filter_pattern.strip_prefix('!') {
+                if !extglob_enabled || !remaining_pattern.starts_with('(') {
+                    filter_pattern_excludes = false;
+                    Some(remaining_pattern.to_owned())
+                } else {
+                    filter_pattern_excludes = true;
+                    Some(filter_pattern.to_owned())
+                }
             } else {
                 filter_pattern_excludes = true;
                 Some(filter_pattern.clone())
@@ -280,7 +287,10 @@ impl CompleteCommand {
             }
         } else {
             if let Some(target_spec) = target_spec {
-                let mut new_spec = Some(self.common_args.create_spec());
+                let mut new_spec = Some(
+                    self.common_args
+                        .create_spec(context.shell.options.extended_globbing),
+                );
                 std::mem::swap(&mut new_spec, target_spec);
             } else {
                 return error::unimp("set unspecified spec");
@@ -443,7 +453,9 @@ impl CompleteCommand {
             return Ok(true);
         }
 
-        let config = self.common_args.create_spec();
+        let config = self
+            .common_args
+            .create_spec(context.shell.options.extended_globbing);
 
         context.shell.completion_config.set(name, config);
 
@@ -466,7 +478,9 @@ impl builtins::Command for CompGenCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        let mut spec = self.common_args.create_spec();
+        let mut spec = self
+            .common_args
+            .create_spec(context.shell.options.extended_globbing);
         spec.options.no_sort = true;
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();

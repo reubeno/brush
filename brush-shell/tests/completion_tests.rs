@@ -324,7 +324,7 @@ async fn complete_path_args_to_well_known_programs() -> Result<()> {
     // Complete.
     let results = test_shell.complete_end_of_line("tar tvf ./item").await?;
 
-    assert_eq!(results, ["./item1", "./item2"]);
+    assert_eq!(results, ["./item2"]);
 
     Ok(())
 }
