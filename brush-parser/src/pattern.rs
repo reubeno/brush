@@ -55,7 +55,7 @@ peg::parser! {
             ['\\'] [c] { c.to_string() }
 
         rule bracket_expression() -> String =
-            "[" invert:(("!")?) members:bracket_member()+ "]" {
+            "[" invert:(invert_char()?) members:bracket_member()+ "]" {
                 let mut members = members;
                 if invert.is_some() {
                     members.insert(0, String::from("^"));
@@ -63,6 +63,9 @@ peg::parser! {
 
                 std::format!("[{}]", members.join(""))
             }
+
+        rule invert_char() -> bool =
+            ['!' | '^'] { true }
 
         rule bracket_member() -> String =
             char_class_expression() /
@@ -76,7 +79,7 @@ peg::parser! {
             "alnum" / "alpha" / "blank" / "cntrl" / "digit" / "graph" / "lower" / "print" / "punct" / "space" / "upper"/ "xdigit"
 
         rule char_range() -> String =
-            range:$([_] "-" [_]) { range.to_owned() }
+            range:$([_] "-" [c if c != ']']) { range.to_owned() }
 
         rule char_list() -> String =
             chars:$([c if c != ']']+) { escape_char_class_char_list(chars) }
