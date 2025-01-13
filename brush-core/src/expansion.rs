@@ -6,6 +6,7 @@ use brush_parser::word::ParameterTransformOp;
 use brush_parser::word::SubstringMatchKind;
 use itertools::Itertools;
 
+use crate::arithmetic;
 use crate::arithmetic::ExpandAndEvaluate;
 use crate::commands;
 use crate::env;
@@ -1334,10 +1335,9 @@ impl<'a> WordExpander<'a> {
         let index_to_use = if for_set_associative_array {
             self.basic_expand_to_str(index).await?
         } else {
-            let index_expr = ast::UnexpandedArithmeticExpr {
-                value: index.to_owned(),
-            };
-            self.expand_arithmetic_expr(index_expr).await?
+            arithmetic::expand_and_eval(self.shell, index, false)
+                .await?
+                .to_string()
         };
 
         Ok(index_to_use)

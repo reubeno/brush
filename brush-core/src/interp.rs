@@ -9,7 +9,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::arithmetic::ExpandAndEvaluate;
+use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg, CommandSpawnResult};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
@@ -1219,8 +1219,7 @@ async fn apply_assignment(
 
         if will_be_indexed_array {
             array_index = Some(
-                ast::UnexpandedArithmeticExpr { value: idx.clone() }
-                    .eval(shell, false)
+                arithmetic::expand_and_eval(shell, idx.as_str(), false)
                     .await?
                     .to_string(),
             );

@@ -2,8 +2,7 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    arithmetic::ExpandAndEvaluate,
-    env, error, escape, expansion, namedoptions, patterns,
+    arithmetic, env, error, escape, expansion, namedoptions, patterns,
     sys::{
         fs::{MetadataExt, PathExt},
         users,
@@ -269,14 +268,8 @@ async fn apply_binary_predicate(
             Ok(left > right)
         }
         ast::BinaryPredicate::ArithmeticEqualTo => {
-            let unexpanded_left = ast::UnexpandedArithmeticExpr {
-                value: left.value.clone(),
-            };
-            let unexpanded_right = ast::UnexpandedArithmeticExpr {
-                value: right.value.clone(),
-            };
-            let left = unexpanded_left.eval(shell, false).await?;
-            let right = unexpanded_right.eval(shell, false).await?;
+            let left = arithmetic::expand_and_eval(shell, left.value.as_str(), false).await?;
+            let right = arithmetic::expand_and_eval(shell, right.value.as_str(), false).await?;
 
             if shell.options.print_commands_and_arguments {
                 shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
@@ -285,14 +278,8 @@ async fn apply_binary_predicate(
             Ok(left == right)
         }
         ast::BinaryPredicate::ArithmeticNotEqualTo => {
-            let unexpanded_left = ast::UnexpandedArithmeticExpr {
-                value: left.value.clone(),
-            };
-            let unexpanded_right = ast::UnexpandedArithmeticExpr {
-                value: right.value.clone(),
-            };
-            let left = unexpanded_left.eval(shell, false).await?;
-            let right = unexpanded_right.eval(shell, false).await?;
+            let left = arithmetic::expand_and_eval(shell, left.value.as_str(), false).await?;
+            let right = arithmetic::expand_and_eval(shell, right.value.as_str(), false).await?;
 
             if shell.options.print_commands_and_arguments {
                 shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
@@ -301,14 +288,8 @@ async fn apply_binary_predicate(
             Ok(left != right)
         }
         ast::BinaryPredicate::ArithmeticLessThan => {
-            let unexpanded_left = ast::UnexpandedArithmeticExpr {
-                value: left.value.clone(),
-            };
-            let unexpanded_right = ast::UnexpandedArithmeticExpr {
-                value: right.value.clone(),
-            };
-            let left = unexpanded_left.eval(shell, false).await?;
-            let right = unexpanded_right.eval(shell, false).await?;
+            let left = arithmetic::expand_and_eval(shell, left.value.as_str(), false).await?;
+            let right = arithmetic::expand_and_eval(shell, right.value.as_str(), false).await?;
 
             if shell.options.print_commands_and_arguments {
                 shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
@@ -317,14 +298,8 @@ async fn apply_binary_predicate(
             Ok(left < right)
         }
         ast::BinaryPredicate::ArithmeticLessThanOrEqualTo => {
-            let unexpanded_left = ast::UnexpandedArithmeticExpr {
-                value: left.value.clone(),
-            };
-            let unexpanded_right = ast::UnexpandedArithmeticExpr {
-                value: right.value.clone(),
-            };
-            let left = unexpanded_left.eval(shell, false).await?;
-            let right = unexpanded_right.eval(shell, false).await?;
+            let left = arithmetic::expand_and_eval(shell, left.value.as_str(), false).await?;
+            let right = arithmetic::expand_and_eval(shell, right.value.as_str(), false).await?;
 
             if shell.options.print_commands_and_arguments {
                 shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
@@ -333,14 +308,8 @@ async fn apply_binary_predicate(
             Ok(left <= right)
         }
         ast::BinaryPredicate::ArithmeticGreaterThan => {
-            let unexpanded_left = ast::UnexpandedArithmeticExpr {
-                value: left.value.clone(),
-            };
-            let unexpanded_right = ast::UnexpandedArithmeticExpr {
-                value: right.value.clone(),
-            };
-            let left = unexpanded_left.eval(shell, false).await?;
-            let right = unexpanded_right.eval(shell, false).await?;
+            let left = arithmetic::expand_and_eval(shell, left.value.as_str(), false).await?;
+            let right = arithmetic::expand_and_eval(shell, right.value.as_str(), false).await?;
 
             if shell.options.print_commands_and_arguments {
                 shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
@@ -349,14 +318,8 @@ async fn apply_binary_predicate(
             Ok(left > right)
         }
         ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo => {
-            let unexpanded_left = ast::UnexpandedArithmeticExpr {
-                value: left.value.clone(),
-            };
-            let unexpanded_right = ast::UnexpandedArithmeticExpr {
-                value: right.value.clone(),
-            };
-            let left = unexpanded_left.eval(shell, false).await?;
-            let right = unexpanded_right.eval(shell, false).await?;
+            let left = arithmetic::expand_and_eval(shell, left.value.as_str(), false).await?;
+            let right = arithmetic::expand_and_eval(shell, right.value.as_str(), false).await?;
 
             if shell.options.print_commands_and_arguments {
                 shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
