@@ -17,7 +17,7 @@ pub(crate) struct PushdCommand {
 
 impl builtins::Command for PushdCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.no_directory_change {

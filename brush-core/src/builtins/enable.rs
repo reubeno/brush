@@ -39,7 +39,7 @@ pub(crate) struct EnableCommand {
 
 impl builtins::Command for EnableCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, crate::error::Error> {
         let mut result = builtins::ExitCode::Success;

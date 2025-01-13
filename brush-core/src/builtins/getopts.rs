@@ -37,7 +37,7 @@ impl builtins::Command for GetOptsCommand {
 
     #[allow(clippy::too_many_lines)]
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut args = HashMap::<char, bool>::new();

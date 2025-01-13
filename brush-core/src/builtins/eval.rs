@@ -11,7 +11,7 @@ pub(crate) struct EvalCommand {
 
 impl builtins::Command for EvalCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if !self.args.is_empty() {
@@ -19,7 +19,7 @@ impl builtins::Command for EvalCommand {
 
             tracing::debug!("Applying eval to: {:?}", args_concatenated);
 
-            let params = context.params.clone();
+            let params = context.params;
             let exec_result = context.shell.run_string(args_concatenated, &params).await?;
 
             Ok(builtins::ExitCode::Custom(exec_result.exit_code))

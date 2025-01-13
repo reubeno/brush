@@ -52,7 +52,7 @@ pub(crate) struct BindCommand {
 
 impl builtins::Command for BindCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.keymap.is_some() {

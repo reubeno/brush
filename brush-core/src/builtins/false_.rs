@@ -8,7 +8,7 @@ pub(crate) struct FalseCommand {}
 
 impl builtins::Command for FalseCommand {
     async fn execute(
-        &self,
+        self,
         _context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, crate::error::Error> {
         Ok(builtins::ExitCode::Custom(1))

@@ -28,7 +28,7 @@ pub(crate) struct CommandCommand {
 
 impl builtins::Command for CommandCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, error::Error> {
         if self.use_default_path {
@@ -111,7 +111,7 @@ impl CommandCommand {
     }
 
     async fn execute_command(
-        &self,
+        self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, error::Error> {
         let args: Vec<_> = std::iter::once(&self.command_name)
@@ -120,7 +120,7 @@ impl CommandCommand {
             .collect();
 
         // We can reuse the context, but need to update the name.
-        context.command_name.clone_from(&self.command_name);
+        context.command_name = self.command_name;
 
         // We do not have an existing process group to place this into.
         let mut pgid = None;

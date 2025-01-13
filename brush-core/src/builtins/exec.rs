@@ -25,7 +25,7 @@ pub(crate) struct ExecCommand {
 
 impl builtins::Command for ExecCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, crate::error::Error> {
         if self.args.is_empty() {
@@ -43,7 +43,7 @@ impl builtins::Command for ExecCommand {
             &self.args[0],
             argv0.as_str(),
             &self.args[1..],
-            context.params.open_files.clone(),
+            context.params.open_files,
             self.empty_environment,
         )?;
 

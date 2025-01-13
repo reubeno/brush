@@ -27,7 +27,7 @@ pub(crate) struct DirsCommand {
 
 impl builtins::Command for DirsCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.clear {

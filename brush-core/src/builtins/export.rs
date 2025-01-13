@@ -39,7 +39,7 @@ impl builtins::DeclarationCommand for ExportCommand {
 
 impl builtins::Command for ExportCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if !self.declarations.is_empty() {

@@ -16,7 +16,7 @@ pub(crate) struct UnaliasCommand {
 
 impl builtins::Command for UnaliasCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut exit_code = builtins::ExitCode::Success;

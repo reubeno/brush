@@ -20,7 +20,7 @@ pub(crate) struct TrapCommand {
 
 impl builtins::Command for TrapCommand {
     async fn execute(
-        &self,
+        self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, crate::error::Error> {
         if self.list_signals {
@@ -40,14 +40,14 @@ impl builtins::Command for TrapCommand {
             Self::remove_all_handlers(&mut context, signal.parse()?);
             Ok(builtins::ExitCode::Success)
         } else {
-            let handler = &self.args[0];
+            let handler = self.args[0].as_str();
 
             let mut signal_types = vec![];
             for signal in &self.args[1..] {
                 signal_types.push(signal.parse()?);
             }
 
-            Self::register_handler(&mut context, signal_types, handler.as_str());
+            Self::register_handler(&mut context, signal_types, handler);
             Ok(builtins::ExitCode::Success)
         }
     }

@@ -15,7 +15,7 @@ pub(crate) struct UnimplementedCommand {
 
 impl builtins::Command for UnimplementedCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         writeln!(

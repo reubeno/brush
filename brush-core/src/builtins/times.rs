@@ -9,7 +9,7 @@ pub(crate) struct TimesCommand {}
 
 impl builtins::Command for TimesCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, error::Error> {
         let (self_user, self_system) = crate::sys::resource::get_self_user_and_system_time()?;

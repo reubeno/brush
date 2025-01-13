@@ -215,7 +215,7 @@ pub trait Command: Parser {
     /// * `context` - The context in which the command is being executed.
     // NOTE: we use desugared async here because we need a Send marker
     fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> impl std::future::Future<Output = Result<ExitCode, error::Error>> + std::marker::Send;
 

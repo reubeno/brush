@@ -12,7 +12,7 @@ pub(crate) struct FgCommand {
 
 impl builtins::Command for FgCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut stderr = context.stdout();

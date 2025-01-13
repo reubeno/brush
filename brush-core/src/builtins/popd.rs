@@ -15,7 +15,7 @@ pub(crate) struct PopdCommand {
 
 impl builtins::Command for PopdCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if let Some(popped) = context.shell.directory_stack.pop() {

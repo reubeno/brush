@@ -16,7 +16,7 @@ pub(crate) struct BuiltinCommand {
 
 impl builtins::Command for BuiltinCommand {
     async fn execute(
-        &self,
+        self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if let Some(builtin_name) = &self.builtin_name {

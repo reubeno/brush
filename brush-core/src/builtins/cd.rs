@@ -32,7 +32,7 @@ pub(crate) struct CdCommand {
 
 impl builtins::Command for CdCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // TODO: implement options
@@ -45,7 +45,7 @@ impl builtins::Command for CdCommand {
         }
 
         let mut should_print = false;
-        let target_dir = if let Some(target_dir) = &self.target_dir {
+        let target_dir = if let Some(target_dir) = self.target_dir {
             // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
                 should_print = true;
@@ -56,8 +56,7 @@ impl builtins::Command for CdCommand {
                     return Ok(builtins::ExitCode::Custom(1));
                 }
             } else {
-                // TODO: remove clone, and use temporary lifetime extension after rust 1.75
-                target_dir.clone()
+                target_dir
             }
         // `cd' without arguments is equivalent to `cd $HOME'
         } else {

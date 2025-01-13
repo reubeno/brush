@@ -17,13 +17,13 @@ pub(crate) struct DotCommand {
 
 impl builtins::Command for DotCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // TODO: Handle trap inheritance.
         let script_args: Vec<_> = self.script_args.iter().map(|a| a.as_str()).collect();
 
-        let params = context.params.clone();
+        let params = context.params;
         let result = context
             .shell
             .source(

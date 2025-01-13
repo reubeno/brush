@@ -25,7 +25,7 @@ pub(crate) struct WaitCommand {
 
 impl builtins::Command for WaitCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, crate::error::Error> {
         if self.wait_for_terminate {

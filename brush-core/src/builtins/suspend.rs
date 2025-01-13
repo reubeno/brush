@@ -13,7 +13,7 @@ pub(crate) struct SuspendCommand {
 
 impl builtins::Command for SuspendCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, error::Error> {
         if context.shell.options.login_shell && !self.force {

@@ -31,7 +31,7 @@ pub(crate) struct HashCommand {
 
 impl builtins::Command for HashCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut result = builtins::ExitCode::Success;
@@ -73,7 +73,7 @@ impl builtins::Command for HashCommand {
                     result = builtins::ExitCode::Custom(1);
                 }
             }
-        } else if let Some(path) = &self.path_to_use {
+        } else if let Some(path) = self.path_to_use {
             for name in &self.names {
                 context.shell.program_location_cache.set(name, path.clone());
             }

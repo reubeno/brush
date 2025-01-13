@@ -11,7 +11,7 @@ pub(crate) struct ShiftCommand {
 
 impl builtins::Command for ShiftCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let n = self.n.unwrap_or(1);

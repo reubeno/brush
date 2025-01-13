@@ -36,8 +36,8 @@ pub(crate) struct TypeCommand {
     names: Vec<String>,
 }
 
-enum ResolvedType {
-    Alias(String),
+enum ResolvedType<'a> {
+    Alias(&'a str),
     Keyword,
     Function(Arc<ast::FunctionDefinition>),
     Builtin,
@@ -46,7 +46,7 @@ enum ResolvedType {
 
 impl builtins::Command for TypeCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut result = builtins::ExitCode::Success;
@@ -142,13 +142,13 @@ impl builtins::Command for TypeCommand {
 }
 
 impl TypeCommand {
-    fn resolve_types(&self, shell: &Shell, name: &str) -> Vec<ResolvedType> {
+    fn resolve_types<'a>(&self, shell: &'a Shell, name: &str) -> Vec<ResolvedType<'a>> {
         let mut types = vec![];
 
         if !self.force_path_search {
             // Check for aliases.
             if let Some(a) = shell.aliases.get(name) {
-                types.push(ResolvedType::Alias(a.clone()));
+                types.push(ResolvedType::Alias(a));
             }
 
             // Check for keywords.

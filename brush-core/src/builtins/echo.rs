@@ -40,7 +40,7 @@ impl builtins::Command for EchoCommand {
     }
 
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut trailing_newline = !self.no_trailing_newline;

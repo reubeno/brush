@@ -54,7 +54,7 @@ enum CompleteCommand {
 
 impl builtins::Command for BrushInfoCommand {
     async fn execute(
-        &self,
+        self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         self.command_group.execute(&mut context).await

@@ -12,7 +12,7 @@ pub(crate) struct ContinueCommand {
 
 impl builtins::Command for ContinueCommand {
     async fn execute(
-        &self,
+        self,
         _context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // If specified, which_loop needs to be positive.

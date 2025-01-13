@@ -61,7 +61,7 @@ pub(crate) struct ReadCommand {
 
 impl builtins::Command for ReadCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.use_readline {
@@ -95,7 +95,7 @@ impl builtins::Command for ReadCommand {
 
             // If -a was specified, then place the fields as elements into the array.
             if let Some(array_variable) = &self.array_variable {
-                let literal_fields = fields.into_iter().map(|f| (None, f)).collect();
+                let literal_fields = fields.into_iter().map(|f| (None, f.to_owned())).collect();
 
                 context.shell.env.update_or_add(
                     array_variable,
@@ -123,7 +123,7 @@ impl builtins::Command for ReadCommand {
                         let next_field = fields.pop_front().unwrap();
                         context.shell.env.update_or_add(
                             name,
-                            variables::ShellValueLiteral::Scalar(next_field),
+                            variables::ShellValueLiteral::Scalar(next_field.to_owned()),
                             |_| Ok(()),
                             env::EnvironmentLookup::Anywhere,
                             env::EnvironmentScope::Global,
@@ -273,12 +273,13 @@ impl ReadCommand {
     }
 }
 
-fn split_line_by_ifs(context: &commands::ExecutionContext<'_>, line: &str) -> VecDeque<String> {
+fn split_line_by_ifs<'a>(
+    context: &commands::ExecutionContext<'_>,
+    line: &'a str,
+) -> VecDeque<&'a str> {
     // Retrieve effective value of IFS for splitting.
     let ifs = context.shell.get_ifs();
     let split_chars: Vec<char> = ifs.chars().collect();
 
-    line.split(split_chars.as_slice())
-        .map(|field| field.to_owned())
-        .collect()
+    line.split(split_chars.as_slice()).collect()
 }

@@ -36,7 +36,7 @@ impl UnsetNameInterpretation {
 
 impl builtins::Command for UnsetCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         //

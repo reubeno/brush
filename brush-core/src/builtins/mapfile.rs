@@ -45,7 +45,7 @@ pub(crate) struct MapFileCommand {
 
 impl builtins::Command for MapFileCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, error::Error> {
         if self.delimiter != "\n" {

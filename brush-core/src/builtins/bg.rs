@@ -12,7 +12,7 @@ pub(crate) struct BgCommand {
 
 impl builtins::Command for BgCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut exit_code = builtins::ExitCode::Success;

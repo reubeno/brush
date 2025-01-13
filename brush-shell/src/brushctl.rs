@@ -44,7 +44,7 @@ enum EventsCommand {
 
 impl brush_core::builtins::Command for BrushCtlCommand {
     async fn execute(
-        &self,
+        self,
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
         match self.command_group {

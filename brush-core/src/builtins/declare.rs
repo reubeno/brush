@@ -116,7 +116,7 @@ impl builtins::Command for DeclareCommand {
     }
 
     async fn execute(
-        &self,
+        self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let verb = match context.command_name.as_str() {

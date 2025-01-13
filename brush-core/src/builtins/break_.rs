@@ -12,7 +12,7 @@ pub(crate) struct BreakCommand {
 
 impl builtins::Command for BreakCommand {
     async fn execute(
-        &self,
+        self,
         _context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // If specified, which_loop needs to be positive.

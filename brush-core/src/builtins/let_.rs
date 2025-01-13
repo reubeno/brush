@@ -13,7 +13,7 @@ pub(crate) struct LetCommand {
 
 impl builtins::Command for LetCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut exit_code = builtins::ExitCode::InvalidUsage;

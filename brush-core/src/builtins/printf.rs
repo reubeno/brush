@@ -18,10 +18,10 @@ pub(crate) struct PrintfCommand {
 
 impl builtins::Command for PrintfCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        let result = self.evaluate(&context)?;
+        let result = Self::evaluate(&context, self.format_and_args)?;
 
         if let Some(variable_name) = &self.output_variable {
             expansion::assign_to_named_parameter(context.shell, variable_name, result).await?;
@@ -36,10 +36,10 @@ impl builtins::Command for PrintfCommand {
 
 impl PrintfCommand {
     fn evaluate(
-        &self,
         context: &commands::ExecutionContext<'_>,
+        format_and_args: Vec<String>,
     ) -> Result<String, crate::error::Error> {
-        match self.format_and_args.as_slice() {
+        match format_and_args.as_slice() {
             // Special-case common format string: "%s".
             [fmt, arg] if fmt == "%s" => Ok(arg.clone()),
             // Special-case invocation of printf with %q-based format string from bash-completion.
@@ -47,7 +47,7 @@ impl PrintfCommand {
             [fmt, arg] if fmt == "%q" => Ok(Self::evaluate_format_with_percent_q(None, arg)),
             [fmt, arg] if fmt == "~%q" => Ok(Self::evaluate_format_with_percent_q(Some("~"), arg)),
             // Fallback to external command.
-            _ => self.evaluate_via_external_command(context),
+            _ => Self::evaluate_via_external_command(context, format_and_args),
         }
     }
 
@@ -64,13 +64,13 @@ impl PrintfCommand {
 
     #[allow(clippy::unwrap_in_result)]
     fn evaluate_via_external_command(
-        &self,
         context: &commands::ExecutionContext<'_>,
+        format_and_args: Vec<String>,
     ) -> Result<String, crate::error::Error> {
         // TODO: Don't call external printf command.
         let mut cmd = std::process::Command::new("printf");
         cmd.env_clear();
-        cmd.args(&self.format_and_args);
+        cmd.args(format_and_args);
 
         let output = cmd.output()?;
 

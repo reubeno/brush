@@ -139,7 +139,7 @@ impl builtins::Command for SetCommand {
 
     #[allow(clippy::too_many_lines)]
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, error::Error> {
         let mut result = builtins::ExitCode::Success;
@@ -265,7 +265,7 @@ impl builtins::Command for SetCommand {
         }
 
         let mut named_options: HashMap<String, bool> = HashMap::new();
-        if let Some(option_names) = &self.set_option.disable {
+        if let Some(option_names) = self.set_option.disable {
             saw_option = true;
             if option_names.is_empty() {
                 for (option_name, option_definition) in crate::namedoptions::SET_O_OPTIONS
@@ -278,11 +278,11 @@ impl builtins::Command for SetCommand {
                 }
             } else {
                 for option_name in option_names {
-                    named_options.insert(option_name.to_owned(), false);
+                    named_options.insert(option_name, false);
                 }
             }
         }
-        if let Some(option_names) = &self.set_option.enable {
+        if let Some(option_names) = self.set_option.enable {
             saw_option = true;
             if option_names.is_empty() {
                 for (option_name, option_definition) in crate::namedoptions::SET_O_OPTIONS
@@ -295,7 +295,7 @@ impl builtins::Command for SetCommand {
                 }
             } else {
                 for option_name in option_names {
-                    named_options.insert(option_name.to_owned(), true);
+                    named_options.insert(option_name, true);
                 }
             }
         }
@@ -308,7 +308,9 @@ impl builtins::Command for SetCommand {
             }
         }
 
-        for (i, arg) in self.positional_args.iter().enumerate() {
+        saw_option = saw_option || !self.positional_args.is_empty();
+
+        for (i, arg) in self.positional_args.into_iter().enumerate() {
             if arg == "-" && i == 0 {
                 continue;
             }
@@ -316,11 +318,9 @@ impl builtins::Command for SetCommand {
             if i < context.shell.positional_parameters.len() {
                 arg.clone_into(&mut context.shell.positional_parameters[i]);
             } else {
-                context.shell.positional_parameters.push(arg.to_owned());
+                context.shell.positional_parameters.push(arg);
             }
         }
-
-        saw_option = saw_option || !self.positional_args.is_empty();
 
         // If we *still* haven't seen any options, then we need to display all variables and
         // functions.

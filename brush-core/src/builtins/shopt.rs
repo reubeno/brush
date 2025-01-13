@@ -33,7 +33,7 @@ pub(crate) struct ShoptCommand {
 
 impl builtins::Command for ShoptCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.set && self.unset {

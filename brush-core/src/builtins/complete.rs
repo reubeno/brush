@@ -220,7 +220,7 @@ pub(crate) struct CompleteCommand {
 
 impl builtins::Command for CompleteCommand {
     async fn execute(
-        &self,
+        self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut result = builtins::ExitCode::Success;
@@ -475,7 +475,7 @@ pub(crate) struct CompGenCommand {
 
 impl builtins::Command for CompGenCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut spec = self
@@ -553,15 +553,15 @@ pub(crate) struct CompOptCommand {
 
 impl builtins::Command for CompOptCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut options = HashMap::new();
-        for option in &self.disabled_options {
-            options.insert(option.clone(), false);
+        for option in self.disabled_options {
+            options.insert(option, false);
         }
-        for option in &self.enabled_options {
-            options.insert(option.clone(), true);
+        for option in self.enabled_options {
+            options.insert(option, true);
         }
 
         if !self.names.is_empty() {

@@ -17,7 +17,7 @@ pub(crate) struct AliasCommand {
 
 impl builtins::Command for AliasCommand {
     async fn execute(
-        &self,
+        self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let mut exit_code = builtins::ExitCode::Success;
