@@ -642,10 +642,8 @@ impl Spec {
             ("COMP_CWORD", context.token_index.to_string().into()),
         ];
 
-        if tracing::enabled!(target: trace_categories::COMPLETION, tracing::Level::DEBUG) {
-            tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
-                vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
-        }
+        tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
+            vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
 
         let mut vars_to_remove = vec![];
         for (var, value) in vars_and_values {
@@ -673,6 +671,7 @@ impl Spec {
         shell.traps.handler_depth += 1;
 
         let invoke_result = shell.invoke_function(function_name, &args).await;
+        tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 
         shell.traps.handler_depth -= 1;
 

@@ -291,12 +291,25 @@ cases:
       myfunc abc
       myfunc "*"
 
+  - name: "Pattern matching: character ranges"
+    stdin: |
+      [[ "x" == [a-z] ]] && echo "1. Matched"
+      [[ "x" == [0-9] ]] && echo "2. Matched"
+      [[ "-" == [---] ]] && echo "3. Matched"
+
   - name: "Pattern matching: character sets"
     stdin: |
-      [[ "x" == [a-z] ]]       && echo "1. Matched"
-      [[ "x" == [xyz] ]]       && echo "2. Matched"
-      [[ "1" == [[:digit:]] ]] && echo "3. Matched"
-      [[ "(" == [\(]  ]]       && echo "4. Matched"
+      [[ "x" == [abc]  ]] && echo "1. Matched"
+      [[ "x" == [xyz]  ]] && echo "2. Matched"
+      [[ "x" == [^xyz] ]] && echo "3. Matched"
+      [[ "x" == [!xyz] ]] && echo "4. Matched"
+      [[ "(" == [\(]   ]] && echo "5. Matched"
+      [[ "+" == [+-]   ]] && echo "6. Matched"
+
+  - name: "Pattern matching: character classes"
+    stdin: |
+      [[ "1" == [[:digit:]] ]] && echo "1. Matched"
+      [[ "1" == [[:alpha:]] ]] && echo "2. Matched"
 
   - name: "Pattern matching: case sensitivity"
     stdin: |
