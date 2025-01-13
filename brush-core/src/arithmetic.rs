@@ -52,25 +52,40 @@ pub trait ExpandAndEvaluate {
 
 impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
     async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError> {
-        // Per documentation, first shell-expand it.
-        let expanded_self = expansion::basic_expand_str_without_tilde(shell, self.value.as_str())
-            .await
-            .map_err(|_e| EvalError::FailedToExpandExpression)?;
-
-        // Now parse.
-        let expr = brush_parser::arithmetic::parse(&expanded_self)
-            .map_err(|_e| EvalError::ParseError(expanded_self))?;
-
-        // Trace if applicable.
-        if trace_if_needed && shell.options.print_commands_and_arguments {
-            shell
-                .trace_command(std::format!("(( {expr} ))"))
-                .map_err(|_err| EvalError::TraceError)?;
-        }
-
-        // Now evaluate.
-        expr.eval(shell)
+        expand_and_eval(shell, self.value.as_str(), trace_if_needed).await
     }
+}
+
+/// Evaluate the given arithmetic expression, returning the resulting numeric value.
+///
+/// # Arguments
+///
+/// * `shell` - The shell to use for evaluation.
+/// * `expr` - The unexpanded arithmetic expression to evaluate.
+/// * `trace_if_needed` - Whether to trace the evaluation.
+pub(crate) async fn expand_and_eval(
+    shell: &mut Shell,
+    expr: &str,
+    trace_if_needed: bool,
+) -> Result<i64, EvalError> {
+    // Per documentation, first shell-expand it.
+    let expanded_self = expansion::basic_expand_str_without_tilde(shell, expr)
+        .await
+        .map_err(|_e| EvalError::FailedToExpandExpression)?;
+
+    // Now parse.
+    let expr = brush_parser::arithmetic::parse(&expanded_self)
+        .map_err(|_e| EvalError::ParseError(expanded_self))?;
+
+    // Trace if applicable.
+    if trace_if_needed && shell.options.print_commands_and_arguments {
+        shell
+            .trace_command(std::format!("(( {expr} ))"))
+            .map_err(|_err| EvalError::TraceError)?;
+    }
+
+    // Now evaluate.
+    expr.eval(shell)
 }
 
 /// Trait implemented by evaluatable arithmetic expressions.
