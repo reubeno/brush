@@ -483,26 +483,41 @@ pub fn tokenize_str_with_options(
     input: &str,
     options: &TokenizerOptions,
 ) -> Result<Vec<Token>, TokenizerError> {
-    cacheable_tokenize_str(input.to_owned(), options.to_owned())
+    uncached_tokenize_string(input.to_owned(), options.to_owned())
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
-fn cacheable_tokenize_str(
+#[cached::proc_macro::cached(name = "TOKENIZE_CACHE", size = 64, result = true)]
+fn uncached_tokenize_string(
     input: String,
     options: TokenizerOptions,
 ) -> Result<Vec<Token>, TokenizerError> {
+    uncached_tokenize_str(input.as_str(), &options)
+}
+
+/// Break the given input shell script string into tokens, returning the tokens.
+/// No caching is performed.
+///
+/// # Arguments
+///
+/// * `input` - The shell script to tokenize.
+pub fn uncached_tokenize_str(
+    input: &str,
+    options: &TokenizerOptions,
+) -> Result<Vec<Token>, TokenizerError> {
     let mut reader = std::io::BufReader::new(input.as_bytes());
-    let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, &options);
+    let mut tokenizer = crate::tokenizer::Tokenizer::new(&mut reader, options);
 
     let mut tokens = vec![];
     loop {
-        let tokenize_result = tokenizer.next_token()?;
-        if let Some(token) = tokenize_result.token {
-            tokens.push(token);
-        }
-
-        if matches!(tokenize_result.reason, TokenEndReason::EndOfInput) {
-            break;
+        match tokenizer.next_token()? {
+            TokenizeResult {
+                token: Some(token), ..
+            } => tokens.push(token),
+            TokenizeResult {
+                reason: TokenEndReason::EndOfInput,
+                ..
+            } => break,
+            _ => (),
         }
     }
 
