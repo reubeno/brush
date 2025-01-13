@@ -18,7 +18,7 @@ workspace = true
 
 [dependencies]
 async-recursion = "1.1.1"
-async-trait = "0.1.84"
+async-trait = "0.1.85"
 brush-parser = { version = "^0.2.12", path = "../brush-parser" }
 cached = "0.54.0"
 cfg-if = "1.0.0"
@@ -30,16 +30,16 @@ indexmap = "2.7.0"
 itertools = "0.14.0"
 lazy_static = "1.5.0"
 rand = "0.8.5"
-thiserror = "2.0.7"
+thiserror = "2.0.11"
 tracing = "0.1.41"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.42.0", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.43.0", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.0"
 os_pipe = { version = "1.2.1", features = ["io_safety"] }
-tokio = { version = "1.41.1", features = [
+tokio = { version = "1.43.0", features = [
     "io-util",
     "macros",
     "process",
