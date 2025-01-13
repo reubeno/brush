@@ -146,7 +146,9 @@ mod unix {
 #[cfg(unix)]
 criterion::criterion_group! {
     name = benches;
-    config = criterion::Criterion::default().with_profiler(pprof::criterion::PProfProfiler::new(100, pprof::criterion::Output::Flamegraph(None)));
+    config = criterion::Criterion::default()
+                .measurement_time(std::time::Duration::from_secs(10))
+                .with_profiler(pprof::criterion::PProfProfiler::new(100, pprof::criterion::Output::Flamegraph(None)));
     targets = unix::criterion_benchmark
 }
 #[cfg(unix)]

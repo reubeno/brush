@@ -1,29 +1,34 @@
 #[cfg(unix)]
 mod unix {
-    use brush_parser::{parse_tokens, tokenize_str};
-    use criterion::{black_box, Criterion};
+    use brush_parser::{parse_tokens, Token};
+    use criterion::Criterion;
 
-    fn parse_script(contents: &str) -> brush_parser::ast::Program {
-        let tokens = tokenize_str(contents).unwrap();
+    fn uncached_tokenize(content: &str) -> Vec<brush_parser::Token> {
+        brush_parser::uncached_tokenize_str(content, &brush_parser::TokenizerOptions::default())
+            .unwrap()
+    }
+
+    fn cacheable_tokenize(content: &str) -> Vec<brush_parser::Token> {
+        brush_parser::tokenize_str_with_options(content, &brush_parser::TokenizerOptions::default())
+            .unwrap()
+    }
+
+    fn parse(tokens: &Vec<Token>) -> brush_parser::ast::Program {
         parse_tokens(
-            &tokens,
+            tokens,
             &brush_parser::ParserOptions::default(),
             &brush_parser::SourceInfo::default(),
         )
         .unwrap()
     }
 
-    fn parse_sample_script() -> brush_parser::ast::Program {
-        let input = r#"
-            for f in A B C; do
-                echo "${f@L}" >&2
-            done
-    "#;
+    const SAMPLE_SCRIPT: &str = r#"
+for f in A B C; do
+    echo "${f@L}" >&2
+done
+"#;
 
-        parse_script(input)
-    }
-
-    fn benchmark_parsing_script(c: &mut Criterion, script_path: &std::path::Path) {
+    fn benchmark_parsing_script_using_caches(c: &mut Criterion, script_path: &std::path::Path) {
         let contents = std::fs::read_to_string(script_path).unwrap();
 
         c.bench_function(
@@ -32,14 +37,17 @@ mod unix {
                 script_path.file_name().unwrap().to_string_lossy()
             )
             .as_str(),
-            |b| b.iter(|| black_box(parse_script(contents.as_str()))),
+            |b| b.iter(|| parse(&cacheable_tokenize(contents.as_str()))),
         );
     }
 
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
-        c.bench_function("parse_sample_script", |b| {
-            b.iter(|| black_box(parse_sample_script()))
+        c.bench_function("tokenize_sample_script", |b| {
+            b.iter(|| uncached_tokenize(SAMPLE_SCRIPT))
         });
+
+        let tokens = uncached_tokenize(SAMPLE_SCRIPT);
+        c.bench_function("parse_sample_script", |b| b.iter(|| parse(&tokens)));
 
         const POSSIBLE_BASH_COMPLETION_SCRIPT_PATH: &str =
             "/usr/share/bash-completion/bash_completion";
@@ -47,7 +55,7 @@ mod unix {
             std::path::PathBuf::from(POSSIBLE_BASH_COMPLETION_SCRIPT_PATH);
 
         if well_known_complicated_script.exists() {
-            benchmark_parsing_script(c, &well_known_complicated_script);
+            benchmark_parsing_script_using_caches(c, &well_known_complicated_script);
         }
     }
 }
