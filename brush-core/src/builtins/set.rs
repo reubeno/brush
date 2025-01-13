@@ -335,6 +335,10 @@ impl builtins::Command for SetCommand {
 fn display_all(context: &commands::ExecutionContext<'_>) -> Result<(), error::Error> {
     // Display variables.
     for (name, var) in context.shell.env.iter().sorted_by_key(|v| v.0) {
+        if !var.is_enumerable() {
+            continue;
+        }
+
         writeln!(
             context.stdout(),
             "{name}={}",
