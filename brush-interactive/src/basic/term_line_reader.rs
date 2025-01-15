@@ -244,7 +244,8 @@ impl<'a> ReadLineState<'a> {
         self.raw_mode.disable()?;
         eprintln!();
         for candidate in &completions.candidates {
-            eprintln!("{candidate}");
+            let formatted = format_completion_candidate(candidate.as_str(), &completions.options);
+            eprintln!("{formatted}");
         }
         self.raw_mode.enable()?;
         std::io::stderr().flush()?;
@@ -265,6 +266,22 @@ impl<'a> ReadLineState<'a> {
 
         Ok(())
     }
+}
+
+fn format_completion_candidate(
+    mut candidate: &str,
+    options: &brush_core::completion::ProcessingOptions,
+) -> String {
+    if options.treat_as_filenames {
+        let trimmed = candidate
+            .strip_suffix(std::path::MAIN_SEPARATOR)
+            .unwrap_or(candidate);
+        if let Some(index) = trimmed.rfind(std::path::MAIN_SEPARATOR) {
+            candidate = &candidate[index + 1..];
+        }
+    }
+
+    candidate.to_string()
 }
 
 fn repeated_char_str(c: char, count: usize) -> String {
