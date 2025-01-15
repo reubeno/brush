@@ -60,6 +60,60 @@ cases:
         echo $f
       done
 
+  - name: "Continue with bad N"
+    known_failure: true # Fails differently
+    stdin: |
+      for f in 1 2 3; do
+        echo $f
+        continue 0
+        echo result: $?
+      done
+
+  - name: "Continue in nested for loop"
+    stdin: |
+      for f in a b c; do
+        for g in 1 2 3; do
+          echo "f=$f g=$g"
+          continue
+          echo "Should not print"
+        done
+        echo "Left inner loop"
+      done
+
+  - name: "Continue in nested for loop with explicit N=1"
+    stdin: |
+      for f in a b c; do
+        for g in 1 2 3; do
+          echo "f=$f g=$g"
+          continue 1
+          echo "Should not print"
+        done
+        echo "Left inner loop"
+      done
+
+  - name: "Continue in nested for loop with explicit N=2"
+    stdin: |
+      for f in a b c; do
+        for g in 1 2 3; do
+          echo "f=$f g=$g"
+          continue 2
+          echo "Should not print"
+        done
+        echo "Left inner loop"
+      done
+
+  - name: "Continue in nested for loop with too large N"
+    known_failure: true
+    stdin: |
+      for f in a b c; do
+        for g in 1 2 3; do
+          echo "f=$f g=$g"
+          continue 3
+          echo "Should not print"
+        done
+        echo "Left inner loop"
+      done
+
   - name: "Multi-line for loop"
     test_files:
       - path: "script.sh"

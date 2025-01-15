@@ -197,7 +197,7 @@ impl Execute for ast::CompoundList {
                 break;
             }
 
-            // TODO: Check for continue/break being in for/while/until loop.
+            // TODO: Check to make sure continue/break is under a for/while/until loop.
             if result.continue_loop.is_some() || result.break_loop.is_some() {
                 break;
             }
@@ -583,11 +583,12 @@ impl Execute for ast::ForClauseCommand {
                 }
 
                 if let Some(continue_count) = &result.continue_loop {
-                    if *continue_count > 0 {
-                        return error::unimp("continue with count > 0");
+                    if *continue_count == 0 {
+                        result.continue_loop = None;
+                    } else {
+                        result.continue_loop = Some(*continue_count - 1);
+                        break;
                     }
-
-                    result.continue_loop = None;
                 }
                 if let Some(break_count) = &result.break_loop {
                     if *break_count == 0 {
@@ -734,11 +735,12 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             }
 
             if let Some(continue_count) = &result.continue_loop {
-                if *continue_count > 0 {
-                    return error::unimp("continue with count > 0");
+                if *continue_count == 0 {
+                    result.continue_loop = None;
+                } else {
+                    result.continue_loop = Some(*continue_count - 1);
+                    break;
                 }
-
-                result.continue_loop = None;
             }
             if let Some(break_count) = &result.break_loop {
                 if *break_count == 0 {
@@ -799,11 +801,12 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             if let Some(continue_count) = &result.continue_loop {
-                if *continue_count > 0 {
-                    return error::unimp("continue with count > 0");
+                if *continue_count == 0 {
+                    result.continue_loop = None;
+                } else {
+                    result.continue_loop = Some(*continue_count - 1);
+                    break;
                 }
-
-                result.continue_loop = None;
             }
             if let Some(break_count) = &result.break_loop {
                 if *break_count == 0 {
