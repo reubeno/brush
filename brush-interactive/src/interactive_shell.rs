@@ -59,6 +59,8 @@ pub trait InteractiveShell {
             // TODO: Consider finding a better place for this.
             let _ = brush_core::TerminalControl::acquire()?;
 
+            let mut announce_exit = self.shell().as_ref().options.interactive;
+
             loop {
                 let result = self.run_interactively_once().await?;
                 match result {
@@ -83,9 +85,14 @@ pub trait InteractiveShell {
                         break;
                     }
                 }
+
+                if self.shell().as_ref().options.exit_after_one_command {
+                    announce_exit = false;
+                    break;
+                }
             }
 
-            if self.shell().as_ref().options.interactive {
+            if announce_exit {
                 writeln!(self.shell().as_ref().stderr(), "exit")?;
             }
 

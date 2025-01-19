@@ -102,6 +102,10 @@ pub struct CommandLineArgs {
     #[clap(long = "sh")]
     pub sh_mode: bool,
 
+    /// Run only one command.
+    #[clap(short = 't')]
+    pub exit_after_one_command: bool,
+
     /// Print input when it's processed.
     #[clap(short = 'v', long = "verbose")]
     pub verbose: bool,
