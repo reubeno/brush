@@ -976,7 +976,11 @@ impl Shell {
                     .set_case_insensitive(self.options.case_insensitive_pathname_expansion);
 
             // TODO: Pass through quoting.
-            if let Ok(entries) = pattern.expand(&self.working_dir, Some(&is_executable)) {
+            if let Ok(entries) = pattern.expand(
+                &self.working_dir,
+                Some(&is_executable),
+                &patterns::FilenameExpansionOptions::default(),
+            ) {
                 for entry in entries {
                     executables.push(PathBuf::from(entry));
                 }

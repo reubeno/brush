@@ -581,10 +581,15 @@ impl<'a> WordExpander<'a> {
             .set_extended_globbing(self.parser_options.enable_extended_globbing)
             .set_case_insensitive(self.shell.options.case_insensitive_pathname_expansion);
 
+        let options = patterns::FilenameExpansionOptions {
+            require_dot_in_pattern_to_match_dot_files: !self.shell.options.glob_matches_dotfiles,
+        };
+
         let expansions = pattern
             .expand(
                 self.shell.working_dir.as_path(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
+                &options,
             )
             .unwrap_or_default();
 

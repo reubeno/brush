@@ -197,7 +197,7 @@ cases:
       echo "test.*"
 
   - name: "Pathname expansion: dot files (no dotglob)"
-    known_failure: true # https://github.com/reubeno/brush/issues/328
+    min_oracle_version: 5.2
     stdin: |
       touch .file
       touch .dir
@@ -210,7 +210,7 @@ cases:
       echo "./.*: " ./.*
 
   - name: "Pathname expansion: dot files (with dotglob)"
-    skip: true # TODO: passes on *some* platforms but not others (due to . and ..); needs investigation
+    min_oracle_version: 5.2
     stdin: |
       touch .file
       touch .dir
