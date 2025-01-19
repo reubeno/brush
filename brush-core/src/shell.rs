@@ -127,6 +127,8 @@ pub struct CreateOptions {
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
     /// Do not execute commands.
     pub do_not_execute_commands: bool,
+    /// Exit after one command.
+    pub exit_after_one_command: bool,
     /// Whether the shell is interactive.
     pub interactive: bool,
     /// Whether the shell is a login shell.

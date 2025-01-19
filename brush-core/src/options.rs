@@ -196,6 +196,7 @@ impl RuntimeOptions {
             do_not_execute_commands: create_options.do_not_execute_commands,
             enable_command_history: create_options.interactive,
             enable_job_control: create_options.interactive,
+            exit_after_one_command: create_options.exit_after_one_command,
             read_commands_from_stdin: create_options.read_commands_from_stdin,
             sh_mode: create_options.sh_mode,
             posix_mode: create_options.posix,
