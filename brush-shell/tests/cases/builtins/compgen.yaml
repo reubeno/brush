@@ -27,6 +27,19 @@ cases:
 
       compgen -A file some | sort
 
+  - name: "compgen -A file with dot files"
+    stdin: |
+      touch .file
+      mkdir .dir
+
+      echo "[without dotglob]"
+      shopt -u dotglob
+      compgen -A file | sort
+
+      echo "[with dotglob]"
+      shopt -s dotglob
+      compgen -A file | sort
+
   - name: "compgen -A function"
     stdin: |
       myfunc() {
