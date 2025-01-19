@@ -260,6 +260,7 @@ impl Spec {
             let expansions = pattern.expand(
                 shell.working_dir.as_path(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
+                &patterns::FilenameExpansionOptions::default(),
             )?;
 
             for expansion in expansions {
@@ -1062,7 +1063,11 @@ async fn get_file_completions(
         .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
 
     pattern
-        .expand(shell.working_dir.as_path(), Some(&path_filter))
+        .expand(
+            shell.working_dir.as_path(),
+            Some(&path_filter),
+            &patterns::FilenameExpansionOptions::default(),
+        )
         .unwrap_or_default()
         .into_iter()
         .collect()

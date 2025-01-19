@@ -24,6 +24,12 @@ impl PatternPiece {
 
 type PatternWord = Vec<PatternPiece>;
 
+/// Options for filename expansion.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FilenameExpansionOptions {
+    pub require_dot_in_pattern_to_match_dot_files: bool,
+}
+
 /// Encapsulates a shell pattern.
 #[derive(Clone, Debug)]
 pub struct Pattern {
@@ -134,6 +140,7 @@ impl Pattern {
         &self,
         working_dir: &Path,
         path_filter: Option<&PF>,
+        options: &FilenameExpansionOptions,
     ) -> Result<Vec<String>, error::Error>
     where
         PF: Fn(&Path) -> bool,
@@ -230,8 +237,19 @@ impl Pattern {
                     .set_extended_globbing(self.enable_extended_globbing)
                     .set_case_insensitive(self.case_insensitive);
 
-                let regex = subpattern.to_regex(true, true)?;
+                let subpattern_starts_with_dot = subpattern
+                    .pieces
+                    .first()
+                    .is_some_and(|piece| piece.as_str().starts_with('.'));
 
+                let allow_dot_files = !options.require_dot_in_pattern_to_match_dot_files
+                    || subpattern_starts_with_dot;
+
+                let matches_dotfile_policy = |dir_entry: &std::fs::DirEntry| {
+                    !dir_entry.file_name().to_string_lossy().starts_with('.') || allow_dot_files
+                };
+
+                let regex = subpattern.to_regex(true, true)?;
                 let matches_regex = |dir_entry: &std::fs::DirEntry| {
                     regex
                         .is_match(dir_entry.file_name().to_string_lossy().as_ref())
@@ -244,6 +262,7 @@ impl Pattern {
                     .into_iter()
                     .filter_map(|result| result.ok())
                     .filter(matches_regex)
+                    .filter(matches_dotfile_policy)
                     .map(|entry| entry.path())
                     .collect();
 
