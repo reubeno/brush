@@ -24,3 +24,14 @@ cases:
     stdin: |
       x=y=z
       echo "x: ${x}"
+
+  - name: "Assignment with tilde expansion"
+    known_failure: true
+    stdin: |
+      HOME=/some/dir
+
+      var=~/file1.txt
+      echo "~/file1.txt: ${var}"
+
+      var=~/file1.txt:~/file2.txt
+      echo "~/file1.txt:~/file2.txt: ${var}"
