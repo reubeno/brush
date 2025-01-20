@@ -33,6 +33,8 @@ pub enum EnvironmentScope {
 pub struct ShellEnvironment {
     /// Stack of scopes, with the top of the stack being the current scope.
     pub(crate) scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
+    /// Whether or not to auto-export variables on creation or modification.
+    export_variables_on_modification: bool,
 }
 
 impl Default for ShellEnvironment {
@@ -46,6 +48,7 @@ impl ShellEnvironment {
     pub fn new() -> Self {
         Self {
             scopes: vec![(EnvironmentScope::Global, ShellVariableMap::new())],
+            export_variables_on_modification: false,
         }
     }
 
@@ -377,12 +380,19 @@ impl ShellEnvironment {
     ) -> Result<(), error::Error> {
         let name = name.into();
 
+        let auto_export = self.export_variables_on_modification;
         if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
             var.assign(value, false)?;
+            if auto_export {
+                var.export();
+            }
             updater(var)
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
             var.assign(value, false)?;
+            if auto_export {
+                var.export();
+            }
             updater(&mut var)?;
 
             self.add(name, var, scope_if_creating)
@@ -438,9 +448,13 @@ impl ShellEnvironment {
     pub fn add<N: Into<String>>(
         &mut self,
         name: N,
-        var: ShellVariable,
+        mut var: ShellVariable,
         target_scope: EnvironmentScope,
     ) -> Result<(), error::Error> {
+        if self.export_variables_on_modification {
+            var.export();
+        }
+
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if *scope_type == target_scope {
                 map.set(name, var);

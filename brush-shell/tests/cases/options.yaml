@@ -5,14 +5,23 @@ cases:
       echo "Default options: $-"
 
   - name: "set -a"
-    known_failure: true # TODO: set -a not implemented
     stdin: |
-      unexported=original
+      v1=1 v2=2 v3=3 v4=4 v5=(a b c)
+      declare -p v1 v2 v3 v4
+
       set -a
-      newvar=bar
-      unexported=updated
-      env | grep newvar
-      env | grep unexported
+      v1=reassigned
+      v2+=appended
+      declare -i v3
+      v4+=(appended)
+      v5[2]=updated
+      v6=new
+      v7[0]=new
+      v8=(new)
+      declare v9=new
+      declare -a v10=(new)
+
+      declare -p v1 v2 v3 v4 v5 v6 v7 v8 v9 v10
 
   - name: "set -n"
     stdin: |
