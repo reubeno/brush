@@ -293,6 +293,10 @@ impl DeclareCommand {
                 var.assign(initial_value, false)?;
             }
 
+            if context.shell.options.export_variables_on_modification && !var.value().is_array() {
+                var.export();
+            }
+
             self.apply_attributes_after_update(&mut var, verb)?;
 
             let scope = if create_var_local {
