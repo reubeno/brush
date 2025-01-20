@@ -1152,7 +1152,7 @@ async fn expand_assignment_value(
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
-    export: bool,
+    mut export: bool,
     required_scope: Option<EnvironmentScope>,
     creation_scope: EnvironmentScope,
 ) -> Result<(), error::Error> {
@@ -1243,6 +1243,13 @@ async fn apply_assignment(
                     }
                 }
             } else {
+                if !export
+                    && shell.options.export_variables_on_modification
+                    && !matches!(new_value, ShellValueLiteral::Array(_))
+                {
+                    export = true;
+                }
+
                 existing_value.assign(new_value, assignment.append)?;
             }
 
@@ -1267,7 +1274,10 @@ async fn apply_assignment(
         }
     } else {
         match new_value {
-            ShellValueLiteral::Scalar(s) => ShellValue::String(s),
+            ShellValueLiteral::Scalar(s) => {
+                export = export || shell.options.export_variables_on_modification;
+                ShellValue::String(s)
+            }
             ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values)?,
         }
     };
