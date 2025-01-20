@@ -48,12 +48,11 @@ jobs:
             required_tools: ""
             binary_name: "brush"
             extra_build_args: ""
-          # Build for aarch64/linux target on x86_64/linux host.
-          - host: "ubuntu-24.04"
-            target: "aarch64-unknown-linux-gnu"
+          # Build for aarch64/linux target on native host.
+          - host: "ubuntu-24.04-arm"
+            target: ""
             os: "linux"
             arch: "aarch64"
-            required_tools: "gcc-aarch64-linux-gnu"
             binary_name: "brush"
             extra_build_args: ""
           # Build for WASI-0.2 target on x86_64/linux host.
@@ -130,14 +129,22 @@ jobs:
       matrix:
         include:
           - host: "ubuntu-24.04"
-            variant: "linux"
-            artifact_suffix: ""
-            name_suffix: "(linux)"
+            variant: "linux-x86_64"
+            artifact_suffix: "linux-x86_64"
+            name_suffix: "(linux/x86_64)"
+            homebrew_supported: true
+
+          - host: "ubuntu-24.04-arm"
+            variant: "linux-aarch64"
+            artifact_suffix: "linux-aarch64"
+            name_suffix: "(linux/aarch64)"
+            homebrew_supported: false
 
           - host: "macos-latest"
             variant: "macos"
             artifact_suffix: "-macos"
             name_suffix: "(macOS)"
+            homebrew_supported: true
 
     name: "Test ${{ matrix.name_suffix }}"
     runs-on: ${{ matrix.host }}
@@ -168,12 +175,14 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Set up Homebrew
+        if: ${{ matrix.homebrew_supported }}
         id: set-up-homebrew
         uses: Homebrew/actions/setup-homebrew@master
         with:
           stable: true
 
       - name: "Install recent bash for tests"
+        if: ${{ matrix.homebrew_supported }}
         run: |
           brew install bash
           BASH_PATH="$(brew --prefix bash)/bin/bash"
@@ -186,7 +195,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: "scop/bash-completion"
-          ref: "2.14.0"
+          ref: "2.16.0"
           path: "bash-completion"
 
       - name: "Setup bash-completion"
