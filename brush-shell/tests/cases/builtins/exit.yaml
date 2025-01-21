@@ -7,3 +7,71 @@ cases:
   - name: "Exit with code"
     stdin: |
       exit 10
+
+  - name: "Exit in for loop"
+    stdin: |
+      for i in 1 2 3; do
+        exit 42
+        echo "Got past exit in loop"
+      done
+      echo "Got past loop"
+
+  - name: "Exit in arithmetic for loop body"
+    stdin: |
+      for ((i = 0; i < 10; i++)); do
+        exit 42
+        echo "Got past exit in loop"
+      done
+      echo "Got past loop"
+
+  - name: "Exit in while loop condition"
+    stdin: |
+      while exit 42; do
+        echo "In loop"
+      done
+      echo "Got past loop"
+
+  - name: "Exit in while loop body"
+    stdin: |
+      while true; do
+        exit 42
+        echo "Got past exit in body"
+        break
+      done
+      echo "Got past loop"
+
+  - name: "Exit in sequence"
+    stdin: |
+      exit 42; echo "Should not be printed"
+
+  - name: "Exit in function"
+    stdin: |
+      myfunc() {
+          exit 42
+          echo "Got past exit in function"
+      }
+
+      myfunc
+      echo "Got past function call"
+
+  - name: "Exit in subshell"
+    stdin: |
+      (exit 42)
+      echo "Got past subshell"
+
+  - name: "Exit in command substitution"
+    stdin: |
+      output=$(echo hi; exit 42; echo there)
+      echo "Got past command substitution"
+
+  - name: "Exit in and/or"
+    stdin: |
+      exit 42 || echo "Got past exit"
+
+  - name: "Exit in brace group"
+    stdin: |
+      { 
+        exit 42
+        echo "Got past exit"
+      }
+      echo "Got past brace group"

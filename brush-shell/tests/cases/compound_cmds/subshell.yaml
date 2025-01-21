@@ -23,3 +23,10 @@ cases:
   - name: "Piped subshell usage"
     stdin: |
       (echo hi) | wc -l
+
+  - name: "Breaks in subshell"
+    stdin: |
+      for i in 1 2 3; do
+        echo $i
+        (for i in 1 2 3; do break 2; done)
+      done

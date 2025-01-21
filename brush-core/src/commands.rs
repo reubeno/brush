@@ -547,7 +547,15 @@ pub(crate) async fn invoke_shell_function(
     // Restore positional parameters.
     context.shell.positional_parameters = prior_positional_params;
 
-    Ok(CommandSpawnResult::ImmediateExit(result?.exit_code))
+    // Get the actual execution result from the body of the function.
+    let result = result?;
+
+    // Report back the exit code, and honor any requests to exit the whole shell.
+    Ok(if result.exit_shell {
+        CommandSpawnResult::ExitShell(result.exit_code)
+    } else {
+        CommandSpawnResult::ImmediateExit(result.exit_code)
+    })
 }
 
 pub(crate) async fn invoke_command_in_subshell_and_get_output(
