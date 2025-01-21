@@ -5,6 +5,7 @@ use crate::{builtins, commands, error, shell, sys::fs::PathExt, ExecutionResult}
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Parser)]
+#[clap(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
     #[arg(short = 'p')]
