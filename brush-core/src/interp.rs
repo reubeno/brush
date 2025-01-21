@@ -555,53 +555,61 @@ impl Execute for ast::ForClauseCommand {
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
 
+        // If we were given explicit words to iterate over, then expand them all, with splitting
+        // enabled.
+        let mut expanded_values = vec![];
         if let Some(unexpanded_values) = &self.values {
-            // Expand all values, with splitting enabled.
-            let mut expanded_values = vec![];
             for value in unexpanded_values {
                 let mut expanded = expansion::full_expand_and_split_word(shell, value).await?;
                 expanded_values.append(&mut expanded);
             }
+        } else {
+            // Otherwise, we use the current positional parameters.
+            expanded_values.extend_from_slice(&shell.positional_parameters);
+        }
 
-            for value in expanded_values {
-                if shell.options.print_commands_and_arguments {
+        for value in expanded_values {
+            if shell.options.print_commands_and_arguments {
+                if let Some(unexpanded_values) = &self.values {
                     shell.trace_command(std::format!(
                         "for {} in {}",
                         self.variable_name,
                         unexpanded_values.iter().join(" ")
                     ))?;
+                } else {
+                    shell.trace_command(std::format!("for {}", self.variable_name,))?;
                 }
+            }
 
-                // Update the variable.
-                shell.env.update_or_add(
-                    &self.variable_name,
-                    ShellValueLiteral::Scalar(value),
-                    |_| Ok(()),
-                    EnvironmentLookup::Anywhere,
-                    EnvironmentScope::Global,
-                )?;
+            // Update the variable.
+            shell.env.update_or_add(
+                &self.variable_name,
+                ShellValueLiteral::Scalar(value),
+                |_| Ok(()),
+                EnvironmentLookup::Anywhere,
+                EnvironmentScope::Global,
+            )?;
 
-                result = self.body.0.execute(shell, params).await?;
-                if result.exit_shell || result.return_from_function_or_script {
+            result = self.body.0.execute(shell, params).await?;
+            if result.exit_shell || result.return_from_function_or_script {
+                break;
+            }
+
+            if let Some(continue_count) = &result.continue_loop {
+                if *continue_count == 0 {
+                    result.continue_loop = None;
+                } else {
+                    result.continue_loop = Some(*continue_count - 1);
                     break;
                 }
-
-                if let Some(continue_count) = &result.continue_loop {
-                    if *continue_count == 0 {
-                        result.continue_loop = None;
-                    } else {
-                        result.continue_loop = Some(*continue_count - 1);
-                        break;
-                    }
+            }
+            if let Some(break_count) = &result.break_loop {
+                if *break_count == 0 {
+                    result.break_loop = None;
+                } else {
+                    result.break_loop = Some(*break_count - 1);
                 }
-                if let Some(break_count) = &result.break_loop {
-                    if *break_count == 0 {
-                        result.break_loop = None;
-                    } else {
-                        result.break_loop = Some(*break_count - 1);
-                    }
-                    break;
-                }
+                break;
             }
         }
 

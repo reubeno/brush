@@ -4,9 +4,35 @@ cases:
     stdin: |
       for f in 1 2 3; do echo $f; done
 
+  - name: "Multi-line for loop"
+    stdin: |
+      for f in 1 2 3; do
+        echo $f
+      done
+
   - name: "Empty for loop"
     stdin: |
       for f in; do echo $f; done
+
+  - name: "for loop without in"
+    stdin: |
+      set -- a b c
+
+      echo "Loop 1"
+      for f; do echo $f; done
+
+      echo "Loop 2: no semicolon"
+      for f do echo $f; done
+
+  - name: "for loop without in but spaces"
+    stdin: |
+      set -- a "b c" d
+
+      echo "Loop 1"
+      for f; do echo $f; done
+
+      echo "Loop 2: no semicolon"
+      for f do echo $f; done
 
   - name: "Break in for loop"
     stdin: |
