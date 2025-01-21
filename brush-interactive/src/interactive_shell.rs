@@ -127,7 +127,7 @@ pub trait InteractiveShell {
                 shell_mut
                     .run_string(prompt_cmd.into_owned(), &params)
                     .await?;
-                shell_mut.as_mut().last_exit_status = prev_last_result;
+                shell_mut.last_exit_status = prev_last_result;
             }
 
             // Now that we've done that, compose the prompt.
