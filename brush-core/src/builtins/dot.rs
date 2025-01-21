@@ -8,11 +8,11 @@ use crate::{builtins, commands};
 #[derive(Debug, Parser)]
 pub(crate) struct DotCommand {
     /// Path to the script to evaluate.
-    pub script_path: String,
+    script_path: String,
 
     /// Any arguments to be passed as positional parameters to the script.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    pub script_args: Vec<String>,
+    script_args: Vec<String>,
 }
 
 impl builtins::Command for DotCommand {

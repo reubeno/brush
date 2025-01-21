@@ -44,7 +44,7 @@ pub struct Shell {
     pub last_exit_status: u8,
 
     /// Clone depth from the original ancestor shell.
-    pub depth: usize,
+    depth: usize,
 
     /// Positional parameters ($1 and beyond)
     pub positional_parameters: Vec<String>,
@@ -56,16 +56,16 @@ pub struct Shell {
     pub shell_product_display_str: Option<String>,
 
     /// Script call stack.
-    pub script_call_stack: VecDeque<String>,
+    script_call_stack: VecDeque<String>,
 
     /// Function call stack.
-    pub function_call_stack: VecDeque<FunctionCall>,
+    function_call_stack: VecDeque<FunctionCall>,
 
     /// Directory stack used by pushd et al.
     pub directory_stack: Vec<PathBuf>,
 
     /// Current line number being processed.
-    pub current_line_number: u32,
+    current_line_number: u32,
 
     /// Completion configuration.
     pub completion_config: completion::Config,
@@ -751,11 +751,11 @@ impl Shell {
         // Retrieve the spec.
         let prompt_spec = self.parameter_or_default(var_name, default);
         if prompt_spec.is_empty() {
-            return Ok(prompt_spec);
+            return Ok(String::new());
         }
 
         // Expand it.
-        let formatted_prompt = prompt::expand_prompt(self, prompt_spec)?;
+        let formatted_prompt = prompt::expand_prompt(self, prompt_spec.into_owned())?;
 
         // Now expand.
         let formatted_prompt = expansion::basic_expand_str(self, &formatted_prompt).await?;
@@ -768,11 +768,8 @@ impl Shell {
         self.last_exit_status
     }
 
-    fn parameter_or_default(&self, name: &str, default: &str) -> String {
-        self.env.get(name).map_or_else(
-            || default.to_owned(),
-            |(_, s)| s.value().to_cow_string().to_string(),
-        )
+    fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
+        self.env.get_str(name).unwrap_or(default.into())
     }
 
     /// Returns a string representing the current `set`-style option flags set in the shell.
@@ -920,10 +917,9 @@ impl Shell {
 
     /// Returns the path to the history file used by the shell, if one is set.
     pub fn get_history_file_path(&self) -> Option<PathBuf> {
-        self.env.get("HISTFILE").map(|(_, var)| {
-            let histfile_str: String = var.value().to_cow_string().to_string();
-            PathBuf::from(histfile_str)
-        })
+        self.env
+            .get_str("HISTFILE")
+            .map(|s| PathBuf::from(s.into_owned()))
     }
 
     /// Returns the number of the line being executed in the currently executing program.
@@ -933,10 +929,7 @@ impl Shell {
 
     /// Returns the current value of the IFS variable, or the default value if it is not set.
     pub(crate) fn get_ifs(&self) -> Cow<'_, str> {
-        self.env.get("IFS").map_or_else(
-            || Cow::Borrowed(" \t\n"),
-            |(_, v)| v.value().to_cow_string(),
-        )
+        self.env.get_str("IFS").unwrap_or_else(|| " \t\n".into())
     }
 
     /// Returns the first character of the IFS variable, or a space if it is not set.
@@ -1147,8 +1140,8 @@ impl Shell {
     }
 
     fn get_home_dir_with_env(env: &ShellEnvironment) -> Option<PathBuf> {
-        if let Some((_, home)) = env.get("HOME") {
-            Some(PathBuf::from(home.value().to_cow_string().to_string()))
+        if let Some(home) = env.get_str("HOME") {
+            Some(PathBuf::from(home.to_string()))
         } else {
             // HOME isn't set, so let's sort it out ourselves.
             users::get_current_user_home_dir()

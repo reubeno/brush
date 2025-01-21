@@ -841,7 +841,7 @@ impl From<String> for ShellValue {
     }
 }
 
-pub(crate) fn get_random_str() -> String {
+fn get_random_str() -> String {
     let mut rng = rand::thread_rng();
     let value = rng.gen_range(0..32768);
     value.to_string()

@@ -111,21 +111,22 @@ pub trait InteractiveShell {
         &mut self,
     ) -> impl std::future::Future<Output = Result<InteractiveExecutionResult, ShellError>> {
         async {
-            let mut shell_mut = self.shell_mut();
+            let mut shell = self.shell_mut();
+            let shell_mut = shell.as_mut();
 
             // Check for any completed jobs.
-            shell_mut.as_mut().check_for_completed_jobs()?;
+            shell_mut.check_for_completed_jobs()?;
 
             // If there's a variable called PROMPT_COMMAND, then run it first.
-            if let Some((_, prompt_cmd)) = shell_mut.as_mut().env.get("PROMPT_COMMAND") {
-                let prompt_cmd = prompt_cmd.value().to_cow_string().to_string();
-
+            if let Some(prompt_cmd) = shell_mut.env.get_str("PROMPT_COMMAND") {
                 // Save (and later restore) the last exit status.
-                let prev_last_result = shell_mut.as_mut().last_exit_status;
+                let prev_last_result = shell_mut.last_exit_status;
 
-                let params = shell_mut.as_mut().default_exec_params();
+                let params = shell_mut.default_exec_params();
 
-                shell_mut.as_mut().run_string(prompt_cmd, &params).await?;
+                shell_mut
+                    .run_string(prompt_cmd.into_owned(), &params)
+                    .await?;
                 shell_mut.as_mut().last_exit_status = prev_last_result;
             }
 
@@ -136,7 +137,7 @@ pub trait InteractiveShell {
                 continuation_prompt: shell_mut.as_mut().compose_continuation_prompt().await?,
             };
 
-            drop(shell_mut);
+            drop(shell);
 
             match self.read_line(prompt)? {
                 ReadResult::Input(read_result) => {

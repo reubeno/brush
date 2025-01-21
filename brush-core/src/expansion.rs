@@ -66,7 +66,7 @@ impl From<ExpansionPiece> for Expansion {
 }
 
 impl Expansion {
-    pub(crate) fn classify(&self) -> ParameterState {
+    fn classify(&self) -> ParameterState {
         let non_empty = self
             .fields
             .iter()
@@ -81,7 +81,7 @@ impl Expansion {
         }
     }
 
-    pub(crate) fn undefined() -> Self {
+    fn undefined() -> Self {
         Self {
             fields: vec![WordField::from(String::new())],
             concatenate: true,
@@ -90,7 +90,7 @@ impl Expansion {
         }
     }
 
-    pub(crate) fn polymorphic_len(&self) -> usize {
+    fn polymorphic_len(&self) -> usize {
         if self.from_array {
             self.fields.len()
         } else {
@@ -98,7 +98,7 @@ impl Expansion {
         }
     }
 
-    pub(crate) fn polymorphic_subslice(&self, index: usize, end: usize) -> Self {
+    fn polymorphic_subslice(&self, index: usize, end: usize) -> Self {
         let len = end - index;
 
         // If we came from an array, then interpret `index` and `end` as indices
@@ -1146,7 +1146,7 @@ impl<'a> WordExpander<'a> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name.as_str()) {
+                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name) {
                     matches!(
                         var.value(),
                         ShellValue::AssociativeArray(_)
@@ -1281,7 +1281,7 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                 // First check to see if it's an associative array.
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name.as_str()) {
+                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name) {
                     matches!(
                         var.value(),
                         ShellValue::AssociativeArray(_)
@@ -1297,7 +1297,7 @@ impl<'a> WordExpander<'a> {
                     .await?;
 
                 // Index into the array.
-                if let Some((_, var)) = self.shell.env.get(name.as_str()) {
+                if let Some((_, var)) = self.shell.env.get(name) {
                     if let Some(value) = var.value().get_at(index_to_use.as_str())? {
                         Ok(Expansion::from(value.to_string()))
                     } else {

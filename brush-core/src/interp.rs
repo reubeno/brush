@@ -1209,8 +1209,7 @@ async fn apply_assignment(
 
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
-        let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env.get(variable_name.as_str())
+        let will_be_indexed_array = if let Some((_, existing_value)) = shell.env.get(variable_name)
         {
             matches!(
                 existing_value.value(),
