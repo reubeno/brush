@@ -6,7 +6,7 @@ use clap::Parser;
 pub(crate) struct EvalCommand {
     /// The script to evaluate.
     #[clap(allow_hyphen_values = true)]
-    pub args: Vec<String>,
+    args: Vec<String>,
 }
 
 impl builtins::Command for EvalCommand {

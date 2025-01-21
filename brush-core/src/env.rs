@@ -32,7 +32,7 @@ pub enum EnvironmentScope {
 #[derive(Clone, Debug)]
 pub struct ShellEnvironment {
     /// Stack of scopes, with the top of the stack being the current scope.
-    pub(crate) scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
+    scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
     /// Whether or not to auto-export variables on creation or modification.
     export_variables_on_modification: bool,
 }

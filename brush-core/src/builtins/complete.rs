@@ -10,7 +10,7 @@ use crate::error;
 use crate::escape;
 
 #[derive(Parser)]
-pub(crate) struct CommonCompleteCommandArgs {
+struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
     #[arg(short = 'o')]
     options: Vec<CompleteOption>,

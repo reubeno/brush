@@ -29,7 +29,7 @@ fn parse_prompt(
     brush_parser::prompt::parse(spec.as_str())
 }
 
-pub(crate) fn format_prompt_piece(
+fn format_prompt_piece(
     shell: &Shell,
     piece: brush_parser::prompt::PromptPiece,
 ) -> Result<String, error::Error> {

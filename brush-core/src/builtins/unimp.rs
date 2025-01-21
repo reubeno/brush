@@ -7,7 +7,7 @@ use clap::Parser;
 #[derive(Parser)]
 pub(crate) struct UnimplementedCommand {
     #[clap(allow_hyphen_values = true)]
-    pub args: Vec<String>,
+    args: Vec<String>,
 
     #[clap(skip)]
     declarations: Vec<commands::CommandArg>,
