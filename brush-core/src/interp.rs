@@ -193,7 +193,7 @@ impl Execute for ast::CompoundList {
             }
 
             // Check for early return.
-            if result.return_from_function_or_script {
+            if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
 
@@ -525,7 +525,11 @@ impl Execute for ast::CompoundCommand {
             ast::CompoundCommand::Subshell(ast::SubshellCommand(s)) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 let mut subshell = shell.clone();
-                s.execute(&mut subshell, params).await
+                let subshell_result = s.execute(&mut subshell, params).await?;
+
+                // Preserve the subshell's exit code, but don't honor any of its requests to exit
+                // the shell, break out of loops, etc.
+                Ok(ExecutionResult::new(subshell_result.exit_code))
             }
             ast::CompoundCommand::ForClause(f) => f.execute(shell, params).await,
             ast::CompoundCommand::CaseClause(c) => c.execute(shell, params).await,
@@ -578,7 +582,7 @@ impl Execute for ast::ForClauseCommand {
                 )?;
 
                 result = self.body.0.execute(shell, params).await?;
-                if result.return_from_function_or_script {
+                if result.exit_shell || result.return_from_function_or_script {
                     break;
                 }
 
@@ -721,16 +725,20 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
         loop {
             let condition_result = test_condition.execute(shell, params).await?;
 
+            if condition_result.exit_shell || condition_result.return_from_function_or_script {
+                result.exit_code = condition_result.exit_code;
+                result.exit_shell = condition_result.exit_shell;
+                result.return_from_function_or_script =
+                    condition_result.return_from_function_or_script;
+                break;
+            }
+
             if condition_result.is_success() != is_while {
                 break;
             }
 
-            if condition_result.return_from_function_or_script {
-                break;
-            }
-
             result = body.0.execute(shell, params).await?;
-            if result.return_from_function_or_script {
+            if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
 
@@ -796,7 +804,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             result = self.body.0.execute(shell, params).await?;
-            if result.return_from_function_or_script {
+            if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
 
