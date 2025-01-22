@@ -1,0 +1,150 @@
+name: "Builtins: return"
+cases:
+  - name: "Return outside function or script"
+    ignore_stderr: true
+    stdin: |
+      return 42
+
+  - name: "Return in directly invoked script"
+    ignore_stderr: true
+    test_files:
+      - path: "script.sh"
+        contents: |
+          return 42
+          echo "Got past return"
+    args: ["./script.sh"]
+
+  - name: "Return from sourced script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          return 42
+          echo "Got past return"
+    stdin: |
+      source script.sh
+
+  - name: "Return from subshell"
+    ignore_stderr: true
+    stdin: |
+      (return)
+      echo "Got past subshell"
+      exit 42
+
+  - name: "Return from nested sourced script"
+    test_files:
+      - path: "inner.sh"
+        contents: |
+          return 42
+          echo "Got past inner return"
+      - path: "outer.sh"
+        contents: |
+          source inner.sh
+          echo "Got to end of outer script"
+    stdin: |
+      source outer.sh
+
+  - name: "Return in function"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          myfunc() {
+              echo "In myfunc()"
+              return 5
+              echo "Should not get here"
+          }
+          echo "Calling myfunc()..."
+          myfunc
+          echo "Returned: $?"
+    args: ["./script.sh"]
+
+  - name: "Return in for loop in function"
+    stdin: |
+      myfunc() {
+          for i in 1 2 3; do
+              echo "In myfunc: $i"
+              return 5
+          done
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in arithmetic for loop in function"
+    stdin: |
+      myfunc() {
+          for ((i=0; i < 5; i++)); do
+              echo "In myfunc: $i"
+              return 5
+          done
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in while loop in function"
+    stdin: |
+      myfunc() {
+          i=0
+          while [[ $i -lt 5 ]]; do
+            echo "In myfunc: $i"
+            return 33
+            i=$((i+1))
+          done
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in case"
+    stdin: |
+      myfunc() {
+        case 1 in
+            1)
+                echo "In case"
+                return 5
+                echo "Should not get here"
+                ;;
+        esac
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in brace group"
+    stdin: |
+      myfunc() {
+        {
+          echo "In brace group"
+          return 5
+          echo "Should not get here"
+        }
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return in and/or"
+    stdin: |
+      myfunc() {
+        echo "In and/or" && return 5 && echo "Should not get here"
+      }
+
+      myfunc
+      echo "Returned: $?"
+
+  - name: "Return from nested clauses"
+    stdin: |
+      myfunc() {
+        while (($#)); do
+          case $1 in
+              *)
+                  shift 2 || {
+                    echo "Returning"
+                    return 5
+                  }
+                  echo "Shifted and fell through"
+          esac
+        done
+      }
+
+      myfunc a b c
