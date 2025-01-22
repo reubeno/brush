@@ -49,3 +49,11 @@ cases:
 
       command -V non-existent || echo "1. Not found"
       command -V /usr/bin/non-existent || echo "2. Not found"
+
+  - name: "command with --"
+    stdin: |
+      command -- ls
+
+  - name: "command with --help"
+    stdin: |
+      command ls --help

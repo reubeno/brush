@@ -18,12 +18,15 @@ pub(crate) struct CommandCommand {
     #[arg(short = 'V')]
     print_verbose_description: bool,
 
-    /// Name of command to invoke.
-    command_name: String,
-
-    /// Arguments for the built-in.
+    /// Command and arguments.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
+    command_and_args: Vec<String>,
+}
+
+impl CommandCommand {
+    fn command(&self) -> Option<&String> {
+        self.command_and_args.first()
+    }
 }
 
 impl builtins::Command for CommandCommand {
@@ -31,37 +34,40 @@ impl builtins::Command for CommandCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, error::Error> {
-        if self.use_default_path {
-            return error::unimp("command -p");
-        }
+        // Silently exit if no command was provided.
+        if let Some(command_name) = self.command() {
+            if self.use_default_path {
+                return error::unimp("command -p");
+            }
 
-        if self.print_description || self.print_verbose_description {
-            if let Some(found_cmd) = self.try_find_command(context.shell) {
-                if self.print_description {
-                    writeln!(context.stdout(), "{found_cmd}")?;
-                } else {
-                    match found_cmd {
-                        FoundCommand::Builtin(_name) => {
-                            writeln!(context.stdout(), "{} is a shell builtin", self.command_name)?;
-                        }
-                        FoundCommand::External(path) => {
-                            writeln!(context.stdout(), "{} is {path}", self.command_name)?;
+            if self.print_description || self.print_verbose_description {
+                if let Some(found_cmd) =
+                    Self::try_find_command(context.shell, command_name.as_str())
+                {
+                    if self.print_description {
+                        writeln!(context.stdout(), "{found_cmd}")?;
+                    } else {
+                        match found_cmd {
+                            FoundCommand::Builtin(_name) => {
+                                writeln!(context.stdout(), "{command_name} is a shell builtin")?;
+                            }
+                            FoundCommand::External(path) => {
+                                writeln!(context.stdout(), "{command_name} is {path}")?;
+                            }
                         }
                     }
+                    Ok(builtins::ExitCode::Success)
+                } else {
+                    if self.print_verbose_description {
+                        writeln!(context.stderr(), "command: {command_name}: not found")?;
+                    }
+                    Ok(builtins::ExitCode::Custom(1))
                 }
-                Ok(builtins::ExitCode::Success)
             } else {
-                if self.print_verbose_description {
-                    writeln!(
-                        context.stderr(),
-                        "command: {}: not found",
-                        self.command_name
-                    )?;
-                }
-                Ok(builtins::ExitCode::Custom(1))
+                self.execute_command(context, command_name).await
             }
         } else {
-            self.execute_command(context).await
+            Ok(builtins::ExitCode::Success)
         }
     }
 }
@@ -82,10 +88,10 @@ impl Display for FoundCommand {
 
 impl CommandCommand {
     #[allow(clippy::unwrap_in_result)]
-    fn try_find_command(&self, shell: &mut shell::Shell) -> Option<FoundCommand> {
+    fn try_find_command(shell: &mut shell::Shell, command_name: &str) -> Option<FoundCommand> {
         // Look in path.
-        if self.command_name.contains(std::path::MAIN_SEPARATOR) {
-            let candidate_path = shell.get_absolute_path(Path::new(&self.command_name));
+        if command_name.contains(std::path::MAIN_SEPARATOR) {
+            let candidate_path = shell.get_absolute_path(Path::new(command_name));
             if candidate_path.executable() {
                 Some(FoundCommand::External(
                     candidate_path
@@ -98,14 +104,14 @@ impl CommandCommand {
                 None
             }
         } else {
-            if let Some(builtin_cmd) = shell.builtins.get(self.command_name.as_str()) {
+            if let Some(builtin_cmd) = shell.builtins.get(command_name) {
                 if !builtin_cmd.disabled {
-                    return Some(FoundCommand::Builtin(self.command_name.clone()));
+                    return Some(FoundCommand::Builtin(command_name.to_owned()));
                 }
             }
 
             shell
-                .find_first_executable_in_path_using_cache(&self.command_name)
+                .find_first_executable_in_path_using_cache(command_name)
                 .map(|path| FoundCommand::External(path.to_string_lossy().to_string()))
         }
     }
@@ -113,21 +119,24 @@ impl CommandCommand {
     async fn execute_command(
         &self,
         mut context: commands::ExecutionContext<'_>,
+        command_name: &str,
     ) -> Result<builtins::ExitCode, error::Error> {
-        let args: Vec<_> = std::iter::once(&self.command_name)
-            .chain(self.args.iter())
-            .map(|arg| arg.into())
-            .collect();
-
-        // We can reuse the context, but need to update the name.
-        context.command_name.clone_from(&self.command_name);
+        command_name.clone_into(&mut context.command_name);
+        let command_and_args = self.command_and_args.iter().map(|arg| arg.into()).collect();
 
         // We do not have an existing process group to place this into.
         let mut pgid = None;
 
         #[allow(clippy::cast_possible_truncation)]
         #[allow(clippy::cast_sign_loss)]
-        match commands::execute(context, &mut pgid, args, false /* use functions? */).await? {
+        match commands::execute(
+            context,
+            &mut pgid,
+            command_and_args,
+            false, /* use functions? */
+        )
+        .await?
+        {
             commands::CommandSpawnResult::SpawnedProcess(mut child) => {
                 // TODO: jobs: review this logic
                 let wait_result = child.wait().await?;
