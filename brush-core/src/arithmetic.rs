@@ -157,8 +157,10 @@ fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64
         }
     };
 
-    let value: i64 = value_str.parse().unwrap_or(0);
-    Ok(value)
+    let parsed_value = brush_parser::arithmetic::parse(value_str.as_ref())
+        .map_err(|_err| EvalError::ParseError(value_str.to_string()))?;
+
+    parsed_value.eval(shell)
 }
 
 #[allow(clippy::unnecessary_wraps)]
