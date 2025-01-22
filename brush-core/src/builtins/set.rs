@@ -129,12 +129,42 @@ pub(crate) struct SetCommand {
     #[clap(flatten)]
     set_option: SetOption,
 
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     positional_args: Vec<String>,
 }
 
 impl builtins::Command for SetCommand {
     fn takes_plus_options() -> bool {
         true
+    }
+
+    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
+    /// to `--`. See [`builtins::parse_known`] for more information
+    /// TODO: we can safely remove this after the issue is resolved
+    fn new<I>(args: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        //
+        // TODO: This is getting pretty messy; we need to see how to avoid this -- handling from
+        // leaking into too many commands' custom parsing.
+        //
+
+        // Apply the same workaround from the default implementation of Command::new to handle +
+        // args.
+        let args = args.into_iter().map(|arg| {
+            if arg.starts_with('+') {
+                format!("--{arg}")
+            } else {
+                arg
+            }
+        });
+
+        let (mut this, rest_args) = crate::builtins::try_parse_known::<SetCommand>(args)?;
+        if let Some(args) = rest_args {
+            this.positional_args.extend(args);
+        }
+        Ok(this)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -308,16 +338,26 @@ impl builtins::Command for SetCommand {
             }
         }
 
-        for (i, arg) in self.positional_args.iter().enumerate() {
-            if arg == "-" && i == 0 {
-                continue;
+        let skip = match self.positional_args.first() {
+            Some(x) if x == "-" => {
+                if self.positional_args.len() > 1 {
+                    context.shell.positional_parameters.clear();
+                }
+                1
             }
+            Some(x) if x == "--" => {
+                context.shell.positional_parameters.clear();
+                1
+            }
+            Some(_) => {
+                context.shell.positional_parameters.clear();
+                0
+            }
+            None => 0,
+        };
 
-            if i < context.shell.positional_parameters.len() {
-                arg.clone_into(&mut context.shell.positional_parameters[i]);
-            } else {
-                context.shell.positional_parameters.push(arg.to_owned());
-            }
+        for arg in self.positional_args.iter().skip(skip) {
+            context.shell.positional_parameters.push(arg.to_owned());
         }
 
         saw_option = saw_option || !self.positional_args.is_empty();

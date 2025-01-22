@@ -1,6 +1,41 @@
 name: "Builtins: set"
 cases:
+  - name: "set with no args"
+    stdin: |
+      MYVARIABLE=VALUE
+      set > set-output.txt
+      grep MYVARIABLE set-output.txt
+
+      # Remove set-output.txt to avoid it being byte-for-byte compared.
+      rm set-output.txt
+
   - name: "Basic set usage"
     stdin: |
       set a b c d
+      echo ${*}
+
+  - name: "set clearing args"
+    stdin: |
+      set a b c
+      echo ${*}
+      set a
+      echo ${*}
+
+  - name: "set with -"
+    stdin: |
+      set - a b c
+      echo "args: " ${*}
+      set -
+      echo "args: " ${*}
+
+  - name: "set with --"
+    stdin: |
+      set -- a b c
+      echo "args: " ${*}
+      set --
+      echo "args: " ${*}
+
+  - name: "set with option-looking tokens"
+    stdin: |
+      set a -v
       echo ${*}
