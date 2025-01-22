@@ -501,7 +501,19 @@ pub fn parse_brace_expansions(
 
 peg::parser! {
     grammar expansion_parser(parser_options: &ParserOptions) for str {
-        pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = word(<![_]>)
+        // Helper rule that enables pegviz to be used to visualize debug peg traces.
+        rule traced<T>(e: rule<T>) -> T =
+            &(input:$([_]*) {
+                #[cfg(feature = "debug-tracing")]
+                println!("[PEG_INPUT_START]\n{}\n[PEG_TRACE_START]", input);
+            })
+            e:e()? {?
+                #[cfg(feature = "debug-tracing")]
+                println!("[PEG_TRACE_STOP]");
+                e.ok_or("")
+            }
+
+        pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = traced(<word(<![_]>)>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
             tilde:tilde_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>, false /*in_command*/)* {
@@ -557,22 +569,40 @@ peg::parser! {
         rule number() -> i64 = n:$(['0'..='9']+) { n.parse().unwrap() }
         rule character() -> char = ['a'..='z' | 'A'..='Z']
 
-        // N.B. We don't bother returning the word pieces, as all users of this rule
+        pub(crate) rule is_arithmetic_word() =
+            arithmetic_word(<![_]>)
+
+            // N.B. We don't bother returning the word pieces, as all users of this rule
         // only try to extract the consumed input string and not the parse result.
         rule arithmetic_word<T>(stop_condition: rule<T>) =
             arithmetic_word_piece(<stop_condition()>)* {}
 
-        rule arithmetic_word_piece<T>(stop_condition: rule<T>) =
-            "(" arithmetic_word_plus_right_paren() {} /
-            word_piece(<param_rule_or_open_paren(<stop_condition()>)>, false /*in_command*/) {}
+        pub(crate) rule is_arithmetic_word_piece() =
+            arithmetic_word_piece(<![_]>)
 
+        // This rule matches an individual "piece" of an arithmetic expression. It needs to handle
+        // matching nested parenthesized expressions as well. We stop consuming the input when
+        // we reach the provided stop condition, which typically denotes the end of the containing
+        // arithmetic expression.
+        rule arithmetic_word_piece<T>(stop_condition: rule<T>) =
+            // This branch matches a parenthesized piece; we consume the opening parenthesis and
+            // delegate the rest to a helper rule. We don't worry about the stop condition passed
+            // into us, because if we see an opening parenthesis then we *must* find its closing
+            // partner.
+            "(" arithmetic_word_plus_right_paren() {} /
+            // This branch matches any standard piece of a word, stopping as soon as we reach
+            // either the overall stop condition *OR* an opening parenthesis. We add this latter
+            // condition to ensure that *we* handle matching parentheses.
+            !"(" word_piece(<param_rule_or_open_paren(<stop_condition()>)>, false /*in_command*/) {}
+
+        // This is a helper rule that matches either the provided stop condition or an opening parenthesis.
         rule param_rule_or_open_paren<T>(stop_condition: rule<T>) -> () =
             stop_condition() {} /
             "(" {}
 
+        // This rule matches an arithmetic word followed by a right parenthesis. It must consume the right parenthesis.
         rule arithmetic_word_plus_right_paren() =
-            "(" arithmetic_word_plus_right_paren() ")" /
-            word_piece(<[')']>, false /*in_command*/)* ")" {}
+            arithmetic_word(<[')']>) ")" /
 
         rule word_piece_with_source<T>(stop_condition: rule<T>, in_command: bool) -> WordPieceWithSource =
             start_index:position!() piece:word_piece(<stop_condition()>, in_command) end_index:position!() {
@@ -923,5 +953,64 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion() -> Result<()> {
+        let parsed = super::parse("$((0))", &ParserOptions::default())?;
+        const EXPECTED_RESULT: &str = "0";
+
+        assert_matches!(
+            &parsed[..],
+            [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion_with_parens() -> Result<()> {
+        let parsed = super::parse("$((((1+2)*3)))", &ParserOptions::default())?;
+        const EXPECTED_RESULT: &str = "((1+2)*3)";
+
+        assert_matches!(
+            &parsed[..],
+            [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arithmetic_word_parsing() {
+        let options = ParserOptions::default();
+
+        assert!(super::expansion_parser::is_arithmetic_word("a", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word("b", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word(" a + b ", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word("(a)", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word("((a))", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word("(((a)))", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word("(1+2)", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word("(1+2)*3", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word("((1+2)*3)", &options).is_ok());
+    }
+
+    #[test]
+    fn test_arithmetic_word_piece_parsing() {
+        let options = ParserOptions::default();
+
+        assert!(super::expansion_parser::is_arithmetic_word_piece("a", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("b", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece(" a + b ", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("(a)", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("((a))", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("(((a)))", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("(1+2)", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("((1+2))", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("((1+2)*3)", &options).is_ok());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("(a", &options).is_err());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("(a))", &options).is_err());
+        assert!(super::expansion_parser::is_arithmetic_word_piece("((a)", &options).is_err());
     }
 }
