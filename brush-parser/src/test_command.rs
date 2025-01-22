@@ -89,7 +89,7 @@ peg::parser! {
             ["-S"] { ast::UnaryPredicate::FileExistsAndIsSocket }
 
         rule binary_op() -> ast::BinaryPredicate =
-            ["=="] { ast::BinaryPredicate::StringExactlyMatchesPattern } /
+            ["=="]  { ast::BinaryPredicate::StringExactlyMatchesString } /
             ["-ef"] { ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers } /
             ["-eq"] { ast::BinaryPredicate::ArithmeticEqualTo } /
             ["-ge"] { ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo } /
@@ -99,11 +99,10 @@ peg::parser! {
             ["-ne"] { ast::BinaryPredicate::ArithmeticNotEqualTo } /
             ["-nt"] { ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot } /
             ["-ot"] { ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes } /
-            ["=="] { ast::BinaryPredicate::StringExactlyMatchesPattern } /
-            ["="] { ast::BinaryPredicate::StringExactlyMatchesPattern } /
-            ["!="] { ast::BinaryPredicate::StringDoesNotExactlyMatchPattern } /
-            ["<"] { ast::BinaryPredicate::LeftSortsBeforeRight } /
-            [">"] { ast::BinaryPredicate::LeftSortsAfterRight }
+            ["="]   { ast::BinaryPredicate::StringExactlyMatchesString } /
+            ["!="]  { ast::BinaryPredicate::StringDoesNotExactlyMatchString } /
+            ["<"]   { ast::BinaryPredicate::LeftSortsBeforeRight } /
+            [">"]   { ast::BinaryPredicate::LeftSortsAfterRight }
 
         rule end() = ![_]
     }

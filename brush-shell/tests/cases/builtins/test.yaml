@@ -1,0 +1,29 @@
+name: "Builtins: test"
+cases:
+  - name: "test: = operator"
+    stdin: |
+      shopt -u nocasematch
+      test "ab" = "ab" && echo "ab = ab"
+      test "ab" = "AB" && echo "ab = AB"
+      test "ab" = "cd" && echo "ab = cd"
+      test "ab" = "a?" && echo "ab = a?"
+
+      shopt -s nocasematch
+      test "ab" = "ab" && echo "ab = ab"
+      test "ab" = "AB" && echo "ab = AB"
+      test "ab" = "cd" && echo "ab = cd"
+      test "ab" = "a?" && echo "ab = a?"
+
+  - name: "test: == operator"
+    stdin: |
+      shopt -u nocasematch
+      test "ab" == "ab" && echo "ab == ab"
+      test "ab" == "AB" && echo "ab == AB"
+      test "ab" == "cd" && echo "ab == cd"
+      test "ab" == "a?" && echo "ab == a?"
+
+      shopt -s nocasematch
+      test "ab" == "ab" && echo "ab == ab"
+      test "ab" == "AB" && echo "ab == AB"
+      test "ab" == "cd" && echo "ab == cd"
+      test "ab" == "a?" && echo "ab == a?"

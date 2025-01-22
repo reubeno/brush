@@ -226,6 +226,26 @@ async fn apply_binary_predicate(
 
             Ok(matches)
         }
+        ast::BinaryPredicate::StringExactlyMatchesString => {
+            let left = expansion::basic_expand_word(shell, left).await?;
+            let right = expansion::basic_expand_word(shell, right).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
+            }
+
+            Ok(left == right)
+        }
+        ast::BinaryPredicate::StringDoesNotExactlyMatchString => {
+            let left = expansion::basic_expand_word(shell, left).await?;
+            let right = expansion::basic_expand_word(shell, right).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell.trace_command(std::format!("[[ {left} {op} {right} ]]"))?;
+            }
+
+            Ok(left != right)
+        }
         ast::BinaryPredicate::StringContainsSubstring => {
             let s = expansion::basic_expand_word(shell, left).await?;
             let substring = expansion::basic_expand_word(shell, right).await?;
@@ -436,6 +456,8 @@ pub(crate) fn apply_binary_predicate_to_strs(
             let eq = pattern.exactly_matches(left)?;
             Ok(!eq)
         }
+        ast::BinaryPredicate::StringExactlyMatchesString => Ok(left == right),
+        ast::BinaryPredicate::StringDoesNotExactlyMatchString => Ok(left != right),
         _ => error::unimp("unsupported test binary predicate"),
     }
 }
