@@ -20,13 +20,24 @@ cases:
 
   - name: "Parentheses"
     stdin: |
-      echo "$(( (10) ))"
       echo "$(((10)))"
+      echo "$((((10))))"
+      echo "$(((((10)))))"
 
-  - name: "Unquoted parentheses"
-    stdin: |
-      echo $(( (10) ))
-      echo $(((10)))
+      echo "$(( (10) ))"
+      echo "$(( (1+2) ))"
+      echo "$(( (1 + 2) ))"
+
+      echo "$(( ((1+2)) ))"
+      echo "$(( ((1 + 2)) ))"
+
+      echo "$(((1+2)*3))"
+      echo "$(((1 + 2) * 3))"
+      echo "$(( (1 + 2) * 3 ))"
+
+      echo "$((((1+2)*3)))"
+      echo "$(( ((1 + 2) * 3) ))"
+      echo "$(( ( (1 + 2) * 3 ) ))"
 
   - name: "Basic quoted arithmetic"
     stdin: |

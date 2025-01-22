@@ -16,6 +16,7 @@ bench = false
 
 [features]
 fuzz-testing = ["dep:arbitrary"]
+debug-tracing = ["peg/trace"]
 
 [dependencies]
 arbitrary = { version = "1.4.1", optional = true, features = ["derive"] }
