@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::io::Write;
 
 use crate::{builtins, commands};
 
@@ -22,7 +23,14 @@ impl builtins::Command for ReturnCommand {
             code_8bit = context.shell.last_exit_status;
         }
 
-        // TODO: only allow return invocation from a function or script
-        Ok(builtins::ExitCode::ReturnFromFunctionOrScript(code_8bit))
+        if context.shell.in_function() || context.shell.in_sourced_script() {
+            Ok(builtins::ExitCode::ReturnFromFunctionOrScript(code_8bit))
+        } else {
+            writeln!(
+                context.shell.stderr(),
+                "return: can only be used in a function or sourced script"
+            )?;
+            Ok(builtins::ExitCode::InvalidUsage)
+        }
     }
 }

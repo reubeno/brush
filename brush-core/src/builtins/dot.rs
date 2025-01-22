@@ -26,7 +26,7 @@ impl builtins::Command for DotCommand {
         let params = context.params.clone();
         let result = context
             .shell
-            .source(
+            .source_script(
                 Path::new(&self.script_path),
                 script_args.as_slice(),
                 &params,

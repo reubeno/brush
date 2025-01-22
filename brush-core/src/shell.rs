@@ -56,7 +56,7 @@ pub struct Shell {
     pub shell_product_display_str: Option<String>,
 
     /// Script call stack.
-    script_call_stack: VecDeque<String>,
+    script_call_stack: VecDeque<(ScriptCallType, String)>,
 
     /// Function call stack.
     function_call_stack: VecDeque<FunctionCall>,
@@ -157,6 +157,15 @@ pub struct CreateOptions {
     pub verbose: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
+}
+
+/// Represents an executing script.
+#[derive(Clone, Debug)]
+pub enum ScriptCallType {
+    /// The script was sourced.
+    Sourced,
+    /// The script was executed.
+    Executed,
 }
 
 /// Represents an active shell function call.
@@ -411,7 +420,7 @@ impl Shell {
     ) -> Result<bool, error::Error> {
         if path.exists() {
             let args: Vec<String> = vec![];
-            self.source(path, &args, params).await?;
+            self.source_script(path, &args, params).await?;
             Ok(true)
         } else {
             tracing::debug!("skipping non-existent file: {}", path.display());
@@ -426,11 +435,30 @@ impl Shell {
     /// * `path` - The path to the file to source.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    pub async fn source<S: AsRef<str>>(
+    pub async fn source_script<S: AsRef<str>>(
         &mut self,
         path: &Path,
         args: &[S],
         params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        self.parse_and_execute_script_file(path, args, params, ScriptCallType::Sourced)
+            .await
+    }
+
+    /// Parse and execute the given file as a shell script, returning the execution result.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the file to source.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `params` - Execution parameters.
+    /// * `call_type` - The type of script call being made.
+    async fn parse_and_execute_script_file<S: AsRef<str>>(
+        &mut self,
+        path: &Path,
+        args: &[S],
+        params: &ExecutionParameters,
+        call_type: ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
         tracing::debug!("sourcing: {}", path.display());
         let opened_file: openfiles::OpenFile = self
@@ -448,7 +476,7 @@ impl Shell {
             source: path.to_string_lossy().to_string(),
         };
 
-        self.source_file(opened_file, &source_info, args, params)
+        self.source_file(opened_file, &source_info, args, params, call_type)
             .await
     }
 
@@ -460,12 +488,14 @@ impl Shell {
     /// * `source_info` - Information about the source of the script.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
+    /// * `call_type` - The type of script call being made.
     async fn source_file<F: Read, S: AsRef<str>>(
         &mut self,
         file: F,
         source_info: &brush_parser::SourceInfo,
         args: &[S],
         params: &ExecutionParameters,
+        call_type: ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
         let mut parser =
@@ -485,7 +515,7 @@ impl Shell {
         );
 
         self.script_call_stack
-            .push_front(source_info.source.clone());
+            .push_front((call_type.clone(), source_info.source.clone()));
         self.update_bash_source_var()?;
 
         let result = self
@@ -632,8 +662,13 @@ impl Shell {
         script_path: &Path,
         args: &[S],
     ) -> Result<ExecutionResult, error::Error> {
-        self.source(script_path, args, &self.default_exec_params())
-            .await
+        self.parse_and_execute_script_file(
+            script_path,
+            args,
+            &self.default_exec_params(),
+            ScriptCallType::Executed,
+        )
+        .await
     }
 
     async fn run_parsed_result(
@@ -813,6 +848,13 @@ impl Shell {
         }
     }
 
+    /// Returns whether or not the shell is actively executing in a sourced script.
+    pub(crate) fn in_sourced_script(&self) -> bool {
+        self.script_call_stack
+            .front()
+            .is_some_and(|(ty, _)| matches!(ty, ScriptCallType::Sourced))
+    }
+
     /// Returns whether or not the shell is actively executing in a shell function.
     pub(crate) fn in_function(&self) -> bool {
         !self.function_call_stack.is_empty()
@@ -896,7 +938,7 @@ impl Shell {
         let source_values = if self.function_call_stack.is_empty() {
             self.script_call_stack
                 .front()
-                .map_or_else(Vec::new, |s| vec![(None, s.to_owned())])
+                .map_or_else(Vec::new, |(_call_type, s)| vec![(None, s.to_owned())])
         } else {
             self.function_call_stack
                 .iter()
