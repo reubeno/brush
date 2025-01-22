@@ -77,9 +77,26 @@ cases:
   - name: "Variable references"
     stdin: |
       x=10
-
       echo "x => $((x))"
       echo "x + 1 => $((x+1))"
+
+      y=
+      echo "y => $((y))"
+      echo "y + 1 => $((y+1))"
+
+      z=notnumber
+      echo "z => $((z))"
+      echo "z + 1 => $((z+1))"
+
+  - name: "Complex variable references"
+    stdin: |
+      x=10
+      y=20
+      z=x+y
+      a=z+z
+
+      echo "z => $((z))"
+      echo "a => $((a))"
 
   - name: "Nested expressions"
     stdin: |
@@ -118,6 +135,12 @@ cases:
 
       echo "--x == $((--x))"
       echo "x is now $x"
+
+  - name: "Assignment with references"
+    stdin: |
+      x=10+3
+      echo "y = x => $((y = x))"
+      echo "y is now $y"
 
   - name: "Assignments in logical boolean expressions"
     known_failure: false
