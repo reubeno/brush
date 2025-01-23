@@ -6,6 +6,21 @@ cases:
       x+=here
       echo "x: ${x}"
 
+  - name: "Appending an integer to an integer variable"
+    stdin: |
+      declare -i x=10
+      echo "x: ${x}"
+      x+=5
+      echo "x: ${x}"
+      x+=value
+      echo "x: ${x}"
+
+      y=value
+      declare -i y
+      echo "y: ${y}"
+      y+=5
+      echo "y: ${y}"
+
   - name: "Append to an unset variable"
     stdin: |
       declare -a myvar
