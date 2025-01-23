@@ -150,17 +150,35 @@ impl builtins::Command for SetCommand {
         // leaking into too many commands' custom parsing.
         //
 
-        // Apply the same workaround from the default implementation of Command::new to handle +
+        // Apply the same workaround from the default implementation of Command::new to handle '+'
         // args.
-        let args = args.into_iter().map(|arg| {
-            if arg.starts_with('+') {
-                format!("--{arg}")
-            } else {
-                arg
-            }
-        });
+        let mut updated_args = vec![];
+        let mut now_parsing_positional_args = false;
+        let mut next_arg_is_option_value = false;
+        for (i, arg) in args.into_iter().enumerate() {
+            if now_parsing_positional_args || next_arg_is_option_value {
+                updated_args.push(arg);
 
-        let (mut this, rest_args) = crate::builtins::try_parse_known::<SetCommand>(args)?;
+                next_arg_is_option_value = false;
+                continue;
+            }
+
+            if arg == "-" || arg == "--" || (i > 0 && !arg.starts_with(['-', '+'])) {
+                now_parsing_positional_args = true;
+            }
+
+            if let Some(plus_options) = arg.strip_prefix("+") {
+                next_arg_is_option_value = plus_options.ends_with('o');
+                for c in plus_options.chars() {
+                    updated_args.push(format!("--+{c}"));
+                }
+            } else {
+                next_arg_is_option_value = arg.starts_with('-') && arg.ends_with('o');
+                updated_args.push(arg);
+            }
+        }
+
+        let (mut this, rest_args) = crate::builtins::try_parse_known::<SetCommand>(updated_args)?;
         if let Some(args) = rest_args {
             this.positional_args.extend(args);
         }

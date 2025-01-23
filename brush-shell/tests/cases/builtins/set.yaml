@@ -14,6 +14,40 @@ cases:
       set a b c d
       echo ${*}
 
+  - name: "set with options"
+    stdin: |
+      function dumpopts {
+          # Dump the options
+          echo "[Options: $1]"
+          echo "set options: " $-
+          shopt -p -o pipefail
+      }
+
+      set -e -u -o pipefail
+      dumpopts enabled
+      echo '*: ' $*
+
+      set +e +u +o pipefail
+      dumpopts disabled
+      echo '*: ' $*
+
+  - name: "set with multiple combined options"
+    stdin: |
+      function dumpopts {
+          # Dump the options
+          echo "[Options: $1]"
+          echo "set options: " $-
+          shopt -p -o pipefail
+      }
+
+      set -euo pipefail
+      dumpopts enabled
+      echo '$*: ' $*
+
+      set +euo pipefail
+      dumpopts disabled
+      echo '$*: ' $*
+
   - name: "set clearing args"
     stdin: |
       set a b c
@@ -35,7 +69,22 @@ cases:
       set --
       echo "args: " ${*}
 
-  - name: "set with option-looking tokens"
+  - name: "set with option-looking args"
     stdin: |
+      set -- a -v
+      echo ${*}
+
+      set - a -v
+      echo ${*}
+
       set a -v
+      echo ${*}
+
+      set -- a +x
+      echo ${*}
+
+      set - a +x
+      echo ${*}
+
+      set a +x
       echo ${*}

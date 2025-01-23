@@ -427,7 +427,7 @@ impl Job {
                         return Some(pid);
                     }
                 }
-                JobTask::Internal(_) => continue,
+                JobTask::Internal(_) => (),
             }
         }
         None

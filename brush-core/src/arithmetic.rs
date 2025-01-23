@@ -19,8 +19,8 @@ pub enum EvalError {
     FailedToTokenizeExpression,
 
     /// Failed to expand an arithmetic expression.
-    #[error("failed to expand expression")]
-    FailedToExpandExpression,
+    #[error("failed to expand expression: '{0}'")]
+    FailedToExpandExpression(String),
 
     /// Failed to access an element of an array.
     #[error("failed to access array")]
@@ -71,7 +71,7 @@ pub(crate) async fn expand_and_eval(
     // Per documentation, first shell-expand it.
     let expanded_self = expansion::basic_expand_str_without_tilde(shell, expr)
         .await
-        .map_err(|_e| EvalError::FailedToExpandExpression)?;
+        .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
 
     // Now parse.
     let expr = brush_parser::arithmetic::parse(&expanded_self)
