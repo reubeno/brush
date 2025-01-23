@@ -213,6 +213,8 @@ impl ShellVariable {
             return Err(error::Error::ReadonlyVariable);
         }
 
+        let value = self.convert_value_literal_for_assignment(value);
+
         if append {
             match (&self.value, &value) {
                 // If we're appending an array to a declared-but-unset variable (or appending
@@ -361,6 +363,7 @@ impl ShellVariable {
         }
 
         let treat_as_int = self.is_treated_as_integer();
+        let value = self.convert_value_str_for_assignment(value);
 
         match &mut self.value {
             ShellValue::IndexedArray(arr) => {
@@ -412,6 +415,29 @@ impl ShellVariable {
                 tracing::error!("assigning to index {array_index} of {:?}", self.value);
                 error::unimp("assigning to index of non-array variable")
             }
+        }
+    }
+
+    fn convert_value_literal_for_assignment(&self, value: ShellValueLiteral) -> ShellValueLiteral {
+        match value {
+            ShellValueLiteral::Scalar(s) => {
+                ShellValueLiteral::Scalar(self.convert_value_str_for_assignment(s))
+            }
+            ShellValueLiteral::Array(literals) => ShellValueLiteral::Array(ArrayLiteral(
+                literals
+                    .0
+                    .into_iter()
+                    .map(|(k, v)| (k, self.convert_value_str_for_assignment(v)))
+                    .collect(),
+            )),
+        }
+    }
+
+    fn convert_value_str_for_assignment(&self, s: String) -> String {
+        if self.is_treated_as_integer() {
+            s.parse::<i64>().unwrap_or(0).to_string()
+        } else {
+            s
         }
     }
 

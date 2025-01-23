@@ -125,6 +125,12 @@ cases:
       echo "var[*]: ${var[*]}"
       declare -p var
 
+  - name: "Appending items to int indexed array"
+    stdin: |
+      declare -ai var=(1 2 3)
+      var+=(4 value 6)
+      declare -p var
+
   - name: "Appending array to associative array"
     stdin: |
       source helpers.sh
@@ -158,6 +164,13 @@ cases:
       source helpers.sh
       declare -Ai assoc_array=([a]=1 [b]=2 [c]=3)
       assoc_array[b]+=2
+      stable_print_assoc_array assoc_array
+
+  - name: "Appending items to int associative array"
+    stdin: |
+      source helpers.sh
+      declare -Ai assoc_array=([a]=1 [b]=2 [c]=3)
+      assoc_array+=([d]=4 [e]=value [f]=6)
       stable_print_assoc_array assoc_array
 
   - name: "Appending array to item"

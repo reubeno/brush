@@ -38,6 +38,35 @@ cases:
       num+=10
       echo $num
 
+  - name: "Declare integer with non-integer string"
+    stdin: |
+      declare -i var=value
+      declare -p var
+
+  - name: "Update integer with non-integer string"
+    stdin: |
+      declare -i var=10
+      declare -p var
+
+      var=value
+      declare -p var
+
+  - name: "Update integer array with non-integer string"
+    stdin: |
+      declare -ai arr=()
+      declare -p arr
+
+      arr[0]="value"
+      declare -p arr
+
+  - name: "Update integer array with non-integer string"
+    stdin: |
+      declare -Ai arr=()
+      declare -p arr
+
+      arr['key']="value"
+      declare -p arr
+
   - name: "Declare readonly variable"
     ignore_stderr: true
     stdin: |
@@ -204,6 +233,13 @@ cases:
       declare var="value"
       declare -p var
       declare var="changed"
+      declare -p var
+
+  - name: "Updating value attributes"
+    stdin: |
+      declare -ix var=10
+      declare -p var
+      declare +ix var
       declare -p var
 
   - name: "Updating array"
