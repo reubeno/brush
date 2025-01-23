@@ -54,17 +54,17 @@ installed on your system, then you can also author a `~/.brushrc` file.
 
 There are some known gaps in compatibility. Most notably:
 
-* **Honoring the full semantics of all `set` and `shopt` options.**
-  The `set` builtin is implemented, as is `set -x` and many frequently used options, but a number of options aren't fully implemented. `set -e`, for example, will execute but its semantics aren't applied across execution.
+* **Some `set` and `shopt` options.**
+  The `set` builtin is implemented, as is `set -x` and many frequently used `set`/`shopt` options, but a number aren't fully implemented. For example, `set -e` will execute but its semantics aren't applied across execution.
 
 * **Anything tagged with a `TODO` comment or where `error::unimp()` is used to return a "not implemented" error**.
   These aren't all tracked with GitHub issues right now, but there's a number of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may be more complicated.
 
-If you feel so inclined, we'd love contributions toward any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help make this project better.
+If you feel so inclined, we'd love contributions toward any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help us make this project better.
 
 ## Testing strategy
 
-This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [515+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
+This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [525+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
 

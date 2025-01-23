@@ -191,15 +191,18 @@ pub trait Command: Parser {
         } else {
             // N.B. clap doesn't support named options like '+x'. To work around this, we
             // establish a pattern of renaming them.
-            let args = args.into_iter().map(|arg| {
-                if arg.starts_with('+') {
-                    format!("--{arg}")
+            let mut updated_args = vec![];
+            for arg in args {
+                if let Some(plus_options) = arg.strip_prefix("+") {
+                    for c in plus_options.chars() {
+                        updated_args.push(format!("--+{c}"));
+                    }
                 } else {
-                    arg
+                    updated_args.push(arg);
                 }
-            });
+            }
 
-            Self::try_parse_from(args)
+            Self::try_parse_from(updated_args)
         }
     }
 
