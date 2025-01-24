@@ -189,7 +189,7 @@ impl Shell {
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: std::env::current_dir()?,
-            env: Self::initialize_vars(options)?,
+            env: env::ShellEnvironment::new(),
             funcs: functions::FunctionEnv::default(),
             options: RuntimeOptions::defaults_from(options),
             jobs: jobs::JobManager::new(),
@@ -212,21 +212,22 @@ impl Shell {
         // parse the entire script with the same settings.
         shell.options.extended_globbing = true;
 
+        // Initialize environment.
+        shell.initialize_vars(options)?;
+
         // Load profiles/configuration.
         shell.load_config(options).await?;
 
         Ok(shell)
     }
 
-    fn initialize_vars(options: &CreateOptions) -> Result<ShellEnvironment, error::Error> {
-        let mut env = ShellEnvironment::new();
-
+    fn initialize_vars(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
         // Seed parameters from environment (unless requested not to do so).
         if !options.do_not_inherit_env {
             for (k, v) in std::env::vars() {
                 let mut var = ShellVariable::new(ShellValue::String(v));
                 var.export();
-                env.set_global(k, var)?;
+                self.env.set_global(k, var)?;
             }
         }
 
@@ -238,26 +239,28 @@ impl Shell {
                 uzers::get_effective_uid()
             )));
             euid_var.set_readonly();
-            env.set_global("EUID", euid_var)?;
+            self.env.set_global("EUID", euid_var)?;
         }
 
         let mut random_var = ShellVariable::new(ShellValue::Random);
         random_var.hide_from_enumeration();
         random_var.treat_as_integer();
-        env.set_global("RANDOM", random_var)?;
+        self.env.set_global("RANDOM", random_var)?;
 
         // Parsing and completion vars
-        env.set_global("IFS", ShellVariable::new(" \t\n".into()))?;
-        env.set_global(
+        self.env
+            .set_global("IFS", ShellVariable::new(" \t\n".into()))?;
+        self.env.set_global(
             "COMP_WORDBREAKS",
             ShellVariable::new(" \t\n\"\'@><=;|&(:".into()),
         )?;
 
         // getopts vars
-        env.set_global("OPTERR", ShellVariable::new("1".into()))?;
+        self.env
+            .set_global("OPTERR", ShellVariable::new("1".into()))?;
         let mut optind_var = ShellVariable::new("1".into());
         optind_var.treat_as_integer();
-        env.set_global("OPTIND", optind_var)?;
+        self.env.set_global("OPTIND", optind_var)?;
 
         // OS info vars
         let os_type = match std::env::consts::OS {
@@ -265,13 +268,14 @@ impl Shell {
             "windows" => "windows",
             _ => "unknown",
         };
-        env.set_global("OSTYPE", ShellVariable::new(os_type.into()))?;
+        self.env
+            .set_global("OSTYPE", ShellVariable::new(os_type.into()))?;
 
         // Set some defaults (if they're not already initialized).
-        if !env.is_set("HISTFILE") {
-            if let Some(home_dir) = Self::get_home_dir_with_env(&env) {
+        if !self.env.is_set("HISTFILE") {
+            if let Some(home_dir) = self.get_home_dir() {
                 let histfile = home_dir.join(".brush_history");
-                env.set_global(
+                self.env.set_global(
                     "HISTFILE",
                     ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
                 )?;
@@ -279,8 +283,8 @@ impl Shell {
         }
 
         #[cfg(unix)]
-        if !env.is_set("PATH") {
-            env.set_global(
+        if !self.env.is_set("PATH") {
+            self.env.set_global(
                 "PATH",
                 ShellVariable::new(
                     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
@@ -294,7 +298,7 @@ impl Shell {
         let pwd = std::env::current_dir()?.to_string_lossy().to_string();
         let mut pwd_var = ShellVariable::new(pwd.into());
         pwd_var.export();
-        env.set_global("PWD", pwd_var)?;
+        self.env.set_global("PWD", pwd_var)?;
 
         // Set version info.
         if !options.sh_mode {
@@ -306,9 +310,10 @@ impl Shell {
             const BASH_MACHINE: &str = "unknown";
 
             if let Some(shell_name) = &options.shell_name {
-                env.set_global("BASH", ShellVariable::new(shell_name.into()))?;
+                self.env
+                    .set_global("BASH", ShellVariable::new(shell_name.into()))?;
             }
-            env.set_global(
+            self.env.set_global(
                 "BASH_VERSINFO",
                 ShellVariable::new(ShellValue::indexed_array_from_slice(
                     [
@@ -322,7 +327,7 @@ impl Shell {
                     .as_slice(),
                 )),
             )?;
-            env.set_global(
+            self.env.set_global(
                 "BASH_VERSION",
                 ShellVariable::new(
                     std::format!(
@@ -333,7 +338,7 @@ impl Shell {
             )?;
         }
 
-        Ok(env)
+        Ok(())
     }
 
     async fn load_config(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
@@ -975,7 +980,7 @@ impl Shell {
     ///
     /// * `name` - The name of the variable to retrieve.
     pub fn get_env_str(&self, name: &str) -> Option<Cow<'_, str>> {
-        self.env.get_str(name)
+        self.env.get_str(name, self)
     }
 
     /// Returns the current value of the IFS variable, or the default value if it is not set.
@@ -1187,11 +1192,11 @@ impl Shell {
 
     /// Returns the shell's current home directory, if available.
     pub(crate) fn get_home_dir(&self) -> Option<PathBuf> {
-        Self::get_home_dir_with_env(&self.env)
+        Self::get_home_dir_with_env(&self.env, self)
     }
 
-    fn get_home_dir_with_env(env: &ShellEnvironment) -> Option<PathBuf> {
-        if let Some(home) = env.get_str("HOME") {
+    fn get_home_dir_with_env(env: &ShellEnvironment, shell: &Shell) -> Option<PathBuf> {
+        if let Some(home) = env.get_str("HOME", shell) {
             Some(PathBuf::from(home.to_string()))
         } else {
             // HOME isn't set, so let's sort it out ourselves.

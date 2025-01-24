@@ -98,7 +98,7 @@ impl builtins::Command for ExportCommand {
                         context.stdout(),
                         "declare -x {}=\"{}\"",
                         name,
-                        variable.value().to_cow_string()
+                        variable.value().to_cow_str(context.shell)
                     )?;
                 }
             }

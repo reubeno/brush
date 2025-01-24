@@ -219,7 +219,7 @@ impl DeclareCommand {
                 "declare -{cs} {name}{separator_str}{}",
                 variable
                     .value()
-                    .format(variables::FormatStyle::DeclarePrint)?
+                    .format(variables::FormatStyle::DeclarePrint, context.shell)?
             )?;
 
             Ok(true)
@@ -483,13 +483,15 @@ impl DeclareCommand {
                     "declare -{cs} {name}{separator_str}{}",
                     variable
                         .value()
-                        .format(variables::FormatStyle::DeclarePrint)?
+                        .format(variables::FormatStyle::DeclarePrint, context.shell)?
                 )?;
             } else {
                 writeln!(
                     context.stdout(),
                     "{name}={}",
-                    variable.value().format(variables::FormatStyle::Basic)?
+                    variable
+                        .value()
+                        .format(variables::FormatStyle::Basic, context.shell)?
                 )?;
             }
         }

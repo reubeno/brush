@@ -400,7 +400,8 @@ fn display_all(context: &commands::ExecutionContext<'_>) -> Result<(), error::Er
         writeln!(
             context.stdout(),
             "{name}={}",
-            var.value().format(variables::FormatStyle::Basic)?,
+            var.value()
+                .format(variables::FormatStyle::Basic, context.shell)?,
         )?;
     }
 
