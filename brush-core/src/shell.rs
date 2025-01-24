@@ -804,7 +804,7 @@ impl Shell {
     }
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
-        self.env.get_str(name).unwrap_or(default.into())
+        self.get_env_str(name).unwrap_or(default.into())
     }
 
     /// Returns a string representing the current `set`-style option flags set in the shell.
@@ -959,8 +959,7 @@ impl Shell {
 
     /// Returns the path to the history file used by the shell, if one is set.
     pub fn get_history_file_path(&self) -> Option<PathBuf> {
-        self.env
-            .get_str("HISTFILE")
+        self.get_env_str("HISTFILE")
             .map(|s| PathBuf::from(s.into_owned()))
     }
 
@@ -969,9 +968,19 @@ impl Shell {
         self.current_line_number
     }
 
+    /// Tries to retrieve a variable from the shell's environment, converting it into its
+    /// string form.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable to retrieve.
+    pub fn get_env_str(&self, name: &str) -> Option<Cow<'_, str>> {
+        self.env.get_str(name)
+    }
+
     /// Returns the current value of the IFS variable, or the default value if it is not set.
     pub(crate) fn get_ifs(&self) -> Cow<'_, str> {
-        self.env.get_str("IFS").unwrap_or_else(|| " \t\n".into())
+        self.get_env_str("IFS").unwrap_or_else(|| " \t\n".into())
     }
 
     /// Returns the first character of the IFS variable, or a space if it is not set.
@@ -1006,7 +1015,7 @@ impl Shell {
         let is_executable = |path: &Path| path.is_file() && path.executable();
 
         let mut executables = vec![];
-        for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
+        for dir_str in self.get_env_str("PATH").unwrap_or_default().split(':') {
             let pattern =
                 patterns::Pattern::from(std::format!("{dir_str}/{required_glob_pattern}"))
                     .set_extended_globbing(self.options.extended_globbing)
@@ -1037,7 +1046,7 @@ impl Shell {
         &self,
         candidate_name: S,
     ) -> Option<PathBuf> {
-        for dir_str in self.env.get_str("PATH").unwrap_or_default().split(':') {
+        for dir_str in self.get_env_str("PATH").unwrap_or_default().split(':') {
             let candidate_path = Path::new(dir_str).join(candidate_name.as_ref());
             if candidate_path.executable() {
                 return Some(candidate_path);

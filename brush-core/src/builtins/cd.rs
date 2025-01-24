@@ -49,7 +49,7 @@ impl builtins::Command for CdCommand {
             // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
                 should_print = true;
-                if let Some(oldpwd) = context.shell.env.get_str("OLDPWD") {
+                if let Some(oldpwd) = context.shell.get_env_str("OLDPWD") {
                     PathBuf::from(oldpwd.to_string())
                 } else {
                     writeln!(context.stderr(), "OLDPWD not set")?;
@@ -61,7 +61,7 @@ impl builtins::Command for CdCommand {
             }
         // `cd' without arguments is equivalent to `cd $HOME'
         } else {
-            if let Some(home_var) = context.shell.env.get_str("HOME") {
+            if let Some(home_var) = context.shell.get_env_str("HOME") {
                 PathBuf::from(home_var.to_string())
             } else {
                 writeln!(context.stderr(), "HOME not set")?;

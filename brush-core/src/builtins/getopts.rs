@@ -67,8 +67,7 @@ impl builtins::Command for GetOptsCommand {
         // If unset, assume OPTIND is 1.
         let mut next_index: usize = context
             .shell
-            .env
-            .get_str("OPTIND")
+            .get_env_str("OPTIND")
             .unwrap_or(Cow::Borrowed("1"))
             .parse()?;
 
@@ -92,8 +91,7 @@ impl builtins::Command for GetOptsCommand {
                 const DEFAULT_NEXT_CHAR_INDEX: usize = 1;
                 let next_char_index = context
                     .shell
-                    .env
-                    .get_str(VAR_GETOPTS_NEXT_CHAR_INDEX)
+                    .get_env_str(VAR_GETOPTS_NEXT_CHAR_INDEX)
                     .map_or(DEFAULT_NEXT_CHAR_INDEX, |s| {
                         s.parse().unwrap_or(DEFAULT_NEXT_CHAR_INDEX)
                     });
