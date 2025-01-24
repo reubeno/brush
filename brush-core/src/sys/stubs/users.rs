@@ -25,6 +25,10 @@ pub(crate) fn get_current_username() -> Result<String, error::Error> {
     error::unimp("get current username")
 }
 
+pub(crate) fn get_user_group_ids() -> Result<Vec<u32>, error::Error> {
+    Ok(vec![])
+}
+
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
     Ok(vec![])
 }

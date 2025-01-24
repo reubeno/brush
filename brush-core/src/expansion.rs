@@ -949,7 +949,7 @@ impl<'a> WordExpander<'a> {
                     .try_resolve_parameter_to_variable(&parameter, indirect)
                     .await?
                 {
-                    Ok(var.get_attribute_flags().into())
+                    Ok(var.get_attribute_flags(self.shell).into())
                 } else {
                     Ok(String::new().into())
                 }
@@ -966,7 +966,7 @@ impl<'a> WordExpander<'a> {
                     let assignable_value_str =
                         var.value().to_assignable_str(index.as_deref(), self.shell);
 
-                    let mut attr_str = var.get_attribute_flags();
+                    let mut attr_str = var.get_attribute_flags(self.shell);
                     if attr_str.is_empty() {
                         attr_str.push('-');
                     }
@@ -974,7 +974,6 @@ impl<'a> WordExpander<'a> {
                     match var.value() {
                         ShellValue::IndexedArray(_)
                         | ShellValue::AssociativeArray(_)
-                        | ShellValue::Random
                         // TODO(dynamic): confirm this
                         | ShellValue::Dynamic { .. } => {
                             let equals_or_nothing = if assignable_value_str.is_empty() {
@@ -1379,7 +1378,7 @@ impl<'a> WordExpander<'a> {
                 Ok(Expansion::from(self.shell.last_exit_status.to_string()))
             }
             brush_parser::word::SpecialParameter::CurrentOptionFlags => {
-                Ok(Expansion::from(self.shell.current_option_flags()))
+                Ok(Expansion::from(self.shell.options.get_option_flags()))
             }
             brush_parser::word::SpecialParameter::ProcessId => {
                 Ok(Expansion::from(std::process::id().to_string()))

@@ -5,6 +5,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rand::Rng;
+
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
@@ -15,7 +17,14 @@ use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     patterns, prompt, sys::users, traps,
 };
-use crate::{pathcache, trace_categories};
+use crate::{pathcache, sys, trace_categories};
+
+const BASH_MAJOR: u32 = 5;
+const BASH_MINOR: u32 = 2;
+const BASH_PATCH: u32 = 15;
+const BASH_BUILD: u32 = 1;
+const BASH_RELEASE: &str = "release";
+const BASH_MACHINE: &str = "unknown";
 
 /// Represents an instance of a shell.
 pub struct Shell {
@@ -42,6 +51,9 @@ pub struct Shell {
     // Additional state
     /// The status of the last completed command.
     pub last_exit_status: u8,
+
+    /// The status of each of the commands in the last pipeline.
+    pub last_pipeline_statuses: Vec<u8>,
 
     /// Clone depth from the original ancestor shell.
     depth: usize,
@@ -75,6 +87,12 @@ pub struct Shell {
 
     /// Shell program location cache.
     pub program_location_cache: pathcache::PathCache,
+
+    /// Last "SECONDS" captured time.
+    last_stopwatch_time: std::time::SystemTime,
+
+    /// Last "SECONDS" offset requested.
+    last_stopwatch_offset: u32,
 }
 
 impl Clone for Shell {
@@ -89,6 +107,7 @@ impl Clone for Shell {
             jobs: jobs::JobManager::new(),
             aliases: self.aliases.clone(),
             last_exit_status: self.last_exit_status,
+            last_pipeline_statuses: self.last_pipeline_statuses.clone(),
             positional_parameters: self.positional_parameters.clone(),
             shell_name: self.shell_name.clone(),
             shell_product_display_str: self.shell_product_display_str.clone(),
@@ -99,6 +118,8 @@ impl Clone for Shell {
             completion_config: self.completion_config.clone(),
             builtins: self.builtins.clone(),
             program_location_cache: self.program_location_cache.clone(),
+            last_stopwatch_time: self.last_stopwatch_time,
+            last_stopwatch_offset: self.last_stopwatch_offset,
             depth: self.depth + 1,
         }
     }
@@ -195,6 +216,7 @@ impl Shell {
             jobs: jobs::JobManager::new(),
             aliases: HashMap::default(),
             last_exit_status: 0,
+            last_pipeline_statuses: vec![0],
             positional_parameters: vec![],
             shell_name: options.shell_name.clone(),
             shell_product_display_str: options.shell_product_display_str.clone(),
@@ -205,6 +227,8 @@ impl Shell {
             completion_config: completion::Config::default(),
             builtins: builtins::get_default_builtins(options),
             program_location_cache: pathcache::PathCache::default(),
+            last_stopwatch_time: std::time::SystemTime::now(),
+            last_stopwatch_offset: 0,
             depth: 0,
         };
 
@@ -221,6 +245,8 @@ impl Shell {
         Ok(shell)
     }
 
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::unwrap_in_result)]
     fn initialize_vars(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
         // Seed parameters from environment (unless requested not to do so).
         if !options.do_not_inherit_env {
@@ -231,47 +257,202 @@ impl Shell {
             }
         }
 
-        // Set some additional ones.
+        // TODO(vars): implement $_
+
+        // BASH
+        if let Some(shell_name) = &options.shell_name {
+            self.env
+                .set_global("BASH", ShellVariable::new(shell_name.into()))?;
+        }
+
+        // BASHOPTS
+        let mut bashopts_var = ShellVariable::new(ShellValue::Dynamic {
+            getter: |shell| shell.options.get_shopt_optstr().into(),
+            setter: |_| (),
+        });
+        bashopts_var.set_readonly();
+        self.env.set_global("BASHOPTS", bashopts_var)?;
+
+        // BASHPID
+        let mut bashpid_var =
+            ShellVariable::new(ShellValue::String(std::process::id().to_string()));
+        bashpid_var.treat_as_integer();
+        self.env.set_global("BASHPID", bashpid_var)?;
+
+        // BASH_ALIASES
+        self.env.set_global(
+            "BASH_ALIASES",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| {
+                    let values = variables::ArrayLiteral(
+                        shell
+                            .aliases
+                            .iter()
+                            .map(|(k, v)| (Some(k.to_owned()), v.to_owned()))
+                            .collect::<Vec<_>>(),
+                    );
+
+                    ShellValue::associative_array_from_literals(values).unwrap()
+                },
+                setter: |_| (),
+            }),
+        )?;
+
+        // TODO(vars): implement BASH_ARGC
+        // TODO(vars): implement BASH_ARGV
+
+        // BASH_ARGV0
+        self.env.set_global(
+            "BASH_ARGV0",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| {
+                    let argv0 = shell.shell_name.as_deref().unwrap_or_default();
+                    argv0.to_string().into()
+                },
+                // TODO(vars): implement updating BASH_ARGV0
+                setter: |_| (),
+            }),
+        )?;
+
+        // TODO(vars): implement mutation of BASH_CMDS
+        self.env.set_global(
+            "BASH_CMDS",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| shell.program_location_cache.to_value().unwrap(),
+                setter: |_| (),
+            }),
+        )?;
+
+        // TODO(vars): implement BASH_COMMAND
+        // TODO(vars): implement BASH_EXECUTIION_STRING
+        // TODO(vars): implement BASH_LINENO
+
+        // BASH_SOURCE
+        self.env.set_global(
+            "BASH_SOURCE",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| shell.get_bash_source_value(),
+                setter: |_| (),
+            }),
+        )?;
+
+        // BASH_SUBSHELL
+        self.env.set_global(
+            "BASH_SUBSHELL",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| shell.depth.to_string().into(),
+                setter: |_| (),
+            }),
+        )?;
+
+        // BASH_VERSINFO
+        let mut bash_versinfo_var = ShellVariable::new(ShellValue::indexed_array_from_strs(
+            [
+                BASH_MAJOR.to_string().as_str(),
+                BASH_MINOR.to_string().as_str(),
+                BASH_PATCH.to_string().as_str(),
+                BASH_BUILD.to_string().as_str(),
+                BASH_RELEASE,
+                BASH_MACHINE,
+            ]
+            .as_slice(),
+        ));
+        bash_versinfo_var.set_readonly();
+        self.env.set_global("BASH_VERSINFO", bash_versinfo_var)?;
+
+        // BASH_VERSION
+        self.env.set_global(
+            "BASH_VERSION",
+            ShellVariable::new(
+                std::format!("{BASH_MAJOR}.{BASH_MINOR}.{BASH_PATCH}({BASH_BUILD})-{BASH_RELEASE}")
+                    .into(),
+            ),
+        )?;
+
+        // COMP_WORDBREAKS
+        self.env.set_global(
+            "COMP_WORDBREAKS",
+            ShellVariable::new(" \t\n\"\'@><=;|&(:".into()),
+        )?;
+
+        // DIRSTACK
+        self.env.set_global(
+            "DIRSTACK",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| {
+                    shell
+                        .directory_stack
+                        .iter()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .collect::<Vec<_>>()
+                        .into()
+                },
+                setter: |_| (),
+            }),
+        )?;
+
+        // EPOCHREALTIME
+        self.env.set_global(
+            "EPOCHREALTIME",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |_shell| {
+                    let now = std::time::SystemTime::now();
+                    let since_epoch = now
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    since_epoch.as_secs_f64().to_string().into()
+                },
+                setter: |_| (),
+            }),
+        )?;
+
+        // EPOCHSECONDS
+        self.env.set_global(
+            "EPOCHSECONDS",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |_shell| {
+                    let now = std::time::SystemTime::now();
+                    let since_epoch = now
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    since_epoch.as_secs().to_string().into()
+                },
+                setter: |_| (),
+            }),
+        )?;
+
+        // EUID
         #[cfg(unix)]
         {
             let mut euid_var = ShellVariable::new(ShellValue::String(format!(
                 "{}",
                 uzers::get_effective_uid()
             )));
-            euid_var.set_readonly();
+            euid_var.treat_as_integer().set_readonly();
             self.env.set_global("EUID", euid_var)?;
         }
 
-        let mut random_var = ShellVariable::new(ShellValue::Random);
-        random_var.hide_from_enumeration();
-        random_var.treat_as_integer();
-        self.env.set_global("RANDOM", random_var)?;
-
-        // Parsing and completion vars
-        self.env
-            .set_global("IFS", ShellVariable::new(" \t\n".into()))?;
+        // FUNCNAME
         self.env.set_global(
-            "COMP_WORDBREAKS",
-            ShellVariable::new(" \t\n\"\'@><=;|&(:".into()),
+            "FUNCNAME",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| shell.get_funcname_value(),
+                setter: |_| (),
+            }),
         )?;
 
-        // getopts vars
-        self.env
-            .set_global("OPTERR", ShellVariable::new("1".into()))?;
-        let mut optind_var = ShellVariable::new("1".into());
-        optind_var.treat_as_integer();
-        self.env.set_global("OPTIND", optind_var)?;
+        // GROUPS
+        let groups = sys::users::get_user_group_ids().unwrap_or_default();
+        self.env.set_global(
+            "GROUPS",
+            ShellVariable::new(ShellValue::indexed_array_from_strings(
+                groups.into_iter().map(|gid| gid.to_string()),
+            )),
+        )?;
 
-        // OS info vars
-        let os_type = match std::env::consts::OS {
-            "linux" => "linux-gnu",
-            "windows" => "windows",
-            _ => "unknown",
-        };
-        self.env
-            .set_global("OSTYPE", ShellVariable::new(os_type.into()))?;
+        // TODO(vars): implement HISTCMD
 
-        // Set some defaults (if they're not already initialized).
+        // HISTFILE (if not already set)
         if !self.env.is_set("HISTFILE") {
             if let Some(home_dir) = self.get_home_dir() {
                 let histfile = home_dir.join(".brush_history");
@@ -282,6 +463,73 @@ impl Shell {
             }
         }
 
+        // HOSTNAME
+        self.env.set_global(
+            "HOSTNAME",
+            ShellVariable::new(
+                sys::network::get_hostname()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+                    .into(),
+            ),
+        )?;
+
+        // HOSTTYPE
+        #[cfg(unix)]
+        {
+            if let Ok(info) = nix::sys::utsname::uname() {
+                self.env.set_global(
+                    "HOSTTYPE",
+                    ShellVariable::new(info.machine().to_string_lossy().to_string().into()),
+                )?;
+            }
+        }
+
+        // IFS
+        self.env
+            .set_global("IFS", ShellVariable::new(" \t\n".into()))?;
+
+        // LINENO
+        self.env.set_global(
+            "LINENO",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| shell.current_line_number.to_string().into(),
+                setter: |_| (),
+            }),
+        )?;
+
+        // MACHTYPE
+        self.env
+            .set_global("MACHTYPE", ShellVariable::new(BASH_MACHINE.into()))?;
+
+        // OLDPWD (initialization)
+        if !self.env.is_set("OLDPWD") {
+            let mut oldpwd_var =
+                ShellVariable::new(ShellValue::Unset(variables::ShellValueUnsetType::Untyped));
+            oldpwd_var.export();
+            self.env.set_global("OLDPWD", oldpwd_var)?;
+        }
+
+        // OPTERR
+        self.env
+            .set_global("OPTERR", ShellVariable::new("1".into()))?;
+
+        // OPTIND
+        let mut optind_var = ShellVariable::new("1".into());
+        optind_var.treat_as_integer();
+        self.env.set_global("OPTIND", optind_var)?;
+
+        // OSTYPE
+        let os_type = match std::env::consts::OS {
+            "linux" => "linux-gnu",
+            "windows" => "windows",
+            _ => "unknown",
+        };
+        self.env
+            .set_global("OSTYPE", ShellVariable::new(os_type.into()))?;
+
+        // PATH (if not already set)
         #[cfg(unix)]
         if !self.env.is_set("PATH") {
             self.env.set_global(
@@ -292,50 +540,110 @@ impl Shell {
             )?;
         }
 
-        // Update PWD to reflect our actual working directory. There's a chance
+        // PIPESTATUS
+        // TODO: Investigate what happens if this gets unset.
+        // TODO: Investigate if this needs to be saved/preserved across prompt display.
+        self.env.set_global(
+            "PIPESTATUS",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| {
+                    ShellValue::indexed_array_from_strings(
+                        shell.last_pipeline_statuses.iter().map(|s| s.to_string()),
+                    )
+                },
+                setter: |_| (),
+            }),
+        )?;
+
+        // PPID
+        if let Some(ppid) = sys::terminal::get_parent_process_id() {
+            let mut ppid_var = ShellVariable::new(ppid.to_string().into());
+            ppid_var.treat_as_integer().set_readonly();
+            self.env.set_global("PPID", ppid_var)?;
+        }
+
+        // RANDOM
+        let mut random_var = ShellVariable::new(ShellValue::Dynamic {
+            getter: get_random_value,
+            setter: |_| (),
+        });
+        random_var.treat_as_integer();
+        self.env.set_global("RANDOM", random_var)?;
+
+        // SECONDS
+        self.env.set_global(
+            "SECONDS",
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |shell| {
+                    let now = std::time::SystemTime::now();
+                    let since_last = now
+                        .duration_since(shell.last_stopwatch_time)
+                        .unwrap_or_default();
+                    let total_seconds =
+                        since_last.as_secs() + u64::from(shell.last_stopwatch_offset);
+                    total_seconds.to_string().into()
+                },
+                // TODO(vars): implement updating SECONDS
+                setter: |_| (),
+            }),
+        )?;
+
+        // SHELL
+        if let Ok(exe_path) = std::env::current_exe() {
+            self.env.set_global(
+                "SHELL",
+                ShellVariable::new(exe_path.to_string_lossy().to_string().into()),
+            )?;
+        }
+
+        // SHELLOPTS
+        let mut shellopts_var = ShellVariable::new(ShellValue::Dynamic {
+            getter: |shell| shell.options.get_set_o_optstr().into(),
+            setter: |_| (),
+        });
+        shellopts_var.set_readonly();
+        self.env.set_global("SHELLOPTS", shellopts_var)?;
+
+        // SHLVL
+        let input_shlvl = self.get_env_str("SHLVL").unwrap_or("0".into());
+        let updated_shlvl = input_shlvl.as_ref().parse::<u32>().unwrap_or(0) + 1;
+        let mut shlvl_var = ShellVariable::new(updated_shlvl.to_string().into());
+        shlvl_var.export();
+        self.env.set_global("SHLVL", shlvl_var)?;
+
+        // SRANDOM
+        let mut random_var = ShellVariable::new(ShellValue::Dynamic {
+            getter: get_srandom_value,
+            setter: |_| (),
+        });
+        random_var.treat_as_integer();
+        self.env.set_global("SRANDOM", random_var)?;
+
+        // PS4
+        if !self.env.is_set("PS4") {
+            self.env
+                .set_global("PS4", ShellVariable::new("+ ".into()))?;
+        }
+
+        //
+        // PWD
+        //
+        // Reflect our actual working directory. There's a chance
         // we inherited an out-of-sync version of the variable. Future updates
         // will be handled by set_working_dir().
+        //
         let pwd = std::env::current_dir()?.to_string_lossy().to_string();
         let mut pwd_var = ShellVariable::new(pwd.into());
         pwd_var.export();
         self.env.set_global("PWD", pwd_var)?;
 
-        // Set version info.
-        if !options.sh_mode {
-            const BASH_MAJOR: u32 = 5;
-            const BASH_MINOR: u32 = 2;
-            const BASH_PATCH: u32 = 15;
-            const BASH_BUILD: u32 = 1;
-            const BASH_RELEASE: &str = "release";
-            const BASH_MACHINE: &str = "unknown";
-
-            if let Some(shell_name) = &options.shell_name {
-                self.env
-                    .set_global("BASH", ShellVariable::new(shell_name.into()))?;
-            }
-            self.env.set_global(
-                "BASH_VERSINFO",
-                ShellVariable::new(ShellValue::indexed_array_from_slice(
-                    [
-                        BASH_MAJOR.to_string().as_str(),
-                        BASH_MINOR.to_string().as_str(),
-                        BASH_PATCH.to_string().as_str(),
-                        BASH_BUILD.to_string().as_str(),
-                        BASH_RELEASE,
-                        BASH_MACHINE,
-                    ]
-                    .as_slice(),
-                )),
-            )?;
-            self.env.set_global(
-                "BASH_VERSION",
-                ShellVariable::new(
-                    std::format!(
-                        "{BASH_MAJOR}.{BASH_MINOR}.{BASH_PATCH}({BASH_BUILD})-{BASH_RELEASE}"
-                    )
-                    .into(),
-                ),
-            )?;
+        // UID
+        #[cfg(unix)]
+        {
+            let mut uid_var =
+                ShellVariable::new(ShellValue::String(format!("{}", uzers::get_current_uid())));
+            uid_var.treat_as_integer().set_readonly();
+            self.env.set_global("UID", uid_var)?;
         }
 
         Ok(())
@@ -521,14 +829,12 @@ impl Shell {
 
         self.script_call_stack
             .push_front((call_type.clone(), source_info.source.clone()));
-        self.update_bash_source_var()?;
 
         let result = self
             .run_parsed_result(parse_result, source_info, params)
             .await;
 
         self.script_call_stack.pop_front();
-        self.update_bash_source_var()?;
 
         // Restore.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -762,12 +1068,12 @@ impl Shell {
 
     /// Composes the shell's post-input, pre-command prompt, applying all appropriate expansions.
     pub async fn compose_precmd_prompt(&mut self) -> Result<String, error::Error> {
-        self.prompt_from_var_or_default("PS0", "").await
+        self.expand_prompt_var_in_subshell("PS0", "").await
     }
 
     /// Composes the shell's prompt, applying all appropriate expansions.
     pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
-        self.prompt_from_var_or_default("PS1", self.default_prompt())
+        self.expand_prompt_var_in_subshell("PS1", self.default_prompt())
             .await
     }
 
@@ -775,32 +1081,33 @@ impl Shell {
     #[allow(clippy::unused_async)]
     pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
         // This is a brush extension.
-        self.prompt_from_var_or_default("BRUSH_PS_ALT", "").await
+        self.expand_prompt_var_in_subshell("BRUSH_PS_ALT", "").await
     }
 
     /// Composes the shell's continuation prompt.
     pub async fn compose_continuation_prompt(&mut self) -> Result<String, error::Error> {
-        self.prompt_from_var_or_default("PS2", "> ").await
+        self.expand_prompt_var_in_subshell("PS2", "> ").await
     }
 
-    async fn prompt_from_var_or_default(
+    async fn expand_prompt_var_in_subshell(
         &mut self,
         var_name: &str,
         default: &str,
     ) -> Result<String, error::Error> {
+        // Create subshell.
+        let mut subshell = self.clone();
+
         // Retrieve the spec.
-        let prompt_spec = self.parameter_or_default(var_name, default);
+        let prompt_spec = subshell.parameter_or_default(var_name, default);
         if prompt_spec.is_empty() {
             return Ok(String::new());
         }
 
         // Expand it.
-        let formatted_prompt = prompt::expand_prompt(self, prompt_spec.into_owned())?;
+        let formatted_prompt = prompt::expand_prompt(&subshell, prompt_spec.into_owned())?;
 
         // Now expand.
-        let formatted_prompt = expansion::basic_expand_str(self, &formatted_prompt).await?;
-
-        Ok(formatted_prompt)
+        expansion::basic_expand_str(&mut subshell, &formatted_prompt).await
     }
 
     /// Returns the exit status of the last command executed in this shell.
@@ -810,36 +1117,6 @@ impl Shell {
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
         self.get_env_str(name).unwrap_or(default.into())
-    }
-
-    /// Returns a string representing the current `set`-style option flags set in the shell.
-    pub(crate) fn current_option_flags(&self) -> String {
-        let mut cs = vec![];
-
-        for (x, y) in crate::namedoptions::SET_OPTIONS.iter() {
-            if (y.getter)(&self.options) {
-                cs.push(*x);
-            }
-        }
-
-        // Sort the flags in a way that matches what bash does.
-        cs.sort_by(|a, b| {
-            if a == b {
-                std::cmp::Ordering::Equal
-            } else if *a == 's' {
-                std::cmp::Ordering::Greater
-            } else if *b == 's' {
-                std::cmp::Ordering::Less
-            } else if a.is_ascii_lowercase() && b.is_ascii_uppercase() {
-                std::cmp::Ordering::Less
-            } else if a.is_ascii_uppercase() && b.is_ascii_lowercase() {
-                std::cmp::Ordering::Greater
-            } else {
-                a.cmp(b)
-            }
-        });
-
-        cs.into_iter().collect()
     }
 
     /// Returns the options that should be used for parsing shell programs; reflects
@@ -894,7 +1171,6 @@ impl Shell {
             function_definition: function_def.clone(),
         });
         self.env.push_scope(env::EnvironmentScope::Local);
-        self.update_funcname_var()?;
         Ok(())
     }
 
@@ -911,55 +1187,30 @@ impl Shell {
             }
         }
 
-        self.update_funcname_var()?;
         Ok(())
     }
 
-    fn update_funcname_var(&mut self) -> Result<(), error::Error> {
-        //
-        // Fill out FUNCNAME[*]
-        //
-        let funcname_values = self
-            .function_call_stack
+    fn get_funcname_value(&self) -> variables::ShellValue {
+        self.function_call_stack
             .iter()
-            .map(|s| (None, s.function_name.clone()))
-            .collect::<Vec<_>>();
-
-        self.env.update_or_add(
-            "FUNCNAME",
-            variables::ShellValueLiteral::Array(variables::ArrayLiteral(funcname_values)),
-            |_| Ok(()),
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
-
-        self.update_bash_source_var()
+            .map(|s| s.function_name.as_str())
+            .collect::<Vec<_>>()
+            .into()
     }
 
-    fn update_bash_source_var(&mut self) -> Result<(), error::Error> {
-        //
-        // Fill out BASH_SOURCE[*]
-        //
-        let source_values = if self.function_call_stack.is_empty() {
+    fn get_bash_source_value(&self) -> variables::ShellValue {
+        if self.function_call_stack.is_empty() {
             self.script_call_stack
                 .front()
-                .map_or_else(Vec::new, |(_call_type, s)| vec![(None, s.to_owned())])
+                .map_or_else(Vec::new, |(_call_type, s)| vec![s.as_ref()])
+                .into()
         } else {
             self.function_call_stack
                 .iter()
-                .map(|s| (None, s.function_definition.source.clone()))
+                .map(|s| s.function_definition.source.as_ref())
                 .collect::<Vec<_>>()
-        };
-
-        self.env.update_or_add(
-            "BASH_SOURCE",
-            variables::ShellValueLiteral::Array(variables::ArrayLiteral(source_values)),
-            |_| Ok(()),
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
-
-        Ok(())
+                .into()
+        }
     }
 
     /// Returns the path to the history file used by the shell, if one is set.
@@ -1222,10 +1473,9 @@ impl Shell {
     ///
     /// * `command` - The command to trace.
     pub(crate) fn trace_command<S: AsRef<str>>(&self, command: S) -> Result<(), std::io::Error> {
-        // TODO: get prefix from PS4
-        const DEFAULT_PREFIX: &str = "+ ";
+        let ps4 = self.get_env_str("PS4").unwrap_or_else(|| "".into());
 
-        let mut prefix = DEFAULT_PREFIX.to_owned();
+        let mut prefix = ps4.to_string();
 
         let additional_depth = self.script_call_stack.len() + self.depth;
         if let Some(c) = prefix.chars().next() {
@@ -1299,4 +1549,18 @@ fn parse_string_impl(
 
 fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
+}
+
+fn get_random_value(_shell: &Shell) -> ShellValue {
+    let mut rng = rand::thread_rng();
+    let num = rng.gen_range(0..32768);
+    let str = num.to_string();
+    str.into()
+}
+
+fn get_srandom_value(_shell: &Shell) -> ShellValue {
+    let mut rng = rand::thread_rng();
+    let num: u32 = rng.gen();
+    let str = num.to_string();
+    str.into()
 }

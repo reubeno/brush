@@ -64,7 +64,7 @@ If you feel so inclined, we'd love contributions toward any of the above, with b
 
 ## Testing strategy
 
-This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [525+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
+This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [550+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
 

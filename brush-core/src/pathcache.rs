@@ -1,3 +1,4 @@
+use crate::{error, variables};
 use std::path::PathBuf;
 
 /// A cache of paths associated with names.
@@ -29,6 +30,17 @@ impl PathCache {
     /// * `name` - The name to set.
     pub fn set<S: AsRef<str>>(&mut self, name: S, path: PathBuf) {
         self.cache.insert(name.as_ref().to_string(), path);
+    }
+
+    /// Projects the cache into a shell value.
+    pub fn to_value(&self) -> Result<variables::ShellValue, error::Error> {
+        let pairs = self
+            .cache
+            .iter()
+            .map(|(k, v)| (Some(k.to_owned()), v.to_string_lossy().to_string()))
+            .collect::<Vec<_>>();
+
+        variables::ShellValue::associative_array_from_literals(variables::ArrayLiteral(pairs))
     }
 
     /// Removes the path associated with the given name, if there is one.

@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
@@ -77,13 +76,15 @@ impl ShellVariable {
     }
 
     /// Marks the variable as exported to child processes.
-    pub fn export(&mut self) {
+    pub fn export(&mut self) -> &mut Self {
         self.exported = true;
+        self
     }
 
     /// Marks the variable as not exported to child processes.
-    pub fn unexport(&mut self) {
+    pub fn unexport(&mut self) -> &mut Self {
         self.exported = false;
+        self
     }
 
     /// Returns whether or not the variable is read-only.
@@ -92,18 +93,19 @@ impl ShellVariable {
     }
 
     /// Marks the variable as read-only.
-    pub fn set_readonly(&mut self) {
+    pub fn set_readonly(&mut self) -> &mut Self {
         self.readonly = true;
+        self
     }
 
     /// Marks the variable as not read-only.
-    pub fn unset_readonly(&mut self) -> Result<(), error::Error> {
+    pub fn unset_readonly(&mut self) -> Result<&mut Self, error::Error> {
         if self.readonly {
             return Err(error::Error::ReadonlyVariable);
         }
 
         self.readonly = false;
-        Ok(())
+        Ok(self)
     }
 
     /// Returns whether or not the variable is traced.
@@ -112,13 +114,15 @@ impl ShellVariable {
     }
 
     /// Marks the variable as traced.
-    pub fn enable_trace(&mut self) {
+    pub fn enable_trace(&mut self) -> &mut Self {
         self.trace = true;
+        self
     }
 
     /// Marks the variable as not traced.
-    pub fn disable_trace(&mut self) {
+    pub fn disable_trace(&mut self) -> &mut Self {
         self.trace = false;
+        self
     }
 
     /// Returns whether or not the variable should be enumerated in the shell's environment.
@@ -127,8 +131,9 @@ impl ShellVariable {
     }
 
     /// Marks the variable as not enumerable in the shell's environment.
-    pub fn hide_from_enumeration(&mut self) {
+    pub fn hide_from_enumeration(&mut self) -> &mut Self {
         self.enumerable = false;
+        self
     }
 
     /// Return the update transform associated with the variable.
@@ -147,13 +152,15 @@ impl ShellVariable {
     }
 
     /// Marks the variable as being treated as an integer.
-    pub fn treat_as_integer(&mut self) {
+    pub fn treat_as_integer(&mut self) -> &mut Self {
         self.treat_as_integer = true;
+        self
     }
 
     /// Marks the variable as not being treated as an integer.
-    pub fn unset_treat_as_integer(&mut self) {
+    pub fn unset_treat_as_integer(&mut self) -> &mut Self {
         self.treat_as_integer = false;
+        self
     }
 
     /// Returns whether or not the variable should be treated as a name reference.
@@ -162,13 +169,15 @@ impl ShellVariable {
     }
 
     /// Marks the variable as being treated as a name reference.
-    pub fn treat_as_nameref(&mut self) {
+    pub fn treat_as_nameref(&mut self) -> &mut Self {
         self.treat_as_nameref = true;
+        self
     }
 
     /// Marks the variable as not being treated as a name reference.
-    pub fn unset_treat_as_nameref(&mut self) {
+    pub fn unset_treat_as_nameref(&mut self) -> &mut Self {
         self.treat_as_nameref = false;
+        self
     }
 
     /// Converts the variable to an indexed array.
@@ -291,7 +300,7 @@ impl ShellVariable {
                 },
                 ShellValue::Unset(_) => unreachable!("covered in conversion above"),
                 // TODO(dynamic): implement appending to dynamic vars
-                ShellValue::Random | ShellValue::Dynamic { .. } => Ok(()),
+                ShellValue::Dynamic { .. } => Ok(()),
             }
         } else {
             match (&self.value, value) {
@@ -315,7 +324,6 @@ impl ShellVariable {
                         ShellValueUnsetType::IndexedArray | ShellValueUnsetType::Untyped,
                     )
                     | ShellValue::String(_)
-                    | ShellValue::Random
                     | ShellValue::Dynamic { .. },
                     ShellValueLiteral::Array(literal_values),
                 ) => {
@@ -334,9 +342,9 @@ impl ShellVariable {
                     Ok(())
                 }
 
-                // Drop other updates to random values.
+                // Handle updates to dynamic values; for now we just drop them.
                 // TODO(dynamic): Allow updates to dynamic values
-                (ShellValue::Random | ShellValue::Dynamic { .. }, _) => Ok(()),
+                (ShellValue::Dynamic { .. }, _) => Ok(()),
 
                 // Assign a scalar value to a scalar or unset (and untyped) variable.
                 (ShellValue::String(_) | ShellValue::Unset(_), ShellValueLiteral::Scalar(s)) => {
@@ -466,7 +474,7 @@ impl ShellVariable {
                     Ok(false)
                 }
             },
-            ShellValue::String(_) | ShellValue::Random => Err(error::Error::NotArray),
+            ShellValue::String(_) => Err(error::Error::NotArray),
             ShellValue::AssociativeArray(values) => Ok(values.remove(index).is_some()),
             ShellValue::IndexedArray(values) => {
                 let key = index.parse::<u64>().unwrap_or(0);
@@ -476,18 +484,28 @@ impl ShellVariable {
         }
     }
 
+    fn resolve_value(&self, shell: &Shell) -> ShellValue {
+        // N.B. We do *not* specially handle a dynamic value that resolves to a dynamic value.
+        match &self.value {
+            ShellValue::Dynamic { getter, .. } => getter(shell),
+            _ => self.value.clone(),
+        }
+    }
+
     /// Returns the canonical attribute flag string for this variable.
-    pub fn get_attribute_flags(&self) -> String {
+    pub fn get_attribute_flags(&self, shell: &Shell) -> String {
+        let value = self.resolve_value(shell);
+
         let mut result = String::new();
 
         if matches!(
-            self.value(),
+            value,
             ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
         ) {
             result.push('a');
         }
         if matches!(
-            self.value(),
+            value,
             ShellValue::AssociativeArray(_)
                 | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
         ) {
@@ -533,8 +551,6 @@ pub enum ShellValue {
     AssociativeArray(BTreeMap<String, String>),
     /// An indexed array.
     IndexedArray(BTreeMap<u64, String>),
-    /// A special value that yields a different random number each time its read.
-    Random,
     /// A value that is dynamically computed.
     Dynamic {
         /// Function that can query the value.
@@ -644,12 +660,29 @@ impl ShellValue {
         )
     }
 
-    /// Returns a new indexed array value constructed from the given slice of strings.
+    /// Returns a new indexed array value constructed from the given slice of owned strings.
     ///
     /// # Arguments
     ///
     /// * `values` - The slice of strings to construct the indexed array from.
-    pub fn indexed_array_from_slice(values: &[&str]) -> Self {
+    pub fn indexed_array_from_strings<S>(values: S) -> Self
+    where
+        S: IntoIterator<Item = String>,
+    {
+        let mut owned_values = BTreeMap::new();
+        for (i, value) in values.into_iter().enumerate() {
+            owned_values.insert(i as u64, value);
+        }
+
+        ShellValue::IndexedArray(owned_values)
+    }
+
+    /// Returns a new indexed array value constructed from the given slice of unowned strings.
+    ///
+    /// # Arguments
+    ///
+    /// * `values` - The slice of strings to construct the indexed array from.
+    pub fn indexed_array_from_strs(values: &[&str]) -> Self {
         let mut owned_values = BTreeMap::new();
         for (i, value) in values.iter().enumerate() {
             owned_values.insert(i as u64, (*value).to_string());
@@ -779,7 +812,6 @@ impl ShellValue {
                 result.push(')');
                 Ok(result.into())
             }
-            ShellValue::Random => Ok(std::format!("\"{}\"", get_random_str()).into()),
             ShellValue::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);
                 let result = dynamic_value.format(style, shell)?.to_string();
@@ -811,7 +843,6 @@ impl ShellValue {
                 let key = index.parse::<u64>().unwrap_or(0);
                 Ok(values.get(&key).map(|s| Cow::Borrowed(s.as_str())))
             }
-            ShellValue::Random => Ok(Some(Cow::Owned(get_random_str()))),
             ShellValue::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);
                 let result = dynamic_value.get_at(index, shell)?;
@@ -824,7 +855,7 @@ impl ShellValue {
     pub fn get_element_keys(&self, shell: &Shell) -> Vec<String> {
         match self {
             ShellValue::Unset(_) => vec![],
-            ShellValue::String(_) | ShellValue::Random => vec!["0".to_owned()],
+            ShellValue::String(_) => vec!["0".to_owned()],
             ShellValue::AssociativeArray(array) => array.keys().map(|k| k.to_owned()).collect(),
             ShellValue::IndexedArray(array) => array.keys().map(|k| k.to_string()).collect(),
             ShellValue::Dynamic { getter, .. } => getter(shell).get_element_keys(shell),
@@ -838,7 +869,6 @@ impl ShellValue {
             ShellValue::String(s) => vec![s.to_owned()],
             ShellValue::AssociativeArray(array) => array.values().map(|v| v.to_owned()).collect(),
             ShellValue::IndexedArray(array) => array.values().map(|v| v.to_owned()).collect(),
-            ShellValue::Random => vec![get_random_str()],
             ShellValue::Dynamic { getter, .. } => getter(shell).get_element_values(shell),
         }
     }
@@ -865,7 +895,6 @@ impl ShellValue {
             ShellValue::IndexedArray(values) => values
                 .get(&0)
                 .map_or_else(|| Cow::Borrowed(""), |s| Cow::Borrowed(s.as_str())),
-            ShellValue::Random => Cow::Owned(get_random_str()),
             ShellValue::Dynamic { .. } => "".into(),
         }
     }
@@ -892,7 +921,6 @@ impl ShellValue {
                         .into_owned()
                 }
             }
-            ShellValue::Random => quote_str_for_assignment(get_random_str().as_str()),
             ShellValue::Dynamic { getter, .. } => getter(shell).to_assignable_str(index, shell),
         }
     }
@@ -916,10 +944,16 @@ impl From<String> for ShellValue {
     }
 }
 
-fn get_random_str() -> String {
-    let mut rng = rand::thread_rng();
-    let value = rng.gen_range(0..32768);
-    value.to_string()
+impl From<Vec<String>> for ShellValue {
+    fn from(values: Vec<String>) -> Self {
+        ShellValue::indexed_array_from_strings(values)
+    }
+}
+
+impl From<Vec<&str>> for ShellValue {
+    fn from(values: Vec<&str>) -> Self {
+        ShellValue::indexed_array_from_strs(values.as_slice())
+    }
 }
 
 pub(crate) fn quote_str_for_assignment(s: &str) -> String {

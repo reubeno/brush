@@ -203,7 +203,7 @@ impl DeclareCommand {
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
-            let mut cs = variable.get_attribute_flags();
+            let mut cs = variable.get_attribute_flags(context.shell);
             if cs.is_empty() {
                 cs.push('-');
             }
@@ -467,7 +467,7 @@ impl DeclareCommand {
             .sorted_by_key(|v| v.0)
         {
             if self.print {
-                let mut cs = variable.get_attribute_flags();
+                let mut cs = variable.get_attribute_flags(context.shell);
                 if cs.is_empty() {
                     cs.push('-');
                 }

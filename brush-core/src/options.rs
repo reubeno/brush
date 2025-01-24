@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::CreateOptions;
 
 /// Runtime changeable options for a shell instance.
@@ -243,5 +245,63 @@ impl RuntimeOptions {
         }
 
         options
+    }
+
+    /// Returns a string representing the current `set`-style option flags set in the shell.
+    pub fn get_option_flags(&self) -> String {
+        let mut cs = vec![];
+
+        for (x, y) in crate::namedoptions::SET_OPTIONS.iter() {
+            if (y.getter)(self) {
+                cs.push(*x);
+            }
+        }
+
+        // Sort the flags in a way that matches what bash does.
+        cs.sort_by(|a, b| {
+            if a == b {
+                std::cmp::Ordering::Equal
+            } else if *a == 's' {
+                std::cmp::Ordering::Greater
+            } else if *b == 's' {
+                std::cmp::Ordering::Less
+            } else if a.is_ascii_lowercase() && b.is_ascii_uppercase() {
+                std::cmp::Ordering::Less
+            } else if a.is_ascii_uppercase() && b.is_ascii_lowercase() {
+                std::cmp::Ordering::Greater
+            } else {
+                a.cmp(b)
+            }
+        });
+
+        cs.into_iter().collect()
+    }
+
+    /// Returns a colon-separated list of sorted 'set -o' options enabled.
+    pub fn get_set_o_optstr(&self) -> String {
+        let mut cs = vec![];
+
+        for (x, y) in crate::namedoptions::SET_O_OPTIONS.iter() {
+            if (y.getter)(self) {
+                cs.push(*x);
+            }
+        }
+
+        cs.sort_unstable();
+        cs.into_iter().join(":")
+    }
+
+    /// Returns a colon-separated list of sorted 'shopt' options enabled.
+    pub fn get_shopt_optstr(&self) -> String {
+        let mut cs = vec![];
+
+        for (x, y) in crate::namedoptions::SHOPT_OPTIONS.iter() {
+            if (y.getter)(self) {
+                cs.push(*x);
+            }
+        }
+
+        cs.sort_unstable();
+        cs.into_iter().join(":")
     }
 }

@@ -1,0 +1,107 @@
+name: "Well-known variable tests"
+cases:
+  - name: "Basic defaulted PATH var"
+    stdin: |
+      if [[ -z "$PATH" ]]; then
+        echo "PATH is not set or is empty"
+      else
+        echo "PATH is set and non-empty"
+      fi
+
+  - name: "Basic variables"
+    known_failure: true # Not fully implemented
+    stdin: |
+      declare -p > ./vars.txt
+      # Filter out variables set by test infrastructure.
+      cat vars.txt | grep '^declare ' | grep -v LLVM | sed -e 's/=.*//'
+      rm vars.txt
+
+  - name: "Static well-known variables"
+    stdin: |
+      echo "EUID: $EUID"
+      echo "UID: $UID"
+
+      [[ $BASHPID == $$ ]]
+      echo 'BASHPID == \$$: ' $?
+
+      [[ $BASH_ARGV0 == $0 ]]
+      echo 'BASH_ARGV0 == $0: ' $?
+
+      [[ $MACHTYPE == ${BASH_VERSINFO[5]} ]]
+      echo 'MACHTYPE == ${BASH_VERSINFO[5]: ' $?
+
+  - name: "BASH_ALIASES"
+    stdin: |
+      echo "Initial BASH_ALIASES: " ${BASH_ALIASES[@]}
+      alias x=y
+      echo "Updated BASH_ALIASES: " ${BASH_ALIASES[@]}
+      unalias x
+      echo "Final BASH_ALIASES: " ${BASH_ALIASES[@]}
+
+  - name: "BASHOPTS"
+    known_failure: true # Need to normalize which options are enabled in oracle
+    stdin: |
+      # Workaround for brush forcing on extglob
+      shopt -u extglob
+
+      echo "BASHOPTS: $BASHOPTS"
+
+  - name: "BASH_SUBSHELL"
+    stdin: |
+      echo "Initial BASH_SUBSHELL: $BASH_SUBSHELL"
+      (echo "Subshell BASH_SUBSHELL: $BASH_SUBSHELL")
+      ( 
+        ( echo "Nested subshell BASH_SUBSHELL: $BASH_SUBSHELL"  )
+      )
+
+      echo $(echo "Command substitution BASH_SUBSHELL: $BASH_SUBSHELL")
+
+  - name: "BASH_VERSINFO"
+    stdin: |
+      shopt -s extglob
+
+      echo "len(BASH_VERSINFO): " ${#BASH_VERSINFO[@]}
+
+      # Only inspect the first 4 elements.
+      for ((i = 0; i < 4; i++)); do
+        cleaned=${BASH_VERSINFO[i]//+([0-9])/d}
+        echo "Cleaned BASH_VERSINFO[$i]: $cleaned"
+      done
+
+  - name: "BASH_VERSION"
+    stdin: |
+      shopt -s extglob
+
+      # Replace specific numbers with placeholder text.
+      cleaned=${BASH_VERSION//+([0-9])/d}
+      echo "Cleaned BASH_VERSION: $cleaned"
+
+  - name: "EPOCHSECONDS"
+    stdin: |
+      external=$(date +%s)
+
+      es1=${EPOCHSECONDS}
+      [[ $es1 =~ ^[0-9]+$ ]] && echo "EPOCHSECONDS is a number"
+
+      es2=${EPOCHSECONDS}
+      [[ $es2 =~ ^[0-9]+$ ]] && echo "EPOCHSECONDS is still a number"
+
+      (( es1 >= external )) && echo "Time is moving forward"
+      (( es1 >= es2 )) && echo "Time is moving forward within the shell"
+
+  - name: "GROUPS"
+    skip: true # TODO: macOS failure needs investigation (passes elsewhere)
+    stdin: |
+      (for group in ${GROUPS[@]}; do
+        echo $group
+      done) | sort
+
+  - name: "SHELLOPTS"
+    stdin: |
+      echo "SHELLOPTS: $SHELLOPTS"
+
+  - name: "SHLVL"
+    stdin: |
+      echo "SHLVL: $SHLVL"
+      bash -c 'echo "bash SHLVL: $SHLVL"'
+      $0 -c 'echo "nested SHLVL: $SHLVL"'
