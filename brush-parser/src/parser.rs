@@ -771,10 +771,16 @@ peg::parser! {
             linebreak() [Token::Word(e, _)] linebreak() { e }
 
         // N.B. An I/O number must be a string of only digits, and it must be
-        // followed by a '<' or '>' character (but not consume them).
+        // followed by a '<' or '>' character (but not consume them). We also
+        // need to make sure that there was no space between the number and the
+        // redirection operator; unfortunately we don't have the space anymore
+        // but we can infer it by looking at the tokens' locations.
         rule io_number() -> u32 =
-            [Token::Word(w, _) if w.chars().all(|c: char| c.is_ascii_digit())]
-            &([Token::Operator(o, _) if o.starts_with('<') || o.starts_with('>')]) {
+            [Token::Word(w, num_loc) if w.chars().all(|c: char| c.is_ascii_digit())]
+            &([Token::Operator(o, redir_loc) if
+                    o.starts_with(['<', '>']) &&
+                    locations_are_contiguous(num_loc, redir_loc)]) {
+
                 w.parse().unwrap()
             }
 
@@ -879,6 +885,13 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
     };
 
     Ok(())
+}
+
+fn locations_are_contiguous(
+    loc_left: &crate::TokenLocation,
+    loc_right: &crate::TokenLocation,
+) -> bool {
+    loc_left.end.index == loc_right.start.index
 }
 
 fn parse_array_assignment(
