@@ -442,12 +442,19 @@ impl Shell {
         )?;
 
         // GROUPS
-        let groups = sys::users::get_user_group_ids().unwrap_or_default();
+        // N.B. We could compute this up front, but we choose to make it dynamic so that we
+        // don't have to make costly system calls if the user never accesses it.
         self.env.set_global(
             "GROUPS",
-            ShellVariable::new(ShellValue::indexed_array_from_strings(
-                groups.into_iter().map(|gid| gid.to_string()),
-            )),
+            ShellVariable::new(ShellValue::Dynamic {
+                getter: |_shell| {
+                    let groups = sys::users::get_user_group_ids().unwrap_or_default();
+                    ShellValue::indexed_array_from_strings(
+                        groups.into_iter().map(|gid| gid.to_string()),
+                    )
+                },
+                setter: |_| (),
+            }),
         )?;
 
         // TODO(vars): implement HISTCMD
