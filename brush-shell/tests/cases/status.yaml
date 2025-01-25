@@ -1,0 +1,35 @@
+name: "Status tests"
+cases:
+  - name: "Basic status"
+    stdin: |
+      cat /non/existent >/dev/null
+      echo "[1] Status: $?; pipe status: ${PIPESTATUS[@]}"
+
+  - name: "Parse error status"
+    known_failure: true # Needs investigation
+    ignore_stderr: true
+    stdin: |
+      # Generate parse error
+      for f done
+      echo "[2] Status: $?; pipe status: ${PIPESTATUS[@]}"
+
+  - name: "Pipeline status"
+    stdin: |
+      /non/existent/program 2>/dev/null | cat
+      echo "Status: $?; pipe status: ${PIPESTATUS[@]}"
+
+  - name: "Command substitution status"
+    stdin: |
+      x=$(echo hi | wc -l)
+      echo "[1] Status: $?; pipe status: ${PIPESTATUS[@]}"
+
+      x=$(cat /non/existent 2>/dev/null)
+      echo "[2] Status: $?; pipe status: ${PIPESTATUS[@]}"
+
+  - name: "Subshell status"
+    stdin: |
+      (echo hi | wc -l)
+      echo "[1] Status: $?; pipe status: ${PIPESTATUS[@]}"
+
+      (cat /non/existent 2>/dev/null)
+      echo "[2] Status: $?; pipe status: ${PIPESTATUS[@]}"

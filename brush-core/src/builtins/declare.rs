@@ -203,7 +203,7 @@ impl DeclareCommand {
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
-            let mut cs = variable.get_attribute_flags();
+            let mut cs = variable.get_attribute_flags(context.shell);
             if cs.is_empty() {
                 cs.push('-');
             }
@@ -219,7 +219,7 @@ impl DeclareCommand {
                 "declare -{cs} {name}{separator_str}{}",
                 variable
                     .value()
-                    .format(variables::FormatStyle::DeclarePrint)?
+                    .format(variables::FormatStyle::DeclarePrint, context.shell)?
             )?;
 
             Ok(true)
@@ -467,7 +467,7 @@ impl DeclareCommand {
             .sorted_by_key(|v| v.0)
         {
             if self.print {
-                let mut cs = variable.get_attribute_flags();
+                let mut cs = variable.get_attribute_flags(context.shell);
                 if cs.is_empty() {
                     cs.push('-');
                 }
@@ -483,13 +483,15 @@ impl DeclareCommand {
                     "declare -{cs} {name}{separator_str}{}",
                     variable
                         .value()
-                        .format(variables::FormatStyle::DeclarePrint)?
+                        .format(variables::FormatStyle::DeclarePrint, context.shell)?
                 )?;
             } else {
                 writeln!(
                     context.stdout(),
                     "{name}={}",
-                    variable.value().format(variables::FormatStyle::Basic)?
+                    variable
+                        .value()
+                        .format(variables::FormatStyle::Basic, context.shell)?
                 )?;
             }
         }

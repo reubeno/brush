@@ -40,6 +40,13 @@ pub(crate) fn get_current_username() -> Result<String, error::Error> {
     Ok(username.to_string_lossy().to_string())
 }
 
+pub(crate) fn get_user_group_ids() -> Result<Vec<u32>, error::Error> {
+    let username = uzers::get_current_username().ok_or_else(|| error::Error::NoCurrentUser)?;
+    let gid = uzers::get_current_gid();
+    let groups = uzers::get_user_groups(&username, gid).unwrap_or_default();
+    Ok(groups.into_iter().map(|g| g.gid()).collect())
+}
+
 #[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
     // TODO: uzers::all_users() is available but unsafe

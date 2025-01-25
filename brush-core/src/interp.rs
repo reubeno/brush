@@ -299,14 +299,16 @@ impl Execute for ast::Pipeline {
         // as needed.
         let spawn_results = spawn_pipeline_processes(self, shell, params).await?;
 
-        // Wait for the processes.
-        let mut result = wait_for_pipeline_processes(self, spawn_results, shell).await?;
+        // Wait for the processes. This also has a side effect of updating pipeline status.
+        let mut result =
+            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell).await?;
 
         // Invert the exit code if requested.
         if self.bang {
             result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
         }
 
+        // Update statuses.
         shell.last_exit_status = result.exit_code;
 
         // If requested, report timing.
@@ -401,7 +403,7 @@ async fn spawn_pipeline_processes(
     Ok(spawn_results)
 }
 
-async fn wait_for_pipeline_processes(
+async fn wait_for_pipeline_processes_and_update_status(
     pipeline: &ast::Pipeline,
     mut process_spawn_results: VecDeque<CommandSpawnResult>,
     shell: &mut Shell,
@@ -409,15 +411,20 @@ async fn wait_for_pipeline_processes(
     let mut result = ExecutionResult::success();
     let mut stopped_children = vec![];
 
+    // Clear our the pipeline status so we can start filling it out.
+    shell.last_pipeline_statuses.clear();
+
     while let Some(child) = process_spawn_results.pop_front() {
         match child.wait(!stopped_children.is_empty()).await? {
             commands::CommandWaitResult::CommandCompleted(current_result) => {
                 result = current_result;
                 shell.last_exit_status = result.exit_code;
+                shell.last_pipeline_statuses.push(result.exit_code);
             }
             commands::CommandWaitResult::CommandStopped(current_result, child) => {
                 result = current_result;
                 shell.last_exit_status = result.exit_code;
+                shell.last_pipeline_statuses.push(result.exit_code);
 
                 stopped_children.push(jobs::JobTask::External(child));
             }

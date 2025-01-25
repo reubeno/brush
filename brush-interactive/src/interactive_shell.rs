@@ -118,15 +118,18 @@ pub trait InteractiveShell {
             shell_mut.check_for_completed_jobs()?;
 
             // If there's a variable called PROMPT_COMMAND, then run it first.
-            if let Some(prompt_cmd) = shell_mut.env.get_str("PROMPT_COMMAND") {
+            if let Some(prompt_cmd) = shell_mut.get_env_str("PROMPT_COMMAND") {
                 // Save (and later restore) the last exit status.
                 let prev_last_result = shell_mut.last_exit_status;
+                let prev_last_pipeline_statuses = shell_mut.last_pipeline_statuses.clone();
 
                 let params = shell_mut.default_exec_params();
 
                 shell_mut
                     .run_string(prompt_cmd.into_owned(), &params)
                     .await?;
+
+                shell_mut.last_pipeline_statuses = prev_last_pipeline_statuses;
                 shell_mut.last_exit_status = prev_last_result;
             }
 

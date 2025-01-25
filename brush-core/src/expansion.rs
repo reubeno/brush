@@ -949,7 +949,7 @@ impl<'a> WordExpander<'a> {
                     .try_resolve_parameter_to_variable(&parameter, indirect)
                     .await?
                 {
-                    Ok(var.get_attribute_flags().into())
+                    Ok(var.get_attribute_flags(self.shell).into())
                 } else {
                     Ok(String::new().into())
                 }
@@ -963,9 +963,10 @@ impl<'a> WordExpander<'a> {
                     .try_resolve_parameter_to_variable(&parameter, indirect)
                     .await?
                 {
-                    let assignable_value_str = var.value().to_assignable_str(index.as_deref());
+                    let assignable_value_str =
+                        var.value().to_assignable_str(index.as_deref(), self.shell);
 
-                    let mut attr_str = var.get_attribute_flags();
+                    let mut attr_str = var.get_attribute_flags(self.shell);
                     if attr_str.is_empty() {
                         attr_str.push('-');
                     }
@@ -973,7 +974,8 @@ impl<'a> WordExpander<'a> {
                     match var.value() {
                         ShellValue::IndexedArray(_)
                         | ShellValue::AssociativeArray(_)
-                        | ShellValue::Random => {
+                        // TODO(dynamic): confirm this
+                        | ShellValue::Dynamic { .. } => {
                             let equals_or_nothing = if assignable_value_str.is_empty() {
                                 ""
                             } else {
@@ -1120,7 +1122,7 @@ impl<'a> WordExpander<'a> {
                 concatenate,
             } => {
                 let keys = if let Some((_, var)) = self.shell.env.get(variable_name) {
-                    var.value().get_element_keys()
+                    var.value().get_element_keys(self.shell)
                 } else {
                     vec![]
                 };
@@ -1273,7 +1275,9 @@ impl<'a> WordExpander<'a> {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         Ok(Expansion::undefined())
                     } else {
-                        Ok(Expansion::from(var.value().to_cow_string().to_string()))
+                        Ok(Expansion::from(
+                            var.value().to_cow_str(self.shell).to_string(),
+                        ))
                     }
                 } else {
                     Ok(Expansion::undefined())
@@ -1298,7 +1302,7 @@ impl<'a> WordExpander<'a> {
 
                 // Index into the array.
                 if let Some((_, var)) = self.shell.env.get(name) {
-                    if let Some(value) = var.value().get_at(index_to_use.as_str())? {
+                    if let Some(value) = var.value().get_at(index_to_use.as_str(), self.shell)? {
                         Ok(Expansion::from(value.to_string()))
                     } else {
                         Ok(Expansion::undefined())
@@ -1309,7 +1313,7 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 if let Some((_, var)) = self.shell.env.get(name) {
-                    let values = var.value().get_element_values();
+                    let values = var.value().get_element_values(self.shell);
 
                     Ok(Expansion {
                         fields: values
@@ -1374,7 +1378,7 @@ impl<'a> WordExpander<'a> {
                 Ok(Expansion::from(self.shell.last_exit_status.to_string()))
             }
             brush_parser::word::SpecialParameter::CurrentOptionFlags => {
-                Ok(Expansion::from(self.shell.current_option_flags()))
+                Ok(Expansion::from(self.shell.options.get_option_flags()))
             }
             brush_parser::word::SpecialParameter::ProcessId => {
                 Ok(Expansion::from(std::process::id().to_string()))

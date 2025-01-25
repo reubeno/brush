@@ -226,7 +226,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     if !empty_env {
         for (name, var) in shell.env.iter() {
             if var.is_exported() {
-                let value_as_str = var.value().to_cow_string();
+                let value_as_str = var.value().to_cow_str(shell);
                 cmd.env(name, value_as_str.as_ref());
             }
         }
