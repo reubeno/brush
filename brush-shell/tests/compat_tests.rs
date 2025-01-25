@@ -715,12 +715,38 @@ impl TestCaseResult {
                 for entry in entries {
                     const INDENT: &str = "        ";
                     match entry {
-                        DirComparisonEntry::Different(left, right) => {
+                        DirComparisonEntry::Different(
+                            left_path,
+                            left_contents,
+                            right_path,
+                            right_contents,
+                        ) => {
                             writeln!(
                                 writer,
                                 "{INDENT}oracle file {} differs from test file {}",
-                                left.to_string_lossy(),
-                                right.to_string_lossy()
+                                left_path.to_string_lossy(),
+                                right_path.to_string_lossy()
+                            )?;
+
+                            writeln!(
+                                writer,
+                                "{INDENT}{}",
+                                "------ Oracle <> Test: file ---------------------------------"
+                                    .cyan()
+                            )?;
+
+                            write_diff(
+                                &mut writer,
+                                8,
+                                left_contents.as_str(),
+                                right_contents.as_str(),
+                            )?;
+
+                            writeln!(
+                                writer,
+                                "        {}",
+                                "---------------------------------------------------------------"
+                                    .cyan()
                             )?;
                         }
                         DirComparisonEntry::LeftOnly(p) => {
@@ -1227,7 +1253,7 @@ impl StringComparison {
 enum DirComparisonEntry {
     LeftOnly(PathBuf),
     RightOnly(PathBuf),
-    Different(PathBuf, PathBuf),
+    Different(PathBuf, String, PathBuf, String),
 }
 
 enum DirComparison {
@@ -1265,7 +1291,9 @@ fn diff_dirs(oracle_path: &Path, test_path: &Path) -> Result<DirComparison> {
             }
             dir_cmp::full::DirCmpEntry::Both(l, r, _) => DirComparisonEntry::Different(
                 pathdiff::diff_paths(l, oracle_path).unwrap(),
+                std::fs::read_to_string(l).unwrap(),
                 pathdiff::diff_paths(r, test_path).unwrap(),
+                std::fs::read_to_string(r).unwrap(),
             ),
         })
         .collect();

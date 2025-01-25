@@ -29,6 +29,20 @@ cases:
     stdin: |
       echo hi >&2
 
+  - name: "Redirecting an fd"
+    stdin: |
+      echo hi-out 1>stdout.txt
+      echo hi-error 2>stderr.txt >&2
+
+  - name: "Almost redirecting but not actually redirecting"
+    stdin: |
+      # Checks to make sure the '1' isn't treated as a file descriptor
+      echo 1 >&2
+
+  - name: "Redirection with arbitrary fd number"
+    stdin: |
+      echo hi 4>file.txt >&4
+
   - name: "Process substitution: basic"
     stdin: |
       shopt -u -o posix
@@ -76,3 +90,24 @@ cases:
     stdin: |
       shopt -u -o posix
       cp <(echo hi) >(cat)
+
+  - name: "Redirection in command substitution"
+    stdin: |
+      echo $(echo hi >&2) 2>stderr.txt
+
+  - name: "Redirection in command substitution to non-standard fd"
+    ignore_stderr: true
+    stdin: |
+      echo $(echo hi >&3) 3>output.txt
+
+  - name: "Redirection in command substitution in braces to non-standard fd"
+    known_failure: true # https://github.com/reubeno/brush/issues/358
+    ignore_stderr: true
+    stdin: |
+      { : $(echo hi >&3); } 3>output.txt
+
+  - name: "Redirection in command substitution in subshell to non-standard fd"
+    known_failure: true # https://github.com/reubeno/brush/issues/358
+    ignore_stderr: true
+    stdin: |
+      ( : $(echo hi >&3); ) 3>output.txt
