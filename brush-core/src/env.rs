@@ -34,7 +34,7 @@ pub enum EnvironmentScope {
 #[derive(Clone, Debug)]
 pub struct ShellEnvironment {
     /// Stack of scopes, with the top of the stack being the current scope.
-    scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
+    scopes: imbl::Vector<(EnvironmentScope, ShellVariableMap)>,
     /// Whether or not to auto-export variables on creation or modification.
     export_variables_on_modification: bool,
     /// Count of total entries (may include duplicates with shadowed variables).
@@ -51,7 +51,7 @@ impl ShellEnvironment {
     /// Returns a new shell environment.
     pub fn new() -> Self {
         Self {
-            scopes: vec![(EnvironmentScope::Global, ShellVariableMap::new())],
+            scopes: imbl::vector![(EnvironmentScope::Global, ShellVariableMap::new())],
             export_variables_on_modification: false,
             entry_count: 0,
         }
@@ -63,7 +63,7 @@ impl ShellEnvironment {
     ///
     /// * `scope_type` - The type of scope to push.
     pub fn push_scope(&mut self, scope_type: EnvironmentScope) {
-        self.scopes.push((scope_type, ShellVariableMap::new()));
+        self.scopes.push_back((scope_type, ShellVariableMap::new()));
     }
 
     /// Pops the top-most scope off the environment's scope stack.
@@ -73,7 +73,7 @@ impl ShellEnvironment {
     /// * `expected_scope_type` - The type of scope that is expected to be atop the stack.
     pub fn pop_scope(&mut self, expected_scope_type: EnvironmentScope) -> Result<(), error::Error> {
         // TODO: Should we panic instead on failure? It's effectively a broken invariant.
-        match self.scopes.pop() {
+        match self.scopes.pop_back() {
             Some((actual_scope_type, _)) if actual_scope_type == expected_scope_type => Ok(()),
             _ => Err(error::Error::MissingScope),
         }
@@ -500,14 +500,14 @@ impl ShellEnvironment {
 /// Represents a map from names to shell variables.
 #[derive(Clone, Debug)]
 pub struct ShellVariableMap {
-    variables: HashMap<String, ShellVariable>,
+    variables: imbl::HashMap<String, ShellVariable>,
 }
 
 impl ShellVariableMap {
     /// Returns a new shell variable map.
     pub fn new() -> Self {
         Self {
-            variables: HashMap::new(),
+            variables: imbl::HashMap::new(),
         }
     }
 
