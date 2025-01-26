@@ -212,9 +212,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     cmd.arg0(argv0);
 
     // Pass through args.
-    for arg in args {
-        cmd.arg(arg);
-    }
+    cmd.args(args);
 
     // Use the shell's current working dir.
     cmd.current_dir(shell.working_dir.as_path());
@@ -224,11 +222,8 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
 
     // Add in exported variables.
     if !empty_env {
-        for (name, var) in shell.env.iter() {
-            if var.is_exported() {
-                let value_as_str = var.value().to_cow_str(shell);
-                cmd.env(name, value_as_str.as_ref());
-            }
+        for (k, v) in shell.env.iter_exported() {
+            cmd.env(k.as_str(), v.value().to_cow_str(shell).as_ref());
         }
     }
 
