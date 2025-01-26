@@ -39,7 +39,7 @@ cases:
       echo "Final BASH_ALIASES: " ${BASH_ALIASES[@]}
 
   - name: "BASHOPTS"
-    known_failure: true # Need to normalize which options are enabled in oracle
+    skip: true # Need to normalize which options are enabled in oracle
     stdin: |
       # Workaround for brush forcing on extglob
       shopt -u extglob

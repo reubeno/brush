@@ -164,7 +164,7 @@ async fn run_impl(
         shell
             .shell_mut()
             .as_mut()
-            .run_script(Path::new(&script_path), args.script_args.as_slice())
+            .run_script(Path::new(&script_path), args.script_args.iter())
             .await?;
     } else {
         // In all other cases, run interactively, taking input from stdin.

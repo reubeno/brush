@@ -30,7 +30,11 @@ impl TestShellWithBashCompletion {
         let mut shell = brush_core::Shell::new(&create_options).await?;
         let exec_params = shell.default_exec_params();
         let source_result = shell
-            .source_script::<String>(bash_completion_script_path.as_path(), &[], &exec_params)
+            .source_script(
+                bash_completion_script_path.as_path(),
+                std::iter::empty::<String>(),
+                &exec_params,
+            )
             .await?;
 
         if source_result.exit_code != 0 {

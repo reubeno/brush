@@ -21,14 +21,12 @@ impl builtins::Command for DotCommand {
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         // TODO: Handle trap inheritance.
-        let script_args: Vec<_> = self.script_args.iter().map(|a| a.as_str()).collect();
-
         let params = context.params.clone();
         let result = context
             .shell
             .source_script(
                 Path::new(&self.script_path),
-                script_args.as_slice(),
+                self.script_args.iter(),
                 &params,
             )
             .await?;

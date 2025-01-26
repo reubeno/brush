@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::hash_map;
 use std::collections::HashMap;
 
 use crate::error;
@@ -36,6 +37,8 @@ pub struct ShellEnvironment {
     scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
     /// Whether or not to auto-export variables on creation or modification.
     export_variables_on_modification: bool,
+    /// Count of total entries (may include duplicates with shadowed variables).
+    entry_count: usize,
 }
 
 impl Default for ShellEnvironment {
@@ -50,6 +53,7 @@ impl ShellEnvironment {
         Self {
             scopes: vec![(EnvironmentScope::Global, ShellVariableMap::new())],
             export_variables_on_modification: false,
+            entry_count: 0,
         }
     }
 
@@ -94,7 +98,10 @@ impl ShellEnvironment {
         &self,
         lookup_policy: EnvironmentLookup,
     ) -> impl Iterator<Item = (&String, &ShellVariable)> {
-        let mut visible_vars: HashMap<&String, &ShellVariable> = HashMap::new();
+        // We won't actually need to store all entries, but we expect it should be
+        // within the same order.
+        let mut visible_vars: HashMap<&String, &ShellVariable> =
+            HashMap::with_capacity(self.entry_count);
 
         let mut local_count = 0;
         for (scope_type, var_map) in self.scopes.iter().rev() {
@@ -122,8 +129,9 @@ impl ShellEnvironment {
             }
 
             for (name, var) in var_map.iter() {
-                if !visible_vars.contains_key(name) {
-                    visible_vars.insert(name, var);
+                // Only insert the variable if it hasn't been seen yet.
+                if let hash_map::Entry::Vacant(entry) = visible_vars.entry(name) {
+                    entry.insert(var);
                 }
             }
 
@@ -226,6 +234,9 @@ impl ShellEnvironment {
                         name,
                         ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped)),
                     );
+                } else if self.entry_count > 0 {
+                    // Entry count should never be 0 here, but we're being defensive.
+                    self.entry_count -= 1;
                 }
 
                 return Ok(unset_result);
@@ -459,7 +470,11 @@ impl ShellEnvironment {
 
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if *scope_type == target_scope {
-                map.set(name, var);
+                let prev_var = map.set(name, var);
+                if prev_var.is_none() {
+                    self.entry_count += 1;
+                }
+
                 return Ok(());
             }
         }
@@ -543,7 +558,7 @@ impl ShellVariableMap {
     ///
     /// * `name` - The name of the variable to set.
     /// * `var` - The variable to set.
-    pub fn set<N: Into<String>>(&mut self, name: N, var: ShellVariable) {
-        self.variables.insert(name.into(), var);
+    pub fn set<N: Into<String>>(&mut self, name: N, var: ShellVariable) -> Option<ShellVariable> {
+        self.variables.insert(name.into(), var)
     }
 }
