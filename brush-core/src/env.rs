@@ -83,6 +83,25 @@ impl ShellEnvironment {
     // Iterators/Getters
     //
 
+    /// Returns an iterator over all exported variables defined in the variable.
+    pub fn iter_exported(&self) -> impl Iterator<Item = (&String, &ShellVariable)> {
+        // We won't actually need to store all entries, but we expect it should be
+        // within the same order.
+        let mut visible_vars: HashMap<&String, &ShellVariable> =
+            HashMap::with_capacity(self.entry_count);
+
+        for (_, var_map) in self.scopes.iter().rev() {
+            for (name, var) in var_map.iter().filter(|(_, v)| v.is_exported()) {
+                // Only insert the variable if it hasn't been seen yet.
+                if let hash_map::Entry::Vacant(entry) = visible_vars.entry(name) {
+                    entry.insert(var);
+                }
+            }
+        }
+
+        visible_vars.into_iter()
+    }
+
     /// Returns an iterator over all the variables defined in the environment.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &ShellVariable)> {
         self.iter_using_policy(EnvironmentLookup::Anywhere)
