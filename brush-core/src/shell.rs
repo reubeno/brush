@@ -639,7 +639,7 @@ impl Shell {
         // we inherited an out-of-sync version of the variable. Future updates
         // will be handled by set_working_dir().
         //
-        let pwd = std::env::current_dir()?.to_string_lossy().to_string();
+        let pwd = self.working_dir.to_string_lossy().to_string();
         let mut pwd_var = ShellVariable::new(pwd.into());
         pwd_var.export();
         self.env.set_global("PWD", pwd_var)?;
@@ -739,8 +739,8 @@ impl Shell {
         params: &ExecutionParameters,
     ) -> Result<bool, error::Error> {
         if path.exists() {
-            let args: Vec<String> = vec![];
-            self.source_script(path, &args, params).await?;
+            self.source_script(path, std::iter::empty::<String>(), params)
+                .await?;
             Ok(true)
         } else {
             tracing::debug!("skipping non-existent file: {}", path.display());
@@ -755,10 +755,10 @@ impl Shell {
     /// * `path` - The path to the file to source.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    pub async fn source_script<S: AsRef<str>>(
+    pub async fn source_script<S: AsRef<str>, I: Iterator<Item = S>>(
         &mut self,
         path: &Path,
-        args: &[S],
+        args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         self.parse_and_execute_script_file(path, args, params, ScriptCallType::Sourced)
@@ -773,10 +773,10 @@ impl Shell {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn parse_and_execute_script_file<S: AsRef<str>>(
+    async fn parse_and_execute_script_file<S: AsRef<str>, I: Iterator<Item = S>>(
         &mut self,
         path: &Path,
-        args: &[S],
+        args: I,
         params: &ExecutionParameters,
         call_type: ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
@@ -809,11 +809,11 @@ impl Shell {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn source_file<F: Read, S: AsRef<str>>(
+    async fn source_file<F: Read, S: AsRef<str>, I: Iterator<Item = S>>(
         &mut self,
         file: F,
         source_info: &brush_parser::SourceInfo,
-        args: &[S],
+        args: I,
         params: &ExecutionParameters,
         call_type: ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
@@ -824,7 +824,7 @@ impl Shell {
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse();
 
-        let mut other_positional_parameters = args.iter().map(|s| s.as_ref().to_owned()).collect();
+        let mut other_positional_parameters = args.map(|s| s.as_ref().to_owned()).collect();
         let mut other_shell_name = Some(source_info.source.clone());
 
         // TODO: Find a cleaner way to change args.
@@ -975,10 +975,10 @@ impl Shell {
     ///
     /// * `script_path` - The path to the script file to execute.
     /// * `args` - The arguments to pass to the script as positional parameters.
-    pub async fn run_script<S: AsRef<str>>(
+    pub async fn run_script<S: AsRef<str>, I: Iterator<Item = S>>(
         &mut self,
         script_path: &Path,
-        args: &[S],
+        args: I,
     ) -> Result<ExecutionResult, error::Error> {
         self.parse_and_execute_script_file(
             script_path,
