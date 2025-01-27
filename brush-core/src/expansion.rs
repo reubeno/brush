@@ -312,11 +312,15 @@ pub(crate) async fn basic_expand_regex(
     expander.basic_expand_regex(&word.flatten()).await
 }
 
-pub(crate) async fn basic_expand_word(
+pub(crate) async fn basic_expand_word<'w>(
     shell: &mut Shell,
-    word: &ast::Word,
-) -> Result<String, error::Error> {
-    basic_expand_str(shell, word.flatten().as_str()).await
+    word: &'w ast::Word,
+) -> Result<Cow<'w, str>, error::Error> {
+    if !WordExpander::expansion_required(word.value.as_str()) {
+        Ok(Cow::Borrowed(&word.value))
+    } else {
+        Ok(basic_expand_str(shell, word.value.as_str()).await?.into())
+    }
 }
 
 pub(crate) async fn basic_expand_str(shell: &mut Shell, s: &str) -> Result<String, error::Error> {
@@ -452,6 +456,11 @@ impl<'a> WordExpander<'a> {
             .set_case_insensitive(self.shell.options.case_insensitive_conditionals))
     }
 
+    /// Checks if the given string requires any meaningful work to expand.
+    pub(crate) fn expansion_required(s: &str) -> bool {
+        s.contains(['$', '`', '\\', '\'', '\"', '~', '{'])
+    }
+
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// yield pieces that could be further processed.
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
@@ -461,7 +470,7 @@ impl<'a> WordExpander<'a> {
         // understood to be the *only* ones indicative of *possible* expansion. There's
         // still a possibility no expansion needs to be done, but that's okay; we'll still
         // yield a correct result.
-        if !word.contains(['$', '`', '\\', '\'', '\"', '~', '{']) {
+        if !Self::expansion_required(word) {
             return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
         }
 

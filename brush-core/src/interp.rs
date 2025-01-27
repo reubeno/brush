@@ -653,7 +653,7 @@ impl Execute for ast::CaseClauseCommand {
                         .set_extended_globbing(shell.options.extended_globbing)
                         .set_case_insensitive(shell.options.case_insensitive_conditionals);
 
-                    if expanded_pattern.exactly_matches(expanded_value.as_str())? {
+                    if expanded_pattern.exactly_matches(expanded_value.as_ref())? {
                         matches = true;
                         break;
                     }
@@ -1145,15 +1145,21 @@ async fn expand_assignment_value(
         ast::AssignmentValue::Scalar(s) => {
             let expanded_word = expansion::basic_expand_word(shell, s).await?;
             ast::AssignmentValue::Scalar(ast::Word {
-                value: expanded_word,
+                value: expanded_word.into_owned(),
             })
         }
         ast::AssignmentValue::Array(arr) => {
             let mut expanded_values = vec![];
             for (key, value) in arr {
                 if let Some(k) = key {
-                    let expanded_key = expansion::basic_expand_word(shell, k).await?.into();
-                    let expanded_value = expansion::basic_expand_word(shell, value).await?.into();
+                    let expanded_key = expansion::basic_expand_word(shell, k)
+                        .await?
+                        .into_owned()
+                        .into();
+                    let expanded_value = expansion::basic_expand_word(shell, value)
+                        .await?
+                        .into_owned()
+                        .into();
                     expanded_values.push((Some(expanded_key), expanded_value));
                 } else {
                     let split_expanded_value =
@@ -1198,21 +1204,23 @@ async fn apply_assignment(
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
             let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
-            ShellValueLiteral::Scalar(value)
+            ShellValueLiteral::Scalar(value.into_owned())
         }
         ast::AssignmentValue::Array(unexpanded_values) => {
             let mut elements = vec![];
             for (unexpanded_key, unexpanded_value) in unexpanded_values {
                 let key = match unexpanded_key {
-                    Some(unexpanded_key) => {
-                        Some(expansion::basic_expand_word(shell, unexpanded_key).await?)
-                    }
+                    Some(unexpanded_key) => Some(
+                        expansion::basic_expand_word(shell, unexpanded_key)
+                            .await?
+                            .into_owned(),
+                    ),
                     None => None,
                 };
 
                 if key.is_some() {
                     let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
-                    elements.push((key, value));
+                    elements.push((key, value.into_owned()));
                 } else {
                     let values =
                         expansion::full_expand_and_split_word(shell, unexpanded_value).await?;
@@ -1505,12 +1513,14 @@ pub(crate) async fn setup_redirect(
 
             // Expand if required.
             let io_here_doc = if io_here.requires_expansion {
-                expansion::basic_expand_word(shell, &io_here.doc).await?
+                expansion::basic_expand_word(shell, &io_here.doc)
+                    .await?
+                    .into_owned()
             } else {
                 io_here.doc.flatten()
             };
 
-            let f = setup_open_file_with_contents(io_here_doc.as_str())?;
+            let f = setup_open_file_with_contents(io_here_doc.as_ref())?;
 
             open_files.files.insert(fd_num, f);
             Ok(Some(fd_num))
@@ -1519,7 +1529,9 @@ pub(crate) async fn setup_redirect(
             // If not specified, default to stdin (fd 0).
             let fd_num = fd_num.unwrap_or(0);
 
-            let mut expanded_word = expansion::basic_expand_word(shell, word).await?;
+            let mut expanded_word = expansion::basic_expand_word(shell, word)
+                .await?
+                .into_owned();
             expanded_word.push('\n');
 
             let f = setup_open_file_with_contents(expanded_word.as_str())?;
