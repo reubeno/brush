@@ -16,9 +16,9 @@ pub trait SimpleCommand {
         -> Result<String, error::Error>;
 
     /// Executes the built-in command.
-    fn execute(
+    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
         context: commands::ExecutionContext<'_>,
-        args: &[&str],
+        args: I,
     ) -> Result<builtins::BuiltinResult, error::Error>;
 }
 
@@ -75,17 +75,12 @@ async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<builtins::BuiltinResult, error::Error> {
-    let plain_args: Vec<_> = args
-        .into_iter()
-        .map(|arg| match arg {
-            CommandArg::String(s) => s,
-            CommandArg::Assignment(a) => a.to_string(),
-        })
-        .collect();
+    let plain_args = args.into_iter().map(|arg| match arg {
+        CommandArg::String(s) => s,
+        CommandArg::Assignment(a) => a.to_string(),
+    });
 
-    let plain_args: Vec<_> = plain_args.iter().map(AsRef::as_ref).collect();
-
-    T::execute(context, plain_args.as_slice())
+    T::execute(context, plain_args)
 }
 
 fn exec_builtin<T: builtins::Command + Send + Sync>(

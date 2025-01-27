@@ -18,9 +18,9 @@ impl builtins::SimpleCommand for ColonCommand {
         }
     }
 
-    fn execute(
+    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
         _context: commands::ExecutionContext<'_>,
-        _args: &[&str],
+        _args: I,
     ) -> Result<builtins::BuiltinResult, crate::error::Error> {
         Ok(builtins::BuiltinResult {
             exit_code: builtins::ExitCode::Success,

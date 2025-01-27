@@ -58,11 +58,11 @@ pub struct Shell {
     /// Clone depth from the original ancestor shell.
     depth: usize,
 
-    /// Positional parameters ($1 and beyond)
-    pub positional_parameters: Vec<String>,
-
-    /// Shell name
+    /// Shell name (a.k.a. $0)
     pub shell_name: Option<String>,
+
+    /// Positional parameters stack ($1 and beyond)
+    pub positional_parameters: Vec<String>,
 
     /// Detailed display string for the shell
     pub shell_product_display_str: Option<String>,
@@ -298,6 +298,7 @@ impl Shell {
             }),
         )?;
 
+        // TODO(vars): when extdebug is enabled, BASH_ARGC and BASH_ARGV are set to valid values
         // TODO(vars): implement BASH_ARGC
         // TODO(vars): implement BASH_ARGV
 
@@ -1199,11 +1200,15 @@ impl Shell {
     }
 
     fn get_funcname_value(&self) -> variables::ShellValue {
-        self.function_call_stack
-            .iter()
-            .map(|s| s.function_name.as_str())
-            .collect::<Vec<_>>()
-            .into()
+        if self.function_call_stack.is_empty() {
+            ShellValue::Unset(variables::ShellValueUnsetType::IndexedArray)
+        } else {
+            self.function_call_stack
+                .iter()
+                .map(|s| s.function_name.as_str())
+                .collect::<Vec<_>>()
+                .into()
+        }
     }
 
     fn get_bash_source_value(&self) -> variables::ShellValue {

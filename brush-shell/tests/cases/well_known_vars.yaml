@@ -46,6 +46,23 @@ cases:
 
       echo "BASHOPTS: $BASHOPTS"
 
+  - name: "BASH_SOURCE and FUNCNAME"
+    stdin: |
+      echo "Input entry"; declare -p BASH_SOURCE FUNCNAME
+
+      function myfunc() {
+          echo "In function: \$1: $1"
+          declare -p BASH_SOURCE FUNCNAME
+
+          if [[ $1 -gt 0 ]]; then
+              myfunc $(( $1 - 1 ))
+          fi
+      }
+
+      myfunc 4
+
+      echo "Input exit"; declare -p BASH_SOURCE FUNCNAME
+
   - name: "BASH_SUBSHELL"
     stdin: |
       echo "Initial BASH_SUBSHELL: $BASH_SUBSHELL"
@@ -95,6 +112,19 @@ cases:
       (for group in ${GROUPS[@]}; do
         echo $group
       done) | sort
+
+  - name: "LINENO"
+    stdin: |
+      echo "LINENO: $LINENO"
+      echo "LINENO: $LINENO"
+      echo "LINENO: $LINENO"
+
+  - name: "LINENO with multi-line input"
+    known_failure: true # Not implemented correctly yet
+    stdin: |
+      for f in 1 2 3; do
+        echo "LINENO: $LINENO"
+      done
 
   - name: "SHELLOPTS"
     stdin: |

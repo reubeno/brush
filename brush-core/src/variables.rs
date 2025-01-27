@@ -484,7 +484,12 @@ impl ShellVariable {
         }
     }
 
-    fn resolve_value(&self, shell: &Shell) -> ShellValue {
+    /// Returns the variable's value; for dynamic values, this will resolve the value.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell in which the variable is being resolved.
+    pub(crate) fn resolve_value(&self, shell: &Shell) -> ShellValue {
         // N.B. We do *not* specially handle a dynamic value that resolves to a dynamic value.
         match &self.value {
             ShellValue::Dynamic { getter, .. } => getter(shell),
