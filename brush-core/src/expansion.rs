@@ -1086,12 +1086,12 @@ impl<'a> WordExpander<'a> {
                 )?;
 
                 transform_expansion(expanded_parameter, |s| {
-                    Self::replace_substring(
+                    Ok(Self::replace_substring(
                         s.as_str(),
                         &regex,
                         expanded_replacement.as_str(),
                         &match_kind,
-                    )
+                    ))
                 })
             }
             brush_parser::word::ParameterExpr::VariableNames {
@@ -1266,7 +1266,8 @@ impl<'a> WordExpander<'a> {
         match parameter {
             brush_parser::word::Parameter::Positional(p) => {
                 if *p == 0 {
-                    self.expand_special_parameter(&brush_parser::word::SpecialParameter::ShellName)
+                    Ok(self
+                        .expand_special_parameter(&brush_parser::word::SpecialParameter::ShellName))
                 } else if let Some(parameter) =
                     self.shell.positional_parameters.get((p - 1) as usize)
                 {
@@ -1275,7 +1276,7 @@ impl<'a> WordExpander<'a> {
                     Ok(Expansion::undefined())
                 }
             }
-            brush_parser::word::Parameter::Special(s) => self.expand_special_parameter(s),
+            brush_parser::word::Parameter::Special(s) => Ok(self.expand_special_parameter(s)),
             brush_parser::word::Parameter::Named(n) => {
                 if !valid_variable_name(n.as_str()) {
                     Err(error::Error::BadSubstitution)
@@ -1360,16 +1361,15 @@ impl<'a> WordExpander<'a> {
         Ok(index_to_use)
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn expand_special_parameter(
         &mut self,
         parameter: &brush_parser::word::SpecialParameter,
-    ) -> Result<Expansion, error::Error> {
+    ) -> Expansion {
         match parameter {
             brush_parser::word::SpecialParameter::AllPositionalParameters { concatenate } => {
                 let positional_params = self.shell.positional_parameters.iter();
 
-                Ok(Expansion {
+                Expansion {
                     fields: positional_params
                         .into_iter()
                         .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
@@ -1377,34 +1377,34 @@ impl<'a> WordExpander<'a> {
                     concatenate: *concatenate,
                     from_array: true,
                     undefined: false,
-                })
+                }
             }
-            brush_parser::word::SpecialParameter::PositionalParameterCount => Ok(Expansion::from(
-                self.shell.positional_parameters.len().to_string(),
-            )),
+            brush_parser::word::SpecialParameter::PositionalParameterCount => {
+                Expansion::from(self.shell.positional_parameters.len().to_string())
+            }
             brush_parser::word::SpecialParameter::LastExitStatus => {
-                Ok(Expansion::from(self.shell.last_exit_status.to_string()))
+                Expansion::from(self.shell.last_exit_status.to_string())
             }
             brush_parser::word::SpecialParameter::CurrentOptionFlags => {
-                Ok(Expansion::from(self.shell.options.get_option_flags()))
+                Expansion::from(self.shell.options.get_option_flags())
             }
             brush_parser::word::SpecialParameter::ProcessId => {
-                Ok(Expansion::from(std::process::id().to_string()))
+                Expansion::from(std::process::id().to_string())
             }
             brush_parser::word::SpecialParameter::LastBackgroundProcessId => {
                 if let Some(job) = self.shell.jobs.current_job() {
                     if let Some(pid) = job.get_representative_pid() {
-                        return Ok(Expansion::from(pid.to_string()));
+                        return Expansion::from(pid.to_string());
                     }
                 }
-                Ok(Expansion::from(String::new()))
+                Expansion::from(String::new())
             }
-            brush_parser::word::SpecialParameter::ShellName => Ok(Expansion::from(
+            brush_parser::word::SpecialParameter::ShellName => Expansion::from(
                 self.shell
                     .shell_name
                     .as_ref()
                     .map_or_else(String::new, |name| name.clone()),
-            )),
+            ),
         }
     }
 
@@ -1508,22 +1508,21 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn replace_substring(
         s: &str,
         regex: &fancy_regex::Regex,
         replacement: &str,
         match_kind: &SubstringMatchKind,
-    ) -> Result<String, error::Error> {
+    ) -> String {
         match match_kind {
             brush_parser::word::SubstringMatchKind::Prefix
             | brush_parser::word::SubstringMatchKind::Suffix
             | brush_parser::word::SubstringMatchKind::FirstOccurrence => {
-                Ok(regex.replace(s, replacement).into_owned())
+                regex.replace(s, replacement).into_owned()
             }
 
             brush_parser::word::SubstringMatchKind::Anywhere => {
-                Ok(regex.replace_all(s, replacement).into_owned())
+                regex.replace_all(s, replacement).into_owned()
             }
         }
     }

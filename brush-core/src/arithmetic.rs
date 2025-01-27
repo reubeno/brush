@@ -165,7 +165,6 @@ fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64
     parsed_value.eval(shell)
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn apply_unary_op(
     shell: &mut Shell,
     op: ast::UnaryOperator,
@@ -292,7 +291,6 @@ fn apply_unary_assignment_op(
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Result<i64, EvalError> {
     match lvalue {
         ast::ArithmeticTarget::Variable(name) => {

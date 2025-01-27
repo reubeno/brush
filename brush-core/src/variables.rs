@@ -284,7 +284,8 @@ impl ShellVariable {
                         self.assign_at_index(String::from("0"), new_value, append)
                     }
                     ShellValueLiteral::Array(new_values) => {
-                        ShellValue::update_indexed_array_from_literals(existing_values, new_values)
+                        ShellValue::update_indexed_array_from_literals(existing_values, new_values);
+                        Ok(())
                     }
                 },
                 ShellValue::AssociativeArray(existing_values) => match value {
@@ -327,7 +328,7 @@ impl ShellVariable {
                     | ShellValue::Dynamic { .. },
                     ShellValueLiteral::Array(literal_values),
                 ) => {
-                    self.value = ShellValue::indexed_array_from_literals(literal_values)?;
+                    self.value = ShellValue::indexed_array_from_literals(literal_values);
                     Ok(())
                 }
 
@@ -701,18 +702,17 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `literals` - The literals to construct the indexed array from.
-    pub fn indexed_array_from_literals(literals: ArrayLiteral) -> Result<ShellValue, error::Error> {
+    pub fn indexed_array_from_literals(literals: ArrayLiteral) -> ShellValue {
         let mut values = BTreeMap::new();
-        ShellValue::update_indexed_array_from_literals(&mut values, literals)?;
+        ShellValue::update_indexed_array_from_literals(&mut values, literals);
 
-        Ok(ShellValue::IndexedArray(values))
+        ShellValue::IndexedArray(values)
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn update_indexed_array_from_literals(
         existing_values: &mut BTreeMap<u64, String>,
         literal_values: ArrayLiteral,
-    ) -> Result<(), error::Error> {
+    ) {
         let mut new_key = if let Some((largest_index, _)) = existing_values.last_key_value() {
             largest_index + 1
         } else {
@@ -727,8 +727,6 @@ impl ShellValue {
             existing_values.insert(new_key, value);
             new_key += 1;
         }
-
-        Ok(())
     }
 
     /// Returns a new associative array value constructed from the given literals.
@@ -830,7 +828,6 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `index` - The index at which to retrieve the value.
-    #[allow(clippy::unnecessary_wraps)]
     pub fn get_at(&self, index: &str, shell: &Shell) -> Result<Option<Cow<'_, str>>, error::Error> {
         match self {
             ShellValue::Unset(_) => Ok(None),

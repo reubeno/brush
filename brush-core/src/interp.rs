@@ -1288,7 +1288,7 @@ async fn apply_assignment(
     let new_value = if let Some(array_index) = array_index {
         match new_value {
             ShellValueLiteral::Scalar(s) => {
-                ShellValue::indexed_array_from_literals(ArrayLiteral(vec![(Some(array_index), s)]))?
+                ShellValue::indexed_array_from_literals(ArrayLiteral(vec![(Some(array_index), s)]))
             }
             ShellValueLiteral::Array(_) => {
                 return error::unimp("cannot assign list to array member");
@@ -1300,7 +1300,7 @@ async fn apply_assignment(
                 export = export || shell.options.export_variables_on_modification;
                 ShellValue::String(s)
             }
-            ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values)?,
+            ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values),
         }
     };
 
