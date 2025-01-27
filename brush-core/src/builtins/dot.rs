@@ -5,7 +5,7 @@ use clap::Parser;
 use crate::{builtins, commands};
 
 /// Evalute the provided script in the current shell environment.
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 pub(crate) struct DotCommand {
     /// Path to the script to evaluate.
     script_path: String,

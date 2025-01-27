@@ -208,7 +208,8 @@ impl DeclareCommand {
                 cs.push('-');
             }
 
-            let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
+            let resolved_value = variable.resolve_value(context.shell);
+            let separator_str = if matches!(resolved_value, ShellValue::Unset(_)) {
                 ""
             } else {
                 "="
@@ -217,9 +218,7 @@ impl DeclareCommand {
             writeln!(
                 context.stdout(),
                 "declare -{cs} {name}{separator_str}{}",
-                variable
-                    .value()
-                    .format(variables::FormatStyle::DeclarePrint, context.shell)?
+                resolved_value.format(variables::FormatStyle::DeclarePrint, context.shell)?
             )?;
 
             Ok(true)

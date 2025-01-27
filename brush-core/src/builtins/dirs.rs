@@ -4,7 +4,7 @@ use std::io::Write;
 use crate::{builtins, commands};
 
 /// Manage the current directory stack.
-#[derive(Parser, Debug, Default)]
+#[derive(Default, Parser)]
 pub(crate) struct DirsCommand {
     /// Clear the directory stack.
     #[arg(short = 'c')]
