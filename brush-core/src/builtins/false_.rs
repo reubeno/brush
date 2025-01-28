@@ -1,16 +1,27 @@
-use clap::Parser;
+use crate::{builtins, commands, error};
 
-use crate::{builtins, commands};
-
-/// Return a non-zero exit code.
-#[derive(Parser)]
+/// Command that always returns failure.
 pub(crate) struct FalseCommand {}
 
-impl builtins::Command for FalseCommand {
-    async fn execute(
-        &self,
+impl builtins::SimpleCommand for FalseCommand {
+    fn get_content(
+        _name: &str,
+        content_type: builtins::ContentType,
+    ) -> Result<String, crate::error::Error> {
+        match content_type {
+            builtins::ContentType::DetailedHelp => Ok("Always returns failure.".into()),
+            builtins::ContentType::ShortUsage => Ok("true: true".into()),
+            builtins::ContentType::ShortDescription => Ok("false - Return failure.".into()),
+            builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
+        }
+    }
+
+    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
         _context: commands::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, crate::error::Error> {
-        Ok(builtins::ExitCode::Custom(1))
+        _args: I,
+    ) -> Result<builtins::BuiltinResult, crate::error::Error> {
+        Ok(builtins::BuiltinResult {
+            exit_code: builtins::ExitCode::Custom(1),
+        })
     }
 }

@@ -210,7 +210,7 @@ pub(crate) fn get_default_builtins(
     m.insert("bg".into(), builtin::<bg::BgCommand>());
     m.insert("cd".into(), builtin::<cd::CdCommand>());
     m.insert("command".into(), builtin::<command::CommandCommand>());
-    m.insert("false".into(), builtin::<false_::FalseCommand>());
+    m.insert("false".into(), simple_builtin::<false_::FalseCommand>());
     m.insert("fg".into(), builtin::<fg::FgCommand>());
     m.insert("getopts".into(), builtin::<getopts::GetOptsCommand>());
     m.insert("hash".into(), builtin::<hash::HashCommand>());
@@ -221,7 +221,7 @@ pub(crate) fn get_default_builtins(
     m.insert("local".into(), decl_builtin::<declare::DeclareCommand>());
     m.insert("pwd".into(), builtin::<pwd::PwdCommand>());
     m.insert("read".into(), builtin::<read::ReadCommand>());
-    m.insert("true".into(), builtin::<true_::TrueCommand>());
+    m.insert("true".into(), simple_builtin::<true_::TrueCommand>());
     m.insert("type".into(), builtin::<type_::TypeCommand>());
     #[cfg(unix)]
     m.insert("umask".into(), builtin::<umask::UmaskCommand>());
