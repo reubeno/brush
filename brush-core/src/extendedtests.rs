@@ -56,7 +56,7 @@ async fn apply_unary_predicate(
         ))?;
     }
 
-    apply_unary_predicate_to_str(op, expanded_operand.as_ref(), shell)
+    apply_unary_predicate_to_str(op, expanded_operand.as_str(), shell)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -197,7 +197,7 @@ async fn apply_binary_predicate(
                 shell.trace_command(std::format!("[[ {s} {op} {right} ]]"))?;
             }
 
-            let (matches, captures) = match regex.matches(s.as_ref()) {
+            let (matches, captures) = match regex.matches(s.as_str()) {
                 Ok(Some(captures)) => (true, captures),
                 Ok(None) => (false, vec![]),
                 // If we can't compile the regex, don't abort the whole operation but make sure to
@@ -254,7 +254,7 @@ async fn apply_binary_predicate(
                 shell.trace_command(std::format!("[[ {s} {op} {substring} ]]"))?;
             }
 
-            Ok(s.contains(substring.as_ref()))
+            Ok(s.contains(substring.as_str()))
         }
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
             error::unimp("extended test binary predicate FilesReferToSameDeviceAndInodeNumbers")
@@ -361,13 +361,13 @@ async fn apply_binary_predicate(
             if shell.options.print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, right).await?;
                 let escaped_right = escape::quote_if_needed(
-                    expanded_right.as_ref(),
+                    expanded_right.as_str(),
                     escape::QuoteMode::BackslashEscape,
                 );
                 shell.trace_command(std::format!("[[ {s} {op} {escaped_right} ]]"))?;
             }
 
-            pattern.exactly_matches(s.as_ref())
+            pattern.exactly_matches(s.as_str())
         }
         ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
             let s = expansion::basic_expand_word(shell, left).await?;
@@ -379,13 +379,13 @@ async fn apply_binary_predicate(
             if shell.options.print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, right).await?;
                 let escaped_right = escape::quote_if_needed(
-                    expanded_right.as_ref(),
+                    expanded_right.as_str(),
                     escape::QuoteMode::BackslashEscape,
                 );
                 shell.trace_command(std::format!("[[ {s} {op} {escaped_right} ]]"))?;
             }
 
-            let eq = pattern.exactly_matches(s.as_ref())?;
+            let eq = pattern.exactly_matches(s.as_str())?;
             Ok(!eq)
         }
     }
