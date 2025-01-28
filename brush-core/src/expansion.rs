@@ -457,6 +457,14 @@ impl<'a> WordExpander<'a> {
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
         tracing::debug!(target: trace_categories::EXPANSION, "Basic expanding: '{word}'");
 
+        // Quick short circuit to avoid more expensive parsing. The characters below are
+        // understood to be the *only* ones indicative of *possible* expansion. There's
+        // still a possibility no expansion needs to be done, but that's okay; we'll still
+        // yield a correct result.
+        if !word.contains(['$', '`', '\\', '\'', '\"', '~', '{']) {
+            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
+        }
+
         // Apply brace expansion first, before anything else.
         let brace_expanded: String = self.brace_expand_if_needed(word)?.into_iter().join(" ");
         if tracing::enabled!(target: trace_categories::EXPANSION, tracing::Level::DEBUG)
