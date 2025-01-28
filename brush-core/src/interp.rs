@@ -103,8 +103,6 @@ struct PipelineExecutionContext<'a> {
     output_pipes: &'a mut Vec<sys::pipes::PipeReader>,
 
     process_group_id: Option<i32>,
-
-    params: ExecutionParameters,
 }
 
 /// Parameters for execution.
@@ -140,6 +138,7 @@ trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext,
+        params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error>;
 }
 
@@ -375,15 +374,20 @@ async fn spawn_pipeline_processes(
                 pipeline_len,
                 output_pipes: &mut output_pipes,
                 process_group_id,
-                params: params.clone(),
             };
+
+            let mut cmd_params = params.clone();
 
             // Make sure that all commands in the pipeline are in the same process group.
             if current_pipeline_index > 0 {
-                pipeline_context.params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+                cmd_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
             }
 
-            spawn_results.push_back(command.execute_in_pipeline(&mut pipeline_context).await?);
+            spawn_results.push_back(
+                command
+                    .execute_in_pipeline(&mut pipeline_context, cmd_params)
+                    .await?,
+            );
             process_group_id = pipeline_context.process_group_id;
         } else {
             let mut pipeline_context = PipelineExecutionContext {
@@ -392,10 +396,13 @@ async fn spawn_pipeline_processes(
                 pipeline_len,
                 output_pipes: &mut output_pipes,
                 process_group_id,
-                params: params.clone(),
             };
 
-            spawn_results.push_back(command.execute_in_pipeline(&mut pipeline_context).await?);
+            spawn_results.push_back(
+                command
+                    .execute_in_pipeline(&mut pipeline_context, params.clone())
+                    .await?,
+            );
             process_group_id = pipeline_context.process_group_id;
         }
     }
@@ -458,16 +465,17 @@ impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
         pipeline_context: &mut PipelineExecutionContext,
+        mut params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
             return Ok(CommandSpawnResult::ImmediateExit(0));
         }
 
         match self {
-            ast::Command::Simple(simple) => simple.execute_in_pipeline(pipeline_context).await,
+            ast::Command::Simple(simple) => {
+                simple.execute_in_pipeline(pipeline_context, params).await
+            }
             ast::Command::Compound(compound, redirects) => {
-                let mut params = pipeline_context.params.clone();
-
                 // Set up pipelining.
                 setup_pipeline_redirection(&mut params.open_files, pipeline_context)?;
 
@@ -495,9 +503,7 @@ impl ExecuteInPipeline for ast::Command {
                 }
             }
             ast::Command::Function(func) => {
-                let result = func
-                    .execute(pipeline_context.shell, &pipeline_context.params)
-                    .await?;
+                let result = func.execute(pipeline_context.shell, &params).await?;
                 Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
             }
             ast::Command::ExtendedTest(e) => {
@@ -874,6 +880,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext,
+        mut params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error> {
         let default_prefix = ast::CommandPrefix::default();
         let prefix_items = self.prefix.as_ref().unwrap_or(&default_prefix);
@@ -886,7 +893,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
         }
 
-        let mut params = context.params.clone();
         let mut assignments = vec![];
         let mut args: Vec<CommandArg> = vec![];
         let mut invoking_declaration_builtin = false;
