@@ -442,7 +442,15 @@ pub(crate) fn execute_external_command(
                 sys::terminal::move_self_to_foreground()?;
             }
 
-            if context.shell.options.sh_mode {
+            if !context.shell.working_dir.exists() {
+                // We may have failed because the working directory doesn't exist.
+                writeln!(
+                    stderr,
+                    "{}: working directory does not exist: {}",
+                    context.shell.shell_name.as_ref().unwrap_or(&String::new()),
+                    context.shell.working_dir.display()
+                )?;
+            } else if context.shell.options.sh_mode {
                 writeln!(
                     stderr,
                     "{}: {}: {}: not found",
