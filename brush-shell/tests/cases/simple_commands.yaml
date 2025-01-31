@@ -25,3 +25,15 @@ cases:
     stdin: |
       ./non-existent-command 2>/dev/null
       echo "Result: $?"
+
+  - name: "Simple command with non-existent cwd"
+    # N.B. We intentionally fail here because there's no safe way to pick an
+    # alternate working directory that we are okay with. To our knowledge,
+    # there's no easy way to hold onto the current working directory past
+    # its deletion.
+    known_failure: true
+    stdin: |
+      mkdir test-dir
+      cd test-dir
+      rmdir $(pwd)
+      ls
