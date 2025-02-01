@@ -36,3 +36,9 @@ cases:
       while IFS= read line; do
           echo "LINE: '$line'"
       done <<<"${content}"
+
+  - name: "read text with tabs and custom IFS"
+    stdin: |
+      while IFS="" read myvar; do
+          echo "myvar1: |${myvar}|"
+      done < <(printf "a\tb\nc d\te\n")
