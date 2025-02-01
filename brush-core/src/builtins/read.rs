@@ -219,7 +219,7 @@ impl ReadCommand {
             }
 
             // Ignore other control characters without including them in the input.
-            if ch.is_ascii_control() {
+            if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
                 continue;
             }
 
