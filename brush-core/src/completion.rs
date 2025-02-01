@@ -880,7 +880,7 @@ impl Config {
         // Make a best-effort attempt to tokenize.
         let tokens = Self::tokenize_input_for_completion(shell, input);
 
-        let cursor: i32 = i32::try_from(position)?;
+        let cursor = i32::try_from(position)?;
         let mut preceding_token = None;
         let mut completion_prefix = "";
         let mut insertion_index = cursor;

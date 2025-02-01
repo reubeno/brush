@@ -924,7 +924,11 @@ impl<'a> WordExpander<'a> {
                 }
 
                 let expanded_offset = offset.eval(self.shell, false).await?;
-                let expanded_offset = usize::try_from(expanded_offset)?;
+                let expanded_offset = if expanded_offset < 0 {
+                    0
+                } else {
+                    usize::try_from(expanded_offset)?
+                };
 
                 let expanded_parameter_len = expanded_parameter.polymorphic_len();
                 let expanded_offset = min(expanded_offset, expanded_parameter_len);
