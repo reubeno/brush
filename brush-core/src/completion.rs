@@ -681,7 +681,10 @@ impl Spec {
             let _ = shell.env.unset(var_name);
         }
 
-        let result = invoke_result?;
+        let result = invoke_result.unwrap_or_else(|e| {
+            tracing::warn!(target: trace_categories::COMPLETION, "error while running completion function '{function_name}': {e}");
+            1 // Report back a non-zero exit code.
+        });
 
         // When the function returns the special value 124, then it's a request
         // for us to restart the completion process.
