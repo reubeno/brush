@@ -33,7 +33,7 @@ pub struct Shell {
     /// Trap handler configuration for the shell.
     pub traps: traps::TrapHandlerConfig,
     /// Manages files opened and accessible via redirection operators.
-    pub open_files: openfiles::OpenFiles,
+    open_files: openfiles::OpenFiles,
     /// The current working directory.
     pub working_dir: PathBuf,
     /// The shell environment, containing shell variables.

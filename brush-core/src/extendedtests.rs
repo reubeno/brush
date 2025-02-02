@@ -60,7 +60,7 @@ async fn apply_unary_predicate(
         ))?;
     }
 
-    apply_unary_predicate_to_str(op, expanded_operand.as_str(), shell)
+    apply_unary_predicate_to_str(op, expanded_operand.as_str(), shell, params)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -68,6 +68,7 @@ pub(crate) fn apply_unary_predicate_to_str(
     op: &ast::UnaryPredicate,
     operand: &str,
     shell: &mut Shell,
+    params: &ExecutionParameters,
 ) -> Result<bool, error::Error> {
     #[allow(clippy::match_single_binding)]
     match op {
@@ -123,7 +124,7 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::FdIsOpenTerminal => {
             if let Ok(fd) = operand.parse::<u32>() {
-                if let Some(open_file) = shell.open_files.files.get(&fd) {
+                if let Some(open_file) = params.open_files.files.get(&fd) {
                     Ok(open_file.is_term())
                 } else {
                     Ok(false)

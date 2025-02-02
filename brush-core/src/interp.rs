@@ -482,7 +482,7 @@ impl ExecuteInPipeline for ast::Command {
                 // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
-                        setup_redirect(&mut params, pipeline_context.shell, redirect).await?;
+                        setup_redirect(pipeline_context.shell, &mut params, redirect).await?;
                     }
                 }
 
@@ -910,7 +910,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if setup_redirect(&mut params, context.shell, redirect)
+                    if setup_redirect(context.shell, &mut params, redirect)
                         .await?
                         .is_none()
                     {
@@ -920,8 +920,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
                     let (installed_fd_num, substitution_file) = setup_process_substitution(
-                        &mut params.open_files,
                         context.shell,
+                        &mut params,
                         kind,
                         subshell_command,
                     )?;
@@ -1362,8 +1362,8 @@ fn setup_pipeline_redirection(
 
 #[allow(clippy::too_many_lines)]
 pub(crate) async fn setup_redirect(
-    params: &'_ mut ExecutionParameters,
     shell: &mut Shell,
+    params: &'_ mut ExecutionParameters,
     redirect: &ast::IoRedirect,
 ) -> Result<Option<u32>, error::Error> {
     match redirect {
@@ -1499,8 +1499,8 @@ pub(crate) async fn setup_redirect(
                         | ast::IoFileRedirectKind::ReadAndWrite
                         | ast::IoFileRedirectKind::Clobber => {
                             let (substitution_fd, substitution_file) = setup_process_substitution(
-                                &mut params.open_files,
                                 shell,
+                                params,
                                 substitution_kind,
                                 subshell_cmd,
                             )?;
@@ -1566,8 +1566,8 @@ fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {
 }
 
 fn setup_process_substitution(
-    open_files: &mut OpenFiles,
     shell: &mut Shell,
+    params: &mut ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
     subshell_cmd: &ast::SubshellCommand,
 ) -> Result<(u32, OpenFile), error::Error> {
@@ -1575,19 +1575,23 @@ fn setup_process_substitution(
     // Execute in a subshell.
     let mut subshell = shell.clone();
 
+    // Set up execution parameters for the child execution.
+    let mut child_params = params.clone();
+    child_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
     // Set up pipe so we can connect to the command.
     let (reader, writer) = sys::pipes::pipe()?;
 
     let target_file = match kind {
         ast::ProcessSubstitutionKind::Read => {
-            subshell
+            child_params
                 .open_files
                 .files
                 .insert(1, openfiles::OpenFile::PipeWriter(writer));
             OpenFile::PipeReader(reader)
         }
         ast::ProcessSubstitutionKind::Write => {
-            subshell
+            child_params
                 .open_files
                 .files
                 .insert(0, openfiles::OpenFile::PipeReader(reader));
@@ -1595,23 +1599,18 @@ fn setup_process_substitution(
         }
     };
 
-    let exec_params = ExecutionParameters {
-        open_files: subshell.open_files.clone(),
-        process_group_policy: ProcessGroupPolicy::SameProcessGroup,
-    };
-
     // Asynchronously spawn off the subshell; we intentionally don't block on its
     // completion.
     let subshell_cmd = subshell_cmd.to_owned();
     tokio::spawn(async move {
         // Intentionally ignore the result of the subshell command.
-        let _ = subshell_cmd.0.execute(&mut subshell, &exec_params).await;
+        let _ = subshell_cmd.0.execute(&mut subshell, &child_params).await;
     });
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
     // available fd.
     let mut candidate_fd_num = 63;
-    while open_files.files.contains_key(&candidate_fd_num) {
+    while params.open_files.files.contains_key(&candidate_fd_num) {
         candidate_fd_num -= 1;
         if candidate_fd_num == 0 {
             return error::unimp("no available file descriptors");

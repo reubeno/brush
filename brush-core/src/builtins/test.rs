@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtins, commands, error, tests, Shell};
+use crate::{builtins, commands, error, tests, ExecutionParameters, Shell};
 
 /// Evaluate test expression.
 #[derive(Parser)]
@@ -30,7 +30,7 @@ impl builtins::Command for TestCommand {
             args = &args[0..args.len() - 1];
         }
 
-        if execute_test(context.shell, args)? {
+        if execute_test(context.shell, &context.params, args)? {
             Ok(builtins::ExitCode::Success)
         } else {
             Ok(builtins::ExitCode::Custom(1))
@@ -38,8 +38,12 @@ impl builtins::Command for TestCommand {
     }
 }
 
-fn execute_test(shell: &mut Shell, args: &[String]) -> Result<bool, error::Error> {
+fn execute_test(
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+    args: &[String],
+) -> Result<bool, error::Error> {
     let test_command =
         brush_parser::test_command::parse(args).map_err(error::Error::TestCommandParseError)?;
-    tests::eval_test_expr(&test_command, shell)
+    tests::eval_test_expr(&test_command, shell, params)
 }

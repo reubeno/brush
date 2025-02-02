@@ -521,7 +521,7 @@ pub(crate) async fn invoke_shell_function(
     // Apply any redirects specified at function definition-time.
     if let Some(redirects) = redirects {
         for redirect in &redirects.0 {
-            interp::setup_redirect(&mut context.params, context.shell, redirect).await?;
+            interp::setup_redirect(context.shell, &mut context.params, redirect).await?;
         }
     }
 
