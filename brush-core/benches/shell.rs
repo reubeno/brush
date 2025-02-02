@@ -26,7 +26,8 @@ mod unix {
     }
 
     async fn expand_string(shell: &mut brush_core::Shell, s: &str) {
-        let _ = shell.basic_expand_string(s).await.unwrap();
+        let params = shell.default_exec_params();
+        let _ = shell.basic_expand_string(&params, s).await.unwrap();
     }
 
     fn eval_arithmetic_expr(shell: &mut brush_core::Shell, expr: &str) {

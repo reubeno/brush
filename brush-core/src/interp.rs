@@ -482,8 +482,7 @@ impl ExecuteInPipeline for ast::Command {
                 // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
-                        setup_redirect(&mut params.open_files, pipeline_context.shell, redirect)
-                            .await?;
+                        setup_redirect(pipeline_context.shell, &mut params, redirect).await?;
                     }
                 }
 
@@ -508,7 +507,9 @@ impl ExecuteInPipeline for ast::Command {
             }
             ast::Command::ExtendedTest(e) => {
                 let result =
-                    if extendedtests::eval_extended_test_expr(e, pipeline_context.shell).await? {
+                    if extendedtests::eval_extended_test_expr(e, pipeline_context.shell, &params)
+                        .await?
+                    {
                         0
                     } else {
                         1
@@ -573,7 +574,8 @@ impl Execute for ast::ForClauseCommand {
         let mut expanded_values = vec![];
         if let Some(unexpanded_values) = &self.values {
             for value in unexpanded_values {
-                let mut expanded = expansion::full_expand_and_split_word(shell, value).await?;
+                let mut expanded =
+                    expansion::full_expand_and_split_word(shell, params, value).await?;
                 expanded_values.append(&mut expanded);
             }
         } else {
@@ -644,7 +646,7 @@ impl Execute for ast::CaseClauseCommand {
             shell.trace_command(std::format!("case {} in", &self.value))?;
         }
 
-        let expanded_value = expansion::basic_expand_word(shell, &self.value).await?;
+        let expanded_value = expansion::basic_expand_word(shell, params, &self.value).await?;
         let mut result: ExecutionResult = ExecutionResult::success();
         let mut force_execute_next_case = false;
 
@@ -654,7 +656,7 @@ impl Execute for ast::CaseClauseCommand {
             } else {
                 let mut matches = false;
                 for pattern in &case.patterns {
-                    let expanded_pattern = expansion::basic_expand_pattern(shell, pattern)
+                    let expanded_pattern = expansion::basic_expand_pattern(shell, params, pattern)
                         .await?
                         .set_extended_globbing(shell.options.extended_globbing)
                         .set_case_insensitive(shell.options.case_insensitive_conditionals);
@@ -790,9 +792,9 @@ impl Execute for ast::ArithmeticCommand {
     async fn execute(
         &self,
         shell: &mut Shell,
-        _params: &ExecutionParameters,
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let value = self.expr.eval(shell, true).await?;
+        let value = self.expr.eval(shell, params, true).await?;
         let result = if value != 0 {
             ExecutionResult::success()
         } else {
@@ -814,12 +816,12 @@ impl Execute for ast::ArithmeticForClauseCommand {
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
         if let Some(initializer) = &self.initializer {
-            initializer.eval(shell, true).await?;
+            initializer.eval(shell, params, true).await?;
         }
 
         loop {
             if let Some(condition) = &self.condition {
-                if condition.eval(shell, true).await? == 0 {
+                if condition.eval(shell, params, true).await? == 0 {
                     break;
                 }
             }
@@ -847,7 +849,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             if let Some(updater) = &self.updater {
-                updater.eval(shell, true).await?;
+                updater.eval(shell, params, true).await?;
             }
         }
 
@@ -908,7 +910,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if setup_redirect(&mut params.open_files, context.shell, redirect)
+                    if setup_redirect(context.shell, &mut params, redirect)
                         .await?
                         .is_none()
                     {
@@ -918,8 +920,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
                     let (installed_fd_num, substitution_file) = setup_process_substitution(
-                        &mut params.open_files,
                         context.shell,
+                        &mut params,
                         kind,
                         subshell_command,
                     )?;
@@ -943,14 +945,15 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             // This looks like an assignment, and the command being invoked is a
                             // well-known builtin that takes arguments that need to function like
                             // assignments (but which are processed by the builtin).
-                            let expanded = expand_assignment(context.shell, assignment).await?;
+                            let expanded =
+                                expand_assignment(context.shell, &params, assignment).await?;
                             args.push(CommandArg::Assignment(expanded));
                         } else {
                             // This *looks* like an assignment, but it's really a string we should
                             // fully treat as a regular looking
                             // argument.
                             let mut next_args =
-                                expansion::full_expand_and_split_word(context.shell, word)
+                                expansion::full_expand_and_split_word(context.shell, &params, word)
                                     .await?
                                     .into_iter()
                                     .map(CommandArg::String)
@@ -961,7 +964,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 }
                 CommandPrefixOrSuffixItem::Word(arg) => {
                     let mut next_args =
-                        expansion::full_expand_and_split_word(context.shell, arg).await?;
+                        expansion::full_expand_and_split_word(context.shell, &params, arg).await?;
 
                     if args.is_empty() {
                         if let Some(cmd_name) = next_args.first() {
@@ -1013,6 +1016,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 apply_assignment(
                     assignment,
                     context.shell,
+                    &params,
                     true,
                     Some(EnvironmentScope::Command),
                     EnvironmentScope::Command,
@@ -1095,6 +1099,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 apply_assignment(
                     assignment,
                     context.shell,
+                    &params,
                     false,
                     None,
                     EnvironmentScope::Global,
@@ -1113,11 +1118,12 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
 async fn expand_assignment(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     assignment: &ast::Assignment,
 ) -> Result<ast::Assignment, error::Error> {
-    let value = expand_assignment_value(shell, &assignment.value).await?;
+    let value = expand_assignment_value(shell, params, &assignment.value).await?;
     Ok(ast::Assignment {
-        name: basic_expand_assignment_name(shell, &assignment.name).await?,
+        name: basic_expand_assignment_name(shell, params, &assignment.name).await?,
         value,
         append: assignment.append,
     })
@@ -1125,16 +1131,17 @@ async fn expand_assignment(
 
 async fn basic_expand_assignment_name(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     name: &ast::AssignmentName,
 ) -> Result<ast::AssignmentName, error::Error> {
     match name {
         ast::AssignmentName::VariableName(name) => {
-            let expanded = expansion::basic_expand_str(shell, name).await?;
+            let expanded = expansion::basic_expand_str(shell, params, name).await?;
             Ok(ast::AssignmentName::VariableName(expanded))
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded_name = expansion::basic_expand_str(shell, name).await?;
-            let expanded_index = expansion::basic_expand_str(shell, index).await?;
+            let expanded_name = expansion::basic_expand_str(shell, params, name).await?;
+            let expanded_index = expansion::basic_expand_str(shell, params, index).await?;
             Ok(ast::AssignmentName::ArrayElementName(
                 expanded_name,
                 expanded_index,
@@ -1145,11 +1152,12 @@ async fn basic_expand_assignment_name(
 
 async fn expand_assignment_value(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     value: &ast::AssignmentValue,
 ) -> Result<ast::AssignmentValue, error::Error> {
     let expanded = match value {
         ast::AssignmentValue::Scalar(s) => {
-            let expanded_word = expansion::basic_expand_word(shell, s).await?;
+            let expanded_word = expansion::basic_expand_word(shell, params, s).await?;
             ast::AssignmentValue::Scalar(ast::Word {
                 value: expanded_word,
             })
@@ -1158,12 +1166,14 @@ async fn expand_assignment_value(
             let mut expanded_values = vec![];
             for (key, value) in arr {
                 if let Some(k) = key {
-                    let expanded_key = expansion::basic_expand_word(shell, k).await?.into();
-                    let expanded_value = expansion::basic_expand_word(shell, value).await?.into();
+                    let expanded_key = expansion::basic_expand_word(shell, params, k).await?.into();
+                    let expanded_value = expansion::basic_expand_word(shell, params, value)
+                        .await?
+                        .into();
                     expanded_values.push((Some(expanded_key), expanded_value));
                 } else {
                     let split_expanded_value =
-                        expansion::full_expand_and_split_word(shell, value).await?;
+                        expansion::full_expand_and_split_word(shell, params, value).await?;
                     for expanded_value in split_expanded_value {
                         expanded_values.push((None, expanded_value.into()));
                     }
@@ -1181,6 +1191,7 @@ async fn expand_assignment_value(
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
+    params: &ExecutionParameters,
     mut export: bool,
     required_scope: Option<EnvironmentScope>,
     creation_scope: EnvironmentScope,
@@ -1194,7 +1205,7 @@ async fn apply_assignment(
             name
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded = expansion::basic_expand_str(shell, index).await?;
+            let expanded = expansion::basic_expand_str(shell, params, index).await?;
             array_index = Some(expanded);
             name
         }
@@ -1203,7 +1214,7 @@ async fn apply_assignment(
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
-            let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
+            let value = expansion::basic_expand_word(shell, params, unexpanded_value).await?;
             ShellValueLiteral::Scalar(value)
         }
         ast::AssignmentValue::Array(unexpanded_values) => {
@@ -1211,17 +1222,19 @@ async fn apply_assignment(
             for (unexpanded_key, unexpanded_value) in unexpanded_values {
                 let key = match unexpanded_key {
                     Some(unexpanded_key) => {
-                        Some(expansion::basic_expand_word(shell, unexpanded_key).await?)
+                        Some(expansion::basic_expand_word(shell, params, unexpanded_key).await?)
                     }
                     None => None,
                 };
 
                 if key.is_some() {
-                    let value = expansion::basic_expand_word(shell, unexpanded_value).await?;
+                    let value =
+                        expansion::basic_expand_word(shell, params, unexpanded_value).await?;
                     elements.push((key, value));
                 } else {
                     let values =
-                        expansion::full_expand_and_split_word(shell, unexpanded_value).await?;
+                        expansion::full_expand_and_split_word(shell, params, unexpanded_value)
+                            .await?;
                     for value in values {
                         elements.push((None, value));
                     }
@@ -1250,7 +1263,7 @@ async fn apply_assignment(
 
         if will_be_indexed_array {
             array_index = Some(
-                arithmetic::expand_and_eval(shell, idx.as_str(), false)
+                arithmetic::expand_and_eval(shell, params, idx.as_str(), false)
                     .await?
                     .to_string(),
             );
@@ -1349,13 +1362,14 @@ fn setup_pipeline_redirection(
 
 #[allow(clippy::too_many_lines)]
 pub(crate) async fn setup_redirect(
-    open_files: &'_ mut OpenFiles,
     shell: &mut Shell,
+    params: &'_ mut ExecutionParameters,
     redirect: &ast::IoRedirect,
 ) -> Result<Option<u32>, error::Error> {
     match redirect {
         ast::IoRedirect::OutputAndError(f, append) => {
-            let mut expanded_fields = expansion::full_expand_and_split_word(shell, f).await?;
+            let mut expanded_fields =
+                expansion::full_expand_and_split_word(shell, params, f).await?;
             if expanded_fields.len() != 1 {
                 return Err(error::Error::InvalidRedirection);
             }
@@ -1379,8 +1393,8 @@ pub(crate) async fn setup_redirect(
             let stdout_file = OpenFile::File(opened_file);
             let stderr_file = stdout_file.try_dup()?;
 
-            open_files.files.insert(1, stdout_file);
-            open_files.files.insert(2, stderr_file);
+            params.open_files.files.insert(1, stdout_file);
+            params.open_files.files.insert(2, stderr_file);
 
             Ok(Some(1))
         }
@@ -1392,7 +1406,7 @@ pub(crate) async fn setup_redirect(
                     let mut options = std::fs::File::options();
 
                     let mut expanded_fields =
-                        expansion::full_expand_and_split_word(shell, f).await?;
+                        expansion::full_expand_and_split_word(shell, params, f).await?;
 
                     if expanded_fields.len() != 1 {
                         return Err(error::Error::InvalidRedirection);
@@ -1470,7 +1484,7 @@ pub(crate) async fn setup_redirect(
 
                     fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
-                    if let Some(f) = open_files.files.get(fd) {
+                    if let Some(f) = params.open_files.files.get(fd) {
                         target_file = f.try_dup()?;
                     } else {
                         tracing::error!("{}: Bad file descriptor", fd);
@@ -1485,14 +1499,17 @@ pub(crate) async fn setup_redirect(
                         | ast::IoFileRedirectKind::ReadAndWrite
                         | ast::IoFileRedirectKind::Clobber => {
                             let (substitution_fd, substitution_file) = setup_process_substitution(
-                                open_files,
                                 shell,
+                                params,
                                 substitution_kind,
                                 subshell_cmd,
                             )?;
 
                             target_file = substitution_file.try_dup()?;
-                            open_files.files.insert(substitution_fd, substitution_file);
+                            params
+                                .open_files
+                                .files
+                                .insert(substitution_fd, substitution_file);
 
                             fd_num = specified_fd_num
                                 .unwrap_or_else(|| get_default_fd_for_redirect_kind(kind));
@@ -1502,7 +1519,7 @@ pub(crate) async fn setup_redirect(
                 }
             }
 
-            open_files.files.insert(fd_num, target_file);
+            params.open_files.files.insert(fd_num, target_file);
             Ok(Some(fd_num))
         }
         ast::IoRedirect::HereDocument(fd_num, io_here) => {
@@ -1511,26 +1528,26 @@ pub(crate) async fn setup_redirect(
 
             // Expand if required.
             let io_here_doc = if io_here.requires_expansion {
-                expansion::basic_expand_word(shell, &io_here.doc).await?
+                expansion::basic_expand_word(shell, params, &io_here.doc).await?
             } else {
                 io_here.doc.flatten()
             };
 
             let f = setup_open_file_with_contents(io_here_doc.as_str())?;
 
-            open_files.files.insert(fd_num, f);
+            params.open_files.files.insert(fd_num, f);
             Ok(Some(fd_num))
         }
         ast::IoRedirect::HereString(fd_num, word) => {
             // If not specified, default to stdin (fd 0).
             let fd_num = fd_num.unwrap_or(0);
 
-            let mut expanded_word = expansion::basic_expand_word(shell, word).await?;
+            let mut expanded_word = expansion::basic_expand_word(shell, params, word).await?;
             expanded_word.push('\n');
 
             let f = setup_open_file_with_contents(expanded_word.as_str())?;
 
-            open_files.files.insert(fd_num, f);
+            params.open_files.files.insert(fd_num, f);
             Ok(Some(fd_num))
         }
     }
@@ -1549,8 +1566,8 @@ fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {
 }
 
 fn setup_process_substitution(
-    open_files: &mut OpenFiles,
     shell: &mut Shell,
+    params: &mut ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
     subshell_cmd: &ast::SubshellCommand,
 ) -> Result<(u32, OpenFile), error::Error> {
@@ -1558,19 +1575,23 @@ fn setup_process_substitution(
     // Execute in a subshell.
     let mut subshell = shell.clone();
 
+    // Set up execution parameters for the child execution.
+    let mut child_params = params.clone();
+    child_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
     // Set up pipe so we can connect to the command.
     let (reader, writer) = sys::pipes::pipe()?;
 
     let target_file = match kind {
         ast::ProcessSubstitutionKind::Read => {
-            subshell
+            child_params
                 .open_files
                 .files
                 .insert(1, openfiles::OpenFile::PipeWriter(writer));
             OpenFile::PipeReader(reader)
         }
         ast::ProcessSubstitutionKind::Write => {
-            subshell
+            child_params
                 .open_files
                 .files
                 .insert(0, openfiles::OpenFile::PipeReader(reader));
@@ -1578,23 +1599,18 @@ fn setup_process_substitution(
         }
     };
 
-    let exec_params = ExecutionParameters {
-        open_files: subshell.open_files.clone(),
-        process_group_policy: ProcessGroupPolicy::SameProcessGroup,
-    };
-
     // Asynchronously spawn off the subshell; we intentionally don't block on its
     // completion.
     let subshell_cmd = subshell_cmd.to_owned();
     tokio::spawn(async move {
         // Intentionally ignore the result of the subshell command.
-        let _ = subshell_cmd.0.execute(&mut subshell, &exec_params).await;
+        let _ = subshell_cmd.0.execute(&mut subshell, &child_params).await;
     });
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
     // available fd.
     let mut candidate_fd_num = 63;
-    while open_files.files.contains_key(&candidate_fd_num) {
+    while params.open_files.files.contains_key(&candidate_fd_num) {
         candidate_fd_num -= 1;
         if candidate_fd_num == 0 {
             return error::unimp("no available file descriptors");

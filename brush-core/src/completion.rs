@@ -244,7 +244,9 @@ impl Spec {
         // Generate completions based on any provided actions (and on words).
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
-            let words = crate::expansion::full_expand_and_split_str(shell, word_list).await?;
+            let params = shell.default_exec_params();
+            let words =
+                crate::expansion::full_expand_and_split_str(shell, &params, word_list).await?;
             for word in words {
                 if word.starts_with(context.token_to_complete) {
                     candidates.insert(word);
@@ -607,8 +609,10 @@ impl Spec {
         }
 
         // Run the command.
+        let params = shell.default_exec_params();
         let output =
-            commands::invoke_command_in_subshell_and_get_output(&mut shell, command_line).await?;
+            commands::invoke_command_in_subshell_and_get_output(&mut shell, &params, command_line)
+                .await?;
 
         // Split results.
         let mut candidates = IndexSet::new();
@@ -1052,8 +1056,9 @@ async fn get_file_completions(
 ) -> IndexSet<String> {
     // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
     let mut throwaway_shell = shell.clone();
+    let params = throwaway_shell.default_exec_params();
     let expanded_token = throwaway_shell
-        .basic_expand_string(token_to_complete)
+        .basic_expand_string(&params, token_to_complete)
         .await
         .unwrap_or_else(|_err| token_to_complete.to_owned());
 

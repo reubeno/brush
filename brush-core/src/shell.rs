@@ -33,7 +33,7 @@ pub struct Shell {
     /// Trap handler configuration for the shell.
     pub traps: traps::TrapHandlerConfig,
     /// Manages files opened and accessible via redirection operators.
-    pub open_files: openfiles::OpenFiles,
+    open_files: openfiles::OpenFiles,
     /// The current working directory.
     pub working_dir: PathBuf,
     /// The shell environment, containing shell variables.
@@ -942,9 +942,10 @@ impl Shell {
     /// * `s` - The string to expand.
     pub async fn basic_expand_string<S: AsRef<str>>(
         &mut self,
+        params: &ExecutionParameters,
         s: S,
     ) -> Result<String, error::Error> {
-        let result = expansion::basic_expand_str(self, s.as_ref()).await?;
+        let result = expansion::basic_expand_str(self, params, s.as_ref()).await?;
         Ok(result)
     }
 
@@ -956,9 +957,10 @@ impl Shell {
     /// * `s` - The string to expand and split.
     pub async fn full_expand_and_split_string<S: AsRef<str>>(
         &mut self,
+        params: &ExecutionParameters,
         s: S,
     ) -> Result<Vec<String>, error::Error> {
-        let result = expansion::full_expand_and_split_str(self, s.as_ref()).await?;
+        let result = expansion::full_expand_and_split_str(self, params, s.as_ref()).await?;
         Ok(result)
     }
 
@@ -981,13 +983,9 @@ impl Shell {
         script_path: &Path,
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(
-            script_path,
-            args,
-            &self.default_exec_params(),
-            ScriptCallType::Executed,
-        )
-        .await
+        let params = self.default_exec_params();
+        self.parse_and_execute_script_file(script_path, args, &params, ScriptCallType::Executed)
+            .await
     }
 
     async fn run_parsed_result(
@@ -1116,7 +1114,8 @@ impl Shell {
         let formatted_prompt = prompt::expand_prompt(self, prompt_spec.into_owned())?;
 
         // Now expand.
-        expansion::basic_expand_str(self, &formatted_prompt).await
+        let params = self.default_exec_params();
+        expansion::basic_expand_str(self, &params, &formatted_prompt).await
     }
 
     /// Returns the exit status of the last command executed in this shell.

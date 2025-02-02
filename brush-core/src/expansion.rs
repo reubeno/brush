@@ -20,6 +20,7 @@ use crate::trace_categories;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
+use crate::ExecutionParameters;
 
 #[derive(Debug)]
 struct Expansion {
@@ -294,17 +295,19 @@ enum ParameterState {
 
 pub(crate) async fn basic_expand_pattern(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     word: &ast::Word,
 ) -> Result<patterns::Pattern, error::Error> {
-    let mut expander = WordExpander::new(shell);
+    let mut expander = WordExpander::new(shell, params);
     expander.basic_expand_pattern(&word.flatten()).await
 }
 
 pub(crate) async fn basic_expand_regex(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     word: &ast::Word,
 ) -> Result<crate::regex::Regex, error::Error> {
-    let mut expander = WordExpander::new(shell);
+    let mut expander = WordExpander::new(shell, params);
 
     // Brace expansion does not appear to be used in regexes.
     expander.force_disable_brace_expansion = true;
@@ -314,63 +317,73 @@ pub(crate) async fn basic_expand_regex(
 
 pub(crate) async fn basic_expand_word(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     word: &ast::Word,
 ) -> Result<String, error::Error> {
-    basic_expand_str(shell, word.flatten().as_str()).await
+    basic_expand_str(shell, params, word.flatten().as_str()).await
 }
 
-pub(crate) async fn basic_expand_str(shell: &mut Shell, s: &str) -> Result<String, error::Error> {
-    let mut expander = WordExpander::new(shell);
+pub(crate) async fn basic_expand_str(
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+    s: &str,
+) -> Result<String, error::Error> {
+    let mut expander = WordExpander::new(shell, params);
     expander.basic_expand_to_str(s).await
 }
 
 pub(crate) async fn basic_expand_str_without_tilde(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     s: &str,
 ) -> Result<String, error::Error> {
-    let mut expander = WordExpander::new(shell);
+    let mut expander = WordExpander::new(shell, params);
     expander.parser_options.tilde_expansion = false;
     expander.basic_expand_to_str(s).await
 }
 
 pub(crate) async fn full_expand_and_split_word(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     word: &ast::Word,
 ) -> Result<Vec<String>, error::Error> {
-    full_expand_and_split_str(shell, word.flatten().as_str()).await
+    full_expand_and_split_str(shell, params, word.flatten().as_str()).await
 }
 
 pub(crate) async fn full_expand_and_split_str(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     s: &str,
 ) -> Result<Vec<String>, error::Error> {
-    let mut expander = WordExpander::new(shell);
+    let mut expander = WordExpander::new(shell, params);
     expander.full_expand_with_splitting(s).await
 }
 
 pub(crate) async fn assign_to_named_parameter(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     name: &str,
     value: String,
 ) -> Result<(), error::Error> {
     let parser_options = shell.parser_options();
-    let mut expander = WordExpander::new(shell);
+    let mut expander = WordExpander::new(shell, params);
     let parameter = brush_parser::word::parse_parameter(name, &parser_options)?;
     expander.assign_to_parameter(&parameter, value).await
 }
 
 struct WordExpander<'a> {
     shell: &'a mut Shell,
+    params: &'a ExecutionParameters,
     parser_options: brush_parser::ParserOptions,
     force_disable_brace_expansion: bool,
 }
 
 impl<'a> WordExpander<'a> {
-    pub fn new(shell: &'a mut Shell) -> Self {
+    pub fn new(shell: &'a mut Shell, params: &'a ExecutionParameters) -> Self {
         let parser_options = shell.parser_options();
-
         Self {
             shell,
+            params,
             parser_options,
             force_disable_brace_expansion: false,
         }
@@ -710,7 +723,8 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::WordPiece::BackquotedCommandSubstitution(s)
             | brush_parser::word::WordPiece::CommandSubstitution(s) => {
                 let output_str =
-                    commands::invoke_command_in_subshell_and_get_output(self.shell, s).await?;
+                    commands::invoke_command_in_subshell_and_get_output(self.shell, self.params, s)
+                        .await?;
 
                 // We trim trailing newlines, per spec.
                 let trimmed = output_str.trim_end_matches('\n');
@@ -923,7 +937,7 @@ impl<'a> WordExpander<'a> {
                     );
                 }
 
-                let expanded_offset = offset.eval(self.shell, false).await?;
+                let expanded_offset = offset.eval(self.shell, self.params, false).await?;
                 let expanded_offset = if expanded_offset < 0 {
                     0
                 } else {
@@ -934,7 +948,7 @@ impl<'a> WordExpander<'a> {
                 let expanded_offset = min(expanded_offset, expanded_parameter_len);
 
                 let end_offset = if let Some(length) = length {
-                    let mut expanded_length = length.eval(self.shell, false).await?;
+                    let mut expanded_length = length.eval(self.shell, self.params, false).await?;
                     if expanded_length < 0 {
                         let param_length: i64 = i64::try_from(expanded_parameter_len)?;
                         expanded_length += param_length;
@@ -1357,7 +1371,7 @@ impl<'a> WordExpander<'a> {
         let index_to_use = if for_set_associative_array {
             self.basic_expand_to_str(index).await?
         } else {
-            arithmetic::expand_and_eval(self.shell, index, false)
+            arithmetic::expand_and_eval(self.shell, self.params, index, false)
                 .await?
                 .to_string()
         };
@@ -1416,7 +1430,7 @@ impl<'a> WordExpander<'a> {
         &mut self,
         expr: brush_parser::ast::UnexpandedArithmeticExpr,
     ) -> Result<String, error::Error> {
-        let value = expr.eval(self.shell, false).await?;
+        let value = expr.eval(self.shell, self.params, false).await?;
         Ok(value.to_string())
     }
 
@@ -1691,33 +1705,34 @@ mod tests {
     async fn test_full_expansion() -> Result<()> {
         let options = crate::shell::CreateOptions::default();
         let mut shell = crate::shell::Shell::new(&options).await?;
+        let params = shell.default_exec_params();
 
         assert_eq!(
-            full_expand_and_split_str(&mut shell, "\"\"").await?,
+            full_expand_and_split_str(&mut shell, &params, "\"\"").await?,
             vec![""]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, "a b").await?,
+            full_expand_and_split_str(&mut shell, &params, "a b").await?,
             vec!["a", "b"]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, "ab").await?,
+            full_expand_and_split_str(&mut shell, &params, "ab").await?,
             vec!["ab"]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, r#""a b""#).await?,
+            full_expand_and_split_str(&mut shell, &params, r#""a b""#).await?,
             vec!["a b"]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, "").await?,
+            full_expand_and_split_str(&mut shell, &params, "").await?,
             Vec::<String>::new()
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, "$@").await?,
+            full_expand_and_split_str(&mut shell, &params, "$@").await?,
             Vec::<String>::new()
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, "$*").await?,
+            full_expand_and_split_str(&mut shell, &params, "$*").await?,
             Vec::<String>::new()
         );
 
@@ -1728,7 +1743,8 @@ mod tests {
     async fn test_brace_expansion() -> Result<()> {
         let options = crate::shell::CreateOptions::default();
         let mut shell = crate::shell::Shell::new(&options).await?;
-        let expander = WordExpander::new(&mut shell);
+        let params = shell.default_exec_params();
+        let expander = WordExpander::new(&mut shell, &params);
 
         assert_eq!(expander.brace_expand_if_needed("abc")?, ["abc"]);
         assert_eq!(expander.brace_expand_if_needed("a{,b}d")?, ["ad", "abd"]);
@@ -1751,7 +1767,8 @@ mod tests {
     async fn test_field_splitting() -> Result<()> {
         let options = crate::shell::CreateOptions::default();
         let mut shell = crate::shell::Shell::new(&options).await?;
-        let expander = WordExpander::new(&mut shell);
+        let params = shell.default_exec_params();
+        let expander = WordExpander::new(&mut shell, &params);
 
         let expansion = Expansion {
             fields: vec![

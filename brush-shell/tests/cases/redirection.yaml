@@ -101,13 +101,11 @@ cases:
       echo $(echo hi >&3) 3>output.txt
 
   - name: "Redirection in command substitution in braces to non-standard fd"
-    known_failure: true # https://github.com/reubeno/brush/issues/358
     ignore_stderr: true
     stdin: |
       { : $(echo hi >&3); } 3>output.txt
 
   - name: "Redirection in command substitution in subshell to non-standard fd"
-    known_failure: true # https://github.com/reubeno/brush/issues/358
     ignore_stderr: true
     stdin: |
       ( : $(echo hi >&3); ) 3>output.txt
