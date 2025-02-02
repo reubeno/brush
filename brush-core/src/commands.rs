@@ -521,7 +521,7 @@ pub(crate) async fn invoke_shell_function(
     // Apply any redirects specified at function definition-time.
     if let Some(redirects) = redirects {
         for redirect in &redirects.0 {
-            interp::setup_redirect(&mut context.params.open_files, context.shell, redirect).await?;
+            interp::setup_redirect(&mut context.params, context.shell, redirect).await?;
         }
     }
 
@@ -563,20 +563,22 @@ pub(crate) async fn invoke_shell_function(
 
 pub(crate) async fn invoke_command_in_subshell_and_get_output(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     s: String,
 ) -> Result<String, error::Error> {
     // Instantiate a subshell to run the command in.
     let mut subshell = shell.clone();
 
+    // Get our own set of parameters we can customize and use.
+    let mut params = params.clone();
+    params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
     // Set up pipe so we can read the output.
     let (reader, writer) = sys::pipes::pipe()?;
-    subshell
+    params
         .open_files
         .files
         .insert(1, openfiles::OpenFile::PipeWriter(writer));
-
-    let mut params = subshell.default_exec_params();
-    params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     // Run the command.
     let result = subshell.run_string(s, &params).await?;

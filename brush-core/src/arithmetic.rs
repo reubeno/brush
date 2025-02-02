@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::{env, expansion, variables, Shell};
+use crate::{env, expansion, variables, ExecutionParameters, Shell};
 use brush_parser::ast;
 
 /// Represents an error that occurs during evaluation of an arithmetic expression.
@@ -47,12 +47,22 @@ pub trait ExpandAndEvaluate {
     ///
     /// * `shell` - The shell to use for evaluation.
     /// * `trace_if_needed` - Whether to trace the evaluation.
-    async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError>;
+    async fn eval(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+        trace_if_needed: bool,
+    ) -> Result<i64, EvalError>;
 }
 
 impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
-    async fn eval(&self, shell: &mut Shell, trace_if_needed: bool) -> Result<i64, EvalError> {
-        expand_and_eval(shell, self.value.as_str(), trace_if_needed).await
+    async fn eval(
+        &self,
+        shell: &mut Shell,
+        params: &ExecutionParameters,
+        trace_if_needed: bool,
+    ) -> Result<i64, EvalError> {
+        expand_and_eval(shell, params, self.value.as_str(), trace_if_needed).await
     }
 }
 
@@ -65,11 +75,12 @@ impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
 /// * `trace_if_needed` - Whether to trace the evaluation.
 pub(crate) async fn expand_and_eval(
     shell: &mut Shell,
+    params: &ExecutionParameters,
     expr: &str,
     trace_if_needed: bool,
 ) -> Result<i64, EvalError> {
     // Per documentation, first shell-expand it.
-    let expanded_self = expansion::basic_expand_str_without_tilde(shell, expr)
+    let expanded_self = expansion::basic_expand_str_without_tilde(shell, params, expr)
         .await
         .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
 

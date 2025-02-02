@@ -24,7 +24,13 @@ impl builtins::Command for PrintfCommand {
         let result = self.evaluate(&context)?;
 
         if let Some(variable_name) = &self.output_variable {
-            expansion::assign_to_named_parameter(context.shell, variable_name, result).await?;
+            expansion::assign_to_named_parameter(
+                context.shell,
+                &context.params,
+                variable_name,
+                result,
+            )
+            .await?;
         } else {
             write!(context.stdout(), "{result}")?;
             context.stdout().flush()?;
