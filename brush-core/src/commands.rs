@@ -115,27 +115,17 @@ pub struct ExecutionContext<'a> {
 impl ExecutionContext<'_> {
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> openfiles::OpenFile {
-        self.fd(0).unwrap()
+        self.params.stdin()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
     pub fn stdout(&self) -> openfiles::OpenFile {
-        self.fd(1).unwrap()
+        self.params.stdout()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
     pub fn stderr(&self) -> openfiles::OpenFile {
-        self.fd(2).unwrap()
-    }
-
-    /// Returns the file descriptor with the given number.
-    #[allow(clippy::unwrap_in_result)]
-    pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
-        self.params
-            .open_files
-            .files
-            .get(&fd)
-            .map(|f| f.try_dup().unwrap())
+        self.params.stderr()
     }
 
     pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {

@@ -82,6 +82,7 @@ impl builtins::Command for ReadCommand {
         let input_stream = if let Some(fd_num) = self.fd_num_to_read {
             let fd_num = fd_num as u32;
             context
+                .params
                 .fd(fd_num)
                 .ok_or_else(|| error::Error::BadFileDescriptor(fd_num))?
         } else {
