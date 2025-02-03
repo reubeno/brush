@@ -397,6 +397,14 @@ fn display_all(context: &commands::ExecutionContext<'_>) -> Result<(), error::Er
             continue;
         }
 
+        // TODO: For now, skip all dynamic variables. The current behavior
+        // of bash is not quite clear. We've empirically found that some
+        // special variables don't get displayed until they're observed
+        // at least once.
+        if matches!(var.value(), variables::ShellValue::Dynamic { .. }) {
+            continue;
+        }
+
         writeln!(
             context.stdout(),
             "{name}={}",
