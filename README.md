@@ -78,14 +78,18 @@ There's a long list of OSS crates whose shoulders this project rests on. Notably
 * [`tokio`](https://github.com/tokio-rs/tokio) - async, well, everything
 * [`nix` rust crate](https://github.com/nix-rust/nix) - higher-level APIs for Unix/POSIX system APIs
 
-Huge kudos and thanks also to `pprof` and `criterion` projects for enabling awesome flamegraphs in smooth integration with `cargo bench`'s standard benchmarking facilities.
+For testing, performance benchmarking, and other important engineering support, we use and love:
+
+* [`pprof-rs`](https://github.com/tikv/pprof-rs) - for sampling-based CPU profiling
+* [`criterion.rs`](https://github.com/bheisler/criterion.rs) - for statistics-based benchmarking
+* [`bash-completion`](https://github.com/scop/bash-completion) - for its completion test suite and general completion support!
 
 ## Links: other shell implementations
 
 There are a number of other POSIX-ish shells implemented in a non-C/C++ implementation language. Some inspirational examples include:
 
-* [Nushell](https://www.nushell.sh/) - modern Rust-implemented shell (which also provides the `reedline` crate we use!)
-* [Rusty Bash](https://github.com/shellgei/rusty_bash)
-* [mvdan/sh](https://github.com/mvdan/sh)
+* [`nushell`](https://www.nushell.sh/) - modern Rust-implemented shell (which also provides the `reedline` crate we use!)
+* [`rusty_bash`](https://github.com/shellgei/rusty_bash)
+* [`mvdan/sh`](https://github.com/mvdan/sh)
 
 We're sure there are plenty more; we're happy to include links to them as well.
