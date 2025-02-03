@@ -1,14 +1,29 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::io::Write;
 
 use crate::{builtins, commands, error};
+
+/// Identifier for a keymap
+#[derive(Clone, ValueEnum)]
+enum BindKeyMap {
+    #[clap(name = "emacs-standard", alias = "emacs")]
+    EmacsStandard,
+    #[clap(name = "emacs-meta")]
+    EmacsMeta,
+    #[clap(name = "emacs-ctlx")]
+    EmacsCtlx,
+    #[clap(name = "vi-command", aliases = &["vi", "vi-move"])]
+    ViCommand,
+    #[clap(name = "vi-insert")]
+    ViInsert,
+}
 
 /// Inspect and modify key bindings and other input configuration.
 #[derive(Parser)]
 pub(crate) struct BindCommand {
     /// Name of key map to use.
     #[arg(short = 'm')]
-    keymap: Option<String>,
+    keymap: Option<BindKeyMap>,
     /// List functions.
     #[arg(short = 'l')]
     list_funcs: bool,
@@ -48,6 +63,8 @@ pub(crate) struct BindCommand {
     /// List key sequence bindings.
     #[arg(short = 'X')]
     list_key_seq_bindings: bool,
+    /// Key sequence binding to readline function or command.
+    key_sequence: Option<String>,
 }
 
 impl builtins::Command for BindCommand {
@@ -55,10 +72,6 @@ impl builtins::Command for BindCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        if self.keymap.is_some() {
-            return error::unimp("bind -m is not yet implemented");
-        }
-
         if self.list_funcs {
             return error::unimp("bind -l is not yet implemented");
         }
@@ -111,6 +124,14 @@ impl builtins::Command for BindCommand {
 
         if self.list_key_seq_bindings {
             return error::unimp("bind -X is not yet implemented");
+        }
+
+        if let Some(key_sequence) = &self.key_sequence {
+            writeln!(
+                context.stderr(),
+                "bind: key seq not implemented: {key_sequence}"
+            )?;
+            return Ok(builtins::ExitCode::Unimplemented);
         }
 
         Ok(builtins::ExitCode::Success)
