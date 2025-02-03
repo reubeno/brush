@@ -1564,15 +1564,15 @@ fn repeated_char_str(c: char, count: usize) -> String {
 }
 
 fn get_random_value(_shell: &Shell) -> ShellValue {
-    let mut rng = rand::thread_rng();
-    let num = rng.gen_range(0..32768);
+    let mut rng = rand::rng();
+    let num = rng.random_range(0..32768);
     let str = num.to_string();
     str.into()
 }
 
 fn get_srandom_value(_shell: &Shell) -> ShellValue {
-    let mut rng = rand::thread_rng();
-    let num: u32 = rng.gen();
+    let mut rng = rand::rng();
+    let num: u32 = rng.random();
     let str = num.to_string();
     str.into()
 }

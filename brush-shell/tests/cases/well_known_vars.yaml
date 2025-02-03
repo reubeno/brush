@@ -126,6 +126,15 @@ cases:
         echo "LINENO: $LINENO"
       done
 
+  - name: "RANDOM"
+    stdin: |
+      first=${RANDOM}
+      second=${RANDOM}
+
+      [[ $first != $second ]] && echo "Confirmed RANDOM at least isn't static"
+      [[ $first -ge 0 && $first -lt 32768 ]] && echo "RANDOM value is within expected range"
+      [[ $second -ge 0 && $second -lt 32768 ]] && echo "RANDOM value is within expected range"
+
   - name: "SHELLOPTS"
     stdin: |
       echo "SHELLOPTS: $SHELLOPTS"
@@ -135,3 +144,10 @@ cases:
       echo "SHLVL: $SHLVL"
       bash -c 'echo "bash SHLVL: $SHLVL"'
       $0 -c 'echo "nested SHLVL: $SHLVL"'
+
+  - name: "SRANDOM"
+    stdin: |
+      first=${SRANDOM}
+      second=${SRANDOM}
+
+      [[ $first != $second ]] && echo "Confirmed SRANDOM at least isn't static"
