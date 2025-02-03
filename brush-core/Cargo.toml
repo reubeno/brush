@@ -18,7 +18,7 @@ workspace = true
 
 [dependencies]
 async-recursion = "1.1.1"
-async-trait = "0.1.85"
+async-trait = "0.1.86"
 brush-parser = { version = "^0.2.12", path = "../brush-parser" }
 cached = "0.54.0"
 cfg-if = "1.0.0"
@@ -29,7 +29,7 @@ futures = "0.3.31"
 indexmap = "2.7.1"
 itertools = "0.14.0"
 lazy_static = "1.5.0"
-rand = "0.8.5"
+rand = "0.9.0"
 thiserror = "2.0.11"
 tracing = "0.1.41"
 

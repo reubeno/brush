@@ -39,7 +39,7 @@ reedline = ["brush-interactive/reedline"]
 workspace = true
 
 [dependencies]
-async-trait = "0.1.85"
+async-trait = "0.1.86"
 brush-parser = { version = "^0.2.12", path = "../brush-parser" }
 brush-core = { version = "^0.2.14", path = "../brush-core" }
 cfg-if = "1.0.0"
