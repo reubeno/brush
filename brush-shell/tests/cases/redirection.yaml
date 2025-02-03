@@ -109,3 +109,8 @@ cases:
     ignore_stderr: true
     stdin: |
       ( : $(echo hi >&3); ) 3>output.txt
+
+  - name: "Redirection failure"
+    ignore_stderr: true
+    stdin: |
+      echo hi > /non-existent-dir/file.txt; echo following-command

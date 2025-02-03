@@ -114,6 +114,29 @@ pub struct ExecutionParameters {
     pub process_group_policy: ProcessGroupPolicy,
 }
 
+impl ExecutionParameters {
+    /// Returns the standard input file; usable with `write!` et al.
+    pub fn stdin(&self) -> openfiles::OpenFile {
+        self.fd(0).unwrap()
+    }
+
+    /// Returns the standard output file; usable with `write!` et al.
+    pub fn stdout(&self) -> openfiles::OpenFile {
+        self.fd(1).unwrap()
+    }
+
+    /// Returns the standard error file; usable with `write!` et al.
+    pub fn stderr(&self) -> openfiles::OpenFile {
+        self.fd(2).unwrap()
+    }
+
+    /// Returns the file descriptor with the given number.
+    #[allow(clippy::unwrap_in_result)]
+    pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
+        self.open_files.files.get(&fd).map(|f| f.try_dup().unwrap())
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 /// Policy for how to manage spawned external processes.
 pub enum ProcessGroupPolicy {
@@ -910,12 +933,16 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if setup_redirect(context.shell, &mut params, redirect)
-                        .await?
-                        .is_none()
-                    {
-                        // Something went wrong.
-                        return Ok(CommandSpawnResult::ImmediateExit(1));
+                    match setup_redirect(context.shell, &mut params, redirect).await {
+                        Err(e) => {
+                            writeln!(params.stderr(), "error: {e}")?;
+                            return Ok(CommandSpawnResult::ImmediateExit(1));
+                        }
+                        Ok(None) => {
+                            // Something went wrong.
+                            return Ok(CommandSpawnResult::ImmediateExit(1));
+                        }
+                        Ok(_) => (),
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
