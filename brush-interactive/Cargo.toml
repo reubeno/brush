@@ -24,7 +24,7 @@ reedline = ["dep:reedline", "dep:nu-ansi-term"]
 workspace = true
 
 [dependencies]
-async-trait = "0.1.85"
+async-trait = "0.1.86"
 brush-parser = { version = "^0.2.12", path = "../brush-parser" }
 brush-core = { version = "^0.2.14", path = "../brush-core" }
 crossterm = { version = "0.28.1", features = ["serde"], optional = true }
