@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rand::Rng;
+use tokio::sync::Mutex;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
@@ -17,7 +18,7 @@ use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     patterns, prompt, sys::users, traps,
 };
-use crate::{pathcache, sys, trace_categories};
+use crate::{interfaces, pathcache, sys, trace_categories};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -93,6 +94,9 @@ pub struct Shell {
 
     /// Last "SECONDS" offset requested.
     last_stopwatch_offset: u32,
+
+    /// Key bindings for the shell, optionally implemented by an interactive shell.
+    pub key_bindings: Option<Arc<Mutex<dyn interfaces::KeyBindings>>>,
 }
 
 impl Clone for Shell {
@@ -120,6 +124,7 @@ impl Clone for Shell {
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
+            key_bindings: self.key_bindings.clone(),
             depth: self.depth + 1,
         }
     }
@@ -229,6 +234,7 @@ impl Shell {
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
+            key_bindings: None,
             depth: 0,
         };
 

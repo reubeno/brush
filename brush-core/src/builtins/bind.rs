@@ -1,7 +1,12 @@
 use clap::{Parser, ValueEnum};
-use std::io::Write;
+use std::{io::Write, sync::Arc};
+use strum::IntoEnumIterator;
+use tokio::sync::Mutex;
 
-use crate::{builtins, commands, error};
+use crate::{
+    builtins, commands, error,
+    interfaces::{self, KeyBindings},
+};
 
 /// Identifier for a keymap
 #[derive(Clone, ValueEnum)]
@@ -16,6 +21,20 @@ enum BindKeyMap {
     ViCommand,
     #[clap(name = "vi-insert")]
     ViInsert,
+}
+
+impl BindKeyMap {
+    fn is_vi(&self) -> bool {
+        matches!(self, Self::ViCommand | Self::ViInsert)
+    }
+
+    #[allow(dead_code)]
+    fn is_emacs(&self) -> bool {
+        matches!(
+            self,
+            Self::EmacsStandard | Self::EmacsMeta | Self::EmacsCtlx
+        )
+    }
 }
 
 /// Inspect and modify key bindings and other input configuration.
@@ -72,11 +91,37 @@ impl builtins::Command for BindCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
+        if let Some(key_bindings) = &context.shell.key_bindings {
+            Ok(self.execute_impl(key_bindings, &context).await?)
+        } else {
+            writeln!(
+                context.stderr(),
+                "bind: key bindings not supported in this configuration"
+            )?;
+            Ok(builtins::ExitCode::Unimplemented)
+        }
+    }
+}
+
+impl BindCommand {
+    async fn execute_impl(
+        &self,
+        bindings: &Arc<Mutex<dyn KeyBindings>>,
+        context: &commands::ExecutionContext<'_>,
+    ) -> Result<builtins::ExitCode, error::Error> {
+        let bindings = bindings.lock().await;
+
         if self.list_funcs {
-            return error::unimp("bind -l is not yet implemented");
+            for func in interfaces::InputFunction::iter() {
+                writeln!(context.stdout(), "{func}")?;
+            }
         }
 
         if self.list_funcs_and_bindings {
+            for (seq, action) in &bindings.get_current() {
+                writeln!(context.stdout(), "{action} can be found on {seq}")?;
+            }
+
             return error::unimp("bind -P is not yet implemented");
         }
 
@@ -127,6 +172,11 @@ impl builtins::Command for BindCommand {
         }
 
         if let Some(key_sequence) = &self.key_sequence {
+            if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
+                // Quietly ignore since we don't support vi mode.
+                return Ok(builtins::ExitCode::Success);
+            }
+
             writeln!(
                 context.stderr(),
                 "bind: key seq not implemented: {key_sequence}"

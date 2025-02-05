@@ -14,6 +14,7 @@ mod escape;
 mod expansion;
 mod extendedtests;
 mod functions;
+pub mod interfaces;
 mod interp;
 mod jobs;
 mod keywords;
