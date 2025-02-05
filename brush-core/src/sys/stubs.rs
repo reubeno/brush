@@ -5,6 +5,7 @@
 #![allow(clippy::unnecessary_wraps)]
 
 pub(crate) mod fs;
+pub(crate) mod input;
 pub(crate) mod network;
 pub(crate) mod pipes;
 pub(crate) mod process;
