@@ -147,6 +147,10 @@ pub enum Error {
     #[error("{0}")]
     TestCommandParseError(#[from] brush_parser::TestCommandParseError),
 
+    /// Unable to parse a key binding specification.
+    #[error("{0}")]
+    BindingParseError(#[from] brush_parser::BindingParseError),
+
     /// A threading error occurred.
     #[error("threading error")]
     ThreadingError(#[from] tokio::task::JoinError),
@@ -200,6 +204,10 @@ pub enum Error {
     /// Array index out of range.
     #[error("array index out of range")]
     ArrayIndexOutOfRange,
+
+    /// Unhandled key code.
+    #[error("unhandled key code: {0:?}")]
+    UnhandledKeyCode(Vec<u8>),
 }
 
 /// Convenience function for returning an error for unimplemented functionality.

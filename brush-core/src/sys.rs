@@ -25,6 +25,7 @@ pub(crate) mod tokio_process;
 
 pub(crate) mod fs;
 
+pub(crate) use platform::input;
 pub(crate) use platform::network;
 pub(crate) use platform::pipes;
 pub(crate) use platform::process;

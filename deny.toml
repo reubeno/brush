@@ -42,6 +42,7 @@ allow = [
     "MIT",
     "NCSA",
     "Unicode-3.0",
+    "WTFPL",
     "Zlib",
 ]
 # The confidence threshold for detecting a license from license text.
@@ -92,7 +93,11 @@ skip = [
     { crate = "itertools" },
     { crate = "linux-raw-sys" },
     { crate = "nu-ansi-term" },
+    { crate = "rand" },
+    { crate = "rand_core" },
     { crate = "rustix" },
+    { crate = "strum" },
+    { crate = "strum_macros" },
     { crate = "wasi" },
     { crate = "zerocopy" },
 ]

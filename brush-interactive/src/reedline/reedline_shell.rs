@@ -3,7 +3,7 @@ use reedline::MenuBuilder;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::{completer, highlighter, refs, validator};
+use super::{completer, edit_mode, highlighter, refs, validator};
 use crate::{interactive_shell::InteractivePrompt, InteractiveShell, ReadResult, ShellError};
 
 /// Represents an interactive shell capable of taking commands from standard input
@@ -24,9 +24,19 @@ impl ReedlineShell {
     pub async fn new(options: &crate::Options) -> Result<ReedlineShell, ShellError> {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
-        let shell = brush_core::Shell::new(&options.shell).await?;
+        let mut shell = brush_core::Shell::new(&options.shell).await?;
         let history_file_path = shell.get_history_file_path();
 
+        // Set up key bindings.
+        let key_bindings = compose_key_bindings(COMPLETION_MENU_NAME);
+
+        // Set up mutable edit mode.
+        let mutable_edit_mode = edit_mode::MutableEditMode::new(key_bindings);
+        let updatable_bindings = mutable_edit_mode.bindings();
+        shell.key_bindings = Some(updatable_bindings.clone());
+
+        // Wrap the shell in an Arc<Mutex> so we can share it with the helper
+        // objects we'll need to set up for reedline.
         let shell_ref = Arc::new(Mutex::new(shell));
 
         // Create helper objects that implement reedline traits; each will
@@ -57,9 +67,6 @@ impl ReedlineShell {
                 .with_selected_match_text_style(Color::Blue.bold().reverse()),
         );
 
-        // Set up key bindings.
-        let key_bindings = compose_key_bindings(COMPLETION_MENU_NAME);
-
         // Set up default history-based hinter.
         let mut hinter = reedline::DefaultHinter::default();
         if !options.disable_color {
@@ -76,7 +83,7 @@ impl ReedlineShell {
             .with_validator(Box::new(validator))
             .with_hinter(Box::new(hinter))
             .with_menu(reedline::ReedlineMenu::EngineCompleter(completion_menu))
-            .with_edit_mode(Box::new(reedline::Emacs::new(key_bindings)));
+            .with_edit_mode(Box::new(mutable_edit_mode));
 
         // If requested, apply some additional niceties.
         if !options.disable_highlighting && !options.disable_color {
@@ -146,6 +153,29 @@ impl InteractiveShell for ReedlineShell {
             }
         } else {
             Ok(ReadResult::Eof)
+        }
+    }
+
+    fn get_read_buffer(&self) -> Option<(String, usize)> {
+        self.reedline.as_ref().map(|r| {
+            (
+                r.current_buffer_contents().to_owned(),
+                r.current_insertion_point(),
+            )
+        })
+    }
+
+    fn set_read_buffer(&mut self, buffer: String, cursor: usize) {
+        if let Some(reedline) = &mut self.reedline {
+            reedline.run_edit_commands(&[
+                reedline::EditCommand::MoveToStart { select: false },
+                reedline::EditCommand::ClearToLineEnd,
+                reedline::EditCommand::InsertString(buffer),
+                reedline::EditCommand::MoveToPosition {
+                    position: cursor,
+                    select: false,
+                },
+            ]);
         }
     }
 
