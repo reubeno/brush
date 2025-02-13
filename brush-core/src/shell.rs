@@ -1389,6 +1389,15 @@ impl Shell {
         Ok(std::fs::File::open(path_to_open)?.into())
     }
 
+    /// Replaces the shell's file descriptor table with the given one.
+    ///
+    /// # Arguments
+    ///
+    /// * `open_files` - The new file descriptor table to use.
+    pub(crate) fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
+        self.open_files = open_files;
+    }
+
     /// Sets the shell's current working directory to the given path.
     ///
     /// # Arguments
