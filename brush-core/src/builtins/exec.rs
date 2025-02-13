@@ -29,6 +29,10 @@ impl builtins::Command for ExecCommand {
         context: commands::ExecutionContext<'_>,
     ) -> Result<builtins::ExitCode, crate::error::Error> {
         if self.args.is_empty() {
+            // When no arguments are present, then there's nothing for us to execute -- but we need
+            // to ensure that any redirections setup for this builtin get applied to the calling
+            // shell instance.
+            context.shell.replace_open_files(context.params.open_files);
             return Ok(builtins::ExitCode::Success);
         }
 
