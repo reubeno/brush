@@ -14,13 +14,30 @@ common_test_files:
       }
 
 cases:
-  - name: "Dump vars"
+  - name: "Display vars"
     stdin: |
       declare myvar=something
       declare -p myvar
 
       myarr=(a b c)
       declare -p myarr
+
+  - name: "Display vars with interesting chars"
+    stdin: |
+      (testvar=$'a\nb' && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar="\"abc\"" && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar="a b c" && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar="'" && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar=$'\x03' && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar=$'\x08' && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar=$(printf '\033[34mabc\033[0m') && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
 
   - name: "Declare integer"
     stdin: |

@@ -1030,7 +1030,10 @@ impl<'a> WordExpander<'a> {
                 op,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                transform_expansion(expanded_parameter, |s| self.apply_transform_to(&op, s))
+                let came_from_undefined = expanded_parameter.undefined;
+                transform_expansion(expanded_parameter, |s| {
+                    self.apply_transform_to(&op, s, came_from_undefined)
+                })
             }
             brush_parser::word::ParameterExpr::UppercaseFirstChar {
                 parameter,
@@ -1302,9 +1305,12 @@ impl<'a> WordExpander<'a> {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         Ok(Expansion::undefined())
                     } else {
-                        Ok(Expansion::from(
-                            var.value().to_cow_str(self.shell).to_string(),
-                        ))
+                        let value = var.value().try_get_cow_str(self.shell);
+                        if let Some(value) = value {
+                            Ok(Expansion::from(value.to_string()))
+                        } else {
+                            Ok(Expansion::undefined())
+                        }
                     }
                 } else {
                     Ok(Expansion::undefined())
@@ -1549,6 +1555,7 @@ impl<'a> WordExpander<'a> {
         &self,
         op: &ParameterTransformOp,
         s: String,
+        came_from_undefined: bool,
     ) -> Result<String, error::Error> {
         match op {
             brush_parser::word::ParameterTransformOp::PromptExpand => {
@@ -1567,12 +1574,26 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
                 separate_words: _separate_words,
             } => {
-                // TODO: This isn't right for arrays.
-                // TODO: This doesn't honor 'separate_words'
-                Ok(variables::quote_str_for_assignment(s.as_str()))
+                if came_from_undefined {
+                    Ok(String::new())
+                } else {
+                    // TODO: This isn't right for arrays.
+                    // TODO: This doesn't honor 'separate_words'
+                    Ok(escape::force_quote(
+                        s.as_str(),
+                        escape::QuoteMode::SingleQuote,
+                    ))
+                }
             }
             brush_parser::word::ParameterTransformOp::Quoted => {
-                Ok(variables::quote_str_for_assignment(s.as_str()))
+                if came_from_undefined {
+                    Ok(String::new())
+                } else {
+                    Ok(escape::force_quote(
+                        s.as_str(),
+                        escape::QuoteMode::SingleQuote,
+                    ))
+                }
             }
             brush_parser::word::ParameterTransformOp::ToLowerCase => Ok(s.to_lowercase()),
             brush_parser::word::ParameterTransformOp::ToUpperCase => Ok(s.to_uppercase()),

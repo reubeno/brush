@@ -167,31 +167,73 @@ pub(crate) fn expand_backslash_escapes(
     Ok((result, true))
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) enum QuoteMode {
+    #[default]
+    SingleQuote,
+    DoubleQuote,
     BackslashEscape,
-    Quote,
 }
 
-pub(crate) fn force_quote(s: &str, mode: QuoteMode) -> String {
-    match mode {
-        QuoteMode::BackslashEscape => escape_with_backslash(s, true).to_string(),
-        QuoteMode::Quote => escape_with_quoting(s, true).to_string(),
+/// Options influencing how to escape/quote an input string.
+#[derive(Default)]
+pub(crate) struct QuoteOptions {
+    /// Whether or not to *always* escape or quote the input; if false, then escaping/quoting
+    /// will only be applied if the input contains characters that *require* it.
+    pub always_quote: bool,
+    /// Preferred mode for quoting/escaping. Quoting may be "upgraded" to a more expressive
+    /// format if the input is not expressible otherwise.
+    pub preferred_mode: QuoteMode,
+    /// Whether or not to *avoid* using ANSI C quoting just for the benefit of newline characters.
+    /// Default is for newline characters to require upgrading the string's quoting to
+    /// ANSI C quoting.
+    pub avoid_ansi_c_quoting_newline: bool,
+}
+
+pub(crate) fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
+    let use_ansi_c_quotes = s.contains(|c| {
+        needs_ansi_c_quoting(c) && (!options.avoid_ansi_c_quoting_newline || c != '\n')
+    });
+
+    if use_ansi_c_quotes {
+        return ansi_c_quote(s).into();
     }
-}
 
-pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
-    match mode {
-        QuoteMode::BackslashEscape => escape_with_backslash(s, false),
-        QuoteMode::Quote => escape_with_quoting(s, false),
-    }
-}
+    let use_default_quotes =
+        !use_ansi_c_quotes && (options.always_quote || s.is_empty() || s.contains(needs_escaping));
 
-fn escape_with_backslash(s: &str, force: bool) -> Cow<'_, str> {
-    if !force && !s.chars().any(needs_escaping) {
+    if !use_default_quotes {
         return s.into();
     }
 
+    match options.preferred_mode {
+        QuoteMode::BackslashEscape => backslash_escape(s).into(),
+        QuoteMode::SingleQuote => single_quote(s).into(),
+        QuoteMode::DoubleQuote => double_quote(s).into(),
+    }
+}
+
+pub(crate) fn force_quote(s: &str, mode: QuoteMode) -> String {
+    let options = QuoteOptions {
+        always_quote: true,
+        preferred_mode: mode,
+        ..Default::default()
+    };
+
+    quote(s, &options).to_string()
+}
+
+pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
+    let options = QuoteOptions {
+        always_quote: false,
+        preferred_mode: mode,
+        ..Default::default()
+    };
+
+    quote(s, &options)
+}
+
+fn backslash_escape(s: &str) -> String {
     let mut output = String::new();
 
     // TODO: Handle other interesting sequences.
@@ -205,18 +247,88 @@ fn escape_with_backslash(s: &str, force: bool) -> Cow<'_, str> {
         }
     }
 
-    output.into()
+    output
 }
 
-fn escape_with_quoting(s: &str, force: bool) -> Cow<'_, str> {
-    // TODO: Handle single-quote!
-    if force || s.is_empty() || s.chars().any(needs_escaping) {
-        std::format!("'{s}'").into()
-    } else {
-        s.into()
+fn single_quote(s: &str) -> String {
+    // Special-case the empty string.
+    if s.is_empty() {
+        return "''".into();
     }
+
+    let mut result = String::new();
+
+    // Go through the string; put everything in single quotes except for
+    // the single quote character itself. It will get escaped outside
+    // all quoting.
+    let mut first = true;
+    for part in s.split('\'') {
+        if !first {
+            result.push('\\');
+            result.push('\'');
+        } else {
+            first = false;
+        }
+
+        if !part.is_empty() {
+            result.push('\'');
+            result.push_str(part);
+            result.push('\'');
+        }
+    }
+
+    result
 }
 
+fn double_quote(s: &str) -> String {
+    let mut result = String::new();
+
+    result.push('"');
+
+    for c in s.chars() {
+        if matches!(c, '$' | '`' | '"' | '\\') {
+            result.push('\\');
+        }
+
+        result.push(c);
+    }
+
+    result.push('"');
+
+    result
+}
+
+fn ansi_c_quote(s: &str) -> String {
+    let mut result = String::new();
+
+    result.push_str("$'");
+
+    for c in s.chars() {
+        match c {
+            '\x07' => result.push_str("\\a"),
+            '\x08' => result.push_str("\\b"),
+            '\x1b' => result.push_str("\\E"),
+            '\x0c' => result.push_str("\\f"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            '\x0b' => result.push_str("\\v"),
+            '\\' => result.push_str("\\\\"),
+            '\'' => result.push_str("\\'"),
+            c if needs_ansi_c_quoting(c) => {
+                result.push_str(std::format!("\\{:03o}", c as u8).as_str());
+            }
+            _ => result.push(c),
+        }
+    }
+
+    result.push('\'');
+
+    result
+}
+
+// Returns whether or not the given character needs to be escaped (or quoted) if outside
+// quotes.
 fn needs_escaping(c: char) -> bool {
     matches!(
         c,
@@ -240,7 +352,12 @@ fn needs_escaping(c: char) -> bool {
             | '^'
             | ','
             | ' '
+            | '\''
     )
+}
+
+fn needs_ansi_c_quoting(c: char) -> bool {
+    c.is_ascii_control()
 }
 
 #[cfg(test)]
@@ -255,10 +372,11 @@ mod tests {
     }
 
     #[test]
-    fn test_quote_escape() {
-        assert_eq!(quote_if_needed("a", QuoteMode::Quote), "a");
-        assert_eq!(quote_if_needed("a b", QuoteMode::Quote), "'a b'");
-        assert_eq!(quote_if_needed("", QuoteMode::Quote), "''");
+    fn test_single_quote_escape() {
+        assert_eq!(quote_if_needed("a", QuoteMode::SingleQuote), "a");
+        assert_eq!(quote_if_needed("a b", QuoteMode::SingleQuote), "'a b'");
+        assert_eq!(quote_if_needed("", QuoteMode::SingleQuote), "''");
+        assert_eq!(quote_if_needed("'", QuoteMode::SingleQuote), "\\'");
     }
 
     fn assert_echo_expands_to(unexpanded: &str, expected: &str) {

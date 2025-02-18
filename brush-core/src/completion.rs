@@ -604,7 +604,7 @@ impl Spec {
         for arg in args {
             command_line.push(' ');
 
-            let escaped_arg = escape::quote_if_needed(arg, escape::QuoteMode::Quote);
+            let escaped_arg = escape::quote_if_needed(arg, escape::QuoteMode::SingleQuote);
             command_line.push_str(escaped_arg.as_ref());
         }
 

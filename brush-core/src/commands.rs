@@ -171,14 +171,14 @@ impl From<&String> for CommandArg {
 impl CommandArg {
     pub fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
-            CommandArg::String(s) => escape::quote_if_needed(s, escape::QuoteMode::Quote),
+            CommandArg::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
             CommandArg::Assignment(a) => {
                 let mut s = a.name.to_string();
                 let op = if a.append { "+=" } else { "=" };
                 s.push_str(op);
                 s.push_str(&escape::quote_if_needed(
                     a.value.to_string().as_str(),
-                    escape::QuoteMode::Quote,
+                    escape::QuoteMode::SingleQuote,
                 ));
                 s.into()
             }
