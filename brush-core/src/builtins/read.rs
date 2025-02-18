@@ -89,13 +89,16 @@ impl builtins::Command for ReadCommand {
             context.stdin()
         };
 
+        // Retrieve effective value of IFS for splitting.
+        let ifs = context.shell.get_ifs();
+
         let input_line = self.read_line(input_stream, context.stdout())?;
 
         if let Some(input_line) = input_line {
-            let mut fields: VecDeque<_> = split_line_by_ifs(&context, input_line.as_str());
-
             // If -a was specified, then place the fields as elements into the array.
             if let Some(array_variable) = &self.array_variable {
+                let fields: VecDeque<_> =
+                    split_line_by_ifs(ifs.as_ref(), input_line.as_str(), None /*max_fields*/);
                 let literal_fields = fields.into_iter().map(|f| (None, f)).collect();
 
                 context.shell.env.update_or_add(
@@ -106,6 +109,12 @@ impl builtins::Command for ReadCommand {
                     env::EnvironmentScope::Global,
                 )?;
             } else if !self.variable_names.is_empty() {
+                let mut fields: VecDeque<_> = split_line_by_ifs(
+                    ifs.as_ref(),
+                    input_line.as_str(),
+                    /*max_fields*/ Some(self.variable_names.len()),
+                );
+
                 for (i, name) in self.variable_names.iter().enumerate() {
                     if fields.is_empty() {
                         // Ensure the var is empty.
@@ -142,11 +151,11 @@ impl builtins::Command for ReadCommand {
                     }
                 }
             } else {
-                // If no variable names were specified, then place the fields into the
+                // If no variable names were specified, then place everything into the
                 // REPLY variable.
                 context.shell.env.update_or_add(
                     "REPLY",
-                    variables::ShellValueLiteral::Scalar(fields.into_iter().join(" ")),
+                    variables::ShellValueLiteral::Scalar(input_line),
                     |_| Ok(()),
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,
@@ -178,7 +187,14 @@ impl ReadCommand {
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
             None
         } else if let Some(delimiter_str) = &self.delimiter {
-            delimiter_str.chars().next()
+            // If the delimiter string is empty, then the docs indicate we need to use
+            // the NUL character as the actual delimiter.
+            if delimiter_str.is_empty() {
+                Some('\0')
+            } else {
+                // In other cases, use the first character in the string as the delimiter.
+                delimiter_str.chars().next()
+            }
         } else {
             Some('\n')
         };
@@ -274,12 +290,93 @@ impl ReadCommand {
     }
 }
 
-fn split_line_by_ifs(context: &commands::ExecutionContext<'_>, line: &str) -> VecDeque<String> {
-    // Retrieve effective value of IFS for splitting.
-    let ifs = context.shell.get_ifs();
-    let split_chars: Vec<char> = ifs.chars().collect();
+fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeque<String> {
+    // Separate out the chars to split by.
+    let ifs_chars = ifs.chars().collect::<Vec<_>>();
 
-    line.split(split_chars.as_slice())
-        .map(|field| field.to_owned())
-        .collect()
+    // Compute which IFS characters are one of the default 3 whitespace chars.
+    let ifs_space_chars = ifs_chars
+        .iter()
+        .copied()
+        .filter(|c| *c == ' ' || *c == '\t' || *c == '\n')
+        .collect::<Vec<_>>();
+
+    // First, trim from the prefix and suffix of the string any matching chars that are
+    // *both* whitespace and present in the IFS string.
+    let trimmed_line = line.trim_matches(ifs_space_chars.as_slice());
+    if trimmed_line.is_empty() {
+        return VecDeque::new();
+    }
+
+    let max_fields = max_fields.unwrap_or(usize::MAX);
+
+    // Now, iterate through the string, manually splitting it by the shell's rules for
+    // honoring IFS. We implement this by hand because we need to ensure that any
+    // IFS character is a valid delimiter, *but* consecutive adjacent IFS characters
+    // are considered a single delimiter if and only if they are one of the 3 default
+    // whitespace characters (i.e., ' ', '\t', or '\n').
+    let mut fields = VecDeque::new();
+    let mut current_field = String::new();
+    let mut skipping_ifs_whitespace = false;
+
+    for c in trimmed_line.chars() {
+        if skipping_ifs_whitespace {
+            if ifs_space_chars.contains(&c) {
+                continue;
+            }
+
+            skipping_ifs_whitespace = false;
+        }
+
+        if fields.len() + 1 < max_fields && ifs_chars.contains(&c) {
+            fields.push_back(current_field);
+            current_field = String::new();
+            skipping_ifs_whitespace = ifs_space_chars.contains(&c);
+        } else {
+            current_field.push(c);
+        }
+    }
+
+    fields.push_back(current_field);
+
+    fields
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::assert_equal;
+
+    use super::*;
+
+    #[test]
+    fn test_split_line_by_ifs() {
+        let result = split_line_by_ifs(",", "a,b,c", None);
+        assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_leading_or_trailing_space() {
+        // Test with leading or trailing space.
+        let result = split_line_by_ifs(" ", "  a b c ", None);
+        assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_extra_interior_space() {
+        // Test with leading or trailing space.
+        let result = split_line_by_ifs(" ", "a  b c", None);
+        assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_leading_non_space_delimiter() {
+        let result = split_line_by_ifs(",", ",a,b,c", None);
+        assert_equal(result, VecDeque::from(vec!["", "a", "b", "c"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_trailing_non_space_delimiter() {
+        let result = split_line_by_ifs(",", "a,b,c,", None);
+        assert_equal(result, VecDeque::from(vec!["a", "b", "c", ""]));
+    }
 }

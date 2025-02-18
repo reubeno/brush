@@ -94,12 +94,12 @@ impl builtins::Command for ExportCommand {
             // Enumerate variables, sorted by key.
             for (name, variable) in context.shell.env.iter().sorted_by_key(|v| v.0) {
                 if variable.is_exported() {
-                    writeln!(
-                        context.stdout(),
-                        "declare -x {}=\"{}\"",
-                        name,
-                        variable.value().to_cow_str(context.shell)
-                    )?;
+                    let value = variable.value().try_get_cow_str(context.shell);
+                    if let Some(value) = value {
+                        writeln!(context.stdout(), "declare -x {name}=\"{value}\"")?;
+                    } else {
+                        writeln!(context.stdout(), "declare -x {name}")?;
+                    }
                 }
             }
         }

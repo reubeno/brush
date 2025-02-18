@@ -609,7 +609,7 @@ impl ShellValueLiteral {
     }
 
     fn fmt_scalar_for_tracing(s: &str, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let processed = escape::quote_if_needed(s, escape::QuoteMode::Quote);
+        let processed = escape::quote_if_needed(s, escape::QuoteMode::SingleQuote);
         write!(f, "{processed}")
     }
 }
@@ -777,25 +777,28 @@ impl ShellValue {
     pub fn format(&self, style: FormatStyle, shell: &Shell) -> Result<Cow<'_, str>, error::Error> {
         match self {
             ShellValue::Unset(_) => Ok("".into()),
-            ShellValue::String(s) => {
-                // TODO: Handle embedded newlines and other special chars.
-                match style {
-                    FormatStyle::Basic => {
-                        if s.contains(' ') {
-                            Ok(format!("'{s}'").into())
-                        } else {
-                            Ok(s.into())
-                        }
-                    }
-                    FormatStyle::DeclarePrint => Ok(format!("\"{s}\"").into()),
+            ShellValue::String(s) => match style {
+                FormatStyle::Basic => Ok(escape::quote_if_needed(
+                    s.as_str(),
+                    escape::QuoteMode::SingleQuote,
+                )),
+                FormatStyle::DeclarePrint => {
+                    Ok(escape::force_quote(s.as_str(), escape::QuoteMode::DoubleQuote).into())
                 }
-            }
+            },
             ShellValue::AssociativeArray(values) => {
                 let mut result = String::new();
                 result.push('(');
 
                 for (key, value) in values {
-                    write!(result, "[{key}]=\"{value}\" ")?;
+                    let formatted_key =
+                        escape::quote_if_needed(key.as_str(), escape::QuoteMode::DoubleQuote);
+                    let formatted_value =
+                        escape::force_quote(value.as_str(), escape::QuoteMode::DoubleQuote);
+
+                    // N.B. We include an unconditional trailing space character (even after the last
+                    // entry in the associative array) to match standard output behavior.
+                    write!(result, "[{formatted_key}]={formatted_value} ")?;
                 }
 
                 result.push(')');
@@ -809,7 +812,10 @@ impl ShellValue {
                     if i > 0 {
                         result.push(' ');
                     }
-                    write!(result, "[{key}]=\"{value}\"")?;
+
+                    let formatted_value =
+                        escape::force_quote(value.as_str(), escape::QuoteMode::DoubleQuote);
+                    write!(result, "[{key}]={formatted_value}")?;
                 }
 
                 result.push(')');
@@ -877,27 +883,37 @@ impl ShellValue {
 
     /// Converts this value to a string.
     pub fn to_cow_str(&self, shell: &Shell) -> Cow<'_, str> {
-        match self {
-            ShellValue::Dynamic { getter, .. } => {
-                let dynamic_value = getter(shell);
-                let result = dynamic_value.to_cow_str(shell).to_string();
-                result.into()
-            }
-            _ => self.to_cow_str_without_dynamic_support(),
-        }
+        self.try_get_cow_str(shell).unwrap_or(Cow::Borrowed(""))
     }
 
     fn to_cow_str_without_dynamic_support(&self) -> Cow<'_, str> {
+        self.try_get_cow_str_without_dynamic_support()
+            .unwrap_or(Cow::Borrowed(""))
+    }
+
+    /// Tries to convert this value to a string; returns `None` if the value is unset
+    /// or otherwise doesn't exist.
+    pub fn try_get_cow_str(&self, shell: &Shell) -> Option<Cow<'_, str>> {
         match self {
-            ShellValue::Unset(_) => Cow::Borrowed(""),
-            ShellValue::String(s) => Cow::Borrowed(s.as_str()),
-            ShellValue::AssociativeArray(values) => values
-                .get("0")
-                .map_or_else(|| Cow::Borrowed(""), |s| Cow::Borrowed(s.as_str())),
-            ShellValue::IndexedArray(values) => values
-                .get(&0)
-                .map_or_else(|| Cow::Borrowed(""), |s| Cow::Borrowed(s.as_str())),
-            ShellValue::Dynamic { .. } => "".into(),
+            ShellValue::Dynamic { getter, .. } => {
+                let dynamic_value = getter(shell);
+                dynamic_value
+                    .try_get_cow_str(shell)
+                    .map(|s| s.to_string().into())
+            }
+            _ => self.try_get_cow_str_without_dynamic_support(),
+        }
+    }
+
+    fn try_get_cow_str_without_dynamic_support(&self) -> Option<Cow<'_, str>> {
+        match self {
+            ShellValue::Unset(_) => None,
+            ShellValue::String(s) => Some(Cow::Borrowed(s.as_str())),
+            ShellValue::AssociativeArray(values) => {
+                values.get("0").map(|s| Cow::Borrowed(s.as_str()))
+            }
+            ShellValue::IndexedArray(values) => values.get(&0).map(|s| Cow::Borrowed(s.as_str())),
+            ShellValue::Dynamic { .. } => None,
         }
     }
 
@@ -909,11 +925,13 @@ impl ShellValue {
     pub fn to_assignable_str(&self, index: Option<&str>, shell: &Shell) -> String {
         match self {
             ShellValue::Unset(_) => String::new(),
-            ShellValue::String(s) => quote_str_for_assignment(s.as_str()),
+            ShellValue::String(s) => {
+                escape::force_quote(s.as_str(), escape::QuoteMode::SingleQuote)
+            }
             ShellValue::AssociativeArray(_) | ShellValue::IndexedArray(_) => {
                 if let Some(index) = index {
                     if let Ok(Some(value)) = self.get_at(index, shell) {
-                        quote_str_for_assignment(value.as_ref())
+                        escape::force_quote(value.as_ref(), escape::QuoteMode::SingleQuote)
                     } else {
                         String::new()
                     }
@@ -956,26 +974,4 @@ impl From<Vec<&str>> for ShellValue {
     fn from(values: Vec<&str>) -> Self {
         ShellValue::indexed_array_from_strs(values.as_slice())
     }
-}
-
-pub(crate) fn quote_str_for_assignment(s: &str) -> String {
-    let mut result = String::new();
-
-    let mut first = true;
-    for part in s.split('\'') {
-        if !first {
-            result.push('\\');
-            result.push('\'');
-        } else {
-            first = false;
-        }
-
-        if !part.is_empty() {
-            result.push('\'');
-            result.push_str(part);
-            result.push('\'');
-        }
-    }
-
-    result
 }

@@ -389,14 +389,14 @@ impl CompleteCommand {
             write!(
                 s,
                 " -G {}",
-                escape::force_quote(glob_pattern, escape::QuoteMode::Quote)
+                escape::force_quote(glob_pattern, escape::QuoteMode::SingleQuote)
             )?;
         }
         if let Some(word_list) = &spec.word_list {
             write!(
                 s,
                 " -W {}",
-                escape::force_quote(word_list, escape::QuoteMode::Quote)
+                escape::force_quote(word_list, escape::QuoteMode::SingleQuote)
             )?;
         }
         if let Some(function_name) = &spec.function_name {
@@ -406,28 +406,28 @@ impl CompleteCommand {
             write!(
                 s,
                 " -C {}",
-                escape::force_quote(command, escape::QuoteMode::Quote)
+                escape::force_quote(command, escape::QuoteMode::SingleQuote)
             )?;
         }
         if let Some(filter_pattern) = &spec.filter_pattern {
             write!(
                 s,
                 " -X {}",
-                escape::force_quote(filter_pattern, escape::QuoteMode::Quote)
+                escape::force_quote(filter_pattern, escape::QuoteMode::SingleQuote)
             )?;
         }
         if let Some(prefix) = &spec.prefix {
             write!(
                 s,
                 " -P {}",
-                escape::force_quote(prefix, escape::QuoteMode::Quote)
+                escape::force_quote(prefix, escape::QuoteMode::SingleQuote)
             )?;
         }
         if let Some(suffix) = &spec.suffix {
             write!(
                 s,
                 " -S {}",
-                escape::force_quote(suffix, escape::QuoteMode::Quote)
+                escape::force_quote(suffix, escape::QuoteMode::SingleQuote)
             )?;
         }
 

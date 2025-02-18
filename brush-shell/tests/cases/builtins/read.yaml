@@ -4,10 +4,10 @@ cases:
     test_files:
       - path: "data.txt"
         contents: |
-          a
-          b
+          a 1
+          b 2
     stdin: |
-      while read name; do echo "Hello, $name"; done < data.txt
+      while read name num; do echo "Hello, $name => $num"; done < data.txt
 
   - name: "Basic read usage from pipe"
     stdin: |
@@ -42,3 +42,41 @@ cases:
       while IFS="" read myvar; do
           echo "myvar1: |${myvar}|"
       done < <(printf "a\tb\nc d\te\n")
+
+  - name: "read with empty entries"
+    stdin: |
+      (echo "x"; echo ""; echo "y"; echo ""; echo "") | while read line; do echo "LINE: '$line'"; done
+      echo 'x,,y,z' | (IFS=',' read READ1 READ2 READ3 READ4; declare -p READ1; declare -p READ2; declare -p READ3; declare -p READ4)
+
+  - name: "read -a with empty lines"
+    stdin: |
+      (echo "hi"; echo ""; echo "there"; echo ""; echo "you") | (read -a READ; declare -p READ)
+      (echo -e "hi\t\tthere\t\tyou") | (read -a READ -d $'\t'; declare -p READ)
+
+  - name: "read -a with empty interior field"
+    stdin: |
+      echo -e -n "hi||there||you" | (IFS='|' read -a READ; declare -p READ)
+      echo -e -n "hi  there  you " | (IFS=' ' read -a READ; declare -p READ)
+      echo -e -n "hi  there  you " | (read -a READ; declare -p READ)
+
+  - name: "read -a with empty leading field"
+    stdin: |
+      echo -e -n "|hi|there|you" | (IFS='|' read -a READ; declare -p READ)
+
+  - name: "read -a with empty trailing field"
+    known_failure: true # Needs further investigation
+    stdin: |
+      echo -e -n "hi|there|you|" | (IFS='|' read -a READ; declare -p READ)
+
+  - name: "read -a with empty entries + empty delimiter"
+    stdin: |
+      (echo "hi"; echo ""; echo "there"; echo ""; echo "you") | (read -a READ -d ''; declare -p READ)
+      echo -e -n "hi\n\nthere\n\nyou\n" | (read -a READ -d ''; declare -p READ)
+
+  - name: "read -a with empty entries + empty delimiter + custom IFS"
+    stdin: |
+      (echo 'x,,y,z'; echo 'w,v'; echo ''; echo ''; echo 'm') | (IFS=',' read -d "" -a READ; declare -p READ)
+
+  - name: "read with empty delimiter"
+    stdin: |
+      echo x | (read -d ""; declare -p REPLY)

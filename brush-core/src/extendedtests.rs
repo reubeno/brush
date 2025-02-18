@@ -56,7 +56,7 @@ async fn apply_unary_predicate(
     if shell.options.print_commands_and_arguments {
         shell.trace_command(std::format!(
             "[[ {op} {} ]]",
-            escape::quote_if_needed(&expanded_operand, escape::QuoteMode::Quote)
+            escape::quote_if_needed(&expanded_operand, escape::QuoteMode::SingleQuote)
         ))?;
     }
 
