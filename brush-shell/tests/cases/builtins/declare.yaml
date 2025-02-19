@@ -24,20 +24,22 @@ cases:
 
   - name: "Display vars with interesting chars"
     stdin: |
-      (testvar=$'a\nb' && declare -p testvar && declare | grep testvar=)
-      echo "-------------------------"
       (testvar="\"abc\"" && declare -p testvar && declare | grep testvar=)
       echo "-------------------------"
       (testvar="a b c" && declare -p testvar && declare | grep testvar=)
       echo "-------------------------"
       (testvar="'" && declare -p testvar && declare | grep testvar=)
+
+  - name: "Display vars with interesting chars 2"
+    min_oracle_version: 5.2 # some sequences render differently in older shell versions
+    stdin: |
+      (testvar=$'a\nb' && declare -p testvar && declare | grep testvar=)
       echo "-------------------------"
       (testvar=$'\x03' && declare -p testvar && declare | grep testvar=)
       echo "-------------------------"
       (testvar=$'\x08' && declare -p testvar && declare | grep testvar=)
       echo "-------------------------"
       (testvar=$(printf '\033[34mabc\033[0m') && declare -p testvar && declare | grep testvar=)
-      echo "-------------------------"
 
   - name: "Declare integer"
     stdin: |
