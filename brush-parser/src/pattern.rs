@@ -130,9 +130,14 @@ peg::parser! {
             "*" { ExtendedGlobKind::Star }
 
         pub(crate) rule extended_glob_body() -> Vec<String> =
+            // Cover case with *no* branches.
+            &[')'] { vec![] } /
+            // Otherwise, look for branches separated by '|'.
             extended_glob_branch() ** "|"
 
         rule extended_glob_branch() -> String =
+            // Cover case of empty branch.
+            &['|' | ')'] { String::new() } /
             pieces:(!['|' | ')'] piece:pattern_piece() { piece })+ {
                 pieces.join("")
             }
@@ -177,6 +182,16 @@ mod tests {
         assert_eq!(
             pattern_to_regex_translator::extended_glob_pattern("@(a|b)", true)?,
             "(a|b)"
+        );
+
+        assert_eq!(
+            pattern_to_regex_translator::extended_glob_pattern("@(|a)", true)?,
+            "(|a)"
+        );
+
+        assert_eq!(
+            pattern_to_regex_translator::extended_glob_pattern("@(|)", true)?,
+            "(|)"
         );
 
         assert_eq!(

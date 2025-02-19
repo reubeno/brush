@@ -78,5 +78,6 @@ cases:
       (echo 'x,,y,z'; echo 'w,v'; echo ''; echo ''; echo 'm') | (IFS=',' read -d "" -a READ; declare -p READ)
 
   - name: "read with empty delimiter"
+    min_oracle_version: 5.2 # \n renders differently in older shell versions
     stdin: |
       echo x | (read -d ""; declare -p REPLY)

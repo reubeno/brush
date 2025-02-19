@@ -159,6 +159,7 @@ cases:
       echo "1: " @(abc|abd).txt
       echo "2: " @(abc.txt)
       echo "3: " @(abc)
+      echo "4: " @(|abc.txt)
 
   - name: "Pathname expansion: Optional patterns"
     ignore_stderr: true
