@@ -46,6 +46,14 @@ If you don't have `rust` installed, we recommend installing it via [`rustup`](ht
 (If you *are* interested in having a binary release, then please let us know in the 'Discussions' area of this
 project or by filing a feature request in 'Issues'.)
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/brush.svg)](https://repology.org/project/brush/versions)
+
+If you are a Nix user, you can also use the registered version.
+
+```bash
+nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
+```
+
 When you run `brush`, it should look exactly as `bash` would on your system since it processes `.bashrc` and
 other usual configuration. If you'd like to customize the look of `brush` to distinguish it from the other shells
 installed on your system, then you can also author a `~/.brushrc` file.
