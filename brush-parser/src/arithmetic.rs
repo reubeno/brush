@@ -101,9 +101,29 @@ peg::parser! {
         rule _() -> () = quiet!{[' ' | '\t' | '\n' | '\r']*} {}
 
         rule literal_number() -> i64 =
-            // TODO: handle explicit radix (e.g., <base>#<literal>) for bases 2 through 64
-            "0" ['x' | 'X'] s:$(['0'..='9' | 'a'..='f' | 'A'..='F']*) {? i64::from_str_radix(s, 16).or(Err("i64")) } /
-            s:$("0" ['0'..='8']*) {? i64::from_str_radix(s, 8).or(Err("i64")) } /
-            s:$(['1'..='9'] ['0'..='9']*) {? s.parse().or(Err("i64")) }
+            // Literal with explicit radix (format: <base>#<literal>)
+            radix:decimal_literal() "#" s:$(['0'..='9' | 'a'..='z' | 'A'..='Z']+) {?
+                // TODO: Support bases larger than 36. from_str_radix can't handle that.
+                if radix < 2 || radix > 36 {
+                    return Err("invalid base");
+                }
+
+                i64::from_str_radix(s, radix as u32).or(Err("i64"))
+            } /
+            // Hex literal
+            "0" ['x' | 'X'] s:$(['0'..='9' | 'a'..='f' | 'A'..='F']*) {?
+                i64::from_str_radix(s, 16).or(Err("i64"))
+            } /
+            // Octal literal
+            s:$("0" ['0'..='8']*) {?
+                i64::from_str_radix(s, 8).or(Err("i64"))
+            } /
+            // Decimal literal
+            decimal_literal()
+
+        rule decimal_literal() -> i64 =
+            s:$(['1'..='9'] ['0'..='9']*) {?
+                s.parse().or(Err("i64"))
+            }
     }
 }

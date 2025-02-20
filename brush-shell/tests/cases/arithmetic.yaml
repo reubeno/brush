@@ -18,6 +18,18 @@ cases:
       echo "$((0x10))"
       echo "$((0x010))"
 
+  - name: "Arithmetic literals with explicit bases"
+    stdin: |
+      echo "$((2#1010))"
+      echo "$((8#16))"
+      echo "$((16#faf))"
+      echo "$((36#vvv))"
+
+  - name: "Arithmetic literals with base 64 encoding"
+    known_failure: true # Not currently handled.
+    stdin: |
+      echo "$((64#zzz))"
+
   - name: "Parentheses"
     stdin: |
       echo "$(((10)))"
