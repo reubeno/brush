@@ -6,6 +6,8 @@
 [![CI workflow badge](https://github.com/reubeno/brush/actions/workflows/ci.yaml/badge.svg)](https://github.com/reubeno/brush/actions/workflows/ci.yaml)
 [![Devcontainer workflow badge](https://github.com/reubeno/brush/actions/workflows/devcontainer.yaml/badge.svg)](https://github.com/reubeno/brush/actions/workflows/devcontainer.yaml)
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/brush.svg)](https://repology.org/project/brush/versions)
+
 ## About
 
 `brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash-](https://www.gnu.org/software/bash/)compatible shell,
@@ -45,8 +47,6 @@ If you don't have `rust` installed, we recommend installing it via [`rustup`](ht
 
 (If you *are* interested in having a binary release, then please let us know in the 'Discussions' area of this
 project or by filing a feature request in 'Issues'.)
-
-[![Packaging status](https://repology.org/badge/vertical-allrepos/brush.svg)](https://repology.org/project/brush/versions)
 
 If you are a Nix user, you can also use the registered version.
 
