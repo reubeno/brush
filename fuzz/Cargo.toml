@@ -16,7 +16,7 @@ rust-version.workspace = true
 cargo-fuzz = true
 
 [dependencies]
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 assert_cmd = "2.0.16"
 lazy_static = "1.5.0"
 libfuzzer-sys = "0.4"
