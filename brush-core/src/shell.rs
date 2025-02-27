@@ -1364,7 +1364,7 @@ impl Shell {
     ///
     /// * `path` - The path to get the absolute form of.
     pub fn get_absolute_path(&self, path: &Path) -> PathBuf {
-        if path.is_absolute() {
+        if path.as_os_str().is_empty() || path.is_absolute() {
             path.to_owned()
         } else {
             self.working_dir.join(path)
