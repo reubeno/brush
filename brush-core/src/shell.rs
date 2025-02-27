@@ -627,6 +627,19 @@ impl Shell {
         random_var.treat_as_integer();
         self.env.set_global("SRANDOM", random_var)?;
 
+        // PS1 / PS2
+        if options.interactive {
+            if !self.env.is_set("PS1") {
+                self.env
+                    .set_global("PS1", ShellVariable::new(r"\s-\v\$ ".into()))?;
+            }
+
+            if !self.env.is_set("PS2") {
+                self.env
+                    .set_global("PS2", ShellVariable::new("> ".into()))?;
+            }
+        }
+
         // PS4
         if !self.env.is_set("PS4") {
             self.env
