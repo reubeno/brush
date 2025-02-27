@@ -48,7 +48,7 @@ impl reedline::Prompt for InteractivePrompt {
     }
 
     fn get_prompt_color(&self) -> reedline::Color {
-        reedline::Color::Magenta
+        reedline::Color::Reset
     }
 
     fn get_prompt_multiline_color(&self) -> nu_ansi_term::Color {
