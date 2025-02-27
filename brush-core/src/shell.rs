@@ -631,7 +631,7 @@ impl Shell {
         if options.interactive {
             if !self.env.is_set("PS1") {
                 self.env
-                    .set_global("PS1", ShellVariable::new(r#"\s-\v\$ "#.into()))?;
+                    .set_global("PS1", ShellVariable::new(r"\s-\v\$ ".into()))?;
             }
 
             if !self.env.is_set("PS2") {
