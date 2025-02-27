@@ -8,11 +8,36 @@ cases:
       [[ -c /dev/null ]] && echo "-c correctly checked /dev/null"
       [[ -c /tmp ]] || echo "-c correctly checked /tmp"
 
-      [[ -d /tmp ]] && echo "-d correctly checked /tmp"
-      [[ -d /dev/null ]] || echo "-d correctly checked /dev/null"
+  - name: "Existence tests"
+    stdin: |
+      [[ -e '' ]] || echo "-e correctly identified empty string as non-existent"
+
+      [[ -e non-existent ]] || echo "-e correctly identified non-existent path"
+      [[ ! -e non-existent ]] && echo "! -e correctly identified non-existent path"
+
+      touch test-file
+      [[ -e test-file ]] && echo "-e correctly identified existing non-dir"
+
+      mkdir test-dir
+      [[ -e test-dir ]] && echo "-d correctly identified existing dir"
+
+  - name: "Directory tests"
+    stdin: |
+      [[ -d '' ]] || echo "-d correctly identified empty string as non-existent"
+
+      [[ -d non-existent ]] || echo "-d correctly identified non-existent path"
+      [[ ! -d non-existent ]] && echo "! -d correctly identified non-existent path"
+
+      touch test-file
+      [[ -d test-file ]] || echo "-d correctly identified non-dir file"
+
+      mkdir test-dir
+      [[ -d test-dir ]] && echo "-d correctly identified existing dir"
 
   - name: "File regular tests"
     stdin: |
+      [[ -f '' ]] || echo "-f correctly identified empty string as non-existent"
+
       [[ -f non-existent ]] || echo "-f correctly identified non-existent path"
       [[ ! -f non-existent ]] && echo "! -f correctly identified non-existent path"
 
