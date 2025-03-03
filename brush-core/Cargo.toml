@@ -22,7 +22,7 @@ async-trait = "0.1.86"
 brush-parser = { version = "^0.2.13", path = "../brush-parser" }
 cached = "0.54.0"
 cfg-if = "1.0.0"
-chrono = "0.4.39"
+chrono = "0.4.40"
 clap = { version = "4.5.21", features = ["derive", "wrap_help"] }
 fancy-regex = "0.14.0"
 futures = "0.3.31"
