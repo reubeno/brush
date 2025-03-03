@@ -22,7 +22,7 @@ debug-tracing = ["peg/trace"]
 arbitrary = { version = "1.4.1", optional = true, features = ["derive"] }
 cached = "0.54.0"
 indenter = "0.3.3"
-peg = "0.8.4"
+peg = "0.8.5"
 thiserror = "2.0.11"
 tracing = "0.1.41"
 utf8-chars = "3.0.5"
