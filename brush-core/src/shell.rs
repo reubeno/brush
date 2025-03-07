@@ -1506,8 +1506,11 @@ impl Shell {
     /// # Arguments
     ///
     /// * `command` - The command to trace.
-    pub(crate) fn trace_command<S: AsRef<str>>(&self, command: S) -> Result<(), std::io::Error> {
-        let ps4 = self.get_env_str("PS4").unwrap_or_else(|| "".into());
+    pub(crate) async fn trace_command<S: AsRef<str>>(
+        &mut self,
+        command: S,
+    ) -> Result<(), error::Error> {
+        let ps4 = self.as_mut().expand_prompt_var("PS4", "+ ").await?;
 
         let mut prefix = ps4.to_string();
 
@@ -1518,7 +1521,8 @@ impl Shell {
             }
         }
 
-        writeln!(self.stderr(), "{prefix}{}", command.as_ref())
+        writeln!(self.stderr(), "{prefix}{}", command.as_ref())?;
+        Ok(())
     }
 
     /// Returns the keywords that are reserved by the shell.

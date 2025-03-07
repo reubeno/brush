@@ -1,0 +1,8 @@
+name: "Builtins: PS4"
+cases:
+  - name: "PS4 expansion"
+    stdin: |
+      PS4='+$FUNCNAME '
+      bar() { true; }
+      foo() { set -x; bar; set +x; }
+      foo
