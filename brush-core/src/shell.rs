@@ -1510,7 +1510,7 @@ impl Shell {
         &mut self,
         command: S,
     ) -> Result<(), error::Error> {
-        let ps4 = self.as_mut().expand_prompt_var("PS4", "+ ").await?;
+        let ps4 = self.as_mut().expand_prompt_var("PS4", "").await?;
 
         let mut prefix = ps4.to_string();
 
