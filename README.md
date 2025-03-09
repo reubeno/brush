@@ -1,11 +1,11 @@
 # brush
 
-[![Crates.io](https://img.shields.io/crates/v/brush-shell?style=flat-square)](https://crates.io/crates/brush-shell)
-[![Crates.io](https://img.shields.io/crates/d/brush-shell?style=flat-square)](https://crates.io/crates/brush-shell)
+[![Published version](https://img.shields.io/crates/v/brush-shell?style=flat-square)](https://crates.io/crates/brush-shell)
+[![Download count](https://img.shields.io/crates/d/brush-shell?style=flat-square)](https://crates.io/crates/brush-shell)
+![MSRV](https://img.shields.io/crates/msrv/brush-shell)
 ![Lines of code badge](https://tokei.rs/b1/github/reubeno/brush?category=code)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![CI workflow badge](https://github.com/reubeno/brush/actions/workflows/ci.yaml/badge.svg)](https://github.com/reubeno/brush/actions/workflows/ci.yaml)
-[![Devcontainer workflow badge](https://github.com/reubeno/brush/actions/workflows/devcontainer.yaml/badge.svg)](https://github.com/reubeno/brush/actions/workflows/devcontainer.yaml)
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/brush.svg)](https://repology.org/project/brush/versions)
 
