@@ -20,7 +20,7 @@ workspace = true
 async-recursion = "1.1.1"
 async-trait = "0.1.86"
 brush-parser = { version = "^0.2.13", path = "../brush-parser" }
-cached = "0.54.0"
+cached = "0.55.1"
 cfg-if = "1.0.0"
 chrono = "0.4.40"
 clap = { version = "4.5.21", features = ["derive", "wrap_help"] }
