@@ -1,0 +1,7 @@
+{
+	// List of extensions to recommend for users of this workspace.
+	// See https://go.microsoft.com/fwlink/?LinkId=827846 for more details.
+	"recommendations": [
+		"rust-lang.rust-analyzer",
+	],
+}
