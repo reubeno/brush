@@ -112,8 +112,7 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/reuben
 We're excited to see your first contribution! We don't bite, so we'd much rather you publish something  than not. If you submit your PR as a draft we're happy to give it a quick scan and provide some early input. Once the PR is marked "ready for review" we'll look through it more carefully.
 
 ### Improving The Documentation
-We appreciate documentation updates as much as code updates! We try to follow the [Diátaxis](https://diataxis.fr/) approach to technical docs. The short version is we recognize the need for tutorials, how-to guides, reference material, and sometime longer-form explanation docs--*and* we recognize the value of being intentional about organizing by those categories.
-
+We appreciate documentation updates as much as code updates! We try to follow the [Diátaxis](https://diataxis.fr/) approach to technical docs. The short version is we recognize the need for tutorials, how-to guides, reference material, and sometimes longer-form explanation docs--*and* we recognize the value of being intentional about organizing by those categories.
 ## Styleguides
 ### Commit Messages
 When you look through our repo history, you'll see commits prefixed with a tag like `feat:` or `fix:`. We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification to maintain consistent readability of commits, both for humans and mechanical release processes.
