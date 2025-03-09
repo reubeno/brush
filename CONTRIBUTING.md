@@ -7,9 +7,10 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 
 > And if you like the project, but just don't have time to contribute, that's fine. There are other easy ways to support the project and show your appreciation, which we would also be very happy about:
 > - Star the project
-> - Tweet about it
+> - Send us feedback via issues or discussion
 > - Refer this project in your project's readme
-> - Mention the project at local meetups and tell your friends/colleagues
+> - Post about it
+> - Tell your friends/colleagues
 
 <!-- omit in toc -->
 ## Table of Contents
@@ -108,14 +109,13 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/reuben
 - **Explain why this enhancement would be useful** to most {{=it.project.name}} users. You may also want to point out the other projects that solved it better and which could serve as inspiration.
 
 ### Your First Code Contribution
-To be written :).
+We're excited to see your first contribution! We don't bite, so we'd much rather you publish something  than not. If you submit your PR as a draft we're happy to give it a quick scan and provide some early input. Once the PR is marked "ready for review" we'll look through it more carefully.
 
 ### Improving The Documentation
-To be written :).
-
+We appreciate documentation updates as much as code updates! We try to follow the [Diátaxis](https://diataxis.fr/) approach to technical docs. The short version is we recognize the need for tutorials, how-to guides, reference material, and sometimes longer-form explanation docs--*and* we recognize the value of being intentional about organizing by those categories.
 ## Styleguides
 ### Commit Messages
-To be written :).
+When you look through our repo history, you'll see commits prefixed with a tag like `feat:` or `fix:`. We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification to maintain consistent readability of commits, both for humans and mechanical release processes.
 
 ## Attribution
 This guide is based on the **contributing-gen**. [Make your own](https://github.com/bttger/contributing-gen)!
