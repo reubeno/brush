@@ -78,7 +78,7 @@ indent = "0.1.1"
 junit-report = "0.8.3"
 pathdiff = "0.2.3"
 regex = "1.11.1"
-serde = { version = "1.0.218", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.0"
 version-compare = "0.2.0"
