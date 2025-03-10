@@ -1116,6 +1116,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 &mut context.process_group_id,
                 args,
                 true, /* use functions? */
+                None,
             )
             .await;
 
