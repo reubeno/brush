@@ -218,6 +218,7 @@ async fn instantiate_shell(
             sh_mode: args.sh_mode,
             verbose: args.verbose,
             max_function_call_depth: None,
+            parser: args.parser_backend.clone().unwrap_or_default().into(),
         },
         disable_bracketed_paste: args.disable_bracketed_paste,
         disable_color: args.disable_color,
