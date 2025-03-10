@@ -540,12 +540,9 @@ impl Shell {
         // PATH (if not already set)
         #[cfg(unix)]
         if !self.env.is_set("PATH") {
-            self.env.set_global(
-                "PATH",
-                ShellVariable::new(
-                    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
-                ),
-            )?;
+            let default_path_str = sys::fs::get_default_executable_search_paths().join(":");
+            self.env
+                .set_global("PATH", ShellVariable::new(default_path_str.into()))?;
         }
 
         // PIPESTATUS
@@ -1316,10 +1313,8 @@ impl Shell {
         let is_executable = |path: &Path| path.is_file() && path.executable();
 
         let mut executables = vec![];
-
         for dir_str in paths {
             let dir_str = dir_str.as_ref();
-
             let pattern =
                 patterns::Pattern::from(std::format!("{dir_str}/{required_glob_pattern}"))
                     .set_extended_globbing(self.options.extended_globbing)

@@ -31,6 +31,16 @@ cases:
       echo "[/usr/bin/non-existent]"
       command -v /usr/bin/non-existent || echo "2. Not found"
 
+  - name: "command -v -p"
+    stdin: |
+      unset PATH
+
+      echo "[no -p]"
+      command -v cat
+
+      echo "[-p]"
+      command -v -p cat
+
   - name: "command -v with full paths"
     skip: true # TODO: investigate why this fails on arch linux
     stdin: |
@@ -57,3 +67,9 @@ cases:
   - name: "command with --help"
     stdin: |
       command ls --help
+
+  - name: "command with -p"
+    stdin: |
+      unset PATH
+
+      command -p -- ls

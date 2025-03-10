@@ -273,6 +273,7 @@ pub(crate) async fn execute(
     process_group_id: &mut Option<i32>,
     args: Vec<CommandArg>,
     use_functions: bool,
+    path_dirs: Option<Vec<String>>,
 ) -> Result<CommandSpawnResult, error::Error> {
     if !cmd_context.command_name.contains(std::path::MAIN_SEPARATOR) {
         let builtin = cmd_context
@@ -307,10 +308,19 @@ pub(crate) async fn execute(
             }
         }
 
-        if let Some(path) = cmd_context
-            .shell
-            .find_first_executable_in_path_using_cache(&cmd_context.command_name)
-        {
+        let path = if let Some(path_dirs) = path_dirs {
+            cmd_context
+                .shell
+                .find_executables_in(path_dirs.iter(), &cmd_context.command_name)
+                .first()
+                .cloned()
+        } else {
+            cmd_context
+                .shell
+                .find_first_executable_in_path_using_cache(&cmd_context.command_name)
+        };
+
+        if let Some(path) = path {
             let resolved_path = path.to_string_lossy();
             execute_external_command(
                 cmd_context,
