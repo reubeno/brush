@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
-use crate::{builtins, commands, error, shell, sys::fs::PathExt, ExecutionResult};
+use crate::{builtins, commands, error, shell, sys, sys::fs::PathExt, ExecutionResult};
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Parser)]
@@ -36,14 +36,12 @@ impl builtins::Command for CommandCommand {
     ) -> Result<builtins::ExitCode, error::Error> {
         // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
-            if self.use_default_path {
-                return error::unimp("command -p");
-            }
-
             if self.print_description || self.print_verbose_description {
-                if let Some(found_cmd) =
-                    Self::try_find_command(context.shell, command_name.as_str())
-                {
+                if let Some(found_cmd) = Self::try_find_command(
+                    context.shell,
+                    command_name.as_str(),
+                    self.use_default_path,
+                ) {
                     if self.print_description {
                         writeln!(context.stdout(), "{found_cmd}")?;
                     } else {
@@ -64,7 +62,8 @@ impl builtins::Command for CommandCommand {
                     Ok(builtins::ExitCode::Custom(1))
                 }
             } else {
-                self.execute_command(context, command_name).await
+                self.execute_command(context, command_name, self.use_default_path)
+                    .await
             }
         } else {
             Ok(builtins::ExitCode::Success)
@@ -88,7 +87,11 @@ impl Display for FoundCommand {
 
 impl CommandCommand {
     #[allow(clippy::unwrap_in_result)]
-    fn try_find_command(shell: &mut shell::Shell, command_name: &str) -> Option<FoundCommand> {
+    fn try_find_command(
+        shell: &mut shell::Shell,
+        command_name: &str,
+        use_default_path: bool,
+    ) -> Option<FoundCommand> {
         // Look in path.
         if command_name.contains(std::path::MAIN_SEPARATOR) {
             let candidate_path = shell.get_absolute_path(Path::new(command_name));
@@ -110,9 +113,17 @@ impl CommandCommand {
                 }
             }
 
-            shell
-                .find_first_executable_in_path_using_cache(command_name)
-                .map(|path| FoundCommand::External(path.to_string_lossy().to_string()))
+            if use_default_path {
+                let dirs = sys::fs::get_default_standard_utils_paths();
+                shell
+                    .find_executables_in(dirs.iter(), command_name)
+                    .first()
+                    .map(|path| FoundCommand::External(path.to_string_lossy().to_string()))
+            } else {
+                shell
+                    .find_first_executable_in_path_using_cache(command_name)
+                    .map(|path| FoundCommand::External(path.to_string_lossy().to_string()))
+            }
         }
     }
 
@@ -120,9 +131,16 @@ impl CommandCommand {
         &self,
         mut context: commands::ExecutionContext<'_>,
         command_name: &str,
+        use_default_path: bool,
     ) -> Result<builtins::ExitCode, error::Error> {
         command_name.clone_into(&mut context.command_name);
         let command_and_args = self.command_and_args.iter().map(|arg| arg.into()).collect();
+
+        let path_dirs = if use_default_path {
+            Some(sys::fs::get_default_standard_utils_paths())
+        } else {
+            None
+        };
 
         // We do not have an existing process group to place this into.
         let mut pgid = None;
@@ -134,6 +152,7 @@ impl CommandCommand {
             &mut pgid,
             command_and_args,
             false, /* use functions? */
+            path_dirs,
         )
         .await?
         {

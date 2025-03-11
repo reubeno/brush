@@ -52,3 +52,11 @@ pub(crate) trait StubMetadataExt {
 }
 
 impl StubMetadataExt for std::fs::Metadata {}
+
+pub(crate) fn get_default_executable_search_paths() -> Vec<String> {
+    vec![]
+}
+
+pub(crate) fn get_default_standard_utils_paths() -> Vec<String> {
+    vec![]
+}
