@@ -10,6 +10,7 @@ use clap::Parser;
 use colored::Colorize;
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
 use std::{
     collections::{HashMap, HashSet},
@@ -1268,40 +1269,88 @@ impl DirComparison {
     }
 }
 
+fn get_dir_entries(dir_path: &Path) -> Result<HashMap<String, std::fs::FileType>> {
+    let mut entries = HashMap::new();
+    for entry in fs::read_dir(dir_path)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let filename = entry.file_name().to_string_lossy().to_string();
+
+        // N.B. We ignore raw coverage profile data files.
+        if filename.ends_with(".profraw") {
+            continue;
+        }
+
+        entries.insert(filename, file_type);
+    }
+
+    Ok(entries)
+}
+
 fn diff_dirs(oracle_path: &Path, test_path: &Path) -> Result<DirComparison> {
-    let profraw_regex = regex::Regex::new(r"\.profraw$")?;
-    let filter = dir_cmp::Filter::Exclude(vec![profraw_regex]);
+    let mut entries = vec![];
 
-    let options = dir_cmp::Options {
-        ignore_equal: true,
-        ignore_left_only: false,
-        ignore_right_only: false,
-        filter: Some(filter),
-        recursive: true,
-    };
+    let oracle_entries = get_dir_entries(oracle_path)?;
+    let test_entries = get_dir_entries(test_path)?;
 
-    let result: Vec<_> = dir_cmp::full::compare_dirs(oracle_path, test_path, options)?
-        .iter()
-        .map(|entry| match entry {
-            dir_cmp::full::DirCmpEntry::Left(p) => {
-                DirComparisonEntry::LeftOnly(pathdiff::diff_paths(p, oracle_path).unwrap())
+    // Look through all the files in the oracle directory
+    for (filename, file_type) in &oracle_entries {
+        if !test_entries.contains_key(filename) {
+            for left_only_file in walkdir::WalkDir::new(oracle_path.join(filename)) {
+                let entry = left_only_file?;
+                let left_only_path = entry.path();
+                entries.push(DirComparisonEntry::LeftOnly(left_only_path.to_owned()));
             }
-            dir_cmp::full::DirCmpEntry::Right(p) => {
-                DirComparisonEntry::RightOnly(pathdiff::diff_paths(p, test_path).unwrap())
-            }
-            dir_cmp::full::DirCmpEntry::Both(l, r, _) => DirComparisonEntry::Different(
-                pathdiff::diff_paths(l, oracle_path).unwrap(),
-                std::fs::read_to_string(l).unwrap(),
-                pathdiff::diff_paths(r, test_path).unwrap(),
-                std::fs::read_to_string(r).unwrap(),
-            ),
-        })
-        .collect();
 
-    if result.is_empty() {
+            continue;
+        }
+
+        let oracle_file_path = oracle_path.join(filename);
+        let test_file_path = test_path.join(filename);
+
+        if file_type.is_file() {
+            let oracle_contents = fs::read_to_string(&oracle_file_path)?;
+            let test_contents = fs::read_to_string(&test_file_path)?;
+
+            if oracle_contents != test_contents {
+                entries.push(DirComparisonEntry::Different(
+                    oracle_file_path,
+                    oracle_contents,
+                    test_file_path,
+                    test_contents,
+                ));
+            }
+        } else if file_type.is_dir() {
+            let subdir_comparison =
+                diff_dirs(oracle_file_path.as_path(), test_file_path.as_path())?;
+            if let DirComparison::TestDiffers(subdir_entries) = subdir_comparison {
+                entries.extend(subdir_entries);
+            }
+        } else {
+            // Ignore other file types (e.g., symlinks).
+        }
+    }
+
+    for (filename, file_type) in &test_entries {
+        if oracle_entries.contains_key(filename) {
+            continue;
+        }
+
+        if file_type.is_dir() {
+            for right_only_file in walkdir::WalkDir::new(test_path.join(filename)) {
+                let entry = right_only_file?;
+                let right_only_path = entry.path();
+                entries.push(DirComparisonEntry::RightOnly(right_only_path.to_owned()));
+            }
+        } else {
+            entries.push(DirComparisonEntry::RightOnly(test_path.join(filename)));
+        }
+    }
+
+    if entries.is_empty() {
         Ok(DirComparison::Same)
     } else {
-        Ok(DirComparison::TestDiffers(result))
+        Ok(DirComparison::TestDiffers(entries))
     }
 }
 
