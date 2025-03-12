@@ -765,7 +765,7 @@ peg::parser! {
             }
 
         rule array_elements() -> Vec<&'input String> =
-            e:array_element()*
+             linebreak() e:array_element()* { e }
 
         rule array_element() -> &'input String =
             linebreak() [Token::Word(e, _)] linebreak() { e }

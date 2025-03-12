@@ -320,3 +320,8 @@ cases:
       echo "\"\${myarray[*]}\": ${myarray[*]}"
       echo "\${myarray[@]}:" ${myarray[@]}
       echo "\${myarray[*]}:" ${myarray[*]}
+
+  - name: "Empty array with newline"
+    stdin: |
+      declare -a myarray=(
+      )
