@@ -351,6 +351,7 @@ dependencies = [
  "clap",
  "colored",
  "const_format",
+ "crossterm",
  "descape",
  "diff",
  "expectrl",

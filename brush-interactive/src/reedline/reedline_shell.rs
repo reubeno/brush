@@ -9,7 +9,7 @@ use crate::{interactive_shell::InteractivePrompt, InteractiveShell, ReadResult, 
 /// Represents an interactive shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.
 pub struct ReedlineShell {
-    reedline: reedline::Reedline,
+    reedline: Option<reedline::Reedline>,
     shell: refs::ShellRef,
 }
 
@@ -93,9 +93,26 @@ impl ReedlineShell {
         }
 
         Ok(ReedlineShell {
-            reedline,
+            reedline: Some(reedline),
             shell: shell_ref,
         })
+    }
+}
+
+impl Drop for ReedlineShell {
+    fn drop(&mut self) {
+        // It's unpleasant to need to do so, but if we detect a panic in the process of being
+        // unwound, then we arrange for our reedline::Reedline instance to *not* get dropped.
+        // Without this, then there's a chance that our panic handler emitted important
+        // diagnostics to stdout but dropping the Reedline object will end up erasing it
+        // when the latter object's internal Painter gets dropped and, in turn, may flush
+        // some not-yet-flushed terminal control sequences. This isn't theoretical; we've
+        // actively seen this in various cases where a panic occurs with Reedline::read_line()
+        // on the stack.
+        if std::thread::panicking() {
+            let reedline = std::mem::take(&mut self.reedline);
+            std::mem::forget(reedline);
+        }
     }
 }
 
@@ -120,11 +137,15 @@ impl InteractiveShell for ReedlineShell {
     ///
     /// * `prompt` - The prompt to display to the user.
     fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
-        match self.reedline.read_line(&prompt) {
-            Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
-            Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
-            Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
-            Err(err) => Err(ShellError::IoError(err)),
+        if let Some(reedline) = &mut self.reedline {
+            match reedline.read_line(&prompt) {
+                Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
+                Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
+                Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
+                Err(err) => Err(ShellError::IoError(err)),
+            }
+        } else {
+            Ok(ReadResult::Eof)
         }
     }
 
