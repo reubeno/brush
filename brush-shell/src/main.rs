@@ -10,7 +10,7 @@ mod shell_factory;
 
 use crate::args::{CommandLineArgs, InputBackend};
 use brush_interactive::InteractiveShell;
-use std::{path::Path, sync::Arc};
+use std::{io::IsTerminal, path::Path, sync::Arc};
 
 lazy_static::lazy_static! {
     static ref TRACE_EVENT_CONFIG: Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> =
@@ -48,15 +48,9 @@ impl CommandLineArgs {
 /// Main entry point for the `brush` shell.
 fn main() {
     //
-    // Set up panic handler. On release builds, it will capture panic details to a
-    // temporary .toml file and report a human-readable message to the screen.
+    // Install panic handlers to clean up on panic.
     //
-    human_panic::setup_panic!(human_panic::Metadata::new(
-        env!("CARGO_BIN_NAME"),
-        env!("CARGO_PKG_VERSION")
-    )
-    .homepage(env!("CARGO_PKG_HOMEPAGE"))
-    .support("please post a GitHub issue at https://github.com/reubeno/brush/issues/new"));
+    install_panic_handlers();
 
     //
     // Parse args.
@@ -96,6 +90,49 @@ fn main() {
 
     #[allow(clippy::cast_lossless)]
     std::process::exit(exit_code as i32);
+}
+
+/// Installs panic handlers to report our panic and cleanly exit on panic.
+fn install_panic_handlers() {
+    //
+    // Set up panic handler. On release builds, it will capture panic details to a
+    // temporary .toml file and report a human-readable message to the screen.
+    //
+    human_panic::setup_panic!(human_panic::Metadata::new(
+        env!("CARGO_BIN_NAME"),
+        env!("CARGO_PKG_VERSION")
+    )
+    .homepage(env!("CARGO_PKG_HOMEPAGE"))
+    .support("please post a GitHub issue at https://github.com/reubeno/brush/issues/new"));
+
+    //
+    // If stdout is connected to a terminal, then register a new panic handler that
+    // resets the terminal and then invokes the previously registered handler. In
+    // dev/debug builds, the previously registered handler will be the default
+    // handler; in release builds, it will be the one registered by `human_panic`.
+    //
+    #[cfg(any(unix, windows))]
+    if std::io::stdout().is_terminal() {
+        let original_panic_handler = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            // Reset the console.
+            let _ = crossterm::execute!(
+                std::io::stdout(),
+                crossterm::terminal::LeaveAlternateScreen,
+                crossterm::terminal::EnableLineWrap,
+                crossterm::style::ResetColor,
+                crossterm::event::DisableMouseCapture,
+                crossterm::event::DisableBracketedPaste,
+                crossterm::cursor::Show,
+                crossterm::cursor::MoveToNextLine(1),
+            );
+
+            let _ = crossterm::terminal::disable_raw_mode();
+
+            // Invoke the original handler
+            original_panic_handler(panic_info);
+        }));
+    }
 }
 
 /// Run the brush shell. Returns the exit code.

@@ -62,6 +62,7 @@ brush-interactive = { version = "^0.2.15", path = "../brush-interactive", featur
     "basic",
     "reedline",
 ] }
+crossterm = "0.28.1"
 tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
