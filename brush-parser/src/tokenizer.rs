@@ -1091,11 +1091,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 self.consume_char()?;
             }
             //
-            // N.B. We need to remember if we were recursively called, say in a command
-            // substitution; in that case we won't think a token was started but... we'd
-            // be wrong.
+            // N.B. We need to remember if we were recursively called in a variable
+            // expansion expression; in that case we won't think a token was started but...
+            // we'd be wrong.
             else if !state.token_is_operator
-                && (state.started_token() || terminating_char.is_some())
+                && (state.started_token() || matches!(terminating_char, Some('}')))
             {
                 self.consume_char()?;
                 state.append_char(c);
@@ -1115,7 +1115,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         }
                     };
                 }
-
                 // Re-start loop as if the comment never happened.
                 continue;
             //

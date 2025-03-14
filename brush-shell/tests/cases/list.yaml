@@ -1,0 +1,30 @@
+name: "List"
+cases:
+  - name: "Ignore single quote in comment in list"
+    stdin: |
+      (
+        # I'm
+        echo "Batman"
+      )
+
+  - name: "Ignore double quote in comment in list"
+    stdin: |
+      (
+        # This " is not being
+        echo "parsed"
+      )
+
+  - name: "Ignore parantheses in comment in list"
+    stdin: |
+      (
+        # :(
+        echo "Sad"
+      )
+
+  - name: "Ignore dollar in comment in list"
+    stdin: |
+      (
+        #               $
+        echo "Mr. Crabs ^"
+      )
+

@@ -1,0 +1,73 @@
+name: "Command substitution"
+cases:
+  - name: "Ignore single quote in comment in command substitution"
+    stdin: |
+      var=$(
+        # I'm
+        echo "Batman"
+      )
+      echo $var
+
+  - name: "Ignore double quote in comment in command substitution"
+    stdin: |
+      var=$(
+        # This " is not being
+        echo "parsed"
+      )
+      echo $var
+
+  - name: "Ignore parantheses in comment in command substitution"
+    stdin: |
+      var=$(
+        # :(
+        echo "Sad"
+      )
+      echo $var
+
+  - name: "Ignore dollar in comment in command substitution"
+    stdin: |
+      var=$(
+        #               $
+        echo "Mr. Crabs ^"
+      )
+      echo $var
+
+  - name: "Positional parameter count not mistaken for comment"
+    stdin: |
+      echo $(echo $#)
+
+  - name: "Ignore single quote in comment in command substitution (backticks)"
+    stdin: |
+      var=`
+        # I'm
+        echo "Batman"
+      `
+      echo $var
+
+  - name: "Ignore double quote in comment in command substitution (backticks)"
+    stdin: |
+      var=`
+        # This " is not being
+        echo "parsed"
+      `
+      echo $var
+
+  - name: "Ignore parantheses in comment in command substitution (backticks)"
+    stdin: |
+      var=`
+        # :(
+        echo "Sad"
+      `
+      echo $var
+
+  - name: "Ignore dollar in comment in command substitution (backticks)"
+    stdin: |
+      var=`
+        #               $
+        echo "Mr. Crabs ^"
+      `
+      echo $var
+
+  - name: "Positional parameter count not mistaken for comment (backticks)"
+    stdin: |
+      echo `echo $#`
