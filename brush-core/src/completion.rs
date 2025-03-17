@@ -9,9 +9,7 @@ use std::{
 };
 
 use crate::{
-    commands, env, error, escape, jobs, namedoptions, patterns,
-    sys::{self, users},
-    trace_categories, traps,
+    commands, env, error, escape, jobs, namedoptions, patterns, sys, trace_categories, traps,
     variables::{self, ShellValueLiteral},
     Shell,
 };
@@ -458,7 +456,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Group => {
-                    for group_name in users::get_all_groups()? {
+                    for group_name in sys::users::get_all_groups()? {
                         if group_name.starts_with(token) {
                             candidates.insert(group_name);
                         }
@@ -507,7 +505,11 @@ impl Spec {
                     }
                 }
                 CompleteAction::Service => {
-                    tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -A service");
+                    for service in sys::network::get_all_services()? {
+                        if service.starts_with(token) {
+                            candidates.insert(service);
+                        }
+                    }
                 }
                 CompleteAction::SetOpt => {
                     for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
@@ -541,7 +543,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::User => {
-                    for user_name in users::get_all_users()? {
+                    for user_name in sys::users::get_all_users()? {
                         if user_name.starts_with(token) {
                             candidates.insert(user_name);
                         }
