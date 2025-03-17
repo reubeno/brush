@@ -24,7 +24,7 @@ reedline = ["dep:reedline", "dep:nu-ansi-term"]
 workspace = true
 
 [dependencies]
-async-trait = "0.1.86"
+async-trait = "0.1.88"
 brush-parser = { version = "^0.2.13", path = "../brush-parser" }
 brush-core = { version = "^0.2.15", path = "../brush-core" }
 crossterm = { version = "0.28.1", features = ["serde"], optional = true }
@@ -35,4 +35,4 @@ thiserror = "2.0.11"
 tracing = "0.1.41"
 
 [target.'cfg(any(windows, unix))'.dependencies]
-tokio = { version = "1.43.0", features = ["macros", "signal"] }
+tokio = { version = "1.44.1", features = ["macros", "signal"] }

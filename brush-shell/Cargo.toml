@@ -39,7 +39,7 @@ reedline = ["brush-interactive/reedline"]
 workspace = true
 
 [dependencies]
-async-trait = "0.1.86"
+async-trait = "0.1.88"
 brush-parser = { version = "^0.2.13", path = "../brush-parser" }
 brush-core = { version = "^0.2.15", path = "../brush-core" }
 cfg-if = "1.0.0"
@@ -55,7 +55,7 @@ human-panic = "2.0.2"
 brush-interactive = { version = "^0.2.15", path = "../brush-interactive", features = [
     "minimal",
 ] }
-tokio = { version = "1.43.0", features = ["rt", "sync"] }
+tokio = { version = "1.44.1", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.15", path = "../brush-interactive", features = [
