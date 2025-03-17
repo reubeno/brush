@@ -469,6 +469,9 @@ jobs:
     runs-on: ubuntu-24.04
     container: ${{ matrix.container }}
     needs: build
+    env:
+      # Reference: https://github.com/Azure/azure-cli/issues/29835
+      GNUPGHOME: /root/.gnupg
     steps:
       # Install prerequisites *first*; may need some of them for checkout itself.
       - name: Install prerequisites
@@ -481,9 +484,7 @@ jobs:
         run: |
           # Hacks to get the mounted nodejs by github actions work as its dynamically linked
           # https://github.com/actions/checkout/issues/334#issuecomment-716068696
-          mkdir -p ~/.config/nix
-          echo 'experimental-features = nix-command flakes' > ~/.config/nix/nix.conf
-          nix build --no-link --max-jobs 2 --cores 0 'nixpkgs#stdenv.cc.cc.lib' 'nixpkgs#glibc'
+          nix --extra-experimental-features nix-command --extra-experimental-features flakes build --no-link --max-jobs 2 --cores 0 'nixpkgs#stdenv.cc.cc.lib' 'nixpkgs#glibc'
           echo "LD_LIBRARY_PATH=$(nix path-info 'nixpkgs#stdenv.cc.cc.lib')/lib" >> "$GITHUB_ENV"
           ln -s "$(nix path-info 'nixpkgs#glibc' --recursive | grep glibc | grep -v bin)/lib64" /lib64
 
