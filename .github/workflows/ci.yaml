@@ -446,7 +446,7 @@ jobs:
 
           - container: "mcr.microsoft.com/azurelinux/base/core:3.0"
             description: "Azure Linux/3.0"
-            prereqs_command: "tdnf install -y bash-completion git iputils grep less sed util-linux"
+            prereqs_command: "tdnf install -y bash-completion ca-certificates git iputils grep less sed util-linux"
 
           - container: "debian:testing"
             description: "Debian/testing"
