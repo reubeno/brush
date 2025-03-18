@@ -69,6 +69,7 @@ cases:
       command ls --help
 
   - name: "command with -p"
+    ignore_stderr: true # In case it fails on the oracle as well, ignore the specific error message.
     stdin: |
       unset PATH
 

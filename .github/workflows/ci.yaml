@@ -456,10 +456,9 @@ jobs:
             description: "Fedora/latest"
             prereqs_command: "dnf install -y bash-completion iputils grep less sed util-linux"
 
-          # TODO: Enable after debugging through the test failures (or marking them disabled for Nix).
-          # - container: "nixos/nix:latest"
-          #   description: "NixOS/latest"
-          #   prereqs_command: "nix --extra-experimental-features nix-command --extra-experimental-features flakes profile install nixpkgs#hexdump nixpkgs#bash-completion"
+          - container: "nixos/nix:latest"
+            description: "NixOS/latest"
+            prereqs_command: "nix --extra-experimental-features nix-command --extra-experimental-features flakes profile install nixpkgs#hexdump nixpkgs#bash-completion"
 
           # NOTE: We use Tumbleweed to make sure we get a recent enough version of bash.
           - container: "opensuse/tumbleweed:latest"
@@ -479,16 +478,23 @@ jobs:
         if: ${{ matrix.prereqs_command != '' }}
         run: ${{ matrix.prereqs_command }}
 
-      # Workaround task issues on NixOS
+      # Workaround path issues on NixOS
       - name: "Apply workarounds: NixOS"
         if: ${{ matrix.container == 'nixos/nix:latest' }}
         run: |
-          # Hacks to get the mounted nodejs by github actions work as its dynamically linked
-          # https://github.com/actions/checkout/issues/334#issuecomment-716068696
           set -x
-          nix --extra-experimental-features nix-command --extra-experimental-features flakes build --no-link --max-jobs 2 --cores 0 'nixpkgs#stdenv.cc.cc.lib' 'nixpkgs#glibc'
-          echo "LD_LIBRARY_PATH=$(nix --extra-experimental-features nix-command --extra-experimental-features flakes path-info 'nixpkgs#stdenv.cc.cc.lib')/lib" >> "$GITHUB_ENV"
-          ln -s "$(nix --extra-experimental-features nix-command --extra-experimental-features flakes path-info 'nixpkgs#glibc' --recursive | grep glibc | grep -v bin)/lib64" /lib64
+
+          # Allow use of experimental features to avoid nix from complaining.
+          export NIX_CONFIG="extra-experimental-features = nix-command flakes"
+
+          # Hacks to get the mounted nodejs by github actions work as it's dynamically linked
+          # https://github.com/actions/checkout/issues/334#issuecomment-716068696
+          nix build --no-link --max-jobs 2 --cores 0 'nixpkgs#stdenv.cc.cc.lib' 'nixpkgs#glibc'
+          echo "LD_LIBRARY_PATH=$(nix path-info 'nixpkgs#stdenv.cc.cc.lib')/lib" >> "$GITHUB_ENV"
+          ln -s "$(nix path-info 'nixpkgs#glibc' --recursive | grep glibc | grep -v bin)/lib64" /lib64
+
+          # Provide alternate path for bash-completion
+          echo "BASH_COMPLETION_PATH=$(nix path-info 'nixpkgs#bash-completion')/share/bash-completion/bash_completion">>"$GITHUB_ENV"
 
       # Checkout sources for YAML-based test cases
       - name: Checkout

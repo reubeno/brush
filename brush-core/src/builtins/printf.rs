@@ -75,7 +75,15 @@ impl PrintfCommand {
     ) -> Result<String, crate::error::Error> {
         // TODO: Don't call external printf command.
         let mut cmd = std::process::Command::new("printf");
+
+        // Clear all environment variables except the PATH we had on launch.
+        // This latter variable is preserved in case the default fallback
+        // PATH isn't sufficient to find printf.
         cmd.env_clear();
+        if let Ok(orig_path) = std::env::var("PATH") {
+            cmd.env("PATH", orig_path);
+        }
+
         cmd.args(&self.format_and_args);
 
         let output = cmd.output()?;
