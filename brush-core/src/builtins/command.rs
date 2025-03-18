@@ -97,11 +97,7 @@ impl CommandCommand {
             let candidate_path = shell.get_absolute_path(Path::new(command_name));
             if candidate_path.executable() {
                 Some(FoundCommand::External(
-                    candidate_path
-                        .canonicalize()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string(),
+                    candidate_path.to_string_lossy().to_string(),
                 ))
             } else {
                 None
