@@ -1010,11 +1010,8 @@ impl TestCase {
         test_cmd.env("PS1", "test$ ");
         // Try to get decent backtraces when problems get hit.
         test_cmd.env("RUST_BACKTRACE", "1");
-        // Hard-code a well-known PATH that isn't dependent on the system's configuration.
-        test_cmd.env(
-            "PATH",
-            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        );
+        // Compute a PATH that contains what we need.
+        test_cmd.env("PATH", compute_test_path_var().unwrap());
 
         // Set up any env vars needed for collecting coverage data.
         if let Some(coverage_target_dir) = &coverage_target_dir {
@@ -1525,6 +1522,38 @@ fn get_bash_version_str(bash_path: &Path) -> Result<String> {
     let ver_str = String::from_utf8(output)?;
 
     Ok(ver_str)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn compute_test_path_var() -> Result<String> {
+    // Start with hard-coded paths that will work on *most* Unix-like systems.
+    let mut dirs = vec![
+        "/usr/local/sbin".into(),
+        "/usr/local/bin".into(),
+        "/usr/sbin".into(),
+        "/usr/bin".into(),
+        "/sbin".into(),
+        "/bin".into(),
+    ];
+
+    //
+    // Handle systems that are more... interesting (i.e., store their standard
+    // POSIX binaries elsewhere). As a concrete example, NixOS has an interesting
+    // set of paths that must be consulted, and unfortunately doesn't accurately
+    // return them via confstr(). For these systems, we go through the host's
+    // PATH variable, and include any paths that contain 'sh'.
+    //
+
+    if let Some(host_path) = std::env::var_os("PATH") {
+        for path in std::env::split_paths(&host_path) {
+            let path_str = path.to_string_lossy().to_string();
+            if !dirs.contains(&path_str) && path.join("sh").is_file() {
+                dirs.push(path_str);
+            }
+        }
+    }
+
+    Ok(dirs.join(":"))
 }
 
 fn main() -> Result<()> {

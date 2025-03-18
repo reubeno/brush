@@ -44,6 +44,7 @@ cases:
       echo hi 4>file.txt >&4
 
   - name: "Process substitution: basic"
+    ignore_stdout: true # Specific fd-based paths may vary across runs
     stdin: |
       shopt -u -o posix
       echo <(:) >(:)
