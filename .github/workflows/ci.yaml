@@ -383,7 +383,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: "scop/bash-completion"
-          ref: "2.15.0"
+          ref: "2.16.0"
           path: "bash-completion"
 
       - name: Download prebuilt brush binaries
