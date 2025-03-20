@@ -29,6 +29,7 @@ type RegexWord = Vec<RegexPiece>;
 pub struct Regex {
     pieces: RegexWord,
     case_insensitive: bool,
+    multiline: bool,
 }
 
 impl From<RegexWord> for Regex {
@@ -36,6 +37,7 @@ impl From<RegexWord> for Regex {
         Self {
             pieces,
             case_insensitive: false,
+            multiline: false,
         }
     }
 }
@@ -48,6 +50,18 @@ impl Regex {
     /// * `value` - The new case sensitivity value.
     pub fn set_case_insensitive(mut self, value: bool) -> Self {
         self.case_insensitive = value;
+        self
+    }
+
+    /// Enables (or disables) multiline support for this pattern.
+    /// This enables matching across lines as well as enables `.`
+    /// to match newline characters.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The new multiline value.
+    pub fn set_multiline(mut self, value: bool) -> Self {
+        self.multiline = value;
         self
     }
 
@@ -64,7 +78,7 @@ impl Regex {
             .collect();
 
         // TODO: Evaluate how compatible the `fancy_regex` crate is with POSIX EREs.
-        let re = compile_regex(regex_pattern, self.case_insensitive)?;
+        let re = compile_regex(regex_pattern, self.case_insensitive, self.multiline)?;
 
         Ok(re.captures(value)?.map(|captures| {
             captures
@@ -79,10 +93,20 @@ impl Regex {
 pub(crate) fn compile_regex(
     regex_str: String,
     case_insensitive: bool,
+    multiline: bool,
 ) -> Result<fancy_regex::Regex, error::Error> {
     // Handle identified cases where a shell-supported regex isn't supported directly by
     // `fancy_regex` -- specifically, adding missing escape characters.
-    let regex_str = add_missing_escape_chars_to_regex(regex_str.as_str());
+    let mut regex_str = add_missing_escape_chars_to_regex(regex_str.as_str());
+
+    // Handle multiline enablement.
+    if multiline {
+        // The fancy_regex crate internally seems to have flags that can be used
+        // to enable multiline support, but they're not exposed via its
+        // RegexBuilder. We instead just prefix with the right flags.
+        let updated_str = std::format!("(?ms){regex_str}");
+        regex_str = updated_str.into();
+    }
 
     let mut builder = fancy_regex::RegexBuilder::new(regex_str.as_ref());
     builder.case_insensitive(case_insensitive);

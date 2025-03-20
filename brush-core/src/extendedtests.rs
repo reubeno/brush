@@ -199,7 +199,9 @@ async fn apply_binary_predicate(
     match op {
         ast::BinaryPredicate::StringMatchesRegex => {
             let s = expansion::basic_expand_word(shell, params, left).await?;
-            let regex = expansion::basic_expand_regex(shell, params, right).await?;
+            let regex = expansion::basic_expand_regex(shell, params, right)
+                .await?
+                .set_multiline(true);
 
             if shell.options.print_commands_and_arguments {
                 shell
