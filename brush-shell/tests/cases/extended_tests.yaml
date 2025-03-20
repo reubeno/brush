@@ -299,3 +299,7 @@ cases:
       [[ z =~ ^z{2,6}$ ]] && echo "1. Matches"
       [[ zzzz =~ ^z{2,6}$ ]] && echo "2. Matches"
       [[ zzzzzzzzz =~ ^z{2,6}$ ]] && echo "3. Matches"
+
+  - name: "Regex with newline"
+    stdin: |
+      [[ $'\n' =~ . ]] && echo "1. Matches"

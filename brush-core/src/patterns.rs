@@ -316,12 +316,6 @@ impl Pattern {
             regex_str.push('^');
         }
 
-        if self.multiline {
-            // Set option for multiline matching + set option for allowing '.' pattern to match
-            // newline.
-            regex_str.push_str("(?ms)");
-        }
-
         let mut current_pattern = String::new();
         for piece in &self.pieces {
             match piece {
@@ -365,7 +359,7 @@ impl Pattern {
 
         tracing::debug!(target: trace_categories::PATTERN, "pattern: '{self:?}' => regex: '{regex_str}'");
 
-        let re = regex::compile_regex(regex_str, self.case_insensitive)?;
+        let re = regex::compile_regex(regex_str, self.case_insensitive, self.multiline)?;
         Ok(re)
     }
 
