@@ -311,6 +311,7 @@ dependencies = [
  "brush-parser",
  "crossterm",
  "indexmap",
+ "nix 0.29.0",
  "nu-ansi-term 0.50.1",
  "reedline",
  "thiserror 2.0.12",
