@@ -22,8 +22,51 @@ impl BasicShell {
     /// * `options` - Options for creating the interactive shell.
     pub async fn new(options: &crate::Options) -> Result<Self, ShellError> {
         let shell = brush_core::Shell::new(&options.shell).await?;
+
+        // DBG:RRO
+        if std::io::stdin().is_terminal() {
+            set_term_echo(false)?;
+        }
+
         Ok(Self { shell })
     }
+}
+
+impl Drop for BasicShell {
+    fn drop(&mut self) {
+        // DBG:RRO
+        if std::io::stdin().is_terminal() {
+            let _ = set_term_echo(true);
+        }
+    }
+}
+
+// DBG:RRO
+#[cfg(not(unix))]
+fn set_term_echo(value: bool) -> Result<(), ShellError> {
+    Ok(())
+}
+
+// DBG:RRO
+#[cfg(unix)]
+fn set_term_echo(value: bool) -> Result<(), ShellError> {
+    let mut termios =
+        nix::sys::termios::tcgetattr(std::io::stdin()).map_err(|_err| ShellError::InputError)?;
+
+    if value {
+        termios.local_flags |= nix::sys::termios::LocalFlags::ECHO;
+    } else {
+        termios.local_flags -= nix::sys::termios::LocalFlags::ECHO;
+    }
+
+    nix::sys::termios::tcsetattr(
+        std::io::stdin(),
+        nix::sys::termios::SetArg::TCSANOW,
+        &termios,
+    )
+    .map_err(|_err| ShellError::InputError)?;
+
+    Ok(())
 }
 
 impl InteractiveShell for BasicShell {
