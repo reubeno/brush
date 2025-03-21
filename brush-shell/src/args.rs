@@ -1,3 +1,4 @@
+use brush_core::ParserImplementation;
 use clap::{builder::styling, Parser};
 use std::io::IsTerminal;
 
@@ -23,6 +24,22 @@ pub enum InputBackend {
     Reedline,
     Basic,
     Minimal,
+}
+
+#[derive(Clone, Default, clap::ValueEnum)]
+pub enum ParserBackend {
+    #[default]
+    Peg,
+    Winnow,
+}
+
+impl From<ParserBackend> for ParserImplementation {
+    fn from(backend: ParserBackend) -> ParserImplementation {
+        match backend {
+            ParserBackend::Peg => ParserImplementation::Peg,
+            ParserBackend::Winnow => ParserImplementation::Winnow,
+        }
+    }
 }
 
 /// Parsed command-line arguments for the brush shell.
@@ -129,6 +146,10 @@ pub struct CommandLineArgs {
     /// Input backend.
     #[clap(long = "input-backend")]
     pub input_backend: Option<InputBackend>,
+
+    /// Parser implementation.
+    #[clap(long = "parser-backend")]
+    pub parser_backend: Option<ParserBackend>,
 
     /// Enable debug logging for classes of tracing events.
     #[clap(long = "log-enable", value_name = "EVENT")]
