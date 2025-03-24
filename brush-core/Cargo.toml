@@ -50,7 +50,7 @@ tokio = { version = "1.43.0", features = [
 
 [target.'cfg(windows)'.dependencies]
 homedir = "0.3.4"
-whoami = "1.5.2"
+whoami = "1.6.0"
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.0"
