@@ -12,6 +12,7 @@ pub mod word;
 mod error;
 mod parser;
 mod tokenizer;
+mod winnow;
 
 pub use error::{ParseError, TestCommandParseError, WordParseError};
 pub use parser::{parse_tokens, Parser, ParserOptions, SourceInfo};
@@ -19,3 +20,4 @@ pub use tokenizer::{
     tokenize_str, tokenize_str_with_options, uncached_tokenize_str, unquote_str, SourcePosition,
     Token, TokenLocation, TokenizerOptions,
 };
+pub use winnow::WinnowParser;
