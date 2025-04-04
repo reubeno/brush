@@ -277,7 +277,7 @@ fn get_default_input_backend() -> InputBackend {
     }
     #[cfg(not(any(windows, unix)))]
     {
-        InputBackend::Basic
+        InputBackend::Minimal
     }
 }
 

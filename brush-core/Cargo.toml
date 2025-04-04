@@ -67,6 +67,10 @@ uzers = "0.12.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.17.0"
 
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.3.2", features = ["wasm_js"] }
+uuid = { version = "1.16.0", features = ["js"] }
+
 [dev-dependencies]
 anyhow = "1.0.96"
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }

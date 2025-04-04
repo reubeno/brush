@@ -274,10 +274,13 @@ impl Shell {
         self.env.set_global("BASHOPTS", bashopts_var)?;
 
         // BASHPID
-        let mut bashpid_var =
-            ShellVariable::new(ShellValue::String(std::process::id().to_string()));
-        bashpid_var.treat_as_integer();
-        self.env.set_global("BASHPID", bashpid_var)?;
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let mut bashpid_var =
+                ShellVariable::new(ShellValue::String(std::process::id().to_string()));
+            bashpid_var.treat_as_integer();
+            self.env.set_global("BASHPID", bashpid_var)?;
+        }
 
         // BASH_ALIASES
         self.env.set_global(

@@ -56,6 +56,14 @@ jobs:
             required_tools: "gcc-aarch64-linux-gnu"
             binary_name: "brush"
             extra_build_args: ""
+          # Build for wasm32 target on x86_64/linux host.
+          - host: "ubuntu-24.04"
+            target: "wasm32-unknown-unknown"
+            os: "unknown"
+            arch: "wasm32"
+            required_tools: ""
+            binary_name: "brush.wasm"
+            extra_build_args: "--no-default-features --features minimal"
           # Build for WASI-0.2 target on x86_64/linux host.
           - host: "ubuntu-24.04"
             target: "wasm32-wasip2"
