@@ -55,15 +55,15 @@ human-panic = "2.0.2"
 brush-interactive = { version = "^0.2.16", path = "../brush-interactive", features = [
     "minimal",
 ] }
-tokio = { version = "1.44.1", features = ["rt", "sync"] }
+tokio = { version = "1.44.2", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.16", path = "../brush-interactive", features = [
     "basic",
     "reedline",
 ] }
-crossterm = "0.28.1"
-tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "sync"] }
+crossterm = "0.29.0"
+tokio = { version = "1.44.2", features = ["rt", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
 anyhow = "1.0.96"
