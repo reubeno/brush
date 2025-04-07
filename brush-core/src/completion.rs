@@ -985,19 +985,15 @@ impl Config {
     }
 
     fn tokenize_input_for_completion(shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
-        // Best-effort tokenization.
-        if let Ok(tokens) = brush_parser::tokenize_str_with_options(
-            input,
-            &(shell.parser_options().tokenizer_options()),
-        ) {
-            return tokens;
-        }
+        const FALLBACK: &str = " \t\n\"\'@><=;|&(:";
 
-        // TODO: This isn't right; we need a better fallback, but this is better than nothing.
-        let default_delimiters = [
-            ' ', '\t', '\n', '"', '\'', '>', '<', '=', ';', '|', '&', '(', ':',
-        ];
-        simple_tokenize_by_delimiters(input, &default_delimiters)
+        let delimiter_str = shell
+            .get_env_str("COMP_WORDBREAKS")
+            .unwrap_or(FALLBACK.into());
+
+        let delimiters: Vec<_> = delimiter_str.chars().collect();
+
+        simple_tokenize_by_delimiters(input, delimiters.as_slice())
     }
 
     async fn get_completions_for_token(&self, shell: &mut Shell, context: Context<'_>) -> Answer {
