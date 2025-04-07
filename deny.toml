@@ -86,6 +86,7 @@ deny = []
 
 # Certain crates/versions that will be skipped when doing duplicate detection.
 skip = [
+    { crate = "crossterm" },
     { crate = "getrandom" },
     { crate = "hashbrown" },
     { crate = "itertools" },
