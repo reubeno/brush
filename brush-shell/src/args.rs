@@ -1,3 +1,4 @@
+use brush_core::ParserImplementation;
 use clap::{builder::styling, Parser};
 use std::io::IsTerminal;
 
@@ -129,6 +130,11 @@ pub struct CommandLineArgs {
     /// Input backend.
     #[clap(long = "input-backend")]
     pub input_backend: Option<InputBackend>,
+
+    /// The parser implementation to use.
+    /// This is currently experimental, use it at your own risk.
+    #[clap(long = "parser-backend")]
+    pub parser_backend: Option<ParserImplementation>,
 
     /// Enable debug logging for classes of tracing events.
     #[clap(long = "log-enable", value_name = "EVENT")]
