@@ -70,7 +70,7 @@ getrandom = { version = "0.3.2", features = ["wasm_js"] }
 uuid = { version = "1.16.0", features = ["js"] }
 
 [dev-dependencies]
-anyhow = "1.0.96"
+anyhow = "1.0.98"
 assert_cmd = "2.0.16"
 assert_fs = "1.1.2"
 colored = "2.2.0"
