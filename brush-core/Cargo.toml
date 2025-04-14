@@ -37,7 +37,7 @@ tracing = "0.1.41"
 tokio = { version = "1.44.2", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
-hostname = "0.4.0"
+hostname = "0.4.1"
 os_pipe = { version = "1.2.1", features = ["io_safety"] }
 tokio = { version = "1.44.2", features = [
     "io-util",
@@ -72,7 +72,7 @@ getrandom = { version = "0.3.2", features = ["wasm_js"] }
 uuid = { version = "1.16.0", features = ["js"] }
 
 [dev-dependencies]
-anyhow = "1.0.96"
+anyhow = "1.0.98"
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
 
 [target.'cfg(unix)'.dev-dependencies]
