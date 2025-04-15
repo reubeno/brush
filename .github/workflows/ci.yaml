@@ -40,6 +40,15 @@ jobs:
             arch: "x86_64"
             binary_name: "brush"
             extra_build_args: ""
+          # Build for x86_64/linux using musl as target C runtime.
+          # We don't bother pinning to an ealier version of Ubuntu because
+          # the produced binary will statically link the C runtime anyhow.
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-linux-musl"
+            os: "linux-musl"
+            arch: "x86_64"
+            binary_name: "brush"
+            extra_build_args: ""
           # Build for aarch64/macos target on native host.
           - host: "macos-latest"
             target: ""
@@ -143,12 +152,11 @@ jobs:
             name_suffix: "(linux/x86_64)"
             homebrew_supported: true
 
-          # TODO: Reenable this once compiler ICEs have been resolved.
-          # - host: "ubuntu-24.04-arm"
-          #   variant: "linux-aarch64"
-          #   artifact_suffix: "linux-aarch64"
-          #   name_suffix: "(linux/aarch64)"
-          #   homebrew_supported: false
+          - host: "ubuntu-24.04-arm"
+            variant: "linux-aarch64"
+            artifact_suffix: "linux-aarch64"
+            name_suffix: "(linux/aarch64)"
+            homebrew_supported: false
 
           - host: "macos-latest"
             variant: "macos"
