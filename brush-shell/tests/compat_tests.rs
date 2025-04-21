@@ -1419,9 +1419,12 @@ struct TestOptions {
     #[clap(short = 'Z')]
     pub unstable_flag: Vec<String>,
 
-    //
-    // Filters
-    pub filters: Vec<String>,
+    /// Patterns for tests to be excluded.
+    #[clap(long = "skip")]
+    pub exclude_filters: Vec<String>,
+
+    /// Patterns for tests to be included.
+    pub include_filters: Vec<String>,
 }
 
 const BASH_CONFIG_NAME: &str = "bash";
@@ -1439,7 +1442,7 @@ impl TestOptions {
     }
 
     pub fn should_run_test(&self, test_case_set: &TestCaseSet, test_case: &TestCase) -> bool {
-        if self.filters.is_empty() {
+        if self.include_filters.is_empty() && self.exclude_filters.is_empty() {
             return true;
         }
 
@@ -1452,12 +1455,32 @@ impl TestOptions {
 
         let qualified_name = format!("{test_case_set_name}::{test_case_name}");
 
+        // If any include filters were given, then we are in opt-in mode. We only run tests that
+        // match 1 or more include filters.
+        if !self.include_filters.is_empty() {
+            if !self.test_matches_filters(&qualified_name, &self.include_filters) {
+                return false;
+            }
+        }
+
+        // In all cases, exclude filters may be used to exclude tests.
+        if !self.exclude_filters.is_empty() {
+            if self.test_matches_filters(&qualified_name, &self.exclude_filters) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn test_matches_filters(&self, qualified_test_name: &String, filters: &[String]) -> bool {
+        // In exact match mode, filters must be an exact match; substring matches are not considered.
         if self.exact_match {
-            self.filters.contains(&qualified_name)
+            filters.contains(qualified_test_name)
         } else {
-            self.filters
+            filters
                 .iter()
-                .any(|filter| qualified_name.contains(filter))
+                .any(|filter| qualified_test_name.contains(filter))
         }
     }
 }
