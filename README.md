@@ -55,6 +55,12 @@ If you are a Nix user, you can also use the registered version.
 nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 ```
 
+Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/packages/brush) with their [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, e.g.
+
+```bash
+paru -S brush
+```
+
 When you run `brush`, it should look exactly as `bash` would on your system since it processes `.bashrc` and
 other usual configuration. If you'd like to customize the look of `brush` to distinguish it from the other shells
 installed on your system, then you can also author a `~/.brushrc` file.
