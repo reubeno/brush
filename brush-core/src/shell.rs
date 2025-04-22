@@ -917,9 +917,9 @@ impl Shell {
     ///
     /// * `command` - The command to execute.
     /// * `params` - Execution parameters.
-    pub async fn run_string(
+    pub async fn run_string<S: Into<String>>(
         &mut self,
-        command: String,
+        command: S,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // TODO: Actually track line numbers; this is something of a hack, assuming each time
@@ -927,7 +927,7 @@ impl Shell {
         // each string we run could be multiple lines.
         self.current_line_number += 1;
 
-        let parse_result = self.parse_string(command);
+        let parse_result = self.parse_string(command.into());
         let source_info = brush_parser::SourceInfo {
             source: String::from("main"),
         };
@@ -941,11 +941,11 @@ impl Shell {
     /// # Arguments
     ///
     /// * `s` - The string to parse as a program.
-    pub fn parse_string(
+    pub fn parse_string<S: Into<String>>(
         &self,
-        s: String,
+        s: S,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        parse_string_impl(s, self.parser_options())
+        parse_string_impl(s.into(), self.parser_options())
     }
 
     /// Applies basic shell expansion to the provided string.
