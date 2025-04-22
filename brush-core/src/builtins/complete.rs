@@ -265,7 +265,8 @@ impl CompleteCommand {
             None
         };
 
-        if self.print {
+        // Treat 'complete' with no options the same as 'complete -p'.
+        if self.print || (!self.remove && target_spec.is_none()) {
             if let Some(target_spec) = target_spec {
                 if let Some(existing_spec) = target_spec {
                     let existing_spec = existing_spec.clone();
