@@ -16,6 +16,7 @@ RUN apt-get update -y && \
         build-essential \
         curl \
         git \
+        iputils-ping \
         language-pack-en \
         neovim \
         sed \

@@ -1,5 +1,10 @@
 name: "Builtins: complete"
 cases:
+  - name: "complete with no options"
+    stdin: |
+      complete -W foo mycmd
+      complete
+
   - name: "Roundtrip: complete -W"
     stdin: |
       complete -W foo mycmd
