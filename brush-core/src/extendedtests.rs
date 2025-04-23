@@ -300,7 +300,25 @@ async fn apply_binary_predicate(
             Ok(l_md.st_dev() == r_md.st_dev() && l_md.st_ino() == r_md.st_ino())
         }
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
-            error::unimp("extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot")
+            let left = expansion::basic_expand_word(shell, params, left).await?;
+            let right = expansion::basic_expand_word(shell, params, right).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell
+                    .trace_command(std::format!("[[ {left} {op} {right} ]]"))
+                    .await?;
+            }
+
+            let (l_path, r_path) = (
+                shell.get_absolute_path(Path::new(&left)),
+                shell.get_absolute_path(Path::new(&right)),
+            );
+
+            match (l_path.metadata(), r_path.metadata()) {
+                (Ok(m1), Ok(m2)) => Ok(m1.modified()? > m2.modified()?),
+                (Ok(_), Err(_)) => Ok(true),
+                _ => Ok(false),
+            }
         }
         ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => error::unimp(
             "extended test binary predicate LeftFileIsOlderOrDoesNotExistWhenRightDoes",
