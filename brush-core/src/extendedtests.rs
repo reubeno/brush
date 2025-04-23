@@ -1,5 +1,5 @@
 use brush_parser::ast;
-use std::{os::linux::fs::MetadataExt as _, path::Path};
+use std::path::Path;
 
 use crate::{
     arithmetic, env, error, escape, expansion, namedoptions, patterns,
@@ -181,10 +181,12 @@ pub(crate) fn apply_unary_predicate_to_str(
             }
         }
         ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env.is_set(operand)),
-        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => match shell.env.get(operand) {
-            Some((_, reffed)) => Ok(reffed.is_treated_as_nameref()),
-            None => Ok(false),
-        },
+        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
+            match (shell.env.is_set(operand), shell.env.get(operand)) {
+                (false, _) | (_, None) => Ok(false),
+                (_, Some((_, reffed))) => Ok(reffed.is_treated_as_nameref()),
+            }
+        }
     }
 }
 
@@ -290,14 +292,11 @@ async fn apply_binary_predicate(
                 shell.get_absolute_path(Path::new(&right)),
             );
 
-            if !l_path.exists() || !r_path.exists() {
+            if !l_path.readable() || !r_path.readable() {
                 return Ok(false);
             }
 
-            let l_md = l_path.metadata()?;
-            let r_md = r_path.metadata()?;
-
-            Ok(l_md.st_dev() == r_md.st_dev() && l_md.st_ino() == r_md.st_ino())
+            Ok(l_path.get_device_and_inode()? == r_path.get_device_and_inode()?)
         }
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
             let left = expansion::basic_expand_word(shell, params, left).await?;
@@ -320,9 +319,27 @@ async fn apply_binary_predicate(
                 _ => Ok(false),
             }
         }
-        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => error::unimp(
-            "extended test binary predicate LeftFileIsOlderOrDoesNotExistWhenRightDoes",
-        ),
+        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => {
+            let left = expansion::basic_expand_word(shell, params, left).await?;
+            let right = expansion::basic_expand_word(shell, params, right).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell
+                    .trace_command(std::format!("[[ {left} {op} {right} ]]"))
+                    .await?;
+            }
+
+            let (l_path, r_path) = (
+                shell.get_absolute_path(Path::new(&left)),
+                shell.get_absolute_path(Path::new(&right)),
+            );
+
+            match (l_path.metadata(), r_path.metadata()) {
+                (Ok(m1), Ok(m2)) => Ok(m1.modified()? < m2.modified()?),
+                (Err(_), Ok(_)) => Ok(true),
+                _ => Ok(false),
+            }
+        }
         ast::BinaryPredicate::LeftSortsBeforeRight => {
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;

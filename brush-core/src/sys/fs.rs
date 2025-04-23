@@ -18,4 +18,6 @@ pub(crate) trait PathExt {
     fn exists_and_is_setgid(&self) -> bool;
     fn exists_and_is_setuid(&self) -> bool;
     fn exists_and_is_sticky_bit(&self) -> bool;
+
+    fn get_device_and_inode(&self) -> Result<(u64, u64), crate::error::Error>;
 }

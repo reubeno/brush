@@ -39,6 +39,10 @@ impl crate::sys::fs::PathExt for std::path::Path {
     fn exists_and_is_sticky_bit(&self) -> bool {
         false
     }
+
+    fn get_device_and_inode(&self) -> Result<(u64, u64), crate::error::Error> {
+        Ok((0, 0))
+    }
 }
 
 pub(crate) trait StubMetadataExt {
