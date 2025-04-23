@@ -110,6 +110,15 @@ cases:
       [[ -w test-file ]] && echo "-w correctly identified writable file"
       [[ -w link ]] && echo "-w correctly identified link to writable file"
 
+  - name: "Variable set and nameref tests"
+    stdin: |
+      foo="bar"
+      declare -n bang=foo
+      [[ -R bang ]] || echo "-R correctly identified nameref variable that is set"
+
+      declare -n somevar
+      [[ -R somevar ]] || echo "-R correctly identified nameref variable that isn't set"
+
   - name: "Unary string extended tests"
     stdin: |
       [[ -z "" ]] && echo "-z: Pass"
