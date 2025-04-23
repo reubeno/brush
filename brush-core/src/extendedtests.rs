@@ -1,5 +1,5 @@
 use brush_parser::ast;
-use std::path::Path;
+use std::{os::linux::fs::MetadataExt as _, path::Path};
 
 use crate::{
     arithmetic, env, error, escape, expansion, namedoptions, patterns,
@@ -181,12 +181,10 @@ pub(crate) fn apply_unary_predicate_to_str(
             }
         }
         ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env.is_set(operand)),
-        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
-            match (shell.env.is_set(operand), shell.env.get(operand)) {
-                (false, _) | (_, None) => Ok(false),
-                (_, Some(reffed)) => Ok(reffed.1.is_treated_as_nameref()),
-            }
-        }
+        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => match shell.env.get(operand) {
+            Some((_, reffed)) => Ok(reffed.is_treated_as_nameref()),
+            None => Ok(false),
+        },
     }
 }
 
@@ -278,7 +276,28 @@ async fn apply_binary_predicate(
             Ok(s.contains(substring.as_str()))
         }
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
-            error::unimp("extended test binary predicate FilesReferToSameDeviceAndInodeNumbers")
+            let left = expansion::basic_expand_word(shell, params, left).await?;
+            let right = expansion::basic_expand_word(shell, params, right).await?;
+
+            if shell.options.print_commands_and_arguments {
+                shell
+                    .trace_command(std::format!("[[ {left} {op} {right} ]]"))
+                    .await?;
+            }
+
+            let (l_path, r_path) = (
+                shell.get_absolute_path(Path::new(&left)),
+                shell.get_absolute_path(Path::new(&right)),
+            );
+
+            if !l_path.exists() || !r_path.exists() {
+                return Ok(false);
+            }
+
+            let l_md = l_path.metadata()?;
+            let r_md = r_path.metadata()?;
+
+            Ok(l_md.st_dev() == r_md.st_dev() && l_md.st_ino() == r_md.st_ino())
         }
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
             error::unimp("extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot")
