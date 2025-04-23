@@ -1259,6 +1259,15 @@ impl Shell {
         self.env.get_str(name, self)
     }
 
+    /// Tries to retrieve a variable from the shell's environment.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable to retrieve.
+    pub fn get_env_var(&self, name: &str) -> Option<&ShellVariable> {
+        self.env.get(name).map(|(_, var)| var)
+    }
+
     /// Returns the current value of the IFS variable, or the default value if it is not set.
     pub(crate) fn get_ifs(&self) -> Cow<'_, str> {
         self.get_env_str("IFS").unwrap_or_else(|| " \t\n".into())
