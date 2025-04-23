@@ -182,7 +182,10 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env.is_set(operand)),
         ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
-            error::unimp("unary extended test predicate: ShellVariableIsSetAndNameRef")
+            match (shell.env.is_set(operand), shell.env.get(operand)) {
+                (false, _) | (_, None) => Ok(false),
+                (_, Some(reffed)) => Ok(reffed.1.is_treated_as_nameref()),
+            }
         }
     }
 }
