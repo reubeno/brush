@@ -1264,8 +1264,8 @@ impl Shell {
     /// # Arguments
     ///
     /// * `name` - The name of the variable to retrieve.
-    pub fn get_env_var(&self, name: &str) -> Option<ShellVariable> {
-        self.env.get(name).map(|(_, var)| var.clone())
+    pub fn get_env_var(&self, name: &str) -> Option<&ShellVariable> {
+        self.env.get(name).map(|(_, var)| var)
     }
 
     /// Returns the current value of the IFS variable, or the default value if it is not set.
