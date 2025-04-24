@@ -1,0 +1,104 @@
+#
+# Based on https://github.com/release-plz/release-plz/blob/a5043c478d46d051c00e4fbc85036ac22510f07e/.github/workflows/cd.yml
+#
+
+name: CD # Continuous Deployment
+
+on:
+  release:
+    types: [published]
+  # Manual triggers don't actually publish but dry-run the builds.
+  workflow_dispatch: null
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+  CARGO_NET_RETRY: 10
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  RUSTUP_MAX_RETRIES: 10
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  upload-assets:
+    name: ${{ matrix.target }}
+
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && github.repository_owner == 'reubeno' && startsWith(github.event.release.name, 'brush-shell-v'))
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Run all jobs to completion regardless of errors.
+      # This is useful because sometimes we fail to compile for a certain target.
+      fail-fast: false
+      matrix:
+        include:
+          # NOTE: We don't provide Windows binaries yet.
+          # - target: aarch64-pc-windows-msvc
+          #   os: windows-2022
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: x86_64-apple-darwin
+            os: macos-13
+          # - target: x86_64-pc-windows-msvc
+          #   os: windows-2022
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-22.04
+          - target: aarch64-apple-darwin
+            os: macos-13
+    timeout-minutes: 60
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: "Install Rust toolchain"
+        uses: actions-rust-lang/setup-rust-toolchain@v1.12.0
+
+      - name: "Setup cross-compiling toolchain"
+        if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
+        uses: taiki-e/setup-cross-toolchain-action@v1.29.1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: "Installing musl cross tools"
+        if: contains(matrix.target, '-musl')
+        uses: taiki-e/install-action@v2.50.0
+        with:
+          tool: cross
+
+      - name: "Update build flags"
+        if: endsWith(matrix.target, 'windows-msvc')
+        run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
+
+      - name: "Build and upload binaries to release"
+        uses: taiki-e/upload-rust-binary-action@v1.24.0
+        id: upload-release
+        with:
+          dry-run: ${{ github.event_name != 'release' }}
+          bin: brush
+          locked: true
+          target: ${{ matrix.target }}
+          tar: unix
+          zip: windows
+          checksum: sha256,sha512
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Generate artifact attestation"
+        if: github.event_name == 'release'
+        uses: actions/attest-build-provenance@v2.2.3
+        with:
+          subject-path: "${{ steps.upload-release.outputs.archive }}.*"
