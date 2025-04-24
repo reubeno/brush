@@ -258,7 +258,7 @@ dependencies = [
 
 [[package]]
 name = "brush-core"
-version = "0.2.16"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "brush-interactive"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "async-trait",
  "brush-core",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "brush-parser"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -341,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "brush-shell"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "anyhow",
  "assert_cmd",
