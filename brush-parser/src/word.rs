@@ -35,6 +35,8 @@ pub enum WordPiece {
     AnsiCQuotedText(String),
     /// A sequence of pieces that are embedded in double quotes.
     DoubleQuotedSequence(Vec<WordPieceWithSource>),
+    /// Gettext enabled variant of [`WordPiece::DoubleQuotedSequence`].
+    GettextDoubleQuotedSequence(Vec<WordPieceWithSource>),
     /// A tilde prefix.
     TildePrefix(String),
     /// A parameter expansion.
@@ -623,6 +625,7 @@ peg::parser! {
             double_quoted_text()
 
         rule unquoted_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
+            s:gettext_double_quoted_sequence() { WordPiece::GettextDoubleQuotedSequence(s) } /
             s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
             s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
             s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
@@ -631,6 +634,9 @@ peg::parser! {
 
         rule double_quoted_sequence() -> Vec<WordPieceWithSource> =
             "\"" i:double_quoted_sequence_inner()* "\"" { i }
+
+        rule gettext_double_quoted_sequence() -> Vec<WordPieceWithSource> =
+            "$\"" i:double_quoted_sequence_inner()* "\"" { i }
 
         rule double_quoted_sequence_inner() -> WordPieceWithSource =
             start_index:position!() piece:double_quoted_word_piece() end_index:position!() {
