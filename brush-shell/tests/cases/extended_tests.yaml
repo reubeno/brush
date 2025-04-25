@@ -119,6 +119,28 @@ cases:
       declare -n somevar
       [[ -R somevar ]] || echo "-R correctly identified nameref variable that isn't set"
 
+  - name: "Files refer to same device and inode tests"
+    stdin: |
+      [[ /bin/sh -ef /bin/sh ]] || echo "-ef correctly identified device and inode numbers"
+
+      [[ ! /etc/os-release -ef /bin/sh ]] || echo "-ef correctly identified device and inode numbers that do not match"
+
+  - name: "File is newer"
+    stdin: |
+      touch bar
+      touch foo
+      [[ foo -nt bar ]] || echo "-nt correctly identified newer file"
+
+      [[ foo -nt file_no_exists ]] || echo "-nt correctly identified when file2 does not exist"
+
+  - name: "File is older"
+    stdin: |
+      touch foo
+      touch bar
+      [[ foo -ot bar ]] || echo "-ot correctly identified older file"
+
+      [[ file_no_exists -ot foo ]] || echo "-ot correctly identified when file1 does not exist"
+
   - name: "Unary string extended tests"
     stdin: |
       [[ -z "" ]] && echo "-z: Pass"
