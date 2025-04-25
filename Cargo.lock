@@ -287,7 +287,6 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
- "uzers",
  "whoami",
 ]
 
@@ -2578,16 +2577,6 @@ dependencies = [
  "getrandom 0.3.2",
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "uzers"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4df81ff504e7d82ad53e95ed1ad5b72103c11253f39238bcc0235b90768a97dd"
-dependencies = [
- "libc",
- "log",
 ]
 
 [[package]]

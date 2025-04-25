@@ -62,7 +62,6 @@ nix = { version = "0.29.0", features = [
     "term",
     "user",
 ] }
-uzers = "0.12.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.17.0"

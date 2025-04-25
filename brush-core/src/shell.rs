@@ -428,10 +428,9 @@ impl Shell {
         // EUID
         #[cfg(unix)]
         {
-            let mut euid_var = ShellVariable::new(ShellValue::String(format!(
-                "{}",
-                uzers::get_effective_uid()
-            )));
+            use nix::unistd::Uid;
+            let mut euid_var =
+                ShellVariable::new(ShellValue::String(format!("{}", Uid::effective().as_raw())));
             euid_var.treat_as_integer().set_readonly();
             self.env.set_global("EUID", euid_var)?;
         }
@@ -661,8 +660,9 @@ impl Shell {
         // UID
         #[cfg(unix)]
         {
+            use nix::unistd::Uid;
             let mut uid_var =
-                ShellVariable::new(ShellValue::String(format!("{}", uzers::get_current_uid())));
+                ShellVariable::new(ShellValue::String(format!("{}", Uid::current().as_raw())));
             uid_var.treat_as_integer().set_readonly();
             self.env.set_global("UID", uid_var)?;
         }
