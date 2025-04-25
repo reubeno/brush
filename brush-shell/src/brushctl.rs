@@ -4,8 +4,8 @@ use std::io::Write;
 use crate::events;
 
 pub(crate) fn register(shell: &mut brush_core::Shell) {
-    shell.builtins.insert(
-        "brushctl".into(),
+    shell.register_builtin(
+        "brushctl",
         brush_core::builtins::builtin::<BrushCtlCommand>(),
     );
 }
