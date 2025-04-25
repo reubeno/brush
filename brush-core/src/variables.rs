@@ -666,6 +666,11 @@ impl ShellValue {
         )
     }
 
+    /// Returns whether or not the value is set.
+    pub fn is_set(&self) -> bool {
+        !matches!(self, ShellValue::Unset(_))
+    }
+
     /// Returns a new indexed array value constructed from the given slice of owned strings.
     ///
     /// # Arguments
