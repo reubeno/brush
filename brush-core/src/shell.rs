@@ -749,9 +749,10 @@ impl Shell {
 
     async fn source_if_exists(
         &mut self,
-        path: &Path,
+        path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<bool, error::Error> {
+        let path = path.as_ref();
         if path.exists() {
             self.source_script(path, std::iter::empty::<String>(), params)
                 .await?;
@@ -769,13 +770,13 @@ impl Shell {
     /// * `path` - The path to the file to source.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    pub async fn source_script<S: AsRef<str>, I: Iterator<Item = S>>(
+    pub async fn source_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
-        path: &Path,
+        path: P,
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(path, args, params, ScriptCallType::Sourced)
+        self.parse_and_execute_script_file(path.as_ref(), args, params, ScriptCallType::Sourced)
             .await
     }
 
@@ -787,13 +788,14 @@ impl Shell {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn parse_and_execute_script_file<S: AsRef<str>, I: Iterator<Item = S>>(
+    async fn parse_and_execute_script_file<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
-        path: &Path,
+        path: P,
         args: I,
         params: &ExecutionParameters,
         call_type: ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
+        let path = path.as_ref();
         tracing::debug!("sourcing: {}", path.display());
         let opened_file: openfiles::OpenFile = self
             .open_file(path, params)
@@ -991,14 +993,19 @@ impl Shell {
     ///
     /// * `script_path` - The path to the script file to execute.
     /// * `args` - The arguments to pass to the script as positional parameters.
-    pub async fn run_script<S: AsRef<str>, I: Iterator<Item = S>>(
+    pub async fn run_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
-        script_path: &Path,
+        script_path: P,
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
-        self.parse_and_execute_script_file(script_path, args, &params, ScriptCallType::Executed)
-            .await
+        self.parse_and_execute_script_file(
+            script_path.as_ref(),
+            args,
+            &params,
+            ScriptCallType::Executed,
+        )
+        .await
     }
 
     async fn run_parsed_result(
@@ -1393,7 +1400,8 @@ impl Shell {
     /// # Arguments
     ///
     /// * `path` - The path to get the absolute form of.
-    pub fn get_absolute_path(&self, path: &Path) -> PathBuf {
+    pub fn get_absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        let path = path.as_ref();
         if path.as_os_str().is_empty() || path.is_absolute() {
             path.to_owned()
         } else {
@@ -1409,10 +1417,10 @@ impl Shell {
     /// * `params` - Execution parameters.
     pub(crate) fn open_file(
         &self,
-        path: &Path,
+        path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, error::Error> {
-        let path_to_open = self.get_absolute_path(path);
+        let path_to_open = self.get_absolute_path(path.as_ref());
 
         // See if this is a reference to a file descriptor, in which case the actual
         // /dev/fd* file path for this process may not match with what's in the execution
@@ -1446,8 +1454,8 @@ impl Shell {
     /// # Arguments
     ///
     /// * `target_dir` - The path to set as the working directory.
-    pub fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
-        let abs_path = self.get_absolute_path(target_dir);
+    pub fn set_working_dir(&mut self, target_dir: impl AsRef<Path>) -> Result<(), error::Error> {
+        let abs_path = self.get_absolute_path(target_dir.as_ref());
 
         match std::fs::metadata(&abs_path) {
             Ok(m) => {
