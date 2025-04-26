@@ -1268,6 +1268,30 @@ impl Shell {
         self.env.get(name).map(|(_, var)| var)
     }
 
+    /// Tries to set a global variable in the shell's environment.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable to add.
+    /// * `var` - The variable contents to add.
+    pub fn set_env_global(&mut self, name: &str, var: ShellVariable) -> Result<(), error::Error> {
+        self.env.set_global(name, var)
+    }
+
+    /// Register a builtin to the shell's environment.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The in-shell name of the builtin.
+    /// * `registration` - The registration handle for the builtin.
+    pub fn register_builtin<S: Into<String>>(
+        &mut self,
+        name: S,
+        registration: builtins::Registration,
+    ) {
+        self.builtins.insert(name.into(), registration);
+    }
+
     /// Returns the current value of the IFS variable, or the default value if it is not set.
     pub(crate) fn get_ifs(&self) -> Cow<'_, str> {
         self.get_env_str("IFS").unwrap_or_else(|| " \t\n".into())
