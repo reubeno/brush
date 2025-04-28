@@ -12,6 +12,18 @@ cases:
       trap "echo 4" 2
       trap -p INT
 
+  - name: "trap unregistering"
+    stdin: |
+      echo "[Case 1]"
+      trap "echo 1" SIGINT
+      trap SIGINT
+      trap -p INT
+
+      echo "[Case 2]"
+      trap "echo 2" SIGINT
+      trap - SIGINT
+      trap -p INT
+
   - name: "trap EXIT"
     known_failure: true # TODO: needs triage and debugging
     stdin: |
