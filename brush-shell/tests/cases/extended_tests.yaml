@@ -127,18 +127,20 @@ cases:
 
   - name: "File is newer"
     stdin: |
-      touch bar
+      touch -d "2 hours ago" bar
       touch foo
-      [[ foo -nt bar ]] && echo "-nt correctly identified newer file"
 
+      [[ foo -nt bar ]] && echo "-nt correctly identified newer file"
+      [[ foo -nt foo ]] && echo "-nt incorrectly identified file as newer than itself"
       [[ foo -nt file_no_exists ]] && echo "-nt correctly identified when file2 does not exist"
 
   - name: "File is older"
     stdin: |
-      touch foo
+      touch -d "2 hours ago" foo
       touch bar
-      [[ foo -ot bar ]] && echo "-ot correctly identified older file"
 
+      [[ foo -ot bar ]] && echo "-ot correctly identified older file"
+      [[ foo -ot foo ]] && echo "-ot incorrectly identified file as older than itself"
       [[ file_no_exists -ot foo ]] && echo "-ot correctly identified when file1 does not exist"
 
   - name: "Unary string extended tests"
