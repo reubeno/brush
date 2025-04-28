@@ -117,21 +117,8 @@ pub trait InteractiveShell {
             // Check for any completed jobs.
             shell_mut.check_for_completed_jobs()?;
 
-            // If there's a variable called PROMPT_COMMAND, then run it first.
-            if let Some(prompt_cmd) = shell_mut.get_env_str("PROMPT_COMMAND") {
-                // Save (and later restore) the last exit status.
-                let prev_last_result = shell_mut.last_exit_status;
-                let prev_last_pipeline_statuses = shell_mut.last_pipeline_statuses.clone();
-
-                let params = shell_mut.default_exec_params();
-
-                shell_mut
-                    .run_string(prompt_cmd.into_owned(), &params)
-                    .await?;
-
-                shell_mut.last_pipeline_statuses = prev_last_pipeline_statuses;
-                shell_mut.last_exit_status = prev_last_result;
-            }
+            // Run any pre-prompt commands.
+            run_pre_prompt_commands(shell_mut).await?;
 
             // Now that we've done that, compose the prompt.
             let prompt = InteractivePrompt {
@@ -168,4 +155,44 @@ pub trait InteractiveShell {
             }
         }
     }
+}
+
+async fn run_pre_prompt_commands(shell: &mut brush_core::Shell) -> Result<(), ShellError> {
+    // If there's a variable called PROMPT_COMMAND, then run it first.
+    if let Some(prompt_cmd_var) = shell.get_env_var("PROMPT_COMMAND") {
+        match prompt_cmd_var.value() {
+            brush_core::ShellValue::String(cmd_str) => {
+                run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
+            }
+            brush_core::ShellValue::IndexedArray(values) => {
+                let owned_values: Vec<_> = values.values().cloned().collect();
+                for cmd_str in owned_values {
+                    run_pre_prompt_command(shell, cmd_str).await?;
+                }
+            }
+            // Other types are ignored.
+            _ => (),
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_pre_prompt_command(
+    shell: &mut brush_core::Shell,
+    prompt_cmd: impl Into<String>,
+) -> Result<(), ShellError> {
+    // Save (and later restore) the last exit status.
+    let prev_last_result = shell.last_exit_status;
+    let prev_last_pipeline_statuses = shell.last_pipeline_statuses.clone();
+
+    // Run the command.
+    let params = shell.default_exec_params();
+    shell.run_string(prompt_cmd, &params).await?;
+
+    // Restore the last exit status.
+    shell.last_pipeline_statuses = prev_last_pipeline_statuses;
+    shell.last_exit_status = prev_last_result;
+
+    Ok(())
 }
