@@ -85,7 +85,7 @@ jobs:
         run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
 
       - name: "Build and upload binaries to release"
-        uses: taiki-e/upload-rust-binary-action@v1.24.0
+        uses: taiki-e/upload-rust-binary-action@v1.25.0
         id: upload-release
         with:
           dry-run: ${{ github.event_name != 'release' }}
