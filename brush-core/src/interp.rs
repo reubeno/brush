@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
 #[cfg(target_os = "linux")]
-use std::os::fd::{AsFd, AsRawFd};
+use std::os::fd::AsFd;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
@@ -1665,10 +1665,7 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     let len = i32::try_from(bytes.len())?;
 
     #[cfg(target_os = "linux")]
-    nix::fcntl::fcntl(
-        reader.as_fd().as_raw_fd(),
-        nix::fcntl::FcntlArg::F_SETPIPE_SZ(len),
-    )?;
+    nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
 
     writer.write_all(bytes)?;
     drop(writer);
