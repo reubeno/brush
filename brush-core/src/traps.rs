@@ -1,3 +1,5 @@
+//! Implements various trapping capabilties.
+
 use std::str::FromStr;
 use std::{collections::HashMap, fmt::Display};
 
@@ -131,6 +133,7 @@ impl TryFrom<&str> for TrapSignal {
     }
 }
 
+/// Error type for [`TrapSignal`] conversions.
 #[derive(Debug, Clone, Copy)]
 pub struct DoesntHaveANumber;
 

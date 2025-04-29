@@ -31,7 +31,7 @@ mod terminal;
 mod tests;
 mod timing;
 mod trace_categories;
-mod traps;
+pub mod traps;
 mod variables;
 
 pub use commands::ExecutionContext;
