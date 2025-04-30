@@ -418,6 +418,8 @@ pub enum BraceExpressionMember {
 
 impl BraceExpressionMember {
     /// Generates expansions for this member.
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
         match self {
             BraceExpressionMember::NumberSequence {
@@ -464,7 +466,7 @@ fn cacheable_parse(
     tracing::debug!(target: "expansion", "Parsing word '{}'", word);
 
     let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
-        .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
+        .map_err(|err| error::WordParseError::Word(word.clone(), err))?;
 
     tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word, pieces);
 
@@ -505,7 +507,7 @@ peg::parser! {
         rule traced<T>(e: rule<T>) -> T =
             &(input:$([_]*) {
                 #[cfg(feature = "debug-tracing")]
-                println!("[PEG_INPUT_START]\n{}\n[PEG_TRACE_START]", input);
+                println!("[PEG_INPUT_START]\n{input}\n[PEG_TRACE_START]");
             })
             e:e()? {?
                 #[cfg(feature = "debug-tracing")]
@@ -957,9 +959,9 @@ mod tests {
 
     #[test]
     fn parse_arithmetic_expansion() -> Result<()> {
-        let parsed = super::parse("$((0))", &ParserOptions::default())?;
         const EXPECTED_RESULT: &str = "0";
 
+        let parsed = super::parse("$((0))", &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT
@@ -970,9 +972,9 @@ mod tests {
 
     #[test]
     fn parse_arithmetic_expansion_with_parens() -> Result<()> {
-        let parsed = super::parse("$((((1+2)*3)))", &ParserOptions::default())?;
         const EXPECTED_RESULT: &str = "((1+2)*3)";
 
+        let parsed = super::parse("$((((1+2)*3)))", &ParserOptions::default())?;
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT

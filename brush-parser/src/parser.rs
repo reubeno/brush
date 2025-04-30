@@ -126,7 +126,7 @@ pub fn parse_tokens(
         Err(parse_error) => {
             tracing::debug!(target: "parse", "Parse error: {:?}", parse_error);
             Err(error::convert_peg_parse_error(
-                parse_error,
+                &parse_error,
                 tokens.as_slice(),
             ))
         }
@@ -216,7 +216,7 @@ peg::parser! {
                 let mut and_ors = vec![first];
                 let mut seps = vec![];
 
-                for (sep, ao) in remainder.into_iter() {
+                for (sep, ao) in remainder {
                     seps.push(sep);
                     and_ors.push(ao);
                 }
@@ -321,7 +321,7 @@ peg::parser! {
                 let mut and_ors = vec![first];
                 let mut seps = vec![];
 
-                for (sep, ao) in remainder.into_iter() {
+                for (sep, ao) in remainder {
                     seps.push(sep.unwrap_or(SeparatorOperator::Sequence));
                     and_ors.push(ao);
                 }
@@ -509,7 +509,7 @@ peg::parser! {
         rule else_part() -> Vec<ast::ElseClause> =
             cs:_conditional_else_part()+ u:_unconditional_else_part()? {
                 let mut parts = vec![];
-                for c in cs.into_iter() {
+                for c in cs {
                     parts.push(c);
                 }
 
@@ -855,12 +855,6 @@ fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
 
 // add `2>&1` to the command if the pipeline is `|&`
 fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static str> {
-    let r = ast::IoRedirect::File(
-        Some(2),
-        ast::IoFileRedirectKind::DuplicateOutput,
-        ast::IoFileRedirectTarget::Fd(1),
-    );
-
     fn add_to_redirect_list(l: &mut Option<ast::RedirectList>, r: ast::IoRedirect) {
         if let Some(l) = l {
             l.0.push(r);
@@ -869,6 +863,12 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
             *l = Some(ast::RedirectList(v));
         }
     }
+
+    let r = ast::IoRedirect::File(
+        Some(2),
+        ast::IoFileRedirectKind::DuplicateOutput,
+        ast::IoFileRedirectTarget::Fd(1),
+    );
 
     match c {
         ast::Command::Simple(c) => {
@@ -882,7 +882,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
         ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
         ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
         ast::Command::ExtendedTest(_) => return Err("|& unimplemented for extended tests"),
-    };
+    }
 
     Ok(())
 }
@@ -925,6 +925,7 @@ fn parse_array_assignment(
 }
 
 #[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
 
     use super::*;
@@ -1006,7 +1007,7 @@ esac\
                     ast::IoFileRedirectKind::DuplicateOutput,
                     ast::IoFileRedirectTarget::Fd(1)
                 ))
-            )
+            );
         }
         Ok(())
     }
@@ -1036,7 +1037,7 @@ esac\
                         ast::IoFileRedirectKind::DuplicateOutput,
                         ast::IoFileRedirectTarget::Fd(1)
                     )
-                )
+                );
             }
         }
         Ok(())
@@ -1044,6 +1045,8 @@ esac\
 
     #[test]
     fn test_parse_program() -> Result<()> {
+        use ast::*;
+
         let input = r#"
 
 #!/usr/bin/env bash
@@ -1056,7 +1059,6 @@ for f in A B C; do
    done
 
 "#;
-        use ast::*;
         let expected = Program {
             complete_commands: vec![CompoundList(vec![CompoundListItem(
                 AndOrList {

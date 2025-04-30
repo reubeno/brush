@@ -160,19 +160,16 @@ impl std::io::Read for OpenFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             OpenFile::Stdin => std::io::stdin().read(buf),
-            OpenFile::Stdout => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                error::Error::OpenFileNotReadable("stdout"),
-            )),
-            OpenFile::Stderr => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                error::Error::OpenFileNotReadable("stderr"),
-            )),
+            OpenFile::Stdout => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
+                "stdout",
+            ))),
+            OpenFile::Stderr => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
+                "stderr",
+            ))),
             OpenFile::Null => Ok(0),
             OpenFile::File(f) => f.read(buf),
             OpenFile::PipeReader(reader) => reader.read(buf),
-            OpenFile::PipeWriter(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            OpenFile::PipeWriter(_) => Err(std::io::Error::other(
                 error::Error::OpenFileNotReadable("pipe writer"),
             )),
         }
@@ -182,16 +179,14 @@ impl std::io::Read for OpenFile {
 impl std::io::Write for OpenFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            OpenFile::Stdin => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                error::Error::OpenFileNotWritable("stdin"),
-            )),
+            OpenFile::Stdin => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
+                "stdin",
+            ))),
             OpenFile::Stdout => std::io::stdout().write(buf),
             OpenFile::Stderr => std::io::stderr().write(buf),
             OpenFile::Null => Ok(buf.len()),
             OpenFile::File(f) => f.write(buf),
-            OpenFile::PipeReader(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            OpenFile::PipeReader(_) => Err(std::io::Error::other(
                 error::Error::OpenFileNotWritable("pipe reader"),
             )),
             OpenFile::PipeWriter(writer) => writer.write(buf),

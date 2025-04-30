@@ -108,6 +108,9 @@ peg::parser! {
                     return Err("invalid base");
                 }
 
+                // Okay to ignore these warnings; we've already checked that the radix is valid.
+                #[allow(clippy::cast_possible_truncation)]
+                #[allow(clippy::cast_sign_loss)]
                 i64::from_str_radix(s, radix as u32).or(Err("i64"))
             } /
             // Hex literal

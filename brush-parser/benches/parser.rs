@@ -42,15 +42,16 @@ done
     }
 
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
+        const POSSIBLE_BASH_COMPLETION_SCRIPT_PATH: &str =
+            "/usr/share/bash-completion/bash_completion";
+
         c.bench_function("tokenize_sample_script", |b| {
-            b.iter(|| uncached_tokenize(SAMPLE_SCRIPT))
+            b.iter(|| uncached_tokenize(SAMPLE_SCRIPT));
         });
 
         let tokens = uncached_tokenize(SAMPLE_SCRIPT);
         c.bench_function("parse_sample_script", |b| b.iter(|| parse(&tokens)));
 
-        const POSSIBLE_BASH_COMPLETION_SCRIPT_PATH: &str =
-            "/usr/share/bash-completion/bash_completion";
         let well_known_complicated_script =
             std::path::PathBuf::from(POSSIBLE_BASH_COMPLETION_SCRIPT_PATH);
 

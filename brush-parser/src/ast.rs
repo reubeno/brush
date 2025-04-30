@@ -19,7 +19,7 @@ pub struct Program {
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for complete_command in &self.complete_commands {
-            write!(f, "{}", complete_command)?;
+            write!(f, "{complete_command}")?;
         }
         Ok(())
     }
@@ -66,7 +66,7 @@ impl Display for AndOrList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.first)?;
         for item in &self.additional {
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
 
         Ok(())
@@ -90,8 +90,8 @@ pub enum AndOr {
 impl Display for AndOr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AndOr::And(pipeline) => write!(f, " && {}", pipeline),
-            AndOr::Or(pipeline) => write!(f, " || {}", pipeline),
+            AndOr::And(pipeline) => write!(f, " && {pipeline}"),
+            AndOr::Or(pipeline) => write!(f, " || {pipeline}"),
         }
     }
 }
@@ -132,7 +132,7 @@ impl Display for Pipeline {
             if i > 0 {
                 write!(f, " |")?;
             }
-            write!(f, "{}", command)?;
+            write!(f, "{command}")?;
         }
 
         Ok(())
@@ -158,17 +158,17 @@ pub enum Command {
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Command::Simple(simple_command) => write!(f, "{}", simple_command),
+            Command::Simple(simple_command) => write!(f, "{simple_command}"),
             Command::Compound(compound_command, redirect_list) => {
-                write!(f, "{}", compound_command)?;
+                write!(f, "{compound_command}")?;
                 if let Some(redirect_list) = redirect_list {
-                    write!(f, "{}", redirect_list)?;
+                    write!(f, "{redirect_list}")?;
                 }
                 Ok(())
             }
-            Command::Function(function_definition) => write!(f, "{}", function_definition),
+            Command::Function(function_definition) => write!(f, "{function_definition}"),
             Command::ExtendedTest(extended_test_expr) => {
-                write!(f, "[[ {} ]]", extended_test_expr)
+                write!(f, "[[ {extended_test_expr} ]]")
             }
         }
     }
@@ -203,24 +203,24 @@ pub enum CompoundCommand {
 impl Display for CompoundCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompoundCommand::Arithmetic(arithmetic_command) => write!(f, "{}", arithmetic_command),
+            CompoundCommand::Arithmetic(arithmetic_command) => write!(f, "{arithmetic_command}"),
             CompoundCommand::ArithmeticForClause(arithmetic_for_clause_command) => {
-                write!(f, "{}", arithmetic_for_clause_command)
+                write!(f, "{arithmetic_for_clause_command}")
             }
             CompoundCommand::BraceGroup(brace_group_command) => {
-                write!(f, "{}", brace_group_command)
+                write!(f, "{brace_group_command}")
             }
-            CompoundCommand::Subshell(subshell_command) => write!(f, "{}", subshell_command),
-            CompoundCommand::ForClause(for_clause_command) => write!(f, "{}", for_clause_command),
+            CompoundCommand::Subshell(subshell_command) => write!(f, "{subshell_command}"),
+            CompoundCommand::ForClause(for_clause_command) => write!(f, "{for_clause_command}"),
             CompoundCommand::CaseClause(case_clause_command) => {
-                write!(f, "{}", case_clause_command)
+                write!(f, "{case_clause_command}")
             }
-            CompoundCommand::IfClause(if_clause_command) => write!(f, "{}", if_clause_command),
+            CompoundCommand::IfClause(if_clause_command) => write!(f, "{if_clause_command}"),
             CompoundCommand::WhileClause(while_or_until_clause_command) => {
-                write!(f, "while {}", while_or_until_clause_command)
+                write!(f, "while {while_or_until_clause_command}")
             }
             CompoundCommand::UntilClause(while_or_until_clause_command) => {
-                write!(f, "until {}", while_or_until_clause_command)
+                write!(f, "until {while_or_until_clause_command}")
             }
         }
     }
@@ -278,7 +278,7 @@ impl Display for ForClauseCommand {
                     write!(f, " ")?;
                 }
 
-                write!(f, "{}", value)?;
+                write!(f, "{value}")?;
             }
         }
 
@@ -308,19 +308,19 @@ impl Display for ArithmeticForClauseCommand {
         write!(f, "for ((")?;
 
         if let Some(initializer) = &self.initializer {
-            write!(f, "{}", initializer)?;
+            write!(f, "{initializer}")?;
         }
 
         write!(f, "; ")?;
 
         if let Some(condition) = &self.condition {
-            write!(f, "{}", condition)?;
+            write!(f, "{condition}")?;
         }
 
         write!(f, "; ")?;
 
         if let Some(updater) = &self.updater {
-            write!(f, "{}", updater)?;
+            write!(f, "{updater}")?;
         }
 
         writeln!(f, "))")?;
@@ -345,7 +345,7 @@ impl Display for CaseClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "case {} in", self.value)?;
         for case in &self.cases {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", case)?;
+            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{case}")?;
         }
         writeln!(f)?;
         write!(f, "esac")
@@ -417,7 +417,7 @@ impl Display for IfClauseCommand {
         )?;
         if let Some(elses) = &self.elses {
             for else_clause in elses {
-                write!(f, "{}", else_clause)?;
+                write!(f, "{else_clause}")?;
             }
         }
 
@@ -443,7 +443,7 @@ impl Display for ElseClause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f)?;
         if let Some(condition) = &self.condition {
-            writeln!(f, "elif {}; then", condition)?;
+            writeln!(f, "elif {condition}; then")?;
         } else {
             writeln!(f, "else")?;
         }
@@ -476,12 +476,12 @@ impl Display for CaseItem {
             if i > 0 {
                 write!(f, "|")?;
             }
-            write!(f, "{}", pattern)?;
+            write!(f, "{pattern}")?;
         }
         writeln!(f, ")")?;
 
         if let Some(cmd) = &self.cmd {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", cmd)?;
+            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{cmd}")?;
         }
         writeln!(f)?;
         write!(f, "{}", self.post_action)
@@ -556,7 +556,7 @@ impl Display for FunctionBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)?;
         if let Some(redirect_list) = &self.1 {
-            write!(f, "{}", redirect_list)?;
+            write!(f, "{redirect_list}")?;
         }
 
         Ok(())
@@ -617,7 +617,7 @@ impl Display for SimpleCommand {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", prefix)?;
+            write!(f, "{prefix}")?;
             wrote_something = true;
         }
 
@@ -626,7 +626,7 @@ impl Display for SimpleCommand {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", word_or_name)?;
+            write!(f, "{word_or_name}")?;
             wrote_something = true;
         }
 
@@ -635,7 +635,7 @@ impl Display for SimpleCommand {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", suffix)?;
+            write!(f, "{suffix}")?;
         }
 
         Ok(())
@@ -655,7 +655,7 @@ impl Display for CommandPrefix {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
         Ok(())
     }
@@ -674,7 +674,7 @@ impl Display for CommandSuffix {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
         Ok(())
     }
@@ -718,11 +718,11 @@ pub enum CommandPrefixOrSuffixItem {
 impl Display for CommandPrefixOrSuffixItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{}", io_redirect),
-            CommandPrefixOrSuffixItem::Word(word) => write!(f, "{}", word),
-            CommandPrefixOrSuffixItem::AssignmentWord(_assignment, word) => write!(f, "{}", word),
+            CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{io_redirect}"),
+            CommandPrefixOrSuffixItem::Word(word) => write!(f, "{word}"),
+            CommandPrefixOrSuffixItem::AssignmentWord(_assignment, word) => write!(f, "{word}"),
             CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
-                write!(f, "{}({})", kind, subshell_command)
+                write!(f, "{kind}({subshell_command})")
             }
         }
     }
@@ -765,9 +765,9 @@ pub enum AssignmentName {
 impl Display for AssignmentName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssignmentName::VariableName(name) => write!(f, "{}", name),
+            AssignmentName::VariableName(name) => write!(f, "{name}"),
             AssignmentName::ArrayElementName(name, index) => {
-                write!(f, "{}[{}]", name, index)
+                write!(f, "{name}[{index}]")
             }
         }
     }
@@ -787,7 +787,7 @@ pub enum AssignmentValue {
 impl Display for AssignmentValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssignmentValue::Scalar(word) => write!(f, "{}", word),
+            AssignmentValue::Scalar(word) => write!(f, "{word}"),
             AssignmentValue::Array(words) => {
                 write!(f, "(")?;
                 for (i, value) in words.iter().enumerate() {
@@ -795,8 +795,8 @@ impl Display for AssignmentValue {
                         write!(f, " ")?;
                     }
                     match value {
-                        (Some(key), value) => write!(f, "[{}]={}", key, value)?,
-                        (None, value) => write!(f, "{}", value)?,
+                        (Some(key), value) => write!(f, "[{key}]={value}")?,
+                        (None, value) => write!(f, "{value}")?,
                     }
                 }
                 write!(f, ")")
@@ -814,7 +814,7 @@ pub struct RedirectList(pub Vec<IoRedirect>);
 impl Display for RedirectList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for item in &self.0 {
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
         Ok(())
     }
@@ -840,17 +840,17 @@ impl Display for IoRedirect {
         match self {
             IoRedirect::File(fd_num, kind, target) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{}", fd_num)?;
+                    write!(f, "{fd_num}")?;
                 }
 
-                write!(f, "{} {}", kind, target)?;
+                write!(f, "{kind} {target}")?;
             }
             IoRedirect::OutputAndError(target, append) => {
                 write!(f, "&>")?;
                 if *append {
                     write!(f, ">")?;
                 }
-                write!(f, " {}", target)?;
+                write!(f, " {target}")?;
             }
             IoRedirect::HereDocument(
                 fd_num,
@@ -862,7 +862,7 @@ impl Display for IoRedirect {
                 },
             ) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{}", fd_num)?;
+                    write!(f, "{fd_num}")?;
                 }
 
                 write!(f, "<<")?;
@@ -870,17 +870,17 @@ impl Display for IoRedirect {
                     write!(f, "-")?;
                 }
 
-                writeln!(f, "{}", here_end)?;
+                writeln!(f, "{here_end}")?;
 
-                write!(f, "{}", doc)?;
-                writeln!(f, "{}", here_end)?;
+                write!(f, "{doc}")?;
+                writeln!(f, "{here_end}")?;
             }
             IoRedirect::HereString(fd_num, s) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{}", fd_num)?;
+                    write!(f, "{fd_num}")?;
                 }
 
-                write!(f, "<<< {}", s)?;
+                write!(f, "<<< {s}")?;
             }
         }
 
@@ -940,8 +940,8 @@ pub enum IoFileRedirectTarget {
 impl Display for IoFileRedirectTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IoFileRedirectTarget::Filename(word) => write!(f, "{}", word),
-            IoFileRedirectTarget::Fd(fd) => write!(f, "{}", fd),
+            IoFileRedirectTarget::Filename(word) => write!(f, "{word}"),
+            IoFileRedirectTarget::Fd(fd) => write!(f, "{fd}"),
             IoFileRedirectTarget::ProcessSubstitution(kind, subshell_command) => {
                 write!(f, "{kind}{subshell_command}")
             }
@@ -992,7 +992,7 @@ impl Display for TestExpr {
             TestExpr::Literal(s) => write!(f, "{s}"),
             TestExpr::And(left, right) => write!(f, "{left} -a {right}"),
             TestExpr::Or(left, right) => write!(f, "{left} -o {right}"),
-            TestExpr::Not(expr) => write!(f, "! {}", expr),
+            TestExpr::Not(expr) => write!(f, "! {expr}"),
             TestExpr::Parenthesized(expr) => write!(f, "( {expr} )"),
             TestExpr::UnaryTest(pred, word) => write!(f, "{pred} {word}"),
             TestExpr::BinaryTest(left, op, right) => write!(f, "{left} {op} {right}"),
@@ -1023,22 +1023,22 @@ impl Display for ExtendedTestExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExtendedTestExpr::And(left, right) => {
-                write!(f, "{} && {}", left, right)
+                write!(f, "{left} && {right}")
             }
             ExtendedTestExpr::Or(left, right) => {
-                write!(f, "{} || {}", left, right)
+                write!(f, "{left} || {right}")
             }
             ExtendedTestExpr::Not(expr) => {
-                write!(f, "! {}", expr)
+                write!(f, "! {expr}")
             }
             ExtendedTestExpr::Parenthesized(expr) => {
-                write!(f, "( {} )", expr)
+                write!(f, "( {expr} )")
             }
             ExtendedTestExpr::UnaryTest(pred, word) => {
-                write!(f, "{} {}", pred, word)
+                write!(f, "{pred} {word}")
             }
             ExtendedTestExpr::BinaryTest(pred, left, right) => {
-                write!(f, "{} {} {}", left, pred, right)
+                write!(f, "{left} {pred} {right}")
             }
         }
     }
@@ -1502,7 +1502,7 @@ impl Display for ArithmeticTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ArithmeticTarget::Variable(name) => write!(f, "{name}"),
-            ArithmeticTarget::ArrayElement(name, index) => write!(f, "{}[{}]", name, index),
+            ArithmeticTarget::ArrayElement(name, index) => write!(f, "{name}[{index}]"),
         }
     }
 }
