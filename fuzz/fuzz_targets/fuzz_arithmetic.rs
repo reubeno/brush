@@ -16,7 +16,9 @@ lazy_static::lazy_static! {
     };
 }
 
-fn eval_arithmetic(mut shell: brush_core::Shell, input: ast::ArithmeticExpr) -> Result<()> {
+fn eval_arithmetic(mut shell: brush_core::Shell, input: &ast::ArithmeticExpr) -> Result<()> {
+    const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
+
     //
     // Turn it back into a string so we can pass it in on the command-line.
     //
@@ -45,7 +47,6 @@ fn eval_arithmetic(mut shell: brush_core::Shell, input: ast::ArithmeticExpr) -> 
 
     let mut oracle_cmd = assert_cmd::Command::from_std(oracle_cmd);
 
-    const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
     oracle_cmd.timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_IN_SECONDS));
 
     let input = std::format!("echo \"$(( {input_str} ))\"\n");
@@ -86,5 +87,5 @@ fuzz_target!(|input: ast::ArithmeticExpr| {
     }
 
     let shell = SHELL_TEMPLATE.clone();
-    eval_arithmetic(shell, input).unwrap();
+    eval_arithmetic(shell, &input).unwrap();
 });

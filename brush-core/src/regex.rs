@@ -14,7 +14,7 @@ pub(crate) enum RegexPiece {
 }
 
 impl RegexPiece {
-    fn to_regex_str(&self) -> Cow<str> {
+    fn to_regex_str(&self) -> Cow<'_, str> {
         match self {
             RegexPiece::Pattern(s) => Cow::Borrowed(s.as_str()),
             RegexPiece::Literal(s) => escape_literal_regex_piece(s.as_str()),
@@ -117,7 +117,7 @@ pub(crate) fn compile_regex(
     }
 }
 
-fn add_missing_escape_chars_to_regex(s: &str) -> Cow<str> {
+fn add_missing_escape_chars_to_regex(s: &str) -> Cow<'_, str> {
     // We may see a character class with an unescaped '[' (open bracket) character. We need
     // to escape that character.
     let mut in_escape = false;
@@ -157,7 +157,7 @@ fn add_missing_escape_chars_to_regex(s: &str) -> Cow<str> {
     updated.into()
 }
 
-fn escape_literal_regex_piece(s: &str) -> Cow<str> {
+fn escape_literal_regex_piece(s: &str) -> Cow<'_, str> {
     let mut result = String::new();
 
     for c in s.chars() {
