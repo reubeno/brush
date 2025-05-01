@@ -1,7 +1,7 @@
 use crate::interactive_shell::InteractivePrompt;
 
 impl reedline::Prompt for InteractivePrompt {
-    fn render_prompt_left(&self) -> std::borrow::Cow<str> {
+    fn render_prompt_left(&self) -> std::borrow::Cow<'_, str> {
         // [Workaround: see https://github.com/nushell/reedline/issues/707]
         // If the prompt starts with a newline character, then there's a chance
         // that it won't be rendered correctly. For this specific case, insert
@@ -13,7 +13,7 @@ impl reedline::Prompt for InteractivePrompt {
         }
     }
 
-    fn render_prompt_right(&self) -> std::borrow::Cow<str> {
+    fn render_prompt_right(&self) -> std::borrow::Cow<'_, str> {
         self.alt_side_prompt.as_str().into()
     }
 
@@ -21,18 +21,18 @@ impl reedline::Prompt for InteractivePrompt {
     fn render_prompt_indicator(
         &self,
         _prompt_mode: reedline::PromptEditMode,
-    ) -> std::borrow::Cow<str> {
+    ) -> std::borrow::Cow<'_, str> {
         "".into()
     }
 
-    fn render_prompt_multiline_indicator(&self) -> std::borrow::Cow<str> {
+    fn render_prompt_multiline_indicator(&self) -> std::borrow::Cow<'_, str> {
         self.continuation_prompt.as_str().into()
     }
 
     fn render_prompt_history_search_indicator(
         &self,
         history_search: reedline::PromptHistorySearch,
-    ) -> std::borrow::Cow<str> {
+    ) -> std::borrow::Cow<'_, str> {
         match history_search.status {
             reedline::PromptHistorySearchStatus::Passing => {
                 if history_search.term.is_empty() {

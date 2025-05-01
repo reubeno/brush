@@ -20,6 +20,12 @@ readme = "README.md"
 repository = "https://github.com/reubeno/brush"
 rust-version = "1.75.0"
 
+[workspace.lints.rust]
+rust_2018_idioms = { level = "deny", priority = -1 }
+unsafe_op_in_unsafe_fn = "deny"
+unused_lifetimes = "deny"
+unused_macro_rules = "deny"
+
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }

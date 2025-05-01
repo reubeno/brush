@@ -543,6 +543,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn current_location(&self) -> Option<SourcePosition> {
         Some(self.cross_state.cursor.clone())
     }
@@ -587,6 +588,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     }
 
     #[allow(clippy::if_same_then_else)]
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::unwrap_in_result)]
+    #[allow(clippy::panic_in_result_fn)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,
@@ -883,7 +887,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                                 match cur_token.reason {
                                     TokenEndReason::HereDocumentBodyStart => {
-                                        state.append_char('\n')
+                                        state.append_char('\n');
                                     }
                                     TokenEndReason::NonNewLineBlank => state.append_char(' '),
                                     TokenEndReason::SpecifiedTerminatingChar => {
@@ -959,12 +963,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                 }
 
                                 if let Some(cur_token_value) = cur_token.token {
-                                    state.append_str(cur_token_value.to_str())
+                                    state.append_str(cur_token_value.to_str());
                                 }
 
                                 match cur_token.reason {
                                     TokenEndReason::HereDocumentBodyStart => {
-                                        state.append_char('\n')
+                                        state.append_char('\n');
                                     }
                                     TokenEndReason::NonNewLineBlank => state.append_char(' '),
                                     TokenEndReason::SpecifiedTerminatingChar => {
@@ -1032,7 +1036,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 && !state.in_operator()
                 && state
                     .current_token()
-                    .ends_with(|x| self.can_start_extglob(x))
+                    .ends_with(|x| Self::can_start_extglob(x))
             {
                 // Consume the '(' and append it.
                 self.consume_char()?;
@@ -1062,7 +1066,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             // If the character *can* start an operator, then it will.
             //
-            } else if state.unquoted() && self.can_start_operator(c) {
+            } else if state.unquoted() && Self::can_start_operator(c) {
                 if state.started_token() {
                     result = state.delimit_current_token(
                         TokenEndReason::OperatorStart,
@@ -1116,11 +1120,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     };
                 }
                 // Re-start loop as if the comment never happened.
-                continue;
-            //
-            // In all other cases where we have an in-progress token, we delimit here.
-            //
             } else if state.started_token() {
+                // In all other cases where we have an in-progress token, we delimit here.
                 result =
                     state.delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
             } else {
@@ -1136,11 +1137,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Ok(result)
     }
 
-    fn can_start_extglob(&self, c: char) -> bool {
+    fn can_start_extglob(c: char) -> bool {
         matches!(c, '@' | '!' | '?' | '+' | '*')
     }
 
-    fn can_start_operator(&self, c: char) -> bool {
+    fn can_start_operator(c: char) -> bool {
         matches!(c, '&' | '(' | ')' | ';' | '\n' | '|' | '<' | '>')
     }
 
@@ -1245,7 +1246,9 @@ pub fn unquote_str(s: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
+
     use super::*;
     use anyhow::Result;
     // use assert_matches::assert_matches;
@@ -1286,8 +1289,8 @@ bc",
     #[test]
     fn tokenize_comment() -> Result<()> {
         let tokens = tokenize_str(
-            r#"a #comment
-"#,
+            r"a #comment
+",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1301,7 +1304,7 @@ bc",
     #[test]
     fn tokenize_comment_at_eof() -> Result<()> {
         assert_matches!(
-            &tokenize_str(r#"a #comment"#)?[..],
+            &tokenize_str(r"a #comment")?[..],
             [t1 @ Token::Word(..)] if t1.to_str() == "a"
         );
         Ok(())
@@ -1310,9 +1313,9 @@ bc",
     #[test]
     fn tokenize_empty_here_doc() -> Result<()> {
         let tokens = tokenize_str(
-            r#"cat <<HERE
+            r"cat <<HERE
 HERE
-"#,
+",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1335,11 +1338,11 @@ HERE
     #[test]
     fn tokenize_here_doc() -> Result<()> {
         let tokens = tokenize_str(
-            r#"cat <<HERE
+            r"cat <<HERE
 SOMETHING
 HERE
 echo after
-"#,
+",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1368,10 +1371,10 @@ echo after
     #[test]
     fn tokenize_here_doc_with_tab_removal() -> Result<()> {
         let tokens = tokenize_str(
-            r#"cat <<-HERE
+            r"cat <<-HERE
 	SOMETHING
 	HERE
-"#,
+",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1394,12 +1397,12 @@ echo after
     #[test]
     fn tokenize_here_doc_with_other_tokens() -> Result<()> {
         let tokens = tokenize_str(
-            r#"cat <<EOF | wc -l
+            r"cat <<EOF | wc -l
 A B C
 1 2 3
 D E F
 EOF
-"#,
+",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1429,13 +1432,13 @@ EOF
     #[test]
     fn tokenize_multiple_here_docs() -> Result<()> {
         let tokens = tokenize_str(
-            r#"cat <<HERE1 <<HERE2
+            r"cat <<HERE1 <<HERE2
 SOMETHING
 HERE1
 OTHER
 HERE2
 echo after
-"#,
+",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1470,33 +1473,31 @@ echo after
     }
 
     #[test]
-    fn tokenize_unterminated_here_doc() -> Result<()> {
+    fn tokenize_unterminated_here_doc() {
         let result = tokenize_str(
-            r#"cat <<HERE
+            r"cat <<HERE
 SOMETHING
-"#,
+",
         );
         assert!(result.is_err());
-        Ok(())
     }
 
     #[test]
-    fn tokenize_missing_here_tag() -> Result<()> {
+    fn tokenize_missing_here_tag() {
         let result = tokenize_str(
             r"cat <<
 ",
         );
         assert!(result.is_err());
-        Ok(())
     }
 
     #[test]
     fn tokenize_here_doc_in_command_substitution() -> Result<()> {
         let tokens = tokenize_str(
-            r#"echo $(cat <<HERE
+            r"echo $(cat <<HERE
 TEXT
 HERE
-)"#,
+)",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1511,12 +1512,12 @@ HERE
     #[test]
     fn tokenize_complex_here_docs_in_command_substitution() -> Result<()> {
         let tokens = tokenize_str(
-            r#"echo $(cat <<HERE1 <<HERE2 | wc -l
+            r"echo $(cat <<HERE1 <<HERE2 | wc -l
 TEXT
 HERE1
 OTHER
 HERE2
-)"#,
+)",
         )?;
         assert_matches!(
             &tokens[..],
@@ -1531,7 +1532,7 @@ HERE2
     #[test]
     fn tokenize_simple_backquote() -> Result<()> {
         assert_matches!(
-            &tokenize_str(r#"echo `echo hi`"#)?[..],
+            &tokenize_str(r"echo `echo hi`")?[..],
             [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
                 t1.to_str() == "echo" &&
                 t2.to_str() == "`echo hi`"
@@ -1754,8 +1755,8 @@ HERE2
     #[test]
     fn test_quote_removal() {
         assert_eq!(unquote_str(r#""hello""#), "hello");
-        assert_eq!(unquote_str(r#"'hello'"#), "hello");
+        assert_eq!(unquote_str(r"'hello'"), "hello");
         assert_eq!(unquote_str(r#""hel\"lo""#), r#"hel"lo"#);
-        assert_eq!(unquote_str(r#"'hel\'lo'"#), r#"hel'lo"#);
+        assert_eq!(unquote_str(r"'hel\'lo'"), r"hel'lo");
     }
 }

@@ -584,10 +584,7 @@ impl builtins::Command for CompOptCommand {
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                std::mem::swap(
-                    &mut context.shell.completion_config.default,
-                    &mut Some(spec),
-                );
+                context.shell.completion_config.default = Some(spec);
             }
         } else if self.update_empty {
             if let Some(spec) = &mut context.shell.completion_config.empty_line {
@@ -595,10 +592,7 @@ impl builtins::Command for CompOptCommand {
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                std::mem::swap(
-                    &mut context.shell.completion_config.empty_line,
-                    &mut Some(spec),
-                );
+                context.shell.completion_config.empty_line = Some(spec);
             }
         } else if self.update_initial_word {
             if let Some(spec) = &mut context.shell.completion_config.initial_word {
@@ -606,10 +600,7 @@ impl builtins::Command for CompOptCommand {
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                std::mem::swap(
-                    &mut context.shell.completion_config.initial_word,
-                    &mut Some(spec),
-                );
+                context.shell.completion_config.initial_word = Some(spec);
             }
         } else {
             // If we got here, then we need to apply to any completion actively in-flight.

@@ -1077,7 +1077,7 @@ async fn get_file_completions(
         .collect()
 }
 
-fn get_command_completions(shell: &Shell, context: &Context) -> IndexSet<String> {
+fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<String> {
     let mut candidates = IndexSet::new();
     let glob_pattern = std::format!("{}*", context.token_to_complete);
 

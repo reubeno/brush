@@ -160,7 +160,7 @@ pub trait Execute {
 trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext,
+        context: &mut PipelineExecutionContext<'_>,
         params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error>;
 }
@@ -487,7 +487,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
-        pipeline_context: &mut PipelineExecutionContext,
+        pipeline_context: &mut PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
@@ -910,7 +910,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     #[allow(clippy::too_many_lines)] // TODO: refactor this function
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext,
+        context: &mut PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error> {
         let default_prefix = ast::CommandPrefix::default();

@@ -59,7 +59,7 @@ pub enum TestCommandParseError {
 }
 
 pub(crate) fn convert_peg_parse_error(
-    err: peg::error::ParseError<usize>,
+    err: &peg::error::ParseError<usize>,
     tokens: &[Token],
 ) -> ParseError {
     let approx_token_index = err.location;

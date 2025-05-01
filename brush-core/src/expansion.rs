@@ -1500,7 +1500,7 @@ impl<'a> WordExpander<'a> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
+                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
                     caps[0].to_uppercase()
                 });
                 Ok(result.into_owned())
@@ -1520,7 +1520,7 @@ impl<'a> WordExpander<'a> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
+                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
                     caps[0].to_lowercase()
                 });
                 Ok(result.into_owned())

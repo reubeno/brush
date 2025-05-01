@@ -15,7 +15,10 @@ lazy_static::lazy_static! {
     };
 }
 
+#[allow(clippy::unused_async)]
 async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
+    const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
+
     //
     // Instantiate a brush shell with defaults, then try to parse the input.
     //
@@ -35,7 +38,6 @@ async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
 
     let mut oracle_cmd = assert_cmd::Command::from_std(oracle_cmd);
 
-    const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
     oracle_cmd.timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_IN_SECONDS));
 
     let mut input = input;

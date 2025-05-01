@@ -104,7 +104,7 @@ peg::parser! {
                         s.push_str(&branches.join("|"));
                         s.push_str(").+?|)");
                     } else {
-                        s.push_str("(?:.+)")
+                        s.push_str("(?:.+)");
                     }
                 } else {
                     s.push('(');
@@ -161,6 +161,7 @@ fn escape_char_class_char_list(s: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;
