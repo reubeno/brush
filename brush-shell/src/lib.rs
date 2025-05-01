@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-mod args;
-mod events;
-mod productinfo;
+pub mod args;
+pub mod events;
 
-pub use args::CommandLineArgs;
+mod productinfo;

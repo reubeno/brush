@@ -1,3 +1,5 @@
+//! Facilities for configuring trap handlers.
+
 use std::str::FromStr;
 use std::{collections::HashMap, fmt::Display};
 
@@ -131,17 +133,18 @@ impl TryFrom<&str> for TrapSignal {
     }
 }
 
+/// Error type used when failing to convert a `TrapSignal` to a number.
 #[derive(Debug, Clone, Copy)]
-pub struct DoesntHaveANumber;
+pub struct TrapSignalNumberError;
 
 impl TryFrom<TrapSignal> for i32 {
-    type Error = DoesntHaveANumber;
+    type Error = TrapSignalNumberError;
     fn try_from(value: TrapSignal) -> Result<Self, Self::Error> {
         Ok(match value {
             #[cfg(unix)]
             TrapSignal::Signal(s) => s as i32,
             TrapSignal::Exit => 0,
-            _ => return Err(DoesntHaveANumber),
+            _ => return Err(TrapSignalNumberError),
         })
     }
 }
@@ -150,9 +153,9 @@ impl TryFrom<TrapSignal> for i32 {
 #[derive(Clone, Default)]
 pub struct TrapHandlerConfig {
     /// Registered handlers for traps; maps signal type to command.
-    pub handlers: HashMap<TrapSignal, String>,
+    pub(crate) handlers: HashMap<TrapSignal, String>,
     /// Current depth of the handler stack.
-    pub handler_depth: i32,
+    pub(crate) handler_depth: i32,
 }
 
 impl TrapHandlerConfig {

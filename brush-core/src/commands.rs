@@ -114,17 +114,17 @@ pub struct ExecutionContext<'a> {
 
 impl ExecutionContext<'_> {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> openfiles::OpenFile {
+    pub fn stdin(&self) -> impl std::io::Read {
         self.params.stdin()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> openfiles::OpenFile {
+    pub fn stdout(&self) -> impl std::io::Write {
         self.params.stdout()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> openfiles::OpenFile {
+    pub fn stderr(&self) -> impl std::io::Write {
         self.params.stderr()
     }
 
@@ -169,7 +169,7 @@ impl From<&String> for CommandArg {
 }
 
 impl CommandArg {
-    pub fn quote_for_tracing(&self) -> Cow<'_, str> {
+    pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             CommandArg::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
             CommandArg::Assignment(a) => {

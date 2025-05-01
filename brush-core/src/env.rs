@@ -1,3 +1,5 @@
+//! Implements a shell variable environment.
+
 use std::borrow::Cow;
 use std::collections::hash_map;
 use std::collections::HashMap;
@@ -51,7 +53,7 @@ impl ShellEnvironment {
     /// Returns a new shell environment.
     pub fn new() -> Self {
         Self {
-            scopes: vec![(EnvironmentScope::Global, ShellVariableMap::new())],
+            scopes: vec![(EnvironmentScope::Global, ShellVariableMap::default())],
             export_variables_on_modification: false,
             entry_count: 0,
         }
@@ -63,7 +65,7 @@ impl ShellEnvironment {
     ///
     /// * `scope_type` - The type of scope to push.
     pub fn push_scope(&mut self, scope_type: EnvironmentScope) {
-        self.scopes.push((scope_type, ShellVariableMap::new()));
+        self.scopes.push((scope_type, ShellVariableMap::default()));
     }
 
     /// Pops the top-most scope off the environment's scope stack.
@@ -517,19 +519,12 @@ impl ShellEnvironment {
 }
 
 /// Represents a map from names to shell variables.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ShellVariableMap {
     variables: HashMap<String, ShellVariable>,
 }
 
 impl ShellVariableMap {
-    /// Returns a new shell variable map.
-    pub fn new() -> Self {
-        Self {
-            variables: HashMap::new(),
-        }
-    }
-
     //
     // Iterators/Getters
     //

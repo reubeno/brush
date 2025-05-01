@@ -44,7 +44,7 @@ pub struct Shell {
     /// Runtime shell options.
     pub options: RuntimeOptions,
     /// State of managed jobs.
-    pub jobs: jobs::JobManager,
+    pub(crate) jobs: jobs::JobManager,
     /// Shell aliases.
     pub aliases: HashMap<String, String>,
 
@@ -87,7 +87,7 @@ pub struct Shell {
     pub builtins: HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
-    pub program_location_cache: pathcache::PathCache,
+    pub(crate) program_location_cache: pathcache::PathCache,
 
     /// Last "SECONDS" captured time.
     last_stopwatch_time: std::time::SystemTime,
@@ -1470,6 +1470,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `open_files` - The new file descriptor table to use.
+    #[allow(dead_code)]
     pub(crate) fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
         self.open_files = open_files;
     }
@@ -1554,13 +1555,13 @@ impl Shell {
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
-    pub fn stdout(&self) -> openfiles::OpenFile {
+    pub fn stdout(&self) -> impl std::io::Write {
         self.open_files.files.get(&1).unwrap().try_dup().unwrap()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
-    pub fn stderr(&self) -> openfiles::OpenFile {
+    pub fn stderr(&self) -> impl std::io::Write {
         self.open_files.files.get(&2).unwrap().try_dup().unwrap()
     }
 

@@ -1,7 +1,9 @@
+/// Stub implementation of a pipe reader.
 #[derive(Clone)]
-pub struct PipeReader {}
+pub(crate) struct PipeReader {}
 
 impl PipeReader {
+    /// Tries to clone the reader.
     pub fn try_clone(&self) -> std::io::Result<PipeReader> {
         Ok((*self).clone())
     }
@@ -20,10 +22,12 @@ impl std::io::Read for PipeReader {
     }
 }
 
+/// Stub implementation o a pipe writer.
 #[derive(Clone)]
-pub struct PipeWriter {}
+pub(crate) struct PipeWriter {}
 
 impl PipeWriter {
+    /// Tries to clone the writer.
     pub fn try_clone(&self) -> std::io::Result<PipeWriter> {
         Ok((*self).clone())
     }

@@ -1,3 +1,5 @@
+//! Defines runtime options for the shell.
+
 use itertools::Itertools;
 
 use crate::CreateOptions;

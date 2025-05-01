@@ -1,9 +1,10 @@
 use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
-use std::io::{Read, Write};
 
 use crate::{builtins, commands, env, error, openfiles, sys, variables};
+
+use std::io::{Read, Write};
 
 /// Parse standard input.
 #[derive(Parser)]
@@ -86,13 +87,13 @@ impl builtins::Command for ReadCommand {
                 .fd(fd_num)
                 .ok_or_else(|| error::Error::BadFileDescriptor(fd_num))?
         } else {
-            context.stdin()
+            context.params.stdin_file()
         };
 
         // Retrieve effective value of IFS for splitting.
         let ifs = context.shell.get_ifs();
 
-        let input_line = self.read_line(input_stream, context.stdout())?;
+        let input_line = self.read_line(input_stream, context.params.stdout_file())?;
 
         if let Some(input_line) = input_line {
             // If -a was specified, then place the fields as elements into the array.

@@ -1,3 +1,5 @@
+//! Structures for managing function registrations.
+
 use std::{collections::HashMap, sync::Arc};
 
 /// An environment for defined, named functions.
@@ -46,5 +48,5 @@ impl FunctionEnv {
 #[derive(Clone)]
 pub struct FunctionRegistration {
     /// The definition of the function.
-    pub definition: Arc<brush_parser::ast::FunctionDefinition>,
+    pub(crate) definition: Arc<brush_parser::ast::FunctionDefinition>,
 }
