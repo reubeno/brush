@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use normalize_path::NormalizePath;
 use rand::Rng;
 
 use crate::arithmetic::Evaluatable;
@@ -1492,8 +1493,8 @@ impl Shell {
             }
         }
 
-        // TODO: Don't canonicalize, just normalize.
-        let cleaned_path = abs_path.canonicalize()?;
+        // Normalize the path (but don't canonicalize it).
+        let cleaned_path = abs_path.normalize();
 
         let pwd = cleaned_path.to_string_lossy().to_string();
 
