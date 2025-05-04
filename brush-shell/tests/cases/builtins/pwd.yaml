@@ -9,3 +9,62 @@ cases:
       cd usr
       pwd
       echo "Result: $?"
+
+  - name: "pwd -LP"
+    stdin: |
+      mkdir -p ./level1/level2/level3
+      cd level1
+      ln -s ./level2/level3 ./symlink
+
+      (
+        cd ./symlink
+        basename $(pwd)
+        basename $(pwd -L)
+        basename $(pwd -P)
+      )
+      (
+        cd ./symlink
+        export PWD=
+        basename $(pwd)
+        basename $(pwd -L)
+        basename $(pwd -P)
+      )
+      (
+        cd ./symlink
+        export PWD=
+        # start a shell without $PWD
+        (
+          basename $(pwd)
+          basename $(pwd -L)
+          basename $(pwd -P)
+        )
+      )
+
+      cd ~
+      pwd
+      pwd -L
+      pwd -P
+
+  - name: "pwd with moved dir"
+    known_failure: true # Needs investigation
+    stdin: |
+      root=$(pwd)
+
+      mkdir -p ${root}/subdir
+      cd ${root}/subdir
+      mv ${root}/subdir ${root}/renamed
+
+      echo "pwd -L: $(basename $(pwd -L))"
+      echo "pwd -P: $(basename $(pwd -P))"
+
+  - name: "pwd with removed dir"
+    known_failure: true # Needs investigation
+    stdin: |
+      root=$(pwd)
+
+      mkdir -p ${root}/subdir
+      cd ${root}/subdir
+      rmdir ${root}/subdir
+
+      echo "pwd -L: $(basename $(pwd -L))"
+      echo "pwd -P: $(basename $(pwd -P))"
