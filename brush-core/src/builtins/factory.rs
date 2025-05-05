@@ -59,6 +59,23 @@ fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Re
     }
 }
 
+/// Returns a built-in command registration, given an implementation of the
+/// `DeclarationCommand` trait that can be default-constructed. The command
+/// implementation is expected to implement clap's `Parser` trait solely
+/// for help/usage information. Arguments are passed directly to the command
+/// via `set_declarations`. This is primarily only expected to be used with
+/// select builtin commands that wrap other builtins (e.g., "builtin").
+fn raw_arg_builtin<B: builtins::DeclarationCommand + Default + Send + Sync>(
+) -> builtins::Registration {
+    builtins::Registration {
+        execute_func: exec_raw_arg_builtin::<B>,
+        content_func: get_builtin_content::<B>,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: true,
+    }
+}
+
 fn get_builtin_content<T: builtins::Command + Send + Sync>(
     name: &str,
     content_type: builtins::ContentType,
@@ -159,6 +176,25 @@ async fn exec_declaration_builtin_impl<T: builtins::DeclarationCommand + Send + 
     })
 }
 
+fn exec_raw_arg_builtin<T: builtins::DeclarationCommand + Default + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<builtins::BuiltinResult, error::Error>> {
+    Box::pin(async move { exec_raw_arg_builtin_impl::<T>(context, args).await })
+}
+
+async fn exec_raw_arg_builtin_impl<T: builtins::DeclarationCommand + Default + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<builtins::BuiltinResult, error::Error> {
+    let mut command = T::default();
+    command.set_declarations(args);
+
+    Ok(builtins::BuiltinResult {
+        exit_code: command.execute(context).await?,
+    })
+}
+
 #[allow(clippy::too_many_lines)]
 pub(crate) fn get_default_builtins(
     options: &crate::CreateOptions,
@@ -236,7 +272,10 @@ pub(crate) fn get_default_builtins(
     m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
 
     if !options.sh_mode {
-        m.insert("builtin".into(), builtin::<builtin_::BuiltinCommand>());
+        m.insert(
+            "builtin".into(),
+            raw_arg_builtin::<builtin_::BuiltinCommand>(),
+        );
         m.insert("declare".into(), decl_builtin::<declare::DeclareCommand>());
         m.insert("echo".into(), builtin::<echo::EchoCommand>());
         m.insert("enable".into(), builtin::<enable::EnableCommand>());
