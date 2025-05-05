@@ -109,31 +109,44 @@ struct PipelineExecutionContext<'a> {
 #[derive(Clone, Default)]
 pub struct ExecutionParameters {
     /// The open files tracked by the current context.
-    pub open_files: openfiles::OpenFiles,
+    pub(crate) open_files: openfiles::OpenFiles,
     /// Policy for how to manage spawned external processes.
     pub process_group_policy: ProcessGroupPolicy,
 }
 
 impl ExecutionParameters {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> openfiles::OpenFile {
+    pub fn stdin(&self) -> impl std::io::Read {
         self.fd(0).unwrap()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> openfiles::OpenFile {
+    pub fn stdout(&self) -> impl std::io::Write {
         self.fd(1).unwrap()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> openfiles::OpenFile {
+    pub fn stderr(&self) -> impl std::io::Write {
         self.fd(2).unwrap()
     }
 
     /// Returns the file descriptor with the given number.
     #[allow(clippy::unwrap_in_result)]
-    pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
+    pub(crate) fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
         self.open_files.files.get(&fd).map(|f| f.try_dup().unwrap())
+    }
+
+    pub(crate) fn stdin_file(&self) -> openfiles::OpenFile {
+        self.fd(0).unwrap()
+    }
+
+    pub(crate) fn stdout_file(&self) -> openfiles::OpenFile {
+        self.fd(1).unwrap()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn stderr_file(&self) -> openfiles::OpenFile {
+        self.fd(2).unwrap()
     }
 }
 

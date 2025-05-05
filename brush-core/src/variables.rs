@@ -1,3 +1,5 @@
+//! Implements variables for a shell environment.
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};

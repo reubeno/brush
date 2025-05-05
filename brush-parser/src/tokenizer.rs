@@ -146,6 +146,8 @@ pub enum TokenizerError {
 }
 
 impl TokenizerError {
+    /// Returns true if the error represents an error that could possibly be due
+    /// to an incomplete input stream.
     pub fn is_incomplete(&self) -> bool {
         matches!(
             self,

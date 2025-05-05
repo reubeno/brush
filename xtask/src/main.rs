@@ -48,7 +48,7 @@ fn generate_man(args: &GenerateManArgs) -> Result<()> {
     }
 
     // Generate!
-    let cmd = brush_shell::CommandLineArgs::command();
+    let cmd = brush_shell::args::CommandLineArgs::command();
     clap_mangen::generate_to(cmd, &args.output_dir)?;
 
     Ok(())
@@ -60,7 +60,8 @@ fn generate_markdown(args: &GenerateMarkdownArgs) -> Result<()> {
         .show_table_of_contents(true);
 
     // Generate!
-    let markdown = clap_markdown::help_markdown_custom::<brush_shell::CommandLineArgs>(&options);
+    let markdown =
+        clap_markdown::help_markdown_custom::<brush_shell::args::CommandLineArgs>(&options);
     std::fs::write(&args.output_path, markdown)?;
 
     Ok(())

@@ -10,7 +10,10 @@ mod shell_factory;
 
 use crate::args::{CommandLineArgs, InputBackend};
 use brush_interactive::InteractiveShell;
-use std::{io::IsTerminal, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
+
+#[cfg(any(unix, windows))]
+use std::io::IsTerminal;
 
 lazy_static::lazy_static! {
     static ref TRACE_EVENT_CONFIG: Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> =

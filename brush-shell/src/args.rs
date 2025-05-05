@@ -18,10 +18,14 @@ const VERSION: &str = const_format::concatcp!(
     ")"
 );
 
+/// Identifies the input backend to use for the shell.
 #[derive(Clone, clap::ValueEnum)]
 pub enum InputBackend {
+    /// Richest input backend, based on reedline.
     Reedline,
+    /// Basic input backend that provides minimal completion support for testing.
     Basic,
+    /// Most minimal input backend.
     Minimal,
 }
 

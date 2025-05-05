@@ -1,3 +1,5 @@
+//! Managing files open within a shell instance.
+
 use std::collections::HashMap;
 use std::io::IsTerminal;
 #[cfg(unix)]
@@ -12,7 +14,7 @@ use crate::error;
 use crate::sys;
 
 /// Represents a file open in a shell context.
-pub enum OpenFile {
+pub(crate) enum OpenFile {
     /// The original standard input this process was started with.
     Stdin,
     /// The original standard output this process was started with.
@@ -210,7 +212,7 @@ impl std::io::Write for OpenFile {
 #[derive(Clone)]
 pub struct OpenFiles {
     /// Maps shell file descriptors to open files.
-    pub files: HashMap<u32, OpenFile>,
+    pub(crate) files: HashMap<u32, OpenFile>,
 }
 
 impl Default for OpenFiles {
@@ -225,6 +227,7 @@ impl Default for OpenFiles {
     }
 }
 
+#[allow(dead_code)]
 impl OpenFiles {
     /// Tries to clone the open files.
     pub fn try_clone(&self) -> Result<OpenFiles, error::Error> {
