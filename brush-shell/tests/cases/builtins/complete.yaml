@@ -72,3 +72,35 @@ cases:
         complete -o ${opt} mycmd_${opt}
         complete -p mycmd_${opt}
       done
+
+  - name: "complete -r"
+    stdin: |
+      echo "[Removing non-existent]"
+      complete -r nonexistent
+      echo $?
+
+      echo "[Removing existing]"
+      complete -W token mycmd
+      complete -r mycmd
+      echo $?
+      complete -p mycmd 2>/dev/null
+
+  - name: "complete -r with no args"
+    stdin: |
+      complete -W token mycmd1
+      complete -W token mycmd2
+
+      complete -r
+      echo $?
+
+      complete -p
+
+  - name: "complete -r with special options"
+    stdin: |
+      complete -W token mycmd
+      complete -W other -E
+
+      complete -r -E
+      echo $?
+      
+      complete -p
