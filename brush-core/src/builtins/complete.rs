@@ -284,7 +284,7 @@ impl CompleteCommand {
                 let mut new_spec = None;
                 std::mem::swap(&mut new_spec, target_spec);
             } else {
-                return error::unimp("remove all specs");
+                context.shell.completion_config.clear();
             }
         } else {
             if let Some(target_spec) = target_spec {
@@ -450,8 +450,19 @@ impl CompleteCommand {
         if self.print {
             return Self::try_display_spec_for_command(context, name);
         } else if self.remove {
-            context.shell.completion_config.remove(name);
-            return Ok(true);
+            let mut result = context.shell.completion_config.remove(name);
+
+            if !result {
+                if context.shell.options.interactive {
+                    writeln!(context.stderr(), "complete: {name}: not found")?;
+                } else {
+                    // For some reason, this is not supposed to be treated as a failure
+                    // in non-interactive execution.
+                    result = true;
+                }
+            }
+
+            return Ok(result);
         }
 
         let config = self

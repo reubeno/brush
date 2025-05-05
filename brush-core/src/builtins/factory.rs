@@ -46,6 +46,9 @@ pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
     }
 }
 
+/// Returns a built-in command registration, given an implementation of the
+/// `DeclarationCommand` trait. Used for select commands that can take parsed
+/// declarations as arguments.
 fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
     builtins::Registration {
         execute_func: exec_declaration_builtin::<B>,
