@@ -855,8 +855,22 @@ impl ShellValue {
                 Ok(values.get(index).map(|s| Cow::Borrowed(s.as_str())))
             }
             ShellValue::IndexedArray(values) => {
-                let key = index.parse::<u64>().unwrap_or(0);
-                Ok(values.get(&key).map(|s| Cow::Borrowed(s.as_str())))
+                let mut index_value = index.parse::<i64>().unwrap_or(0);
+
+                #[allow(clippy::cast_possible_wrap)]
+                if index_value < 0 {
+                    index_value += values.len() as i64;
+                    if index_value < 0 {
+                        return Err(error::Error::ArrayIndexOutOfRange);
+                    }
+                }
+
+                // Now that we've confirmed that the index is non-negative, we can safely convert it
+                // to a u64 without any fuss.
+                #[allow(clippy::cast_sign_loss)]
+                let index_value = index_value as u64;
+
+                Ok(values.get(&index_value).map(|s| Cow::Borrowed(s.as_str())))
             }
             ShellValue::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);

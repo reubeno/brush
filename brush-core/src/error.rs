@@ -192,6 +192,10 @@ pub enum Error {
     /// System time error.
     #[error("system time error: {0}")]
     TimeError(#[from] std::time::SystemTimeError),
+
+    /// Array index out of range.
+    #[error("array index out of range")]
+    ArrayIndexOutOfRange,
 }
 
 /// Convenience function for returning an error for unimplemented functionality.
