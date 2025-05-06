@@ -739,6 +739,16 @@ cases:
       echo "\${myarray[@]:2:2}: ${myarray[@]:2:2}"
       echo "\${myarray[@]:2}: ${myarray[@]:2}"
 
+  - name: "Substring operator on arrays with negative index"
+    stdin: |
+      set abcde fghij klmno pqrst uvwxy z
+      echo "\${@: -2:2}: ${@: -2:2}"
+      echo "\${@: -2}: ${@: -2}"
+
+      myarray=(abcde fghij klmno pqrst uvwxy z)
+      echo "\${myarray[@]: -2:2}: ${myarray[@]: -2:2}"
+      echo "\${myarray[@]: -2}: ${myarray[@]: -2}"
+
   - name: "Substring operator on single-element array"
     stdin: |
       myarray=("abcde fghij klmno pqrst uvwxy z")
