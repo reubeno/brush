@@ -4,14 +4,16 @@ use std::io::Write;
 use crate::{builtins, commands};
 
 /// Directly invokes a built-in, without going through typical search order.
-#[derive(Parser)]
+#[derive(Default, Parser)]
 pub(crate) struct BuiltinCommand {
-    /// Name of built-in to invoke.
-    builtin_name: Option<String>,
+    #[clap(skip)]
+    args: Vec<commands::CommandArg>,
+}
 
-    /// Arguments for the built-in.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
+impl builtins::DeclarationCommand for BuiltinCommand {
+    fn set_declarations(&mut self, args: Vec<commands::CommandArg>) {
+        self.args = args;
+    }
 }
 
 impl builtins::Command for BuiltinCommand {
@@ -19,23 +21,26 @@ impl builtins::Command for BuiltinCommand {
         &self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        if let Some(builtin_name) = &self.builtin_name {
-            if let Some(builtin) = context.shell.builtins.get(builtin_name) {
-                context.command_name.clone_from(builtin_name);
+        if self.args.is_empty() {
+            return Ok(builtins::ExitCode::Success);
+        }
 
-                let args: Vec<commands::CommandArg> = std::iter::once(builtin_name.into())
-                    .chain(self.args.iter().map(|arg| arg.into()))
-                    .collect();
+        let args: Vec<_> = self.args.iter().skip(1).cloned().collect();
+        if args.is_empty() {
+            return Ok(builtins::ExitCode::Success);
+        }
 
-                (builtin.execute_func)(context, args)
-                    .await
-                    .map(|res: builtins::BuiltinResult| res.exit_code)
-            } else {
-                writeln!(context.stderr(), "{builtin_name}: command not found")?;
-                Ok(builtins::ExitCode::Custom(1))
-            }
+        let builtin_name = args[0].to_string();
+
+        if let Some(builtin) = context.shell.builtins.get(&builtin_name) {
+            context.command_name = builtin_name;
+
+            (builtin.execute_func)(context, args)
+                .await
+                .map(|res: builtins::BuiltinResult| res.exit_code)
         } else {
-            Ok(builtins::ExitCode::Success)
+            writeln!(context.stderr(), "{builtin_name}: command not found")?;
+            Ok(builtins::ExitCode::Custom(1))
         }
     }
 }

@@ -18,8 +18,11 @@ cases:
       builtin false; echo "builtin false => $?"
       builtin true; echo "builtin true => $?"
 
+  - name: "builtin with non-decl builtin"
+    stdin: |
+      builtin echo variable=value
+
   - name: "builtin with decl builtin"
-    known_failure: true # Needs investigation
     stdin: |
       builtin declare variable=value
       declare -p variable
