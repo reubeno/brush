@@ -198,6 +198,14 @@ cases:
       declare -f test
       declare -p -f test
 
+  - name: "Displaying non-existent functions"
+    stdin: |
+      declare -f not_a_function
+      echo "Result (-f): $?"
+
+      declare -F not_a_function
+      echo "Result (-F): $?"
+
   - name: "Valid conversions"
     stdin: |
       declare -a arr1=(a b c)

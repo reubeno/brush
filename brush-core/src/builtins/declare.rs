@@ -199,7 +199,7 @@ impl DeclareCommand {
                 }
                 Ok(true)
             } else {
-                writeln!(context.stderr(), "declare: {name}: not found")?;
+                // For some reason, bash does not print an error message in this case.
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
