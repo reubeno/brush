@@ -174,7 +174,10 @@ async fn run_impl(
 ) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
-    *event_config = Some(events::TraceEventConfig::init(&args.enabled_log_events));
+    *event_config = Some(events::TraceEventConfig::init(
+        &args.enabled_debug_events,
+        &args.disabled_events,
+    ));
     drop(event_config);
 
     // Instantiate an appropriately configured shell.

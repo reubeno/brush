@@ -468,7 +468,7 @@ pub(crate) fn execute_external_command(
                 sys::terminal::move_self_to_foreground()?;
             }
 
-            tracing::error!("error: {}", e);
+            tracing::error!("{e}");
             Ok(CommandSpawnResult::ImmediateExit(126))
         }
     }
@@ -502,8 +502,16 @@ async fn execute_builtin_command(
                 return Ok(CommandSpawnResult::ContinueLoop(count))
             }
         },
+        Err(e @ error::Error::Unimplemented(..)) => {
+            tracing::warn!(target: trace_categories::UNIMPLEMENTED, "{e}");
+            1
+        }
+        Err(e @ error::Error::UnimplementedAndTracked(..)) => {
+            tracing::warn!(target: trace_categories::UNIMPLEMENTED, "{e}");
+            1
+        }
         Err(e) => {
-            tracing::error!("error: {}", e);
+            tracing::error!("{e}");
             1
         }
     };

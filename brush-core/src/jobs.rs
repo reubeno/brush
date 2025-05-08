@@ -141,7 +141,7 @@ impl JobManager {
                 self.jobs.iter_mut().find(|j| j.id == id)
             }
             _ => {
-                tracing::warn!("UNIMPLEMENTED: job spec naming command: '{job_spec}'");
+                tracing::warn!(target: trace_categories::UNIMPLEMENTED, "unimplemented: job spec naming command: '{job_spec}'");
                 None
             }
         }

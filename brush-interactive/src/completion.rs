@@ -72,7 +72,7 @@ fn postprocess_completion_candidate(
         }
     }
     if options.no_autoquote_filenames {
-        tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: don't autoquote filenames");
+        tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: don't autoquote filenames");
     }
     if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
         if !options.treat_as_filenames || !candidate.ends_with(std::path::MAIN_SEPARATOR) {

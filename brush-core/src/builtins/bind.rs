@@ -1,7 +1,7 @@
 use clap::{Parser, ValueEnum};
 use std::io::Write;
 
-use crate::{builtins, commands, error};
+use crate::{builtins, commands, error, trace_categories};
 
 /// Identifier for a keymap
 #[derive(Clone, ValueEnum)]
@@ -67,33 +67,35 @@ pub(crate) struct BindCommand {
     key_sequence: Option<String>,
 }
 
+const BIND_FEATURE_ISSUE_ID: u32 = 380;
+
 impl builtins::Command for BindCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         if self.list_funcs {
-            return error::unimp("bind -l is not yet implemented");
+            return error::unimp_with_issue("bind -l", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.list_funcs_and_bindings {
-            return error::unimp("bind -P is not yet implemented");
+            return error::unimp_with_issue("bind -P", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.list_funcs_and_bindings_reusable {
-            return error::unimp("bind -p is not yet implemented");
+            return error::unimp_with_issue("bind -p", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.list_key_seqs_that_invoke_macros {
-            return error::unimp("bind -S is not yet implemented");
+            return error::unimp_with_issue("bind -S", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.list_key_seqs_that_invoke_macros_reusable {
-            return error::unimp("bind -s is not yet implemented");
+            return error::unimp_with_issue("bind -s", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.list_vars {
-            return error::unimp("bind -V is not yet implemented");
+            return error::unimp_with_issue("bind -V", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.list_vars_reusable {
@@ -103,34 +105,33 @@ impl builtins::Command for BindCommand {
         }
 
         if self.query_func_bindings.is_some() {
-            return error::unimp("bind -q is not yet implemented");
+            return error::unimp_with_issue("bind -q", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.remove_func_bindings.is_some() {
-            return error::unimp("bind -u is not yet implemented");
+            return error::unimp_with_issue("bind -u", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.remove_key_seq_binding.is_some() {
-            return error::unimp("bind -r is not yet implemented");
+            return error::unimp_with_issue("bind -r", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.bindings_file.is_some() {
-            return error::unimp("bind -f is not yet implemented");
+            return error::unimp_with_issue("bind -f", BIND_FEATURE_ISSUE_ID);
         }
 
         if !self.key_seq_bindings.is_empty() {
-            return error::unimp("bind -x is not yet implemented");
+            return error::unimp_with_issue("bind -x", BIND_FEATURE_ISSUE_ID);
         }
 
         if self.list_key_seq_bindings {
-            return error::unimp("bind -X is not yet implemented");
+            return error::unimp_with_issue("bind -X", BIND_FEATURE_ISSUE_ID);
         }
 
         if let Some(key_sequence) = &self.key_sequence {
-            writeln!(
-                context.stderr(),
+            tracing::warn!(target: trace_categories::UNIMPLEMENTED,
                 "bind: key seq not implemented: {key_sequence}"
-            )?;
+            );
             return Ok(builtins::ExitCode::Unimplemented);
         }
 

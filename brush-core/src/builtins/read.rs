@@ -75,7 +75,7 @@ impl builtins::Command for ReadCommand {
             tracing::debug!("read -r is not implemented");
         }
         if self.timeout_in_seconds.is_some() {
-            return error::unimp("read -t");
+            return error::unimp_with_issue("read -t", 227);
         }
 
         // Find the input stream to use.

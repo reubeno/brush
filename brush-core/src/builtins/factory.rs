@@ -267,8 +267,10 @@ pub(crate) fn get_default_builtins(
     m.insert("unalias".into(), builtin::<unalias::UnaliasCommand>());
     m.insert("wait".into(), builtin::<wait::WaitCommand>());
 
-    // TODO: Unimplemented non-special builtins
+    // TODO: implement fc builtin; should be done after history.
     m.insert("fc".into(), builtin::<unimp::UnimplementedCommand>());
+
+    // TODO(#473): implement ulimit builtin
     m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
 
     if !options.sh_mode {
@@ -303,11 +305,19 @@ pub(crate) fn get_default_builtins(
         // Input configuration builtins
         m.insert("bind".into(), builtin::<bind::BindCommand>());
 
-        // TODO: Unimplemented builtins
-        m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
-        m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());
+        // TODO(#469): implement history builtin
         m.insert("history".into(), builtin::<unimp::UnimplementedCommand>());
+
+        // TODO: implement caller builtin
+        m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
+
+        // TODO: implement disown builtin
+        m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());
+
+        // TODO: implement logout builtin
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
+
+        // TODO(#474): implement readarray builtin
         m.insert("readarray".into(), builtin::<unimp::UnimplementedCommand>());
     }
 
