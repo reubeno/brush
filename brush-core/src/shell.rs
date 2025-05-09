@@ -258,7 +258,7 @@ impl Shell {
             }
         }
 
-        // TODO(vars): implement $_
+        // TODO(#479): implement $_
 
         // BASH
         if let Some(shell_name) = &options.shell_name {

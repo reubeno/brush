@@ -30,6 +30,23 @@ cases:
       [[ $MACHTYPE == ${BASH_VERSINFO[5]} ]]
       echo 'MACHTYPE == ${BASH_VERSINFO[5]: ' $?
 
+  - name: "dollar-_"
+    known_failure: true # Issue #479
+    stdin: |
+      # Check on start
+      [[ "$0" == "$_" ]] && echo '$_ matches $0 on start'
+
+      # Now do something
+      echo first middle last >/dev/null
+      echo "\$_ after first echo command: $_"
+      echo
+      echo "\$_ after second echo command: $_"
+
+      # See if a child process sees a changed $_ and which token they see
+      echo "Spawning child process..."
+      env -v | grep '^_='
+      echo "\$_ after child process exited: $_"
+
   - name: "BASH_ALIASES"
     stdin: |
       echo "Initial BASH_ALIASES: " ${BASH_ALIASES[@]}
