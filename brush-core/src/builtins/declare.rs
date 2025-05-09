@@ -125,13 +125,8 @@ impl builtins::Command for DeclareCommand {
             _ => DeclareVerb::Declare,
         };
 
-        // TODO: implement declare -I
         if self.locals_inherit_from_prev_scope {
-            writeln!(
-                context.stderr(),
-                "UNIMPLEMENTED: declare -I: locals inherit from previous scope"
-            )?;
-            return Ok(builtins::ExitCode::Unimplemented);
+            return error::unimp("declare -I");
         }
 
         let mut result = builtins::ExitCode::Success;

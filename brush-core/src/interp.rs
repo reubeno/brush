@@ -1008,7 +1008,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
                             {
                                 //
-                                // TODO: This is a total hack; aliases are supposed to be handled
+                                // TODO(#57): This is a total hack; aliases are supposed to be handled
                                 // much earlier in the process.
                                 //
                                 let mut alias_pieces: Vec<_> = alias_value

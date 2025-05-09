@@ -74,8 +74,8 @@ impl EventsCommand {
                                                                         // errors
                     }
                 }
-                EventsCommand::Enable { event } => event_config.enable(event)?,
-                EventsCommand::Disable { event } => event_config.disable(event)?,
+                EventsCommand::Enable { event } => event_config.enable(*event)?,
+                EventsCommand::Disable { event } => event_config.disable(*event)?,
             }
 
             Ok(brush_core::builtins::ExitCode::Success)

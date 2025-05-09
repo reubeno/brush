@@ -5,3 +5,4 @@ pub(crate) const JOBS: &str = "jobs";
 pub(crate) const PARSE: &str = "parse";
 pub(crate) const PATTERN: &str = "pattern";
 pub(crate) const FUNCTIONS: &str = "functions";
+pub(crate) const UNIMPLEMENTED: &str = "unimplemented";

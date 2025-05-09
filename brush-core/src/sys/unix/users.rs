@@ -1,4 +1,4 @@
-use crate::error;
+use crate::{error, trace_categories};
 use std::path::PathBuf;
 
 use uzers::os::unix::UserExt;
@@ -49,14 +49,14 @@ pub(crate) fn get_user_group_ids() -> Result<Vec<u32>, error::Error> {
 
 #[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
-    // TODO: uzers::all_users() is available but unsafe
-    tracing::debug!("UNIMPLEMENTED: get_all_users");
+    // TODO(#475): uzers::all_users() is available but unsafe
+    tracing::debug!(target: trace_categories::UNIMPLEMENTED, "get_all_users");
     Ok(vec![])
 }
 
 #[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
-    // TODO: uzers::all_groups() is available but unsafe
-    tracing::debug!("UNIMPLEMENTED: get_all_groups");
+    // TODO(#475): uzers::all_groups() is available but unsafe
+    tracing::debug!(target: trace_categories::UNIMPLEMENTED, "get_all_groups");
     Ok(vec![])
 }

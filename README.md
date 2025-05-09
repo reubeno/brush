@@ -17,7 +17,7 @@ implemented in Rust. It's built and tested on Linux and macOS, with experimental
 ![screenshot](https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52)
 
 `brush` is functional for interactive use as a daily driver! It can execute most `sh` and `bash` scripts we've
-encountered. Known limitations are tracked with filed issues. Out of an abundance of caution, 
+encountered. Known limitations are tracked with filed issues. Out of an abundance of caution,
 we wouldn't recommend using it yet in _production_ scenarios in case it doesn't behave identically
 to your existing stable shell. (If you do find any behavioral differences, though, please report them with an
 issue!)
@@ -33,9 +33,11 @@ attitude :).
 
 Available for use and distribution under the [MIT license](LICENSE).
 
-### Try it out!
+### Try it out
 
-We don't publish binary releases of `brush`, but if you have a working `rust` toolchain installed you can simply run:
+#### Building from sources
+
+We don't (yet) publish binary releases of `brush` but will Real Soon Now. In the meantime, if you have a working `rust` toolchain installed, then you can simply run:
 
 ```bash
 cargo install --locked brush-shell
@@ -46,14 +48,18 @@ greatest bits, you can clone this repo and execute `cargo run`.
 
 If you don't have `rust` installed, we recommend installing it via [`rustup`](https://rustup.rs/).
 
-(If you *are* interested in having a binary release, then please let us know in the 'Discussions' area of this
+(If you _are_ interested in having a binary release, then please let us know in the 'Discussions' area of this
 project or by filing a feature request in 'Issues'.)
+
+#### Installing on Nix
 
 If you are a Nix user, you can also use the registered version.
 
 ```bash
 nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 ```
+
+#### Installing on Arch Linux
 
 Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/packages/brush) with their [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, e.g.
 
@@ -72,14 +78,14 @@ There are some known gaps in compatibility. Most notably:
 * **Some `set` and `shopt` options.**
   The `set` builtin is implemented, as is `set -x` and many frequently used `set`/`shopt` options, but a number aren't fully implemented. For example, `set -e` will execute but its semantics aren't applied across execution.
 
-* **Anything tagged with a `TODO` comment or where `error::unimp()` is used to return a "not implemented" error**.
-  These aren't all tracked with GitHub issues right now, but there's a number of these scattered throughout the code base. Some are indicative of missing functionality that may be straightforward to implement; others may be more complicated.
+* **The `history` builtin and support for programmatically manipulating command history.**
+  This is something we're actively working on, with promises for supporting shell extensions like [atuin](https://atuin.sh/).
 
 If you feel so inclined, we'd love contributions toward any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help us make this project better.
 
 ## Testing strategy
 
-This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [550+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
+This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [600+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
 
@@ -106,5 +112,6 @@ There are a number of other POSIX-ish shells implemented in a non-C/C++ implemen
 * [`nushell`](https://www.nushell.sh/) - modern Rust-implemented shell (which also provides the `reedline` crate we use!)
 * [`rusty_bash`](https://github.com/shellgei/rusty_bash)
 * [`mvdan/sh`](https://github.com/mvdan/sh)
+* [`Oils`](https://github.com/oils-for-unix/oils)
 
 We're sure there are plenty more; we're happy to include links to them as well.

@@ -77,7 +77,6 @@ impl Regex {
             .map(|piece| piece.to_regex_str())
             .collect();
 
-        // TODO: Evaluate how compatible the `fancy_regex` crate is with POSIX EREs.
         let re = compile_regex(regex_pattern, self.case_insensitive, self.multiline)?;
 
         Ok(re.captures(value)?.map(|captures| {

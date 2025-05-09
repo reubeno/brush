@@ -360,7 +360,7 @@ impl Spec {
                 // It's not clear what exactly this means, though. From basic testing, it doesn't
                 // seem to include basic file and directory name completion.
                 //
-                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o bashdefault");
+                tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -o bashdefault");
             }
             if options.default || options.dir_names {
                 // N.B. We approximate "default" readline completion behavior by getting file and
@@ -408,7 +408,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Binding => {
-                    tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -A binding");
+                    tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -A binding");
                 }
                 CompleteAction::Builtin => {
                     for name in shell.builtins.keys() {
@@ -507,7 +507,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Service => {
-                    tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -A service");
+                    tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -A service");
                 }
                 CompleteAction::SetOpt => {
                     for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
