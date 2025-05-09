@@ -59,7 +59,11 @@ similar_names = "allow"
 struct_excessive_bools = "allow"
 
 [profile.release]
-strip = "debuginfo"
+strip = true
 lto = "fat"
 codegen-units = 1
 panic = "abort"
+
+[profile.bench]
+inherits = "release"
+strip = "debuginfo"
