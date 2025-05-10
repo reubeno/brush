@@ -28,6 +28,8 @@
 
 </p> 
 
+<hr/>
+
 `brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash-](https://www.gnu.org/software/bash/)compatible shell,
 implemented in Rust. It's built and tested on Linux, macOS, and WSL. Native Windows support is experimental.
 
