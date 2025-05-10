@@ -1,5 +1,7 @@
 <div align="center">
-  ![image](https://github.com/user-attachments/assets/1388df92-0ed9-4a7e-b69e-293c5228cca0)
+  <img src="https://github.com/user-attachments/assets/19351a8e-7b03-4338-81be-dd5b6d7e5abc"/>
+
+  <!--<img src="https://github.com/user-attachments/assets/d0002cf3-301f-4165-b484-bc78a54e9621"/>-->
 </div>
 
 <!-- Primary badges -->
