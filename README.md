@@ -1,8 +1,8 @@
 <div align="center">
   <img src="https://github.com/user-attachments/assets/19351a8e-7b03-4338-81be-dd5b6d7e5abc"/>
-
-  <!--<img src="https://github.com/user-attachments/assets/d0002cf3-301f-4165-b484-bc78a54e9621"/>-->
 </div>
+
+<br/>
 
 <!-- Primary badges -->
 <p align="center">
@@ -12,16 +12,30 @@
   <img src="https://tokei.rs/b1/github/reubeno/brush?category=code"/>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/></a>
   <a href="https://github.com/reubeno/brush/actions/workflows/ci.yaml"><img src="https://github.com/reubeno/brush/actions/workflows/ci.yaml/badge.svg"/></a>
+
+  <!-- Packaging badges -->
+  <br/>
+  <a href="https://repology.org/project/brush/versions">
+    <img src="https://repology.org/badge/version-for-repo/aur/brush.svg" alt="AUR package">
+  </a>
+  <a href="https://repology.org/project/brush/versions">
+    <img src="https://repology.org/badge/version-for-repo/nix_unstable/brush.svg" alt="AUR package">
+  </a>
 </p>
 
+<a href="https://repology.org/project/brush/versions">
+</a>
+
+</p> 
+
 `brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash-](https://www.gnu.org/software/bash/)compatible shell,
-implemented in Rust. It's built and tested on Linux, macOS, and WSL, with experimental native support on Windows.
+implemented in Rust. It's built and tested on Linux, macOS, and WSL. Native Windows support is experimental.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52" width="80%"/>
 </p>
 
-`brush` is functional for interactive use as a daily driver! It can execute most `sh` and `bash` scripts we've
+`brush` is functional for interactive use as a daily driver! It executes most `sh` and `bash` scripts we've
 encountered. Known limitations are tracked with filed issues. Out of an abundance of caution,
 we wouldn't recommend using it yet in _production_ scenarios in case it doesn't behave identically
 to your existing stable shell. (If you do find any behavioral differences, though, please report them with an
@@ -34,34 +48,29 @@ Contributions and feedback of all kinds are welcome! For more guidance, please c
 This project was originally borne out of curiosity and a desire to learn. We're doing our best to keep that
 attitude :).
 
-## 📝 License
+<br/>
+
+### 📝 License
 
 Available for use and distribution under the [MIT license](LICENSE).
 
-## ⌨️ Try it out
+<br/>
 
-<!-- Packaging badges -->
-<p align="center">
-  <a href="https://repology.org/project/brush/versions"><img src="https://repology.org/badge/vertical-allrepos/brush.svg"/></a>
-</p>
+### ⌨️ Installation
 
-### Building from sources
+When you run `brush`, it should look exactly as `bash` does on your system: it processes your `.bashrc` and
+other standard configuration. If you'd like to distinguish the look of `brush` from the other shells
+on your system, you may author a `~/.brushrc` file.
 
-We don't (yet) publish binary releases of `brush` but will Real Soon Now. In the meantime, if you have a working `rust` toolchain installed, then you can simply run:
+#### 🔨 Building from sources
+
+We don't (yet) publish binary releases of `brush` (but will Real Soon Now). To build from sources, first install a working `rust` toolchain; we recommend installing it via [`rustup`](https://rustup.rs/). Then run:
 
 ```bash
 cargo install --locked brush-shell
 ```
 
-This will install the most recently released version of `brush` from `crates.io`. Alternatively, for the latest and
-greatest bits, you can clone this repo and execute `cargo run`.
-
-If you don't have `rust` installed, we recommend installing it via [`rustup`](https://rustup.rs/).
-
-(If you _are_ interested in having a binary release, then please let us know in the 'Discussions' area of this
-project or by filing a feature request in 'Issues'.)
-
-### Installing on Nix
+#### 🐧 Nix
 
 If you are a Nix user, you can also use the registered version.
 
@@ -69,7 +78,7 @@ If you are a Nix user, you can also use the registered version.
 nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 ```
 
-### Installing on Arch Linux
+### 🐧 Arch Linux
 
 Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/packages/brush) with their [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, e.g.
 
@@ -77,11 +86,9 @@ Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/pa
 paru -S brush
 ```
 
-When you run `brush`, it should look exactly as `bash` would on your system since it processes `.bashrc` and
-other usual configuration. If you'd like to customize the look of `brush` to distinguish it from the other shells
-installed on your system, then you can also author a `~/.brushrc` file.
+<br/>
 
-## 🔍 Known limitations
+### 🔍 Known limitations
 
 There are some known gaps in compatibility. Most notably:
 
@@ -93,13 +100,17 @@ There are some known gaps in compatibility. Most notably:
 
 If you feel so inclined, we'd love contributions toward any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help us make this project better.
 
-## 🧪 Testing strategy
+<br/>
+
+### 🧪 Testing strategy
 
 This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [600+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
 
-## 🙏 Credits
+<br/>
+
+### 🙏 Credits
 
 There's a long list of OSS crates whose shoulders this project rests on. Notably, the following crates are directly relied on for major portions of shell functionality:
 
@@ -115,7 +126,9 @@ For testing, performance benchmarking, and other important engineering support, 
 * [`criterion.rs`](https://github.com/bheisler/criterion.rs) - for statistics-based benchmarking
 * [`bash-completion`](https://github.com/scop/bash-completion) - for its completion test suite and general completion support!
 
-## 🔗 Links: other shell implementations
+<br/>
+
+### 🔗 Links: other shell implementations
 
 There are a number of other POSIX-ish shells implemented in a non-C/C++ implementation language. Some inspirational examples include:
 
