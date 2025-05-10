@@ -263,15 +263,14 @@ pub(crate) fn get_default_builtins(
     m.insert("true".into(), builtin::<true_::TrueCommand>());
     m.insert("type".into(), builtin::<type_::TypeCommand>());
     #[cfg(unix)]
+    m.insert("ulimit".into(), builtin::<ulimit::ULimitCommand>());
+    #[cfg(unix)]
     m.insert("umask".into(), builtin::<umask::UmaskCommand>());
     m.insert("unalias".into(), builtin::<unalias::UnaliasCommand>());
     m.insert("wait".into(), builtin::<wait::WaitCommand>());
 
     // TODO: implement fc builtin; should be done after history.
     m.insert("fc".into(), builtin::<unimp::UnimplementedCommand>());
-
-    // TODO(#473): implement ulimit builtin
-    m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
 
     if !options.sh_mode {
         m.insert(

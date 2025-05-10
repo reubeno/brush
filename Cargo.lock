@@ -284,6 +284,7 @@ dependencies = [
  "pprof",
  "procfs",
  "rand 0.9.1",
+ "rlimit",
  "strum 0.27.1",
  "strum_macros 0.27.1",
  "terminfo",
@@ -2095,6 +2096,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57397d16646700483b67d2dd6511d79318f9d057fdbd21a4066aeac8b41d310a"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "rlimit"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7043b63bd0cd1aaa628e476b80e6d4023a3b50eb32789f2728908107bd0c793a"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
