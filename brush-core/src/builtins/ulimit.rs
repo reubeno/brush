@@ -124,6 +124,13 @@ impl ResourceDescription {
         short: 's',
         unit: Unit::KBytes,
     };
+    const VMEM: ResourceDescription = ResourceDescription {
+        resource: Resource::AS,
+        help: "the size of virtual memory",
+        description: "virtual memory",
+        short: 'v',
+        unit: Unit::KBytes,
+    };
 
     fn get(&self, hard: bool) -> std::io::Result<String> {
         let val = if hard {
@@ -272,6 +279,9 @@ pub(crate) struct ULimitCommand {
     /// the maximum amount of cpu time in seconds
     #[arg(short = 't', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CPU)]
     cpu: Option<LimitValue>,
+    /// the size of virtual memory
+    #[arg(short = 'v', default_missing_value = "", num_args(0..=1), help = ResourceDescription::VMEM)]
+    vmem: Option<LimitValue>,
     /// argument for the implicit limit (`-f`)
     limit: Option<LimitValue>,
 }
@@ -310,6 +320,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.rtprio, ResourceDescription::RTPRIO);
         set_or_get(self.stack, ResourceDescription::STACK);
         set_or_get(self.cpu, ResourceDescription::CPU);
+        set_or_get(self.vmem, ResourceDescription::VMEM);
 
         if resources_to_set.is_empty() {
             if resources_to_get.is_empty() {
