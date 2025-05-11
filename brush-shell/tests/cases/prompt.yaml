@@ -90,3 +90,18 @@ cases:
       expanded=${prompt@P}
       roundtripped=$(date --date="${expanded}" +'%H:%M:%S')
       [[ ${expanded} == ${roundtripped} ]] && echo "Time matches"
+
+  - name: "Current history number"
+    known_failure: true
+    stdin: |
+      prompt='\!'
+      expanded=${prompt@P}
+      roundtripped=$(history | tail -n 1 | cut -d ' ' -f 1)
+      [[ ${expanded} == ${roundtripped} ]] && echo "History number matches"
+
+  - name: "Current command number"
+    known_failure: true # Issue #471
+    stdin: |
+      prompt='\#'
+      expanded=${prompt@P}
+      echo "${expanded}"
