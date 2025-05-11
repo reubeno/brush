@@ -67,6 +67,13 @@ impl ResourceDescription {
         short: 'l',
         unit: Unit::KBytes,
     };
+    const MSGQUEUE: ResourceDescription = ResourceDescription {
+        resource: Resource::MSGQUEUE,
+        help: "the maximum number of bytes in POSIX message queues",
+        description: "POSIX message queues",
+        short: 'q',
+        unit: Unit::Bytes,
+    };
     const RSS: ResourceDescription = ResourceDescription {
         resource: Resource::RSS,
         help: "the maximum resident set size",
@@ -227,6 +234,9 @@ pub(crate) struct ULimitCommand {
     /// the maximum number of open file descriptors
     #[arg(short = 'n', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NOFILE)]
     file_open: Option<LimitValue>,
+    /// the maximum number of bytes in POSIX message queues
+    #[arg(short = 'q', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MSGQUEUE)]
+    msgqueue: Option<LimitValue>,
     /// the maximum scheduling priority (`nice`)
     #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
     nice: Option<LimitValue>,
@@ -264,6 +274,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.rss, ResourceDescription::RSS);
         set_or_get(self.file_open, ResourceDescription::NOFILE);
         set_or_get(self.nice, ResourceDescription::NICE);
+        set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
 
         if resources_to_set.is_empty() {
             if resources_to_get.is_empty() {
