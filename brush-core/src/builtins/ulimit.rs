@@ -115,6 +115,9 @@ impl ResourceDescription {
 
     /// Print either soft or hard limit
     fn print(&self, hard: bool) {
+        if !self.resource.is_supported() {
+            return;
+        }
         let unit = match self.unit {
             Unit::Block => format!("(block, -{})", self.short),
             Unit::Bytes => format!("(bytes, -{})", self.short),
