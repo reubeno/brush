@@ -102,6 +102,13 @@ impl ResourceDescription {
         short: 'k',
         unit: Unit::Number,
     };
+    const RTPRIO: ResourceDescription = ResourceDescription {
+        resource: Resource::RTPRIO,
+        help: "the maximum real-time scheduling priority",
+        description: "real-time priority",
+        short: 'r',
+        unit: Unit::Number,
+    };
 
     fn get(&self, hard: bool) -> std::io::Result<String> {
         let val = if hard {
@@ -240,6 +247,9 @@ pub(crate) struct ULimitCommand {
     /// the maximum scheduling priority (`nice`)
     #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
     nice: Option<LimitValue>,
+    /// the maximum real-time scheduling priority
+    #[arg(short = 'r', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTPRIO)]
+    rtprio: Option<LimitValue>,
     /// argument for the implicit limit (`-f`)
     limit: Option<LimitValue>,
 }
@@ -275,6 +285,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.file_open, ResourceDescription::NOFILE);
         set_or_get(self.nice, ResourceDescription::NICE);
         set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
+        set_or_get(self.rtprio, ResourceDescription::RTPRIO);
 
         if resources_to_set.is_empty() {
             if resources_to_get.is_empty() {
