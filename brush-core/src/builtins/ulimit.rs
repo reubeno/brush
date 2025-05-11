@@ -53,6 +53,20 @@ impl ResourceDescription {
         short: 'f',
         unit: Unit::Block,
     };
+    const SIGPENDING: ResourceDescription = ResourceDescription {
+        resource: Resource::SIGPENDING,
+        help: "the maximum number of pending signals",
+        description: "pending signals",
+        short: 'i',
+        unit: Unit::Number,
+    };
+    const MEMLOCK: ResourceDescription = ResourceDescription {
+        resource: Resource::MEMLOCK,
+        help: "the maximum size a process may lock into memory",
+        description: "max locked memory",
+        short: 'l',
+        unit: Unit::KBytes,
+    };
     const RSS: ResourceDescription = ResourceDescription {
         resource: Resource::RSS,
         help: "the maximum resident set size",
@@ -198,6 +212,12 @@ pub(crate) struct ULimitCommand {
     /// the maximum size of files written by the shell and its children
     #[arg(short = 'f', default_missing_value = "", num_args(0..=1), help = ResourceDescription::FSIZE)]
     file_size: Option<LimitValue>,
+    /// the maximum number of pending signals
+    #[arg(short = 'i', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SIGPENDING)]
+    sigpending: Option<LimitValue>,
+    /// the maximum size a process may lock into memory
+    #[arg(short = 'l', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MEMLOCK)]
+    memlock: Option<LimitValue>,
     /// the maximum number of kqueues allocated for this process
     #[arg(short = 'k', default_missing_value = "", num_args(0..=1), help = ResourceDescription::KQUEUES)]
     kqueues: Option<LimitValue>,
@@ -238,7 +258,9 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.core, ResourceDescription::CORE);
         set_or_get(self.data, ResourceDescription::DATA);
         set_or_get(self.file_size, ResourceDescription::FSIZE);
+        set_or_get(self.sigpending, ResourceDescription::SIGPENDING);
         set_or_get(self.kqueues, ResourceDescription::KQUEUES);
+        set_or_get(self.memlock, ResourceDescription::MEMLOCK);
         set_or_get(self.rss, ResourceDescription::RSS);
         set_or_get(self.file_open, ResourceDescription::NOFILE);
         set_or_get(self.nice, ResourceDescription::NICE);
