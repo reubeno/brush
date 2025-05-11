@@ -124,6 +124,13 @@ impl ResourceDescription {
         short: 's',
         unit: Unit::KBytes,
     };
+    const NPROC: ResourceDescription = ResourceDescription {
+        resource: Resource::NPROC,
+        help: "the maximum number of user processes",
+        description: "max user processes",
+        short: 'u',
+        unit: Unit::Number,
+    };
     const VMEM: ResourceDescription = ResourceDescription {
         resource: Resource::AS,
         help: "the size of virtual memory",
@@ -280,6 +287,9 @@ pub(crate) struct ULimitCommand {
     #[arg(short = 't', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CPU)]
     cpu: Option<LimitValue>,
     /// the size of virtual memory
+    #[arg(short = 'u', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPROC)]
+    nproc: Option<LimitValue>,
+    /// the size of virtual memory
     #[arg(short = 'v', default_missing_value = "", num_args(0..=1), help = ResourceDescription::VMEM)]
     vmem: Option<LimitValue>,
     /// argument for the implicit limit (`-f`)
@@ -320,6 +330,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.rtprio, ResourceDescription::RTPRIO);
         set_or_get(self.stack, ResourceDescription::STACK);
         set_or_get(self.cpu, ResourceDescription::CPU);
+        set_or_get(self.nproc, ResourceDescription::NPROC);
         set_or_get(self.vmem, ResourceDescription::VMEM);
 
         if resources_to_set.is_empty() {
