@@ -28,6 +28,9 @@ const BASH_BUILD: u32 = 1;
 const BASH_RELEASE: &str = "release";
 const BASH_MACHINE: &str = "unknown";
 
+/// Type for storing a key bindings helper.
+pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
+
 /// Represents an instance of a shell.
 pub struct Shell {
     //
@@ -97,7 +100,7 @@ pub struct Shell {
     last_stopwatch_offset: u32,
 
     /// Key bindings for the shell, optionally implemented by an interactive shell.
-    pub key_bindings: Option<Arc<Mutex<dyn interfaces::KeyBindings>>>,
+    pub key_bindings: Option<KeyBindingsHelper>,
 }
 
 impl Clone for Shell {
@@ -144,7 +147,7 @@ impl AsMut<Shell> for Shell {
 }
 
 /// Options for creating a new shell.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct CreateOptions {
     /// Disabled shopt options.
     pub disabled_shopt_options: Vec<String>,
@@ -184,6 +187,8 @@ pub struct CreateOptions {
     pub verbose: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
+    /// Key bindings helper for the shell to use.
+    pub key_bindings: Option<KeyBindingsHelper>,
 }
 
 /// Represents an executing script.
@@ -235,7 +240,7 @@ impl Shell {
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
-            key_bindings: None,
+            key_bindings: options.key_bindings.clone(),
             depth: 0,
         };
 

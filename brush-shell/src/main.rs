@@ -261,6 +261,7 @@ async fn instantiate_shell(
             sh_mode: args.sh_mode,
             verbose: args.verbose,
             max_function_call_depth: None,
+            key_bindings: None,
         },
         disable_bracketed_paste: args.disable_bracketed_paste,
         disable_color: args.disable_color,
@@ -268,7 +269,7 @@ async fn instantiate_shell(
     };
 
     // Create the shell.
-    let mut shell = factory.create(&options).await?;
+    let mut shell = factory.create(options).await?;
 
     // Register our own built-in(s) with the shell.
     brushctl::register(shell.shell_mut().as_mut());
