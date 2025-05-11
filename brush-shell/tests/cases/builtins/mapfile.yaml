@@ -4,3 +4,7 @@ cases:
     stdin: |
       mapfile -t myarray < /dev/null
       (echo "hello"; echo "there") | (mapfile -t myarray && declare -p myarray)
+  - name: "readarray -t"
+    stdin: |
+      readarray -t myarray < /dev/null
+      (echo "hello"; echo "there") | (readarray -t myarray && declare -p myarray)
