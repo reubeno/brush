@@ -13,6 +13,7 @@ enum Unit {
     Bytes,
     KBytes,
     Number,
+    Seconds,
 }
 
 #[derive(Clone, Copy)]
@@ -38,6 +39,13 @@ impl ResourceDescription {
         description: "core file size",
         short: 'c',
         unit: Unit::Block,
+    };
+    const CPU: ResourceDescription = ResourceDescription {
+        resource: Resource::CPU,
+        help: "the maximum amount of cpu time in seconds",
+        description: "cpu time",
+        short: 't',
+        unit: Unit::Seconds,
     };
     const DATA: ResourceDescription = ResourceDescription {
         resource: Resource::DATA,
@@ -158,6 +166,7 @@ impl ResourceDescription {
             Unit::Bytes => format!("(bytes, -{})", self.short),
             Unit::KBytes => format!("(kbytes, -{})", self.short),
             Unit::Number => format!("(-{})", self.short),
+            Unit::Seconds => format!("(seconds, -{})", self.short),
         };
         let resource = self.get(hard).unwrap_or_else(|e| format!("{e}"));
         println!("{:<26}{:>16} {}", self.description, unit, resource);
@@ -260,6 +269,9 @@ pub(crate) struct ULimitCommand {
     /// the maximum stack size
     #[arg(short = 's', default_missing_value = "", num_args(0..=1), help = ResourceDescription::STACK)]
     stack: Option<LimitValue>,
+    /// the maximum amount of cpu time in seconds
+    #[arg(short = 't', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CPU)]
+    cpu: Option<LimitValue>,
     /// argument for the implicit limit (`-f`)
     limit: Option<LimitValue>,
 }
@@ -297,6 +309,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
         set_or_get(self.rtprio, ResourceDescription::RTPRIO);
         set_or_get(self.stack, ResourceDescription::STACK);
+        set_or_get(self.cpu, ResourceDescription::CPU);
 
         if resources_to_set.is_empty() {
             if resources_to_get.is_empty() {
