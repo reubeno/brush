@@ -1,4 +1,7 @@
-use clap::Parser;
+use clap::{
+    builder::{IntoResettable, StyledStr},
+    Parser,
+};
 use rlimit::Resource;
 use std::str::FromStr;
 
@@ -7,6 +10,7 @@ use crate::{builtins, commands};
 #[derive(Clone, Copy)]
 enum Unit {
     Block,
+    Bytes,
     KBytes,
     Number,
 }
@@ -14,34 +18,60 @@ enum Unit {
 #[derive(Clone, Copy)]
 struct ResourceDescription {
     resource: Resource,
+    help: &'static str,
     description: &'static str,
     short: char,
     unit: Unit,
 }
 
 impl ResourceDescription {
+    const SBSIZE: ResourceDescription = ResourceDescription {
+        resource: Resource::SBSIZE,
+        help: "the socket buffer size",
+        description: "socket buffer size",
+        short: 'b',
+        unit: Unit::Bytes,
+    };
     const CORE: ResourceDescription = ResourceDescription {
         resource: Resource::CORE,
+        help: "the maximum size of core files created",
         description: "core file size",
         short: 'c',
         unit: Unit::Block,
     };
     const FSIZE: ResourceDescription = ResourceDescription {
         resource: Resource::FSIZE,
+        help: "the maximum size of files written by the shell and its children",
         description: "file size",
         short: 'f',
         unit: Unit::Block,
     };
     const RSS: ResourceDescription = ResourceDescription {
         resource: Resource::RSS,
+        help: "the maximum resident set size",
         description: "max memory size",
         short: 'm',
         unit: Unit::KBytes,
     };
     const NOFILE: ResourceDescription = ResourceDescription {
         resource: Resource::NOFILE,
+        help: "the maximum number of open file descriptors",
         description: "open files",
         short: 'n',
+        unit: Unit::Number,
+    };
+    const NICE: ResourceDescription = ResourceDescription {
+        resource: Resource::NICE,
+        help: "the maximum scheduling priority (`nice`)",
+        description: "scheduling priority",
+        short: 'e',
+        unit: Unit::Number,
+    };
+    const KQUEUES: ResourceDescription = ResourceDescription {
+        resource: Resource::KQUEUES,
+        help: "the maximum number of kqueues allocated for this process",
+        description: "max kqueues",
+        short: 'k',
         unit: Unit::Number,
     };
 
@@ -77,24 +107,36 @@ impl ResourceDescription {
     }
 
     /// Print either soft or hard limit
-    fn print(&self, hard: bool) -> std::io::Result<()> {
+    fn print(&self, hard: bool) {
         let unit = match self.unit {
             Unit::Block => format!("(block, -{})", self.short),
+            Unit::Bytes => format!("(bytes, -{})", self.short),
             Unit::KBytes => format!("(kbytes, -{})", self.short),
             Unit::Number => format!("(-{})", self.short),
         };
-        let resource = self.get(hard)?;
+        let resource = self.get(hard).unwrap_or_else(|e| format!("{e}"));
         println!("{:<26}{:>16} {}", self.description, unit, resource);
-        Ok(())
+    }
+
+    /// Provide the matching help String
+    fn help(&self) -> String {
+        format!(
+            "{} {}",
+            self.help,
+            if self.resource.is_supported() {
+                "(supported)"
+            } else {
+                "(unsupported)"
+            }
+        )
     }
 }
 
-const ALL_RESOURCES: [ResourceDescription; 4] = [
-    ResourceDescription::CORE,
-    ResourceDescription::FSIZE,
-    ResourceDescription::NOFILE,
-    ResourceDescription::RSS,
-];
+impl IntoResettable<StyledStr> for ResourceDescription {
+    fn into_resettable(self) -> clap::builder::Resettable<StyledStr> {
+        clap::builder::Resettable::Value(self.help().into())
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 enum LimitValue {
@@ -134,19 +176,27 @@ pub(crate) struct ULimitCommand {
     /// all current limits are reported
     #[arg(short)]
     all: bool,
+    /// the maximum socket buffer size
+    #[arg(short = 'b', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SBSIZE)]
+    sbsize: Option<LimitValue>,
     /// the maximum size of core files created
-    #[arg(short, default_missing_value = "", num_args(0..=1))]
+    #[arg(short = 'c', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CORE)]
     core: Option<LimitValue>,
     /// the maximum size of files written by the shell and its children
-    #[arg(short = 'f', default_missing_value = "", num_args(0..=1))]
+    #[arg(short = 'f', default_missing_value = "", num_args(0..=1), help = ResourceDescription::FSIZE)]
     file_size: Option<LimitValue>,
+    /// the maximum number of kqueues allocated for this process
+    #[arg(short = 'k', default_missing_value = "", num_args(0..=1), help = ResourceDescription::KQUEUES)]
+    kqueues: Option<LimitValue>,
     /// the maximum resident set size
-    #[arg(short = 'm', default_missing_value = "", num_args(0..=1))]
+    #[arg(short = 'm', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RSS)]
     rss: Option<LimitValue>,
     /// the maximum number of open file descriptors
-    #[arg(short = 'n', default_missing_value = "", num_args(0..=1))]
+    #[arg(short = 'n', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NOFILE)]
     file_open: Option<LimitValue>,
-
+    /// the maximum scheduling priority (`nice`)
+    #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
+    nice: Option<LimitValue>,
     /// argument for the implicit limit (`-f`)
     limit: Option<LimitValue>,
 }
@@ -160,24 +210,24 @@ impl builtins::Command for ULimitCommand {
         let mut resources_to_set = Vec::new();
         let mut resources_to_get = Vec::new();
 
-        let mut set_or_get = |val, descr| match val {
-            Some(LimitValue::Unset) => resources_to_get.push(descr),
-            Some(v) => resources_to_set.push((descr, v)),
-            None => {}
+        let mut set_or_get = |val, descr| {
+            match val {
+                Some(LimitValue::Unset) => resources_to_get.push(descr),
+                Some(v) => resources_to_set.push((descr, v)),
+                None => {}
+            }
+            if self.all {
+                resources_to_get.push(descr);
+            }
         };
 
+        set_or_get(self.sbsize, ResourceDescription::SBSIZE);
         set_or_get(self.core, ResourceDescription::CORE);
         set_or_get(self.file_size, ResourceDescription::FSIZE);
+        set_or_get(self.kqueues, ResourceDescription::KQUEUES);
         set_or_get(self.rss, ResourceDescription::RSS);
         set_or_get(self.file_open, ResourceDescription::NOFILE);
-
-        if self.all {
-            resources_to_get = ALL_RESOURCES.into();
-        }
-
-        if !resources_to_get.is_empty() && !resources_to_set.is_empty() {
-            return Err(crate::Error::InvalidArguments);
-        }
+        set_or_get(self.nice, ResourceDescription::NICE);
 
         if resources_to_set.is_empty() {
             if resources_to_get.is_empty() {
@@ -197,7 +247,7 @@ impl builtins::Command for ULimitCommand {
             println!("{}", resources_to_get[0].get(self.hard)?);
         } else {
             for resource in resources_to_get {
-                resource.print(self.hard)?;
+                resource.print(self.hard);
             }
         }
 
