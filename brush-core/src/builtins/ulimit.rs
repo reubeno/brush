@@ -39,6 +39,13 @@ impl ResourceDescription {
         short: 'c',
         unit: Unit::Block,
     };
+    const DATA: ResourceDescription = ResourceDescription {
+        resource: Resource::DATA,
+        help: "the maximum size of a process's data segment",
+        description: "data seg size",
+        short: 'd',
+        unit: Unit::KBytes,
+    };
     const FSIZE: ResourceDescription = ResourceDescription {
         resource: Resource::FSIZE,
         help: "the maximum size of files written by the shell and its children",
@@ -182,6 +189,9 @@ pub(crate) struct ULimitCommand {
     /// the maximum size of core files created
     #[arg(short = 'c', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CORE)]
     core: Option<LimitValue>,
+    /// the maximum size of a process's data segment
+    #[arg(short = 'd', default_missing_value = "", num_args(0..=1), help = ResourceDescription::DATA)]
+    data: Option<LimitValue>,
     /// the maximum size of files written by the shell and its children
     #[arg(short = 'f', default_missing_value = "", num_args(0..=1), help = ResourceDescription::FSIZE)]
     file_size: Option<LimitValue>,
@@ -223,6 +233,7 @@ impl builtins::Command for ULimitCommand {
 
         set_or_get(self.sbsize, ResourceDescription::SBSIZE);
         set_or_get(self.core, ResourceDescription::CORE);
+        set_or_get(self.data, ResourceDescription::DATA);
         set_or_get(self.file_size, ResourceDescription::FSIZE);
         set_or_get(self.kqueues, ResourceDescription::KQUEUES);
         set_or_get(self.rss, ResourceDescription::RSS);
