@@ -46,6 +46,19 @@ pub trait InteractiveShell {
     /// * `prompt` - The prompt to display to the user.
     fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError>;
 
+    /// Returns the current contents of the read buffer and the current cursor
+    /// position within the buffer; None is returned if the read buffer is
+    /// empty or cannot be read by this implementation.
+    fn get_read_buffer(&self) -> Option<(String, usize)> {
+        None
+    }
+
+    /// Updates the read buffer with the given string and cursor. Considered a
+    /// no-op if the implementation does not support updating read buffers.
+    fn set_read_buffer(&mut self, _buffer: String, _cursor: usize) {
+        // No-op by default.
+    }
+
     /// Update history, if relevant.
     fn update_history(&mut self) -> Result<(), ShellError>;
 
@@ -131,7 +144,16 @@ pub trait InteractiveShell {
 
             match self.read_line(prompt)? {
                 ReadResult::Input(read_result) => {
+                    let buffer_info = self.get_read_buffer();
+
                     let mut shell_mut = self.shell_mut();
+
+                    let nonempty_buffer = if let Some((buffer, cursor)) = buffer_info {
+                        shell_mut.as_mut().set_edit_buffer(buffer, cursor)?;
+                        true
+                    } else {
+                        false
+                    };
 
                     let precmd_prompt = shell_mut.as_mut().compose_precmd_prompt().await?;
                     if !precmd_prompt.is_empty() {
@@ -139,10 +161,23 @@ pub trait InteractiveShell {
                     }
 
                     let params = shell_mut.as_mut().default_exec_params();
-                    match shell_mut.as_mut().run_string(read_result, &params).await {
+                    let result = match shell_mut.as_mut().run_string(read_result, &params).await {
                         Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
                         Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
+                    };
+
+                    if nonempty_buffer {
+                        let (updated_buffer, updated_cursor) = shell_mut
+                            .as_mut()
+                            .pop_edit_buffer()?
+                            .unwrap_or((String::new(), 0));
+
+                        drop(shell_mut);
+
+                        self.set_read_buffer(updated_buffer, updated_cursor);
                     }
+
+                    result
                 }
                 ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
                 ReadResult::Interrupted => {

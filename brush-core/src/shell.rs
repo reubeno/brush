@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use normalize_path::NormalizePath;
 use rand::Rng;
+use tokio::sync::Mutex;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
@@ -18,7 +19,7 @@ use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     patterns, prompt, sys::users, traps,
 };
-use crate::{pathcache, sys, trace_categories};
+use crate::{interfaces, pathcache, sys, trace_categories};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -94,6 +95,9 @@ pub struct Shell {
 
     /// Last "SECONDS" offset requested.
     last_stopwatch_offset: u32,
+
+    /// Key bindings for the shell, optionally implemented by an interactive shell.
+    pub key_bindings: Option<Arc<Mutex<dyn interfaces::KeyBindings>>>,
 }
 
 impl Clone for Shell {
@@ -121,6 +125,7 @@ impl Clone for Shell {
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
+            key_bindings: self.key_bindings.clone(),
             depth: self.depth + 1,
         }
     }
@@ -230,6 +235,7 @@ impl Shell {
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
+            key_bindings: None,
             depth: 0,
         };
 
@@ -1630,6 +1636,45 @@ impl Shell {
         expr: &brush_parser::ast::ArithmeticExpr,
     ) -> Result<i64, error::Error> {
         Ok(expr.eval(self)?)
+    }
+
+    /// Updates the shell state to reflect the given edit buffer contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `contents` - The contents of the edit buffer.
+    /// * `cursor` - The cursor position in the edit buffer.
+    pub fn set_edit_buffer(&mut self, contents: String, cursor: usize) -> Result<(), error::Error> {
+        self.env
+            .set_global("READLINE_LINE", ShellVariable::new(contents.into()))?;
+
+        self.env.set_global(
+            "READLINE_POINT",
+            ShellVariable::new(cursor.to_string().into()),
+        )?;
+
+        Ok(())
+    }
+
+    /// Returns the contents of the shell's edit buffer, if any. The buffer
+    /// state is cleared from the shell.
+    pub fn pop_edit_buffer(&mut self) -> Result<Option<(String, usize)>, error::Error> {
+        let line = self
+            .env
+            .unset("READLINE_LINE")?
+            .map(|line| line.value().to_cow_str(self).to_string());
+
+        let point = self
+            .env
+            .unset("READLINE_POINT")?
+            .and_then(|point| point.value().to_cow_str(self).parse::<usize>().ok())
+            .unwrap_or(0);
+
+        if let Some(line) = line {
+            Ok(Some((line, point)))
+        } else {
+            Ok(None)
+        }
     }
 }
 
