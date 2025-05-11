@@ -95,8 +95,9 @@ impl builtins::Command for BindCommand {
         } else {
             writeln!(
                 context.stderr(),
-                "bind: key bindings not supported in this configuration"
+                "bind: key bindings not supported in this config"
             )?;
+
             Ok(builtins::ExitCode::Unimplemented)
         }
     }

@@ -21,19 +21,19 @@ impl ReedlineShell {
     /// # Arguments
     ///
     /// * `options` - Options for creating the interactive shell.
-    pub async fn new(options: &crate::Options) -> Result<ReedlineShell, ShellError> {
-        // Set up shell first. Its initialization may influence how the
-        // editor needs to operate.
-        let mut shell = brush_core::Shell::new(&options.shell).await?;
-        let history_file_path = shell.get_history_file_path();
-
+    pub async fn new(mut options: crate::Options) -> Result<ReedlineShell, ShellError> {
         // Set up key bindings.
         let key_bindings = compose_key_bindings(COMPLETION_MENU_NAME);
 
         // Set up mutable edit mode.
         let mutable_edit_mode = edit_mode::MutableEditMode::new(key_bindings);
         let updatable_bindings = mutable_edit_mode.bindings();
-        shell.key_bindings = Some(updatable_bindings.clone());
+        options.shell.key_bindings = Some(updatable_bindings);
+
+        // Set up shell first. Its initialization may influence how the
+        // editor needs to operate.
+        let shell = brush_core::Shell::new(&options.shell).await?;
+        let history_file_path = shell.get_history_file_path();
 
         // Wrap the shell in an Arc<Mutex> so we can share it with the helper
         // objects we'll need to set up for reedline.
