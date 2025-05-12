@@ -56,7 +56,7 @@ homedir = "0.3.4"
 whoami = "1.6.0"
 
 [target.'cfg(unix)'.dependencies]
-command-fds = "0.3.1"
+command-fds = "=0.3.0"
 nix = { version = "0.30.1", features = [
     "fs",
     "process",
