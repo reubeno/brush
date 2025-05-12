@@ -283,6 +283,7 @@ pub(crate) fn get_default_builtins(
         m.insert("enable".into(), builtin::<enable::EnableCommand>());
         m.insert("let".into(), builtin::<let_::LetCommand>());
         m.insert("mapfile".into(), builtin::<mapfile::MapFileCommand>());
+        m.insert("readarray".into(), builtin::<mapfile::MapFileCommand>());
         m.insert("printf".into(), builtin::<printf::PrintfCommand>());
         m.insert("shopt".into(), builtin::<shopt::ShoptCommand>());
         m.insert("source".into(), builtin::<dot::DotCommand>().special());
@@ -316,9 +317,6 @@ pub(crate) fn get_default_builtins(
 
         // TODO: implement logout builtin
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
-
-        // TODO(#474): implement readarray builtin
-        m.insert("readarray".into(), builtin::<unimp::UnimplementedCommand>());
     }
 
     //
