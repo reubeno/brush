@@ -105,3 +105,21 @@ cases:
       prompt='\#'
       expanded=${prompt@P}
       echo "${expanded}"
+
+  - name: "Command substitution in prompt"
+    known_failure: true # @P expansion doesn't word-expand after prompt expanding
+    stdin: |
+      prompt='$(echo Hello)'
+      echo "Without spaces: ${prompt@P}"
+
+      prompt=' $(echo Hello) '
+      echo "With spaces: ${prompt@P}"
+
+  - name: "Backquoted command substitution in prompt"
+    known_failure: true # @P expansion doesn't word-expand after prompt expanding
+    stdin: |
+      prompt='`echo Hello`'
+      echo "Without spaces: ${prompt@P}"
+
+      prompt=' `echo Hello` '
+      echo "With spaces: ${prompt@P}"
