@@ -391,7 +391,7 @@ impl<'a> WordExpander<'a> {
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
-        String::from(self.basic_expand(word).await?)
+        Ok(String::from(self.basic_expand(word).await?))
     }
 
     #[allow(clippy::ref_option)]
