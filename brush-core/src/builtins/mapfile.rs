@@ -40,7 +40,22 @@ pub(crate) struct MapFileCommand {
     callback_group_size: i64,
 
     /// Name of array to read into.
+    #[arg(default_value = "MAPFILE")]
     array_var_name: String,
+}
+
+enum LineCount {
+    All,
+    Some(i64),
+}
+
+impl From<i64> for LineCount {
+    fn from(value: i64) -> Self {
+        match value {
+            0 => Self::All,
+            default => Self::Some(default),
+        }
+    }
 }
 
 impl builtins::Command for MapFileCommand {
@@ -52,10 +67,6 @@ impl builtins::Command for MapFileCommand {
             // This will require reading a single char at a time and stoping as soon as
             // the delimiter is hit.
             return error::unimp("mapfile with non-newline delimiter not yet implemented");
-        }
-
-        if self.max_count != 0 {
-            return error::unimp("mapfile -n is not yet implemented");
         }
 
         if self.origin.is_some() {
@@ -77,7 +88,7 @@ impl builtins::Command for MapFileCommand {
             .ok_or_else(|| error::Error::BadFileDescriptor(self.fd))?;
 
         // Read!
-        let results = self.read_entries(input_file)?;
+        let results = self.read_entries(input_file, &self.max_count.into())?;
 
         // Assign!
         context.shell.env.update_or_add(
@@ -96,6 +107,7 @@ impl MapFileCommand {
     fn read_entries(
         &self,
         mut input_file: openfiles::OpenFile,
+        lines: &LineCount,
     ) -> Result<variables::ArrayLiteral, error::Error> {
         let mut entries = vec![];
 
@@ -104,7 +116,14 @@ impl MapFileCommand {
         let mut current_entry = String::new();
         let mut buffer: [u8; 1] = [0; 1]; // 1-byte buffer
 
+        let mut lines_read = 0;
         loop {
+            if let LineCount::Some(limit) = lines {
+                if lines_read >= *limit {
+                    break;
+                }
+            }
+
             // TODO: Figure out how to restore terminal settings on error?
             let n = input_file.read(&mut buffer)?;
             if n == 0 {
@@ -133,6 +152,7 @@ impl MapFileCommand {
             } else {
                 current_entry.push(ch);
             }
+            lines_read += 1;
         }
 
         if let Some(orig_term_attr) = &orig_term_attr {
