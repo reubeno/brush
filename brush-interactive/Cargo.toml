@@ -35,7 +35,7 @@ thiserror = "2.0.12"
 tracing = "0.1.41"
 
 [target.'cfg(any(windows, unix))'.dependencies]
-tokio = { version = "1.44.2", features = ["macros", "signal"] }
+tokio = { version = "1.45.0", features = ["macros", "signal"] }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3.2", features = ["wasm_js"] }
+getrandom = { version = "0.3.3", features = ["wasm_js"] }

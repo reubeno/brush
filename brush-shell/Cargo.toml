@@ -55,7 +55,7 @@ human-panic = "2.0.2"
 brush-interactive = { version = "^0.2.17", path = "../brush-interactive", features = [
     "minimal",
 ] }
-tokio = { version = "1.44.2", features = ["rt", "sync"] }
+tokio = { version = "1.45.0", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.17", path = "../brush-interactive", features = [
@@ -66,7 +66,7 @@ crossterm = "0.29.0"
 tokio = { version = "1.44.2", features = ["rt", "rt-multi-thread", "sync"] }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3.2", features = ["wasm_js"] }
+getrandom = { version = "0.3.3", features = ["wasm_js"] }
 uuid = { version = "1.16.0", features = ["js"] }
 
 [dev-dependencies]

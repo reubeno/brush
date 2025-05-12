@@ -37,7 +37,7 @@ thiserror = "2.0.12"
 tracing = "0.1.41"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.44.2", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.45.0", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.1"
@@ -56,7 +56,7 @@ homedir = "0.3.4"
 whoami = "1.6.0"
 
 [target.'cfg(unix)'.dependencies]
-command-fds = "0.3.0"
+command-fds = "=0.3.0"
 nix = { version = "0.30.1", features = [
     "fs",
     "process",
@@ -72,7 +72,7 @@ uzers = "0.12.1"
 procfs = "0.17.0"
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3.2", features = ["wasm_js"] }
+getrandom = { version = "0.3.3", features = ["wasm_js"] }
 uuid = { version = "1.16.0", features = ["js"] }
 
 [dev-dependencies]
