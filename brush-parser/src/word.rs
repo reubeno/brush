@@ -656,7 +656,7 @@ peg::parser! {
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
-            !stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"'] {}
+            !stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"' | '`'] {}
 
         rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
 
@@ -673,7 +673,7 @@ peg::parser! {
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((!double_quoted_escape_sequence() [^'$' | '\"'])+)
+            $((!double_quoted_escape_sequence() [^'$' | '\"' | '`'])+)
 
         rule normal_escape_sequence() -> WordPiece =
             s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
@@ -939,6 +939,32 @@ mod tests {
         assert_matches!(
             &parsed[..],
             [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo !(x)"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command() -> Result<()> {
+        let parsed = super::parse("`echo hi`", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[..],
+            [WordPieceWithSource { piece: WordPiece::BackquotedCommandSubstitution(s), .. }] if s == "echo hi"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_in_double_quotes() -> Result<()> {
+        let parsed = super::parse(r#""`echo hi`""#, &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[..],
+            [WordPieceWithSource { piece: WordPiece::DoubleQuotedSequence(inner), .. }]
+                if matches!(
+                    &inner[..],
+                    [WordPieceWithSource { piece: WordPiece::BackquotedCommandSubstitution(s), .. }] if s == "echo hi"
+                )
         );
 
         Ok(())

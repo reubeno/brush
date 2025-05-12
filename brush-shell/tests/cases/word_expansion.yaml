@@ -80,6 +80,12 @@ cases:
     stdin: |
       echo `echo \`echo hi\``
 
+  - name: "Backtick command substitution in double quotes"
+    stdin: |
+      echo "`echo First line`"
+      echo " `echo Second line` "
+      echo "Third`echo line`here"
+
   - name: "String length"
     stdin: |
       x="abc"
