@@ -49,11 +49,47 @@ enum LineCount {
     Some(i64),
 }
 
+struct LineCountIter {
+    kind: LineCount,
+    count: i64,
+}
+
 impl From<i64> for LineCount {
     fn from(value: i64) -> Self {
         match value {
             0 => Self::All,
             default => Self::Some(default),
+        }
+    }
+}
+
+impl IntoIterator for LineCount {
+    type Item = i64;
+    type IntoIter = LineCountIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter {
+            kind: self,
+            count: 0,
+        }
+    }
+}
+
+impl Iterator for LineCountIter {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.count += 1;
+
+        match self.kind {
+            LineCount::All => Some(self.count),
+            LineCount::Some(some) => {
+                if self.count <= some {
+                    Some(some)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -88,7 +124,7 @@ impl builtins::Command for MapFileCommand {
             .ok_or_else(|| error::Error::BadFileDescriptor(self.fd))?;
 
         // Read!
-        let results = self.read_entries(input_file, &self.max_count.into())?;
+        let results = self.read_entries(input_file, self.max_count.into())?;
 
         // Assign!
         context.shell.env.update_or_add(
@@ -107,7 +143,7 @@ impl MapFileCommand {
     fn read_entries(
         &self,
         mut input_file: openfiles::OpenFile,
-        lines: &LineCount,
+        lines: LineCount,
     ) -> Result<variables::ArrayLiteral, error::Error> {
         let mut entries = vec![];
 
@@ -116,14 +152,7 @@ impl MapFileCommand {
         let mut current_entry = String::new();
         let mut buffer: [u8; 1] = [0; 1]; // 1-byte buffer
 
-        let mut lines_read = 0;
-        loop {
-            if let LineCount::Some(limit) = lines {
-                if lines_read >= *limit {
-                    break;
-                }
-            }
-
+        for _ in lines {
             // TODO: Figure out how to restore terminal settings on error?
             let n = input_file.read(&mut buffer)?;
             if n == 0 {
@@ -152,7 +181,6 @@ impl MapFileCommand {
             } else {
                 current_entry.push(ch);
             }
-            lines_read += 1;
         }
 
         if let Some(orig_term_attr) = &orig_term_attr {
