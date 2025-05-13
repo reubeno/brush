@@ -40,19 +40,19 @@ impl ResourceDescription {
         short: 'c',
         unit: Unit::Block,
     };
-    const CPU: ResourceDescription = ResourceDescription {
-        resource: Resource::CPU,
-        help: "the maximum amount of cpu time in seconds",
-        description: "cpu time",
-        short: 't',
-        unit: Unit::Seconds,
-    };
     const DATA: ResourceDescription = ResourceDescription {
         resource: Resource::DATA,
         help: "the maximum size of a process's data segment",
         description: "data seg size",
         short: 'd',
         unit: Unit::KBytes,
+    };
+    const NICE: ResourceDescription = ResourceDescription {
+        resource: Resource::NICE,
+        help: "the maximum scheduling priority (`nice`)",
+        description: "scheduling priority",
+        short: 'e',
+        unit: Unit::Number,
     };
     const FSIZE: ResourceDescription = ResourceDescription {
         resource: Resource::FSIZE,
@@ -75,12 +75,12 @@ impl ResourceDescription {
         short: 'l',
         unit: Unit::KBytes,
     };
-    const MSGQUEUE: ResourceDescription = ResourceDescription {
-        resource: Resource::MSGQUEUE,
-        help: "the maximum number of bytes in POSIX message queues",
-        description: "POSIX message queues",
-        short: 'q',
-        unit: Unit::Bytes,
+    const KQUEUES: ResourceDescription = ResourceDescription {
+        resource: Resource::KQUEUES,
+        help: "the maximum number of kqueues allocated for this process",
+        description: "max kqueues",
+        short: 'k',
+        unit: Unit::Number,
     };
     const RSS: ResourceDescription = ResourceDescription {
         resource: Resource::RSS,
@@ -96,19 +96,12 @@ impl ResourceDescription {
         short: 'n',
         unit: Unit::Number,
     };
-    const NICE: ResourceDescription = ResourceDescription {
-        resource: Resource::NICE,
-        help: "the maximum scheduling priority (`nice`)",
-        description: "scheduling priority",
-        short: 'e',
-        unit: Unit::Number,
-    };
-    const KQUEUES: ResourceDescription = ResourceDescription {
-        resource: Resource::KQUEUES,
-        help: "the maximum number of kqueues allocated for this process",
-        description: "max kqueues",
-        short: 'k',
-        unit: Unit::Number,
+    const MSGQUEUE: ResourceDescription = ResourceDescription {
+        resource: Resource::MSGQUEUE,
+        help: "the maximum number of bytes in POSIX message queues",
+        description: "POSIX message queues",
+        short: 'q',
+        unit: Unit::Bytes,
     };
     const RTPRIO: ResourceDescription = ResourceDescription {
         resource: Resource::RTPRIO,
@@ -123,6 +116,13 @@ impl ResourceDescription {
         description: "stack size",
         short: 's',
         unit: Unit::KBytes,
+    };
+    const CPU: ResourceDescription = ResourceDescription {
+        resource: Resource::CPU,
+        help: "the maximum amount of cpu time in seconds",
+        description: "cpu time",
+        short: 't',
+        unit: Unit::Seconds,
     };
     const NPROC: ResourceDescription = ResourceDescription {
         resource: Resource::NPROC,
@@ -140,11 +140,8 @@ impl ResourceDescription {
     };
 
     fn get(&self, hard: bool) -> std::io::Result<String> {
-        let val = if hard {
-            self.resource.get_hard()?
-        } else {
-            self.resource.get_soft()?
-        };
+        let (soft_limit, hard_limit) = self.resource.get()?;
+        let val = if hard { hard_limit } else { soft_limit };
 
         if val == rlimit::INFINITY {
             Ok("unlimited".into())
@@ -242,7 +239,7 @@ pub(crate) struct ULimitCommand {
     #[arg(short = 'H')]
     hard: bool,
     /// all current limits are reported
-    #[arg(short)]
+    #[arg(short = 'a')]
     all: bool,
     /// the maximum socket buffer size
     #[arg(short = 'b', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SBSIZE)]
@@ -253,6 +250,9 @@ pub(crate) struct ULimitCommand {
     /// the maximum size of a process's data segment
     #[arg(short = 'd', default_missing_value = "", num_args(0..=1), help = ResourceDescription::DATA)]
     data: Option<LimitValue>,
+    /// the maximum scheduling priority (`nice`)
+    #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
+    nice: Option<LimitValue>,
     /// the maximum size of files written by the shell and its children
     #[arg(short = 'f', default_missing_value = "", num_args(0..=1), help = ResourceDescription::FSIZE)]
     file_size: Option<LimitValue>,
@@ -271,12 +271,12 @@ pub(crate) struct ULimitCommand {
     /// the maximum number of open file descriptors
     #[arg(short = 'n', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NOFILE)]
     file_open: Option<LimitValue>,
+    /// Unimplemented
+    #[arg(short = 'p', default_missing_value = "", num_args(0..=1))]
+    pipe: Option<LimitValue>,
     /// the maximum number of bytes in POSIX message queues
     #[arg(short = 'q', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MSGQUEUE)]
     msgqueue: Option<LimitValue>,
-    /// the maximum scheduling priority (`nice`)
-    #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
-    nice: Option<LimitValue>,
     /// the maximum real-time scheduling priority
     #[arg(short = 'r', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTPRIO)]
     rtprio: Option<LimitValue>,
@@ -292,6 +292,19 @@ pub(crate) struct ULimitCommand {
     /// the size of virtual memory
     #[arg(short = 'v', default_missing_value = "", num_args(0..=1), help = ResourceDescription::VMEM)]
     vmem: Option<LimitValue>,
+    /// Unimplemented
+    #[arg(short = 'x', default_missing_value = "", num_args(0..=1))]
+    file_lock: Option<LimitValue>,
+    /// Unimplemented
+    #[arg(short = 'P', default_missing_value = "", num_args(0..=1))]
+    npts: Option<LimitValue>,
+    /// Unimplemented
+    #[arg(short = 'R', default_missing_value = "", num_args(0..=1))]
+    rttime: Option<LimitValue>,
+    /// Unimplemented
+    #[arg(short = 'T', default_missing_value = "", num_args(0..=1))]
+    threads: Option<LimitValue>,
+
     /// argument for the implicit limit (`-f`)
     limit: Option<LimitValue>,
 }
@@ -315,6 +328,15 @@ impl builtins::Command for ULimitCommand {
                 resources_to_get.push(descr);
             }
         };
+
+        if self.threads.is_some()
+            || self.rttime.is_some()
+            || self.npts.is_some()
+            || self.file_lock.is_some()
+            || self.pipe.is_some()
+        {
+            return crate::error::unimp("Limit unimplemented");
+        }
 
         set_or_get(self.sbsize, ResourceDescription::SBSIZE);
         set_or_get(self.core, ResourceDescription::CORE);
