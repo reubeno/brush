@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{BufRead, BufReader};
 
 use clap::Parser;
 
@@ -44,67 +44,11 @@ pub(crate) struct MapFileCommand {
     array_var_name: String,
 }
 
-enum LineCount {
-    All,
-    Some(i64),
-}
-
-struct LineCountIter {
-    kind: LineCount,
-    count: i64,
-}
-
-impl From<i64> for LineCount {
-    fn from(value: i64) -> Self {
-        match value {
-            0 => Self::All,
-            default => Self::Some(default),
-        }
-    }
-}
-
-impl IntoIterator for LineCount {
-    type Item = i64;
-    type IntoIter = LineCountIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter {
-            kind: self,
-            count: 0,
-        }
-    }
-}
-
-impl Iterator for LineCountIter {
-    type Item = i64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.count += 1;
-
-        match self.kind {
-            LineCount::All => Some(self.count),
-            LineCount::Some(some) => {
-                if self.count <= some {
-                    Some(some)
-                } else {
-                    None
-                }
-            }
-        }
-    }
-}
-
 impl builtins::Command for MapFileCommand {
     async fn execute(
         &self,
-        context: commands::ExecutionContext<'_>,
+        mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, error::Error> {
-        if self.delimiter != "\n" {
-            // This will require reading a single char at a time and stoping as soon as
-            // the delimiter is hit.
-            return error::unimp("mapfile with non-newline delimiter not yet implemented");
-        }
-
         if self.origin.is_some() {
             // This will require merging into a potentially already-existing array.
             return error::unimp("mapfile -O is not yet implemented");
@@ -114,17 +58,13 @@ impl builtins::Command for MapFileCommand {
             return error::unimp("mapfile -s is not yet implemented");
         }
 
-        if self.callback.is_some() {
-            return error::unimp("mapfile -C is not yet implemented");
-        }
-
         let input_file = context
             .params
             .fd(self.fd)
             .ok_or_else(|| error::Error::BadFileDescriptor(self.fd))?;
 
         // Read!
-        let results = self.read_entries(input_file, self.max_count.into())?;
+        let results = self.read_entries(input_file, &mut context).await?;
 
         // Assign!
         context.shell.env.update_or_add(
@@ -140,47 +80,50 @@ impl builtins::Command for MapFileCommand {
 }
 
 impl MapFileCommand {
-    fn read_entries(
+    async fn read_entries(
         &self,
-        mut input_file: openfiles::OpenFile,
-        lines: LineCount,
+        input_file: openfiles::OpenFile,
+        context: &mut commands::ExecutionContext<'_>,
     ) -> Result<variables::ArrayLiteral, error::Error> {
-        let mut entries = vec![];
-
         let orig_term_attr = setup_terminal_settings(&input_file)?;
 
-        let mut current_entry = String::new();
-        let mut buffer: [u8; 1] = [0; 1]; // 1-byte buffer
+        let mut entries = vec![];
+        let mut buf_reader = BufReader::new(input_file.clone());
+        let mut line = vec![];
+        let mut idx = self.skip_count;
+        let mut read_count = 0;
+        let delimiter = self.delimiter.chars().next().unwrap_or('\n');
 
-        for _ in lines {
-            // TODO: Figure out how to restore terminal settings on error?
-            let n = input_file.read(&mut buffer)?;
-            if n == 0 {
-                // EOF reached.
+        while self.max_count == 0 || entries.len() < usize::try_from(self.max_count)? {
+            line.clear();
+            let bytes = buf_reader.read_until(delimiter as u8, &mut line)?;
+            if bytes == 0 {
                 break;
             }
 
-            let ch = buffer[0] as char;
-
-            // Check for Ctrl+C.
-            if ch == '\x03' {
-                break;
-            // Ctrl+D is EOF *if* there's no entry in progress.
-            } else if ch == '\x04' && current_entry.is_empty() {
-                break;
+            if read_count < self.skip_count {
+                read_count += 1;
+                continue;
             }
 
-            // Check for a delimiting newline char.
-            // TODO: Support other delimiters.
-            if ch == '\n' {
-                if !self.remove_delimiter {
-                    current_entry.push(ch);
+            if self.remove_delimiter && line.ends_with(&[delimiter as u8]) {
+                line.pop();
+            }
+
+            let line_str = String::from_utf8_lossy(&line).to_string();
+
+            if let Some(callback) = &self.callback {
+                if (idx - self.origin.unwrap_or(0)) % self.callback_group_size == 0 {
+                    // Ignore shell error.
+                    let _ = context
+                        .shell
+                        .invoke_function(callback, &[idx.to_string().as_str(), &line_str])
+                        .await;
                 }
-
-                entries.push((None, std::mem::take(&mut current_entry)));
-            } else {
-                current_entry.push(ch);
             }
+
+            entries.push((None, line_str));
+            idx += 1;
         }
 
         if let Some(orig_term_attr) = &orig_term_attr {
