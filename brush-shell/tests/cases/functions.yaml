@@ -90,3 +90,13 @@ cases:
 
       echo "Calling inner from toplevel"
       inner
+
+  - name: "Exporting functions to child instance"
+    stdin: |
+      mytestfunc() {
+          echo "In mytestfunc"
+      }
+
+      export -f mytestfunc
+
+      $0 -c 'mytestfunc'

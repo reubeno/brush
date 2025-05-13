@@ -139,6 +139,10 @@ pub enum Error {
     #[error("{0}")]
     FormattingError(#[from] std::fmt::Error),
 
+    /// An error occurred while parsing.
+    #[error("{0}")]
+    ParseError(#[from] brush_parser::ParseError),
+
     /// An error occurred while parsing a word.
     #[error("{0}")]
     WordParseError(#[from] brush_parser::WordParseError),
