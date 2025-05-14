@@ -7,7 +7,6 @@ use std::os::fd::AsFd;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg, CommandSpawnResult};
@@ -17,7 +16,9 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, timing, traps};
+use crate::{
+    error, expansion, extendedtests, functions, jobs, openfiles, processes, sys, timing, traps,
+};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -907,9 +908,10 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell
-            .funcs
-            .update(self.fname.clone(), Arc::new(self.clone()));
+        shell.funcs.update(
+            self.fname.clone(),
+            functions::FunctionRegistration::from(self.clone()),
+        );
 
         let result = ExecutionResult::success();
         shell.last_exit_status = result.exit_code;

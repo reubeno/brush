@@ -18,3 +18,11 @@ cases:
     stdin: |
       export arr=(a 1 2)
       declare -p arr
+
+  - name: "Unexporting variable"
+    stdin: |
+      MY_TEST_VAR="value"
+      export MY_TEST_VAR="value"
+      export -n MY_TEST_VAR
+
+      env | grep MY_TEST_VAR

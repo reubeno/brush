@@ -1,7 +1,5 @@
 #[cfg(unix)]
 mod unix {
-    use std::sync::Arc;
-
     use criterion::{black_box, Criterion};
 
     async fn instantiate_shell() -> brush_core::Shell {
@@ -107,7 +105,7 @@ mod unix {
         let mut shell = rt.block_on(instantiate_shell());
         shell.funcs.update(
             String::from("testfunc"),
-            Arc::new(brush_parser::ast::FunctionDefinition {
+            brush_parser::ast::FunctionDefinition {
                 fname: String::from("testfunc"),
                 body: brush_parser::ast::FunctionBody(
                     brush_parser::ast::CompoundCommand::BraceGroup(
@@ -118,7 +116,8 @@ mod unix {
                     None,
                 ),
                 source: String::from("/some/path"),
-            }),
+            }
+            .into(),
         );
         c.bench_function("function_call", |b| {
             b.iter_batched_ref(

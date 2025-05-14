@@ -257,12 +257,44 @@ impl Shell {
         Ok(shell)
     }
 
+    fn initialize_exported_func(
+        &mut self,
+        func_name: &str,
+        body_text: &str,
+    ) -> Result<(), error::Error> {
+        let mut parser = create_parser(body_text, &self.parser_options());
+        let func_body = parser.parse_function_parens_and_body()?;
+
+        let func_def = brush_parser::ast::FunctionDefinition {
+            fname: func_name.to_owned(),
+            body: func_body,
+            source: String::new(),
+        };
+
+        let mut registration = functions::FunctionRegistration::from(func_def);
+        registration.export();
+
+        self.funcs.update(func_name.to_owned(), registration);
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::unwrap_in_result)]
     fn initialize_vars(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
         // Seed parameters from environment (unless requested not to do so).
         if !options.do_not_inherit_env {
             for (k, v) in std::env::vars() {
+                // See if it's a function exported by an ancestor process.
+                if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
+                    if let Some(func_name) = func_name.strip_suffix("%%") {
+                        // Intentionally best-effort; don't fail out of the shell if we can't
+                        // parse an incoming function.
+                        let _ = self.initialize_exported_func(func_name, v.as_str());
+                        continue;
+                    }
+                }
+
                 let mut var = ShellVariable::new(ShellValue::String(v));
                 var.export();
                 self.env.set_global(k, var)?;
@@ -850,7 +882,7 @@ impl Shell {
             brush_parser::Parser::new(&mut reader, &self.parser_options(), source_info);
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
-        let parse_result = parser.parse();
+        let parse_result = parser.parse_program();
 
         let mut other_positional_parameters = args.map(|s| s.as_ref().to_owned()).collect();
         let mut other_shell_name = Some(source_info.source.clone());
@@ -1688,15 +1720,22 @@ fn parse_string_impl(
     s: String,
     parser_options: brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut reader = std::io::BufReader::new(s.as_bytes());
+    let mut parser = create_parser(s.as_str(), &parser_options);
+
+    tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
+    parser.parse_program()
+}
+
+fn create_parser<'a>(
+    s: &'a str,
+    parser_options: &brush_parser::ParserOptions,
+) -> brush_parser::Parser<std::io::BufReader<&'a [u8]>> {
+    let reader = std::io::BufReader::new(s.as_bytes());
     let source_info = brush_parser::SourceInfo {
         source: String::from("main"),
     };
-    let mut parser: brush_parser::Parser<&mut std::io::BufReader<&[u8]>> =
-        brush_parser::Parser::new(&mut reader, &parser_options, &source_info);
 
-    tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
-    parser.parse()
+    brush_parser::Parser::new(reader, parser_options, &source_info)
 }
 
 fn repeated_char_str(c: char, count: usize) -> String {

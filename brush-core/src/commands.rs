@@ -217,6 +217,17 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
         }
     }
 
+    // Add in exported functions.
+    if !empty_env {
+        for (func_name, registration) in shell.funcs.iter() {
+            if registration.is_exported() {
+                let var_name = std::format!("BASH_FUNC_{func_name}%%");
+                let value = std::format!("() {}", registration.definition.body);
+                cmd.env(var_name, value);
+            }
+        }
+    }
+
     // Redirect stdin, if applicable.
     match open_files.files.remove(&0) {
         Some(OpenFile::Stdin) | None => (),

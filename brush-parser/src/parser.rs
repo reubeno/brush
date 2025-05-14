@@ -61,7 +61,7 @@ impl<R: std::io::BufRead> Parser<R> {
     }
 
     /// Parses the input into an abstract syntax tree (AST) of a shell program.
-    pub fn parse(&mut self) -> Result<ast::Program, error::ParseError> {
+    pub fn parse_program(&mut self) -> Result<ast::Program, error::ParseError> {
         //
         // References:
         //   * https://www.gnu.org/software/bash/manual/bash.html#Shell-Syntax
@@ -70,6 +70,25 @@ impl<R: std::io::BufRead> Parser<R> {
         //   * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
         //
 
+        let tokens = self.tokenize()?;
+        parse_tokens(&tokens, &self.options, &self.source_info)
+    }
+
+    /// Parses a function definition body from the input. The body is expected to be
+    /// preceded by "()", but no function name.
+    pub fn parse_function_parens_and_body(
+        &mut self,
+    ) -> Result<ast::FunctionBody, error::ParseError> {
+        let tokens = self.tokenize()?;
+        let parse_result = token_parser::function_parens_and_body(
+            &Tokens { tokens: &tokens },
+            &self.options,
+            &self.source_info,
+        );
+        parse_result_to_error(parse_result, &tokens)
+    }
+
+    fn tokenize(&mut self) -> Result<Vec<Token>, error::ParseError> {
         // First we tokenize the input, according to the policy implied by provided options.
         let mut tokenizer = Tokenizer::new(&mut self.reader, &self.options.tokenizer_options());
 
@@ -100,7 +119,7 @@ impl<R: std::io::BufRead> Parser<R> {
 
         tracing::debug!(target: "tokenize", "  => {} token(s)", tokens.len());
 
-        parse_tokens(&tokens, &self.options, &self.source_info)
+        Ok(tokens)
     }
 }
 
@@ -117,7 +136,16 @@ pub fn parse_tokens(
     source_info: &SourceInfo,
 ) -> Result<ast::Program, error::ParseError> {
     let parse_result = token_parser::program(&Tokens { tokens }, options, source_info);
+    parse_result_to_error(parse_result, tokens)
+}
 
+fn parse_result_to_error<R>(
+    parse_result: Result<R, peg::error::ParseError<usize>>,
+    tokens: &Vec<Token>,
+) -> Result<R, error::ParseError>
+where
+    R: std::fmt::Debug,
+{
     let result = match parse_result {
         Ok(program) => {
             tracing::debug!(target: "parse", "PROG: {:?}", program);
@@ -539,13 +567,16 @@ peg::parser! {
 
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         rule function_definition() -> ast::FunctionDefinition =
-            specific_word("function")? fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
+            specific_word("function")? fname:fname() body:function_parens_and_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
             } /
             expected!("function definition")
+
+        pub(crate) rule function_parens_and_body() -> ast::FunctionBody =
+            specific_operator("(") specific_operator(")") linebreak() body:function_body() { body }
 
         rule function_body() -> ast::FunctionBody =
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
