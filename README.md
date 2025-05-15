@@ -13,14 +13,21 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/></a>
   <a href="https://github.com/reubeno/brush/actions/workflows/ci.yaml"><img src="https://github.com/reubeno/brush/actions/workflows/ci.yaml/badge.svg"/></a>
 
-  <!-- Packaging badges -->
   <br/>
+
+  <!-- Social badges -->
+  <a href="https://discord.gg/kPRgC9j3Tj">
+    <img src="https://dcbadge.limes.pink/api/server/https://discord.gg/kPRgC9j3Tj?compact=true&style=flat" alt="Discord invite"/>
+  </a>
+
+  <!-- Packaging badges -->
   <a href="https://repology.org/project/brush/versions">
-    <img src="https://repology.org/badge/version-for-repo/aur/brush.svg" alt="AUR package">
+    <img src="https://repology.org/badge/version-for-repo/aur/brush.svg" alt="AUR package"/>
   </a>
   <a href="https://repology.org/project/brush/versions">
-    <img src="https://repology.org/badge/version-for-repo/nix_unstable/brush.svg" alt="AUR package">
+    <img src="https://repology.org/badge/version-for-repo/nix_unstable/brush.svg" alt="AUR package"/>
   </a>
+
 </p>
 
 <a href="https://repology.org/project/brush/versions">
@@ -52,19 +59,17 @@ attitude :).
 
 <br/>
 
-### 📝 License
+## 📝 License
 
 Available for use and distribution under the [MIT license](LICENSE).
 
-<br/>
-
-### ⌨️ Installation
+## ⌨️ Installation
 
 When you run `brush`, it should look exactly as `bash` does on your system: it processes your `.bashrc` and
 other standard configuration. If you'd like to distinguish the look of `brush` from the other shells
 on your system, you may author a `~/.brushrc` file.
 
-#### 🔨 Building from sources
+### 🔨 Building from sources
 
 We don't (yet) publish binary releases of `brush` (but will Real Soon Now). To build from sources, first install a working `rust` toolchain; we recommend installing it via [`rustup`](https://rustup.rs/). Then run:
 
@@ -72,7 +77,7 @@ We don't (yet) publish binary releases of `brush` (but will Real Soon Now). To b
 cargo install --locked brush-shell
 ```
 
-#### 🐧 Nix
+### 🐧 Nix
 
 If you are a Nix user, you can also use the registered version.
 
@@ -88,9 +93,11 @@ Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/pa
 paru -S brush
 ```
 
-<br/>
+## 👥 Community
 
-### 🔍 Known limitations
+`brush` has a community Discord server, available [here](https://discord.gg/kPRgC9j3Tj).
+
+## 🔍 Known limitations
 
 There are some known gaps in compatibility. Most notably:
 
@@ -102,17 +109,13 @@ There are some known gaps in compatibility. Most notably:
 
 If you feel so inclined, we'd love contributions toward any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help us make this project better.
 
-<br/>
-
-### 🧪 Testing strategy
+## 🧪 Testing strategy
 
 This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [600+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
 
-<br/>
-
-### 🙏 Credits
+## 🙏 Credits
 
 There's a long list of OSS crates whose shoulders this project rests on. Notably, the following crates are directly relied on for major portions of shell functionality:
 
@@ -128,9 +131,7 @@ For testing, performance benchmarking, and other important engineering support, 
 * [`criterion.rs`](https://github.com/bheisler/criterion.rs) - for statistics-based benchmarking
 * [`bash-completion`](https://github.com/scop/bash-completion) - for its completion test suite and general completion support!
 
-<br/>
-
-### 🔗 Links: other shell implementations
+## 🔗 Links: other shell implementations
 
 There are a number of other POSIX-ish shells implemented in a non-C/C++ implementation language. Some inspirational examples include:
 
