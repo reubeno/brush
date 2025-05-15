@@ -12,7 +12,7 @@ pub(crate) struct MapFileCommand {
     delimiter: String,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default_value = "0")]
+    #[arg(short = 'n', default_value_t = 0)]
     max_count: i64,
 
     /// Index into array at which to start assignment.
@@ -20,7 +20,7 @@ pub(crate) struct MapFileCommand {
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value = "0")]
+    #[arg(short = 's', default_value_t = 0)]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -28,7 +28,7 @@ pub(crate) struct MapFileCommand {
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default_value = "0")]
+    #[arg(short = 'u', default_value_t = 0)]
     fd: u32,
 
     /// Name of function to call for each group of lines.
@@ -36,7 +36,7 @@ pub(crate) struct MapFileCommand {
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value = "5000")]
+    #[arg(short = 'c', default_value_t = 5000)]
     callback_group_size: i64,
 
     /// Name of array to read into.
