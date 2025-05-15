@@ -12,6 +12,7 @@ enum Unit {
     Bytes,
     HalfKBytes,
     KBytes,
+    Micros,
     Number,
     Seconds,
 }
@@ -169,6 +170,13 @@ impl ResourceDescription {
         short: 'r',
         unit: Unit::Number,
     };
+    const RTTIME: ResourceDescription = ResourceDescription {
+        resource: Resource::Phy(rlimit::Resource::RTTIME),
+        help: "the maximum real-time scheduling priority",
+        description: "real-time non-blocking time",
+        short: 'R',
+        unit: Unit::Micros,
+    };
     const STACK: ResourceDescription = ResourceDescription {
         resource: Resource::Phy(rlimit::Resource::STACK),
         help: "the maximum stack size",
@@ -250,6 +258,7 @@ impl ResourceDescription {
             Unit::Bytes => format!("(bytes, -{})", self.short),
             Unit::HalfKBytes => format!("(512 bytes, -{})", self.short),
             Unit::KBytes => format!("(kbytes, -{})", self.short),
+            Unit::Micros => format!("(microseconds, -{})", self.short),
             Unit::Number => format!("(-{})", self.short),
             Unit::Seconds => format!("(seconds, -{})", self.short),
         };
@@ -372,8 +381,8 @@ pub(crate) struct ULimitCommand {
     /// the maximum number of pseudoterminals
     #[arg(short = 'P', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPTS)]
     npts: Option<LimitValue>,
-    /// Unimplemented
-    #[arg(short = 'R', default_missing_value = "", num_args(0..=1))]
+    /// real-time non-blocking time
+    #[arg(short = 'R', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTTIME)]
     rttime: Option<LimitValue>,
     /// the maximum number of threads
     #[arg(short = 'T', default_missing_value = "", num_args(0..=1), help = ResourceDescription::THREADS)]
@@ -403,7 +412,7 @@ impl builtins::Command for ULimitCommand {
             }
         };
 
-        if self.rttime.is_some() || self.file_lock.is_some() {
+        if self.file_lock.is_some() {
             return crate::error::unimp("Limit unimplemented");
         }
 
@@ -421,6 +430,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.nice, ResourceDescription::NICE);
         set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
         set_or_get(self.rtprio, ResourceDescription::RTPRIO);
+        set_or_get(self.rttime, ResourceDescription::RTTIME);
         set_or_get(self.stack, ResourceDescription::STACK);
         set_or_get(self.threads, ResourceDescription::THREADS);
         set_or_get(self.cpu, ResourceDescription::CPU);
