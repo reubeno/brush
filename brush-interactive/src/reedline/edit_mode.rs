@@ -123,17 +123,13 @@ impl interfaces::KeyBindings for UpdatableBindings {
 
     fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error> {
         let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                KeyError::UnsupportedKeySequence(seq),
-            ));
+            return Err(std::io::Error::other(KeyError::UnsupportedKeySequence(seq)));
         };
 
         let Some(event) = translate_action_to_reedline_event(&action) else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                KeyError::UnsupportedKeyAction(action),
-            ));
+            return Err(std::io::Error::other(KeyError::UnsupportedKeyAction(
+                action,
+            )));
         };
 
         self.update(|bindings| {
