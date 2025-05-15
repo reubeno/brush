@@ -24,7 +24,7 @@ enum Virtual {
 }
 
 impl Virtual {
-    fn get(&self) -> std::io::Result<(u64, u64)> {
+    fn get(self) -> std::io::Result<(u64, u64)> {
         match self {
             Virtual::Pipe => {
                 let lim = nix::unistd::PathconfVar::PIPE_BUF as u64;
@@ -35,7 +35,7 @@ impl Virtual {
                 .or_else(|_| rlimit::Resource::VMEM.get()),
         }
     }
-    fn set(&self, soft: u64, hard: u64) -> std::io::Result<()> {
+    fn set(self, soft: u64, hard: u64) -> std::io::Result<()> {
         match self {
             Virtual::Pipe => Err(std::io::Error::from(ErrorKind::Unsupported)),
             Virtual::VMem => rlimit::Resource::AS
@@ -43,7 +43,7 @@ impl Virtual {
                 .or_else(|_| rlimit::Resource::VMEM.set(soft, hard)),
         }
     }
-    fn is_supported(&self) -> bool {
+    fn is_supported(self) -> bool {
         match self {
             Virtual::Pipe => true,
             Virtual::VMem => {
@@ -60,19 +60,19 @@ enum Resource {
 }
 
 impl Resource {
-    fn get(&self) -> std::io::Result<(u64, u64)> {
+    fn get(self) -> std::io::Result<(u64, u64)> {
         match self {
             Resource::Phy(res) => res.get(),
             Resource::Virt(res) => res.get(),
         }
     }
-    fn set(&self, soft: u64, hard: u64) -> std::io::Result<()> {
+    fn set(self, soft: u64, hard: u64) -> std::io::Result<()> {
         match self {
             Resource::Phy(res) => res.set(soft, hard),
             Resource::Virt(res) => res.set(soft, hard),
         }
     }
-    fn is_supported(&self) -> bool {
+    fn is_supported(self) -> bool {
         match self {
             Resource::Phy(res) => res.is_supported(),
             Resource::Virt(res) => res.is_supported(),
