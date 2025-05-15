@@ -197,6 +197,13 @@ impl ResourceDescription {
         short: 'v',
         unit: Unit::KBytes,
     };
+    const THREADS: ResourceDescription = ResourceDescription {
+        resource: Resource::Phy(rlimit::Resource::THREADS),
+        help: "the maximum number of threads",
+        description: "number of threads",
+        short: 'T',
+        unit: Unit::Number,
+    };
 
     fn get(&self, hard: bool) -> std::io::Result<String> {
         let (soft_limit, hard_limit) = self.resource.get()?;
@@ -361,8 +368,8 @@ pub(crate) struct ULimitCommand {
     /// Unimplemented
     #[arg(short = 'R', default_missing_value = "", num_args(0..=1))]
     rttime: Option<LimitValue>,
-    /// Unimplemented
-    #[arg(short = 'T', default_missing_value = "", num_args(0..=1))]
+    /// the maximum number of threads
+    #[arg(short = 'T', default_missing_value = "", num_args(0..=1), help = ResourceDescription::THREADS)]
     threads: Option<LimitValue>,
 
     /// argument for the implicit limit (`-f`)
@@ -389,11 +396,7 @@ impl builtins::Command for ULimitCommand {
             }
         };
 
-        if self.threads.is_some()
-            || self.rttime.is_some()
-            || self.npts.is_some()
-            || self.file_lock.is_some()
-        {
+        if self.rttime.is_some() || self.npts.is_some() || self.file_lock.is_some() {
             return crate::error::unimp("Limit unimplemented");
         }
 
@@ -411,6 +414,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
         set_or_get(self.rtprio, ResourceDescription::RTPRIO);
         set_or_get(self.stack, ResourceDescription::STACK);
+        set_or_get(self.threads, ResourceDescription::THREADS);
         set_or_get(self.cpu, ResourceDescription::CPU);
         set_or_get(self.nproc, ResourceDescription::NPROC);
         set_or_get(self.vmem, ResourceDescription::VMEM);
