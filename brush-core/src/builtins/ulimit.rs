@@ -2,8 +2,7 @@ use clap::{
     builder::{IntoResettable, StyledStr},
     Parser,
 };
-use rlimit::Resource;
-use std::str::FromStr;
+use std::{io::ErrorKind, str::FromStr};
 
 use crate::{builtins, commands};
 
@@ -11,9 +10,62 @@ use crate::{builtins, commands};
 enum Unit {
     Block,
     Bytes,
+    HalfKBytes,
     KBytes,
     Number,
     Seconds,
+}
+
+#[derive(Clone, Copy)]
+enum Virtual {
+    Pipe,
+}
+
+impl Virtual {
+    fn get(&self) -> std::io::Result<(u64, u64)> {
+        match self {
+            Virtual::Pipe => {
+                let lim = nix::unistd::PathconfVar::PIPE_BUF as u64;
+                Ok((lim, lim))
+            }
+        }
+    }
+    fn set(&self, _soft: u64, _hard: u64) -> std::io::Result<()> {
+        match self {
+            Virtual::Pipe => Err(std::io::Error::from(ErrorKind::Unsupported)),
+        }
+    }
+    fn is_supported(&self) -> bool {
+        let _ = self;
+        true
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Resource {
+    Phy(rlimit::Resource),
+    Virt(Virtual),
+}
+
+impl Resource {
+    fn get(&self) -> std::io::Result<(u64, u64)> {
+        match self {
+            Resource::Phy(res) => res.get(),
+            Resource::Virt(res) => res.get(),
+        }
+    }
+    fn set(&self, soft: u64, hard: u64) -> std::io::Result<()> {
+        match self {
+            Resource::Phy(res) => res.set(soft, hard),
+            Resource::Virt(res) => res.set(soft, hard),
+        }
+    }
+    fn is_supported(&self) -> bool {
+        match self {
+            Resource::Phy(res) => res.is_supported(),
+            Resource::Virt(res) => res.is_supported(),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -27,112 +79,119 @@ struct ResourceDescription {
 
 impl ResourceDescription {
     const SBSIZE: ResourceDescription = ResourceDescription {
-        resource: Resource::SBSIZE,
+        resource: Resource::Phy(rlimit::Resource::SBSIZE),
         help: "the socket buffer size",
         description: "socket buffer size",
         short: 'b',
         unit: Unit::Bytes,
     };
     const CORE: ResourceDescription = ResourceDescription {
-        resource: Resource::CORE,
+        resource: Resource::Phy(rlimit::Resource::CORE),
         help: "the maximum size of core files created",
         description: "core file size",
         short: 'c',
         unit: Unit::Block,
     };
     const DATA: ResourceDescription = ResourceDescription {
-        resource: Resource::DATA,
+        resource: Resource::Phy(rlimit::Resource::DATA),
         help: "the maximum size of a process's data segment",
         description: "data seg size",
         short: 'd',
         unit: Unit::KBytes,
     };
     const NICE: ResourceDescription = ResourceDescription {
-        resource: Resource::NICE,
+        resource: Resource::Phy(rlimit::Resource::NICE),
         help: "the maximum scheduling priority (`nice`)",
         description: "scheduling priority",
         short: 'e',
         unit: Unit::Number,
     };
     const FSIZE: ResourceDescription = ResourceDescription {
-        resource: Resource::FSIZE,
+        resource: Resource::Phy(rlimit::Resource::FSIZE),
         help: "the maximum size of files written by the shell and its children",
         description: "file size",
         short: 'f',
         unit: Unit::Block,
     };
     const SIGPENDING: ResourceDescription = ResourceDescription {
-        resource: Resource::SIGPENDING,
+        resource: Resource::Phy(rlimit::Resource::SIGPENDING),
         help: "the maximum number of pending signals",
         description: "pending signals",
         short: 'i',
         unit: Unit::Number,
     };
     const MEMLOCK: ResourceDescription = ResourceDescription {
-        resource: Resource::MEMLOCK,
+        resource: Resource::Phy(rlimit::Resource::MEMLOCK),
         help: "the maximum size a process may lock into memory",
         description: "max locked memory",
         short: 'l',
         unit: Unit::KBytes,
     };
     const KQUEUES: ResourceDescription = ResourceDescription {
-        resource: Resource::KQUEUES,
+        resource: Resource::Phy(rlimit::Resource::KQUEUES),
         help: "the maximum number of kqueues allocated for this process",
         description: "max kqueues",
         short: 'k',
         unit: Unit::Number,
     };
     const RSS: ResourceDescription = ResourceDescription {
-        resource: Resource::RSS,
+        resource: Resource::Phy(rlimit::Resource::RSS),
         help: "the maximum resident set size",
         description: "max memory size",
         short: 'm',
         unit: Unit::KBytes,
     };
     const NOFILE: ResourceDescription = ResourceDescription {
-        resource: Resource::NOFILE,
+        resource: Resource::Phy(rlimit::Resource::NOFILE),
         help: "the maximum number of open file descriptors",
         description: "open files",
         short: 'n',
         unit: Unit::Number,
     };
     const MSGQUEUE: ResourceDescription = ResourceDescription {
-        resource: Resource::MSGQUEUE,
+        resource: Resource::Phy(rlimit::Resource::MSGQUEUE),
         help: "the maximum number of bytes in POSIX message queues",
         description: "POSIX message queues",
         short: 'q',
         unit: Unit::Bytes,
     };
+    const PIPE: ResourceDescription = ResourceDescription {
+        resource: Resource::Virt(Virtual::Pipe),
+        help: "the pipe buffer size",
+        description: "pipe size",
+        short: 'p',
+        unit: Unit::HalfKBytes,
+    };
     const RTPRIO: ResourceDescription = ResourceDescription {
-        resource: Resource::RTPRIO,
+        resource: Resource::Phy(rlimit::Resource::RTPRIO),
         help: "the maximum real-time scheduling priority",
         description: "real-time priority",
         short: 'r',
         unit: Unit::Number,
     };
     const STACK: ResourceDescription = ResourceDescription {
-        resource: Resource::STACK,
+        resource: Resource::Phy(rlimit::Resource::STACK),
         help: "the maximum stack size",
         description: "stack size",
         short: 's',
         unit: Unit::KBytes,
     };
     const CPU: ResourceDescription = ResourceDescription {
-        resource: Resource::CPU,
+        resource: Resource::Phy(rlimit::Resource::CPU),
         help: "the maximum amount of cpu time in seconds",
         description: "cpu time",
         short: 't',
         unit: Unit::Seconds,
     };
     const NPROC: ResourceDescription = ResourceDescription {
-        resource: Resource::NPROC,
+        resource: Resource::Phy(rlimit::Resource::NPROC),
         help: "the maximum number of user processes",
         description: "max user processes",
         short: 'u',
         unit: Unit::Number,
     };
     const VMEM: ResourceDescription = ResourceDescription {
-        resource: Resource::AS,
+        resource: Resource::Phy(rlimit::Resource::AS),
         help: "the size of virtual memory",
         description: "virtual memory",
         short: 'v',
@@ -175,6 +234,7 @@ impl ResourceDescription {
         let unit = match self.unit {
             Unit::Block => format!("(block, -{})", self.short),
             Unit::Bytes => format!("(bytes, -{})", self.short),
+            Unit::HalfKBytes => format!("(512 bytes, -{})", self.short),
             Unit::KBytes => format!("(kbytes, -{})", self.short),
             Unit::Number => format!("(-{})", self.short),
             Unit::Seconds => format!("(seconds, -{})", self.short),
@@ -271,8 +331,8 @@ pub(crate) struct ULimitCommand {
     /// the maximum number of open file descriptors
     #[arg(short = 'n', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NOFILE)]
     file_open: Option<LimitValue>,
-    /// Unimplemented
-    #[arg(short = 'p', default_missing_value = "", num_args(0..=1))]
+    /// the pipe buffer size
+    #[arg(short = 'p', default_missing_value = "", num_args(0..=1), help = ResourceDescription::PIPE)]
     pipe: Option<LimitValue>,
     /// the maximum number of bytes in POSIX message queues
     #[arg(short = 'q', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MSGQUEUE)]
@@ -333,7 +393,6 @@ impl builtins::Command for ULimitCommand {
             || self.rttime.is_some()
             || self.npts.is_some()
             || self.file_lock.is_some()
-            || self.pipe.is_some()
         {
             return crate::error::unimp("Limit unimplemented");
         }
@@ -347,6 +406,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.memlock, ResourceDescription::MEMLOCK);
         set_or_get(self.rss, ResourceDescription::RSS);
         set_or_get(self.file_open, ResourceDescription::NOFILE);
+        set_or_get(self.pipe, ResourceDescription::PIPE);
         set_or_get(self.nice, ResourceDescription::NICE);
         set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
         set_or_get(self.rtprio, ResourceDescription::RTPRIO);
