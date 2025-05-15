@@ -6,7 +6,7 @@ use crate::{builtins, commands};
 #[derive(Parser)]
 pub(crate) struct ContinueCommand {
     /// If specified, indicates which nested loop to continue to the next iteration of.
-    #[clap(default_value = "1")]
+    #[clap(default_value_t = 1)]
     which_loop: i8,
 }
 
