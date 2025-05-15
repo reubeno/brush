@@ -142,6 +142,13 @@ impl ResourceDescription {
         short: 'm',
         unit: Unit::KBytes,
     };
+    const LOCKS: ResourceDescription = ResourceDescription {
+        resource: Resource::Phy(rlimit::Resource::LOCKS),
+        help: "the maximum number of file locks",
+        description: "file locks",
+        short: 'x',
+        unit: Unit::Number,
+    };
     const NOFILE: ResourceDescription = ResourceDescription {
         resource: Resource::Phy(rlimit::Resource::NOFILE),
         help: "the maximum number of open file descriptors",
@@ -375,8 +382,8 @@ pub(crate) struct ULimitCommand {
     /// the size of virtual memory
     #[arg(short = 'v', default_missing_value = "", num_args(0..=1), help = ResourceDescription::VMEM)]
     vmem: Option<LimitValue>,
-    /// Unimplemented
-    #[arg(short = 'x', default_missing_value = "", num_args(0..=1))]
+    /// the maximum number of file locks
+    #[arg(short = 'x', default_missing_value = "", num_args(0..=1), help = ResourceDescription::LOCKS)]
     file_lock: Option<LimitValue>,
     /// the maximum number of pseudoterminals
     #[arg(short = 'P', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPTS)]
@@ -412,10 +419,6 @@ impl builtins::Command for ULimitCommand {
             }
         };
 
-        if self.file_lock.is_some() {
-            return crate::error::unimp("Limit unimplemented");
-        }
-
         set_or_get(self.sbsize, ResourceDescription::SBSIZE);
         set_or_get(self.core, ResourceDescription::CORE);
         set_or_get(self.data, ResourceDescription::DATA);
@@ -424,6 +427,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.kqueues, ResourceDescription::KQUEUES);
         set_or_get(self.memlock, ResourceDescription::MEMLOCK);
         set_or_get(self.rss, ResourceDescription::RSS);
+        set_or_get(self.file_lock, ResourceDescription::LOCKS);
         set_or_get(self.file_open, ResourceDescription::NOFILE);
         set_or_get(self.pipe, ResourceDescription::PIPE);
         set_or_get(self.npts, ResourceDescription::NPTS);
