@@ -20,6 +20,7 @@ enum Unit {
 #[derive(Clone, Copy)]
 enum Virtual {
     Pipe,
+    VMem,
 }
 
 impl Virtual {
@@ -29,16 +30,26 @@ impl Virtual {
                 let lim = nix::unistd::PathconfVar::PIPE_BUF as u64;
                 Ok((lim, lim))
             }
+            Virtual::VMem => rlimit::Resource::AS
+                .get()
+                .or_else(|_| rlimit::Resource::VMEM.get()),
         }
     }
-    fn set(&self, _soft: u64, _hard: u64) -> std::io::Result<()> {
+    fn set(&self, soft: u64, hard: u64) -> std::io::Result<()> {
         match self {
             Virtual::Pipe => Err(std::io::Error::from(ErrorKind::Unsupported)),
+            Virtual::VMem => rlimit::Resource::AS
+                .set(soft, hard)
+                .or_else(|_| rlimit::Resource::VMEM.set(soft, hard)),
         }
     }
     fn is_supported(&self) -> bool {
-        let _ = self;
-        true
+        match self {
+            Virtual::Pipe => true,
+            Virtual::VMem => {
+                rlimit::Resource::AS.is_supported() || rlimit::Resource::VMEM.is_supported()
+            }
+        }
     }
 }
 
@@ -206,7 +217,7 @@ impl ResourceDescription {
         unit: Unit::Number,
     };
     const VMEM: ResourceDescription = ResourceDescription {
-        resource: Resource::Phy(rlimit::Resource::AS),
+        resource: Resource::Virt(Virtual::VMem),
         help: "the size of virtual memory",
         description: "virtual memory",
         short: 'v',
