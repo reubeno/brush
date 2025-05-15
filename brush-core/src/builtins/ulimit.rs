@@ -204,6 +204,13 @@ impl ResourceDescription {
         short: 'T',
         unit: Unit::Number,
     };
+    const NPTS: ResourceDescription = ResourceDescription {
+        resource: Resource::Phy(rlimit::Resource::NPTS),
+        help: "the maximum number of pseudoterminals",
+        description: "number of pseudoterminals",
+        short: 'P',
+        unit: Unit::Number,
+    };
 
     fn get(&self, hard: bool) -> std::io::Result<String> {
         let (soft_limit, hard_limit) = self.resource.get()?;
@@ -362,8 +369,8 @@ pub(crate) struct ULimitCommand {
     /// Unimplemented
     #[arg(short = 'x', default_missing_value = "", num_args(0..=1))]
     file_lock: Option<LimitValue>,
-    /// Unimplemented
-    #[arg(short = 'P', default_missing_value = "", num_args(0..=1))]
+    /// the maximum number of pseudoterminals
+    #[arg(short = 'P', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPTS)]
     npts: Option<LimitValue>,
     /// Unimplemented
     #[arg(short = 'R', default_missing_value = "", num_args(0..=1))]
@@ -396,7 +403,7 @@ impl builtins::Command for ULimitCommand {
             }
         };
 
-        if self.rttime.is_some() || self.npts.is_some() || self.file_lock.is_some() {
+        if self.rttime.is_some() || self.file_lock.is_some() {
             return crate::error::unimp("Limit unimplemented");
         }
 
@@ -410,6 +417,7 @@ impl builtins::Command for ULimitCommand {
         set_or_get(self.rss, ResourceDescription::RSS);
         set_or_get(self.file_open, ResourceDescription::NOFILE);
         set_or_get(self.pipe, ResourceDescription::PIPE);
+        set_or_get(self.npts, ResourceDescription::NPTS);
         set_or_get(self.nice, ResourceDescription::NICE);
         set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
         set_or_get(self.rtprio, ResourceDescription::RTPRIO);
