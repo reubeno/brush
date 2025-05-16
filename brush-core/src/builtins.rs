@@ -35,6 +35,7 @@ mod fg;
 mod getopts;
 mod hash;
 mod help;
+mod history;
 mod jobs;
 #[cfg(unix)]
 mod kill;
@@ -232,7 +233,9 @@ pub trait Command: Parser {
     /// * `name` - The name of the command.
     /// * `content_type` - The type of content to retrieve.
     fn get_content(name: &str, content_type: ContentType) -> Result<String, error::Error> {
-        let mut clap_command = Self::command().styles(brush_help_styles());
+        let mut clap_command = Self::command()
+            .styles(brush_help_styles())
+            .next_line_help(false);
         clap_command.set_bin_name(name);
 
         let s = match content_type {

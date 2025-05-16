@@ -58,10 +58,6 @@ impl InteractiveShell for MinimalShell {
             Ok(ReadResult::Input(result))
         }
     }
-
-    fn update_history(&mut self) -> Result<(), ShellError> {
-        Ok(())
-    }
 }
 
 impl MinimalShell {
