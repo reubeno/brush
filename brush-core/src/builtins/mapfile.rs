@@ -102,7 +102,9 @@ impl MapFileCommand {
 
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) => break, // End of input
+                    Ok(0) => break,                                         // End of input
+                    Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
+                    Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
                     Ok(1) => {
                         let byte = buf[0];
                         line.push(byte);
