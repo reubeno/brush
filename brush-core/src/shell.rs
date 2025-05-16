@@ -19,7 +19,7 @@ use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     patterns, prompt, sys::users, traps,
 };
-use crate::{interfaces, pathcache, sys, trace_categories};
+use crate::{history, interfaces, pathcache, sys, trace_categories};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -101,6 +101,9 @@ pub struct Shell {
 
     /// Key bindings for the shell, optionally implemented by an interactive shell.
     pub key_bindings: Option<KeyBindingsHelper>,
+
+    /// History of commands executed in the shell.
+    history: Option<history::History>,
 }
 
 impl Clone for Shell {
@@ -129,6 +132,7 @@ impl Clone for Shell {
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
             key_bindings: self.key_bindings.clone(),
+            history: self.history.clone(),
             depth: self.depth + 1,
         }
     }
@@ -241,6 +245,7 @@ impl Shell {
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
             key_bindings: options.key_bindings.clone(),
+            history: None,
             depth: 0,
         };
 
@@ -250,6 +255,13 @@ impl Shell {
 
         // Initialize environment.
         shell.initialize_vars(options)?;
+
+        // Set up history, if relevant.
+        if shell.options.enable_command_history {
+            if let Some(history_path) = shell.get_history_file_path() {
+                shell.history = Some(history::History::import(history_path.as_path())?);
+            }
+        }
 
         // Load profiles/configuration.
         shell.load_config(options).await?;
@@ -1712,6 +1724,16 @@ impl Shell {
         } else {
             Ok(None)
         }
+    }
+
+    /// Returns the shell's history, if it exists.
+    pub fn history(&self) -> Option<&history::History> {
+        self.history.as_ref()
+    }
+
+    /// Returns a mutable reference to the shell's history, if it exists.
+    pub fn history_mut(&mut self) -> Option<&mut history::History> {
+        self.history.as_mut()
     }
 }
 
