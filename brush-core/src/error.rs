@@ -47,6 +47,10 @@ pub enum Error {
     #[error("command not found: {0}")]
     CommandNotFound(String),
 
+    /// History item was not found.
+    #[error("history item not found")]
+    HistoryItemNotFound,
+
     /// The requested functionality has not yet been implemented in this shell.
     #[error("not yet implemented: {0}")]
     Unimplemented(&'static str),
