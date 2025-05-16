@@ -1,0 +1,5 @@
+name: "Builtins: history"
+cases:
+  - name: "history with no args"
+    stdin: |
+      history
