@@ -233,7 +233,7 @@ pub trait Command: Parser {
         clap_command.set_bin_name(name);
 
         let s = match content_type {
-            ContentType::DetailedHelp => clap_command.render_long_help().ansi().to_string(),
+            ContentType::DetailedHelp => clap_command.render_help().ansi().to_string(),
             ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
             ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
             ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,

@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 pub(crate) struct ReadCommand {
     /// Optionally, name of an array variable to receive read words
     /// of input.
-    #[clap(short = 'a')]
+    #[clap(short = 'a', value_name = "VAR_NAME")]
     array_variable: Option<String>,
 
     /// Optionally, a delimiter to use other than a newline character.
@@ -23,16 +23,16 @@ pub(crate) struct ReadCommand {
     use_readline: bool,
 
     /// Provide text to use as initial input for readline.
-    #[clap(short = 'i')]
+    #[clap(short = 'i', value_name = "STR")]
     initial_text: Option<String>,
 
     /// Read only the first N characters or until a specified
     /// delimiter is reached, whichever happens first.
-    #[clap(short = 'n')]
+    #[clap(short = 'n', value_name = "COUNT")]
     return_after_n_chars: Option<usize>,
 
     /// Read exactly N characters, ignoring any specified delimiter.
-    #[clap(short = 'N')]
+    #[clap(short = 'N', value_name = "COUNT")]
     return_after_n_chars_no_delimiter: Option<usize>,
 
     /// Prompt to display before reading.
@@ -49,7 +49,7 @@ pub(crate) struct ReadCommand {
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[clap(short = 't')]
+    #[clap(short = 't', value_name = "SECONDS")]
     timeout_in_seconds: Option<usize>,
 
     /// File descriptor to read from instead of stdin.
@@ -98,8 +98,11 @@ impl builtins::Command for ReadCommand {
         if let Some(input_line) = input_line {
             // If -a was specified, then place the fields as elements into the array.
             if let Some(array_variable) = &self.array_variable {
-                let fields: VecDeque<_> =
-                    split_line_by_ifs(ifs.as_ref(), input_line.as_str(), None /*max_fields*/);
+                let fields: VecDeque<_> = split_line_by_ifs(
+                    ifs.as_ref(),
+                    input_line.as_str(),
+                    None, /* max_fields */
+                );
                 let literal_fields = fields.into_iter().map(|f| (None, f)).collect();
 
                 context.shell.env.update_or_add(
@@ -113,7 +116,7 @@ impl builtins::Command for ReadCommand {
                 let mut fields: VecDeque<_> = split_line_by_ifs(
                     ifs.as_ref(),
                     input_line.as_str(),
-                    /*max_fields*/ Some(self.variable_names.len()),
+                    /* max_fields */ Some(self.variable_names.len()),
                 );
 
                 for (i, name) in self.variable_names.iter().enumerate() {

@@ -26,7 +26,7 @@ pub(crate) struct EnableCommand {
     special_only: bool,
 
     /// Path to a shared object from which built-in commands will be loaded.
-    #[arg(short = 'f')]
+    #[arg(short = 'f', value_name = "PATH")]
     shared_object_path: Option<String>,
 
     /// Remove the built-in commands loaded from the indicated object path.

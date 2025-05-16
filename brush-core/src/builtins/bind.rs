@@ -62,19 +62,19 @@ pub(crate) struct BindCommand {
     #[arg(short = 'v')]
     list_vars_reusable: bool,
     /// Find the keys bound to the given named function.
-    #[arg(short = 'q')]
+    #[arg(short = 'q', value_name = "FUNC_NAME")]
     query_func_bindings: Option<String>,
     /// Remove all bindings for the given named function.
-    #[arg(short = 'u')]
+    #[arg(short = 'u', value_name = "FUNC_NAME")]
     remove_func_bindings: Option<String>,
     /// Remove the binding for the given key sequence.
-    #[arg(short = 'r')]
+    #[arg(short = 'r', value_name = "KEY_SEQ")]
     remove_key_seq_binding: Option<String>,
     /// Import bindings from the given file.
-    #[arg(short = 'f')]
+    #[arg(short = 'f', value_name = "PATH")]
     bindings_file: Option<String>,
     /// Bind key sequence to command.
-    #[arg(short = 'x')]
+    #[arg(short = 'x', value_name = "BINDING")]
     key_seq_bindings: Vec<String>,
     /// List key sequence bindings.
     #[arg(short = 'X')]

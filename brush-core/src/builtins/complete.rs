@@ -20,7 +20,7 @@ struct CommonCompleteCommandArgs {
     actions: Vec<CompleteAction>,
 
     /// File glob pattern to be expanded to generate completions.
-    #[arg(short = 'G', allow_hyphen_values = true)]
+    #[arg(short = 'G', allow_hyphen_values = true, value_name = "GLOB")]
     glob_pattern: Option<String>,
 
     /// List of words that will be considered as completions.
@@ -28,19 +28,22 @@ struct CommonCompleteCommandArgs {
     word_list: Option<String>,
 
     /// Name of a shell function to invoke to generate completions.
-    #[arg(short = 'F', allow_hyphen_values = true)]
+    #[arg(short = 'F', allow_hyphen_values = true, value_name = "FUNC_NAME")]
     function_name: Option<String>,
 
     /// Command to execute to generate completions.
     #[arg(short = 'C', allow_hyphen_values = true)]
     command: Option<String>,
 
-    #[arg(short = 'X', allow_hyphen_values = true)]
+    /// Pattern used as filter for completions.
+    #[arg(short = 'X', allow_hyphen_values = true, value_name = "PATTERN")]
     filter_pattern: Option<String>,
 
+    /// Prefix pattern used as filter for completions.
     #[arg(short = 'P', allow_hyphen_values = true)]
     prefix: Option<String>,
 
+    /// Suffix oattern used as filter for completions.
     #[arg(short = 'S', allow_hyphen_values = true)]
     suffix: Option<String>,
 
@@ -554,7 +557,7 @@ pub(crate) struct CompOptCommand {
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o')]
+    #[arg(short = 'o', value_name = "OPT")]
     enabled_options: Vec<CompleteOption>,
     #[arg(long = concat!("+o"), hide = true)]
     disabled_options: Vec<CompleteOption>,

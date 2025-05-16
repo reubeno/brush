@@ -16,7 +16,7 @@ pub(crate) struct WaitCommand {
     wait_for_first_or_next: bool,
 
     /// Name of variable to receive the job ID of the job whose status is indicated.
-    #[arg(short = 'p')]
+    #[arg(short = 'p', value_name = "VAR_NAME")]
     variable_to_receive_id: Option<String>,
 
     /// Specs of jobs to wait for.
