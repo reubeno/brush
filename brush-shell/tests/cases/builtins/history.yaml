@@ -1,7 +1,6 @@
 name: "Builtins: history"
 cases:
   - name: "basic history saving"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -10,15 +9,15 @@ cases:
       echo else
 
   - name: "existing history file"
-    known_failure: true
     pty: true
     env:
-      HOME: "."
+      HISTFILE: "history-file.txt"
     test_files:
-      - path: ".bash_history"
+      - path: "history-file.txt"
         contents: |
           a b c
           1 2 3
+    ignore_stdout: true # Prompts and other don't quite line up
     stdin: |
       #expect-prompt
       history >history-output.txt
@@ -27,8 +26,7 @@ cases:
       #send:Ctrl+D
 
   - name: "existing history file with timestamps"
-    known_failure: true
-    args: ["-o", "history"]
+    pty: true
     env:
       HISTFILE: "history-file.txt"
     test_files:
@@ -38,11 +36,32 @@ cases:
           a b c
           #1750000001
           1 2 3
+    ignore_stdout: true # Prompts and other don't quite line up
     stdin: |
-      history
+      #expect-prompt
+      history >history-output.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "existing history file with timestamps and HISTTIMEFORMAT"
+    pty: true
+    env:
+      HISTFILE: "history-file.txt"
+      HISTTIMEFORMAT: "%C "
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          #1750000000
+          a b c
+          #1750000001
+          1 2 3
+    ignore_stdout: true # Prompts and other don't quite line up
+    stdin: |
+      #expect-prompt
+      #send:Ctrl+D
 
   - name: "history N"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -51,8 +70,19 @@ cases:
       : cmd2
       history 2
 
+  - name: "history with duplicates"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd1
+      : cmd1
+      : cmd2
+      : cmd1
+      history
+
   - name: "history -c"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -62,7 +92,6 @@ cases:
       history
 
   - name: "history -d"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -72,7 +101,6 @@ cases:
       history
 
   - name: "history -d: negative offset"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -83,7 +111,6 @@ cases:
       history
 
   - name: "history -a"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -102,7 +129,6 @@ cases:
       cat $HISTFILE
 
   - name: "history -w"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -121,7 +147,6 @@ cases:
       cat $HISTFILE
 
   - name: "history -w with explicit file"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -130,7 +155,7 @@ cases:
       history -w some-file.txt
 
   - name: "history -s"
-    known_failure: true
+    known_failure: true # NOTE: bash excludes the history command itself from history
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -139,7 +164,6 @@ cases:
       history
 
   - name: "HISTCMD"
-    known_failure: true
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"
@@ -152,7 +176,7 @@ cases:
       echo $HISTCMD
 
   - name: "HISTTIMEFORMAT"
-    known_failure: true
+    known_failure: true # TODO: needs triage
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"

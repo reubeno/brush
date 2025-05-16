@@ -59,9 +59,6 @@ pub trait InteractiveShell: Send {
         // No-op by default.
     }
 
-    /// Update history, if relevant.
-    fn update_history(&mut self) -> Result<(), ShellError>;
-
     /// Runs the interactive shell loop, reading commands from standard input and writing
     /// results to standard output and standard error. Continues until the shell
     /// normally exits or until a fatal error occurs.
@@ -113,7 +110,7 @@ pub trait InteractiveShell: Send {
                 writeln!(self.shell().as_ref().stderr(), "exit")?;
             }
 
-            if let Err(e) = self.update_history() {
+            if let Err(e) = self.shell_mut().as_mut().save_history() {
                 // N.B. This seems like the sort of thing that's worth being noisy about,
                 // but bash doesn't do that -- and probably for a reason.
                 tracing::debug!("couldn't save history: {e}");
@@ -160,11 +157,18 @@ pub trait InteractiveShell: Send {
                         false
                     };
 
+                    // Display the pre-command prompt (if there is one).
                     let precmd_prompt = shell_mut.as_mut().compose_precmd_prompt().await?;
                     if !precmd_prompt.is_empty() {
                         print!("{precmd_prompt}");
                     }
 
+                    // Update history (if applicable).
+                    shell_mut
+                        .as_mut()
+                        .add_to_history(read_result.trim_end_matches('\n'))?;
+
+                    // Execute the command.
                     let params = shell_mut.as_mut().default_exec_params();
                     let result = match shell_mut.as_mut().run_string(read_result, &params).await {
                         Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),

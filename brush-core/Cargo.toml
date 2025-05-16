@@ -80,6 +80,7 @@ uuid = { version = "1.17.0", features = ["js"] }
 [dev-dependencies]
 anyhow = "1.0.98"
 criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }
