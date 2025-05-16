@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader};
+use std::io::Read;
 
 use clap::Parser;
 
@@ -88,16 +88,35 @@ impl MapFileCommand {
         let orig_term_attr = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
-        let mut buf_reader = BufReader::new(input_file.clone());
         let mut line = vec![];
         let mut idx = self.skip_count;
         let mut read_count = 0;
-        let delimiter = self.delimiter.chars().next().unwrap_or('\n');
+        let delimiter = self.delimiter.chars().next().unwrap_or('\n') as u8;
+
+        let mut reader = input_file.clone();
+        let mut buf = [0u8; 1];
 
         while self.max_count == 0 || entries.len() < usize::try_from(self.max_count)? {
             line.clear();
-            let bytes = buf_reader.read_until(delimiter as u8, &mut line)?;
-            if bytes == 0 {
+            let mut saw_delimiter = false;
+
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break, // End of input
+                    Ok(1) => {
+                        let byte = buf[0];
+                        line.push(byte);
+                        if byte == delimiter {
+                            saw_delimiter = true;
+                            break;
+                        }
+                    }
+                    Ok(_) => unreachable!("input can only be 0, 1, or error"),
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            if line.is_empty() && !saw_delimiter {
                 break;
             }
 
@@ -106,7 +125,7 @@ impl MapFileCommand {
                 continue;
             }
 
-            if self.remove_delimiter && line.ends_with(&[delimiter as u8]) {
+            if self.remove_delimiter && line.ends_with(&[delimiter]) {
                 line.pop();
             }
 
