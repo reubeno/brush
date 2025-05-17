@@ -17,6 +17,16 @@ enum Unit {
     Seconds,
 }
 
+impl Unit {
+    fn scale(self) -> u64 {
+        match self {
+            Unit::Block | Unit::HalfKBytes => 512,
+            Unit::KBytes => 1024,
+            _ => 1,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Virtual {
     Pipe,
@@ -27,7 +37,7 @@ impl Virtual {
     fn get(self) -> std::io::Result<(u64, u64)> {
         match self {
             Virtual::Pipe => {
-                let lim = nix::unistd::PathconfVar::PIPE_BUF as u64;
+                let lim = nix::unistd::PathconfVar::PIPE_BUF as u64 * 512;
                 Ok((lim, lim))
             }
             Virtual::VMem => rlimit::Resource::AS
@@ -245,7 +255,7 @@ impl ResourceDescription {
         if val == rlimit::INFINITY {
             Ok("unlimited".into())
         } else {
-            Ok(format!("{val}"))
+            Ok(format!("{}", val / self.unit.scale()))
         }
     }
 
@@ -255,7 +265,7 @@ impl ResourceDescription {
             LimitValue::Soft => soft,
             LimitValue::Hard => hard,
             LimitValue::Unlimited => rlimit::INFINITY,
-            LimitValue::Value(v) => v,
+            LimitValue::Value(v) => v * self.unit.scale(),
             LimitValue::Unset => return Ok(()),
         };
 
