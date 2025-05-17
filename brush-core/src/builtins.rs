@@ -57,6 +57,8 @@ mod trap;
 mod true_;
 mod type_;
 #[cfg(unix)]
+mod ulimit;
+#[cfg(unix)]
 mod umask;
 mod unalias;
 mod unimp;
