@@ -43,7 +43,7 @@ struct CommonCompleteCommandArgs {
     #[arg(short = 'P', allow_hyphen_values = true)]
     prefix: Option<String>,
 
-    /// Suffix oattern used as filter for completions.
+    /// Suffix pattern used as filter for completions.
     #[arg(short = 'S', allow_hyphen_values = true)]
     suffix: Option<String>,
 
