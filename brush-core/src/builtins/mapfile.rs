@@ -20,7 +20,7 @@ pub(crate) struct MapFileCommand {
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0, value_parser = validate_less_than_zero)]
+    #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -36,28 +36,12 @@ pub(crate) struct MapFileCommand {
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000, value_parser = validate_non_zero)]
+    #[arg(short = 'c', default_value_t = 5000, value_parser = clap::value_parser!(i64).range(1..))]
     callback_group_size: i64,
 
     /// Name of array to read into.
     #[arg(default_value = "MAPFILE")]
     array_var_name: String,
-}
-
-fn validate_less_than_zero(val: &str) -> Result<i64, String> {
-    match val.parse::<i64>() {
-        Ok(v) if v < 0 => Ok(v),
-        Ok(_) => Err("invalid line count".into()),
-        Err(e) => Err(format!("invalid number: {e}")),
-    }
-}
-
-fn validate_non_zero(val: &str) -> Result<i64, String> {
-    match val.parse::<i64>() {
-        Ok(v) if v > 0 => Ok(v),
-        Ok(_) => Err("invalid callback quantum".into()),
-        Err(e) => Err(format!("invalid number: {e}")),
-    }
 }
 
 impl builtins::Command for MapFileCommand {
