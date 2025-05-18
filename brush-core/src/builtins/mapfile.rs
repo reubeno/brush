@@ -88,7 +88,6 @@ impl MapFileCommand {
         let orig_term_attr = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
-        let mut line = vec![];
         let mut idx = self.skip_count;
         let mut read_count = 0;
         let max_count = self.max_count.try_into()?;
@@ -96,8 +95,8 @@ impl MapFileCommand {
 
         let mut buf = [0u8; 1];
 
-        while self.max_count == 0 || entries.len() < max_count {
-            line.clear();
+        while max_count == 0 || entries.len() < max_count {
+            let mut line = vec![];
             let mut saw_delimiter = false;
 
             loop {
