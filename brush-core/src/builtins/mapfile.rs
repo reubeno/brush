@@ -16,8 +16,8 @@ pub(crate) struct MapFileCommand {
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O')]
-    origin: Option<i64>,
+    #[arg(short = 'O', default_value_t = 0)]
+    origin: i64,
 
     /// Number of initial entries to skip.
     #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
@@ -49,7 +49,7 @@ impl builtins::Command for MapFileCommand {
         &self,
         mut context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, error::Error> {
-        if self.origin.is_some() {
+        if self.origin != 0 {
             // This will require merging into a potentially already-existing array.
             return error::unimp("mapfile -O is not yet implemented");
         }
@@ -129,7 +129,7 @@ impl MapFileCommand {
             let line_str = String::from_utf8_lossy(&line).to_string();
 
             if let Some(callback) = &self.callback {
-                if (idx - self.origin.unwrap_or(0)) % self.callback_group_size == 0 {
+                if (idx - self.origin) % self.callback_group_size == 0 {
                     // Ignore shell error.
                     let _ = context
                         .shell
