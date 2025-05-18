@@ -2,7 +2,10 @@ use clap::{
     builder::{IntoResettable, StyledStr},
     Parser,
 };
-use std::{io::ErrorKind, str::FromStr};
+use std::{
+    io::{self, ErrorKind, Write},
+    str::FromStr,
+};
 
 use crate::{builtins, commands};
 
@@ -277,9 +280,9 @@ impl ResourceDescription {
     }
 
     /// Print either soft or hard limit
-    fn print(&self, hard: bool) {
+    fn print(&self, context: &commands::ExecutionContext<'_>, hard: bool) -> io::Result<()> {
         if !self.resource.is_supported() {
-            return;
+            return Ok(());
         }
         let unit = match self.unit {
             Unit::Block => format!("(block, -{})", self.short),
@@ -291,7 +294,13 @@ impl ResourceDescription {
             Unit::Seconds => format!("(seconds, -{})", self.short),
         };
         let resource = self.get(hard).unwrap_or_else(|e| format!("{e}"));
-        println!("{:<26}{:>16} {}", self.description, unit, resource);
+        writeln!(
+            context.stdout(),
+            "{:<26}{:>16} {}",
+            self.description,
+            unit,
+            resource
+        )
     }
 
     /// Provide the matching help String
@@ -423,7 +432,7 @@ pub(crate) struct ULimitCommand {
 impl builtins::Command for ULimitCommand {
     async fn execute(
         &self,
-        _context: commands::ExecutionContext<'_>,
+        context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let exit_code = builtins::ExitCode::Success;
         let mut resources_to_set = Vec::new();
@@ -477,10 +486,10 @@ impl builtins::Command for ULimitCommand {
         }
 
         if resources_to_get.len() == 1 {
-            println!("{}", resources_to_get[0].get(self.hard)?);
+            writeln!(context.stdout(), "{}", resources_to_get[0].get(self.hard)?)?;
         } else {
             for resource in resources_to_get {
-                resource.print(self.hard);
+                resource.print(&context, self.hard)?;
             }
         }
 
