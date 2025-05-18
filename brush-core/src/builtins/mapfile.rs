@@ -36,12 +36,20 @@ pub(crate) struct MapFileCommand {
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000)]
+    #[arg(short = 'c', default_value_t = 5000, value_parser = validate_non_zero)]
     callback_group_size: i64,
 
     /// Name of array to read into.
     #[arg(default_value = "MAPFILE")]
     array_var_name: String,
+}
+
+fn validate_non_zero(val: &str) -> Result<i64, String> {
+    match val.parse::<i64>() {
+        Ok(v) if v > 0 => Ok(v),
+        Ok(_) => Err("invalid callback quantum".into()),
+        Err(e) => Err(format!("invalid number: {e}")),
+    }
 }
 
 impl builtins::Command for MapFileCommand {
@@ -52,10 +60,6 @@ impl builtins::Command for MapFileCommand {
         if self.origin.is_some() {
             // This will require merging into a potentially already-existing array.
             return error::unimp("mapfile -O is not yet implemented");
-        }
-
-        if self.skip_count != 0 {
-            return error::unimp("mapfile -s is not yet implemented");
         }
 
         let input_file = context
