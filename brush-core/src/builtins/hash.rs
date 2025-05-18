@@ -14,7 +14,7 @@ pub(crate) struct HashCommand {
     display_as_usable_input: bool,
 
     /// The path to associate with the names.
-    #[arg(short = 'p')]
+    #[arg(short = 'p', value_name = "PATH")]
     path_to_use: Option<PathBuf>,
 
     /// Remove all entries.
