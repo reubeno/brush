@@ -207,10 +207,12 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
     );
 
     // Add undo.
-    // TODO: We would prefer Ctrl+_ to match readline, but that doesn't seem to work.
+    // NOTE: To match readline, we bind Ctrl+_ to undo; in practice, the only way
+    // to get that to work out is to specify Ctrl+7 for the binding. It's not clear
+    // that this is terribly portable across terminals/environments.
     key_bindings.add_binding(
-        reedline::KeyModifiers::ALT,
-        reedline::KeyCode::Char('_'),
+        reedline::KeyModifiers::CONTROL,
+        reedline::KeyCode::Char('7'),
         reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::Undo]),
     );
 
