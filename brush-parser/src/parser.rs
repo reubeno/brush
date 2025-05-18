@@ -7,7 +7,7 @@ use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Token
 pub struct ParserOptions {
     /// Whether or not to enable extended globbing (a.k.a. `extglob`).
     pub enable_extended_globbing: bool,
-    /// Whether or not to enable POSIX complaince mode.
+    /// Whether or not to enable POSIX compliance mode.
     pub posix_mode: bool,
     /// Whether or not to enable maximal compatibility with the `sh` shell.
     pub sh_mode: bool,

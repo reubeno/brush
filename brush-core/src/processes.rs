@@ -64,7 +64,7 @@ impl ChildProcess {
     }
 }
 
-/// Reperesents the result of waiting for an executing process.
+/// Represents the result of waiting for an executing process.
 pub(crate) enum ProcessWaitResult {
     /// The process completed.
     Completed(std::process::Output),

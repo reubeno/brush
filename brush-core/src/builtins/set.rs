@@ -12,7 +12,7 @@ builtins::minus_or_plus_flag_arg!(
     "Export variables on modification"
 );
 builtins::minus_or_plus_flag_arg!(
-    NotfyJobTerminationImmediately,
+    NotifyJobTerminationImmediately,
     'b',
     "Notify job termination immediately"
 );
@@ -89,7 +89,7 @@ pub(crate) struct SetCommand {
     #[clap(flatten)]
     export_variables_on_modification: ExportVariablesOnModification,
     #[clap(flatten)]
-    notify_job_termination_immediately: NotfyJobTerminationImmediately,
+    notify_job_termination_immediately: NotifyJobTerminationImmediately,
     #[clap(flatten)]
     exit_on_nonzero_command_exit: ExitOnNonzeroCommandExit,
     #[clap(flatten)]

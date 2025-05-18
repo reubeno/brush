@@ -19,7 +19,7 @@ use crate::{
 pub(crate) enum CommandSpawnResult {
     /// The child process was spawned.
     SpawnedProcess(processes::ChildProcess),
-    /// The command immediatedly exited with the given numeric exit code.
+    /// The command immediately exited with the given numeric exit code.
     ImmediateExit(u8),
     /// The shell should exit after this command, yielding the given numeric exit code.
     ExitShell(u8),

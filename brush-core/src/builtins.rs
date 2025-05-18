@@ -414,7 +414,7 @@ fn brush_help_styles() -> clap::builder::Styles {
 /// # Returns
 ///
 /// * a parsed struct T from [`clap::Parser::parse_from`]
-/// * the remain iterator `args` with `--` and the rest arguments if they present othervise None
+/// * the remain iterator `args` with `--` and the rest arguments if they present otherwise None
 ///
 /// # Examples
 /// ```

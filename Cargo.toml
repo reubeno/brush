@@ -58,6 +58,28 @@ result_large_err = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
 
+[workspace.metadata.typos]
+files.extend-exclude = [
+    # Exclude the changelog because it's dynamically generated.
+    "/CHANGELOG.md",
+    # Remove this once impending mapfile updates are merged.
+    "/brush-core/src/builtins/mapfile.rs",
+]
+
+[workspace.metadata.typos.default]
+extend-ignore-re = [
+    # -ot is a valid binary operator
+    "-ot",
+    # Ignore 2-letter string literals, which show up in testing a fair bit.
+    '"[a-zA-Z]{2}"',
+]
+
+[workspace.metadata.typos.default.extend-words]
+# These show up in tests.
+"abd" = "abd"
+"hel" = "hel"
+"ba" = "ba"
+
 [profile.release]
 strip = true
 lto = "fat"

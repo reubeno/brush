@@ -3,7 +3,7 @@ use std::io::Write;
 
 use crate::{arithmetic::Evaluatable, builtins, commands};
 
-/// Evalute arithmetic expressions.
+/// Evaluate arithmetic expressions.
 #[derive(Parser)]
 pub(crate) struct LetCommand {
     /// Arithmetic expressions to evaluate.
