@@ -1,7 +1,7 @@
 use crate::{builtins, commands};
 use clap::Parser;
 
-/// Evalute the given string as script.
+/// Evaluate the given string as script.
 #[derive(Parser)]
 pub(crate) struct EvalCommand {
     /// The script to evaluate.

@@ -1390,7 +1390,7 @@ struct TestOptions {
     #[clap(long = "exact")]
     pub exact_match: bool,
 
-    /// Optionaly specify a non-default path for bash
+    /// Optionally specify a non-default path for bash
     #[clap(long = "bash-path", default_value = "bash", env = "BASH_PATH")]
     pub bash_path: PathBuf,
 
@@ -1474,7 +1474,8 @@ impl TestOptions {
     }
 
     fn test_matches_filters(&self, qualified_test_name: &String, filters: &[String]) -> bool {
-        // In exact match mode, filters must be an exact match; substring matches are not considered.
+        // In exact match mode, filters must be an exact match; substring matches are not
+        // considered.
         if self.exact_match {
             filters.contains(qualified_test_name)
         } else {

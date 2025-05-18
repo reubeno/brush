@@ -14,7 +14,7 @@ cases:
         echo "parsed"
       )
 
-  - name: "Ignore parantheses in comment in list"
+  - name: "Ignore parentheses in comment in list"
     stdin: |
       (
         # :(
@@ -27,4 +27,3 @@ cases:
         #               $
         echo "Mr. Crabs ^"
       )
-
