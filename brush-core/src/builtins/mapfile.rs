@@ -20,7 +20,7 @@ pub(crate) struct MapFileCommand {
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0)]
+    #[arg(short = 's', default_value_t = 0, value_parser = validate_less_than_zero)]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -42,6 +42,14 @@ pub(crate) struct MapFileCommand {
     /// Name of array to read into.
     #[arg(default_value = "MAPFILE")]
     array_var_name: String,
+}
+
+fn validate_less_than_zero(val: &str) -> Result<i64, String> {
+    match val.parse::<i64>() {
+        Ok(v) if v < 0 => Ok(v),
+        Ok(_) => Err("invalid line count".into()),
+        Err(e) => Err(format!("invalid number: {e}")),
+    }
 }
 
 fn validate_non_zero(val: &str) -> Result<i64, String> {
