@@ -82,7 +82,7 @@ impl builtins::Command for MapFileCommand {
 impl MapFileCommand {
     async fn read_entries(
         &self,
-        input_file: openfiles::OpenFile,
+        mut input_file: openfiles::OpenFile,
         context: &mut commands::ExecutionContext<'_>,
     ) -> Result<variables::ArrayLiteral, error::Error> {
         let orig_term_attr = setup_terminal_settings(&input_file)?;
@@ -91,17 +91,17 @@ impl MapFileCommand {
         let mut line = vec![];
         let mut idx = self.skip_count;
         let mut read_count = 0;
+        let max_count = self.max_count.try_into()?;
         let delimiter = self.delimiter.chars().next().unwrap_or('\n') as u8;
 
-        let mut reader = input_file.clone();
         let mut buf = [0u8; 1];
 
-        while self.max_count == 0 || entries.len() < usize::try_from(self.max_count)? {
+        while self.max_count == 0 || entries.len() < max_count {
             line.clear();
             let mut saw_delimiter = false;
 
             loop {
-                match reader.read(&mut buf) {
+                match input_file.read(&mut buf) {
                     Ok(0) => break,                                         // End of input
                     Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
                     Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
