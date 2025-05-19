@@ -77,7 +77,7 @@ uuid = { version = "1.16.0", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.98"
-criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
+criterion = { version = "0.6.0", features = ["async_tokio", "html_reports"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.14.0", features = ["criterion", "flamegraph"] }
