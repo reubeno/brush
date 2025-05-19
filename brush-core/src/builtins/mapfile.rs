@@ -47,11 +47,15 @@ pub(crate) struct MapFileCommand {
 impl builtins::Command for MapFileCommand {
     async fn execute(
         &self,
-        mut context: commands::ExecutionContext<'_>,
+        context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, error::Error> {
         if self.origin != 0 {
             // This will require merging into a potentially already-existing array.
             return error::unimp("mapfile -O is not yet implemented");
+        }
+
+        if self.callback_group_size != 5000 || self.callback.is_some() {
+            return error::unimp("mapfile -C/-c is not yet implemented");
         }
 
         let input_file = context
@@ -60,7 +64,7 @@ impl builtins::Command for MapFileCommand {
             .ok_or_else(|| error::Error::BadFileDescriptor(self.fd))?;
 
         // Read!
-        let results = self.read_entries(input_file, &mut context).await?;
+        let results = self.read_entries(input_file)?;
 
         // Assign!
         context.shell.env.update_or_add(
@@ -76,15 +80,14 @@ impl builtins::Command for MapFileCommand {
 }
 
 impl MapFileCommand {
-    async fn read_entries(
+    fn read_entries(
         &self,
         mut input_file: openfiles::OpenFile,
-        context: &mut commands::ExecutionContext<'_>,
     ) -> Result<variables::ArrayLiteral, error::Error> {
         let orig_term_attr = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
-        let mut idx = self.skip_count;
+        // let mut idx = self.skip_count;
         let mut read_count = 0;
         let max_count = self.max_count.try_into()?;
         let delimiter = self.delimiter.chars().next().unwrap_or('\n') as u8;
@@ -128,18 +131,8 @@ impl MapFileCommand {
 
             let line_str = String::from_utf8_lossy(&line).to_string();
 
-            if let Some(callback) = &self.callback {
-                if (idx - self.origin) % self.callback_group_size == 0 {
-                    // Ignore shell error.
-                    let _ = context
-                        .shell
-                        .invoke_function(callback, &[idx.to_string().as_str(), &line_str])
-                        .await;
-                }
-            }
-
             entries.push((None, line_str));
-            idx += 1;
+            // idx += 1;
         }
 
         if let Some(orig_term_attr) = &orig_term_attr {
