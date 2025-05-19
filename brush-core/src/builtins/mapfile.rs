@@ -87,7 +87,6 @@ impl MapFileCommand {
         let orig_term_attr = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
-        // let mut idx = self.skip_count;
         let mut read_count = 0;
         let max_count = self.max_count.try_into()?;
         let delimiter = self.delimiter.chars().next().unwrap_or('\n') as u8;
@@ -132,7 +131,6 @@ impl MapFileCommand {
             let line_str = String::from_utf8_lossy(&line).to_string();
 
             entries.push((None, line_str));
-            // idx += 1;
         }
 
         if let Some(orig_term_attr) = &orig_term_attr {
