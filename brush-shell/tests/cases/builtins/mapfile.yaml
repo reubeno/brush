@@ -20,3 +20,7 @@ cases:
     stdin: |
       mapfile -t -n 2 -d 'Z' myarray < <(echo -ne "helloZthereZgeneralZkenobi")
       [[ "${myarray[*]}" == "hello there" ]]
+  - name: "mapfile -s"
+    stdin: |
+      mapfile -t -n 2 -s 1 -d 'Z' myarray < <(echo -ne "helloZthereZgeneralZkenobi")
+      [[ "${myarray[*]}" == "there general" ]]
