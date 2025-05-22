@@ -4,6 +4,7 @@ use indexmap::IndexSet;
 
 use crate::trace_categories;
 
+#[allow(dead_code)]
 pub(crate) async fn complete_async(
     shell: &mut brush_core::Shell,
     line: &str,
@@ -50,6 +51,7 @@ pub(crate) async fn complete_async(
     completions
 }
 
+#[allow(dead_code)]
 fn postprocess_completion_candidate(
     mut candidate: String,
     options: &brush_core::completion::ProcessingOptions,
