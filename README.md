@@ -139,5 +139,6 @@ There are a number of other POSIX-ish shells implemented in a non-C/C++ implemen
 * [`rusty_bash`](https://github.com/shellgei/rusty_bash)
 * [`mvdan/sh`](https://github.com/mvdan/sh)
 * [`Oils`](https://github.com/oils-for-unix/oils)
+* [`fish`](https://fishshell.com) ([as of 4.0](https://fishshell.com/blog/rustport/))
 
 We're sure there are plenty more; we're happy to include links to them as well.
