@@ -86,6 +86,8 @@ pub struct AndOrListIter {
     list: VecDeque<AndOr>,
 }
 
+impl ExactSizeIterator for AndOrListIter {}
+
 impl Iterator for AndOrListIter {
     type Item = AndOr;
 
