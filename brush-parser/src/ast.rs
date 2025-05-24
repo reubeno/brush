@@ -77,6 +77,11 @@ impl Display for AndOrList {
 }
 
 /// Iterator for [`AndOrList`].
+///
+/// # Notes
+/// This makes the initial element an [`AndOr::And`] element. The reasoning is that because there
+/// is no command before it, and this command *will* be run, it makes sense that "faking" the
+/// previous command must have a successful return code.
 pub struct AndOrListIter {
     list: VecDeque<AndOr>,
 }
