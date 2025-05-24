@@ -981,17 +981,26 @@ impl Shell {
             .await
     }
 
+    /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
+    /// for the program.
+    pub fn parse<R: Read>(
+        &self,
+        reader: R,
+    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+        parse_impl(reader, self.parser_options())
+    }
+
     /// Parses the given bytes as a shell program, returning the resulting Abstract Syntax Tree
     /// for the program.
     ///
     /// # Arguments
     ///
     /// * `b` - The bytes to parse as a program.
-    pub fn parse_bytes<B: Into<Vec<u8>>>(
+    pub fn parse_bytes<B: AsRef<[u8]>>(
         &self,
         b: B,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        parse_bytes_impl(b.into(), self.parser_options())
+        parse_bytes_impl(b.as_ref(), self.parser_options())
     }
 
     /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
@@ -1728,12 +1737,21 @@ impl Shell {
     }
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
-fn parse_bytes_impl(
-    b: Vec<u8>,
+fn parse_impl<R: Read>(
+    r: R,
     parser_options: brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut parser = create_parser(&b, &parser_options);
+    let mut parser = create_parser(r, &parser_options);
+
+    tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
+    parser.parse_program()
+}
+
+fn parse_bytes_impl(
+    b: &[u8],
+    parser_options: brush_parser::ParserOptions,
+) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+    let mut parser = create_parser(b, &parser_options);
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing bytes as program...");
     parser.parse_program()
@@ -1750,11 +1768,11 @@ fn parse_string_impl(
     parser.parse_program()
 }
 
-fn create_parser<'a>(
-    s: &'a [u8],
+fn create_parser<R: Read>(
+    r: R,
     parser_options: &brush_parser::ParserOptions,
-) -> brush_parser::Parser<std::io::BufReader<&'a [u8]>> {
-    let reader = std::io::BufReader::new(s);
+) -> brush_parser::Parser<std::io::BufReader<R>> {
+    let reader = std::io::BufReader::new(r);
     let source_info = brush_parser::SourceInfo {
         source: String::from("main"),
     };
