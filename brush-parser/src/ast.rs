@@ -1,7 +1,10 @@
 //! Defines the Abstract Syntax Tree (ast) for shell programs. Includes types and utilities
 //! for manipulating the AST.
 
-use std::fmt::{Display, Write};
+use std::{
+    collections::VecDeque,
+    fmt::{Display, Write},
+};
 
 use crate::tokenizer;
 
@@ -70,6 +73,37 @@ impl Display for AndOrList {
         }
 
         Ok(())
+    }
+}
+
+/// Iterator for [`AndOrList`].
+///
+/// # Notes
+/// This makes the initial element an [`AndOr::And`] element. The reasoning is that because there
+/// is no command before it, and this command *will* be run, it makes sense that "faking" the
+/// previous command must have a successful return code.
+pub struct AndOrListIter {
+    list: VecDeque<AndOr>,
+}
+
+impl ExactSizeIterator for AndOrListIter {}
+
+impl Iterator for AndOrListIter {
+    type Item = AndOr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.list.pop_front()
+    }
+}
+
+impl IntoIterator for AndOrList {
+    type Item = AndOr;
+    type IntoIter = AndOrListIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let mut list = vec![AndOr::And(self.first)];
+        list.append(&mut self.additional.clone());
+        AndOrListIter { list: list.into() }
     }
 }
 

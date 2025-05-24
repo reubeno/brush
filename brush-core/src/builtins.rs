@@ -458,7 +458,7 @@ where
 
 /// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
 /// This function is used to parse arguments in builtins such as
-/// [`crate::builtins::echo::EchoCommand`]
+/// `crate::builtins::echo::EchoCommand`
 pub fn try_parse_known<T: Parser>(
     args: impl IntoIterator<Item = String>,
 ) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {
