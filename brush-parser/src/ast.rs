@@ -84,6 +84,18 @@ impl Display for AndOrList {
 /// previous command must have a successful return code.
 pub struct AndOrListIter {
     list: VecDeque<AndOr>,
+    first: *const Pipeline,
+}
+
+impl AndOrListIter {
+    /// Check if the current element in the iterator is the [`AndOrList::first`].
+    pub fn is_first(&self) -> bool {
+        if let Some(AndOr::And(front)) = self.list.front() {
+            std::ptr::eq(front, self.first)
+        } else {
+            false
+        }
+    }
 }
 
 impl ExactSizeIterator for AndOrListIter {
@@ -111,9 +123,13 @@ impl IntoIterator for AndOrList {
     type IntoIter = AndOrListIter;
 
     fn into_iter(self) -> Self::IntoIter {
+        let first: *const Pipeline = &self.first;
         let mut list = vec![AndOr::And(self.first)];
         list.append(&mut self.additional.clone());
-        AndOrListIter { list: list.into() }
+        AndOrListIter {
+            list: list.into(),
+            first,
+        }
     }
 }
 
