@@ -990,19 +990,6 @@ impl Shell {
         parse_impl(reader, self.parser_options())
     }
 
-    /// Parses the given bytes as a shell program, returning the resulting Abstract Syntax Tree
-    /// for the program.
-    ///
-    /// # Arguments
-    ///
-    /// * `b` - The bytes to parse as a program.
-    pub fn parse_bytes<B: AsRef<[u8]>>(
-        &self,
-        b: B,
-    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        parse_bytes_impl(b.as_ref(), self.parser_options())
-    }
-
     /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
     /// for the program.
     ///
@@ -1744,16 +1731,6 @@ fn parse_impl<R: Read>(
     let mut parser = create_parser(r, &parser_options);
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
-    parser.parse_program()
-}
-
-fn parse_bytes_impl(
-    b: &[u8],
-    parser_options: brush_parser::ParserOptions,
-) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut parser = create_parser(b, &parser_options);
-
-    tracing::debug!(target: trace_categories::PARSE, "Parsing bytes as program...");
     parser.parse_program()
 }
 
