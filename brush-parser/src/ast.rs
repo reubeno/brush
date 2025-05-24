@@ -100,6 +100,12 @@ impl Iterator for AndOrListIter {
     }
 }
 
+impl DoubleEndedIterator for AndOrListIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.list.pop_back()
+    }
+}
+
 impl IntoIterator for AndOrList {
     type Item = AndOr;
     type IntoIter = AndOrListIter;
