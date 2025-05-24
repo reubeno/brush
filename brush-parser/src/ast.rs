@@ -86,7 +86,11 @@ pub struct AndOrListIter {
     list: VecDeque<AndOr>,
 }
 
-impl ExactSizeIterator for AndOrListIter {}
+impl ExactSizeIterator for AndOrListIter {
+    fn len(&self) -> usize {
+        self.list.len()
+    }
+}
 
 impl Iterator for AndOrListIter {
     type Item = AndOr;
