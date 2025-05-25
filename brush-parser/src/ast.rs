@@ -1,10 +1,7 @@
 //! Defines the Abstract Syntax Tree (ast) for shell programs. Includes types and utilities
 //! for manipulating the AST.
 
-use std::{
-    collections::VecDeque,
-    fmt::{Display, Write},
-};
+use std::fmt::{Display, Write};
 
 use crate::tokenizer;
 
@@ -76,60 +73,81 @@ impl Display for AndOrList {
     }
 }
 
-/// Iterator for [`AndOrList`].
-///
-/// # Notes
-/// This makes the initial element an [`AndOr::And`] element. The reasoning is that because there
-/// is no command before it, and this command *will* be run, it makes sense that "faking" the
-/// previous command must have a successful return code.
-pub struct AndOrListIter {
-    list: VecDeque<AndOr>,
-    first: *const Pipeline,
+/// Represents a boolean operator used to connect command pipelines in an [`AndOrList`]
+#[derive(PartialEq, Eq)]
+pub enum PipelineOperator {
+    /// The command pipelines are connected by a boolean AND operator.
+    And,
+    /// The command pipelines are connected by a boolean OR operator.
+    Or,
 }
 
-impl AndOrListIter {
-    /// Check if the current element in the iterator is the [`AndOrList::first`].
-    pub fn is_first(&self) -> bool {
-        if let Some(AndOr::And(front)) = self.list.front() {
-            std::ptr::eq(front, self.first)
-        } else {
-            false
+impl PartialEq<AndOr> for PipelineOperator {
+    fn eq(&self, other: &AndOr) -> bool {
+        matches!(
+            (self, other),
+            (PipelineOperator::And, AndOr::And(_)) | (PipelineOperator::Or, AndOr::Or(_))
+        )
+    }
+}
+
+// We cannot losslessly convert into `AndOr`, hence we can only do `Into`.
+#[allow(clippy::from_over_into)]
+impl Into<PipelineOperator> for AndOr {
+    fn into(self) -> PipelineOperator {
+        match self {
+            AndOr::And(_) => PipelineOperator::And,
+            AndOr::Or(_) => PipelineOperator::Or,
         }
     }
 }
 
-impl ExactSizeIterator for AndOrListIter {
-    fn len(&self) -> usize {
-        self.list.len()
-    }
+/// An iterator over the pipelines in an [`AndOrList`].
+pub struct AndOrListIter<'a> {
+    first: Option<&'a Pipeline>,
+    additional_iter: std::slice::Iter<'a, AndOr>,
 }
 
-impl Iterator for AndOrListIter {
-    type Item = AndOr;
+impl<'a> Iterator for AndOrListIter<'a> {
+    type Item = (PipelineOperator, &'a Pipeline);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.list.pop_front()
+        if let Some(first) = self.first.take() {
+            Some((PipelineOperator::And, first))
+        } else {
+            self.additional_iter.next().map(|and_or| match and_or {
+                AndOr::And(pipeline) => (PipelineOperator::And, pipeline),
+                AndOr::Or(pipeline) => (PipelineOperator::Or, pipeline),
+            })
+        }
     }
 }
 
-impl DoubleEndedIterator for AndOrListIter {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.list.pop_back()
-    }
-}
-
-impl IntoIterator for AndOrList {
-    type Item = AndOr;
-    type IntoIter = AndOrListIter;
+impl<'a> IntoIterator for &'a AndOrList {
+    type Item = (PipelineOperator, &'a Pipeline);
+    type IntoIter = AndOrListIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let first: *const Pipeline = &self.first;
-        let mut list = vec![AndOr::And(self.first)];
-        list.append(&mut self.additional.clone());
         AndOrListIter {
-            list: list.into(),
-            first,
+            first: Some(&self.first),
+            additional_iter: self.additional.iter(),
         }
+    }
+}
+
+impl<'a> From<(PipelineOperator, &'a Pipeline)> for AndOr {
+    fn from(value: (PipelineOperator, &'a Pipeline)) -> Self {
+        match value.0 {
+            PipelineOperator::Or => Self::Or(value.1.to_owned()),
+            PipelineOperator::And => Self::And(value.1.to_owned()),
+        }
+    }
+}
+
+impl AndOrList {
+    /// Returns an iterator over the pipelines in this `AndOrList`.
+    pub fn iter(&self) -> AndOrListIter<'_> {
+        self.into_iter()
     }
 }
 
