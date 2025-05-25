@@ -61,6 +61,11 @@ cases:
       x=$(echo foo | (wc -l; echo hi))
       echo "\$x: $x"
 
+  - name: "Command substitution with subshell"
+    stdin: |
+      x=$( (echo hi) )
+      echo "\$x: $x"
+
   - name: "Command substitution exit code"
     stdin: |
       x=$(false) && echo "1. Made it past false"
