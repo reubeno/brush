@@ -496,7 +496,7 @@ impl Shell {
             "GROUPS",
             ShellVariable::new(ShellValue::Dynamic {
                 getter: |_shell| {
-                    let groups = sys::users::get_user_group_ids().unwrap_or_default();
+                    let groups = get_current_user_gids();
                     ShellValue::indexed_array_from_strings(
                         groups.into_iter().map(|gid| gid.to_string()),
                     )
@@ -1754,4 +1754,23 @@ fn get_srandom_value(_shell: &Shell) -> ShellValue {
     let num: u32 = rng.random();
     let str = num.to_string();
     str.into()
+}
+
+/// Returns a list of the current user's group IDs, with the effective GID at the front.
+fn get_current_user_gids() -> Vec<u32> {
+    let mut groups = sys::users::get_user_group_ids().unwrap_or_default();
+
+    // If the effective GID is present but not in the first position in the list, then move
+    // it there.
+    if let Ok(gid) = sys::users::get_effective_gid() {
+        if let Some(index) = groups.iter().position(|&g| g == gid) {
+            if index > 0 {
+                // Move it to the front.
+                groups.remove(index);
+                groups.insert(0, gid);
+            }
+        }
+    }
+
+    groups
 }
