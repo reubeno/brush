@@ -85,6 +85,10 @@ cases:
     stdin: |
       echo `echo \`echo hi\``
 
+  - name: "Backtick command substitution with backslashes"
+    stdin: |
+      echo `echo \\`
+
   - name: "Backtick command substitution in double quotes"
     stdin: |
       echo "`echo First line`"
