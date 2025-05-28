@@ -30,6 +30,13 @@ cases:
     stdin: |
       echo "$((64#zzz))"
 
+  - name: "Unary arithmetic operators with space"
+    stdin: |
+      echo "$(( - 1 ))"
+      echo "$(( + 1 ))"
+      echo "$(( ~ 10 ))"
+      echo "$(( ! 10 ))"
+
   - name: "Parentheses"
     stdin: |
       echo "$(((10)))"
