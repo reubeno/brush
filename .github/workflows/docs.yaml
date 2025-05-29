@@ -12,6 +12,9 @@ env:
   CLICOLOR: 1
   CLICOLOR_FORCE: 1
 
+permissions:
+  contents: read
+
 jobs:
   # Check links in docs
   check-links:
@@ -20,6 +23,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Check repo-local links
         uses: lycheeverse/lychee-action@v2
@@ -34,6 +39,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@stable

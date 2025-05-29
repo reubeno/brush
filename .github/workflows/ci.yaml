@@ -95,6 +95,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -169,6 +171,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -212,6 +216,7 @@ jobs:
       - name: "Download recent bash-completion sources for tests"
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: "scop/bash-completion"
           ref: "2.16.0"
           path: "bash-completion"
@@ -282,6 +287,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up rust toolchain (${{ matrix.rust-version }})
         uses: dtolnay/rust-toolchain@master
@@ -320,6 +327,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up nightly rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -343,11 +352,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           path: pr
 
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           path: main
           ref: main
 
@@ -393,11 +404,13 @@ jobs:
       - name: Checkout brush
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           path: "brush"
 
       - name: Checkout bash-completion
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: "scop/bash-completion"
           ref: "2.16.0"
           path: "bash-completion"
@@ -516,6 +529,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           path: sources
 
       - name: Download prebuilt brush binaries
