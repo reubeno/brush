@@ -189,6 +189,8 @@ pub struct CreateOptions {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
+    /// Brush shell version.
+    pub brush_shell_version: String,
 }
 
 /// Represents an executing script.
@@ -300,6 +302,9 @@ impl Shell {
                 self.env.set_global(k, var)?;
             }
         }
+        let brush_version = options.brush_shell_version.clone();
+        self.env
+            .set_global("BRUSH_VERSION", ShellVariable::new(brush_version.into()))?;
 
         // TODO(#479): implement $_
 

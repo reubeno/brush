@@ -36,10 +36,19 @@ struct TestConfig {
 
 impl TestConfig {
     pub fn for_bash_testing(options: &TestOptions) -> Result<Self> {
-        // Check for bash version.
+        // Check for bash and brush version.
         let bash_version_str = get_bash_version_str(Path::new(&options.bash_path))?;
+        let brush_version_str = get_brush_version_str(Path::new(&options.brush_path))?;
         if options.verbose {
             eprintln!("Detected bash version: {bash_version_str}");
+            eprintln!("Detected brush version: {brush_version_str}");
+        }
+        if bash_version_str == brush_version_str {
+            anyhow::bail!(
+                "accidentally exposing same version between bash ({}) and brush ({})",
+                bash_version_str,
+                brush_version_str
+            );
         }
 
         // Skip rc file and profile for deterministic behavior across systems/distros.
@@ -1541,6 +1550,21 @@ fn get_bash_version_str(bash_path: &Path) -> Result<String> {
         .arg("echo -n ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}.${BASH_VERSINFO[2]}")
         .output()
         .context("failed to retrieve bash version")?
+        .stdout;
+
+    let ver_str = String::from_utf8(output)?;
+
+    Ok(ver_str)
+}
+
+fn get_brush_version_str(brush_path: &Path) -> Result<String> {
+    let output = std::process::Command::new(brush_path)
+        .arg("--norc")
+        .arg("--noprofile")
+        .arg("-c")
+        .arg("echo -n ${BRUSH_VERSION}")
+        .output()
+        .context("failed to retrieve brush version")?
         .stdout;
 
     let ver_str = String::from_utf8(output)?;
