@@ -941,8 +941,9 @@ impl<'a> WordExpander<'a> {
 
                 let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
                 if expanded_offset < 0 {
-                    // For arrays--and only arrays--we handle negative indexes as offsets from the end
-                    // of the array, with -1 referencing the last element of the array.
+                    // For arrays--and only arrays--we handle negative indexes as offsets from the
+                    // end of the array, with -1 referencing the last element of
+                    // the array.
                     if expanded_parameter.from_array {
                         expanded_offset += expanded_parameter_len;
 
