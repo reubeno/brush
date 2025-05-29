@@ -94,7 +94,7 @@ jobs:
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
@@ -105,7 +105,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           key: "${{ matrix.target }}"
 
@@ -115,7 +115,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cross
 
@@ -128,14 +128,14 @@ jobs:
         run: cross build --release --target=${{ matrix.target }} ${{ matrix.extra_build_args }}
 
       - name: "Upload binaries"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
       - name: "Upload integration test binaries"
         if: ${{ matrix.target == '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: integration-tests-${{ matrix.arch }}-${{ matrix.os }}
           path: |
@@ -170,7 +170,7 @@ jobs:
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
@@ -181,18 +181,18 @@ jobs:
           components: llvm-tools-preview
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-llvm-cov
 
@@ -214,7 +214,7 @@ jobs:
           echo "BASH_PATH=${BASH_PATH}">>$GITHUB_ENV
 
       - name: "Download recent bash-completion sources for tests"
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
@@ -247,14 +247,14 @@ jobs:
           exit ${result}
 
       - name: "Upload test results"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: test-reports${{ matrix.artifact_suffix }}
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
-        uses: clearlyip/code-coverage-report-action@v5
+        uses: clearlyip/code-coverage-report-action@17b6103ac2d3b9bb6c7a8562ac22a4c010d6d52f # v5.2.0
         if: always()
         id: "code_coverage_report"
         with:
@@ -268,7 +268,7 @@ jobs:
           negative_difference_threshold: 5
 
       - name: "Upload code coverage report"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: codecov-reports${{ matrix.artifact_suffix }}
@@ -286,7 +286,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
@@ -297,7 +297,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
@@ -309,7 +309,7 @@ jobs:
         run: cargo check --all-features --all-targets
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-deny
 
@@ -326,7 +326,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
@@ -336,7 +336,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-udeps
 
@@ -350,13 +350,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           path: pr
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           path: main
@@ -368,7 +368,7 @@ jobs:
           toolchain: stable
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           workspaces: |
             ./pr
@@ -387,7 +387,7 @@ jobs:
           ./pr/scripts/compare-benchmark-results.py -b main/benchmarks.txt -t pr/benchmarks.txt >benchmark-results.md
 
       - name: Upload performance results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: perf-reports
           path: |
@@ -402,13 +402,13 @@ jobs:
     needs: build
     steps:
       - name: Checkout brush
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           path: "brush"
 
       - name: Checkout bash-completion
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
@@ -416,7 +416,7 @@ jobs:
           path: "bash-completion"
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: "binaries-x86_64-linux"
           path: "binaries"
@@ -456,7 +456,7 @@ jobs:
             >${{ github.workspace }}/test-results-bash-completion.md
 
       - name: Upload test report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-reports-bash-completion
           path: |
@@ -527,19 +527,19 @@ jobs:
 
       # Checkout sources for YAML-based test cases
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           path: sources
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: binaries-x86_64-linux
           path: binaries
 
       - name: Download integration test binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: integration-tests-x86_64-linux
           path: binaries

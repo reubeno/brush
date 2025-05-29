@@ -22,12 +22,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
       - name: Check repo-local links
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@82202e5e9c2f4ef1a55a3d02563e1cb6041e5332 # v2.4.1
         with:
           args: ". --offline --verbose --no-progress"
           fail: true
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
@@ -48,7 +48,7 @@ jobs:
           toolchain: stable
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
 
       - name: Create dirs
         run: mkdir -p ./md ./man
@@ -57,7 +57,7 @@ jobs:
         run: cargo xtask generate-markdown --out ./md/brush.md
 
       - name: Upload markdown docs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: docs-markdown
           path: md
@@ -66,7 +66,7 @@ jobs:
         run: cargo xtask generate-man --output-dir ./man
 
       - name: Upload man pages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: docs-man
           path: man
