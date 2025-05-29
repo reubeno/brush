@@ -190,7 +190,7 @@ pub struct CreateOptions {
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
     /// Brush implementation version.
-    pub shell_version: String,
+    pub shell_version: Option<String>,
 }
 
 /// Represents an executing script.
@@ -303,8 +303,10 @@ impl Shell {
             }
         }
         let shell_version = options.shell_version.clone();
-        self.env
-            .set_global("BRUSH_VERSION", ShellVariable::new(shell_version.into()))?;
+        self.env.set_global(
+            "BRUSH_VERSION",
+            ShellVariable::new(shell_version.unwrap_or_default().into()),
+        )?;
 
         // TODO(#479): implement $_
 
