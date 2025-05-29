@@ -189,6 +189,8 @@ pub struct CreateOptions {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
+    /// Brush implementation version.
+    pub shell_version: Option<String>,
 }
 
 /// Represents an executing script.
@@ -300,6 +302,11 @@ impl Shell {
                 self.env.set_global(k, var)?;
             }
         }
+        let shell_version = options.shell_version.clone();
+        self.env.set_global(
+            "BRUSH_VERSION",
+            ShellVariable::new(shell_version.unwrap_or_default().into()),
+        )?;
 
         // TODO(#479): implement $_
 
@@ -409,6 +416,7 @@ impl Shell {
         self.env.set_global("BASH_VERSINFO", bash_versinfo_var)?;
 
         // BASH_VERSION
+        // This is the Bash interface version. See BRUSH_VERSION for its implementation version.
         self.env.set_global(
             "BASH_VERSION",
             ShellVariable::new(
