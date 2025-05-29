@@ -20,7 +20,7 @@ jobs:
         id: find-run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: octokit/request-action@v2.x
+        uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
         with:
           route: GET /repos/${{ github.event.workflow_run.repository.full_name }}/actions/runs/${{ github.event.workflow_run.id }}
 
@@ -54,7 +54,7 @@ jobs:
       - name: Download code coverage reports
         if: steps.get-pr.outputs.pr_number != ''
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: codecov-reports*
           merge-multiple: true
@@ -65,7 +65,7 @@ jobs:
       - name: Download performance reports
         if: steps.get-pr.outputs.pr_number != ''
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: perf-reports*
           merge-multiple: true
@@ -76,7 +76,7 @@ jobs:
       - name: Download test results
         if: steps.get-pr.outputs.pr_number != ''
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: test-reports*
           merge-multiple: true
@@ -106,7 +106,7 @@ jobs:
              }' >event-file.json
 
       - name: "Publish test results"
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        uses: EnricoMi/publish-unit-test-result-action@3a74b2957438d0b6e2e61d67b05318aa25c9e6c6 # v2.20.0
         if: steps.get-pr.outputs.pr_number != ''
         continue-on-error: true
         with:
@@ -116,7 +116,7 @@ jobs:
           files: reports/test-results-*.xml
 
       - name: "Publish available .md reports to PR"
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@67d0dec7b07ed060a405f9b2a64b8ab319fdd7db # v2.9.2
         if: steps.get-pr.outputs.pr_number != ''
         with:
           path: reports/*.md
