@@ -5,51 +5,79 @@ on:
     types:
       - completed
 
-permissions:
-  actions: read
-  checks: write
-  contents: read
-  pull-requests: write
+permissions: {}
 
 jobs:
   report:
     name: "Report"
+
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      pull-requests: write
+
     runs-on: ubuntu-24.04
+
+    # We only run this job if the workflow run that completed was triggered by a pull request.
+    if: github.event.workflow_run.event == 'pull_request'
+
     steps:
-      - name: Find workflow run
-        id: find-run
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
-        with:
-          route: GET /repos/${{ github.event.workflow_run.repository.full_name }}/actions/runs/${{ github.event.workflow_run.id }}
-
-      - name: Extract PR number
+      - name: Extract PR number and create event file
         id: get-pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          head_branch=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_branch')
-          head_sha=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_sha')
-          head_repo=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_repository.full_name')
-          head_repo_owner=$(echo '${{ steps.find-run.outputs.data }}' | jq -r '.head_repository.owner.login')
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
 
-          if [[ "${head_branch}" != "" && "${head_repo}" != "" ]]; then
-            pr_number="$(gh pr list -R ${{ github.repository }} --state open --json number,headRefName,headRepositoryOwner,headRepository,baseRefName -q "map(select(.headRefName == \"${head_branch}\" and .headRepositoryOwner.login == \"${head_repo_owner}\" and .baseRefName == \"main\")) | .[0].number" || true)"
-          else
-            pr_number=""
-          fi
+            // Find the workflow run that triggered this job.
+            const workflowRun = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id,
+            });
 
-          if [[ "${pr_number}" != "" ]]; then
-            echo "This workflow run was for PR #${pr_number}."
-          else
-            echo "This workflow run was not for a PR."
-          fi
+            // Extract the source commit info.
+            const { head_branch, head_sha, head_repository } = workflowRun.data;
+            const head_repo_owner = head_repository.owner.login;
+            core.setOutput('head_branch', head_branch);
+            core.setOutput('head_sha', head_sha);
+            core.setOutput('head_repo', head_repository.full_name);
 
-          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
-          echo "head_branch=${head_branch}" >> "$GITHUB_OUTPUT"
-          echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
-          echo "head_repo=${head_repo}" >> "$GITHUB_OUTPUT"
+            // Try to find all PRs from that source.
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${head_repo_owner}:${head_branch}`,
+              per_page: 20
+            });
+
+            // Filter PRs to find the one that targets the main branch.
+            // NOTE: This only supports a target branch of 'main'.
+            const filtered_prs = prs.filter(pr => pr.base.ref === 'main');
+
+            if (filtered_prs.length > 0) {
+              const pr = filtered_prs[0];
+              core.setOutput('pr_number', pr.number);
+
+              // Write out a mostly-stubbed event file.
+              const eventData = {
+                pull_request: {
+                  head: {
+                    sha: head_sha,
+                    repo: {
+                      full_name: head_repository.full_name
+                    }
+                  }
+                }
+              };
+
+              fs.writeFileSync('event-file.json', JSON.stringify(eventData), 'utf-8');
+            } else {
+              core.setOutput('pr_number', '');
+            }
 
       - name: Download code coverage reports
         if: steps.get-pr.outputs.pr_number != ''
@@ -89,21 +117,6 @@ jobs:
         if: steps.get-pr.outputs.pr_number != ''
         run: |
           ls -lR reports/
-
-      - name: "Synthesize event file"
-        if: steps.get-pr.outputs.pr_number != ''
-        run: |
-          echo \
-            '{
-               "pull_request": {
-                 "head": {
-                   "sha": "${{ steps.get-pr.outputs.head_sha }}",
-                   "repo": {
-                     "full_name": "${{ steps.get-pr.outputs.head_repo }}"
-                   }
-                 }
-               }
-             }' >event-file.json
 
       - name: "Publish test results"
         uses: EnricoMi/publish-unit-test-result-action@3a74b2957438d0b6e2e61d67b05318aa25c9e6c6 # v2.20.0
