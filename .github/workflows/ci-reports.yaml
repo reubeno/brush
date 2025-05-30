@@ -1,6 +1,8 @@
 name: "PR Reports"
 on:
-  workflow_run:
+  # We intentionally run this workflow in the context of the target of a PR; we are careful
+  # an intentional about how we handle the data coming from the PR.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: ["CI"]
     types:
       - completed

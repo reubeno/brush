@@ -199,7 +199,9 @@ jobs:
       - name: Set up Homebrew
         if: ${{ matrix.homebrew_supported }}
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@b04401e20b1aef21843d7c3e261d27a89f65af7d
+        # We ignore the stale-action-refs check because this action does not have any releases or tags.
+        # We're forced to pick a specific commit.
+        uses: Homebrew/actions/setup-homebrew@b04401e20b1aef21843d7c3e261d27a89f65af7d # zizmor: ignore[stale-action-refs]
         with:
           stable: true
 
