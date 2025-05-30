@@ -23,6 +23,8 @@ defaults:
   run:
     shell: bash
 
+permissions: {}
+
 jobs:
   upload-assets:
     name: ${{ matrix.target }}
