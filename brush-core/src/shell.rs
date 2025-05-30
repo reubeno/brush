@@ -191,6 +191,18 @@ pub struct CreateOptions {
     pub key_bindings: Option<KeyBindingsHelper>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
+    /// The parser implementation to use.
+    pub parser: ParserImplementation,
+}
+
+/// Represents the parser implementation.
+#[derive(Debug, Clone, Default, clap::ValueEnum)]
+pub enum ParserImplementation {
+    #[default]
+    /// The peg parser implementation
+    Peg,
+    /// The winnow parser implementation
+    Winnow,
 }
 
 /// Represents an executing script.

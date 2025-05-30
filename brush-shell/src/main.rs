@@ -263,6 +263,7 @@ async fn instantiate_shell(
             max_function_call_depth: None,
             key_bindings: None,
             shell_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            parser: args.parser_backend.clone().unwrap_or_default(),
         },
         disable_bracketed_paste: args.disable_bracketed_paste,
         disable_color: args.disable_color,
