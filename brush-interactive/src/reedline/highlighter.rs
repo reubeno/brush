@@ -181,7 +181,8 @@ impl<'a> StyledInputLine<'a> {
                     global_offset + word_piece.end_index,
                 );
             }
-            brush_parser::word::WordPiece::DoubleQuotedSequence(subpieces) => {
+            brush_parser::word::WordPiece::DoubleQuotedSequence(subpieces)
+            | brush_parser::word::WordPiece::GettextDoubleQuotedSequence(subpieces) => {
                 self.set_next_missing_style(styles::quoted());
                 for subpiece in subpieces {
                     self.style_and_append_word_piece(subpiece, styles::quoted(), global_offset);
