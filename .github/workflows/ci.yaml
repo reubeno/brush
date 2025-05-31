@@ -111,7 +111,9 @@ jobs:
 
       - name: Install additional prerequisite tools
         if: ${{ matrix.required_tools != '' }}
-        run: sudo apt-get update -y && sudo apt-get install -y ${{ matrix.required_tools }}
+        env:
+          REQUIRED_TOOLS: ${{ matrix.required_tools }}
+        run: sudo apt-get update -y && sudo apt-get install -y ${REQUIRED_TOOLS}
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.target != '' }}
@@ -121,11 +123,16 @@ jobs:
 
       - name: "Build (native)"
         if: ${{ matrix.target == '' }}
-        run: cargo build --release --all-targets ${{ matrix.extra_build_args }}
+        env:
+          EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
+        run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
 
       - name: "Build (cross)"
         if: ${{ matrix.target != '' }}
-        run: cross build --release --target=${{ matrix.target }} ${{ matrix.extra_build_args }}
+        env:
+          TARGET: ${{ matrix.target }}
+          EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
+        run: cross build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -228,6 +235,8 @@ jobs:
           echo "BASH_COMPLETION_PATH=${GITHUB_WORKSPACE}/bash-completion/bash_completion">>$GITHUB_ENV
 
       - name: Test
+        env:
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -euxo pipefail
 
@@ -240,10 +249,10 @@ jobs:
           cargo nextest run --workspace --no-fail-fast || result=$?
 
           # Generate code coverage report
-          cargo llvm-cov report --cobertura --output-path ./codecov-${{ matrix.variant }}.xml || result=$?
+          cargo llvm-cov report --cobertura --output-path ./codecov-${VARIANT}.xml || result=$?
 
           # Rename test results.
-          mv target/nextest/default/test-results.xml ./test-results-${{ matrix.variant }}.xml
+          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}.xml
 
           # Report the actual test results
           exit ${result}
@@ -447,15 +456,15 @@ jobs:
         run: |
           pytest -n 128 \
               --json-report \
-              --json-report-file=${{ github.workspace }}/test-results-bash-completion.json \
+              --json-report-file=$GITHUB_WORKSPACE/test-results-bash-completion.json \
               ./t || true
 
       - name: "Generate report summary"
         run: |
           python3 brush/scripts/summarize-pytest-results.py \
-            -r ${{ github.workspace }}/test-results-bash-completion.json \
+            -r $GITHUB_WORKSPACE/test-results-bash-completion.json \
             --title="Test Summary: bash-completion test suite" \
-            >${{ github.workspace }}/test-results-bash-completion.md
+            >$GITHUB_WORKSPACE/test-results-bash-completion.md
 
       - name: Upload test report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -507,7 +516,9 @@ jobs:
       # Install prerequisites *first*; may need some of them for checkout itself.
       - name: Install prerequisites
         if: ${{ matrix.prereqs_command != '' }}
-        run: ${{ matrix.prereqs_command }}
+        env:
+          PREREQS_COMMAND: ${{ matrix.prereqs_command }}
+        run: bash -c "${PREREQS_COMMAND}"
 
       # Workaround path issues on NixOS
       - name: "Apply workarounds: NixOS"
