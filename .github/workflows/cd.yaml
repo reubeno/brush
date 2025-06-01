@@ -23,6 +23,8 @@ defaults:
   run:
     shell: bash
 
+permissions: {}
+
 jobs:
   upload-assets:
     name: ${{ matrix.target }}
@@ -61,22 +63,22 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
       - name: "Install Rust toolchain"
-        uses: actions-rust-lang/setup-rust-toolchain@v1.12.0
+        uses: actions-rust-lang/setup-rust-toolchain@9d7e65c320fdb52dcd45ffaa68deb6c02c8754d9 # v1.12.0
 
       - name: "Setup cross-compiling toolchain"
         if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
-        uses: taiki-e/setup-cross-toolchain-action@v1.29.1
+        uses: taiki-e/setup-cross-toolchain-action@0123528f956f923e7a476f4cc04882bc005e7c89 # v1.29.1
         with:
           target: ${{ matrix.target }}
 
       - name: "Installing musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@v2.50.0
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cross
 
@@ -85,7 +87,7 @@ jobs:
         run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
 
       - name: "Build and upload binaries to release"
-        uses: taiki-e/upload-rust-binary-action@v1.26.0
+        uses: taiki-e/upload-rust-binary-action@db101489b509ad1c7acce163e118eb36a1650f98 # v1.26.0
         id: upload-release
         with:
           dry-run: ${{ github.event_name != 'release' }}
@@ -99,6 +101,6 @@ jobs:
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@v2.3.0
+        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
         with:
           subject-path: "${{ steps.upload-release.outputs.archive }}.*"

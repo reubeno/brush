@@ -859,9 +859,10 @@ peg::parser! {
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }
 
-        rule backquoted_char() -> char =
-            "\\`" { '`' } /
-            [^'`']
+        rule backquoted_char() -> &'input str =
+            "\\`" { "`" } /
+            "\\\\" { "\\\\" } /
+            s:$([^'`']) { s }
 
         rule arithmetic_expansion() -> WordPiece =
             "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }

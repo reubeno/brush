@@ -94,7 +94,9 @@ jobs:
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -103,37 +105,44 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           key: "${{ matrix.target }}"
 
       - name: Install additional prerequisite tools
         if: ${{ matrix.required_tools != '' }}
-        run: sudo apt-get update -y && sudo apt-get install -y ${{ matrix.required_tools }}
+        env:
+          REQUIRED_TOOLS: ${{ matrix.required_tools }}
+        run: sudo apt-get update -y && sudo apt-get install -y ${REQUIRED_TOOLS}
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cross
 
       - name: "Build (native)"
         if: ${{ matrix.target == '' }}
-        run: cargo build --release --all-targets ${{ matrix.extra_build_args }}
+        env:
+          EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
+        run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
 
       - name: "Build (cross)"
         if: ${{ matrix.target != '' }}
-        run: cross build --release --target=${{ matrix.target }} ${{ matrix.extra_build_args }}
+        env:
+          TARGET: ${{ matrix.target }}
+          EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
+        run: cross build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
       - name: "Upload integration test binaries"
         if: ${{ matrix.target == '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: integration-tests-${{ matrix.arch }}-${{ matrix.os }}
           path: |
@@ -168,7 +177,9 @@ jobs:
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -177,25 +188,27 @@ jobs:
           components: llvm-tools-preview
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-llvm-cov
 
       - name: Set up Homebrew
         if: ${{ matrix.homebrew_supported }}
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@master
+        # We ignore the stale-action-refs check because this action does not have any releases or tags.
+        # We're forced to pick a specific commit.
+        uses: Homebrew/actions/setup-homebrew@b04401e20b1aef21843d7c3e261d27a89f65af7d # zizmor: ignore[stale-action-refs]
         with:
           stable: true
 
@@ -210,8 +223,9 @@ jobs:
           echo "BASH_PATH=${BASH_PATH}">>$GITHUB_ENV
 
       - name: "Download recent bash-completion sources for tests"
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           repository: "scop/bash-completion"
           ref: "2.16.0"
           path: "bash-completion"
@@ -221,6 +235,8 @@ jobs:
           echo "BASH_COMPLETION_PATH=${GITHUB_WORKSPACE}/bash-completion/bash_completion">>$GITHUB_ENV
 
       - name: Test
+        env:
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -euxo pipefail
 
@@ -233,23 +249,23 @@ jobs:
           cargo nextest run --workspace --no-fail-fast || result=$?
 
           # Generate code coverage report
-          cargo llvm-cov report --cobertura --output-path ./codecov-${{ matrix.variant }}.xml || result=$?
+          cargo llvm-cov report --cobertura --output-path ./codecov-${VARIANT}.xml || result=$?
 
           # Rename test results.
-          mv target/nextest/default/test-results.xml ./test-results-${{ matrix.variant }}.xml
+          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}.xml
 
           # Report the actual test results
           exit ${result}
 
       - name: "Upload test results"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: test-reports${{ matrix.artifact_suffix }}
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
-        uses: clearlyip/code-coverage-report-action@v5
+        uses: clearlyip/code-coverage-report-action@17b6103ac2d3b9bb6c7a8562ac22a4c010d6d52f # v5.2.0
         if: always()
         id: "code_coverage_report"
         with:
@@ -263,7 +279,7 @@ jobs:
           negative_difference_threshold: 5
 
       - name: "Upload code coverage report"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: codecov-reports${{ matrix.artifact_suffix }}
@@ -281,7 +297,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up rust toolchain (${{ matrix.rust-version }})
         uses: dtolnay/rust-toolchain@master
@@ -290,7 +308,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
@@ -302,7 +320,7 @@ jobs:
         run: cargo check --all-features --all-targets
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-deny
 
@@ -319,7 +337,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up nightly rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -327,7 +347,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@84c20235bedc3797c7e1ddf685c574a4a6c666da # v2.52.2
         with:
           tool: cargo-udeps
 
@@ -341,13 +361,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           path: pr
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           path: main
           ref: main
 
@@ -357,7 +379,7 @@ jobs:
           toolchain: stable
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           workspaces: |
             ./pr
@@ -376,7 +398,7 @@ jobs:
           ./pr/scripts/compare-benchmark-results.py -b main/benchmarks.txt -t pr/benchmarks.txt >benchmark-results.md
 
       - name: Upload performance results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: perf-reports
           path: |
@@ -391,19 +413,21 @@ jobs:
     needs: build
     steps:
       - name: Checkout brush
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           path: "brush"
 
       - name: Checkout bash-completion
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           repository: "scop/bash-completion"
           ref: "2.16.0"
           path: "bash-completion"
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: "binaries-x86_64-linux"
           path: "binaries"
@@ -432,18 +456,18 @@ jobs:
         run: |
           pytest -n 128 \
               --json-report \
-              --json-report-file=${{ github.workspace }}/test-results-bash-completion.json \
+              --json-report-file=$GITHUB_WORKSPACE/test-results-bash-completion.json \
               ./t || true
 
       - name: "Generate report summary"
         run: |
           python3 brush/scripts/summarize-pytest-results.py \
-            -r ${{ github.workspace }}/test-results-bash-completion.json \
+            -r $GITHUB_WORKSPACE/test-results-bash-completion.json \
             --title="Test Summary: bash-completion test suite" \
-            >${{ github.workspace }}/test-results-bash-completion.md
+            >$GITHUB_WORKSPACE/test-results-bash-completion.md
 
       - name: Upload test report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-reports-bash-completion
           path: |
@@ -492,7 +516,9 @@ jobs:
       # Install prerequisites *first*; may need some of them for checkout itself.
       - name: Install prerequisites
         if: ${{ matrix.prereqs_command != '' }}
-        run: ${{ matrix.prereqs_command }}
+        env:
+          PREREQS_COMMAND: ${{ matrix.prereqs_command }}
+        run: bash -c "${PREREQS_COMMAND}"
 
       # Workaround path issues on NixOS
       - name: "Apply workarounds: NixOS"
@@ -514,18 +540,19 @@ jobs:
 
       # Checkout sources for YAML-based test cases
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           path: sources
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: binaries-x86_64-linux
           path: binaries
 
       - name: Download integration test binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: integration-tests-x86_64-linux
           path: binaries

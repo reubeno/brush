@@ -292,3 +292,48 @@ cases:
 
       declare -A assoc_array["key"]="key-value"
       stable_print_assoc_array assoc_array
+
+  - name: "Uppercase attribute"
+    stdin: |
+      declare var=value
+
+      declare -u var
+      declare -p var
+
+      var="abcd"
+      declare -p var
+
+      declare another="abcd"
+      declare -u another
+      another+=efg
+      declare -p another
+
+  - name: "Lowercase attribute"
+    stdin: |
+      declare var=value
+
+      declare -l var
+      declare -p var
+
+      var="AbCd"
+      declare -p var
+
+      declare another="ABCD"
+      declare -l another
+      another+=EFG
+      declare -p another
+
+  - name: "Capitalize attribute"
+    stdin: |
+      declare var=value
+
+      declare -c var
+      declare -p var
+
+      var="aBcD eFg"
+      declare -p var
+
+      declare another="aBcD"
+      declare -c another
+      another+=eFg
+      declare -p another

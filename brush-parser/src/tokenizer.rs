@@ -586,9 +586,19 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     }
 
     pub fn next_token(&mut self) -> Result<TokenizeResult, TokenizerError> {
-        self.next_token_until(None)
+        self.next_token_until(None, false /* include space? */)
     }
 
+    /// Returns the next token from the input stream, optionally stopping early when a specified
+    /// terminating character is encountered.
+    ///
+    /// # Arguments
+    ///
+    /// * `terminating_char` - An optional character that, if encountered, will stop the
+    ///   tokenization process and return the token up to that character.
+    /// * `include_space` - If true, include spaces in the tokenization process. This is not
+    ///   typically the case, but can be helpful when needing to preserve the original source text
+    ///   embedded within a command substitution or similar construct.
     #[allow(clippy::if_same_then_else)]
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::unwrap_in_result)]
@@ -596,6 +606,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,
+        include_space: bool,
     ) -> Result<TokenizeResult, TokenizerError> {
         let mut state = TokenParseState::new(&self.cross_state.cursor);
         let mut result: Option<TokenizeResult> = None;
@@ -848,7 +859,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                                     pending_here_doc_tokens.remove(0)
                                 } else {
-                                    let cur_token = self.next_token_until(Some(')'))?;
+                                    let cur_token = self.next_token_until(
+                                        Some(')'),
+                                        true, /* include space? */
+                                    )?;
 
                                     // See if this is a here-document-related token we need to hold
                                     // onto until after we've seen all the tokens that need to show
@@ -938,7 +952,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                                     pending_here_doc_tokens.remove(0)
                                 } else {
-                                    let cur_token = self.next_token_until(Some('}'))?;
+                                    let cur_token = self.next_token_until(
+                                        Some('}'),
+                                        false, /* include space? */
+                                    )?;
 
                                     // See if this is a here-document-related token we need to hold
                                     // onto until after we've seen all the tokens that need to show
@@ -1088,6 +1105,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         TokenEndReason::NonNewLineBlank,
                         &mut self.cross_state,
                     )?;
+                } else if include_space {
+                    state.append_char(c);
                 } else {
                     // Make sure we don't include this char in the token range.
                     state.start_position.column += 1;
@@ -1526,7 +1545,7 @@ HERE2
             [t1 @ Token::Word(..),
              t2 @ Token::Word(..)] if
                 t1.to_str() == "echo" &&
-                t2.to_str() == "$(cat <<HERE1 <<HERE2 |wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)"
+                t2.to_str() == "$(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)"
         );
         Ok(())
     }
@@ -1581,6 +1600,15 @@ HERE2
     }
 
     #[test]
+    fn tokenize_command_substitution_with_subshell() -> Result<()> {
+        assert_matches!(
+            &tokenize_str("$( (:) )")?[..],
+            [t @ Token::Word(..)] if t.to_str() == "$( (:) )"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn tokenize_command_substitution_containing_extglob() -> Result<()> {
         assert_matches!(
             &tokenize_str("echo $(echo !(x))")?[..],
@@ -1609,7 +1637,7 @@ HERE2
         assert_matches!(
             &tokenize_str("$(( 1 ))")?[..],
             [t1 @ Token::Word(..)] if
-                t1.to_str() == "$((1 ))"
+                t1.to_str() == "$(( 1 ))"
         );
         Ok(())
     }
@@ -1618,7 +1646,7 @@ HERE2
         assert_matches!(
             &tokenize_str("$(( (0) ))")?[..],
             [t1 @ Token::Word(..)] if
-                t1.to_str() == "$(((0)))"
+                t1.to_str() == "$(( (0) ))"
         );
         Ok(())
     }
