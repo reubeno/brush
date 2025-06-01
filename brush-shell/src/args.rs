@@ -21,7 +21,7 @@ const VERSION: &str = const_format::concatcp!(
 );
 
 /// Identifies the input backend to use for the shell.
-#[derive(Clone, clap::ValueEnum)]
+#[derive(Clone, Copy, clap::ValueEnum)]
 pub enum InputBackend {
     /// Richest input backend, based on reedline.
     Reedline,
@@ -159,18 +159,23 @@ pub struct CommandLineArgs {
 impl CommandLineArgs {
     /// Returns whether or not the arguments indicate that the shell should run in interactive mode.
     pub fn is_interactive(&self) -> bool {
+        // If -i is provided, then that overrides any further consideration; it forces
+        // interactive mode.
         if self.interactive {
             return true;
         }
 
+        // If -c or non-option arguments are provided, then we're not in interactive mode.
         if self.command.is_some() || self.script_path.is_some() {
             return false;
         }
 
+        // If *either* stdin or stderr is not a terminal, then we're not in interactive mode.
         if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
             return false;
         }
 
+        // In all other cases, we assume interactive mode.
         true
     }
 }

@@ -146,8 +146,9 @@ async fn run(
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
     let default_backend = get_default_input_backend();
+    let selected_backend = args.input_backend.unwrap_or(default_backend);
 
-    match args.input_backend.as_ref().unwrap_or(&default_backend) {
+    match selected_backend {
         InputBackend::Reedline => {
             run_impl(cli_args, args, shell_factory::ReedlineShellFactory).await
         }
@@ -179,7 +180,7 @@ async fn run_impl(
     // Instantiate an appropriately configured shell.
     let mut shell = instantiate_shell(&args, cli_args, factory).await?;
 
-    // Handle commands.
+    // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
         // Pass through args.
         if let Some(script_path) = args.script_path {
@@ -194,10 +195,20 @@ async fn run_impl(
             .as_mut()
             .run_string(command, &params)
             .await?;
+
+    // If -s was provided, then read commands from stdin. If there was a script (and optionally
+    // args) passed on the command line via positional arguments, then we copy over the
+    // parameters but do *not* execute it.
     } else if args.read_commands_from_stdin {
-        // We were asked to read commands from stdin; do so, even if there was a script
-        // passed on the command line.
+        if let Some(script_path) = args.script_path {
+            shell.shell_mut().as_mut().positional_parameters = std::iter::once(script_path)
+                .chain(args.script_args.into_iter())
+                .collect();
+        }
+
         shell.run_interactively().await?;
+
+    // If a script path was provided, then run the script.
     } else if let Some(script_path) = args.script_path {
         // The path to a script was provided on the command line; run the script.
         shell
@@ -205,8 +216,10 @@ async fn run_impl(
             .as_mut()
             .run_script(Path::new(&script_path), args.script_args.iter())
             .await?;
+
+    // If we got down here, then we don't have any commands to run. We'll be reading
+    // them in from stdin one way or the other.
     } else {
-        // In all other cases, run interactively, taking input from stdin.
         shell.run_interactively().await?;
     }
 
@@ -230,8 +243,11 @@ async fn instantiate_shell(
         None
     };
 
+    // Commands are read from stdin if -s was provided, or if no command was specified (either via
+    // -c or as a positional argument).
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
         || (args.script_path.is_none() && args.command.is_none());
+
     let interactive = args.is_interactive();
 
     // Compose the options we'll use to create the shell.
@@ -274,10 +290,17 @@ async fn instantiate_shell(
     Ok(shell)
 }
 
-const fn get_default_input_backend() -> InputBackend {
+fn get_default_input_backend() -> InputBackend {
     #[cfg(any(windows, unix))]
     {
-        InputBackend::Reedline
+        // If stdin isn't a terminal, then `reedline` doesn't do the right thing
+        // (reference: https://github.com/nushell/reedline/issues/509). Switch to
+        // the minimal input backend instead for that scenario.
+        if std::io::stdin().is_terminal() {
+            InputBackend::Reedline
+        } else {
+            InputBackend::Minimal
+        }
     }
     #[cfg(not(any(windows, unix)))]
     {
