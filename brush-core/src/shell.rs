@@ -995,7 +995,10 @@ impl Shell {
         &self,
         reader: R,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        parse_impl(reader, self.parser_options())
+        let mut parser = create_parser(reader, &self.parser_options());
+
+        tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
+        parser.parse_program()
     }
 
     /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
@@ -1730,16 +1733,6 @@ impl Shell {
             Ok(None)
         }
     }
-}
-
-fn parse_impl<R: Read>(
-    r: R,
-    parser_options: brush_parser::ParserOptions,
-) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut parser = create_parser(r, &parser_options);
-
-    tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
-    parser.parse_program()
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]
