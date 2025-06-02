@@ -7,8 +7,14 @@ name: CD # Continuous Deployment
 on:
   release:
     types: [published]
+
   # Manual triggers don't actually publish but dry-run the builds.
   workflow_dispatch: null
+
+  # Run on PR in dry-run mode to make sure this workflow is still generally
+  # working.
+  pull_request:
+    branches: ["main"]
 
 env:
   CARGO_INCREMENTAL: 0
