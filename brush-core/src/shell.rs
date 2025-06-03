@@ -264,7 +264,7 @@ impl Shell {
         func_name: &str,
         body_text: &str,
     ) -> Result<(), error::Error> {
-        let mut parser = create_parser(body_text, &self.parser_options());
+        let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
         let func_body = parser.parse_function_parens_and_body()?;
 
         let func_def = brush_parser::ast::FunctionDefinition {
@@ -987,6 +987,18 @@ impl Shell {
         };
         self.run_parsed_result(parse_result, &source_info, params)
             .await
+    }
+
+    /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
+    /// for the program.
+    pub fn parse<R: Read>(
+        &self,
+        reader: R,
+    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+        let mut parser = create_parser(reader, &self.parser_options());
+
+        tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
+        parser.parse_program()
     }
 
     /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
@@ -1728,17 +1740,17 @@ fn parse_string_impl(
     s: String,
     parser_options: brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut parser = create_parser(s.as_str(), &parser_options);
+    let mut parser = create_parser(s.as_bytes(), &parser_options);
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse_program()
 }
 
-fn create_parser<'a>(
-    s: &'a str,
+fn create_parser<R: Read>(
+    r: R,
     parser_options: &brush_parser::ParserOptions,
-) -> brush_parser::Parser<std::io::BufReader<&'a [u8]>> {
-    let reader = std::io::BufReader::new(s.as_bytes());
+) -> brush_parser::Parser<std::io::BufReader<R>> {
+    let reader = std::io::BufReader::new(r);
     let source_info = brush_parser::SourceInfo {
         source: String::from("main"),
     };
