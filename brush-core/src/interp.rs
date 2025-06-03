@@ -624,15 +624,18 @@ impl Execute for ast::ForClauseCommand {
             if shell.options.print_commands_and_arguments {
                 if let Some(unexpanded_values) = &self.values {
                     shell
-                        .trace_command(std::format!(
-                            "for {} in {}",
-                            self.variable_name,
-                            unexpanded_values.iter().join(" ")
-                        ))
+                        .trace_command(
+                            params,
+                            std::format!(
+                                "for {} in {}",
+                                self.variable_name,
+                                unexpanded_values.iter().join(" ")
+                            ),
+                        )
                         .await?;
                 } else {
                     shell
-                        .trace_command(std::format!("for {}", self.variable_name,))
+                        .trace_command(params, std::format!("for {}", self.variable_name,))
                         .await?;
                 }
             }
@@ -685,7 +688,7 @@ impl Execute for ast::CaseClauseCommand {
         // on, but that's not it.
         if shell.options.print_commands_and_arguments {
             shell
-                .trace_command(std::format!("case {} in", &self.value))
+                .trace_command(params, std::format!("case {} in", &self.value))
                 .await?;
         }
 
@@ -1010,8 +1013,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
                             {
                                 //
-                                // TODO(#57): This is a total hack; aliases are supposed to be handled
-                                // much earlier in the process.
+                                // TODO(#57): This is a total hack; aliases are supposed to be
+                                // handled much earlier in the
+                                // process.
                                 //
                                 let mut alias_pieces: Vec<_> = alias_value
                                     .split_ascii_whitespace()
@@ -1101,7 +1105,10 @@ async fn execute_command(
     if context.shell.options.print_commands_and_arguments {
         context
             .shell
-            .trace_command(args.iter().map(|arg| arg.quote_for_tracing()).join(" "))
+            .trace_command(
+                &params,
+                args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
+            )
             .await?;
     }
 
@@ -1299,7 +1306,7 @@ async fn apply_assignment(
     if shell.options.print_commands_and_arguments {
         let op = if assignment.append { "+=" } else { "=" };
         shell
-            .trace_command(std::format!("{}{op}{new_value}", assignment.name))
+            .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
             .await?;
     }
 

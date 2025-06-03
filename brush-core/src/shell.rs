@@ -1632,9 +1632,11 @@ impl Shell {
     ///
     /// # Arguments
     ///
+    /// * `params` - Execution parameters.
     /// * `command` - The command to trace.
     pub(crate) async fn trace_command<S: AsRef<str>>(
         &mut self,
+        params: &ExecutionParameters,
         command: S,
     ) -> Result<(), error::Error> {
         let ps4 = self.as_mut().expand_prompt_var("PS4", "").await?;
@@ -1648,7 +1650,7 @@ impl Shell {
             }
         }
 
-        writeln!(self.stderr(), "{prefix}{}", command.as_ref())?;
+        writeln!(params.stderr(), "{prefix}{}", command.as_ref())?;
         Ok(())
     }
 

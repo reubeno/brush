@@ -104,3 +104,20 @@ cases:
       ((x = 3)) || ((x = 4))
 
       override=value echo some_output
+
+  - name: "set -x with redirection"
+    stdin: |
+      set -x
+
+      echo "This is a test" >output.txt 2>&1
+
+      exec >output2.txt 2>&1
+
+      echo "This is another test"
+
+  - name: "set -x with sourced script"
+    stdin: |
+      set -x
+
+      echo 'echo hi' >script.sh
+      source script.sh >output.txt 2>&1

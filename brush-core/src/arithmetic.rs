@@ -91,7 +91,7 @@ pub(crate) async fn expand_and_eval(
     // Trace if applicable.
     if trace_if_needed && shell.options.print_commands_and_arguments {
         shell
-            .trace_command(std::format!("(( {expr} ))"))
+            .trace_command(params, std::format!("(( {expr} ))"))
             .await
             .map_err(|_err| EvalError::TraceError)?;
     }
