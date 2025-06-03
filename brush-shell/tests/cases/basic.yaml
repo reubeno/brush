@@ -13,6 +13,29 @@ cases:
     stdin: |
       echo 'hi'; echo 'there'
 
+  - name: "Basic -s usage with -c"
+    args: ["-s", "-c", "echo hi1 hi2"]
+    stdin: |
+      [[ $(type -P $0) == $(type -P $BASH) ]] && echo '$0 matches $BASH'
+      echo "\$1: $1"
+      echo "\$2: $2"
+      echo "\$3: $3"
+
+  - name: "Basic -s usage with positional args"
+    args: ["-s", "arg1", "arg2", "arg3"]
+    stdin: |
+      [[ $(type -P $0) == $(type -P $BASH) ]] && echo '$0 matches $BASH'
+      echo "\$1: $1"
+      echo "\$2: $2"
+      echo "\$3: $3"
+
+  - name: "Basic -i usage with commands via stdin"
+    skip: true # Needs investigation
+    args: ["-i"]
+    stdin: |
+      echo hi
+      echo there
+
   - name: "Basic script execution"
     test_files:
       - path: "script.sh"
