@@ -13,6 +13,7 @@ const DISPLAY_INDENT: &str = "    ";
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct Program {
     /// A sequence of complete shell commands.
+    #[cfg_attr(test, serde(rename = "cmds"))]
     pub complete_commands: Vec<CompleteCommand>,
 }
 
@@ -55,10 +56,12 @@ impl Display for SeparatorOperator {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "AndOr"))]
 pub struct AndOrList {
     /// The first command pipeline.
     pub first: Pipeline,
     /// Any additional command pipelines, in sequence order.
+    #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
     pub additional: Vec<AndOr>,
 }
 
@@ -193,9 +196,11 @@ pub enum PipelineTimed {
 pub struct Pipeline {
     /// Indicates whether the pipeline's execution should be timed with reported
     /// timings in output.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub timed: Option<PipelineTimed>,
     /// Indicates whether the result of the overall pipeline should be the logical
     /// negation of the result of the pipeline.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub bang: bool,
     /// The sequence of commands in the pipeline.
     pub seq: Vec<Command>,
@@ -434,6 +439,7 @@ impl Display for CaseClauseCommand {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "List"))]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
 impl Display for CompoundList {
@@ -462,6 +468,7 @@ impl Display for CompoundList {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Item"))]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
 impl Display for CompoundListItem {
@@ -482,6 +489,7 @@ pub struct IfClauseCommand {
     /// The command to execute if the condition is true.
     pub then: CompoundList,
     /// Optionally, `else` clauses that will be evaluated if the condition is false.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub elses: Option<Vec<ElseClause>>,
 }
 
@@ -512,6 +520,7 @@ impl Display for IfClauseCommand {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct ElseClause {
     /// If present, the condition that must be met for this `else` clause to be executed.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub condition: Option<CompoundList>,
     /// The commands to execute if this `else` clause is selected.
     pub body: CompoundList,
@@ -677,12 +686,17 @@ impl Display for DoGroupCommand {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Simple"))]
 pub struct SimpleCommand {
     /// Optionally, a prefix to the command.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub prefix: Option<CommandPrefix>,
     /// The name of the command to execute.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(test, serde(rename = "w"))]
     pub word_or_name: Option<Word>,
     /// Optionally, a suffix to the command.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub suffix: Option<CommandSuffix>,
 }
 
@@ -724,6 +738,7 @@ impl Display for SimpleCommand {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Prefix"))]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandPrefix {
@@ -743,6 +758,7 @@ impl Display for CommandPrefix {
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Suffix"))]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandSuffix {
@@ -788,6 +804,7 @@ pub enum CommandPrefixOrSuffixItem {
     /// A word.
     Word(Word),
     /// An assignment/declaration word.
+    #[cfg_attr(test, serde(rename = "Assign"))]
     AssignmentWord(Assignment, Word),
     /// A process substitution.
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
@@ -810,12 +827,14 @@ impl Display for CommandPrefixOrSuffixItem {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Assign"))]
 pub struct Assignment {
     /// Name being assigned to.
     pub name: AssignmentName,
     /// Value being assigned.
     pub value: AssignmentValue,
     /// Whether or not to append to the preexisting value associated with the named variable.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub append: bool,
 }
 
@@ -835,6 +854,7 @@ impl Display for Assignment {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum AssignmentName {
     /// A named variable.
+    #[cfg_attr(test, serde(rename = "Var"))]
     VariableName(String),
     /// An element in a named array.
     ArrayElementName(String, String),
@@ -1033,8 +1053,10 @@ impl Display for IoFileRedirectTarget {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct IoHereDocument {
     /// Whether to remove leading tabs from the here document.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub remove_tabs: bool,
     /// Whether to basic-expand the contents of the here document.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub requires_expansion: bool,
     /// The delimiter marking the end of the here document.
     pub here_end: Word,
@@ -1281,8 +1303,10 @@ impl Display for BinaryPredicate {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "W"))]
 pub struct Word {
     /// Raw text of the word.
+    #[cfg_attr(test, serde(rename = "v"))]
     pub value: String,
 }
 

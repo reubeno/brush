@@ -34,9 +34,10 @@ utf8-chars = "3.0.5"
 anyhow = "1.0.98"
 assert_matches = "1.5.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
-insta = { version = "1.43.1", features = ["ron"] }
+insta = { version = "1.43.1", features = ["glob", "ron", "yaml"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 serde = { version = "1.0.219", features = ["derive"] }
+serde_yaml = "0.9.34"
 
 [target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }

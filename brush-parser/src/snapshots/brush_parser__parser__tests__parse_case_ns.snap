@@ -5,36 +5,32 @@ expression: "ParseResult { input, result: &command }"
 ParseResult(
   input: "\\\ncase x in\nx)\n    echo y\nesac\\\n",
   result: CaseClauseCommand(
-    value: Word(
-      value: "x",
+    value: W(
+      v: "x",
     ),
     cases: [
       CaseItem(
         patterns: [
-          Word(
-            value: "x",
+          W(
+            v: "x",
           ),
         ],
-        cmd: Some(CompoundList([
-          CompoundListItem(AndOrList(
+        cmd: Some(List([
+          Item(AndOr(
             first: Pipeline(
-              timed: None,
-              bang: false,
               seq: [
-                Simple(SimpleCommand(
-                  prefix: None,
-                  word_or_name: Some(Word(
-                    value: "echo",
+                Simple(Simple(
+                  w: Some(W(
+                    v: "echo",
                   )),
-                  suffix: Some(CommandSuffix([
-                    Word(Word(
-                      value: "y",
+                  suffix: Some(Suffix([
+                    Word(W(
+                      v: "y",
                     )),
                   ])),
                 )),
               ],
             ),
-            additional: [],
           ), Sequence),
         ])),
         post_action: ExitCase,

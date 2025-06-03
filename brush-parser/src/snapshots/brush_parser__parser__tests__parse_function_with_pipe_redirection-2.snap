@@ -7,38 +7,32 @@ ParseResult(
   result: [
     Function(FunctionDefinition(
       fname: "foo",
-      body: FunctionBody(BraceGroup(BraceGroupCommand(CompoundList([
-        CompoundListItem(AndOrList(
+      body: FunctionBody(BraceGroup(BraceGroupCommand(List([
+        Item(AndOr(
           first: Pipeline(
-            timed: None,
-            bang: false,
             seq: [
-              Simple(SimpleCommand(
-                prefix: None,
-                word_or_name: Some(Word(
-                  value: "echo",
+              Simple(Simple(
+                w: Some(W(
+                  v: "echo",
                 )),
-                suffix: Some(CommandSuffix([
-                  Word(Word(
-                    value: "1",
+                suffix: Some(Suffix([
+                  Word(W(
+                    v: "1",
                   )),
                 ])),
               )),
             ],
           ),
-          additional: [],
         ), Sequence),
       ]))), Some(RedirectList([
         File(Some(2), DuplicateOutput, Fd(1)),
       ]))),
       source: "",
     )),
-    Simple(SimpleCommand(
-      prefix: None,
-      word_or_name: Some(Word(
-        value: "cat",
+    Simple(Simple(
+      w: Some(W(
+        v: "cat",
       )),
-      suffix: None,
     )),
   ],
 )

@@ -5,21 +5,18 @@ expression: "ParseResult { input, result: &seq }"
 ParseResult(
   input: "echo |& wc",
   result: [
-    Simple(SimpleCommand(
-      prefix: None,
-      word_or_name: Some(Word(
-        value: "echo",
+    Simple(Simple(
+      w: Some(W(
+        v: "echo",
       )),
-      suffix: Some(CommandSuffix([
+      suffix: Some(Suffix([
         IoRedirect(File(Some(2), DuplicateOutput, Fd(1))),
       ])),
     )),
-    Simple(SimpleCommand(
-      prefix: None,
-      word_or_name: Some(Word(
-        value: "wc",
+    Simple(Simple(
+      w: Some(W(
+        v: "wc",
       )),
-      suffix: None,
     )),
   ],
 )
