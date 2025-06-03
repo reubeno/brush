@@ -1,0 +1,40 @@
+---
+source: brush-parser/src/parser.rs
+expression: "ParseResult { input, result: &command }"
+---
+ParseResult(
+  input: "\\\ncase x in\nx)\n    echo y;;\nesac\\\n",
+  result: CaseClauseCommand(
+    value: W(
+      v: "x",
+    ),
+    cases: [
+      CaseItem(
+        patterns: [
+          W(
+            v: "x",
+          ),
+        ],
+        cmd: Some(List([
+          Item(AndOr(
+            first: Pipeline(
+              seq: [
+                Simple(Simple(
+                  w: Some(W(
+                    v: "echo",
+                  )),
+                  suffix: Some(Suffix([
+                    Word(W(
+                      v: "y",
+                    )),
+                  ])),
+                )),
+              ],
+            ),
+          ), Sequence),
+        ])),
+        post_action: ExitCase,
+      ),
+    ],
+  ),
+)

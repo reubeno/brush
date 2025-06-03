@@ -1,0 +1,52 @@
+---
+source: brush-parser/src/parser.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "\n\n#!/usr/bin/env bash\n\nfor f in A B C; do\n\n    # sdfsdf\n    echo \"${f@L}\" >&2\n\n   done\n\n",
+  result: Program(
+    cmds: [
+      List([
+        Item(AndOr(
+          first: Pipeline(
+            seq: [
+              Compound(ForClause(ForClauseCommand(
+                variable_name: "f",
+                values: Some([
+                  W(
+                    v: "A",
+                  ),
+                  W(
+                    v: "B",
+                  ),
+                  W(
+                    v: "C",
+                  ),
+                ]),
+                body: DoGroupCommand(List([
+                  Item(AndOr(
+                    first: Pipeline(
+                      seq: [
+                        Simple(Simple(
+                          w: Some(W(
+                            v: "echo",
+                          )),
+                          suffix: Some(Suffix([
+                            Word(W(
+                              v: "\"${f@L}\"",
+                            )),
+                            IoRedirect(File(None, DuplicateOutput, Fd(2))),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                ])),
+              )), None),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

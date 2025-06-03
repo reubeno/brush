@@ -14,6 +14,9 @@ mod error;
 mod parser;
 mod tokenizer;
 
+#[cfg(test)]
+mod snapshot_tests;
+
 pub use error::{BindingParseError, ParseError, TestCommandParseError, WordParseError};
 pub use parser::{parse_tokens, Parser, ParserOptions, SourceInfo};
 pub use tokenizer::{
