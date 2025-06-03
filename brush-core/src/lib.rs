@@ -36,6 +36,7 @@ pub mod traps;
 pub mod variables;
 
 pub use arithmetic::EvalError;
+pub use brush_parser::ParseError;
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::Error;
 pub use interp::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy};
