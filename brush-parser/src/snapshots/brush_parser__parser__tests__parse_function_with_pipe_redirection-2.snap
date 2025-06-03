@@ -1,0 +1,44 @@
+---
+source: brush-parser/src/parser.rs
+expression: "ParseResult { input, result: &seq }"
+---
+ParseResult(
+  input: "foo() { echo 1; } |& cat",
+  result: [
+    Function(FunctionDefinition(
+      fname: "foo",
+      body: FunctionBody(BraceGroup(BraceGroupCommand(CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            timed: None,
+            bang: false,
+            seq: [
+              Simple(SimpleCommand(
+                prefix: None,
+                word_or_name: Some(Word(
+                  value: "echo",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "1",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+          additional: [],
+        ), Sequence),
+      ]))), Some(RedirectList([
+        File(Some(2), DuplicateOutput, Fd(1)),
+      ]))),
+      source: "",
+    )),
+    Simple(SimpleCommand(
+      prefix: None,
+      word_or_name: Some(Word(
+        value: "cat",
+      )),
+      suffix: None,
+    )),
+  ],
+)

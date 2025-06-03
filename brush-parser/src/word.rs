@@ -905,7 +905,21 @@ peg::parser! {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use assert_matches::assert_matches;
+    use insta::assert_ron_snapshot;
+
+    #[derive(serde::Serialize)]
+    struct ParseTestResults<'a> {
+        input: &'a str,
+        result: Vec<WordPieceWithSource>,
+    }
+
+    fn test_parse(word: &str) -> Result<ParseTestResults<'_>> {
+        let parsed = super::parse(word, &ParserOptions::default())?;
+        Ok(ParseTestResults {
+            input: word,
+            result: parsed,
+        })
+    }
 
     #[test]
     fn parse_command_substitution() -> Result<()> {
@@ -914,11 +928,7 @@ mod tests {
         super::expansion_parser::command("echo hi", &ParserOptions::default())?;
         super::expansion_parser::command_substitution("$(echo hi)", &ParserOptions::default())?;
 
-        let parsed = super::parse("$(echo hi)", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo hi"
-        );
+        assert_ron_snapshot!(test_parse("$(echo hi)")?);
 
         Ok(())
     }
@@ -933,88 +943,43 @@ mod tests {
             &ParserOptions::default(),
         )?;
 
-        let parsed = super::parse(r#"$(echo "hi")"#, &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == r#"echo "hi""#
-        );
-
+        assert_ron_snapshot!(test_parse(r#"$(echo "hi")"#)?);
         Ok(())
     }
 
     #[test]
     fn parse_command_substitution_with_embedded_extglob() -> Result<()> {
-        let parsed = super::parse("$(echo !(x))", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo !(x)"
-        );
-
+        assert_ron_snapshot!(test_parse("$(echo !(x))")?);
         Ok(())
     }
 
     #[test]
     fn parse_backquoted_command() -> Result<()> {
-        let parsed = super::parse("`echo hi`", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::BackquotedCommandSubstitution(s), .. }] if s == "echo hi"
-        );
-
+        assert_ron_snapshot!(test_parse("`echo hi`")?);
         Ok(())
     }
 
     #[test]
     fn parse_backquoted_command_in_double_quotes() -> Result<()> {
-        let parsed = super::parse(r#""`echo hi`""#, &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::DoubleQuotedSequence(inner), .. }]
-                if matches!(
-                    &inner[..],
-                    [WordPieceWithSource { piece: WordPiece::BackquotedCommandSubstitution(s), .. }] if s == "echo hi"
-                )
-        );
-
+        assert_ron_snapshot!(test_parse(r#""`echo hi`""#)?);
         Ok(())
     }
 
     #[test]
     fn parse_extglob_with_embedded_parameter() -> Result<()> {
-        let parsed = super::parse("+([$var])", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::Text(s1), .. },
-             WordPieceWithSource { piece: WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter: Parameter::Named(s2), .. }), ..},
-             WordPieceWithSource { piece: WordPiece::Text(s3), .. }] if s1 == "+([" && s2 == "var" && s3 == "])"
-        );
-
+        assert_ron_snapshot!(test_parse("+([$var])")?);
         Ok(())
     }
 
     #[test]
     fn parse_arithmetic_expansion() -> Result<()> {
-        const EXPECTED_RESULT: &str = "0";
-
-        let parsed = super::parse("$((0))", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT
-        );
-
+        assert_ron_snapshot!(test_parse("$((0))")?);
         Ok(())
     }
 
     #[test]
     fn parse_arithmetic_expansion_with_parens() -> Result<()> {
-        const EXPECTED_RESULT: &str = "((1+2)*3)";
-
-        let parsed = super::parse("$((((1+2)*3)))", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT
-        );
-
+        assert_ron_snapshot!(test_parse("$((((1+2)*3)))")?);
         Ok(())
     }
 

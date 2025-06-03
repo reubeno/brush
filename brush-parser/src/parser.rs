@@ -962,7 +962,13 @@ mod tests {
     use super::*;
     use crate::tokenizer::tokenize_str;
     use anyhow::Result;
-    use assert_matches::assert_matches;
+    use insta::assert_ron_snapshot;
+
+    #[derive(serde::Serialize)]
+    struct ParseResult<'a, T: serde::Serialize> {
+        input: &'a str,
+        result: &'a T,
+    }
 
     #[test]
     fn parse_case() -> Result<()> {
@@ -982,9 +988,10 @@ esac\
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(command.cases.len(), 1);
-        assert_eq!(command.cases[0].patterns.len(), 1);
-        assert_eq!(command.cases[0].patterns[0].flatten(), "x");
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &command
+        });
 
         Ok(())
     }
@@ -1007,9 +1014,10 @@ esac\
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(command.cases.len(), 1);
-        assert_eq!(command.cases[0].patterns.len(), 1);
-        assert_eq!(command.cases[0].patterns[0].flatten(), "x");
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &command
+        });
 
         Ok(())
     }
@@ -1027,19 +1035,11 @@ esac\
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(seq.len(), 2);
-        assert_matches!(seq[0], ast::Command::Simple(..));
-        if let ast::Command::Simple(c) = &seq[0] {
-            let c = c.suffix.as_ref().unwrap();
-            assert_matches!(
-                c.0[0],
-                ast::CommandPrefixOrSuffixItem::IoRedirect(ast::IoRedirect::File(
-                    Some(2),
-                    ast::IoFileRedirectKind::DuplicateOutput,
-                    ast::IoFileRedirectTarget::Fd(1)
-                ))
-            );
-        }
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &seq
+        });
+
         Ok(())
     }
 
@@ -1056,28 +1056,18 @@ esac\
                 &ParserOptions::default(),
                 &SourceInfo::default(),
             )?;
-            assert_eq!(seq.len(), 2);
-            assert_matches!(seq[0], ast::Command::Function(..));
-            if let ast::Command::Function(f) = &seq[0] {
-                let l = &f.body.1;
-                assert!(l.is_some());
-                assert_matches!(
-                    l.as_ref().unwrap().0[0],
-                    ast::IoRedirect::File(
-                        Some(2),
-                        ast::IoFileRedirectKind::DuplicateOutput,
-                        ast::IoFileRedirectTarget::Fd(1)
-                    )
-                );
-            }
+
+            assert_ron_snapshot!(ParseResult {
+                input,
+                result: &seq
+            });
         }
+
         Ok(())
     }
 
     #[test]
     fn test_parse_program() -> Result<()> {
-        use ast::*;
-
         let input = r#"
 
 #!/usr/bin/env bash
@@ -1090,51 +1080,6 @@ for f in A B C; do
    done
 
 "#;
-        let expected = Program {
-            complete_commands: vec![CompoundList(vec![CompoundListItem(
-                AndOrList {
-                    first: Pipeline {
-                        timed: None,
-                        bang: false,
-                        seq: vec![Command::Compound(
-                            CompoundCommand::ForClause(ForClauseCommand {
-                                variable_name: "f".into(),
-                                values: Some(vec![Word::new("A"), Word::new("B"), Word::new("C")]),
-                                body: DoGroupCommand(CompoundList(vec![CompoundListItem(
-                                    AndOrList {
-                                        first: Pipeline {
-                                            timed: None,
-                                            bang: false,
-                                            seq: vec![Command::Simple(SimpleCommand {
-                                                prefix: None,
-                                                word_or_name: Some(Word::new("echo")),
-                                                suffix: Some(CommandSuffix(vec![
-                                                    CommandPrefixOrSuffixItem::Word(Word::new(
-                                                        r#""${f@L}""#,
-                                                    )),
-                                                    CommandPrefixOrSuffixItem::IoRedirect(
-                                                        IoRedirect::File(
-                                                            None,
-                                                            IoFileRedirectKind::DuplicateOutput,
-                                                            IoFileRedirectTarget::Fd(2),
-                                                        ),
-                                                    ),
-                                                ])),
-                                            })],
-                                        },
-                                        additional: vec![],
-                                    },
-                                    SeparatorOperator::Sequence,
-                                )])),
-                            }),
-                            None,
-                        )],
-                    },
-                    additional: vec![],
-                },
-                SeparatorOperator::Sequence,
-            )])],
-        };
 
         let tokens = tokenize_str(input)?;
         let result = super::token_parser::program(
@@ -1145,7 +1090,10 @@ for f in A B C; do
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(result, expected);
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &result
+        });
 
         Ok(())
     }

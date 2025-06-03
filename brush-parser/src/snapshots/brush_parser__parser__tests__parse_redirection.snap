@@ -1,0 +1,25 @@
+---
+source: brush-parser/src/parser.rs
+expression: "ParseResult { input, result: &seq }"
+---
+ParseResult(
+  input: "echo |& wc",
+  result: [
+    Simple(SimpleCommand(
+      prefix: None,
+      word_or_name: Some(Word(
+        value: "echo",
+      )),
+      suffix: Some(CommandSuffix([
+        IoRedirect(File(Some(2), DuplicateOutput, Fd(1))),
+      ])),
+    )),
+    Simple(SimpleCommand(
+      prefix: None,
+      word_or_name: Some(Word(
+        value: "wc",
+      )),
+      suffix: None,
+    )),
+  ],
+)
