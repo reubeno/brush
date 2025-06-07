@@ -47,6 +47,11 @@ impl FunctionEnv {
         self.functions.insert(name, registration);
     }
 
+    /// Clear all functions in this environment.
+    pub fn clear(&mut self) {
+        self.functions.clear();
+    }
+
     /// Returns an iterator over the functions registered in this environment.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &FunctionRegistration)> {
         self.functions.iter()
