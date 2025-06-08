@@ -1402,8 +1402,6 @@ struct TestOptions {
     #[clap(long = "test-cases-path", env = "BRUSH_COMPAT_TEST_CASES")]
     pub test_cases_path: Option<PathBuf>,
 
-    //
-    // Compat-only options
     /// Show output from test cases (for compatibility only, has no effect)
     #[clap(long = "show-output")]
     pub show_output: bool,
@@ -1411,6 +1409,10 @@ struct TestOptions {
     /// Capture output? (for compatibility only, has no effect)
     #[clap(long = "nocapture")]
     pub no_capture: bool,
+
+    /// Colorize output? (for compatibility only, has no effect)
+    #[clap(long = "color", default_value_t = clap::ColorChoice::Auto)]
+    pub color: clap::ColorChoice,
 
     #[clap(long = "ignored")]
     pub skipped_tests_only: bool,

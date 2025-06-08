@@ -4,6 +4,7 @@ use crate::error;
 
 /// Represents a readline key-sequence binding.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(Eq, serde::Serialize))]
 pub struct KeySequenceBinding {
     /// Key sequence to bind
     pub seq: KeySequence,
@@ -13,10 +14,12 @@ pub struct KeySequenceBinding {
 
 /// Represents a key sequence.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(Eq, serde::Serialize))]
 pub struct KeySequence(pub Vec<KeySequenceItem>);
 
 /// Represents an element of a key sequence.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(Eq, serde::Serialize))]
 pub enum KeySequenceItem {
     /// Control
     Control,
@@ -28,6 +31,7 @@ pub enum KeySequenceItem {
 
 /// Represents a single key stroke.
 #[derive(Debug, Default, Clone, PartialEq)]
+#[cfg_attr(test, derive(Eq, serde::Serialize))]
 pub struct KeyStroke {
     /// Meta key is held down
     pub meta: bool,

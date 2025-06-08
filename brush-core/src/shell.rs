@@ -189,6 +189,8 @@ pub struct CreateOptions {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
+    /// Brush implementation version.
+    pub shell_version: Option<String>,
 }
 
 /// Represents an executing script.
@@ -262,7 +264,7 @@ impl Shell {
         func_name: &str,
         body_text: &str,
     ) -> Result<(), error::Error> {
-        let mut parser = create_parser(body_text, &self.parser_options());
+        let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
         let func_body = parser.parse_function_parens_and_body()?;
 
         let func_def = brush_parser::ast::FunctionDefinition {
@@ -300,6 +302,11 @@ impl Shell {
                 self.env.set_global(k, var)?;
             }
         }
+        let shell_version = options.shell_version.clone();
+        self.env.set_global(
+            "BRUSH_VERSION",
+            ShellVariable::new(shell_version.unwrap_or_default().into()),
+        )?;
 
         // TODO(#479): implement $_
 
@@ -409,6 +416,7 @@ impl Shell {
         self.env.set_global("BASH_VERSINFO", bash_versinfo_var)?;
 
         // BASH_VERSION
+        // This is the Bash interface version. See BRUSH_VERSION for its implementation version.
         self.env.set_global(
             "BASH_VERSION",
             ShellVariable::new(
@@ -496,7 +504,7 @@ impl Shell {
             "GROUPS",
             ShellVariable::new(ShellValue::Dynamic {
                 getter: |_shell| {
-                    let groups = sys::users::get_user_group_ids().unwrap_or_default();
+                    let groups = get_current_user_gids();
                     ShellValue::indexed_array_from_strings(
                         groups.into_iter().map(|gid| gid.to_string()),
                     )
@@ -979,6 +987,18 @@ impl Shell {
         };
         self.run_parsed_result(parse_result, &source_info, params)
             .await
+    }
+
+    /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
+    /// for the program.
+    pub fn parse<R: Read>(
+        &self,
+        reader: R,
+    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+        let mut parser = create_parser(reader, &self.parser_options());
+
+        tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
+        parser.parse_program()
     }
 
     /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
@@ -1720,17 +1740,17 @@ fn parse_string_impl(
     s: String,
     parser_options: brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut parser = create_parser(s.as_str(), &parser_options);
+    let mut parser = create_parser(s.as_bytes(), &parser_options);
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse_program()
 }
 
-fn create_parser<'a>(
-    s: &'a str,
+fn create_parser<R: Read>(
+    r: R,
     parser_options: &brush_parser::ParserOptions,
-) -> brush_parser::Parser<std::io::BufReader<&'a [u8]>> {
-    let reader = std::io::BufReader::new(s.as_bytes());
+) -> brush_parser::Parser<std::io::BufReader<R>> {
+    let reader = std::io::BufReader::new(r);
     let source_info = brush_parser::SourceInfo {
         source: String::from("main"),
     };
@@ -1754,4 +1774,23 @@ fn get_srandom_value(_shell: &Shell) -> ShellValue {
     let num: u32 = rng.random();
     let str = num.to_string();
     str.into()
+}
+
+/// Returns a list of the current user's group IDs, with the effective GID at the front.
+fn get_current_user_gids() -> Vec<u32> {
+    let mut groups = sys::users::get_user_group_ids().unwrap_or_default();
+
+    // If the effective GID is present but not in the first position in the list, then move
+    // it there.
+    if let Ok(gid) = sys::users::get_effective_gid() {
+        if let Some(index) = groups.iter().position(|&g| g == gid) {
+            if index > 0 {
+                // Move it to the front.
+                groups.remove(index);
+                groups.insert(0, gid);
+            }
+        }
+    }
+
+    groups
 }

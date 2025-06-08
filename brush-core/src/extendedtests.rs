@@ -285,16 +285,7 @@ async fn apply_binary_predicate(
                     .await?;
             }
 
-            let (l_path, r_path) = (
-                shell.get_absolute_path(Path::new(&left)),
-                shell.get_absolute_path(Path::new(&right)),
-            );
-
-            if !l_path.readable() || !r_path.readable() {
-                return Ok(false);
-            }
-
-            Ok(l_path.get_device_and_inode()? == r_path.get_device_and_inode()?)
+            files_refer_to_same_device_and_inode_numbers(shell, left, right)
         }
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
             let left = expansion::basic_expand_word(shell, params, left).await?;
@@ -306,16 +297,7 @@ async fn apply_binary_predicate(
                     .await?;
             }
 
-            let (l_path, r_path) = (
-                shell.get_absolute_path(Path::new(&left)),
-                shell.get_absolute_path(Path::new(&right)),
-            );
-
-            match (l_path.metadata(), r_path.metadata()) {
-                (Ok(m1), Ok(m2)) => Ok(m1.modified()? > m2.modified()?),
-                (Ok(_), Err(_)) => Ok(true),
-                _ => Ok(false),
-            }
+            left_file_is_newer_or_exists_when_right_does_not(shell, left, right)
         }
         ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => {
             let left = expansion::basic_expand_word(shell, params, left).await?;
@@ -327,16 +309,7 @@ async fn apply_binary_predicate(
                     .await?;
             }
 
-            let (l_path, r_path) = (
-                shell.get_absolute_path(Path::new(&left)),
-                shell.get_absolute_path(Path::new(&right)),
-            );
-
-            match (l_path.metadata(), r_path.metadata()) {
-                (Ok(m1), Ok(m2)) => Ok(m1.modified()? < m2.modified()?),
-                (Err(_), Ok(_)) => Ok(true),
-                _ => Ok(false),
-            }
+            left_file_is_older_or_does_not_exist_when_right_does(shell, left, right)
         }
         ast::BinaryPredicate::LeftSortsBeforeRight => {
             let left = expansion::basic_expand_word(shell, params, left).await?;
@@ -504,14 +477,14 @@ pub(crate) fn apply_binary_predicate_to_strs(
 ) -> Result<bool, error::Error> {
     match op {
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
-            error::unimp("extended test binary predicate FilesReferToSameDeviceAndInodeNumbers")
+            files_refer_to_same_device_and_inode_numbers(shell, left, right)
         }
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
-            error::unimp("extended test binary predicate LeftFileIsNewerOrExistsWhenRightDoesNot")
+            left_file_is_newer_or_exists_when_right_does_not(shell, left, right)
         }
-        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => error::unimp(
-            "extended test binary predicate LeftFileIsOlderOrDoesNotExistWhenRightDoes",
-        ),
+        ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => {
+            left_file_is_older_or_does_not_exist_when_right_does(shell, left, right)
+        }
         ast::BinaryPredicate::LeftSortsBeforeRight => {
             // TODO: According to docs, should be lexicographical order of the current locale.
             Ok(left < right)
@@ -580,4 +553,55 @@ fn apply_test_binary_arithmetic_predicate(
     } else {
         false
     }
+}
+
+fn left_file_is_older_or_does_not_exist_when_right_does(
+    shell: &mut Shell,
+    left: impl AsRef<str>,
+    right: impl AsRef<str>,
+) -> Result<bool, error::Error> {
+    let (l_path, r_path) = (
+        shell.get_absolute_path(Path::new(left.as_ref())),
+        shell.get_absolute_path(Path::new(right.as_ref())),
+    );
+
+    match (l_path.metadata(), r_path.metadata()) {
+        (Ok(m1), Ok(m2)) => Ok(m1.modified()? < m2.modified()?),
+        (Err(_), Ok(_)) => Ok(true),
+        _ => Ok(false),
+    }
+}
+
+fn left_file_is_newer_or_exists_when_right_does_not(
+    shell: &mut Shell,
+    left: impl AsRef<str>,
+    right: impl AsRef<str>,
+) -> Result<bool, error::Error> {
+    let (l_path, r_path) = (
+        shell.get_absolute_path(Path::new(left.as_ref())),
+        shell.get_absolute_path(Path::new(right.as_ref())),
+    );
+
+    match (l_path.metadata(), r_path.metadata()) {
+        (Ok(m1), Ok(m2)) => Ok(m1.modified()? > m2.modified()?),
+        (Ok(_), Err(_)) => Ok(true),
+        _ => Ok(false),
+    }
+}
+
+fn files_refer_to_same_device_and_inode_numbers(
+    shell: &mut Shell,
+    left: impl AsRef<str>,
+    right: impl AsRef<str>,
+) -> Result<bool, error::Error> {
+    let (l_path, r_path) = (
+        shell.get_absolute_path(Path::new(left.as_ref())),
+        shell.get_absolute_path(Path::new(right.as_ref())),
+    );
+
+    if !l_path.readable() || !r_path.readable() {
+        return Ok(false);
+    }
+
+    Ok(l_path.get_device_and_inode()? == r_path.get_device_and_inode()?)
 }

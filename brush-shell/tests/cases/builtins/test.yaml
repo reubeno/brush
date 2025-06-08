@@ -27,3 +27,27 @@ cases:
       test "ab" == "AB" && echo "ab == AB"
       test "ab" == "cd" && echo "ab == cd"
       test "ab" == "a?" && echo "ab == a?"
+
+  - name: "test: files refer to same device and inode"
+    stdin: |
+      [ /bin/sh -ef /bin/sh ] && echo "-ef correctly identified device and inode numbers"
+
+      [ ! /etc/os-release -ef /bin/sh ] && echo "-ef correctly identified device and inode numbers that do not match"
+
+  - name: "test: file is newer"
+    stdin: |
+      touch -d "2 hours ago" bar
+      touch foo
+
+      [ foo -nt bar ] && echo "-nt correctly identified newer file"
+      [ foo -nt foo ] && echo "-nt incorrectly identified file as newer than itself"
+      [ foo -nt file_no_exists ] && echo "-nt correctly identified when file2 does not exist"
+
+  - name: "test: file is older"
+    stdin: |
+      touch -d "2 hours ago" foo
+      touch bar
+
+      [ foo -ot bar ] && echo "-ot correctly identified older file"
+      [ foo -ot foo ] && echo "-ot incorrectly identified file as older than itself"
+      [ file_no_exists -ot foo ] && echo "-ot correctly identified when file1 does not exist"

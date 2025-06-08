@@ -290,7 +290,7 @@ pub(crate) fn get_default_builtins(
         m.insert("suspend".into(), builtin::<suspend::SuspendCommand>());
         m.insert("test".into(), builtin::<test::TestCommand>());
         m.insert("[".into(), builtin::<test::TestCommand>());
-        m.insert("typeset".into(), builtin::<declare::DeclareCommand>());
+        m.insert("typeset".into(), decl_builtin::<declare::DeclareCommand>());
 
         // Completion builtins
         m.insert("complete".into(), builtin::<complete::CompleteCommand>());

@@ -1,0 +1,10 @@
+name: "Builtins: typeset"
+
+cases:
+  - name: "Display vars"
+    stdin: |
+      typeset myvar=something
+      typeset -p myvar
+
+      typeset myarr=(a b c)
+      typeset -p myarr
