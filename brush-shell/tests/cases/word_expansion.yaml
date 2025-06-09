@@ -42,6 +42,11 @@ cases:
       echo "ANSI-C quoted len: ${#ansi_c_quoted}"
       echo -n $'\n' | hexdump -C
 
+  - name: "gettext style quotes"
+    stdin: |
+      quoted=$"Hello, world"
+      echo "Content: [${quoted}]"
+
   - name: "Command substitution"
     stdin: |
       var="value"
