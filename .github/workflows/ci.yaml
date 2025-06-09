@@ -117,7 +117,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@735e5933943122c5ac182670a935f54a949265c1 # v2.52.4
+        uses: taiki-e/install-action@92f69c195229fe62d58b4d697ab4bc75def98e76 # v2.52.7
         with:
           tool: cross
 
@@ -194,12 +194,12 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@735e5933943122c5ac182670a935f54a949265c1 # v2.52.4
+        uses: taiki-e/install-action@92f69c195229fe62d58b4d697ab4bc75def98e76 # v2.52.7
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@735e5933943122c5ac182670a935f54a949265c1 # v2.52.4
+        uses: taiki-e/install-action@92f69c195229fe62d58b4d697ab4bc75def98e76 # v2.52.7
         with:
           tool: cargo-llvm-cov
 
@@ -320,7 +320,7 @@ jobs:
         run: cargo check --all-features --all-targets
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@735e5933943122c5ac182670a935f54a949265c1 # v2.52.4
+        uses: taiki-e/install-action@92f69c195229fe62d58b4d697ab4bc75def98e76 # v2.52.7
         with:
           tool: cargo-deny
 
@@ -347,7 +347,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@735e5933943122c5ac182670a935f54a949265c1 # v2.52.4
+        uses: taiki-e/install-action@92f69c195229fe62d58b4d697ab4bc75def98e76 # v2.52.7
         with:
           tool: cargo-udeps
 
