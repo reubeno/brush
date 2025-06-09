@@ -1,5 +1,4 @@
-use crate::{builtins, commands};
-use std::io::Write;
+use crate::{builtins, commands, trace_categories};
 
 use clap::Parser;
 
@@ -18,17 +17,11 @@ impl builtins::Command for UnimplementedCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        writeln!(
-            context.stderr(),
-            "UNIMPLEMENTED: {}: built-in unimplemented: {} {}",
-            context
-                .shell
-                .shell_name
-                .as_ref()
-                .map_or("(unknown shell)", |sn| sn),
+        tracing::warn!(target: trace_categories::UNIMPLEMENTED,
+            "unimplemented built-in: {} {}",
             context.command_name,
             self.args.join(" ")
-        )?;
+        );
         Ok(builtins::ExitCode::Unimplemented)
     }
 }

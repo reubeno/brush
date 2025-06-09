@@ -1,3 +1,5 @@
+//! Implements variables for a shell environment.
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
@@ -27,7 +29,7 @@ pub struct ShellVariable {
 }
 
 /// Kind of transformation to apply to a variable's value when it is updated.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ShellVariableUpdateTransform {
     /// No transformation.
     None,
@@ -35,6 +37,8 @@ pub enum ShellVariableUpdateTransform {
     Lowercase,
     /// Convert the value to uppercase.
     Uppercase,
+    /// Convert the value to lowercase, with the first character capitalized.
+    Capitalize,
 }
 
 impl Default for ShellVariable {
@@ -138,7 +142,7 @@ impl ShellVariable {
 
     /// Return the update transform associated with the variable.
     pub fn get_update_transform(&self) -> ShellVariableUpdateTransform {
-        self.transform_on_update.clone()
+        self.transform_on_update
     }
 
     /// Set the update transform associated with the variable.
@@ -260,6 +264,7 @@ impl ShellVariable {
             }
 
             let treat_as_int = self.is_treated_as_integer();
+            let update_transform = self.get_update_transform();
 
             match &mut self.value {
                 ShellValue::String(base) => match value {
@@ -271,6 +276,7 @@ impl ShellVariable {
                             base.push_str(int_value.to_string().as_str());
                         } else {
                             base.push_str(suffix.as_str());
+                            Self::apply_value_transforms(base, treat_as_int, update_transform);
                         }
                         Ok(())
                     }
@@ -453,11 +459,36 @@ impl ShellVariable {
         }
     }
 
-    fn convert_value_str_for_assignment(&self, s: String) -> String {
-        if self.is_treated_as_integer() {
-            s.parse::<i64>().unwrap_or(0).to_string()
+    fn convert_value_str_for_assignment(&self, mut s: String) -> String {
+        Self::apply_value_transforms(
+            &mut s,
+            self.is_treated_as_integer(),
+            self.get_update_transform(),
+        );
+
+        s
+    }
+
+    fn apply_value_transforms(
+        s: &mut String,
+        treat_as_int: bool,
+        update_transform: ShellVariableUpdateTransform,
+    ) {
+        if treat_as_int {
+            *s = (*s).parse::<i64>().unwrap_or(0).to_string();
         } else {
-            s
+            match update_transform {
+                ShellVariableUpdateTransform::None => (),
+                ShellVariableUpdateTransform::Lowercase => *s = (*s).to_lowercase(),
+                ShellVariableUpdateTransform::Uppercase => *s = (*s).to_uppercase(),
+                ShellVariableUpdateTransform::Capitalize => {
+                    // This isn't really title-case; only the first character is capitalized.
+                    *s = s.to_lowercase();
+                    if let Some(c) = s.chars().next() {
+                        s.replace_range(0..1, &c.to_uppercase().to_string());
+                    }
+                }
+            }
         }
     }
 
@@ -516,6 +547,9 @@ impl ShellVariable {
                 | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
         ) {
             result.push('A');
+        }
+        if let ShellVariableUpdateTransform::Capitalize = self.get_update_transform() {
+            result.push('c');
         }
         if self.is_treated_as_integer() {
             result.push('i');
@@ -666,6 +700,11 @@ impl ShellValue {
         )
     }
 
+    /// Returns whether or not the value is set.
+    pub fn is_set(&self) -> bool {
+        !matches!(self, ShellValue::Unset(_))
+    }
+
     /// Returns a new indexed array value constructed from the given slice of owned strings.
     ///
     /// # Arguments
@@ -796,8 +835,9 @@ impl ShellValue {
                     let formatted_value =
                         escape::force_quote(value.as_str(), escape::QuoteMode::DoubleQuote);
 
-                    // N.B. We include an unconditional trailing space character (even after the last
-                    // entry in the associative array) to match standard output behavior.
+                    // N.B. We include an unconditional trailing space character (even after the
+                    // last entry in the associative array) to match standard
+                    // output behavior.
                     write!(result, "[{formatted_key}]={formatted_value} ")?;
                 }
 
@@ -848,8 +888,22 @@ impl ShellValue {
                 Ok(values.get(index).map(|s| Cow::Borrowed(s.as_str())))
             }
             ShellValue::IndexedArray(values) => {
-                let key = index.parse::<u64>().unwrap_or(0);
-                Ok(values.get(&key).map(|s| Cow::Borrowed(s.as_str())))
+                let mut index_value = index.parse::<i64>().unwrap_or(0);
+
+                #[allow(clippy::cast_possible_wrap)]
+                if index_value < 0 {
+                    index_value += values.len() as i64;
+                    if index_value < 0 {
+                        return Err(error::Error::ArrayIndexOutOfRange);
+                    }
+                }
+
+                // Now that we've confirmed that the index is non-negative, we can safely convert it
+                // to a u64 without any fuss.
+                #[allow(clippy::cast_sign_loss)]
+                let index_value = index_value as u64;
+
+                Ok(values.get(&index_value).map(|s| Cow::Borrowed(s.as_str())))
             }
             ShellValue::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);

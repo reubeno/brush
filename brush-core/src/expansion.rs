@@ -391,8 +391,7 @@ impl<'a> WordExpander<'a> {
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
-        let expanded = String::from(self.basic_expand(word).await?);
-        Ok(expanded)
+        Ok(String::from(self.basic_expand(word).await?))
     }
 
     #[allow(clippy::ref_option)]
@@ -938,34 +937,48 @@ impl<'a> WordExpander<'a> {
                     );
                 }
 
-                let expanded_offset = offset.eval(self.shell, self.params, false).await?;
-                let expanded_offset = if expanded_offset < 0 {
-                    0
-                } else {
-                    usize::try_from(expanded_offset)?
-                };
+                #[allow(clippy::cast_possible_wrap)]
+                let expanded_parameter_len = expanded_parameter.polymorphic_len() as i64;
 
-                let expanded_parameter_len = expanded_parameter.polymorphic_len();
+                let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
+                if expanded_offset < 0 {
+                    // For arrays--and only arrays--we handle negative indexes as offsets from the
+                    // end of the array, with -1 referencing the last element of
+                    // the array.
+                    if expanded_parameter.from_array {
+                        expanded_offset += expanded_parameter_len;
+
+                        // If the offset is still negative, then we need to yield an empty slice.
+                        // We force the offset to the end of the array.
+                        if expanded_offset < 0 {
+                            expanded_offset = expanded_parameter_len;
+                        }
+                    } else {
+                        // For other values, we just treat negative indexes as 0.
+                        expanded_offset = 0;
+                    }
+                }
+
+                // Make sure the offset is within the bounds of the array.
                 let expanded_offset = min(expanded_offset, expanded_parameter_len);
 
                 let end_offset = if let Some(length) = length {
                     let mut expanded_length = length.eval(self.shell, self.params, false).await?;
                     if expanded_length < 0 {
-                        let param_length: i64 = i64::try_from(expanded_parameter_len)?;
-                        expanded_length += param_length;
+                        expanded_length += expanded_parameter_len;
                     }
 
-                    let expanded_length = std::cmp::min(
-                        usize::try_from(expanded_length)?,
-                        expanded_parameter_len - expanded_offset,
-                    );
+                    let expanded_length =
+                        min(expanded_length, expanded_parameter_len - expanded_offset);
 
                     expanded_offset + expanded_length
                 } else {
                     expanded_parameter_len
                 };
 
-                Ok(expanded_parameter.polymorphic_subslice(expanded_offset, end_offset))
+                #[allow(clippy::cast_sign_loss)]
+                Ok(expanded_parameter
+                    .polymorphic_subslice(expanded_offset as usize, end_offset as usize))
             }
             brush_parser::word::ParameterExpr::Transform {
                 parameter,
@@ -1336,7 +1349,7 @@ impl<'a> WordExpander<'a> {
 
                 // Index into the array.
                 if let Some((_, var)) = self.shell.env.get(name) {
-                    if let Some(value) = var.value().get_at(index_to_use.as_str(), self.shell)? {
+                    if let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell) {
                         Ok(Expansion::from(value.to_string()))
                     } else {
                         Ok(Expansion::undefined())
@@ -1501,7 +1514,7 @@ impl<'a> WordExpander<'a> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
+                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
                     caps[0].to_uppercase()
                 });
                 Ok(result.into_owned())
@@ -1521,7 +1534,7 @@ impl<'a> WordExpander<'a> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures| {
+                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
                     caps[0].to_lowercase()
                 });
                 Ok(result.into_owned())

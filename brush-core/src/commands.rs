@@ -19,7 +19,7 @@ use crate::{
 pub(crate) enum CommandSpawnResult {
     /// The child process was spawned.
     SpawnedProcess(processes::ChildProcess),
-    /// The command immediatedly exited with the given numeric exit code.
+    /// The command immediately exited with the given numeric exit code.
     ImmediateExit(u8),
     /// The shell should exit after this command, yielding the given numeric exit code.
     ExitShell(u8),
@@ -114,17 +114,17 @@ pub struct ExecutionContext<'a> {
 
 impl ExecutionContext<'_> {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> openfiles::OpenFile {
+    pub fn stdin(&self) -> impl std::io::Read {
         self.params.stdin()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> openfiles::OpenFile {
+    pub fn stdout(&self) -> impl std::io::Write {
         self.params.stdout()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> openfiles::OpenFile {
+    pub fn stderr(&self) -> impl std::io::Write {
         self.params.stderr()
     }
 
@@ -169,7 +169,7 @@ impl From<&String> for CommandArg {
 }
 
 impl CommandArg {
-    pub fn quote_for_tracing(&self) -> Cow<'_, str> {
+    pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             CommandArg::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
             CommandArg::Assignment(a) => {
@@ -214,6 +214,17 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     if !empty_env {
         for (k, v) in shell.env.iter_exported() {
             cmd.env(k.as_str(), v.value().to_cow_str(shell).as_ref());
+        }
+    }
+
+    // Add in exported functions.
+    if !empty_env {
+        for (func_name, registration) in shell.funcs.iter() {
+            if registration.is_exported() {
+                let var_name = std::format!("BASH_FUNC_{func_name}%%");
+                let value = std::format!("() {}", registration.definition.body);
+                cmd.env(var_name, value);
+            }
         }
     }
 
@@ -468,7 +479,7 @@ pub(crate) fn execute_external_command(
                 sys::terminal::move_self_to_foreground()?;
             }
 
-            tracing::error!("error: {}", e);
+            tracing::error!("{e}");
             Ok(CommandSpawnResult::ImmediateExit(126))
         }
     }
@@ -502,8 +513,16 @@ async fn execute_builtin_command(
                 return Ok(CommandSpawnResult::ContinueLoop(count))
             }
         },
+        Err(e @ error::Error::Unimplemented(..)) => {
+            tracing::warn!(target: trace_categories::UNIMPLEMENTED, "{e}");
+            1
+        }
+        Err(e @ error::Error::UnimplementedAndTracked(..)) => {
+            tracing::warn!(target: trace_categories::UNIMPLEMENTED, "{e}");
+            1
+        }
         Err(e) => {
-            tracing::error!("error: {}", e);
+            tracing::error!("{e}");
             1
         }
     };

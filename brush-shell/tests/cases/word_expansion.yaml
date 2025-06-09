@@ -61,6 +61,11 @@ cases:
       x=$(echo foo | (wc -l; echo hi))
       echo "\$x: $x"
 
+  - name: "Command substitution with subshell"
+    stdin: |
+      x=$( (echo hi) )
+      echo "\$x: $x"
+
   - name: "Command substitution exit code"
     stdin: |
       x=$(false) && echo "1. Made it past false"
@@ -79,6 +84,16 @@ cases:
   - name: "Backtick command substitution with escaping"
     stdin: |
       echo `echo \`echo hi\``
+
+  - name: "Backtick command substitution with backslashes"
+    stdin: |
+      echo `echo \\`
+
+  - name: "Backtick command substitution in double quotes"
+    stdin: |
+      echo "`echo First line`"
+      echo " `echo Second line` "
+      echo "Third`echo line`here"
 
   - name: "String length"
     stdin: |
@@ -738,6 +753,16 @@ cases:
       myarray=(abcde fghij klmno pqrst uvwxy z)
       echo "\${myarray[@]:2:2}: ${myarray[@]:2:2}"
       echo "\${myarray[@]:2}: ${myarray[@]:2}"
+
+  - name: "Substring operator on arrays with negative index"
+    stdin: |
+      set abcde fghij klmno pqrst uvwxy z
+      echo "\${@: -2:2}: ${@: -2:2}"
+      echo "\${@: -2}: ${@: -2}"
+
+      myarray=(abcde fghij klmno pqrst uvwxy z)
+      echo "\${myarray[@]: -2:2}: ${myarray[@]: -2:2}"
+      echo "\${myarray[@]: -2}: ${myarray[@]: -2}"
 
   - name: "Substring operator on single-element array"
     stdin: |

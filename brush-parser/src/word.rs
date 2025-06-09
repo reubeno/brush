@@ -15,6 +15,7 @@ use crate::ParserOptions;
 
 /// Encapsulates a `WordPiece` together with its position in the string it came from.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct WordPieceWithSource {
     /// The word piece.
     pub piece: WordPiece,
@@ -26,6 +27,7 @@ pub struct WordPieceWithSource {
 
 /// Represents a piece of a word.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum WordPiece {
     /// A simple unquoted, unescaped string.
     Text(String),
@@ -53,6 +55,7 @@ pub enum WordPiece {
 
 /// Type of a parameter test.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ParameterTestType {
     /// Check for unset or null.
     UnsetOrNull,
@@ -62,6 +65,7 @@ pub enum ParameterTestType {
 
 /// A parameter, used in a parameter expansion.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum Parameter {
     /// A 0-indexed positional parameter.
     Positional(u32),
@@ -87,6 +91,7 @@ pub enum Parameter {
 
 /// A special parameter, used in a parameter expansion.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum SpecialParameter {
     /// All positional parameters.
     AllPositionalParameters {
@@ -109,6 +114,7 @@ pub enum SpecialParameter {
 
 /// A parameter expression, used in a parameter expansion.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ParameterExpr {
     /// A parameter, with optional indirection.
     Parameter {
@@ -328,6 +334,7 @@ pub enum ParameterExpr {
 
 /// Kind of substring match.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum SubstringMatchKind {
     /// Match the prefix of the string.
     Prefix,
@@ -341,6 +348,7 @@ pub enum SubstringMatchKind {
 
 /// Kind of operation to apply to a parameter.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ParameterTransformOp {
     /// Capitalizate initials.
     CapitalizeInitial,
@@ -420,6 +428,8 @@ pub enum BraceExpressionMember {
 
 impl BraceExpressionMember {
     /// Generates expansions for this member.
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
         match self {
             BraceExpressionMember::NumberSequence {
@@ -466,7 +476,7 @@ fn cacheable_parse(
     tracing::debug!(target: "expansion", "Parsing word '{}'", word);
 
     let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
-        .map_err(|err| error::WordParseError::Word(word.to_owned(), err))?;
+        .map_err(|err| error::WordParseError::Word(word.clone(), err))?;
 
     tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word, pieces);
 
@@ -507,7 +517,7 @@ peg::parser! {
         rule traced<T>(e: rule<T>) -> T =
             &(input:$([_]*) {
                 #[cfg(feature = "debug-tracing")]
-                println!("[PEG_INPUT_START]\n{}\n[PEG_TRACE_START]", input);
+                println!("[PEG_INPUT_START]\n{input}\n[PEG_TRACE_START]");
             })
             e:e()? {?
                 #[cfg(feature = "debug-tracing")]
@@ -660,7 +670,7 @@ peg::parser! {
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
-            !stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"'] {}
+            !stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"' | '`'] {}
 
         rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
 
@@ -677,7 +687,7 @@ peg::parser! {
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((!double_quoted_escape_sequence() [^'$' | '\"'])+)
+            $((!double_quoted_escape_sequence() [^'$' | '\"' | '`'])+)
 
         rule normal_escape_sequence() -> WordPiece =
             s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
@@ -863,9 +873,10 @@ peg::parser! {
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }
 
-        rule backquoted_char() -> char =
-            "\\`" { '`' } /
-            [^'`']
+        rule backquoted_char() -> &'input str =
+            "\\`" { "`" } /
+            "\\\\" { "\\\\" } /
+            s:$([^'`']) { s }
 
         rule arithmetic_expansion() -> WordPiece =
             "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
@@ -900,7 +911,21 @@ peg::parser! {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use assert_matches::assert_matches;
+    use insta::assert_ron_snapshot;
+
+    #[derive(serde::Serialize)]
+    struct ParseTestResults<'a> {
+        input: &'a str,
+        result: Vec<WordPieceWithSource>,
+    }
+
+    fn test_parse(word: &str) -> Result<ParseTestResults<'_>> {
+        let parsed = super::parse(word, &ParserOptions::default())?;
+        Ok(ParseTestResults {
+            input: word,
+            result: parsed,
+        })
+    }
 
     #[test]
     fn parse_command_substitution() -> Result<()> {
@@ -909,11 +934,7 @@ mod tests {
         super::expansion_parser::command("echo hi", &ParserOptions::default())?;
         super::expansion_parser::command_substitution("$(echo hi)", &ParserOptions::default())?;
 
-        let parsed = super::parse("$(echo hi)", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo hi"
-        );
+        assert_ron_snapshot!(test_parse("$(echo hi)")?);
 
         Ok(())
     }
@@ -928,62 +949,43 @@ mod tests {
             &ParserOptions::default(),
         )?;
 
-        let parsed = super::parse(r#"$(echo "hi")"#, &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == r#"echo "hi""#
-        );
-
+        assert_ron_snapshot!(test_parse(r#"$(echo "hi")"#)?);
         Ok(())
     }
 
     #[test]
     fn parse_command_substitution_with_embedded_extglob() -> Result<()> {
-        let parsed = super::parse("$(echo !(x))", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::CommandSubstitution(s), .. }] if s.as_str() == "echo !(x)"
-        );
+        assert_ron_snapshot!(test_parse("$(echo !(x))")?);
+        Ok(())
+    }
 
+    #[test]
+    fn parse_backquoted_command() -> Result<()> {
+        assert_ron_snapshot!(test_parse("`echo hi`")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_in_double_quotes() -> Result<()> {
+        assert_ron_snapshot!(test_parse(r#""`echo hi`""#)?);
         Ok(())
     }
 
     #[test]
     fn parse_extglob_with_embedded_parameter() -> Result<()> {
-        let parsed = super::parse("+([$var])", &ParserOptions::default())?;
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::Text(s1), .. },
-             WordPieceWithSource { piece: WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter: Parameter::Named(s2), .. }), ..},
-             WordPieceWithSource { piece: WordPiece::Text(s3), .. }] if s1 == "+([" && s2 == "var" && s3 == "])"
-        );
-
+        assert_ron_snapshot!(test_parse("+([$var])")?);
         Ok(())
     }
 
     #[test]
     fn parse_arithmetic_expansion() -> Result<()> {
-        let parsed = super::parse("$((0))", &ParserOptions::default())?;
-        const EXPECTED_RESULT: &str = "0";
-
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT
-        );
-
+        assert_ron_snapshot!(test_parse("$((0))")?);
         Ok(())
     }
 
     #[test]
     fn parse_arithmetic_expansion_with_parens() -> Result<()> {
-        let parsed = super::parse("$((((1+2)*3)))", &ParserOptions::default())?;
-        const EXPECTED_RESULT: &str = "((1+2)*3)";
-
-        assert_matches!(
-            &parsed[..],
-            [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value }), .. }] if value == EXPECTED_RESULT
-        );
-
+        assert_ron_snapshot!(test_parse("$((((1+2)*3)))")?);
         Ok(())
     }
 

@@ -3,7 +3,7 @@ pub(crate) trait ShellFactory {
 
     async fn create(
         &self,
-        options: &brush_interactive::Options,
+        options: brush_interactive::Options,
     ) -> Result<Self::ShellType, brush_interactive::ShellError>;
 }
 
@@ -61,7 +61,7 @@ impl ShellFactory for ReedlineShellFactory {
     #[allow(unused)]
     async fn create(
         &self,
-        options: &brush_interactive::Options,
+        options: brush_interactive::Options,
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
         #[cfg(any(windows, unix))]
         {
@@ -85,11 +85,11 @@ impl ShellFactory for BasicShellFactory {
     #[allow(unused)]
     async fn create(
         &self,
-        options: &brush_interactive::Options,
+        options: brush_interactive::Options,
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
         #[cfg(feature = "basic")]
         {
-            brush_interactive::BasicShell::new(options).await
+            brush_interactive::BasicShell::new(&options).await
         }
         #[cfg(not(feature = "basic"))]
         {
@@ -109,11 +109,11 @@ impl ShellFactory for MinimalShellFactory {
     #[allow(unused)]
     async fn create(
         &self,
-        options: &brush_interactive::Options,
+        options: brush_interactive::Options,
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
         #[cfg(feature = "minimal")]
         {
-            brush_interactive::MinimalShell::new(options).await
+            brush_interactive::MinimalShell::new(&options).await
         }
         #[cfg(not(feature = "minimal"))]
         {

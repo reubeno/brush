@@ -360,7 +360,7 @@ impl Spec {
                 // It's not clear what exactly this means, though. From basic testing, it doesn't
                 // seem to include basic file and directory name completion.
                 //
-                tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -o bashdefault");
+                tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -o bashdefault");
             }
             if options.default || options.dir_names {
                 // N.B. We approximate "default" readline completion behavior by getting file and
@@ -408,7 +408,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Binding => {
-                    tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -A binding");
+                    tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -A binding");
                 }
                 CompleteAction::Builtin => {
                     for name in shell.builtins.keys() {
@@ -507,7 +507,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Service => {
-                    tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: complete -A service");
+                    tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -A service");
                 }
                 CompleteAction::SetOpt => {
                     for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
@@ -771,25 +771,38 @@ const DEFAULT_COMMAND: &str = "_DefaultCmD_";
 const INITIAL_WORD: &str = "_InitialWorD_";
 
 impl Config {
-    /// Removes a completion spec by name.
+    /// Removes all registered completion specs.
+    pub fn clear(&mut self) {
+        self.commands.clear();
+        self.empty_line = None;
+        self.default = None;
+        self.initial_word = None;
+    }
+
+    /// Ensures the named completion spec is no longer registered; returns whether a
+    /// removal operation was required.
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the completion spec to remove.
-    pub fn remove(&mut self, name: &str) {
+    pub fn remove(&mut self, name: &str) -> bool {
         match name {
             EMPTY_COMMAND => {
+                let result = self.empty_line.is_some();
                 self.empty_line = None;
+                result
             }
             DEFAULT_COMMAND => {
+                let result = self.default.is_some();
                 self.default = None;
+                result
             }
             INITIAL_WORD => {
+                let result = self.initial_word.is_some();
                 self.initial_word = None;
+                result
             }
-            _ => {
-                self.commands.remove(name);
-            }
+            _ => self.commands.remove(name).is_some(),
         }
     }
 
@@ -1077,7 +1090,7 @@ async fn get_file_completions(
         .collect()
 }
 
-fn get_command_completions(shell: &Shell, context: &Context) -> IndexSet<String> {
+fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<String> {
     let mut candidates = IndexSet::new();
     let glob_pattern = std::format!("{}*", context.token_to_complete);
 

@@ -4,8 +4,8 @@ use std::io::Write;
 use crate::events;
 
 pub(crate) fn register(shell: &mut brush_core::Shell) {
-    shell.builtins.insert(
-        "brushctl".into(),
+    shell.register_builtin(
+        "brushctl",
         brush_core::builtins::builtin::<BrushCtlCommand>(),
     );
 }
@@ -74,8 +74,8 @@ impl EventsCommand {
                                                                         // errors
                     }
                 }
-                EventsCommand::Enable { event } => event_config.enable(event)?,
-                EventsCommand::Disable { event } => event_config.disable(event)?,
+                EventsCommand::Enable { event } => event_config.enable(*event)?,
+                EventsCommand::Disable { event } => event_config.disable(*event)?,
             }
 
             Ok(brush_core::builtins::ExitCode::Success)

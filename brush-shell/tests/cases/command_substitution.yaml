@@ -16,7 +16,7 @@ cases:
       )
       echo $var
 
-  - name: "Ignore parantheses in comment in command substitution"
+  - name: "Ignore parentheses in comment in command substitution"
     stdin: |
       var=$(
         # :(
@@ -52,7 +52,7 @@ cases:
       `
       echo $var
 
-  - name: "Ignore parantheses in comment in command substitution (backticks)"
+  - name: "Ignore parentheses in comment in command substitution (backticks)"
     stdin: |
       var=`
         # :(

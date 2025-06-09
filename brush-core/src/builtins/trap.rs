@@ -36,7 +36,15 @@ impl builtins::Command for TrapCommand {
             }
             Ok(builtins::ExitCode::Success)
         } else if self.args.len() == 1 {
+            // When only a single argument is given, it is assumed to be a signal name
+            // and an indication to remove the handlers for that signal.
             let signal = self.args[0].as_str();
+            Self::remove_all_handlers(&mut context, signal.parse()?);
+            Ok(builtins::ExitCode::Success)
+        } else if self.args[0] == "-" {
+            // Alternatively, "-" as the first argument indicates that the next
+            // argument is a signal name and we need to remove the handlers for that signal.
+            let signal = self.args[1].as_str();
             Self::remove_all_handlers(&mut context, signal.parse()?);
             Ok(builtins::ExitCode::Success)
         } else {

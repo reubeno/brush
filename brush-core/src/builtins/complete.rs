@@ -20,7 +20,7 @@ struct CommonCompleteCommandArgs {
     actions: Vec<CompleteAction>,
 
     /// File glob pattern to be expanded to generate completions.
-    #[arg(short = 'G', allow_hyphen_values = true)]
+    #[arg(short = 'G', allow_hyphen_values = true, value_name = "GLOB")]
     glob_pattern: Option<String>,
 
     /// List of words that will be considered as completions.
@@ -28,19 +28,22 @@ struct CommonCompleteCommandArgs {
     word_list: Option<String>,
 
     /// Name of a shell function to invoke to generate completions.
-    #[arg(short = 'F', allow_hyphen_values = true)]
+    #[arg(short = 'F', allow_hyphen_values = true, value_name = "FUNC_NAME")]
     function_name: Option<String>,
 
     /// Command to execute to generate completions.
     #[arg(short = 'C', allow_hyphen_values = true)]
     command: Option<String>,
 
-    #[arg(short = 'X', allow_hyphen_values = true)]
+    /// Pattern used as filter for completions.
+    #[arg(short = 'X', allow_hyphen_values = true, value_name = "PATTERN")]
     filter_pattern: Option<String>,
 
+    /// Prefix pattern used as filter for completions.
     #[arg(short = 'P', allow_hyphen_values = true)]
     prefix: Option<String>,
 
+    /// Suffix pattern used as filter for completions.
     #[arg(short = 'S', allow_hyphen_values = true)]
     suffix: Option<String>,
 
@@ -284,7 +287,7 @@ impl CompleteCommand {
                 let mut new_spec = None;
                 std::mem::swap(&mut new_spec, target_spec);
             } else {
-                return error::unimp("remove all specs");
+                context.shell.completion_config.clear();
             }
         } else {
             if let Some(target_spec) = target_spec {
@@ -450,8 +453,19 @@ impl CompleteCommand {
         if self.print {
             return Self::try_display_spec_for_command(context, name);
         } else if self.remove {
-            context.shell.completion_config.remove(name);
-            return Ok(true);
+            let mut result = context.shell.completion_config.remove(name);
+
+            if !result {
+                if context.shell.options.interactive {
+                    writeln!(context.stderr(), "complete: {name}: not found")?;
+                } else {
+                    // For some reason, this is not supposed to be treated as a failure
+                    // in non-interactive execution.
+                    result = true;
+                }
+            }
+
+            return Ok(result);
         }
 
         let config = self
@@ -543,7 +557,7 @@ pub(crate) struct CompOptCommand {
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o')]
+    #[arg(short = 'o', value_name = "OPT")]
     enabled_options: Vec<CompleteOption>,
     #[arg(long = concat!("+o"), hide = true)]
     disabled_options: Vec<CompleteOption>,
@@ -584,10 +598,7 @@ impl builtins::Command for CompOptCommand {
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                std::mem::swap(
-                    &mut context.shell.completion_config.default,
-                    &mut Some(spec),
-                );
+                context.shell.completion_config.default = Some(spec);
             }
         } else if self.update_empty {
             if let Some(spec) = &mut context.shell.completion_config.empty_line {
@@ -595,10 +606,7 @@ impl builtins::Command for CompOptCommand {
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                std::mem::swap(
-                    &mut context.shell.completion_config.empty_line,
-                    &mut Some(spec),
-                );
+                context.shell.completion_config.empty_line = Some(spec);
             }
         } else if self.update_initial_word {
             if let Some(spec) = &mut context.shell.completion_config.initial_word {
@@ -606,10 +614,7 @@ impl builtins::Command for CompOptCommand {
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                std::mem::swap(
-                    &mut context.shell.completion_config.initial_word,
-                    &mut Some(spec),
-                );
+                context.shell.completion_config.initial_word = Some(spec);
             }
         } else {
             // If we got here, then we need to apply to any completion actively in-flight.

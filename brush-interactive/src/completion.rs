@@ -4,6 +4,7 @@ use indexmap::IndexSet;
 
 use crate::trace_categories;
 
+#[allow(dead_code)]
 pub(crate) async fn complete_async(
     shell: &mut brush_core::Shell,
     line: &str,
@@ -50,6 +51,7 @@ pub(crate) async fn complete_async(
     completions
 }
 
+#[allow(dead_code)]
 fn postprocess_completion_candidate(
     mut candidate: String,
     options: &brush_core::completion::ProcessingOptions,
@@ -72,7 +74,7 @@ fn postprocess_completion_candidate(
         }
     }
     if options.no_autoquote_filenames {
-        tracing::debug!(target: trace_categories::COMPLETION, "UNIMPLEMENTED: don't autoquote filenames");
+        tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: don't autoquote filenames");
     }
     if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
         if !options.treat_as_filenames || !candidate.ends_with(std::path::MAIN_SEPARATOR) {

@@ -1,4 +1,5 @@
 mod completer;
+mod edit_mode;
 mod highlighter;
 mod prompt;
 mod reedline_shell;

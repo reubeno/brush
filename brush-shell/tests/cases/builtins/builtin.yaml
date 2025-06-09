@@ -12,3 +12,17 @@ cases:
 
   - name: "valid builtin with hyphen args"
     stdin: builtin echo -e "Hello\nWorld"
+
+  - name: "builtin passing through results"
+    stdin: |
+      builtin false; echo "builtin false => $?"
+      builtin true; echo "builtin true => $?"
+
+  - name: "builtin with non-decl builtin"
+    stdin: |
+      builtin echo variable=value
+
+  - name: "builtin with decl builtin"
+    stdin: |
+      builtin declare variable=value
+      declare -p variable

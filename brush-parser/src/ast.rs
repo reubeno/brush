@@ -10,16 +10,17 @@ const DISPLAY_INDENT: &str = "    ";
 /// Represents a complete shell program.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct Program {
     /// A sequence of complete shell commands.
+    #[cfg_attr(test, serde(rename = "cmds"))]
     pub complete_commands: Vec<CompleteCommand>,
 }
 
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for complete_command in &self.complete_commands {
-            write!(f, "{}", complete_command)?;
+            write!(f, "{complete_command}")?;
         }
         Ok(())
     }
@@ -34,7 +35,7 @@ pub type CompleteCommandItem = CompoundListItem;
 /// Indicates whether the preceding command is executed synchronously or asynchronously.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum SeparatorOperator {
     /// The preceding command is executed asynchronously.
     Async,
@@ -54,11 +55,13 @@ impl Display for SeparatorOperator {
 /// Represents a sequence of command pipelines connected by boolean operators.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "AndOr"))]
 pub struct AndOrList {
     /// The first command pipeline.
     pub first: Pipeline,
     /// Any additional command pipelines, in sequence order.
+    #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
     pub additional: Vec<AndOr>,
 }
 
@@ -66,10 +69,88 @@ impl Display for AndOrList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.first)?;
         for item in &self.additional {
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
 
         Ok(())
+    }
+}
+
+/// Represents a boolean operator used to connect command pipelines in an [`AndOrList`]
+#[derive(PartialEq, Eq)]
+pub enum PipelineOperator {
+    /// The command pipelines are connected by a boolean AND operator.
+    And,
+    /// The command pipelines are connected by a boolean OR operator.
+    Or,
+}
+
+impl PartialEq<AndOr> for PipelineOperator {
+    fn eq(&self, other: &AndOr) -> bool {
+        matches!(
+            (self, other),
+            (PipelineOperator::And, AndOr::And(_)) | (PipelineOperator::Or, AndOr::Or(_))
+        )
+    }
+}
+
+// We cannot losslessly convert into `AndOr`, hence we can only do `Into`.
+#[allow(clippy::from_over_into)]
+impl Into<PipelineOperator> for AndOr {
+    fn into(self) -> PipelineOperator {
+        match self {
+            AndOr::And(_) => PipelineOperator::And,
+            AndOr::Or(_) => PipelineOperator::Or,
+        }
+    }
+}
+
+/// An iterator over the pipelines in an [`AndOrList`].
+pub struct AndOrListIter<'a> {
+    first: Option<&'a Pipeline>,
+    additional_iter: std::slice::Iter<'a, AndOr>,
+}
+
+impl<'a> Iterator for AndOrListIter<'a> {
+    type Item = (PipelineOperator, &'a Pipeline);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(first) = self.first.take() {
+            Some((PipelineOperator::And, first))
+        } else {
+            self.additional_iter.next().map(|and_or| match and_or {
+                AndOr::And(pipeline) => (PipelineOperator::And, pipeline),
+                AndOr::Or(pipeline) => (PipelineOperator::Or, pipeline),
+            })
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a AndOrList {
+    type Item = (PipelineOperator, &'a Pipeline);
+    type IntoIter = AndOrListIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        AndOrListIter {
+            first: Some(&self.first),
+            additional_iter: self.additional.iter(),
+        }
+    }
+}
+
+impl<'a> From<(PipelineOperator, &'a Pipeline)> for AndOr {
+    fn from(value: (PipelineOperator, &'a Pipeline)) -> Self {
+        match value.0 {
+            PipelineOperator::Or => Self::Or(value.1.to_owned()),
+            PipelineOperator::And => Self::And(value.1.to_owned()),
+        }
+    }
+}
+
+impl AndOrList {
+    /// Returns an iterator over the pipelines in this `AndOrList`.
+    pub fn iter(&self) -> AndOrListIter<'_> {
+        self.into_iter()
     }
 }
 
@@ -77,7 +158,7 @@ impl Display for AndOrList {
 /// succeeding pipeline.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum AndOr {
     /// Boolean AND operator; the embedded pipeline is only to be executed if the
     /// preceding command has succeeded.
@@ -90,8 +171,8 @@ pub enum AndOr {
 impl Display for AndOr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AndOr::And(pipeline) => write!(f, " && {}", pipeline),
-            AndOr::Or(pipeline) => write!(f, " || {}", pipeline),
+            AndOr::And(pipeline) => write!(f, " && {pipeline}"),
+            AndOr::Or(pipeline) => write!(f, " || {pipeline}"),
         }
     }
 }
@@ -99,7 +180,7 @@ impl Display for AndOr {
 /// The type of timing requested for a pipeline.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum PipelineTimed {
     /// The pipeline should be timed with bash-like output.
     Timed,
@@ -111,13 +192,15 @@ pub enum PipelineTimed {
 /// to the command that follows it.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct Pipeline {
     /// Indicates whether the pipeline's execution should be timed with reported
     /// timings in output.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub timed: Option<PipelineTimed>,
     /// Indicates whether the result of the overall pipeline should be the logical
     /// negation of the result of the pipeline.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub bang: bool,
     /// The sequence of commands in the pipeline.
     pub seq: Vec<Command>,
@@ -132,7 +215,7 @@ impl Display for Pipeline {
             if i > 0 {
                 write!(f, " |")?;
             }
-            write!(f, "{}", command)?;
+            write!(f, "{command}")?;
         }
 
         Ok(())
@@ -142,7 +225,7 @@ impl Display for Pipeline {
 /// Represents a shell command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum Command {
     /// A simple command, directly invoking an external command, a built-in command,
     /// a shell function, or similar.
@@ -158,17 +241,17 @@ pub enum Command {
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Command::Simple(simple_command) => write!(f, "{}", simple_command),
+            Command::Simple(simple_command) => write!(f, "{simple_command}"),
             Command::Compound(compound_command, redirect_list) => {
-                write!(f, "{}", compound_command)?;
+                write!(f, "{compound_command}")?;
                 if let Some(redirect_list) = redirect_list {
-                    write!(f, "{}", redirect_list)?;
+                    write!(f, "{redirect_list}")?;
                 }
                 Ok(())
             }
-            Command::Function(function_definition) => write!(f, "{}", function_definition),
+            Command::Function(function_definition) => write!(f, "{function_definition}"),
             Command::ExtendedTest(extended_test_expr) => {
-                write!(f, "[[ {} ]]", extended_test_expr)
+                write!(f, "[[ {extended_test_expr} ]]")
             }
         }
     }
@@ -177,7 +260,7 @@ impl Display for Command {
 /// Represents a compound command, potentially made up of multiple nested commands.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum CompoundCommand {
     /// An arithmetic command, evaluating an arithmetic expression.
     Arithmetic(ArithmeticCommand),
@@ -203,24 +286,24 @@ pub enum CompoundCommand {
 impl Display for CompoundCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompoundCommand::Arithmetic(arithmetic_command) => write!(f, "{}", arithmetic_command),
+            CompoundCommand::Arithmetic(arithmetic_command) => write!(f, "{arithmetic_command}"),
             CompoundCommand::ArithmeticForClause(arithmetic_for_clause_command) => {
-                write!(f, "{}", arithmetic_for_clause_command)
+                write!(f, "{arithmetic_for_clause_command}")
             }
             CompoundCommand::BraceGroup(brace_group_command) => {
-                write!(f, "{}", brace_group_command)
+                write!(f, "{brace_group_command}")
             }
-            CompoundCommand::Subshell(subshell_command) => write!(f, "{}", subshell_command),
-            CompoundCommand::ForClause(for_clause_command) => write!(f, "{}", for_clause_command),
+            CompoundCommand::Subshell(subshell_command) => write!(f, "{subshell_command}"),
+            CompoundCommand::ForClause(for_clause_command) => write!(f, "{for_clause_command}"),
             CompoundCommand::CaseClause(case_clause_command) => {
-                write!(f, "{}", case_clause_command)
+                write!(f, "{case_clause_command}")
             }
-            CompoundCommand::IfClause(if_clause_command) => write!(f, "{}", if_clause_command),
+            CompoundCommand::IfClause(if_clause_command) => write!(f, "{if_clause_command}"),
             CompoundCommand::WhileClause(while_or_until_clause_command) => {
-                write!(f, "while {}", while_or_until_clause_command)
+                write!(f, "while {while_or_until_clause_command}")
             }
             CompoundCommand::UntilClause(while_or_until_clause_command) => {
-                write!(f, "until {}", while_or_until_clause_command)
+                write!(f, "until {while_or_until_clause_command}")
             }
         }
     }
@@ -229,7 +312,7 @@ impl Display for CompoundCommand {
 /// An arithmetic command, evaluating an arithmetic expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct ArithmeticCommand {
     /// The raw, unparsed and unexpanded arithmetic expression.
     pub expr: UnexpandedArithmeticExpr,
@@ -244,7 +327,7 @@ impl Display for ArithmeticCommand {
 /// A subshell, which executes commands in a subshell.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct SubshellCommand(pub CompoundList);
 
 impl Display for SubshellCommand {
@@ -258,7 +341,7 @@ impl Display for SubshellCommand {
 /// A for clause, which loops over a set of values.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct ForClauseCommand {
     /// The name of the iterator variable.
     pub variable_name: String,
@@ -278,7 +361,7 @@ impl Display for ForClauseCommand {
                     write!(f, " ")?;
                 }
 
-                write!(f, "{}", value)?;
+                write!(f, "{value}")?;
             }
         }
 
@@ -291,7 +374,7 @@ impl Display for ForClauseCommand {
 /// An arithmetic for clause, which loops until an arithmetic condition is reached.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct ArithmeticForClauseCommand {
     /// Optionally, the initializer expression evaluated before the first iteration of the loop.
     pub initializer: Option<UnexpandedArithmeticExpr>,
@@ -308,19 +391,19 @@ impl Display for ArithmeticForClauseCommand {
         write!(f, "for ((")?;
 
         if let Some(initializer) = &self.initializer {
-            write!(f, "{}", initializer)?;
+            write!(f, "{initializer}")?;
         }
 
         write!(f, "; ")?;
 
         if let Some(condition) = &self.condition {
-            write!(f, "{}", condition)?;
+            write!(f, "{condition}")?;
         }
 
         write!(f, "; ")?;
 
         if let Some(updater) = &self.updater {
-            write!(f, "{}", updater)?;
+            write!(f, "{updater}")?;
         }
 
         writeln!(f, "))")?;
@@ -333,7 +416,7 @@ impl Display for ArithmeticForClauseCommand {
 /// pattern-based filters.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct CaseClauseCommand {
     /// The value being matched on.
     pub value: Word,
@@ -345,7 +428,7 @@ impl Display for CaseClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "case {} in", self.value)?;
         for case in &self.cases {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", case)?;
+            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{case}")?;
         }
         writeln!(f)?;
         write!(f, "esac")
@@ -355,7 +438,8 @@ impl Display for CaseClauseCommand {
 /// A sequence of commands.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "List"))]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
 impl Display for CompoundList {
@@ -383,7 +467,8 @@ impl Display for CompoundList {
 /// An element of a compound command list.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Item"))]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
 impl Display for CompoundListItem {
@@ -397,13 +482,14 @@ impl Display for CompoundListItem {
 /// An if clause, which conditionally executes a command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct IfClauseCommand {
     /// The command whose execution result is inspected.
     pub condition: CompoundList,
     /// The command to execute if the condition is true.
     pub then: CompoundList,
     /// Optionally, `else` clauses that will be evaluated if the condition is false.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub elses: Option<Vec<ElseClause>>,
 }
 
@@ -417,7 +503,7 @@ impl Display for IfClauseCommand {
         )?;
         if let Some(elses) = &self.elses {
             for else_clause in elses {
-                write!(f, "{}", else_clause)?;
+                write!(f, "{else_clause}")?;
             }
         }
 
@@ -431,9 +517,10 @@ impl Display for IfClauseCommand {
 /// Represents the `else` clause of a conditional command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct ElseClause {
     /// If present, the condition that must be met for this `else` clause to be executed.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub condition: Option<CompoundList>,
     /// The commands to execute if this `else` clause is selected.
     pub body: CompoundList,
@@ -443,7 +530,7 @@ impl Display for ElseClause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f)?;
         if let Some(condition) = &self.condition {
-            writeln!(f, "elif {}; then", condition)?;
+            writeln!(f, "elif {condition}; then")?;
         } else {
             writeln!(f, "else")?;
         }
@@ -459,7 +546,7 @@ impl Display for ElseClause {
 /// An individual matching case item in a case clause.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct CaseItem {
     /// The patterns that select this case branch.
     pub patterns: Vec<Word>,
@@ -476,12 +563,12 @@ impl Display for CaseItem {
             if i > 0 {
                 write!(f, "|")?;
             }
-            write!(f, "{}", pattern)?;
+            write!(f, "{pattern}")?;
         }
         writeln!(f, ")")?;
 
         if let Some(cmd) = &self.cmd {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", cmd)?;
+            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{cmd}")?;
         }
         writeln!(f)?;
         write!(f, "{}", self.post_action)
@@ -491,7 +578,7 @@ impl Display for CaseItem {
 /// Describes the action to take after executing the body command of a case clause.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum CaseItemPostAction {
     /// The containing case should be exited.
     ExitCase,
@@ -516,7 +603,7 @@ impl Display for CaseItemPostAction {
 /// A while or until clause, whose looping is controlled by a condition.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand);
 
 impl Display for WhileOrUntilClauseCommand {
@@ -528,7 +615,7 @@ impl Display for WhileOrUntilClauseCommand {
 /// Encapsulates the definition of a shell function.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct FunctionDefinition {
     /// The name of the function.
     pub fname: String,
@@ -549,14 +636,14 @@ impl Display for FunctionDefinition {
 /// Encapsulates the body of a function definition.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
 
 impl Display for FunctionBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)?;
         if let Some(redirect_list) = &self.1 {
-            write!(f, "{}", redirect_list)?;
+            write!(f, "{redirect_list}")?;
         }
 
         Ok(())
@@ -566,7 +653,7 @@ impl Display for FunctionBody {
 /// A brace group, which groups commands together.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct BraceGroupCommand(pub CompoundList);
 
 impl Display for BraceGroupCommand {
@@ -583,7 +670,7 @@ impl Display for BraceGroupCommand {
 /// A do group, which groups commands together.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct DoGroupCommand(pub CompoundList);
 
 impl Display for DoGroupCommand {
@@ -598,13 +685,18 @@ impl Display for DoGroupCommand {
 /// Represents the invocation of a simple command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Simple"))]
 pub struct SimpleCommand {
     /// Optionally, a prefix to the command.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub prefix: Option<CommandPrefix>,
     /// The name of the command to execute.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(test, serde(rename = "w"))]
     pub word_or_name: Option<Word>,
     /// Optionally, a suffix to the command.
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub suffix: Option<CommandSuffix>,
 }
 
@@ -617,7 +709,7 @@ impl Display for SimpleCommand {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", prefix)?;
+            write!(f, "{prefix}")?;
             wrote_something = true;
         }
 
@@ -626,7 +718,7 @@ impl Display for SimpleCommand {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", word_or_name)?;
+            write!(f, "{word_or_name}")?;
             wrote_something = true;
         }
 
@@ -635,7 +727,7 @@ impl Display for SimpleCommand {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", suffix)?;
+            write!(f, "{suffix}")?;
         }
 
         Ok(())
@@ -645,7 +737,8 @@ impl Display for SimpleCommand {
 /// Represents a prefix to a simple command.
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Prefix"))]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandPrefix {
@@ -655,7 +748,7 @@ impl Display for CommandPrefix {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
         Ok(())
     }
@@ -664,7 +757,8 @@ impl Display for CommandPrefix {
 /// Represents a suffix to a simple command; a word argument, declaration, or I/O redirection.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Suffix"))]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl Display for CommandSuffix {
@@ -674,7 +768,7 @@ impl Display for CommandSuffix {
                 write!(f, " ")?;
             }
 
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
         Ok(())
     }
@@ -683,7 +777,7 @@ impl Display for CommandSuffix {
 /// Represents the I/O direction of a process substitution.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ProcessSubstitutionKind {
     /// The process is read from.
     Read,
@@ -703,13 +797,14 @@ impl Display for ProcessSubstitutionKind {
 /// A prefix or suffix for a simple command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum CommandPrefixOrSuffixItem {
     /// An I/O redirection.
     IoRedirect(IoRedirect),
     /// A word.
     Word(Word),
     /// An assignment/declaration word.
+    #[cfg_attr(test, serde(rename = "Assign"))]
     AssignmentWord(Assignment, Word),
     /// A process substitution.
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
@@ -718,11 +813,11 @@ pub enum CommandPrefixOrSuffixItem {
 impl Display for CommandPrefixOrSuffixItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{}", io_redirect),
-            CommandPrefixOrSuffixItem::Word(word) => write!(f, "{}", word),
-            CommandPrefixOrSuffixItem::AssignmentWord(_assignment, word) => write!(f, "{}", word),
+            CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{io_redirect}"),
+            CommandPrefixOrSuffixItem::Word(word) => write!(f, "{word}"),
+            CommandPrefixOrSuffixItem::AssignmentWord(_assignment, word) => write!(f, "{word}"),
             CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
-                write!(f, "{}({})", kind, subshell_command)
+                write!(f, "{kind}({subshell_command})")
             }
         }
     }
@@ -731,13 +826,15 @@ impl Display for CommandPrefixOrSuffixItem {
 /// Encapsulates an assignment declaration.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Assign"))]
 pub struct Assignment {
     /// Name being assigned to.
     pub name: AssignmentName,
     /// Value being assigned.
     pub value: AssignmentValue,
     /// Whether or not to append to the preexisting value associated with the named variable.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub append: bool,
 }
 
@@ -754,9 +851,10 @@ impl Display for Assignment {
 /// The target of an assignment.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum AssignmentName {
     /// A named variable.
+    #[cfg_attr(test, serde(rename = "Var"))]
     VariableName(String),
     /// An element in a named array.
     ArrayElementName(String, String),
@@ -765,9 +863,9 @@ pub enum AssignmentName {
 impl Display for AssignmentName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssignmentName::VariableName(name) => write!(f, "{}", name),
+            AssignmentName::VariableName(name) => write!(f, "{name}"),
             AssignmentName::ArrayElementName(name, index) => {
-                write!(f, "{}[{}]", name, index)
+                write!(f, "{name}[{index}]")
             }
         }
     }
@@ -776,7 +874,7 @@ impl Display for AssignmentName {
 /// A value being assigned to a variable.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum AssignmentValue {
     /// A scalar (word) value.
     Scalar(Word),
@@ -787,7 +885,7 @@ pub enum AssignmentValue {
 impl Display for AssignmentValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssignmentValue::Scalar(word) => write!(f, "{}", word),
+            AssignmentValue::Scalar(word) => write!(f, "{word}"),
             AssignmentValue::Array(words) => {
                 write!(f, "(")?;
                 for (i, value) in words.iter().enumerate() {
@@ -795,8 +893,8 @@ impl Display for AssignmentValue {
                         write!(f, " ")?;
                     }
                     match value {
-                        (Some(key), value) => write!(f, "[{}]={}", key, value)?,
-                        (None, value) => write!(f, "{}", value)?,
+                        (Some(key), value) => write!(f, "[{key}]={value}")?,
+                        (None, value) => write!(f, "{value}")?,
                     }
                 }
                 write!(f, ")")
@@ -808,13 +906,13 @@ impl Display for AssignmentValue {
 /// A list of I/O redirections to be applied to a command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct RedirectList(pub Vec<IoRedirect>);
 
 impl Display for RedirectList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for item in &self.0 {
-            write!(f, "{}", item)?;
+            write!(f, "{item}")?;
         }
         Ok(())
     }
@@ -823,7 +921,7 @@ impl Display for RedirectList {
 /// An I/O redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum IoRedirect {
     /// Redirection to a file.
     File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
@@ -840,17 +938,17 @@ impl Display for IoRedirect {
         match self {
             IoRedirect::File(fd_num, kind, target) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{}", fd_num)?;
+                    write!(f, "{fd_num}")?;
                 }
 
-                write!(f, "{} {}", kind, target)?;
+                write!(f, "{kind} {target}")?;
             }
             IoRedirect::OutputAndError(target, append) => {
                 write!(f, "&>")?;
                 if *append {
                     write!(f, ">")?;
                 }
-                write!(f, " {}", target)?;
+                write!(f, " {target}")?;
             }
             IoRedirect::HereDocument(
                 fd_num,
@@ -862,7 +960,7 @@ impl Display for IoRedirect {
                 },
             ) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{}", fd_num)?;
+                    write!(f, "{fd_num}")?;
                 }
 
                 write!(f, "<<")?;
@@ -870,17 +968,17 @@ impl Display for IoRedirect {
                     write!(f, "-")?;
                 }
 
-                writeln!(f, "{}", here_end)?;
+                writeln!(f, "{here_end}")?;
 
-                write!(f, "{}", doc)?;
-                writeln!(f, "{}", here_end)?;
+                write!(f, "{doc}")?;
+                writeln!(f, "{here_end}")?;
             }
             IoRedirect::HereString(fd_num, s) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{}", fd_num)?;
+                    write!(f, "{fd_num}")?;
                 }
 
-                write!(f, "<<< {}", s)?;
+                write!(f, "<<< {s}")?;
             }
         }
 
@@ -891,7 +989,7 @@ impl Display for IoRedirect {
 /// Kind of file I/O redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum IoFileRedirectKind {
     /// Read (`<`).
     Read,
@@ -926,7 +1024,7 @@ impl Display for IoFileRedirectKind {
 /// Target for an I/O file redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum IoFileRedirectTarget {
     /// Path to a file.
     Filename(Word),
@@ -940,8 +1038,8 @@ pub enum IoFileRedirectTarget {
 impl Display for IoFileRedirectTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IoFileRedirectTarget::Filename(word) => write!(f, "{}", word),
-            IoFileRedirectTarget::Fd(fd) => write!(f, "{}", fd),
+            IoFileRedirectTarget::Filename(word) => write!(f, "{word}"),
+            IoFileRedirectTarget::Fd(fd) => write!(f, "{fd}"),
             IoFileRedirectTarget::ProcessSubstitution(kind, subshell_command) => {
                 write!(f, "{kind}{subshell_command}")
             }
@@ -952,11 +1050,13 @@ impl Display for IoFileRedirectTarget {
 /// Represents an I/O here document.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct IoHereDocument {
     /// Whether to remove leading tabs from the here document.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub remove_tabs: bool,
     /// Whether to basic-expand the contents of the here document.
+    #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub requires_expansion: bool,
     /// The delimiter marking the end of the here document.
     pub here_end: Word,
@@ -966,6 +1066,7 @@ pub struct IoHereDocument {
 
 /// A (non-extended) test expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum TestExpr {
     /// Always evaluates to false.
     False,
@@ -992,7 +1093,7 @@ impl Display for TestExpr {
             TestExpr::Literal(s) => write!(f, "{s}"),
             TestExpr::And(left, right) => write!(f, "{left} -a {right}"),
             TestExpr::Or(left, right) => write!(f, "{left} -o {right}"),
-            TestExpr::Not(expr) => write!(f, "! {}", expr),
+            TestExpr::Not(expr) => write!(f, "! {expr}"),
             TestExpr::Parenthesized(expr) => write!(f, "( {expr} )"),
             TestExpr::UnaryTest(pred, word) => write!(f, "{pred} {word}"),
             TestExpr::BinaryTest(left, op, right) => write!(f, "{left} {op} {right}"),
@@ -1003,7 +1104,7 @@ impl Display for TestExpr {
 /// An extended test expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ExtendedTestExpr {
     /// Logical AND operation on two nested expressions.
     And(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
@@ -1023,22 +1124,22 @@ impl Display for ExtendedTestExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExtendedTestExpr::And(left, right) => {
-                write!(f, "{} && {}", left, right)
+                write!(f, "{left} && {right}")
             }
             ExtendedTestExpr::Or(left, right) => {
-                write!(f, "{} || {}", left, right)
+                write!(f, "{left} || {right}")
             }
             ExtendedTestExpr::Not(expr) => {
-                write!(f, "! {}", expr)
+                write!(f, "! {expr}")
             }
             ExtendedTestExpr::Parenthesized(expr) => {
-                write!(f, "( {} )", expr)
+                write!(f, "( {expr} )")
             }
             ExtendedTestExpr::UnaryTest(pred, word) => {
-                write!(f, "{} {}", pred, word)
+                write!(f, "{pred} {word}")
             }
             ExtendedTestExpr::BinaryTest(pred, left, right) => {
-                write!(f, "{} {} {}", left, pred, right)
+                write!(f, "{left} {pred} {right}")
             }
         }
     }
@@ -1047,7 +1148,7 @@ impl Display for ExtendedTestExpr {
 /// A unary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum UnaryPredicate {
     /// Computes if the operand is a path to an existing file.
     FileExists,
@@ -1136,7 +1237,7 @@ impl Display for UnaryPredicate {
 /// A binary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum BinaryPredicate {
     /// Computes if two files refer to the same device and inode numbers.
     FilesReferToSameDeviceAndInodeNumbers,
@@ -1201,9 +1302,11 @@ impl Display for BinaryPredicate {
 /// Represents a shell word.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "W"))]
 pub struct Word {
     /// Raw text of the word.
+    #[cfg_attr(test, serde(rename = "v"))]
     pub value: String,
 }
 
@@ -1249,7 +1352,7 @@ impl Word {
 /// Encapsulates an unparsed arithmetic expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct UnexpandedArithmeticExpr {
     /// The raw text of the expression.
     pub value: String,
@@ -1263,6 +1366,7 @@ impl Display for UnexpandedArithmeticExpr {
 
 /// An arithmetic expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ArithmeticExpr {
     /// A literal integer value.
     Literal(i64),
@@ -1368,6 +1472,7 @@ impl Display for ArithmeticExpr {
 /// A binary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum BinaryOperator {
     /// Exponentiation (e.g., `x ** y`).
     Power,
@@ -1441,6 +1546,7 @@ impl Display for BinaryOperator {
 /// A unary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum UnaryOperator {
     /// Unary plus (e.g., `+x`).
     UnaryPlus,
@@ -1466,6 +1572,7 @@ impl Display for UnaryOperator {
 /// A unary arithmetic assignment operator.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum UnaryAssignmentOperator {
     /// Prefix increment (e.g., `++x`).
     PrefixIncrement,
@@ -1491,6 +1598,7 @@ impl Display for UnaryAssignmentOperator {
 /// Identifies the target of an arithmetic assignment expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ArithmeticTarget {
     /// A named variable.
     Variable(String),
@@ -1502,7 +1610,7 @@ impl Display for ArithmeticTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ArithmeticTarget::Variable(name) => write!(f, "{name}"),
-            ArithmeticTarget::ArrayElement(name, index) => write!(f, "{}[{}]", name, index),
+            ArithmeticTarget::ArrayElement(name, index) => write!(f, "{name}[{index}]"),
         }
     }
 }

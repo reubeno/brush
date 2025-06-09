@@ -67,6 +67,7 @@ impl JobTask {
     }
 }
 
+#[allow(dead_code)]
 impl JobManager {
     /// Returns a new job manager.
     pub fn new() -> Self {
@@ -140,7 +141,7 @@ impl JobManager {
                 self.jobs.iter_mut().find(|j| j.id == id)
             }
             _ => {
-                tracing::warn!("UNIMPLEMENTED: job spec naming command: '{job_spec}'");
+                tracing::warn!(target: trace_categories::UNIMPLEMENTED, "unimplemented: job spec naming command: '{job_spec}'");
                 None
             }
         }
@@ -196,6 +197,7 @@ impl JobManager {
 #[derive(Clone)]
 pub enum JobState {
     /// Unknown state.
+    #[allow(dead_code)]
     Unknown,
     /// The job is running.
     Running,
@@ -271,6 +273,7 @@ impl Display for Job {
     }
 }
 
+#[allow(dead_code)]
 impl Job {
     /// Returns a new job object.
     ///

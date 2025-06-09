@@ -4,3 +4,23 @@ cases:
     stdin: |
       mapfile -t myarray < /dev/null
       (echo "hello"; echo "there") | (mapfile -t myarray && declare -p myarray)
+  - name: "readarray -t"
+    stdin: |
+      readarray -t myarray < /dev/null
+      (echo "hello"; echo "there") | (readarray -t myarray && declare -p myarray)
+  - name: "mapfile -d"
+    stdin: |
+      mapfile -t -d 'Z' myarray < <(echo -ne "helloZthereZgeneralZkenobi")
+      [[ "${myarray[*]}" == "hello there general kenobi" ]]
+  - name: "mapfile no array name"
+    stdin: |
+      mapfile -t < <(echo -ne "woo\nah!")
+      [[ "${MAPFILE[*]}" == "woo ah!" ]]
+  - name: "mapfile -n"
+    stdin: |
+      mapfile -t -n 2 -d 'Z' myarray < <(echo -ne "helloZthereZgeneralZkenobi")
+      [[ "${myarray[*]}" == "hello there" ]]
+  - name: "mapfile -s"
+    stdin: |
+      mapfile -t -n 2 -s 1 -d 'Z' myarray < <(echo -ne "helloZthereZgeneralZkenobi")
+      [[ "${myarray[*]}" == "there general" ]]

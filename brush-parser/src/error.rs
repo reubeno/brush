@@ -58,8 +58,20 @@ pub enum TestCommandParseError {
     TestCommand(peg::error::ParseError<usize>),
 }
 
+/// Represents an error that occurred while parsing a key-binding specification.
+#[derive(Debug, thiserror::Error)]
+pub enum BindingParseError {
+    /// An unknown error occurred while parsing a key-binding specification.
+    #[error("unknown error while parsing key-binding: '{0}'")]
+    Unknown(String),
+
+    /// A key code was missing from the key-binding specification.
+    #[error("missing key code in key-binding")]
+    MissingKeyCode,
+}
+
 pub(crate) fn convert_peg_parse_error(
-    err: peg::error::ParseError<usize>,
+    err: &peg::error::ParseError<usize>,
     tokens: &[Token],
 ) -> ParseError {
     let approx_token_index = err.location;

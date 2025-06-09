@@ -8,7 +8,7 @@ cases:
       myalias 'hello'
 
   - name: "Alias with trailing space"
-    known_failure: true
+    known_failure: true # Issue #57
     stdin: |
       shopt -s expand_aliases
       alias cmd='echo '
@@ -26,7 +26,7 @@ cases:
       outeralias 'hello'
 
   - name: "Alias to keywords"
-    known_failure: true
+    known_failure: true # Issue #286
     stdin: |
       shopt -s expand_aliases
       alias myalias=if

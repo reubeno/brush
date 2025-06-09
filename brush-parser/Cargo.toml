@@ -1,7 +1,7 @@
 [package]
 name = "brush-parser"
 description = "POSIX/bash shell tokenizer and parsers (used by brush-shell)"
-version = "0.2.15"
+version = "0.2.16"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -10,6 +10,9 @@ license.workspace = true
 readme.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 bench = false
@@ -23,18 +26,20 @@ arbitrary = { version = "1.4.1", optional = true, features = ["derive"] }
 cached = "0.55.1"
 indenter = "0.3.3"
 peg = "0.8.5"
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 tracing = "0.1.41"
 utf8-chars = "3.0.5"
 
 [dev-dependencies]
 anyhow = "1.0.98"
-assert_matches = "1.5.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
+insta = { version = "1.43.1", features = ["glob", "ron", "yaml"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_yaml = "0.9.34"
 
 [target.'cfg(unix)'.dev-dependencies]
-pprof = { version = "0.14.0", features = ["criterion", "flamegraph"] }
+pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }
 
 [[bench]]
 name = "parser"

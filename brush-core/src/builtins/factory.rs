@@ -46,9 +46,29 @@ pub fn builtin<B: builtins::Command + Send + Sync>() -> builtins::Registration {
     }
 }
 
+/// Returns a built-in command registration, given an implementation of the
+/// `DeclarationCommand` trait. Used for select commands that can take parsed
+/// declarations as arguments.
 fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Registration {
     builtins::Registration {
         execute_func: exec_declaration_builtin::<B>,
+        content_func: get_builtin_content::<B>,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: true,
+    }
+}
+
+/// Returns a built-in command registration, given an implementation of the
+/// `DeclarationCommand` trait that can be default-constructed. The command
+/// implementation is expected to implement clap's `Parser` trait solely
+/// for help/usage information. Arguments are passed directly to the command
+/// via `set_declarations`. This is primarily only expected to be used with
+/// select builtin commands that wrap other builtins (e.g., "builtin").
+fn raw_arg_builtin<B: builtins::DeclarationCommand + Default + Send + Sync>(
+) -> builtins::Registration {
+    builtins::Registration {
+        execute_func: exec_raw_arg_builtin::<B>,
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
@@ -156,6 +176,25 @@ async fn exec_declaration_builtin_impl<T: builtins::DeclarationCommand + Send + 
     })
 }
 
+fn exec_raw_arg_builtin<T: builtins::DeclarationCommand + Default + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<builtins::BuiltinResult, error::Error>> {
+    Box::pin(async move { exec_raw_arg_builtin_impl::<T>(context, args).await })
+}
+
+async fn exec_raw_arg_builtin_impl<T: builtins::DeclarationCommand + Default + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<builtins::BuiltinResult, error::Error> {
+    let mut command = T::default();
+    command.set_declarations(args);
+
+    Ok(builtins::BuiltinResult {
+        exit_code: command.execute(context).await?,
+    })
+}
+
 #[allow(clippy::too_many_lines)]
 pub(crate) fn get_default_builtins(
     options: &crate::CreateOptions,
@@ -224,21 +263,26 @@ pub(crate) fn get_default_builtins(
     m.insert("true".into(), builtin::<true_::TrueCommand>());
     m.insert("type".into(), builtin::<type_::TypeCommand>());
     #[cfg(unix)]
+    m.insert("ulimit".into(), builtin::<ulimit::ULimitCommand>());
+    #[cfg(unix)]
     m.insert("umask".into(), builtin::<umask::UmaskCommand>());
     m.insert("unalias".into(), builtin::<unalias::UnaliasCommand>());
     m.insert("wait".into(), builtin::<wait::WaitCommand>());
 
-    // TODO: Unimplemented non-special builtins
+    // TODO: implement fc builtin; should be done after history.
     m.insert("fc".into(), builtin::<unimp::UnimplementedCommand>());
-    m.insert("ulimit".into(), builtin::<unimp::UnimplementedCommand>());
 
     if !options.sh_mode {
-        m.insert("builtin".into(), builtin::<builtin_::BuiltinCommand>());
+        m.insert(
+            "builtin".into(),
+            raw_arg_builtin::<builtin_::BuiltinCommand>(),
+        );
         m.insert("declare".into(), decl_builtin::<declare::DeclareCommand>());
         m.insert("echo".into(), builtin::<echo::EchoCommand>());
         m.insert("enable".into(), builtin::<enable::EnableCommand>());
         m.insert("let".into(), builtin::<let_::LetCommand>());
         m.insert("mapfile".into(), builtin::<mapfile::MapFileCommand>());
+        m.insert("readarray".into(), builtin::<mapfile::MapFileCommand>());
         m.insert("printf".into(), builtin::<printf::PrintfCommand>());
         m.insert("shopt".into(), builtin::<shopt::ShoptCommand>());
         m.insert("source".into(), builtin::<dot::DotCommand>().special());
@@ -246,7 +290,7 @@ pub(crate) fn get_default_builtins(
         m.insert("suspend".into(), builtin::<suspend::SuspendCommand>());
         m.insert("test".into(), builtin::<test::TestCommand>());
         m.insert("[".into(), builtin::<test::TestCommand>());
-        m.insert("typeset".into(), builtin::<declare::DeclareCommand>());
+        m.insert("typeset".into(), decl_builtin::<declare::DeclareCommand>());
 
         // Completion builtins
         m.insert("complete".into(), builtin::<complete::CompleteCommand>());
@@ -261,12 +305,17 @@ pub(crate) fn get_default_builtins(
         // Input configuration builtins
         m.insert("bind".into(), builtin::<bind::BindCommand>());
 
-        // TODO: Unimplemented builtins
-        m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
-        m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());
+        // TODO(#469): implement history builtin
         m.insert("history".into(), builtin::<unimp::UnimplementedCommand>());
+
+        // TODO: implement caller builtin
+        m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
+
+        // TODO: implement disown builtin
+        m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());
+
+        // TODO: implement logout builtin
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
-        m.insert("readarray".into(), builtin::<unimp::UnimplementedCommand>());
     }
 
     //

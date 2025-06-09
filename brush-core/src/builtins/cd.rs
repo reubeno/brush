@@ -3,17 +3,17 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use crate::{builtins, commands};
+use crate::{builtins, commands, error};
 
 /// Change the current shell working directory.
 #[derive(Parser)]
 pub(crate) struct CdCommand {
     /// Force following symlinks.
-    #[arg(short = 'L')]
+    #[arg(short = 'L', overrides_with = "use_physical_dir")]
     force_follow_symlinks: bool,
 
     /// Use physical dir structure without following symlinks.
-    #[arg(short = 'P')]
+    #[arg(short = 'P', overrides_with = "force_follow_symlinks")]
     use_physical_dir: bool,
 
     /// Exit with non zero exit status if current working directory resolution fails.
@@ -34,18 +34,14 @@ impl builtins::Command for CdCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        // TODO: implement options
-        if self.force_follow_symlinks
-            || self.use_physical_dir
-            || self.exit_on_failed_cwd_resolution
-            || self.file_with_xattr_as_dir
-        {
-            return crate::error::unimp("options to cd");
+    ) -> Result<builtins::ExitCode, error::Error> {
+        // TODO: implement 'cd -@'
+        if self.file_with_xattr_as_dir {
+            return error::unimp("cd -@");
         }
 
         let mut should_print = false;
-        let target_dir = if let Some(target_dir) = &self.target_dir {
+        let mut target_dir = if let Some(target_dir) = &self.target_dir {
             // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
                 should_print = true;
@@ -68,6 +64,20 @@ impl builtins::Command for CdCommand {
                 return Ok(builtins::ExitCode::Custom(1));
             }
         };
+
+        if self.use_physical_dir
+            || context
+                .shell
+                .options
+                .do_not_resolve_symlinks_when_changing_dir
+        {
+            // -e is only relevant in physical mode.
+            if self.exit_on_failed_cwd_resolution {
+                return error::unimp("cd -e");
+            }
+
+            target_dir = context.shell.get_absolute_path(target_dir).canonicalize()?;
+        }
 
         if let Err(e) = context.shell.set_working_dir(&target_dir) {
             writeln!(context.stderr(), "cd: {e}")?;

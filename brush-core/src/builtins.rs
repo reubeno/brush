@@ -57,6 +57,8 @@ mod trap;
 mod true_;
 mod type_;
 #[cfg(unix)]
+mod ulimit;
+#[cfg(unix)]
 mod umask;
 mod unalias;
 mod unimp;
@@ -233,7 +235,7 @@ pub trait Command: Parser {
         clap_command.set_bin_name(name);
 
         let s = match content_type {
-            ContentType::DetailedHelp => clap_command.render_long_help().ansi().to_string(),
+            ContentType::DetailedHelp => clap_command.render_help().ansi().to_string(),
             ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
             ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
             ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
@@ -414,7 +416,7 @@ fn brush_help_styles() -> clap::builder::Styles {
 /// # Returns
 ///
 /// * a parsed struct T from [`clap::Parser::parse_from`]
-/// * the remain iterator `args` with `--` and the rest arguments if they present othervise None
+/// * the remain iterator `args` with `--` and the rest arguments if they present otherwise None
 ///
 /// # Examples
 /// ```
@@ -456,7 +458,7 @@ where
 
 /// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
 /// This function is used to parse arguments in builtins such as
-/// [`crate::builtins::echo::EchoCommand`]
+/// `crate::builtins::echo::EchoCommand`
 pub fn try_parse_known<T: Parser>(
     args: impl IntoIterator<Item = String>,
 ) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {

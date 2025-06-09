@@ -60,6 +60,11 @@ impl crate::sys::fs::PathExt for Path {
         let file_mode = try_get_file_mode(self);
         file_mode.is_some_and(|mode| mode & S_ISVTX != 0)
     }
+
+    fn get_device_and_inode(&self) -> Result<(u64, u64), crate::error::Error> {
+        let metadata = self.metadata()?;
+        Ok((metadata.dev(), metadata.ino()))
+    }
 }
 
 fn try_get_file_type(path: &Path) -> Option<std::fs::FileType> {

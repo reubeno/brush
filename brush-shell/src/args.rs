@@ -18,10 +18,14 @@ const VERSION: &str = const_format::concatcp!(
     ")"
 );
 
+/// Identifies the input backend to use for the shell.
 #[derive(Clone, clap::ValueEnum)]
 pub enum InputBackend {
+    /// Richest input backend, based on reedline.
     Reedline,
+    /// Basic input backend that provides minimal completion support for testing.
     Basic,
+    /// Most minimal input backend.
     Minimal,
 }
 
@@ -131,8 +135,12 @@ pub struct CommandLineArgs {
     pub input_backend: Option<InputBackend>,
 
     /// Enable debug logging for classes of tracing events.
-    #[clap(long = "log-enable", value_name = "EVENT")]
-    pub enabled_log_events: Vec<events::TraceEvent>,
+    #[clap(long = "debug", alias = "log-enable", value_name = "EVENT")]
+    pub enabled_debug_events: Vec<events::TraceEvent>,
+
+    /// Disable logging for classes of tracing events.
+    #[clap(long = "disable-event", alias = "log-disable", value_name = "EVENT")]
+    pub disabled_events: Vec<events::TraceEvent>,
 
     /// Path to script to execute.
     // allow any string as command_name similar to sh

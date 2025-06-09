@@ -6,7 +6,7 @@ use tracing_subscriber::{
 };
 
 /// Type of event to trace.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 pub enum TraceEvent {
     /// Traces parsing and evaluation of arithmetic expressions.
     #[clap(name = "arithmetic")]
@@ -23,6 +23,9 @@ pub enum TraceEvent {
     /// Traces functions.
     #[clap(name = "functions")]
     Functions,
+    /// Traces input controls.
+    #[clap(name = "input")]
+    Input,
     /// Traces job management.
     #[clap(name = "jobs")]
     Jobs,
@@ -35,6 +38,9 @@ pub enum TraceEvent {
     /// Traces the process of tokenizing input text.
     #[clap(name = "tokenize")]
     Tokenize,
+    /// Traces usage of unimplemented functionality.
+    #[clap(name = "unimplemented", alias = "unimp")]
+    Unimplemented,
 }
 
 impl Display for TraceEvent {
@@ -45,27 +51,35 @@ impl Display for TraceEvent {
             TraceEvent::Complete => write!(f, "complete"),
             TraceEvent::Expand => write!(f, "expand"),
             TraceEvent::Functions => write!(f, "functions"),
+            TraceEvent::Input => write!(f, "input"),
             TraceEvent::Jobs => write!(f, "jobs"),
             TraceEvent::Parse => write!(f, "parse"),
             TraceEvent::Pattern => write!(f, "pattern"),
             TraceEvent::Tokenize => write!(f, "tokenize"),
+            TraceEvent::Unimplemented => write!(f, "unimplemented"),
         }
     }
 }
 
 #[derive(Default)]
 pub(crate) struct TraceEventConfig {
-    enabled_trace_events: HashSet<TraceEvent>,
+    enabled_debug_events: HashSet<TraceEvent>,
+    disabled_events: HashSet<TraceEvent>,
     handle: Option<Handle<Targets, Registry>>,
 }
 
 impl TraceEventConfig {
-    pub fn init(enabled_log_events: &[TraceEvent]) -> TraceEventConfig {
-        let enabled_trace_events: HashSet<TraceEvent> =
-            enabled_log_events.iter().cloned().collect();
+    pub fn init(
+        enabled_debug_events: &[TraceEvent],
+        disabled_events: &[TraceEvent],
+    ) -> TraceEventConfig {
+        let enabled_debug_events: HashSet<TraceEvent> =
+            enabled_debug_events.iter().copied().collect();
+        let disabled_events: HashSet<TraceEvent> = disabled_events.iter().copied().collect();
 
         let mut config = TraceEventConfig {
-            enabled_trace_events,
+            enabled_debug_events,
+            disabled_events,
             ..Default::default()
         };
 
@@ -98,19 +112,8 @@ impl TraceEventConfig {
         let mut filter = tracing_subscriber::filter::Targets::new()
             .with_default(tracing_subscriber::filter::LevelFilter::INFO);
 
-        for event in &self.enabled_trace_events {
-            let targets = match event {
-                TraceEvent::Arithmetic => vec!["arithmetic"],
-                TraceEvent::Commands => vec!["commands"],
-                TraceEvent::Complete => vec!["completion"],
-                TraceEvent::Expand => vec!["expansion"],
-                TraceEvent::Functions => vec!["functions"],
-                TraceEvent::Jobs => vec!["jobs"],
-                TraceEvent::Parse => vec!["parse"],
-                TraceEvent::Pattern => vec!["pattern"],
-                TraceEvent::Tokenize => vec!["tokenize"],
-            };
-
+        for event in &self.enabled_debug_events {
+            let targets = Self::event_to_tracing_targets(event);
             filter = filter.with_targets(
                 targets
                     .into_iter()
@@ -118,25 +121,50 @@ impl TraceEventConfig {
             );
         }
 
+        for event in &self.disabled_events {
+            let targets = Self::event_to_tracing_targets(event);
+            filter = filter.with_targets(
+                targets
+                    .into_iter()
+                    .map(|target| (target, tracing::level_filters::LevelFilter::OFF)),
+            );
+        }
+
         filter
     }
 
-    pub fn get_enabled_events(&self) -> &HashSet<TraceEvent> {
-        &self.enabled_trace_events
+    fn event_to_tracing_targets(event: &TraceEvent) -> Vec<&str> {
+        match event {
+            TraceEvent::Arithmetic => vec!["arithmetic"],
+            TraceEvent::Commands => vec!["commands"],
+            TraceEvent::Complete => vec!["completion"],
+            TraceEvent::Expand => vec!["expansion"],
+            TraceEvent::Functions => vec!["functions"],
+            TraceEvent::Input => vec!["input"],
+            TraceEvent::Jobs => vec!["jobs"],
+            TraceEvent::Parse => vec!["parse"],
+            TraceEvent::Pattern => vec!["pattern"],
+            TraceEvent::Tokenize => vec!["tokenize"],
+            TraceEvent::Unimplemented => vec!["unimplemented"],
+        }
     }
 
-    pub fn enable(&mut self, event: &TraceEvent) -> Result<(), Error> {
+    pub fn get_enabled_events(&self) -> &HashSet<TraceEvent> {
+        &self.enabled_debug_events
+    }
+
+    pub fn enable(&mut self, event: TraceEvent) -> Result<(), Error> {
         // Don't bother to reload config if nothing has changed.
-        if !self.enabled_trace_events.insert(event.to_owned()) {
+        if !self.enabled_debug_events.insert(event) {
             return Ok(());
         }
 
         self.reload_filter()
     }
 
-    pub fn disable(&mut self, event: &TraceEvent) -> Result<(), Error> {
+    pub fn disable(&mut self, event: TraceEvent) -> Result<(), Error> {
         // Don't bother to reload config if nothing has changed.
-        if !self.enabled_trace_events.remove(event) {
+        if !self.enabled_debug_events.remove(&event) {
             return Ok(());
         }
 

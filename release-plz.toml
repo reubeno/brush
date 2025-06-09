@@ -11,6 +11,17 @@ name = "brush-shell"
 changelog_update = true
 changelog_path = "./CHANGELOG.md"
 changelog_include = ["brush-core", "brush-interactive-shell", "brush-parser"]
+git_release_latest = true
+git_release_draft = true
 git_release_enable = true
 git_release_name = "brush v{{ version }}"
-git_release_body = ""
+git_release_body = """
+{{ changelog }}
+{% if remote.contributors %}
+### Contributors
+{% for contributor in remote.contributors %}
+* @{{ contributor.username }}
+{% endfor %}
+{% endif %}
+"""
+

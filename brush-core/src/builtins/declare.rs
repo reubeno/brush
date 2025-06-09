@@ -22,6 +22,11 @@ builtins::minus_or_plus_flag_arg!(
     'A',
     "Make the variable an associative array."
 );
+builtins::minus_or_plus_flag_arg!(
+    CapitalizeValueOnAssignmentFlag,
+    'c',
+    "Enable capitalize-on-assignment for the variable."
+);
 builtins::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
 builtins::minus_or_plus_flag_arg!(
     LowercaseValueOnAssignmentFlag,
@@ -73,6 +78,8 @@ pub(crate) struct DeclareCommand {
     make_indexed_array: MakeIndexedArrayFlag,
     #[clap(flatten)] // -A
     make_associative_array: MakeAssociativeArrayFlag,
+    #[clap(flatten)] // -c
+    capitalize_value_on_assignment: CapitalizeValueOnAssignmentFlag,
     #[clap(flatten)] // -i
     make_integer: MakeIntegerFlag,
     #[clap(flatten)] // -l
@@ -125,13 +132,8 @@ impl builtins::Command for DeclareCommand {
             _ => DeclareVerb::Declare,
         };
 
-        // TODO: implement declare -I
         if self.locals_inherit_from_prev_scope {
-            writeln!(
-                context.stderr(),
-                "UNIMPLEMENTED: declare -I: locals inherit from previous scope"
-            )?;
-            return Ok(builtins::ExitCode::Unimplemented);
+            return error::unimp("declare -I");
         }
 
         let mut result = builtins::ExitCode::Success;
@@ -199,7 +201,7 @@ impl DeclareCommand {
                 }
                 Ok(true)
             } else {
-                writeln!(context.stderr(), "declare: {name}: not found")?;
+                // For some reason, bash does not print an error message in this case.
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
@@ -421,6 +423,14 @@ impl DeclareCommand {
         if let Some(value) = self.make_integer.to_bool() {
             filters.push(Box::new(move |(_, v)| v.is_treated_as_integer() == value));
         }
+        if let Some(value) = self.capitalize_value_on_assignment.to_bool() {
+            filters.push(Box::new(move |(_, v)| {
+                matches!(
+                    v.get_update_transform(),
+                    ShellVariableUpdateTransform::Capitalize
+                ) == value
+            }));
+        }
         if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
             filters.push(Box::new(move |(_, v)| {
                 matches!(
@@ -520,6 +530,16 @@ impl DeclareCommand {
                 var.treat_as_integer();
             } else {
                 var.unset_treat_as_integer();
+            }
+        }
+        if let Some(value) = self.capitalize_value_on_assignment.to_bool() {
+            if value {
+                var.set_update_transform(ShellVariableUpdateTransform::Capitalize);
+            } else if matches!(
+                var.get_update_transform(),
+                ShellVariableUpdateTransform::Capitalize
+            ) {
+                var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
         if let Some(value) = self.lowercase_value_on_assignment.to_bool() {

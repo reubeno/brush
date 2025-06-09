@@ -7,7 +7,7 @@ use crate::{builtins, commands, error};
 #[derive(Parser)]
 pub(crate) struct ExecCommand {
     /// Pass given name as zeroth argument to command.
-    #[arg(short = 'a')]
+    #[arg(short = 'a', value_name = "NAME")]
     name_for_argv0: Option<String>,
 
     /// Exec command with an empty environment.

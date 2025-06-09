@@ -1,0 +1,37 @@
+name: "Builtins: ulimit"
+cases:
+  - name: "ulimit -c"
+    stdin: |
+      ulimit -c
+
+  - name: "ulimit -d"
+    stdin: |
+      ulimit -d
+
+  - name: "ulimit -f"
+    stdin: |
+      ulimit -f
+
+  - name: "ulimit -l"
+    stdin: |
+      ulimit -l
+
+  - name: "ulimit -m"
+    stdin: |
+      ulimit -m
+
+  - name: "ulimit -n"
+    stdin: |
+      ulimit -n
+
+  - name: "ulimit -d unlimited"
+    stdin: |
+      ulimit -d unlimited
+
+  - name: "ulimit -f unlimited"
+    stdin: |
+      ulimit -f unlimited
+
+  - name: "ulimit -m unlimited"
+    stdin: |
+      ulimit -m unlimited

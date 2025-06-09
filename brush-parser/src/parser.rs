@@ -7,7 +7,7 @@ use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Token
 pub struct ParserOptions {
     /// Whether or not to enable extended globbing (a.k.a. `extglob`).
     pub enable_extended_globbing: bool,
-    /// Whether or not to enable POSIX complaince mode.
+    /// Whether or not to enable POSIX compliance mode.
     pub posix_mode: bool,
     /// Whether or not to enable maximal compatibility with the `sh` shell.
     pub sh_mode: bool,
@@ -61,7 +61,7 @@ impl<R: std::io::BufRead> Parser<R> {
     }
 
     /// Parses the input into an abstract syntax tree (AST) of a shell program.
-    pub fn parse(&mut self) -> Result<ast::Program, error::ParseError> {
+    pub fn parse_program(&mut self) -> Result<ast::Program, error::ParseError> {
         //
         // References:
         //   * https://www.gnu.org/software/bash/manual/bash.html#Shell-Syntax
@@ -70,6 +70,25 @@ impl<R: std::io::BufRead> Parser<R> {
         //   * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
         //
 
+        let tokens = self.tokenize()?;
+        parse_tokens(&tokens, &self.options, &self.source_info)
+    }
+
+    /// Parses a function definition body from the input. The body is expected to be
+    /// preceded by "()", but no function name.
+    pub fn parse_function_parens_and_body(
+        &mut self,
+    ) -> Result<ast::FunctionBody, error::ParseError> {
+        let tokens = self.tokenize()?;
+        let parse_result = token_parser::function_parens_and_body(
+            &Tokens { tokens: &tokens },
+            &self.options,
+            &self.source_info,
+        );
+        parse_result_to_error(parse_result, &tokens)
+    }
+
+    fn tokenize(&mut self) -> Result<Vec<Token>, error::ParseError> {
         // First we tokenize the input, according to the policy implied by provided options.
         let mut tokenizer = Tokenizer::new(&mut self.reader, &self.options.tokenizer_options());
 
@@ -100,7 +119,7 @@ impl<R: std::io::BufRead> Parser<R> {
 
         tracing::debug!(target: "tokenize", "  => {} token(s)", tokens.len());
 
-        parse_tokens(&tokens, &self.options, &self.source_info)
+        Ok(tokens)
     }
 }
 
@@ -117,7 +136,16 @@ pub fn parse_tokens(
     source_info: &SourceInfo,
 ) -> Result<ast::Program, error::ParseError> {
     let parse_result = token_parser::program(&Tokens { tokens }, options, source_info);
+    parse_result_to_error(parse_result, tokens)
+}
 
+fn parse_result_to_error<R>(
+    parse_result: Result<R, peg::error::ParseError<usize>>,
+    tokens: &Vec<Token>,
+) -> Result<R, error::ParseError>
+where
+    R: std::fmt::Debug,
+{
     let result = match parse_result {
         Ok(program) => {
             tracing::debug!(target: "parse", "PROG: {:?}", program);
@@ -126,7 +154,7 @@ pub fn parse_tokens(
         Err(parse_error) => {
             tracing::debug!(target: "parse", "Parse error: {:?}", parse_error);
             Err(error::convert_peg_parse_error(
-                parse_error,
+                &parse_error,
                 tokens.as_slice(),
             ))
         }
@@ -216,7 +244,7 @@ peg::parser! {
                 let mut and_ors = vec![first];
                 let mut seps = vec![];
 
-                for (sep, ao) in remainder.into_iter() {
+                for (sep, ao) in remainder {
                     seps.push(sep);
                     and_ors.push(ao);
                 }
@@ -321,7 +349,7 @@ peg::parser! {
                 let mut and_ors = vec![first];
                 let mut seps = vec![];
 
-                for (sep, ao) in remainder.into_iter() {
+                for (sep, ao) in remainder {
                     seps.push(sep.unwrap_or(SeparatorOperator::Sequence));
                     and_ors.push(ao);
                 }
@@ -509,7 +537,7 @@ peg::parser! {
         rule else_part() -> Vec<ast::ElseClause> =
             cs:_conditional_else_part()+ u:_unconditional_else_part()? {
                 let mut parts = vec![];
-                for c in cs.into_iter() {
+                for c in cs {
                     parts.push(c);
                 }
 
@@ -539,13 +567,16 @@ peg::parser! {
 
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         rule function_definition() -> ast::FunctionDefinition =
-            specific_word("function")? fname:fname() specific_operator("(") specific_operator(")") linebreak() body:function_body() {
+            specific_word("function")? fname:fname() body:function_parens_and_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
                 ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
             } /
             expected!("function definition")
+
+        pub(crate) rule function_parens_and_body() -> ast::FunctionBody =
+            specific_operator("(") specific_operator(")") linebreak() body:function_body() { body }
 
         rule function_body() -> ast::FunctionBody =
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
@@ -855,12 +886,6 @@ fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
 
 // add `2>&1` to the command if the pipeline is `|&`
 fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static str> {
-    let r = ast::IoRedirect::File(
-        Some(2),
-        ast::IoFileRedirectKind::DuplicateOutput,
-        ast::IoFileRedirectTarget::Fd(1),
-    );
-
     fn add_to_redirect_list(l: &mut Option<ast::RedirectList>, r: ast::IoRedirect) {
         if let Some(l) = l {
             l.0.push(r);
@@ -869,6 +894,12 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
             *l = Some(ast::RedirectList(v));
         }
     }
+
+    let r = ast::IoRedirect::File(
+        Some(2),
+        ast::IoFileRedirectKind::DuplicateOutput,
+        ast::IoFileRedirectTarget::Fd(1),
+    );
 
     match c {
         ast::Command::Simple(c) => {
@@ -882,7 +913,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
         ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
         ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
         ast::Command::ExtendedTest(_) => return Err("|& unimplemented for extended tests"),
-    };
+    }
 
     Ok(())
 }
@@ -925,12 +956,19 @@ fn parse_array_assignment(
 }
 
 #[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
 
     use super::*;
     use crate::tokenizer::tokenize_str;
     use anyhow::Result;
-    use assert_matches::assert_matches;
+    use insta::assert_ron_snapshot;
+
+    #[derive(serde::Serialize)]
+    struct ParseResult<'a, T: serde::Serialize> {
+        input: &'a str,
+        result: &'a T,
+    }
 
     #[test]
     fn parse_case() -> Result<()> {
@@ -950,9 +988,10 @@ esac\
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(command.cases.len(), 1);
-        assert_eq!(command.cases[0].patterns.len(), 1);
-        assert_eq!(command.cases[0].patterns[0].flatten(), "x");
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &command
+        });
 
         Ok(())
     }
@@ -975,9 +1014,10 @@ esac\
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(command.cases.len(), 1);
-        assert_eq!(command.cases[0].patterns.len(), 1);
-        assert_eq!(command.cases[0].patterns[0].flatten(), "x");
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &command
+        });
 
         Ok(())
     }
@@ -995,19 +1035,11 @@ esac\
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(seq.len(), 2);
-        assert_matches!(seq[0], ast::Command::Simple(..));
-        if let ast::Command::Simple(c) = &seq[0] {
-            let c = c.suffix.as_ref().unwrap();
-            assert_matches!(
-                c.0[0],
-                ast::CommandPrefixOrSuffixItem::IoRedirect(ast::IoRedirect::File(
-                    Some(2),
-                    ast::IoFileRedirectKind::DuplicateOutput,
-                    ast::IoFileRedirectTarget::Fd(1)
-                ))
-            )
-        }
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &seq
+        });
+
         Ok(())
     }
 
@@ -1024,21 +1056,13 @@ esac\
                 &ParserOptions::default(),
                 &SourceInfo::default(),
             )?;
-            assert_eq!(seq.len(), 2);
-            assert_matches!(seq[0], ast::Command::Function(..));
-            if let ast::Command::Function(f) = &seq[0] {
-                let l = &f.body.1;
-                assert!(l.is_some());
-                assert_matches!(
-                    l.as_ref().unwrap().0[0],
-                    ast::IoRedirect::File(
-                        Some(2),
-                        ast::IoFileRedirectKind::DuplicateOutput,
-                        ast::IoFileRedirectTarget::Fd(1)
-                    )
-                )
-            }
+
+            assert_ron_snapshot!(ParseResult {
+                input,
+                result: &seq
+            });
         }
+
         Ok(())
     }
 
@@ -1056,52 +1080,6 @@ for f in A B C; do
    done
 
 "#;
-        use ast::*;
-        let expected = Program {
-            complete_commands: vec![CompoundList(vec![CompoundListItem(
-                AndOrList {
-                    first: Pipeline {
-                        timed: None,
-                        bang: false,
-                        seq: vec![Command::Compound(
-                            CompoundCommand::ForClause(ForClauseCommand {
-                                variable_name: "f".into(),
-                                values: Some(vec![Word::new("A"), Word::new("B"), Word::new("C")]),
-                                body: DoGroupCommand(CompoundList(vec![CompoundListItem(
-                                    AndOrList {
-                                        first: Pipeline {
-                                            timed: None,
-                                            bang: false,
-                                            seq: vec![Command::Simple(SimpleCommand {
-                                                prefix: None,
-                                                word_or_name: Some(Word::new("echo")),
-                                                suffix: Some(CommandSuffix(vec![
-                                                    CommandPrefixOrSuffixItem::Word(Word::new(
-                                                        r#""${f@L}""#,
-                                                    )),
-                                                    CommandPrefixOrSuffixItem::IoRedirect(
-                                                        IoRedirect::File(
-                                                            None,
-                                                            IoFileRedirectKind::DuplicateOutput,
-                                                            IoFileRedirectTarget::Fd(2),
-                                                        ),
-                                                    ),
-                                                ])),
-                                            })],
-                                        },
-                                        additional: vec![],
-                                    },
-                                    SeparatorOperator::Sequence,
-                                )])),
-                            }),
-                            None,
-                        )],
-                    },
-                    additional: vec![],
-                },
-                SeparatorOperator::Sequence,
-            )])],
-        };
 
         let tokens = tokenize_str(input)?;
         let result = super::token_parser::program(
@@ -1112,7 +1090,10 @@ for f in A B C; do
             &SourceInfo::default(),
         )?;
 
-        assert_eq!(result, expected);
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &result
+        });
 
         Ok(())
     }

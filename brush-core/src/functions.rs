@@ -1,3 +1,5 @@
+//! Structures for managing function registrations.
+
 use std::{collections::HashMap, sync::Arc};
 
 /// An environment for defined, named functions.
@@ -16,6 +18,16 @@ impl FunctionEnv {
         self.functions.get(name)
     }
 
+    /// Tries to retrieve a mutable reference to the registration for a
+    /// function by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to retrieve.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut FunctionRegistration> {
+        self.functions.get_mut(name)
+    }
+
     /// Unregisters a function from the environment.
     ///
     /// # Arguments
@@ -30,10 +42,14 @@ impl FunctionEnv {
     /// # Arguments
     ///
     /// * `name` - The name of the function to update.
-    /// * `definition` - The new definition for the function.
-    pub fn update(&mut self, name: String, definition: Arc<brush_parser::ast::FunctionDefinition>) {
-        self.functions
-            .insert(name, FunctionRegistration { definition });
+    /// * `registration` - The new registration for the function.
+    pub fn update(&mut self, name: String, registration: FunctionRegistration) {
+        self.functions.insert(name, registration);
+    }
+
+    /// Clear all functions in this environment.
+    pub fn clear(&mut self) {
+        self.functions.clear();
     }
 
     /// Returns an iterator over the functions registered in this environment.
@@ -46,5 +62,33 @@ impl FunctionEnv {
 #[derive(Clone)]
 pub struct FunctionRegistration {
     /// The definition of the function.
-    pub definition: Arc<brush_parser::ast::FunctionDefinition>,
+    pub(crate) definition: Arc<brush_parser::ast::FunctionDefinition>,
+    /// Whether or not this function definition should be exported to children.
+    exported: bool,
+}
+
+impl From<brush_parser::ast::FunctionDefinition> for FunctionRegistration {
+    fn from(definition: brush_parser::ast::FunctionDefinition) -> Self {
+        FunctionRegistration {
+            definition: Arc::new(definition),
+            exported: false,
+        }
+    }
+}
+
+impl FunctionRegistration {
+    /// Marks the function for export.
+    pub fn export(&mut self) {
+        self.exported = true;
+    }
+
+    /// Unmarks the function for export.
+    pub fn unexport(&mut self) {
+        self.exported = false;
+    }
+
+    /// Returns whether this function is exported.
+    pub fn is_exported(&self) -> bool {
+        self.exported
+    }
 }

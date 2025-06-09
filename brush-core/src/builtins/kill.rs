@@ -8,11 +8,11 @@ use crate::{builtins, commands, error, sys};
 #[derive(Parser)]
 pub(crate) struct KillCommand {
     /// Name of the signal to send.
-    #[arg(short = 's')]
+    #[arg(short = 's', value_name = "SIG_NAME")]
     signal_name: Option<String>,
 
     /// Number of the signal to send.
-    #[arg(short = 'n')]
+    #[arg(short = 'n', value_name = "SIG_NUM")]
     signal_number: Option<usize>,
 
     //

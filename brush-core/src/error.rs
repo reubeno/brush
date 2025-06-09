@@ -48,8 +48,12 @@ pub enum Error {
     CommandNotFound(String),
 
     /// The requested functionality has not yet been implemented in this shell.
-    #[error("UNIMPLEMENTED: {0}")]
+    #[error("not yet implemented: {0}")]
     Unimplemented(&'static str),
+
+    /// The requested functionality has not yet been implemented in this shell; it is tracked in a GitHub issue.
+    #[error("not yet implemented: {0}; see https://github.com/reubeno/brush/issues/{1}")]
+    UnimplementedAndTracked(&'static str, u32),
 
     /// An expected environment scope could not be found.
     #[error("missing scope")]
@@ -135,6 +139,10 @@ pub enum Error {
     #[error("{0}")]
     FormattingError(#[from] std::fmt::Error),
 
+    /// An error occurred while parsing.
+    #[error("{0}")]
+    ParseError(#[from] brush_parser::ParseError),
+
     /// An error occurred while parsing a word.
     #[error("{0}")]
     WordParseError(#[from] brush_parser::WordParseError),
@@ -142,6 +150,10 @@ pub enum Error {
     /// Unable to parse a test command.
     #[error("{0}")]
     TestCommandParseError(#[from] brush_parser::TestCommandParseError),
+
+    /// Unable to parse a key binding specification.
+    #[error("{0}")]
+    BindingParseError(#[from] brush_parser::BindingParseError),
 
     /// A threading error occurred.
     #[error("threading error")]
@@ -192,6 +204,14 @@ pub enum Error {
     /// System time error.
     #[error("system time error: {0}")]
     TimeError(#[from] std::time::SystemTimeError),
+
+    /// Array index out of range.
+    #[error("array index out of range")]
+    ArrayIndexOutOfRange,
+
+    /// Unhandled key code.
+    #[error("unhandled key code: {0:?}")]
+    UnhandledKeyCode(Vec<u8>),
 }
 
 /// Convenience function for returning an error for unimplemented functionality.
@@ -201,4 +221,13 @@ pub enum Error {
 /// * `msg` - The message to include in the error
 pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {
     Err(Error::Unimplemented(msg))
+}
+
+/// Convenience function for returning an error for *tracked*, unimplemented functionality.
+///
+/// # Arguments
+///
+/// * `msg` - The message to include in the error
+pub(crate) fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
+    Err(Error::UnimplementedAndTracked(msg, project_issue_id))
 }

@@ -3,11 +3,10 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
 #[cfg(target_os = "linux")]
-use std::os::fd::{AsFd, AsRawFd};
+use std::os::fd::AsFd;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg, CommandSpawnResult};
@@ -17,7 +16,9 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, timing, traps};
+use crate::{
+    error, expansion, extendedtests, functions, jobs, openfiles, processes, sys, timing, traps,
+};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -109,31 +110,44 @@ struct PipelineExecutionContext<'a> {
 #[derive(Clone, Default)]
 pub struct ExecutionParameters {
     /// The open files tracked by the current context.
-    pub open_files: openfiles::OpenFiles,
+    pub(crate) open_files: openfiles::OpenFiles,
     /// Policy for how to manage spawned external processes.
     pub process_group_policy: ProcessGroupPolicy,
 }
 
 impl ExecutionParameters {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> openfiles::OpenFile {
+    pub fn stdin(&self) -> impl std::io::Read {
         self.fd(0).unwrap()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> openfiles::OpenFile {
+    pub fn stdout(&self) -> impl std::io::Write {
         self.fd(1).unwrap()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> openfiles::OpenFile {
+    pub fn stderr(&self) -> impl std::io::Write {
         self.fd(2).unwrap()
     }
 
     /// Returns the file descriptor with the given number.
     #[allow(clippy::unwrap_in_result)]
-    pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
+    pub(crate) fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
         self.open_files.files.get(&fd).map(|f| f.try_dup().unwrap())
+    }
+
+    pub(crate) fn stdin_file(&self) -> openfiles::OpenFile {
+        self.fd(0).unwrap()
+    }
+
+    pub(crate) fn stdout_file(&self) -> openfiles::OpenFile {
+        self.fd(1).unwrap()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn stderr_file(&self) -> openfiles::OpenFile {
+        self.fd(2).unwrap()
     }
 }
 
@@ -160,7 +174,7 @@ pub trait Execute {
 trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext,
+        context: &mut PipelineExecutionContext<'_>,
         params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error>;
 }
@@ -487,7 +501,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
-        pipeline_context: &mut PipelineExecutionContext,
+        pipeline_context: &mut PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
@@ -894,9 +908,10 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell
-            .funcs
-            .update(self.fname.clone(), Arc::new(self.clone()));
+        shell.funcs.update(
+            self.fname.clone(),
+            functions::FunctionRegistration::from(self.clone()),
+        );
 
         let result = ExecutionResult::success();
         shell.last_exit_status = result.exit_code;
@@ -910,33 +925,24 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     #[allow(clippy::too_many_lines)] // TODO: refactor this function
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext,
+        context: &mut PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<CommandSpawnResult, error::Error> {
-        let default_prefix = ast::CommandPrefix::default();
-        let prefix_items = self.prefix.as_ref().unwrap_or(&default_prefix);
-
-        let default_suffix = ast::CommandSuffix::default();
-        let suffix_items = self.suffix.as_ref().unwrap_or(&default_suffix);
-
-        let mut cmd_name_items = vec![];
-        if let Some(cmd_name) = &self.word_or_name {
-            cmd_name_items.push(CommandPrefixOrSuffixItem::Word(cmd_name.clone()));
-        }
-
-        let mut assignments = vec![];
-        let mut args: Vec<CommandArg> = vec![];
-        let mut invoking_declaration_builtin = false;
+        let prefix_iter = self.prefix.as_ref().map(|s| s.0.iter()).unwrap_or_default();
+        let suffix_iter = self.suffix.as_ref().map(|s| s.0.iter()).unwrap_or_default();
+        let cmd_name_items = self
+            .word_or_name
+            .as_ref()
+            .map(|won| CommandPrefixOrSuffixItem::Word(won.clone()));
 
         // Set up pipelining.
         setup_pipeline_redirection(&mut params.open_files, context)?;
 
-        for item in prefix_items
-            .0
-            .iter()
-            .chain(cmd_name_items.iter())
-            .chain(suffix_items.0.iter())
-        {
+        let mut assignments = vec![];
+        let mut args: Vec<CommandArg> = vec![];
+        let mut command_takes_assignments = false;
+
+        for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
                     match setup_redirect(context.shell, &mut params, redirect).await {
@@ -974,7 +980,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                         // scoped assignment. Add it to the list we're accumulating.
                         assignments.push(assignment);
                     } else {
-                        if invoking_declaration_builtin {
+                        if command_takes_assignments {
                             // This looks like an assignment, and the command being invoked is a
                             // well-known builtin that takes arguments that need to function like
                             // assignments (but which are processed by the builtin).
@@ -1004,7 +1010,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
                             {
                                 //
-                                // TODO: This is a total hack; aliases are supposed to be handled
+                                // TODO(#57): This is a total hack; aliases are supposed to be handled
                                 // much earlier in the process.
                                 //
                                 let mut alias_pieces: Vec<_> = alias_value
@@ -1018,16 +1024,17 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                                 next_args = alias_pieces;
                             }
 
+                            let first_arg = next_args[0].as_str();
+
                             // Check if we're going to be invoking a special declaration builtin.
-                            // That will change how we parse and process
-                            // args.
+                            // That will change how we parse and process args.
                             if context
                                 .shell
                                 .builtins
-                                .get(next_args[0].as_str())
-                                .is_some_and(|r| r.declaration_builtin)
+                                .get(first_arg)
+                                .is_some_and(|r| !r.disabled && r.declaration_builtin)
                             {
-                                invoking_declaration_builtin = true;
+                                command_takes_assignments = true;
                             }
                         }
                     }
@@ -1040,91 +1047,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
-            // Push a new ephemeral environment scope for the duration of the command. We'll
-            // set command-scoped variable assignments after doing so, and revert them before
-            // returning.
-            context.shell.env.push_scope(EnvironmentScope::Command);
-            for assignment in &assignments {
-                // Ensure it's tagged as exported and created in the command scope.
-                apply_assignment(
-                    assignment,
-                    context.shell,
-                    &params,
-                    true,
-                    Some(EnvironmentScope::Command),
-                    EnvironmentScope::Command,
-                )
-                .await?;
-            }
-
-            if context.shell.options.print_commands_and_arguments {
-                context
-                    .shell
-                    .trace_command(args.iter().map(|arg| arg.quote_for_tracing()).join(" "))
-                    .await?;
-            }
-
-            // TODO: This is adding more complexity here; should be factored out into an appropriate
-            // helper.
-            if context.shell.traps.handler_depth == 0 {
-                let debug_trap_handler = context
-                    .shell
-                    .traps
-                    .handlers
-                    .get(&traps::TrapSignal::Debug)
-                    .cloned();
-                if let Some(debug_trap_handler) = debug_trap_handler {
-                    // TODO: Confirm whether trap handlers should be executed in the same process
-                    // group.
-                    let handler_params = ExecutionParameters {
-                        open_files: params.open_files.clone(),
-                        process_group_policy: ProcessGroupPolicy::SameProcessGroup,
-                    };
-
-                    let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
-
-                    // TODO: This shouldn't *just* be set in a trap situation.
-                    context.shell.env.update_or_add(
-                        "BASH_COMMAND",
-                        ShellValueLiteral::Scalar(full_cmd),
-                        |_| Ok(()),
-                        EnvironmentLookup::Anywhere,
-                        EnvironmentScope::Global,
-                    )?;
-
-                    context.shell.traps.handler_depth += 1;
-
-                    // TODO: Discard result?
-                    let _ = context
-                        .shell
-                        .run_string(debug_trap_handler, &handler_params)
-                        .await?;
-
-                    context.shell.traps.handler_depth -= 1;
-                }
-            }
-
-            let cmd_context = commands::ExecutionContext {
-                shell: context.shell,
-                command_name: cmd_name,
-                params,
-            };
-
-            // Execute.
-            let execution_result = commands::execute(
-                cmd_context,
-                &mut context.process_group_id,
-                args,
-                true, /* use functions? */
-                None,
-            )
-            .await;
-
-            // Pop off that ephemeral environment scope.
-            // TODO: jobs: do we need to move self back to foreground on error here?
-            context.shell.env.pop_scope(EnvironmentScope::Command)?;
-
-            execution_result
+            execute_command(context, params, cmd_name, assignments, args).await
         } else {
             // Reset last status.
             context.shell.last_exit_status = 0;
@@ -1149,6 +1072,100 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             ))
         }
     }
+}
+
+async fn execute_command(
+    context: &mut PipelineExecutionContext<'_>,
+    params: ExecutionParameters,
+    cmd_name: String,
+    assignments: Vec<&ast::Assignment>,
+    args: Vec<CommandArg>,
+) -> Result<CommandSpawnResult, error::Error> {
+    // Push a new ephemeral environment scope for the duration of the command. We'll
+    // set command-scoped variable assignments after doing so, and revert them before
+    // returning.
+    context.shell.env.push_scope(EnvironmentScope::Command);
+    for assignment in &assignments {
+        // Ensure it's tagged as exported and created in the command scope.
+        apply_assignment(
+            assignment,
+            context.shell,
+            &params,
+            true,
+            Some(EnvironmentScope::Command),
+            EnvironmentScope::Command,
+        )
+        .await?;
+    }
+
+    if context.shell.options.print_commands_and_arguments {
+        context
+            .shell
+            .trace_command(args.iter().map(|arg| arg.quote_for_tracing()).join(" "))
+            .await?;
+    }
+
+    // TODO: This is adding more complexity here; should be factored out into an appropriate
+    // helper.
+    if context.shell.traps.handler_depth == 0 {
+        let debug_trap_handler = context
+            .shell
+            .traps
+            .handlers
+            .get(&traps::TrapSignal::Debug)
+            .cloned();
+        if let Some(debug_trap_handler) = debug_trap_handler {
+            // TODO: Confirm whether trap handlers should be executed in the same process
+            // group.
+            let handler_params = ExecutionParameters {
+                open_files: params.open_files.clone(),
+                process_group_policy: ProcessGroupPolicy::SameProcessGroup,
+            };
+
+            let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
+
+            // TODO: This shouldn't *just* be set in a trap situation.
+            context.shell.env.update_or_add(
+                "BASH_COMMAND",
+                ShellValueLiteral::Scalar(full_cmd),
+                |_| Ok(()),
+                EnvironmentLookup::Anywhere,
+                EnvironmentScope::Global,
+            )?;
+
+            context.shell.traps.handler_depth += 1;
+
+            // TODO: Discard result?
+            let _ = context
+                .shell
+                .run_string(debug_trap_handler, &handler_params)
+                .await?;
+
+            context.shell.traps.handler_depth -= 1;
+        }
+    }
+
+    let cmd_context = commands::ExecutionContext {
+        shell: context.shell,
+        command_name: cmd_name,
+        params,
+    };
+
+    // Execute.
+    let execution_result = commands::execute(
+        cmd_context,
+        &mut context.process_group_id,
+        args,
+        true, /* use functions? */
+        None,
+    )
+    .await;
+
+    // Pop off that ephemeral environment scope.
+    // TODO: jobs: do we need to move self back to foreground on error here?
+    context.shell.env.pop_scope(EnvironmentScope::Command)?;
+
+    execution_result
 }
 
 async fn expand_assignment(
@@ -1665,10 +1682,7 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     let len = i32::try_from(bytes.len())?;
 
     #[cfg(target_os = "linux")]
-    nix::fcntl::fcntl(
-        reader.as_fd().as_raw_fd(),
-        nix::fcntl::FcntlArg::F_SETPIPE_SZ(len),
-    )?;
+    nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
 
     writer.write_all(bytes)?;
     drop(writer);

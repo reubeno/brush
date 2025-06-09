@@ -5,7 +5,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use normalize_path::NormalizePath;
 use rand::Rng;
+use tokio::sync::Mutex;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
@@ -17,7 +19,7 @@ use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     patterns, prompt, sys::users, traps,
 };
-use crate::{pathcache, sys, trace_categories};
+use crate::{interfaces, pathcache, sys, trace_categories};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -25,6 +27,9 @@ const BASH_PATCH: u32 = 15;
 const BASH_BUILD: u32 = 1;
 const BASH_RELEASE: &str = "release";
 const BASH_MACHINE: &str = "unknown";
+
+/// Type for storing a key bindings helper.
+pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 
 /// Represents an instance of a shell.
 pub struct Shell {
@@ -43,7 +48,7 @@ pub struct Shell {
     /// Runtime shell options.
     pub options: RuntimeOptions,
     /// State of managed jobs.
-    pub jobs: jobs::JobManager,
+    pub(crate) jobs: jobs::JobManager,
     /// Shell aliases.
     pub aliases: HashMap<String, String>,
 
@@ -86,13 +91,16 @@ pub struct Shell {
     pub builtins: HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
-    pub program_location_cache: pathcache::PathCache,
+    pub(crate) program_location_cache: pathcache::PathCache,
 
     /// Last "SECONDS" captured time.
     last_stopwatch_time: std::time::SystemTime,
 
     /// Last "SECONDS" offset requested.
     last_stopwatch_offset: u32,
+
+    /// Key bindings for the shell, optionally implemented by an interactive shell.
+    pub key_bindings: Option<KeyBindingsHelper>,
 }
 
 impl Clone for Shell {
@@ -120,6 +128,7 @@ impl Clone for Shell {
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
+            key_bindings: self.key_bindings.clone(),
             depth: self.depth + 1,
         }
     }
@@ -138,7 +147,7 @@ impl AsMut<Shell> for Shell {
 }
 
 /// Options for creating a new shell.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct CreateOptions {
     /// Disabled shopt options.
     pub disabled_shopt_options: Vec<String>,
@@ -178,6 +187,10 @@ pub struct CreateOptions {
     pub verbose: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
+    /// Key bindings helper for the shell to use.
+    pub key_bindings: Option<KeyBindingsHelper>,
+    /// Brush implementation version.
+    pub shell_version: Option<String>,
 }
 
 /// Represents an executing script.
@@ -229,6 +242,7 @@ impl Shell {
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
+            key_bindings: options.key_bindings.clone(),
             depth: 0,
         };
 
@@ -245,19 +259,56 @@ impl Shell {
         Ok(shell)
     }
 
+    fn initialize_exported_func(
+        &mut self,
+        func_name: &str,
+        body_text: &str,
+    ) -> Result<(), error::Error> {
+        let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
+        let func_body = parser.parse_function_parens_and_body()?;
+
+        let func_def = brush_parser::ast::FunctionDefinition {
+            fname: func_name.to_owned(),
+            body: func_body,
+            source: String::new(),
+        };
+
+        let mut registration = functions::FunctionRegistration::from(func_def);
+        registration.export();
+
+        self.funcs.update(func_name.to_owned(), registration);
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::unwrap_in_result)]
     fn initialize_vars(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
         // Seed parameters from environment (unless requested not to do so).
         if !options.do_not_inherit_env {
             for (k, v) in std::env::vars() {
+                // See if it's a function exported by an ancestor process.
+                if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
+                    if let Some(func_name) = func_name.strip_suffix("%%") {
+                        // Intentionally best-effort; don't fail out of the shell if we can't
+                        // parse an incoming function.
+                        let _ = self.initialize_exported_func(func_name, v.as_str());
+                        continue;
+                    }
+                }
+
                 let mut var = ShellVariable::new(ShellValue::String(v));
                 var.export();
                 self.env.set_global(k, var)?;
             }
         }
+        let shell_version = options.shell_version.clone();
+        self.env.set_global(
+            "BRUSH_VERSION",
+            ShellVariable::new(shell_version.unwrap_or_default().into()),
+        )?;
 
-        // TODO(vars): implement $_
+        // TODO(#479): implement $_
 
         // BASH
         if let Some(shell_name) = &options.shell_name {
@@ -365,6 +416,7 @@ impl Shell {
         self.env.set_global("BASH_VERSINFO", bash_versinfo_var)?;
 
         // BASH_VERSION
+        // This is the Bash interface version. See BRUSH_VERSION for its implementation version.
         self.env.set_global(
             "BASH_VERSION",
             ShellVariable::new(
@@ -452,7 +504,7 @@ impl Shell {
             "GROUPS",
             ShellVariable::new(ShellValue::Dynamic {
                 getter: |_shell| {
-                    let groups = sys::users::get_user_group_ids().unwrap_or_default();
+                    let groups = get_current_user_gids();
                     ShellValue::indexed_array_from_strings(
                         groups.into_iter().map(|gid| gid.to_string()),
                     )
@@ -749,9 +801,10 @@ impl Shell {
 
     async fn source_if_exists(
         &mut self,
-        path: &Path,
+        path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<bool, error::Error> {
+        let path = path.as_ref();
         if path.exists() {
             self.source_script(path, std::iter::empty::<String>(), params)
                 .await?;
@@ -769,13 +822,13 @@ impl Shell {
     /// * `path` - The path to the file to source.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    pub async fn source_script<S: AsRef<str>, I: Iterator<Item = S>>(
+    pub async fn source_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
-        path: &Path,
+        path: P,
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(path, args, params, ScriptCallType::Sourced)
+        self.parse_and_execute_script_file(path.as_ref(), args, params, ScriptCallType::Sourced)
             .await
     }
 
@@ -787,13 +840,14 @@ impl Shell {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn parse_and_execute_script_file<S: AsRef<str>, I: Iterator<Item = S>>(
+    async fn parse_and_execute_script_file<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
-        path: &Path,
+        path: P,
         args: I,
         params: &ExecutionParameters,
         call_type: ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
+        let path = path.as_ref();
         tracing::debug!("sourcing: {}", path.display());
         let opened_file: openfiles::OpenFile = self
             .open_file(path, params)
@@ -836,7 +890,7 @@ impl Shell {
             brush_parser::Parser::new(&mut reader, &self.parser_options(), source_info);
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
-        let parse_result = parser.parse();
+        let parse_result = parser.parse_program();
 
         let mut other_positional_parameters = args.map(|s| s.as_ref().to_owned()).collect();
         let mut other_shell_name = Some(source_info.source.clone());
@@ -935,6 +989,18 @@ impl Shell {
             .await
     }
 
+    /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
+    /// for the program.
+    pub fn parse<R: Read>(
+        &self,
+        reader: R,
+    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+        let mut parser = create_parser(reader, &self.parser_options());
+
+        tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
+        parser.parse_program()
+    }
+
     /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
     /// for the program.
     ///
@@ -991,14 +1057,19 @@ impl Shell {
     ///
     /// * `script_path` - The path to the script file to execute.
     /// * `args` - The arguments to pass to the script as positional parameters.
-    pub async fn run_script<S: AsRef<str>, I: Iterator<Item = S>>(
+    pub async fn run_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
-        script_path: &Path,
+        script_path: P,
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
-        self.parse_and_execute_script_file(script_path, args, &params, ScriptCallType::Executed)
-            .await
+        self.parse_and_execute_script_file(
+            script_path.as_ref(),
+            args,
+            &params,
+            ScriptCallType::Executed,
+        )
+        .await
     }
 
     async fn run_parsed_result(
@@ -1268,6 +1339,30 @@ impl Shell {
         self.env.get(name).map(|(_, var)| var)
     }
 
+    /// Tries to set a global variable in the shell's environment.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable to add.
+    /// * `var` - The variable contents to add.
+    pub fn set_env_global(&mut self, name: &str, var: ShellVariable) -> Result<(), error::Error> {
+        self.env.set_global(name, var)
+    }
+
+    /// Register a builtin to the shell's environment.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The in-shell name of the builtin.
+    /// * `registration` - The registration handle for the builtin.
+    pub fn register_builtin<S: Into<String>>(
+        &mut self,
+        name: S,
+        registration: builtins::Registration,
+    ) {
+        self.builtins.insert(name.into(), registration);
+    }
+
     /// Returns the current value of the IFS variable, or the default value if it is not set.
     pub(crate) fn get_ifs(&self) -> Cow<'_, str> {
         self.get_env_str("IFS").unwrap_or_else(|| " \t\n".into())
@@ -1393,7 +1488,8 @@ impl Shell {
     /// # Arguments
     ///
     /// * `path` - The path to get the absolute form of.
-    pub fn get_absolute_path(&self, path: &Path) -> PathBuf {
+    pub fn get_absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        let path = path.as_ref();
         if path.as_os_str().is_empty() || path.is_absolute() {
             path.to_owned()
         } else {
@@ -1409,10 +1505,10 @@ impl Shell {
     /// * `params` - Execution parameters.
     pub(crate) fn open_file(
         &self,
-        path: &Path,
+        path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, error::Error> {
-        let path_to_open = self.get_absolute_path(path);
+        let path_to_open = self.get_absolute_path(path.as_ref());
 
         // See if this is a reference to a file descriptor, in which case the actual
         // /dev/fd* file path for this process may not match with what's in the execution
@@ -1437,6 +1533,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `open_files` - The new file descriptor table to use.
+    #[allow(dead_code)]
     pub(crate) fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
         self.open_files = open_files;
     }
@@ -1446,8 +1543,8 @@ impl Shell {
     /// # Arguments
     ///
     /// * `target_dir` - The path to set as the working directory.
-    pub fn set_working_dir(&mut self, target_dir: &Path) -> Result<(), error::Error> {
-        let abs_path = self.get_absolute_path(target_dir);
+    pub fn set_working_dir(&mut self, target_dir: impl AsRef<Path>) -> Result<(), error::Error> {
+        let abs_path = self.get_absolute_path(target_dir.as_ref());
 
         match std::fs::metadata(&abs_path) {
             Ok(m) => {
@@ -1460,8 +1557,8 @@ impl Shell {
             }
         }
 
-        // TODO: Don't canonicalize, just normalize.
-        let cleaned_path = abs_path.canonicalize()?;
+        // Normalize the path (but don't canonicalize it).
+        let cleaned_path = abs_path.normalize();
 
         let pwd = cleaned_path.to_string_lossy().to_string();
 
@@ -1521,13 +1618,13 @@ impl Shell {
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
-    pub fn stdout(&self) -> openfiles::OpenFile {
+    pub fn stdout(&self) -> impl std::io::Write {
         self.open_files.files.get(&1).unwrap().try_dup().unwrap()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
-    pub fn stderr(&self) -> openfiles::OpenFile {
+    pub fn stderr(&self) -> impl std::io::Write {
         self.open_files.files.get(&2).unwrap().try_dup().unwrap()
     }
 
@@ -1597,6 +1694,45 @@ impl Shell {
     ) -> Result<i64, error::Error> {
         Ok(expr.eval(self)?)
     }
+
+    /// Updates the shell state to reflect the given edit buffer contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `contents` - The contents of the edit buffer.
+    /// * `cursor` - The cursor position in the edit buffer.
+    pub fn set_edit_buffer(&mut self, contents: String, cursor: usize) -> Result<(), error::Error> {
+        self.env
+            .set_global("READLINE_LINE", ShellVariable::new(contents.into()))?;
+
+        self.env.set_global(
+            "READLINE_POINT",
+            ShellVariable::new(cursor.to_string().into()),
+        )?;
+
+        Ok(())
+    }
+
+    /// Returns the contents of the shell's edit buffer, if any. The buffer
+    /// state is cleared from the shell.
+    pub fn pop_edit_buffer(&mut self) -> Result<Option<(String, usize)>, error::Error> {
+        let line = self
+            .env
+            .unset("READLINE_LINE")?
+            .map(|line| line.value().to_cow_str(self).to_string());
+
+        let point = self
+            .env
+            .unset("READLINE_POINT")?
+            .and_then(|point| point.value().to_cow_str(self).parse::<usize>().ok())
+            .unwrap_or(0);
+
+        if let Some(line) = line {
+            Ok(Some((line, point)))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]
@@ -1604,15 +1740,22 @@ fn parse_string_impl(
     s: String,
     parser_options: brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut reader = std::io::BufReader::new(s.as_bytes());
+    let mut parser = create_parser(s.as_bytes(), &parser_options);
+
+    tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
+    parser.parse_program()
+}
+
+fn create_parser<R: Read>(
+    r: R,
+    parser_options: &brush_parser::ParserOptions,
+) -> brush_parser::Parser<std::io::BufReader<R>> {
+    let reader = std::io::BufReader::new(r);
     let source_info = brush_parser::SourceInfo {
         source: String::from("main"),
     };
-    let mut parser: brush_parser::Parser<&mut std::io::BufReader<&[u8]>> =
-        brush_parser::Parser::new(&mut reader, &parser_options, &source_info);
 
-    tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
-    parser.parse()
+    brush_parser::Parser::new(reader, parser_options, &source_info)
 }
 
 fn repeated_char_str(c: char, count: usize) -> String {
@@ -1631,4 +1774,23 @@ fn get_srandom_value(_shell: &Shell) -> ShellValue {
     let num: u32 = rng.random();
     let str = num.to_string();
     str.into()
+}
+
+/// Returns a list of the current user's group IDs, with the effective GID at the front.
+fn get_current_user_gids() -> Vec<u32> {
+    let mut groups = sys::users::get_user_group_ids().unwrap_or_default();
+
+    // If the effective GID is present but not in the first position in the list, then move
+    // it there.
+    if let Ok(gid) = sys::users::get_effective_gid() {
+        if let Some(index) = groups.iter().position(|&g| g == gid) {
+            if index > 0 {
+                // Move it to the front.
+                groups.remove(index);
+                groups.insert(0, gid);
+            }
+        }
+    }
+
+    groups
 }

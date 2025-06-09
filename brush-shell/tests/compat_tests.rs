@@ -1390,7 +1390,7 @@ struct TestOptions {
     #[clap(long = "exact")]
     pub exact_match: bool,
 
-    /// Optionaly specify a non-default path for bash
+    /// Optionally specify a non-default path for bash
     #[clap(long = "bash-path", default_value = "bash", env = "BASH_PATH")]
     pub bash_path: PathBuf,
 
@@ -1402,8 +1402,6 @@ struct TestOptions {
     #[clap(long = "test-cases-path", env = "BRUSH_COMPAT_TEST_CASES")]
     pub test_cases_path: Option<PathBuf>,
 
-    //
-    // Compat-only options
     /// Show output from test cases (for compatibility only, has no effect)
     #[clap(long = "show-output")]
     pub show_output: bool,
@@ -1411,6 +1409,10 @@ struct TestOptions {
     /// Capture output? (for compatibility only, has no effect)
     #[clap(long = "nocapture")]
     pub no_capture: bool,
+
+    /// Colorize output? (for compatibility only, has no effect)
+    #[clap(long = "color", default_value_t = clap::ColorChoice::Auto)]
+    pub color: clap::ColorChoice,
 
     #[clap(long = "ignored")]
     pub skipped_tests_only: bool,
@@ -1474,7 +1476,8 @@ impl TestOptions {
     }
 
     fn test_matches_filters(&self, qualified_test_name: &String, filters: &[String]) -> bool {
-        // In exact match mode, filters must be an exact match; substring matches are not considered.
+        // In exact match mode, filters must be an exact match; substring matches are not
+        // considered.
         if self.exact_match {
             filters.contains(qualified_test_name)
         } else {
