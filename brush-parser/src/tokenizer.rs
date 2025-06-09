@@ -649,13 +649,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 }
 
                 // Verify we're not in a here document.
-                if !matches!(self.cross_state.here_state, HereState::None)
-                {
+                if !matches!(self.cross_state.here_state, HereState::None) {
                     if self.remove_here_end_tag(&mut state, &mut result, false)? {
                         // If we hit end tag without a trailing newline, try to get next token.
                         continue;
                     }
-                
+
                     let tag_names = self
                         .cross_state
                         .current_here_tags
@@ -1153,17 +1152,25 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         result: &mut Option<TokenizeResult>,
         ends_with_newline: bool,
     ) -> Result<bool, TokenizerError> {
+        // Bail immediately if we don't even have a *starting* here tag.
+        if self.cross_state.current_here_tags.is_empty() {
+            return Ok(false);
+        }
+
         let next_here_tag = &self.cross_state.current_here_tags[0];
+
         let tag_str: Cow<'_, str> = if next_here_tag.tag_was_escaped_or_quoted {
             unquote_str(next_here_tag.tag.as_str()).into()
         } else {
             next_here_tag.tag.as_str().into()
         };
+
         let tag_str = if !ends_with_newline {
             tag_str.strip_suffix('\n').unwrap_or(tag_str.as_ref())
         } else {
             tag_str.as_ref()
         };
+
         if let Some(current_token_without_here_tag) = state.current_token().strip_suffix(tag_str) {
             // Make sure that was either the start of the here document, or there
             // was a newline between the preceding part
