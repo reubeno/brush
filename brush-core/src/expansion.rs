@@ -642,7 +642,8 @@ impl<'a> WordExpander<'a> {
                     String::from_utf8_lossy(expanded.as_slice()).into_owned(),
                 ))
             }
-            brush_parser::word::WordPiece::DoubleQuotedSequence(pieces) => {
+            brush_parser::word::WordPiece::DoubleQuotedSequence(pieces)
+            | brush_parser::word::WordPiece::GettextDoubleQuotedSequence(pieces) => {
                 let mut fields: Vec<WordField> = vec![];
 
                 let pieces_is_empty = pieces.is_empty();

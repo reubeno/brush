@@ -37,6 +37,8 @@ pub enum WordPiece {
     AnsiCQuotedText(String),
     /// A sequence of pieces that are embedded in double quotes.
     DoubleQuotedSequence(Vec<WordPieceWithSource>),
+    /// Gettext enabled variant of [`WordPiece::DoubleQuotedSequence`].
+    GettextDoubleQuotedSequence(Vec<WordPieceWithSource>),
     /// A tilde prefix.
     TildePrefix(String),
     /// A parameter expansion.
@@ -620,10 +622,18 @@ peg::parser! {
             }
 
         rule word_piece<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
+            // Rules that match quoted text.
+            s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
+            s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
+            s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
+            s:gettext_double_quoted_sequence() { WordPiece::GettextDoubleQuotedSequence(s) } /
+            // Rules that match pieces starting with a dollar sign ('$').
             arithmetic_expansion() /
             command_substitution() /
             parameter_expansion() /
-            unquoted_text(<stop_condition()>, in_command)
+            // Rules that match unquoted text that doesn't start with an unescaped dollar sign.
+            normal_escape_sequence() /
+            unquoted_literal_text(<stop_condition()>, in_command)
 
         rule double_quoted_word_piece() -> WordPiece =
             arithmetic_expansion() /
@@ -632,15 +642,11 @@ peg::parser! {
             double_quoted_escape_sequence() /
             double_quoted_text()
 
-        rule unquoted_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
-            s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
-            s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
-            s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
-            normal_escape_sequence() /
-            unquoted_literal_text(<stop_condition()>, in_command)
-
         rule double_quoted_sequence() -> Vec<WordPieceWithSource> =
             "\"" i:double_quoted_sequence_inner()* "\"" { i }
+
+        rule gettext_double_quoted_sequence() -> Vec<WordPieceWithSource> =
+            "$\"" i:double_quoted_sequence_inner()* "\"" { i }
 
         rule double_quoted_sequence_inner() -> WordPieceWithSource =
             start_index:position!() piece:double_quoted_word_piece() end_index:position!() {
@@ -919,6 +925,24 @@ mod tests {
             input: word,
             result: parsed,
         })
+    }
+
+    #[test]
+    fn parse_ansi_c_quoted_text() -> Result<()> {
+        assert_ron_snapshot!(test_parse(r"$'hi\nthere\t'")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_quoted_text() -> Result<()> {
+        assert_ron_snapshot!(test_parse(r#""a ${b} c""#)?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_gettext_double_quoted_text() -> Result<()> {
+        assert_ron_snapshot!(test_parse(r#"$"a ${b} c""#)?);
+        Ok(())
     }
 
     #[test]
