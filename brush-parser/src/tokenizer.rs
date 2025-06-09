@@ -31,12 +31,15 @@ pub(crate) enum TokenEndReason {
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Pos"))]
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
+    #[cfg_attr(test, serde(rename = "idx"))]
     pub index: i32,
     /// The 1-based line number.
     pub line: i32,
     /// The 1-based column number.
+    #[cfg_attr(test, serde(rename = "col"))]
     pub column: i32,
 }
 
@@ -50,6 +53,7 @@ impl Display for SourcePosition {
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(test, serde(rename = "Loc"))]
 pub struct TokenLocation {
     /// The start position of the token.
     pub start: SourcePosition,
@@ -63,8 +67,10 @@ pub struct TokenLocation {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum Token {
     /// An operator token.
+    #[cfg_attr(test, serde(rename = "Op"))]
     Operator(String, TokenLocation),
     /// A word token.
+    #[cfg_attr(test, serde(rename = "W"))]
     Word(String, TokenLocation),
 }
 
@@ -1275,7 +1281,21 @@ mod tests {
 
     use super::*;
     use anyhow::Result;
+    use insta::assert_ron_snapshot;
     use pretty_assertions::{assert_eq, assert_matches};
+
+    #[derive(serde::Serialize)]
+    struct TokenizerResult<'a> {
+        input: &'a str,
+        result: Vec<Token>,
+    }
+
+    fn test_tokenizer(input: &str) -> Result<TokenizerResult<'_>> {
+        Ok(TokenizerResult {
+            input,
+            result: tokenize_str(input)?,
+        })
+    }
 
     #[test]
     fn tokenize_empty() -> Result<()> {
@@ -1286,212 +1306,91 @@ mod tests {
 
     #[test]
     fn tokenize_line_continuation() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"a\
-bc",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "abc"
-        );
+bc"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_operators() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("a>>b")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Operator(..), t3 @ Token::Word(..)] if
-                t1.to_str() == "a" &&
-                t2.to_str() == ">>" &&
-                t3.to_str() == "b"
-        );
+        assert_ron_snapshot!(test_tokenizer("a>>b")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_comment() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"a #comment
-",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..), t2 @ Token::Operator(..)] if
-                t1.to_str() == "a" &&
-                t2.to_str() == "\n"
-        );
+"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_comment_at_eof() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r"a #comment")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "a"
-        );
+        assert_ron_snapshot!(test_tokenizer(r"a #comment")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_empty_here_doc() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"cat <<HERE
 HERE
-",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..),
-             t2 @ Token::Operator(..),
-             t3 @ Token::Word(..),
-             t4 @ Token::Word(..),
-             t5 @ Token::Word(..),
-             t6 @ Token::Operator(..)] if
-                t1.to_str() == "cat" &&
-                t2.to_str() == "<<" &&
-                t3.to_str() == "HERE" &&
-                t4.to_str() == "" &&
-                t5.to_str() == "HERE" &&
-                t6.to_str() == "\n"
-        );
+"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_here_doc() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"cat <<HERE
 SOMETHING
 HERE
 echo after
-",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..),
-             t2 @ Token::Operator(..),
-             t3 @ Token::Word(..),
-             t4 @ Token::Word(..),
-             t5 @ Token::Word(..),
-             t6 @ Token::Operator(..),
-             t7 @ Token::Word(..),
-             t8 @ Token::Word(..),
-             t9 @ Token::Operator(..)] if
-                t1.to_str() == "cat" &&
-                t2.to_str() == "<<" &&
-                t3.to_str() == "HERE" &&
-                t4.to_str() == "SOMETHING\n" &&
-                t5.to_str() == "HERE" &&
-                t6.to_str() == "\n" &&
-                t7.to_str() == "echo" &&
-                t8.to_str() == "after" &&
-                t9.to_str() == "\n"
-        );
+"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_here_doc_with_tab_removal() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"cat <<-HERE
 	SOMETHING
 	HERE
-",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..),
-             t2 @ Token::Operator(..),
-             t3 @ Token::Word(..),
-             t4 @ Token::Word(..),
-             t5 @ Token::Word(..),
-             t6 @ Token::Operator(..)] if
-                t1.to_str() == "cat" &&
-                t2.to_str() == "<<-" &&
-                t3.to_str() == "HERE" &&
-                t4.to_str() == "SOMETHING\n" &&
-                t5.to_str() == "HERE" &&
-                t6.to_str() == "\n"
-        );
+"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_here_doc_with_other_tokens() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"cat <<EOF | wc -l
 A B C
 1 2 3
 D E F
 EOF
-",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..),
-             t2 @ Token::Operator(..),
-             t3 @ Token::Word(..),
-             t4 @ Token::Word(..),
-             t5 @ Token::Word(..),
-             t6 @ Token::Operator(..),
-             t7 @ Token::Word(..),
-             t8 @ Token::Word(..),
-             t9 @ Token::Operator(..)] if
-                t1.to_str() == "cat" &&
-                t2.to_str() == "<<" &&
-                t3.to_str() == "EOF" &&
-                t4.to_str() == "A B C\n1 2 3\nD E F\n" &&
-                t5.to_str() == "EOF" &&
-                t6.to_str() == "|" &&
-                t7.to_str() == "wc" &&
-                t8.to_str() == "-l" &&
-                t9.to_str() == "\n"
-        );
-
+"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_multiple_here_docs() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"cat <<HERE1 <<HERE2
 SOMETHING
 HERE1
 OTHER
 HERE2
 echo after
-",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..),
-             t2 @ Token::Operator(..),
-             t3 @ Token::Word(..),
-             t4 @ Token::Word(..),
-             t5 @ Token::Word(..),
-             t6 @ Token::Operator(..),
-             t7 @ Token::Word(..),
-             t8 @ Token::Word(..),
-             t9 @ Token::Word(..),
-             t10 @ Token::Operator(..),
-             t11 @ Token::Word(..),
-             t12 @ Token::Word(..),
-             t13 @ Token::Operator(..)] if
-                t1.to_str() == "cat" &&
-                t2.to_str() == "<<" &&
-                t3.to_str() == "HERE1" &&
-                t4.to_str() == "SOMETHING\n" &&
-                t5.to_str() == "HERE1" &&
-                t6.to_str() == "<<" &&
-                t7.to_str() == "HERE2" &&
-                t8.to_str() == "OTHER\n" &&
-                t9.to_str() == "HERE2" &&
-                t10.to_str() == "\n" &&
-                t11.to_str() == "echo" &&
-                t12.to_str() == "after" &&
-                t13.to_str() == "\n"
-        );
+"
+        )?);
         Ok(())
     }
 
@@ -1516,61 +1415,37 @@ SOMETHING
 
     #[test]
     fn tokenize_here_doc_in_command_substitution() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"echo $(cat <<HERE
 TEXT
 HERE
-)",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..),
-             t2 @ Token::Word(..)] if
-                t1.to_str() == "echo" &&
-                t2.to_str() == "$(cat <<HERE\nTEXT\nHERE\n)"
-        );
+)"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_complex_here_docs_in_command_substitution() -> Result<()> {
-        let tokens = tokenize_str(
+        assert_ron_snapshot!(test_tokenizer(
             r"echo $(cat <<HERE1 <<HERE2 | wc -l
 TEXT
 HERE1
 OTHER
 HERE2
-)",
-        )?;
-        assert_matches!(
-            &tokens[..],
-            [t1 @ Token::Word(..),
-             t2 @ Token::Word(..)] if
-                t1.to_str() == "echo" &&
-                t2.to_str() == "$(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)"
-        );
+)"
+        )?);
         Ok(())
     }
 
     #[test]
     fn tokenize_simple_backquote() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r"echo `echo hi`")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
-                t1.to_str() == "echo" &&
-                t2.to_str() == "`echo hi`"
-        );
+        assert_ron_snapshot!(test_tokenizer(r"echo `echo hi`")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_backquote_with_escape() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r"echo `echo\`hi`")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
-                t1.to_str() == "echo" &&
-                t2.to_str() == r"`echo\`hi`"
-        );
+        assert_ron_snapshot!(test_tokenizer(r"echo `echo\`hi`")?);
         Ok(())
     }
 
@@ -1592,43 +1467,25 @@ HERE2
 
     #[test]
     fn tokenize_command_substitution() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("a$(echo hi)b c")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
-                t1.to_str() == "a$(echo hi)b" &&
-                t2.to_str() == "c"
-        );
+        assert_ron_snapshot!(test_tokenizer("a$(echo hi)b c")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_command_substitution_with_subshell() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("$( (:) )")?[..],
-            [t @ Token::Word(..)] if t.to_str() == "$( (:) )"
-        );
+        assert_ron_snapshot!(test_tokenizer("$( (:) )")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_command_substitution_containing_extglob() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("echo $(echo !(x))")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
-                t1.to_str() == "echo" &&
-                t2.to_str() == "$(echo !(x))"
-        );
+        assert_ron_snapshot!(test_tokenizer("echo $(echo !(x))")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_arithmetic_expression() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("a$((1+2))b c")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
-                t1.to_str() == "a$((1+2))b" &&
-                t2.to_str() == "c"
-        );
+        assert_ron_snapshot!(test_tokenizer("a$((1+2))b c")?);
         Ok(())
     }
 
@@ -1636,58 +1493,29 @@ HERE2
     fn tokenize_arithmetic_expression_with_space() -> Result<()> {
         // N.B. The spacing comes out a bit odd, but it gets processed okay
         // by later stages.
-        assert_matches!(
-            &tokenize_str("$(( 1 ))")?[..],
-            [t1 @ Token::Word(..)] if
-                t1.to_str() == "$(( 1 ))"
-        );
+        assert_ron_snapshot!(test_tokenizer("$(( 1 ))")?);
         Ok(())
     }
     #[test]
     fn tokenize_arithmetic_expression_with_parens() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("$(( (0) ))")?[..],
-            [t1 @ Token::Word(..)] if
-                t1.to_str() == "$(( (0) ))"
-        );
+        assert_ron_snapshot!(test_tokenizer("$(( (0) ))")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_special_parameters() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("$$")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "$$"
-        );
-        assert_matches!(
-            &tokenize_str("$@")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "$@"
-        );
-        assert_matches!(
-            &tokenize_str("$!")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "$!"
-        );
-        assert_matches!(
-            &tokenize_str("$?")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "$?"
-        );
-        assert_matches!(
-            &tokenize_str("$*")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "$*"
-        );
+        assert_ron_snapshot!(test_tokenizer("$$")?);
+        assert_ron_snapshot!(test_tokenizer("$@")?);
+        assert_ron_snapshot!(test_tokenizer("$!")?);
+        assert_ron_snapshot!(test_tokenizer("$?")?);
+        assert_ron_snapshot!(test_tokenizer("$*")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_unbraced_parameter_expansion() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("$x")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "$x"
-        );
-        assert_matches!(
-            &tokenize_str("a$x")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "a$x"
-        );
+        assert_ron_snapshot!(test_tokenizer("$x")?);
+        assert_ron_snapshot!(test_tokenizer("a$x")?);
         Ok(())
     }
 
@@ -1701,86 +1529,50 @@ HERE2
 
     #[test]
     fn tokenize_braced_parameter_expansion() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("${x}")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "${x}"
-        );
-        assert_matches!(
-            &tokenize_str("a${x}b")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == "a${x}b"
-        );
+        assert_ron_snapshot!(test_tokenizer("${x}")?);
+        assert_ron_snapshot!(test_tokenizer("a${x}b")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_braced_parameter_expansion_with_escaping() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r"a${x\}}b")?[..],
-            [t1 @ Token::Word(..)] if t1.to_str() == r"a${x\}}b"
-        );
+        assert_ron_snapshot!(test_tokenizer(r"a${x\}}b")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_whitespace() -> Result<()> {
-        assert_matches!(
-            &tokenize_str("1 2 3")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Word(..), t3 @ Token::Word(..)] if
-                t1.to_str() == "1" &&
-                t2.to_str() == "2" &&
-                t3.to_str() == "3"
-        );
+        assert_ron_snapshot!(test_tokenizer("1 2 3")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_escaped_whitespace() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r"1\ 2 3")?[..],
-            [t1 @ Token::Word(..), t2 @ Token::Word(..)] if
-                t1.to_str() == r"1\ 2" &&
-                t2.to_str() == "3"
-        );
+        assert_ron_snapshot!(test_tokenizer(r"1\ 2 3")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_single_quote() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r"x'a b'y")?[..],
-            [t1 @ Token::Word(..)] if
-                t1.to_str() == r"x'a b'y"
-        );
+        assert_ron_snapshot!(test_tokenizer(r"x'a b'y")?);
         Ok(())
     }
 
     #[test]
     fn tokenize_double_quote() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r#"x"a b"y"#)?[..],
-            [t1 @ Token::Word(..)] if
-                t1.to_str() == r#"x"a b"y"#
-        );
+        assert_ron_snapshot!(test_tokenizer(r#"x"a b"y"#)?);
         Ok(())
     }
 
     #[test]
     fn tokenize_double_quoted_command_substitution() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r#"x"$(echo hi)"y"#)?[..],
-            [t1 @ Token::Word(..)] if
-                t1.to_str() == r#"x"$(echo hi)"y"#
-        );
+        assert_ron_snapshot!(test_tokenizer(r#"x"$(echo hi)"y"#)?);
         Ok(())
     }
 
     #[test]
     fn tokenize_double_quoted_arithmetic_expression() -> Result<()> {
-        assert_matches!(
-            &tokenize_str(r#"x"$((1+2))"y"#)?[..],
-            [t1 @ Token::Word(..)] if
-                t1.to_str() == r#"x"$((1+2))"y"#
-        );
+        assert_ron_snapshot!(test_tokenizer(r#"x"$((1+2))"y"#)?);
         Ok(())
     }
 
