@@ -1353,6 +1353,24 @@ HERE
 echo after
 "
         )?);
+        assert_ron_snapshot!(test_tokenizer(
+            r"cat <<HERE
+SOMETHING
+HERE
+"
+        )?);
+        assert_ron_snapshot!(test_tokenizer(
+            r"cat <<HERE
+SOMETHING
+HERE
+
+"
+        )?);
+        assert_ron_snapshot!(test_tokenizer(
+            r"cat <<HERE
+SOMETHING
+HERE"
+        )?);
         Ok(())
     }
 

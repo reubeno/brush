@@ -53,6 +53,9 @@ cases:
       wc -l <<EOF
       EOF
 
+  - name: "Basic here doc"
+    stdin: "wc -l <<EOF\nSomething\nEOF"
+
   - name: "Here doc with other tokens after tag"
     stdin: |
       wc -l <<EOF | wc -l
