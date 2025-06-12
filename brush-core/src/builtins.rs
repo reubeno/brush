@@ -41,6 +41,7 @@ mod kill;
 mod let_;
 mod mapfile;
 mod popd;
+#[cfg(any(unix, windows))]
 mod printf;
 mod pushd;
 mod pwd;

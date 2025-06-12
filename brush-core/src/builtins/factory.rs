@@ -283,6 +283,7 @@ pub(crate) fn get_default_builtins(
         m.insert("let".into(), builtin::<let_::LetCommand>());
         m.insert("mapfile".into(), builtin::<mapfile::MapFileCommand>());
         m.insert("readarray".into(), builtin::<mapfile::MapFileCommand>());
+        #[cfg(any(unix, windows))]
         m.insert("printf".into(), builtin::<printf::PrintfCommand>());
         m.insert("shopt".into(), builtin::<shopt::ShoptCommand>());
         m.insert("source".into(), builtin::<dot::DotCommand>().special());
