@@ -31,6 +31,7 @@ itertools = "0.14.0"
 normalize-path = "0.2.1"
 rand = "0.9.1"
 strum = "0.27.1"
+uucore = { version = "0.1.0", default-features = false, features = ["format"] }
 strum_macros = "0.27.1"
 thiserror = "2.0.12"
 tracing = "0.1.41"

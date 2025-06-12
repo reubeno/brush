@@ -194,6 +194,10 @@ pub enum Error {
     #[error("printf failure: {0}")]
     PrintfFailure(i32),
 
+    /// Printf invalid usage
+    #[error("printf: {0}")]
+    PrintfInvalidUsage(String),
+
     /// Interrupted
     #[error("interrupted")]
     Interrupted,

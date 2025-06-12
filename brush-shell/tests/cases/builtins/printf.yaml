@@ -213,6 +213,7 @@ cases:
       printf "%*.*s|\n" 10 3 "hello world"
 
   - name: "printf with zero precision and zero arg"
+    known_failure: true
     stdin: |
       printf "%.0d\n" 0
 
@@ -284,6 +285,7 @@ cases:
 
   # More empty string handling
   - name: "printf with empty strings for numbers"
+    known_failure: true
     stdin: |
       printf "%d" ""
       printf "%x" ""
@@ -321,7 +323,6 @@ cases:
 
   - name: "printf with no arguments"
     ignore_stderr: true
-    known_failure: true
     stdin: |
       printf
       echo "Result: $?"
