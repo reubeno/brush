@@ -1,4 +1,4 @@
-use clap::{builder::styling, Parser};
+use clap::{Parser, builder::styling};
 use std::io::IsTerminal;
 
 use crate::{events, productinfo};

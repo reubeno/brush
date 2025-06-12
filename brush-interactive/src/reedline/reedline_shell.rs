@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::{completer, edit_mode, highlighter, refs, validator};
-use crate::{interactive_shell::InteractivePrompt, InteractiveShell, ReadResult, ShellError};
+use crate::{InteractiveShell, ReadResult, ShellError, interactive_shell::InteractivePrompt};
 
 /// Represents an interactive shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.

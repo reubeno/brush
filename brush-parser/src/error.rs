@@ -1,5 +1,5 @@
-use crate::tokenizer;
 use crate::Token;
+use crate::tokenizer;
 
 /// Represents an error that occurred while parsing tokens.
 #[derive(thiserror::Error, Debug)]

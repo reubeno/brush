@@ -9,11 +9,10 @@ use std::{
 };
 
 use crate::{
-    commands, env, error, escape, jobs, namedoptions, patterns,
+    Shell, commands, env, error, escape, jobs, namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
-    Shell,
 };
 
 /// Type of action to take to generate completion candidates.

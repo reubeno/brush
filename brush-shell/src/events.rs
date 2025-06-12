@@ -2,7 +2,7 @@ use std::{collections::HashSet, fmt::Display};
 
 use brush_core::Error;
 use tracing_subscriber::{
-    filter::Targets, layer::SubscriberExt, reload::Handle, util::SubscriberInitExt, Layer, Registry,
+    Layer, Registry, filter::Targets, layer::SubscriberExt, reload::Handle, util::SubscriberInitExt,
 };
 
 /// Type of event to trace.

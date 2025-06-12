@@ -6,10 +6,10 @@
 
 use anyhow::Context;
 use expectrl::{
+    Expect, Session,
     process::unix::{PtyStream, UnixProcess},
     repl::ReplSession,
     stream::log::LogStream,
-    Expect, Session,
 };
 
 #[test]

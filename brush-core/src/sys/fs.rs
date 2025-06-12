@@ -1,10 +1,10 @@
 #[allow(unused_imports)]
 pub(crate) use super::platform::fs::*;
 
-#[cfg(unix)]
-pub(crate) use std::os::unix::fs::MetadataExt;
 #[cfg(not(unix))]
 pub(crate) use StubMetadataExt as MetadataExt;
+#[cfg(unix)]
+pub(crate) use std::os::unix::fs::MetadataExt;
 
 pub(crate) trait PathExt {
     fn readable(&self) -> bool;

@@ -1,4 +1,4 @@
-use crate::{error, extendedtests, ExecutionParameters, Shell};
+use crate::{ExecutionParameters, Shell, error, extendedtests};
 
 pub(crate) fn eval_test_expr(
     expr: &brush_parser::ast::TestExpr,

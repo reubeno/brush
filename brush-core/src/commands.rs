@@ -9,10 +9,10 @@ use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
 
 use crate::{
-    builtins, error, escape,
+    ExecutionParameters, ExecutionResult, Shell, builtins, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
-    processes, sys, trace_categories, ExecutionParameters, ExecutionResult, Shell,
+    processes, sys, trace_categories,
 };
 
 /// Represents the result of spawning a command.
@@ -114,17 +114,17 @@ pub struct ExecutionContext<'a> {
 
 impl ExecutionContext<'_> {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> impl std::io::Read {
+    pub fn stdin(&self) -> impl std::io::Read + 'static {
         self.params.stdin()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> impl std::io::Write {
+    pub fn stdout(&self) -> impl std::io::Write + 'static {
         self.params.stdout()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write {
+    pub fn stderr(&self) -> impl std::io::Write + 'static {
         self.params.stderr()
     }
 
@@ -504,13 +504,13 @@ async fn execute_builtin_command(
             builtins::ExitCode::Custom(code) => code,
             builtins::ExitCode::ExitShell(code) => return Ok(CommandSpawnResult::ExitShell(code)),
             builtins::ExitCode::ReturnFromFunctionOrScript(code) => {
-                return Ok(CommandSpawnResult::ReturnFromFunctionOrScript(code))
+                return Ok(CommandSpawnResult::ReturnFromFunctionOrScript(code));
             }
             builtins::ExitCode::BreakLoop(count) => {
-                return Ok(CommandSpawnResult::BreakLoop(count))
+                return Ok(CommandSpawnResult::BreakLoop(count));
             }
             builtins::ExitCode::ContinueLoop(count) => {
-                return Ok(CommandSpawnResult::ContinueLoop(count))
+                return Ok(CommandSpawnResult::ContinueLoop(count));
             }
         },
         Err(e @ error::Error::Unimplemented(..)) => {

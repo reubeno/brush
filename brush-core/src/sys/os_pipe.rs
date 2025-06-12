@@ -1,1 +1,1 @@
-pub(crate) use os_pipe::{pipe, PipeReader, PipeWriter};
+pub(crate) use os_pipe::{PipeReader, PipeWriter, pipe};

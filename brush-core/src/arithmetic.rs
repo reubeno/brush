@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::{env, expansion, variables, ExecutionParameters, Shell};
+use crate::{ExecutionParameters, Shell, env, expansion, variables};
 use brush_parser::ast;
 
 /// Represents an error that occurs during evaluation of an arithmetic expression.
@@ -338,11 +338,7 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
 }
 
 fn bool_to_i64(value: bool) -> i64 {
-    if value {
-        1
-    } else {
-        0
-    }
+    if value { 1 } else { 0 }
 }
 
 // N.B. We implement our own version of wrapping_pow that takes a 64-bit exponent.

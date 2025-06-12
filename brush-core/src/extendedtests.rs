@@ -2,13 +2,12 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    arithmetic, env, error, escape, expansion, namedoptions, patterns,
+    ExecutionParameters, Shell, arithmetic, env, error, escape, expansion, namedoptions, patterns,
     sys::{
         fs::{MetadataExt, PathExt},
         users,
     },
     variables::{self, ArrayLiteral},
-    ExecutionParameters, Shell,
 };
 
 #[async_recursion::async_recursion]

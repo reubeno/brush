@@ -6,7 +6,7 @@ use clap::Parser;
 
 use crate::keywords;
 use crate::sys::fs::PathExt;
-use crate::{builtins, commands, Shell};
+use crate::{Shell, builtins, commands};
 
 /// Inspect the type of a named shell item.
 #[derive(Parser)]

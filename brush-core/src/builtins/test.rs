@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtins, commands, error, tests, ExecutionParameters, Shell};
+use crate::{ExecutionParameters, Shell, builtins, commands, error, tests};
 
 /// Evaluate test expression.
 #[derive(Parser)]

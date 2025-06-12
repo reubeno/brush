@@ -146,7 +146,7 @@ fn parse_result_to_error<R>(
 where
     R: std::fmt::Debug,
 {
-    let result = match parse_result {
+    match parse_result {
         Ok(program) => {
             tracing::debug!(target: "parse", "PROG: {:?}", program);
             Ok(program)
@@ -158,9 +158,7 @@ where
                 tokens.as_slice(),
             ))
         }
-    };
-
-    result
+    }
 }
 
 impl peg::Parse for Tokens<'_> {

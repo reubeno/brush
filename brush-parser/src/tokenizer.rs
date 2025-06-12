@@ -909,7 +909,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                         state.append_char(self.next_char()?.unwrap());
                                     }
                                     TokenEndReason::EndOfInput => {
-                                        return Err(TokenizerError::UnterminatedCommandSubstitution)
+                                        return Err(
+                                            TokenizerError::UnterminatedCommandSubstitution,
+                                        );
                                     }
                                     _ => (),
                                 }
@@ -985,7 +987,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                         break;
                                     }
                                     TokenEndReason::EndOfInput => {
-                                        return Err(TokenizerError::UnterminatedVariable)
+                                        return Err(TokenizerError::UnterminatedVariable);
                                     }
                                     _ => (),
                                 }

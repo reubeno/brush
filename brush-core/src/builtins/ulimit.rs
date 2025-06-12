@@ -1,6 +1,6 @@
 use clap::{
-    builder::{IntoResettable, StyledStr},
     Parser,
+    builder::{IntoResettable, StyledStr},
 };
 use std::{
     io::{self, ErrorKind, Write},

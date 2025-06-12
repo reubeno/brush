@@ -335,8 +335,11 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
             None
         }
         reedline::ReedlineEvent::UntilFound(uf_events) => {
-            if let [reedline::ReedlineEvent::HistoryHintComplete
-            | reedline::ReedlineEvent::HistoryHintWordComplete, next_evt] = uf_events.as_slice()
+            if let [
+                reedline::ReedlineEvent::HistoryHintComplete
+                | reedline::ReedlineEvent::HistoryHintWordComplete,
+                next_evt,
+            ] = uf_events.as_slice()
             {
                 translate_reedline_event_to_action(next_evt)
             } else {
