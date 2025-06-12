@@ -1,6 +1,6 @@
 #[cfg(unix)]
 mod unix {
-    use brush_parser::{parse_tokens, Token};
+    use brush_parser::{Token, parse_tokens};
     use criterion::Criterion;
 
     fn uncached_tokenize(content: &str) -> Vec<brush_parser::Token> {

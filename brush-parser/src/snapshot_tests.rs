@@ -103,7 +103,7 @@ fn parse_script_content(s: &str) -> ParseSummary<'_> {
             return ParseSummary {
                 input: input_lines,
                 result: ParseResult::Failure(err.to_string()),
-            }
+            };
         }
     };
 
@@ -117,7 +117,7 @@ fn parse_script_content(s: &str) -> ParseSummary<'_> {
             return ParseSummary {
                 input: input_lines,
                 result: ParseResult::Failure(err.to_string()),
-            }
+            };
         }
     };
 

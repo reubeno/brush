@@ -6,6 +6,7 @@ use brush_parser::word::ParameterTransformOp;
 use brush_parser::word::SubstringMatchKind;
 use itertools::Itertools;
 
+use crate::ExecutionParameters;
 use crate::arithmetic;
 use crate::arithmetic::ExpandAndEvaluate;
 use crate::commands;
@@ -20,7 +21,6 @@ use crate::trace_categories;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
-use crate::ExecutionParameters;
 
 #[derive(Debug)]
 struct Expansion {

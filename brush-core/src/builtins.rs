@@ -1,12 +1,12 @@
 //! Infrastructure for shell built-in commands.
 
-use clap::builder::styling;
 use clap::Parser;
+use clap::builder::styling;
 use futures::future::BoxFuture;
 
+use crate::ExecutionResult;
 use crate::commands;
 use crate::error;
-use crate::ExecutionResult;
 
 mod alias;
 mod bg;
@@ -66,7 +66,7 @@ mod unset;
 mod wait;
 
 pub(crate) use factory::get_default_builtins;
-pub use factory::{builtin, simple_builtin, SimpleCommand};
+pub use factory::{SimpleCommand, builtin, simple_builtin};
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.

@@ -117,17 +117,17 @@ pub struct ExecutionParameters {
 
 impl ExecutionParameters {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> impl std::io::Read {
+    pub fn stdin(&self) -> impl std::io::Read + 'static {
         self.fd(0).unwrap()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> impl std::io::Write {
+    pub fn stdout(&self) -> impl std::io::Write + 'static {
         self.fd(1).unwrap()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write {
+    pub fn stderr(&self) -> impl std::io::Write + 'static {
         self.fd(2).unwrap()
     }
 
@@ -263,13 +263,11 @@ fn spawn_ao_list_in_task<'a>(
             .await
     });
 
-    let job = shell.jobs.add_as_current(jobs::Job::new(
+    shell.jobs.add_as_current(jobs::Job::new(
         [jobs::JobTask::Internal(join_handle)],
         ao_list.to_string(),
         jobs::JobState::Running,
-    ));
-
-    job
+    ))
 }
 
 #[async_trait::async_trait]
@@ -783,8 +781,8 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             WhileOrUntil::While => true,
             WhileOrUntil::Until => false,
         };
-        let test_condition = &self.1 .0;
-        let body = &self.1 .1;
+        let test_condition = &self.1.0;
+        let body = &self.1.1;
 
         let mut result = ExecutionResult::success();
 

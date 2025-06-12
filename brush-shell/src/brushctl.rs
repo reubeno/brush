@@ -70,8 +70,8 @@ impl EventsCommand {
                     let enabled_events = event_config.get_enabled_events();
                     for event in enabled_events {
                         writeln!(context.stdout(), "{event}").unwrap(); // Add .unwrap() to handle
-                                                                        // any potential write
-                                                                        // errors
+                        // any potential write
+                        // errors
                     }
                 }
                 EventsCommand::Enable { event } => event_config.enable(*event)?,

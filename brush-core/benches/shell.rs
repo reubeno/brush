@@ -1,6 +1,6 @@
 #[cfg(unix)]
 mod unix {
-    use criterion::{black_box, Criterion};
+    use criterion::{Criterion, black_box};
 
     async fn instantiate_shell() -> brush_core::Shell {
         let options = brush_core::CreateOptions::default();

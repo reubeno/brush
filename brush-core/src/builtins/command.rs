@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
-use crate::{builtins, commands, error, shell, sys, sys::fs::PathExt, ExecutionResult};
+use crate::{ExecutionResult, builtins, commands, error, shell, sys, sys::fs::PathExt};
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Parser)]

@@ -42,10 +42,10 @@ fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::BellCharacter => "\x07".to_owned(),
         brush_parser::prompt::PromptPiece::CarriageReturn => "\r".to_owned(),
         brush_parser::prompt::PromptPiece::CurrentCommandNumber => {
-            return error::unimp("prompt: current command number")
+            return error::unimp("prompt: current command number");
         }
         brush_parser::prompt::PromptPiece::CurrentHistoryNumber => {
-            return error::unimp("prompt: current history number")
+            return error::unimp("prompt: current history number");
         }
         brush_parser::prompt::PromptPiece::CurrentUser => users::get_current_username()?,
         brush_parser::prompt::PromptPiece::CurrentWorkingDirectory {
@@ -98,7 +98,7 @@ fn format_prompt_piece(
         }
         brush_parser::prompt::PromptPiece::StartNonPrintingSequence => String::new(),
         brush_parser::prompt::PromptPiece::TerminalDeviceBaseName => {
-            return error::unimp("prompt: terminal device base name")
+            return error::unimp("prompt: terminal device base name");
         }
         brush_parser::prompt::PromptPiece::Time(time_fmt) => {
             format_time(&chrono::Local::now(), &time_fmt)

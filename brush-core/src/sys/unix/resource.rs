@@ -1,8 +1,8 @@
 use crate::error;
 
 #[allow(clippy::unnecessary_wraps)]
-pub(crate) fn get_self_user_and_system_time(
-) -> Result<(std::time::Duration, std::time::Duration), error::Error> {
+pub(crate) fn get_self_user_and_system_time()
+-> Result<(std::time::Duration, std::time::Duration), error::Error> {
     let usage = nix::sys::resource::getrusage(nix::sys::resource::UsageWho::RUSAGE_SELF)?;
     Ok((
         convert_rusage_time(usage.user_time()),
@@ -11,8 +11,8 @@ pub(crate) fn get_self_user_and_system_time(
 }
 
 #[allow(clippy::unnecessary_wraps)]
-pub(crate) fn get_children_user_and_system_time(
-) -> Result<(std::time::Duration, std::time::Duration), error::Error> {
+pub(crate) fn get_children_user_and_system_time()
+-> Result<(std::time::Duration, std::time::Duration), error::Error> {
     let usage = nix::sys::resource::getrusage(nix::sys::resource::UsageWho::RUSAGE_CHILDREN)?;
     Ok((
         convert_rusage_time(usage.user_time()),

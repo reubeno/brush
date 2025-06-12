@@ -62,7 +62,7 @@ impl HelpCommand {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
                     let prefix = if builtin.disabled { "*" } else { " " };
                     write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
-                                                                       // column width
+                    // column width
                 }
             }
             writeln!(context.stdout())?;

@@ -100,12 +100,11 @@ fn install_panic_handlers() {
     // Set up panic handler. On release builds, it will capture panic details to a
     // temporary .toml file and report a human-readable message to the screen.
     //
-    human_panic::setup_panic!(human_panic::Metadata::new(
-        env!("CARGO_BIN_NAME"),
-        env!("CARGO_PKG_VERSION")
-    )
-    .homepage(env!("CARGO_PKG_HOMEPAGE"))
-    .support("please post a GitHub issue at https://github.com/reubeno/brush/issues/new"));
+    human_panic::setup_panic!(
+        human_panic::Metadata::new(env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"))
+            .homepage(env!("CARGO_PKG_HOMEPAGE"))
+            .support("please post a GitHub issue at https://github.com/reubeno/brush/issues/new")
+    );
 
     //
     // If stdout is connected to a terminal, then register a new panic handler that
@@ -169,7 +168,7 @@ async fn run(
 async fn run_impl(
     cli_args: Vec<String>,
     args: CommandLineArgs,
-    factory: impl shell_factory::ShellFactory,
+    factory: impl shell_factory::ShellFactory + 'static,
 ) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
@@ -222,8 +221,8 @@ async fn run_impl(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-    factory: impl shell_factory::ShellFactory,
-) -> Result<impl brush_interactive::InteractiveShell, brush_interactive::ShellError> {
+    factory: impl shell_factory::ShellFactory + 'static,
+) -> Result<impl brush_interactive::InteractiveShell + 'static, brush_interactive::ShellError> {
     let argv0 = if args.sh_mode {
         // Simulate having been run as "sh".
         Some(String::from("sh"))

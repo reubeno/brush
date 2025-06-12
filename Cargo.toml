@@ -13,7 +13,7 @@ default-members = ["brush-shell"]
 [workspace.package]
 authors = ["reuben olinsky"]
 categories = ["command-line-utilities", "development-tools"]
-edition = "2021"
+edition = "2024"
 keywords = ["cli", "shell", "sh", "bash", "script"]
 license = "MIT"
 readme = "README.md"

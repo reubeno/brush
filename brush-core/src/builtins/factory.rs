@@ -13,7 +13,7 @@ use crate::error;
 pub trait SimpleCommand {
     /// Returns the content of the built-in command.
     fn get_content(name: &str, content_type: builtins::ContentType)
-        -> Result<String, error::Error>;
+    -> Result<String, error::Error>;
 
     /// Executes the built-in command.
     fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
@@ -65,8 +65,8 @@ fn decl_builtin<B: builtins::DeclarationCommand + Send + Sync>() -> builtins::Re
 /// for help/usage information. Arguments are passed directly to the command
 /// via `set_declarations`. This is primarily only expected to be used with
 /// select builtin commands that wrap other builtins (e.g., "builtin").
-fn raw_arg_builtin<B: builtins::DeclarationCommand + Default + Send + Sync>(
-) -> builtins::Registration {
+fn raw_arg_builtin<B: builtins::DeclarationCommand + Default + Send + Sync>()
+-> builtins::Registration {
     builtins::Registration {
         execute_func: exec_raw_arg_builtin::<B>,
         content_func: get_builtin_content::<B>,

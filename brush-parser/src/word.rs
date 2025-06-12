@@ -9,9 +9,9 @@
 //! - Command substitution expressions.
 //! - Arithmetic expansion expressions.
 
+use crate::ParserOptions;
 use crate::ast;
 use crate::error;
-use crate::ParserOptions;
 
 /// Encapsulates a `WordPiece` together with its position in the string it came from.
 #[derive(Clone, Debug)]

@@ -1,4 +1,4 @@
-use clap::{arg, Parser};
+use clap::{Parser, arg};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
@@ -533,7 +533,7 @@ impl builtins::Command for CompGenCommand {
                 }
             }
             completion::Answer::RestartCompletionProcess => {
-                return error::unimp("restart completion")
+                return error::unimp("restart completion");
             }
         }
 

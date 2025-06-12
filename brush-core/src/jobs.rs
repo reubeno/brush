@@ -3,12 +3,12 @@ use std::fmt::Display;
 
 use futures::FutureExt;
 
+use crate::ExecutionResult;
 use crate::error;
 use crate::processes;
 use crate::sys;
 use crate::trace_categories;
 use crate::traps;
-use crate::ExecutionResult;
 
 pub(crate) type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>;
 pub(crate) type JobResult = (Job, Result<ExecutionResult, error::Error>);

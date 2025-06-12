@@ -1,9 +1,8 @@
 use std::io::{IsTerminal, Write};
 
 use crate::{
-    completion,
+    ShellError, completion,
     interactive_shell::{InteractivePrompt, InteractiveShell, ReadResult},
-    ShellError,
 };
 
 use super::term_line_reader;

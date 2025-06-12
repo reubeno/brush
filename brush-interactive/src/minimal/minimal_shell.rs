@@ -1,8 +1,8 @@
 use std::io::{IsTerminal, Write};
 
 use crate::{
-    interactive_shell::{InteractivePrompt, InteractiveShell, ReadResult},
     ShellError,
+    interactive_shell::{InteractivePrompt, InteractiveShell, ReadResult},
 };
 
 /// Represents a minimal shell capable of taking commands from standard input
