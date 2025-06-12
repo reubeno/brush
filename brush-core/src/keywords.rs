@@ -36,8 +36,7 @@ fn get_keywords(sh_mode_only: bool) -> HashSet<String> {
 
 pub(crate) static SH_MODE_KEYWORDS: LazyLock<HashSet<String>> =
     LazyLock::new(|| get_keywords(true));
-pub(crate) static KEYWORDS: LazyLock<HashSet<String>> =
-    LazyLock::new(|| get_keywords(false));
+pub(crate) static KEYWORDS: LazyLock<HashSet<String>> = LazyLock::new(|| get_keywords(false));
 
 pub fn is_keyword(shell: &Shell, name: &str) -> bool {
     if shell.options.sh_mode {

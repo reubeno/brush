@@ -17,160 +17,159 @@ impl OptionDefinition {
     }
 }
 
-pub(crate) static SET_OPTIONS: LazyLock<HashMap<char, OptionDefinition>> =
-    LazyLock::new(|| {
-        HashMap::from([
-            (
-                'a',
-                OptionDefinition::new(
-                    |options| options.export_variables_on_modification,
-                    |options, value| options.export_variables_on_modification = value,
-                ),
+pub(crate) static SET_OPTIONS: LazyLock<HashMap<char, OptionDefinition>> = LazyLock::new(|| {
+    HashMap::from([
+        (
+            'a',
+            OptionDefinition::new(
+                |options| options.export_variables_on_modification,
+                |options, value| options.export_variables_on_modification = value,
             ),
-            (
-                'b',
-                OptionDefinition::new(
-                    |options| options.notify_job_termination_immediately,
-                    |options, value| options.notify_job_termination_immediately = value,
-                ),
+        ),
+        (
+            'b',
+            OptionDefinition::new(
+                |options| options.notify_job_termination_immediately,
+                |options, value| options.notify_job_termination_immediately = value,
             ),
-            (
-                'e',
-                OptionDefinition::new(
-                    |options| options.exit_on_nonzero_command_exit,
-                    |options, value| options.exit_on_nonzero_command_exit = value,
-                ),
+        ),
+        (
+            'e',
+            OptionDefinition::new(
+                |options| options.exit_on_nonzero_command_exit,
+                |options, value| options.exit_on_nonzero_command_exit = value,
             ),
-            (
-                'f',
-                OptionDefinition::new(
-                    |options| options.disable_filename_globbing,
-                    |options, value| options.disable_filename_globbing = value,
-                ),
+        ),
+        (
+            'f',
+            OptionDefinition::new(
+                |options| options.disable_filename_globbing,
+                |options, value| options.disable_filename_globbing = value,
             ),
-            (
-                'h',
-                OptionDefinition::new(
-                    |options| options.remember_command_locations,
-                    |options, value| options.remember_command_locations = value,
-                ),
+        ),
+        (
+            'h',
+            OptionDefinition::new(
+                |options| options.remember_command_locations,
+                |options, value| options.remember_command_locations = value,
             ),
-            (
-                'i',
-                OptionDefinition::new(
-                    |options| options.interactive,
-                    |options, value| options.interactive = value,
-                ),
+        ),
+        (
+            'i',
+            OptionDefinition::new(
+                |options| options.interactive,
+                |options, value| options.interactive = value,
             ),
-            (
-                'k',
-                OptionDefinition::new(
-                    |options| options.place_all_assignment_args_in_command_env,
-                    |options, value| options.place_all_assignment_args_in_command_env = value,
-                ),
+        ),
+        (
+            'k',
+            OptionDefinition::new(
+                |options| options.place_all_assignment_args_in_command_env,
+                |options, value| options.place_all_assignment_args_in_command_env = value,
             ),
-            (
-                'm',
-                OptionDefinition::new(
-                    |options| options.enable_job_control,
-                    |options, value| options.enable_job_control = value,
-                ),
+        ),
+        (
+            'm',
+            OptionDefinition::new(
+                |options| options.enable_job_control,
+                |options, value| options.enable_job_control = value,
             ),
-            (
-                'n',
-                OptionDefinition::new(
-                    |options| options.do_not_execute_commands,
-                    |options, value| options.do_not_execute_commands = value,
-                ),
+        ),
+        (
+            'n',
+            OptionDefinition::new(
+                |options| options.do_not_execute_commands,
+                |options, value| options.do_not_execute_commands = value,
             ),
-            (
-                'p',
-                OptionDefinition::new(
-                    |options| options.real_effective_uid_mismatch,
-                    |options, value| options.real_effective_uid_mismatch = value,
-                ),
+        ),
+        (
+            'p',
+            OptionDefinition::new(
+                |options| options.real_effective_uid_mismatch,
+                |options, value| options.real_effective_uid_mismatch = value,
             ),
-            (
-                't',
-                OptionDefinition::new(
-                    |options| options.exit_after_one_command,
-                    |options, value| options.exit_after_one_command = value,
-                ),
+        ),
+        (
+            't',
+            OptionDefinition::new(
+                |options| options.exit_after_one_command,
+                |options, value| options.exit_after_one_command = value,
             ),
-            (
-                'u',
-                OptionDefinition::new(
-                    |options| options.treat_unset_variables_as_error,
-                    |options, value| options.treat_unset_variables_as_error = value,
-                ),
+        ),
+        (
+            'u',
+            OptionDefinition::new(
+                |options| options.treat_unset_variables_as_error,
+                |options, value| options.treat_unset_variables_as_error = value,
             ),
-            (
-                'v',
-                OptionDefinition::new(
-                    |options| options.print_shell_input_lines,
-                    |options, value| options.print_shell_input_lines = value,
-                ),
+        ),
+        (
+            'v',
+            OptionDefinition::new(
+                |options| options.print_shell_input_lines,
+                |options, value| options.print_shell_input_lines = value,
             ),
-            (
-                'x',
-                OptionDefinition::new(
-                    |options| options.print_commands_and_arguments,
-                    |options, value| options.print_commands_and_arguments = value,
-                ),
+        ),
+        (
+            'x',
+            OptionDefinition::new(
+                |options| options.print_commands_and_arguments,
+                |options, value| options.print_commands_and_arguments = value,
             ),
-            (
-                'B',
-                OptionDefinition::new(
-                    |options| options.perform_brace_expansion,
-                    |options, value| options.perform_brace_expansion = value,
-                ),
+        ),
+        (
+            'B',
+            OptionDefinition::new(
+                |options| options.perform_brace_expansion,
+                |options, value| options.perform_brace_expansion = value,
             ),
-            (
-                'C',
-                OptionDefinition::new(
-                    |options| options.disallow_overwriting_regular_files_via_output_redirection,
-                    |options, value| {
-                        options.disallow_overwriting_regular_files_via_output_redirection = value
-                    },
-                ),
+        ),
+        (
+            'C',
+            OptionDefinition::new(
+                |options| options.disallow_overwriting_regular_files_via_output_redirection,
+                |options, value| {
+                    options.disallow_overwriting_regular_files_via_output_redirection = value;
+                },
             ),
-            (
-                'E',
-                OptionDefinition::new(
-                    |options| options.shell_functions_inherit_err_trap,
-                    |options, value| options.shell_functions_inherit_err_trap = value,
-                ),
+        ),
+        (
+            'E',
+            OptionDefinition::new(
+                |options| options.shell_functions_inherit_err_trap,
+                |options, value| options.shell_functions_inherit_err_trap = value,
             ),
-            (
-                'H',
-                OptionDefinition::new(
-                    |options| options.enable_bang_style_history_substitution,
-                    |options, value| options.enable_bang_style_history_substitution = value,
-                ),
+        ),
+        (
+            'H',
+            OptionDefinition::new(
+                |options| options.enable_bang_style_history_substitution,
+                |options, value| options.enable_bang_style_history_substitution = value,
             ),
-            (
-                'P',
-                OptionDefinition::new(
-                    |options| options.do_not_resolve_symlinks_when_changing_dir,
-                    |options, value| options.do_not_resolve_symlinks_when_changing_dir = value,
-                ),
+        ),
+        (
+            'P',
+            OptionDefinition::new(
+                |options| options.do_not_resolve_symlinks_when_changing_dir,
+                |options, value| options.do_not_resolve_symlinks_when_changing_dir = value,
             ),
-            (
-                'T',
-                OptionDefinition::new(
-                    |options| options.shell_functions_inherit_debug_and_return_traps,
-                    |options, value| options.shell_functions_inherit_debug_and_return_traps = value,
-                ),
+        ),
+        (
+            'T',
+            OptionDefinition::new(
+                |options| options.shell_functions_inherit_debug_and_return_traps,
+                |options, value| options.shell_functions_inherit_debug_and_return_traps = value,
             ),
-            (
-                's',
-                OptionDefinition::new(
-                    |options| options.read_commands_from_stdin,
-                    |options, value| options.read_commands_from_stdin = value,
-                ),
+        ),
+        (
+            's',
+            OptionDefinition::new(
+                |options| options.read_commands_from_stdin,
+                |options, value| options.read_commands_from_stdin = value,
             ),
-        ])
-    });
+        ),
+    ])
+});
 
 pub(crate) static SET_O_OPTIONS: LazyLock<HashMap<&'static str, OptionDefinition>> =
     LazyLock::new(|| {
@@ -271,7 +270,7 @@ pub(crate) static SET_O_OPTIONS: LazyLock<HashMap<&'static str, OptionDefinition
                 OptionDefinition::new(
                     |options| options.disallow_overwriting_regular_files_via_output_redirection,
                     |options, value| {
-                        options.disallow_overwriting_regular_files_via_output_redirection = value
+                        options.disallow_overwriting_regular_files_via_output_redirection = value;
                     },
                 ),
             ),

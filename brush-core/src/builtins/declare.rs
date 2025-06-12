@@ -327,9 +327,7 @@ impl DeclareCommand {
                 // In such case, we ignore the index and treat it as a declaration of
                 // the array.
                 static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
-                    LazyLock::new(|| {
-                        fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap()
-                    });
+                    LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
                 if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
                     name = captures.get(1).unwrap().as_str().to_owned();
                     assigned_index = Some(captures.get(2).unwrap().as_str().to_owned());
