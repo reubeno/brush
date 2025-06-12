@@ -1010,8 +1010,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
                             {
                                 //
-                                // TODO(#57): This is a total hack; aliases are supposed to be handled
-                                // much earlier in the process.
+                                // TODO(#57): This is a total hack; aliases are supposed to be
+                                // handled much earlier in the process.
                                 //
                                 let mut alias_pieces: Vec<_> = alias_value
                                     .split_ascii_whitespace()

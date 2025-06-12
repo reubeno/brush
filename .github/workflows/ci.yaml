@@ -293,7 +293,7 @@ jobs:
     strategy:
       matrix:
         # Test latest stable as well as MSRV.
-        rust-version: ["stable", "1.75.0"]
+        rust-version: ["stable", "1.85.0"]
 
     steps:
       - name: Checkout

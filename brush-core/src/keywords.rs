@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 use crate::Shell;
 
@@ -33,10 +34,9 @@ fn get_keywords(sh_mode_only: bool) -> HashSet<String> {
     keywords
 }
 
-lazy_static::lazy_static! {
-    pub(crate) static ref SH_MODE_KEYWORDS: HashSet<String> = get_keywords(true);
-    pub(crate) static ref KEYWORDS: HashSet<String> = get_keywords(false);
-}
+pub(crate) static SH_MODE_KEYWORDS: LazyLock<HashSet<String>> =
+    LazyLock::new(|| get_keywords(true));
+pub(crate) static KEYWORDS: LazyLock<HashSet<String>> = LazyLock::new(|| get_keywords(false));
 
 pub fn is_keyword(shell: &Shell, name: &str) -> bool {
     if shell.options.sh_mode {

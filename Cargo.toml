@@ -18,7 +18,7 @@ keywords = ["cli", "shell", "sh", "bash", "script"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/reubeno/brush"
-rust-version = "1.75.0"
+rust-version = "1.85.0"
 
 [workspace.lints.rust]
 warnings = { level = "deny" }
