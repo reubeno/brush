@@ -140,8 +140,12 @@ impl builtins::Command for GetOptsCommand {
                         new_optarg = None;
                     }
 
-                    // TODO: honor OPTERR=0 indicating suppression of error messages
-                    if treat_unknown_options_as_failure {
+                    let opterr = match context.shell.get_env_str("OPTERR") {
+                        Some(var) => var.parse().unwrap_or(0),
+                        None => 0,
+                    };
+
+                    if treat_unknown_options_as_failure && opterr == 1 {
                         writeln!(context.stderr(), "getopts: illegal option -- {c}")?;
                     }
                 }
