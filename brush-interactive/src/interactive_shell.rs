@@ -1,5 +1,5 @@
 use crate::ShellError;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 
 /// Result of a read operation.
 pub enum ReadResult {
@@ -71,8 +71,10 @@ pub trait InteractiveShell: Send {
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), ShellError>> + Send {
         async {
-            // TODO: Consider finding a better place for this.
-            let _ = brush_core::TerminalControl::acquire()?;
+            // Acquire terminal control if stdin is a terminal.
+            if std::io::stdin().is_terminal() {
+                brush_core::TerminalControl::acquire()?;
+            }
 
             let mut announce_exit = self.shell().as_ref().options.interactive;
 
