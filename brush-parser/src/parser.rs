@@ -28,7 +28,7 @@ impl Default for ParserOptions {
 
 impl ParserOptions {
     /// Returns the tokenizer options implied by these parser options.
-    pub fn tokenizer_options(&self) -> TokenizerOptions {
+    pub const fn tokenizer_options(&self) -> TokenizerOptions {
         TokenizerOptions {
             enable_extended_globbing: self.enable_extended_globbing,
             posix_mode: self.posix_mode,
@@ -53,7 +53,7 @@ impl<R: std::io::BufRead> Parser<R> {
     /// * `options` - The options to use when parsing.
     /// * `source_info` - Information about the source of the tokens.
     pub fn new(reader: R, options: &ParserOptions, source_info: &SourceInfo) -> Self {
-        Parser {
+        Self {
             reader,
             options: options.clone(),
             source_info: source_info.clone(),
@@ -916,7 +916,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
     Ok(())
 }
 
-fn locations_are_contiguous(
+const fn locations_are_contiguous(
     loc_left: &crate::TokenLocation,
     loc_right: &crate::TokenLocation,
 ) -> bool {
@@ -963,7 +963,7 @@ mod tests {
     use insta::assert_ron_snapshot;
 
     #[derive(serde::Serialize)]
-    struct ParseResult<'a, T: serde::Serialize> {
+    struct ParseResult<'a, T> {
         input: &'a str,
         result: &'a T,
     }

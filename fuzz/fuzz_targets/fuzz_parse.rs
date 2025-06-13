@@ -1,4 +1,5 @@
 #![no_main]
+#![allow(missing_docs)]
 
 use anyhow::Result;
 use libfuzzer_sys::fuzz_target;

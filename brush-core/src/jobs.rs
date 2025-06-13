@@ -39,7 +39,7 @@ pub enum JobTaskWaitResult {
 impl JobTask {
     pub async fn wait(&mut self) -> Result<JobTaskWaitResult, error::Error> {
         match self {
-            JobTask::External(process) => {
+            Self::External(process) => {
                 let wait_result = process.wait().await?;
                 match wait_result {
                     processes::ProcessWaitResult::Completed(output) => {
@@ -48,18 +48,18 @@ impl JobTask {
                     processes::ProcessWaitResult::Stopped => Ok(JobTaskWaitResult::Stopped),
                 }
             }
-            JobTask::Internal(handle) => Ok(JobTaskWaitResult::Completed(handle.await??)),
+            Self::Internal(handle) => Ok(JobTaskWaitResult::Completed(handle.await??)),
         }
     }
 
     #[allow(clippy::unwrap_in_result)]
     fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
-            JobTask::External(process) => {
+            Self::External(process) => {
                 let check_result = process.poll();
                 check_result.map(|polled_result| polled_result.map(|output| output.into()))
             }
-            JobTask::Internal(handle) => {
+            Self::Internal(handle) => {
                 let checkable_handle = handle;
                 checkable_handle.now_or_never().map(|r| r.unwrap())
             }
@@ -210,10 +210,10 @@ pub enum JobState {
 impl Display for JobState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JobState::Unknown => write!(f, "Unknown"),
-            JobState::Running => write!(f, "Running"),
-            JobState::Stopped => write!(f, "Stopped"),
-            JobState::Done => write!(f, "Done"),
+            Self::Unknown => write!(f, "Unknown"),
+            Self::Running => write!(f, "Running"),
+            Self::Stopped => write!(f, "Stopped"),
+            Self::Done => write!(f, "Done"),
         }
     }
 }
@@ -232,9 +232,9 @@ pub enum JobAnnotation {
 impl Display for JobAnnotation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JobAnnotation::None => write!(f, ""),
-            JobAnnotation::Current => write!(f, "+"),
-            JobAnnotation::Previous => write!(f, "-"),
+            Self::None => write!(f, ""),
+            Self::Current => write!(f, "+"),
+            Self::Previous => write!(f, "-"),
         }
     }
 }
@@ -318,12 +318,12 @@ impl Job {
     }
 
     /// Returns whether the job is the current job.
-    pub fn is_current(&self) -> bool {
+    pub const fn is_current(&self) -> bool {
         matches!(self.annotation, JobAnnotation::Current)
     }
 
     /// Returns whether the job is the previous job.
-    pub fn is_prev(&self) -> bool {
+    pub const fn is_prev(&self) -> bool {
         matches!(self.annotation, JobAnnotation::Previous)
     }
 
@@ -413,7 +413,7 @@ impl Job {
     }
 
     /// Kills the job.
-    pub fn kill(&mut self, signal: traps::TrapSignal) -> Result<(), error::Error> {
+    pub fn kill(&self, signal: traps::TrapSignal) -> Result<(), error::Error> {
         if let Some(pid) = self.get_process_group_id() {
             sys::signal::kill_process(pid, signal)
         } else {

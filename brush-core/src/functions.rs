@@ -69,7 +69,7 @@ pub struct FunctionRegistration {
 
 impl From<brush_parser::ast::FunctionDefinition> for FunctionRegistration {
     fn from(definition: brush_parser::ast::FunctionDefinition) -> Self {
-        FunctionRegistration {
+        Self {
             definition: Arc::new(definition),
             exported: false,
         }
@@ -78,17 +78,17 @@ impl From<brush_parser::ast::FunctionDefinition> for FunctionRegistration {
 
 impl FunctionRegistration {
     /// Marks the function for export.
-    pub fn export(&mut self) {
+    pub const fn export(&mut self) {
         self.exported = true;
     }
 
     /// Unmarks the function for export.
-    pub fn unexport(&mut self) {
+    pub const fn unexport(&mut self) {
         self.exported = false;
     }
 
     /// Returns whether this function is exported.
-    pub fn is_exported(&self) -> bool {
+    pub const fn is_exported(&self) -> bool {
         self.exported
     }
 }

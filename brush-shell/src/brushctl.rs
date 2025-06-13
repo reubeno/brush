@@ -66,7 +66,7 @@ impl EventsCommand {
 
         if let Some(event_config) = event_config.as_mut() {
             match self {
-                EventsCommand::Status => {
+                Self::Status => {
                     let enabled_events = event_config.get_enabled_events();
                     for event in enabled_events {
                         writeln!(context.stdout(), "{event}").unwrap(); // Add .unwrap() to handle
@@ -74,8 +74,8 @@ impl EventsCommand {
                         // errors
                     }
                 }
-                EventsCommand::Enable { event } => event_config.enable(*event)?,
-                EventsCommand::Disable { event } => event_config.disable(*event)?,
+                Self::Enable { event } => event_config.enable(*event)?,
+                Self::Disable { event } => event_config.disable(*event)?,
             }
 
             Ok(brush_core::builtins::ExitCode::Success)

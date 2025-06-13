@@ -9,7 +9,7 @@ struct StopwatchTime {
 }
 
 impl StopwatchTime {
-    fn minus(&self, other: &StopwatchTime) -> Result<StopwatchTiming, error::Error> {
+    fn minus(&self, other: &Self) -> Result<StopwatchTiming, error::Error> {
         let user = (self.self_user - other.self_user) + (self.children_user - other.children_user);
         let system =
             (self.self_system - other.self_system) + (self.children_system - other.children_system);

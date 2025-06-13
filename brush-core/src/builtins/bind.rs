@@ -21,12 +21,12 @@ enum BindKeyMap {
 }
 
 impl BindKeyMap {
-    fn is_vi(&self) -> bool {
+    const fn is_vi(&self) -> bool {
         matches!(self, Self::ViCommand | Self::ViInsert)
     }
 
     #[allow(dead_code)]
-    fn is_emacs(&self) -> bool {
+    const fn is_emacs(&self) -> bool {
         matches!(
             self,
             Self::EmacsStandard | Self::EmacsMeta | Self::EmacsCtlx
@@ -178,6 +178,9 @@ impl BindCommand {
                 bind_key_sequence(&mut *bindings, key_seq, command)?;
             }
         }
+
+        // We might as well drop the bindings lock here since we don't need it anymore.
+        drop(bindings);
 
         if let Some(key_sequence) = &self.key_sequence {
             if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {

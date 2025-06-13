@@ -48,9 +48,10 @@ impl TestShellWithBashCompletion {
 
     fn find_bash_completion_script() -> Result<PathBuf> {
         // See if an environmental override was provided.
-        let script_path = std::env::var("BASH_COMPLETION_PATH")
-            .map(PathBuf::from)
-            .unwrap_or(PathBuf::from(DEFAULT_BASH_COMPLETION_SCRIPT));
+        let script_path = std::env::var("BASH_COMPLETION_PATH").map_or_else(
+            |_| PathBuf::from(DEFAULT_BASH_COMPLETION_SCRIPT),
+            PathBuf::from,
+        );
 
         if script_path.exists() {
             Ok(script_path)

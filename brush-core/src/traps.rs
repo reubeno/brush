@@ -29,7 +29,7 @@ impl Display for TrapSignal {
 
 impl TrapSignal {
     /// Returns all possible values of [`TrapSignal`].
-    pub fn iterator() -> impl Iterator<Item = TrapSignal> {
+    pub fn iterator() -> impl Iterator<Item = Self> {
         const SIGNALS: &[TrapSignal] = &[TrapSignal::Debug, TrapSignal::Err, TrapSignal::Exit];
         let iter = SIGNALS.iter().copied();
 
@@ -46,10 +46,10 @@ impl TrapSignal {
     pub const fn as_str(self) -> &'static str {
         match self {
             #[cfg(unix)]
-            TrapSignal::Signal(s) => s.as_str(),
-            TrapSignal::Debug => "DEBUG",
-            TrapSignal::Err => "ERR",
-            TrapSignal::Exit => "EXIT",
+            Self::Signal(s) => s.as_str(),
+            Self::Debug => "DEBUG",
+            Self::Err => "ERR",
+            Self::Exit => "EXIT",
         }
     }
 }
@@ -75,11 +75,11 @@ pub fn format_signals(
 // implement s.parse::<TrapSignal>()
 impl FromStr for TrapSignal {
     type Err = error::Error;
-    fn from_str(s: &str) -> Result<Self, <TrapSignal as FromStr>::Err> {
+    fn from_str(s: &str) -> Result<Self, <Self as FromStr>::Err> {
         if let Ok(n) = s.parse::<i32>() {
-            TrapSignal::try_from(n)
+            Self::try_from(n)
         } else {
-            TrapSignal::try_from(s)
+            Self::try_from(s)
         }
     }
 }
@@ -92,9 +92,9 @@ impl TryFrom<i32> for TrapSignal {
         // available on bsd-like systems),
         // and don't have persistent numbers across platforms, so we skip them here.
         Ok(match value {
-            0 => TrapSignal::Exit,
+            0 => Self::Exit,
             #[cfg(unix)]
-            value => TrapSignal::Signal(
+            value => Self::Signal(
                 nix::sys::signal::Signal::try_from(value)
                     .map_err(|_| error::Error::InvalidSignal(value.to_string()))?,
             ),
@@ -112,9 +112,9 @@ impl TryFrom<&str> for TrapSignal {
         let mut s = value.to_ascii_uppercase();
 
         Ok(match s.as_str() {
-            "DEBUG" => TrapSignal::Debug,
-            "ERR" => TrapSignal::Err,
-            "EXIT" => TrapSignal::Exit,
+            "DEBUG" => Self::Debug,
+            "ERR" => Self::Err,
+            "EXIT" => Self::Exit,
 
             #[cfg(unix)]
             _ => {
@@ -142,7 +142,7 @@ impl TryFrom<TrapSignal> for i32 {
     fn try_from(value: TrapSignal) -> Result<Self, Self::Error> {
         Ok(match value {
             #[cfg(unix)]
-            TrapSignal::Signal(s) => s as i32,
+            TrapSignal::Signal(s) => s as Self,
             TrapSignal::Exit => 0,
             _ => return Err(TrapSignalNumberError),
         })

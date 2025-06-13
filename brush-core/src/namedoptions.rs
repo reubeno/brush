@@ -12,8 +12,8 @@ pub(crate) struct OptionDefinition {
 }
 
 impl OptionDefinition {
-    fn new(getter: OptionGetter, setter: OptionSetter) -> OptionDefinition {
-        OptionDefinition { getter, setter }
+    fn new(getter: OptionGetter, setter: OptionSetter) -> Self {
+        Self { getter, setter }
     }
 }
 

@@ -134,14 +134,14 @@ impl Clone for Shell {
     }
 }
 
-impl AsRef<Shell> for Shell {
-    fn as_ref(&self) -> &Shell {
+impl AsRef<Self> for Shell {
+    fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl AsMut<Shell> for Shell {
-    fn as_mut(&mut self) -> &mut Shell {
+impl AsMut<Self> for Shell {
+    fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
@@ -217,9 +217,9 @@ impl Shell {
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub async fn new(options: &CreateOptions) -> Result<Shell, error::Error> {
+    pub async fn new(options: &CreateOptions) -> Result<Self, error::Error> {
         // Instantiate the shell with some defaults.
-        let mut shell = Shell {
+        let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: std::env::current_dir()?,
@@ -665,7 +665,7 @@ impl Shell {
         self.env.set_global("SHELLOPTS", shellopts_var)?;
 
         // SHLVL
-        let input_shlvl = self.get_env_str("SHLVL").unwrap_or("0".into());
+        let input_shlvl = self.get_env_str("SHLVL").unwrap_or_else(|| "0".into());
         let updated_shlvl = input_shlvl.as_ref().parse::<u32>().unwrap_or(0) + 1;
         let mut shlvl_var = ShellVariable::new(updated_shlvl.to_string().into());
         shlvl_var.export();
@@ -1078,11 +1078,11 @@ impl Shell {
         source_info: &brush_parser::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let mut error_prefix = String::new();
-
-        if !source_info.source.is_empty() {
-            error_prefix = format!("{}: ", source_info.source);
-        }
+        let error_prefix = if !source_info.source.is_empty() {
+            format!("{}: ", source_info.source)
+        } else {
+            String::new()
+        };
 
         let result = match parse_result {
             Ok(prog) => match self.run_program(prog, params).await {
@@ -1148,7 +1148,7 @@ impl Shell {
         program.execute(self, params).await
     }
 
-    fn default_prompt(&self) -> &'static str {
+    const fn default_prompt(&self) -> &'static str {
         if self.options.sh_mode {
             "$ "
         } else {
@@ -1203,17 +1203,17 @@ impl Shell {
     }
 
     /// Returns the exit status of the last command executed in this shell.
-    pub fn last_result(&self) -> u8 {
+    pub const fn last_result(&self) -> u8 {
         self.last_exit_status
     }
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
-        self.get_env_str(name).unwrap_or(default.into())
+        self.get_env_str(name).unwrap_or_else(|| default.into())
     }
 
     /// Returns the options that should be used for parsing shell programs; reflects
     /// the current configuration state of the shell and may change over time.
-    pub fn parser_options(&self) -> brush_parser::ParserOptions {
+    pub const fn parser_options(&self) -> brush_parser::ParserOptions {
         brush_parser::ParserOptions {
             enable_extended_globbing: self.options.extended_globbing,
             posix_mode: self.options.posix_mode,
@@ -1316,7 +1316,7 @@ impl Shell {
     }
 
     /// Returns the number of the line being executed in the currently executing program.
-    pub(crate) fn get_current_input_line_number(&self) -> u32 {
+    pub(crate) const fn get_current_input_line_number(&self) -> u32 {
         self.current_line_number
     }
 
@@ -1607,7 +1607,7 @@ impl Shell {
         Self::get_home_dir_with_env(&self.env, self)
     }
 
-    fn get_home_dir_with_env(env: &ShellEnvironment, shell: &Shell) -> Option<PathBuf> {
+    fn get_home_dir_with_env(env: &ShellEnvironment, shell: &Self) -> Option<PathBuf> {
         if let Some(home) = env.get_str("HOME", shell) {
             Some(PathBuf::from(home.to_string()))
         } else {
@@ -1639,7 +1639,7 @@ impl Shell {
     ) -> Result<(), error::Error> {
         let ps4 = self.as_mut().expand_prompt_var("PS4", "").await?;
 
-        let mut prefix = ps4.to_string();
+        let mut prefix = ps4;
 
         let additional_depth = self.script_call_stack.len() + self.depth;
         if let Some(c) = prefix.chars().next() {

@@ -1,7 +1,5 @@
 //! Implements a tokenizer and parsers for POSIX / bash shell syntax.
 
-#![deny(missing_docs)]
-
 pub mod arithmetic;
 pub mod ast;
 pub mod pattern;

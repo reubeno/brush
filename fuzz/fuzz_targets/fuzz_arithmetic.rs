@@ -1,4 +1,5 @@
 #![no_main]
+#![allow(missing_docs)]
 
 use std::sync::LazyLock;
 

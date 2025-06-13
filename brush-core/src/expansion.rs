@@ -44,7 +44,7 @@ impl Default for Expansion {
 impl From<Expansion> for String {
     fn from(value: Expansion) -> Self {
         // TODO: Use IFS instead for separator?
-        value.fields.into_iter().map(String::from).join(" ")
+        value.fields.into_iter().map(Self::from).join(" ")
     }
 }
 
@@ -52,7 +52,7 @@ impl From<String> for Expansion {
     fn from(value: String) -> Self {
         Self {
             fields: vec![WordField::from(value)],
-            ..Expansion::default()
+            ..Self::default()
         }
     }
 }
@@ -61,7 +61,7 @@ impl From<ExpansionPiece> for Expansion {
     fn from(piece: ExpansionPiece) -> Self {
         Self {
             fields: vec![WordField::from(piece)],
-            ..Expansion::default()
+            ..Self::default()
         }
     }
 }
@@ -108,7 +108,7 @@ impl Expansion {
             let actual_len = min(len, self.fields.len() - index);
             let fields = self.fields[index..(index + actual_len)].to_vec();
 
-            Expansion {
+            Self {
                 fields,
                 concatenate: self.concatenate,
                 undefined: self.undefined,
@@ -178,7 +178,7 @@ impl Expansion {
                 }
             }
 
-            Expansion {
+            Self {
                 fields,
                 concatenate: self.concatenate,
                 undefined: self.undefined,
@@ -192,7 +192,7 @@ impl Expansion {
 struct WordField(Vec<ExpansionPiece>);
 
 impl WordField {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self(vec![])
     }
 
@@ -203,7 +203,7 @@ impl WordField {
 
 impl From<WordField> for String {
     fn from(field: WordField) -> Self {
-        field.0.into_iter().map(String::from).collect()
+        field.0.into_iter().map(Self::from).collect()
     }
 }
 
@@ -215,7 +215,7 @@ impl From<WordField> for patterns::Pattern {
             .map(patterns::PatternPiece::from)
             .collect();
 
-        patterns::Pattern::from(pieces)
+        Self::from(pieces)
     }
 }
 
@@ -249,8 +249,8 @@ impl From<ExpansionPiece> for String {
 impl From<ExpansionPiece> for patterns::PatternPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => patterns::PatternPiece::Literal(s),
-            ExpansionPiece::Splittable(s) => patterns::PatternPiece::Pattern(s),
+            ExpansionPiece::Unsplittable(s) => Self::Literal(s),
+            ExpansionPiece::Splittable(s) => Self::Pattern(s),
         }
     }
 }
@@ -258,8 +258,8 @@ impl From<ExpansionPiece> for patterns::PatternPiece {
 impl From<ExpansionPiece> for crate::regex::RegexPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => crate::regex::RegexPiece::Literal(s),
-            ExpansionPiece::Splittable(s) => crate::regex::RegexPiece::Pattern(s),
+            ExpansionPiece::Unsplittable(s) => Self::Literal(s),
+            ExpansionPiece::Splittable(s) => Self::Pattern(s),
         }
     }
 }
@@ -267,22 +267,22 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
 impl ExpansionPiece {
     fn as_str(&self) -> &str {
         match self {
-            ExpansionPiece::Unsplittable(s) => s.as_str(),
-            ExpansionPiece::Splittable(s) => s.as_str(),
+            Self::Unsplittable(s) => s.as_str(),
+            Self::Splittable(s) => s.as_str(),
         }
     }
 
     fn len(&self) -> usize {
         match self {
-            ExpansionPiece::Unsplittable(s) => s.len(),
-            ExpansionPiece::Splittable(s) => s.len(),
+            Self::Unsplittable(s) => s.len(),
+            Self::Splittable(s) => s.len(),
         }
     }
 
-    fn make_unsplittable(self) -> ExpansionPiece {
+    fn make_unsplittable(self) -> Self {
         match self {
-            ExpansionPiece::Unsplittable(_) => self,
-            ExpansionPiece::Splittable(s) => ExpansionPiece::Unsplittable(s),
+            Self::Unsplittable(_) => self,
+            Self::Splittable(s) => Self::Unsplittable(s),
         }
     }
 }
@@ -380,7 +380,7 @@ struct WordExpander<'a> {
 }
 
 impl<'a> WordExpander<'a> {
-    pub fn new(shell: &'a mut Shell, params: &'a ExecutionParameters) -> Self {
+    pub const fn new(shell: &'a mut Shell, params: &'a ExecutionParameters) -> Self {
         let parser_options = shell.parser_options();
         Self {
             shell,
@@ -1401,7 +1401,7 @@ impl<'a> WordExpander<'a> {
     }
 
     fn expand_special_parameter(
-        &mut self,
+        &self,
         parameter: &brush_parser::word::SpecialParameter,
     ) -> Expansion {
         match parameter {

@@ -16,8 +16,8 @@ pub(crate) enum RegexPiece {
 impl RegexPiece {
     fn to_regex_str(&self) -> Cow<'_, str> {
         match self {
-            RegexPiece::Pattern(s) => Cow::Borrowed(s.as_str()),
-            RegexPiece::Literal(s) => escape_literal_regex_piece(s.as_str()),
+            Self::Pattern(s) => Cow::Borrowed(s.as_str()),
+            Self::Literal(s) => escape_literal_regex_piece(s.as_str()),
         }
     }
 }
@@ -48,7 +48,7 @@ impl Regex {
     /// # Arguments
     ///
     /// * `value` - The new case sensitivity value.
-    pub fn set_case_insensitive(mut self, value: bool) -> Self {
+    pub const fn set_case_insensitive(mut self, value: bool) -> Self {
         self.case_insensitive = value;
         self
     }
@@ -60,7 +60,7 @@ impl Regex {
     /// # Arguments
     ///
     /// * `value` - The new multiline value.
-    pub fn set_multiline(mut self, value: bool) -> Self {
+    pub const fn set_multiline(mut self, value: bool) -> Self {
         self.multiline = value;
         self
     }
@@ -172,7 +172,7 @@ fn escape_literal_regex_piece(s: &str) -> Cow<'_, str> {
     result.into()
 }
 
-fn regex_char_is_special(c: char) -> bool {
+const fn regex_char_is_special(c: char) -> bool {
     matches!(
         c,
         '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '[' | ']' | '{' | '}'

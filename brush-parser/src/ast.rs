@@ -46,8 +46,8 @@ pub enum SeparatorOperator {
 impl Display for SeparatorOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SeparatorOperator::Async => write!(f, "&"),
-            SeparatorOperator::Sequence => write!(f, ";"),
+            Self::Async => write!(f, "&"),
+            Self::Sequence => write!(f, ";"),
         }
     }
 }
@@ -89,7 +89,7 @@ impl PartialEq<AndOr> for PipelineOperator {
     fn eq(&self, other: &AndOr) -> bool {
         matches!(
             (self, other),
-            (PipelineOperator::And, AndOr::And(_)) | (PipelineOperator::Or, AndOr::Or(_))
+            (Self::And, AndOr::And(_)) | (Self::Or, AndOr::Or(_))
         )
     }
 }
@@ -99,8 +99,8 @@ impl PartialEq<AndOr> for PipelineOperator {
 impl Into<PipelineOperator> for AndOr {
     fn into(self) -> PipelineOperator {
         match self {
-            AndOr::And(_) => PipelineOperator::And,
-            AndOr::Or(_) => PipelineOperator::Or,
+            Self::And(_) => PipelineOperator::And,
+            Self::Or(_) => PipelineOperator::Or,
         }
     }
 }
@@ -171,8 +171,8 @@ pub enum AndOr {
 impl Display for AndOr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AndOr::And(pipeline) => write!(f, " && {pipeline}"),
-            AndOr::Or(pipeline) => write!(f, " || {pipeline}"),
+            Self::And(pipeline) => write!(f, " && {pipeline}"),
+            Self::Or(pipeline) => write!(f, " || {pipeline}"),
         }
     }
 }
@@ -241,16 +241,16 @@ pub enum Command {
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Command::Simple(simple_command) => write!(f, "{simple_command}"),
-            Command::Compound(compound_command, redirect_list) => {
+            Self::Simple(simple_command) => write!(f, "{simple_command}"),
+            Self::Compound(compound_command, redirect_list) => {
                 write!(f, "{compound_command}")?;
                 if let Some(redirect_list) = redirect_list {
                     write!(f, "{redirect_list}")?;
                 }
                 Ok(())
             }
-            Command::Function(function_definition) => write!(f, "{function_definition}"),
-            Command::ExtendedTest(extended_test_expr) => {
+            Self::Function(function_definition) => write!(f, "{function_definition}"),
+            Self::ExtendedTest(extended_test_expr) => {
                 write!(f, "[[ {extended_test_expr} ]]")
             }
         }
@@ -286,23 +286,23 @@ pub enum CompoundCommand {
 impl Display for CompoundCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompoundCommand::Arithmetic(arithmetic_command) => write!(f, "{arithmetic_command}"),
-            CompoundCommand::ArithmeticForClause(arithmetic_for_clause_command) => {
+            Self::Arithmetic(arithmetic_command) => write!(f, "{arithmetic_command}"),
+            Self::ArithmeticForClause(arithmetic_for_clause_command) => {
                 write!(f, "{arithmetic_for_clause_command}")
             }
-            CompoundCommand::BraceGroup(brace_group_command) => {
+            Self::BraceGroup(brace_group_command) => {
                 write!(f, "{brace_group_command}")
             }
-            CompoundCommand::Subshell(subshell_command) => write!(f, "{subshell_command}"),
-            CompoundCommand::ForClause(for_clause_command) => write!(f, "{for_clause_command}"),
-            CompoundCommand::CaseClause(case_clause_command) => {
+            Self::Subshell(subshell_command) => write!(f, "{subshell_command}"),
+            Self::ForClause(for_clause_command) => write!(f, "{for_clause_command}"),
+            Self::CaseClause(case_clause_command) => {
                 write!(f, "{case_clause_command}")
             }
-            CompoundCommand::IfClause(if_clause_command) => write!(f, "{if_clause_command}"),
-            CompoundCommand::WhileClause(while_or_until_clause_command) => {
+            Self::IfClause(if_clause_command) => write!(f, "{if_clause_command}"),
+            Self::WhileClause(while_or_until_clause_command) => {
                 write!(f, "while {while_or_until_clause_command}")
             }
-            CompoundCommand::UntilClause(while_or_until_clause_command) => {
+            Self::UntilClause(while_or_until_clause_command) => {
                 write!(f, "until {while_or_until_clause_command}")
             }
         }
@@ -593,9 +593,9 @@ pub enum CaseItemPostAction {
 impl Display for CaseItemPostAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CaseItemPostAction::ExitCase => write!(f, ";;"),
-            CaseItemPostAction::UnconditionallyExecuteNextCaseItem => write!(f, ";&"),
-            CaseItemPostAction::ContinueEvaluatingCases => write!(f, ";;&"),
+            Self::ExitCase => write!(f, ";;"),
+            Self::UnconditionallyExecuteNextCaseItem => write!(f, ";&"),
+            Self::ContinueEvaluatingCases => write!(f, ";;&"),
         }
     }
 }
@@ -788,8 +788,8 @@ pub enum ProcessSubstitutionKind {
 impl Display for ProcessSubstitutionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProcessSubstitutionKind::Read => write!(f, "<"),
-            ProcessSubstitutionKind::Write => write!(f, ">"),
+            Self::Read => write!(f, "<"),
+            Self::Write => write!(f, ">"),
         }
     }
 }
@@ -813,10 +813,10 @@ pub enum CommandPrefixOrSuffixItem {
 impl Display for CommandPrefixOrSuffixItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CommandPrefixOrSuffixItem::IoRedirect(io_redirect) => write!(f, "{io_redirect}"),
-            CommandPrefixOrSuffixItem::Word(word) => write!(f, "{word}"),
-            CommandPrefixOrSuffixItem::AssignmentWord(_assignment, word) => write!(f, "{word}"),
-            CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
+            Self::IoRedirect(io_redirect) => write!(f, "{io_redirect}"),
+            Self::Word(word) => write!(f, "{word}"),
+            Self::AssignmentWord(_assignment, word) => write!(f, "{word}"),
+            Self::ProcessSubstitution(kind, subshell_command) => {
                 write!(f, "{kind}({subshell_command})")
             }
         }
@@ -863,8 +863,8 @@ pub enum AssignmentName {
 impl Display for AssignmentName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssignmentName::VariableName(name) => write!(f, "{name}"),
-            AssignmentName::ArrayElementName(name, index) => {
+            Self::VariableName(name) => write!(f, "{name}"),
+            Self::ArrayElementName(name, index) => {
                 write!(f, "{name}[{index}]")
             }
         }
@@ -885,8 +885,8 @@ pub enum AssignmentValue {
 impl Display for AssignmentValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssignmentValue::Scalar(word) => write!(f, "{word}"),
-            AssignmentValue::Array(words) => {
+            Self::Scalar(word) => write!(f, "{word}"),
+            Self::Array(words) => {
                 write!(f, "(")?;
                 for (i, value) in words.iter().enumerate() {
                     if i > 0 {
@@ -936,21 +936,21 @@ pub enum IoRedirect {
 impl Display for IoRedirect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IoRedirect::File(fd_num, kind, target) => {
+            Self::File(fd_num, kind, target) => {
                 if let Some(fd_num) = fd_num {
                     write!(f, "{fd_num}")?;
                 }
 
                 write!(f, "{kind} {target}")?;
             }
-            IoRedirect::OutputAndError(target, append) => {
+            Self::OutputAndError(target, append) => {
                 write!(f, "&>")?;
                 if *append {
                     write!(f, ">")?;
                 }
                 write!(f, " {target}")?;
             }
-            IoRedirect::HereDocument(
+            Self::HereDocument(
                 fd_num,
                 IoHereDocument {
                     remove_tabs,
@@ -973,7 +973,7 @@ impl Display for IoRedirect {
                 write!(f, "{doc}")?;
                 writeln!(f, "{here_end}")?;
             }
-            IoRedirect::HereString(fd_num, s) => {
+            Self::HereString(fd_num, s) => {
                 if let Some(fd_num) = fd_num {
                     write!(f, "{fd_num}")?;
                 }
@@ -1010,13 +1010,13 @@ pub enum IoFileRedirectKind {
 impl Display for IoFileRedirectKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IoFileRedirectKind::Read => write!(f, "<"),
-            IoFileRedirectKind::Write => write!(f, ">"),
-            IoFileRedirectKind::Append => write!(f, ">>"),
-            IoFileRedirectKind::ReadAndWrite => write!(f, "<>"),
-            IoFileRedirectKind::Clobber => write!(f, ">|"),
-            IoFileRedirectKind::DuplicateInput => write!(f, "<&"),
-            IoFileRedirectKind::DuplicateOutput => write!(f, ">&"),
+            Self::Read => write!(f, "<"),
+            Self::Write => write!(f, ">"),
+            Self::Append => write!(f, ">>"),
+            Self::ReadAndWrite => write!(f, "<>"),
+            Self::Clobber => write!(f, ">|"),
+            Self::DuplicateInput => write!(f, "<&"),
+            Self::DuplicateOutput => write!(f, ">&"),
         }
     }
 }
@@ -1038,9 +1038,9 @@ pub enum IoFileRedirectTarget {
 impl Display for IoFileRedirectTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IoFileRedirectTarget::Filename(word) => write!(f, "{word}"),
-            IoFileRedirectTarget::Fd(fd) => write!(f, "{fd}"),
-            IoFileRedirectTarget::ProcessSubstitution(kind, subshell_command) => {
+            Self::Filename(word) => write!(f, "{word}"),
+            Self::Fd(fd) => write!(f, "{fd}"),
+            Self::ProcessSubstitution(kind, subshell_command) => {
                 write!(f, "{kind}{subshell_command}")
             }
         }
@@ -1089,14 +1089,14 @@ pub enum TestExpr {
 impl Display for TestExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TestExpr::False => Ok(()),
-            TestExpr::Literal(s) => write!(f, "{s}"),
-            TestExpr::And(left, right) => write!(f, "{left} -a {right}"),
-            TestExpr::Or(left, right) => write!(f, "{left} -o {right}"),
-            TestExpr::Not(expr) => write!(f, "! {expr}"),
-            TestExpr::Parenthesized(expr) => write!(f, "( {expr} )"),
-            TestExpr::UnaryTest(pred, word) => write!(f, "{pred} {word}"),
-            TestExpr::BinaryTest(left, op, right) => write!(f, "{left} {op} {right}"),
+            Self::False => Ok(()),
+            Self::Literal(s) => write!(f, "{s}"),
+            Self::And(left, right) => write!(f, "{left} -a {right}"),
+            Self::Or(left, right) => write!(f, "{left} -o {right}"),
+            Self::Not(expr) => write!(f, "! {expr}"),
+            Self::Parenthesized(expr) => write!(f, "( {expr} )"),
+            Self::UnaryTest(pred, word) => write!(f, "{pred} {word}"),
+            Self::BinaryTest(left, op, right) => write!(f, "{left} {op} {right}"),
         }
     }
 }
@@ -1123,22 +1123,22 @@ pub enum ExtendedTestExpr {
 impl Display for ExtendedTestExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExtendedTestExpr::And(left, right) => {
+            Self::And(left, right) => {
                 write!(f, "{left} && {right}")
             }
-            ExtendedTestExpr::Or(left, right) => {
+            Self::Or(left, right) => {
                 write!(f, "{left} || {right}")
             }
-            ExtendedTestExpr::Not(expr) => {
+            Self::Not(expr) => {
                 write!(f, "! {expr}")
             }
-            ExtendedTestExpr::Parenthesized(expr) => {
+            Self::Parenthesized(expr) => {
                 write!(f, "( {expr} )")
             }
-            ExtendedTestExpr::UnaryTest(pred, word) => {
+            Self::UnaryTest(pred, word) => {
                 write!(f, "{pred} {word}")
             }
-            ExtendedTestExpr::BinaryTest(pred, left, right) => {
+            Self::BinaryTest(pred, left, right) => {
                 write!(f, "{left} {pred} {right}")
             }
         }
@@ -1206,30 +1206,30 @@ pub enum UnaryPredicate {
 impl Display for UnaryPredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnaryPredicate::FileExists => write!(f, "-e"),
-            UnaryPredicate::FileExistsAndIsBlockSpecialFile => write!(f, "-b"),
-            UnaryPredicate::FileExistsAndIsCharSpecialFile => write!(f, "-c"),
-            UnaryPredicate::FileExistsAndIsDir => write!(f, "-d"),
-            UnaryPredicate::FileExistsAndIsRegularFile => write!(f, "-f"),
-            UnaryPredicate::FileExistsAndIsSetgid => write!(f, "-g"),
-            UnaryPredicate::FileExistsAndIsSymlink => write!(f, "-h"),
-            UnaryPredicate::FileExistsAndHasStickyBit => write!(f, "-k"),
-            UnaryPredicate::FileExistsAndIsFifo => write!(f, "-p"),
-            UnaryPredicate::FileExistsAndIsReadable => write!(f, "-r"),
-            UnaryPredicate::FileExistsAndIsNotZeroLength => write!(f, "-s"),
-            UnaryPredicate::FdIsOpenTerminal => write!(f, "-t"),
-            UnaryPredicate::FileExistsAndIsSetuid => write!(f, "-u"),
-            UnaryPredicate::FileExistsAndIsWritable => write!(f, "-w"),
-            UnaryPredicate::FileExistsAndIsExecutable => write!(f, "-x"),
-            UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => write!(f, "-G"),
-            UnaryPredicate::FileExistsAndModifiedSinceLastRead => write!(f, "-N"),
-            UnaryPredicate::FileExistsAndOwnedByEffectiveUserId => write!(f, "-O"),
-            UnaryPredicate::FileExistsAndIsSocket => write!(f, "-S"),
-            UnaryPredicate::ShellOptionEnabled => write!(f, "-o"),
-            UnaryPredicate::ShellVariableIsSetAndAssigned => write!(f, "-v"),
-            UnaryPredicate::ShellVariableIsSetAndNameRef => write!(f, "-R"),
-            UnaryPredicate::StringHasZeroLength => write!(f, "-z"),
-            UnaryPredicate::StringHasNonZeroLength => write!(f, "-n"),
+            Self::FileExists => write!(f, "-e"),
+            Self::FileExistsAndIsBlockSpecialFile => write!(f, "-b"),
+            Self::FileExistsAndIsCharSpecialFile => write!(f, "-c"),
+            Self::FileExistsAndIsDir => write!(f, "-d"),
+            Self::FileExistsAndIsRegularFile => write!(f, "-f"),
+            Self::FileExistsAndIsSetgid => write!(f, "-g"),
+            Self::FileExistsAndIsSymlink => write!(f, "-h"),
+            Self::FileExistsAndHasStickyBit => write!(f, "-k"),
+            Self::FileExistsAndIsFifo => write!(f, "-p"),
+            Self::FileExistsAndIsReadable => write!(f, "-r"),
+            Self::FileExistsAndIsNotZeroLength => write!(f, "-s"),
+            Self::FdIsOpenTerminal => write!(f, "-t"),
+            Self::FileExistsAndIsSetuid => write!(f, "-u"),
+            Self::FileExistsAndIsWritable => write!(f, "-w"),
+            Self::FileExistsAndIsExecutable => write!(f, "-x"),
+            Self::FileExistsAndOwnedByEffectiveGroupId => write!(f, "-G"),
+            Self::FileExistsAndModifiedSinceLastRead => write!(f, "-N"),
+            Self::FileExistsAndOwnedByEffectiveUserId => write!(f, "-O"),
+            Self::FileExistsAndIsSocket => write!(f, "-S"),
+            Self::ShellOptionEnabled => write!(f, "-o"),
+            Self::ShellVariableIsSetAndAssigned => write!(f, "-v"),
+            Self::ShellVariableIsSetAndNameRef => write!(f, "-R"),
+            Self::StringHasZeroLength => write!(f, "-z"),
+            Self::StringHasNonZeroLength => write!(f, "-n"),
         }
     }
 }
@@ -1278,23 +1278,23 @@ pub enum BinaryPredicate {
 impl Display for BinaryPredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => write!(f, "-ef"),
-            BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => write!(f, "-nt"),
-            BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes => write!(f, "-ot"),
-            BinaryPredicate::StringExactlyMatchesPattern => write!(f, "=="),
-            BinaryPredicate::StringDoesNotExactlyMatchPattern => write!(f, "!="),
-            BinaryPredicate::StringMatchesRegex => write!(f, "=~"),
-            BinaryPredicate::StringContainsSubstring => write!(f, "=~"),
-            BinaryPredicate::StringExactlyMatchesString => write!(f, "=="),
-            BinaryPredicate::StringDoesNotExactlyMatchString => write!(f, "!="),
-            BinaryPredicate::LeftSortsBeforeRight => write!(f, "<"),
-            BinaryPredicate::LeftSortsAfterRight => write!(f, ">"),
-            BinaryPredicate::ArithmeticEqualTo => write!(f, "-eq"),
-            BinaryPredicate::ArithmeticNotEqualTo => write!(f, "-ne"),
-            BinaryPredicate::ArithmeticLessThan => write!(f, "-lt"),
-            BinaryPredicate::ArithmeticLessThanOrEqualTo => write!(f, "-le"),
-            BinaryPredicate::ArithmeticGreaterThan => write!(f, "-gt"),
-            BinaryPredicate::ArithmeticGreaterThanOrEqualTo => write!(f, "-ge"),
+            Self::FilesReferToSameDeviceAndInodeNumbers => write!(f, "-ef"),
+            Self::LeftFileIsNewerOrExistsWhenRightDoesNot => write!(f, "-nt"),
+            Self::LeftFileIsOlderOrDoesNotExistWhenRightDoes => write!(f, "-ot"),
+            Self::StringExactlyMatchesPattern => write!(f, "=="),
+            Self::StringDoesNotExactlyMatchPattern => write!(f, "!="),
+            Self::StringMatchesRegex => write!(f, "=~"),
+            Self::StringContainsSubstring => write!(f, "=~"),
+            Self::StringExactlyMatchesString => write!(f, "=="),
+            Self::StringDoesNotExactlyMatchString => write!(f, "!="),
+            Self::LeftSortsBeforeRight => write!(f, "<"),
+            Self::LeftSortsAfterRight => write!(f, ">"),
+            Self::ArithmeticEqualTo => write!(f, "-eq"),
+            Self::ArithmeticNotEqualTo => write!(f, "-ne"),
+            Self::ArithmeticLessThan => write!(f, "-lt"),
+            Self::ArithmeticLessThanOrEqualTo => write!(f, "-le"),
+            Self::ArithmeticGreaterThan => write!(f, "-gt"),
+            Self::ArithmeticGreaterThanOrEqualTo => write!(f, "-ge"),
         }
     }
 }
@@ -1317,12 +1317,12 @@ impl Display for Word {
 }
 
 impl From<&tokenizer::Token> for Word {
-    fn from(t: &tokenizer::Token) -> Word {
+    fn from(t: &tokenizer::Token) -> Self {
         match t {
-            tokenizer::Token::Word(value, _) => Word {
+            tokenizer::Token::Word(value, _) => Self {
                 value: value.clone(),
             },
-            tokenizer::Token::Operator(value, _) => Word {
+            tokenizer::Token::Operator(value, _) => Self {
                 value: value.clone(),
             },
         }
@@ -1330,8 +1330,8 @@ impl From<&tokenizer::Token> for Word {
 }
 
 impl From<String> for Word {
-    fn from(s: String) -> Word {
-        Word { value: s }
+    fn from(s: String) -> Self {
+        Self { value: s }
     }
 }
 
@@ -1405,32 +1405,32 @@ impl<'a> arbitrary::Arbitrary<'a> for ArithmeticExpr {
         ])?;
 
         match *variant {
-            "Literal" => Ok(ArithmeticExpr::Literal(i64::arbitrary(u)?)),
-            "Reference" => Ok(ArithmeticExpr::Reference(ArithmeticTarget::arbitrary(u)?)),
-            "UnaryOp" => Ok(ArithmeticExpr::UnaryOp(
+            "Literal" => Ok(Self::Literal(i64::arbitrary(u)?)),
+            "Reference" => Ok(Self::Reference(ArithmeticTarget::arbitrary(u)?)),
+            "UnaryOp" => Ok(Self::UnaryOp(
                 UnaryOperator::arbitrary(u)?,
-                Box::new(ArithmeticExpr::arbitrary(u)?),
+                Box::new(Self::arbitrary(u)?),
             )),
-            "BinaryOp" => Ok(ArithmeticExpr::BinaryOp(
+            "BinaryOp" => Ok(Self::BinaryOp(
                 BinaryOperator::arbitrary(u)?,
-                Box::new(ArithmeticExpr::arbitrary(u)?),
-                Box::new(ArithmeticExpr::arbitrary(u)?),
+                Box::new(Self::arbitrary(u)?),
+                Box::new(Self::arbitrary(u)?),
             )),
-            "Conditional" => Ok(ArithmeticExpr::Conditional(
-                Box::new(ArithmeticExpr::arbitrary(u)?),
-                Box::new(ArithmeticExpr::arbitrary(u)?),
-                Box::new(ArithmeticExpr::arbitrary(u)?),
+            "Conditional" => Ok(Self::Conditional(
+                Box::new(Self::arbitrary(u)?),
+                Box::new(Self::arbitrary(u)?),
+                Box::new(Self::arbitrary(u)?),
             )),
-            "Assignment" => Ok(ArithmeticExpr::Assignment(
+            "Assignment" => Ok(Self::Assignment(
                 ArithmeticTarget::arbitrary(u)?,
-                Box::new(ArithmeticExpr::arbitrary(u)?),
+                Box::new(Self::arbitrary(u)?),
             )),
-            "BinaryAssignment" => Ok(ArithmeticExpr::BinaryAssignment(
+            "BinaryAssignment" => Ok(Self::BinaryAssignment(
                 BinaryOperator::arbitrary(u)?,
                 ArithmeticTarget::arbitrary(u)?,
-                Box::new(ArithmeticExpr::arbitrary(u)?),
+                Box::new(Self::arbitrary(u)?),
             )),
-            "UnaryAssignment" => Ok(ArithmeticExpr::UnaryAssignment(
+            "UnaryAssignment" => Ok(Self::UnaryAssignment(
                 UnaryAssignmentOperator::arbitrary(u)?,
                 ArithmeticTarget::arbitrary(u)?,
             )),
@@ -1442,24 +1442,24 @@ impl<'a> arbitrary::Arbitrary<'a> for ArithmeticExpr {
 impl Display for ArithmeticExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ArithmeticExpr::Literal(literal) => write!(f, "{literal}"),
-            ArithmeticExpr::Reference(target) => write!(f, "{target}"),
-            ArithmeticExpr::UnaryOp(op, operand) => write!(f, "{op}{operand}"),
-            ArithmeticExpr::BinaryOp(op, left, right) => {
+            Self::Literal(literal) => write!(f, "{literal}"),
+            Self::Reference(target) => write!(f, "{target}"),
+            Self::UnaryOp(op, operand) => write!(f, "{op}{operand}"),
+            Self::BinaryOp(op, left, right) => {
                 if matches!(op, BinaryOperator::Comma) {
                     write!(f, "{left}{op} {right}")
                 } else {
                     write!(f, "{left} {op} {right}")
                 }
             }
-            ArithmeticExpr::Conditional(condition, if_branch, else_branch) => {
+            Self::Conditional(condition, if_branch, else_branch) => {
                 write!(f, "{condition} ? {if_branch} : {else_branch}")
             }
-            ArithmeticExpr::Assignment(target, value) => write!(f, "{target} = {value}"),
-            ArithmeticExpr::BinaryAssignment(op, target, operand) => {
+            Self::Assignment(target, value) => write!(f, "{target} = {value}"),
+            Self::BinaryAssignment(op, target, operand) => {
                 write!(f, "{target} {op}= {operand}")
             }
-            ArithmeticExpr::UnaryAssignment(op, target) => match op {
+            Self::UnaryAssignment(op, target) => match op {
                 UnaryAssignmentOperator::PrefixIncrement
                 | UnaryAssignmentOperator::PrefixDecrement => write!(f, "{op}{target}"),
                 UnaryAssignmentOperator::PostfixIncrement
@@ -1519,26 +1519,26 @@ pub enum BinaryOperator {
 impl Display for BinaryOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinaryOperator::Power => write!(f, "**"),
-            BinaryOperator::Multiply => write!(f, "*"),
-            BinaryOperator::Divide => write!(f, "/"),
-            BinaryOperator::Modulo => write!(f, "%"),
-            BinaryOperator::Comma => write!(f, ","),
-            BinaryOperator::Add => write!(f, "+"),
-            BinaryOperator::Subtract => write!(f, "-"),
-            BinaryOperator::ShiftLeft => write!(f, "<<"),
-            BinaryOperator::ShiftRight => write!(f, ">>"),
-            BinaryOperator::LessThan => write!(f, "<"),
-            BinaryOperator::LessThanOrEqualTo => write!(f, "<="),
-            BinaryOperator::GreaterThan => write!(f, ">"),
-            BinaryOperator::GreaterThanOrEqualTo => write!(f, ">="),
-            BinaryOperator::Equals => write!(f, "=="),
-            BinaryOperator::NotEquals => write!(f, "!="),
-            BinaryOperator::BitwiseAnd => write!(f, "&"),
-            BinaryOperator::BitwiseXor => write!(f, "^"),
-            BinaryOperator::BitwiseOr => write!(f, "|"),
-            BinaryOperator::LogicalAnd => write!(f, "&&"),
-            BinaryOperator::LogicalOr => write!(f, "||"),
+            Self::Power => write!(f, "**"),
+            Self::Multiply => write!(f, "*"),
+            Self::Divide => write!(f, "/"),
+            Self::Modulo => write!(f, "%"),
+            Self::Comma => write!(f, ","),
+            Self::Add => write!(f, "+"),
+            Self::Subtract => write!(f, "-"),
+            Self::ShiftLeft => write!(f, "<<"),
+            Self::ShiftRight => write!(f, ">>"),
+            Self::LessThan => write!(f, "<"),
+            Self::LessThanOrEqualTo => write!(f, "<="),
+            Self::GreaterThan => write!(f, ">"),
+            Self::GreaterThanOrEqualTo => write!(f, ">="),
+            Self::Equals => write!(f, "=="),
+            Self::NotEquals => write!(f, "!="),
+            Self::BitwiseAnd => write!(f, "&"),
+            Self::BitwiseXor => write!(f, "^"),
+            Self::BitwiseOr => write!(f, "|"),
+            Self::LogicalAnd => write!(f, "&&"),
+            Self::LogicalOr => write!(f, "||"),
         }
     }
 }
@@ -1561,10 +1561,10 @@ pub enum UnaryOperator {
 impl Display for UnaryOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnaryOperator::UnaryPlus => write!(f, "+"),
-            UnaryOperator::UnaryMinus => write!(f, "-"),
-            UnaryOperator::BitwiseNot => write!(f, "~"),
-            UnaryOperator::LogicalNot => write!(f, "!"),
+            Self::UnaryPlus => write!(f, "+"),
+            Self::UnaryMinus => write!(f, "-"),
+            Self::BitwiseNot => write!(f, "~"),
+            Self::LogicalNot => write!(f, "!"),
         }
     }
 }
@@ -1587,10 +1587,10 @@ pub enum UnaryAssignmentOperator {
 impl Display for UnaryAssignmentOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnaryAssignmentOperator::PrefixIncrement => write!(f, "++"),
-            UnaryAssignmentOperator::PrefixDecrement => write!(f, "--"),
-            UnaryAssignmentOperator::PostfixIncrement => write!(f, "++"),
-            UnaryAssignmentOperator::PostfixDecrement => write!(f, "--"),
+            Self::PrefixIncrement => write!(f, "++"),
+            Self::PrefixDecrement => write!(f, "--"),
+            Self::PostfixIncrement => write!(f, "++"),
+            Self::PostfixDecrement => write!(f, "--"),
         }
     }
 }
@@ -1609,8 +1609,8 @@ pub enum ArithmeticTarget {
 impl Display for ArithmeticTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ArithmeticTarget::Variable(name) => write!(f, "{name}"),
-            ArithmeticTarget::ArrayElement(name, index) => write!(f, "{name}[{index}]"),
+            Self::Variable(name) => write!(f, "{name}"),
+            Self::ArrayElement(name, index) => write!(f, "{name}[{index}]"),
         }
     }
 }

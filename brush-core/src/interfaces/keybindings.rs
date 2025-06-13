@@ -15,8 +15,8 @@ pub enum KeyAction {
 impl Display for KeyAction {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            KeyAction::ShellCommand(command) => write!(f, "shell command: {command}"),
-            KeyAction::DoInputFunction(function) => function.fmt(f),
+            Self::ShellCommand(command) => write!(f, "shell command: {command}"),
+            Self::DoInputFunction(function) => function.fmt(f),
         }
     }
 }
@@ -304,24 +304,24 @@ pub enum Key {
 impl Display for Key {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Key::Character(c @ ('\\' | '\"' | '\'')) => write!(f, "\\{c}")?,
-            Key::Character(c) => write!(f, "{c}")?,
-            Key::Backspace => write!(f, "Backspace")?,
-            Key::Enter => write!(f, "Enter")?,
-            Key::Left => write!(f, "Left")?,
-            Key::Right => write!(f, "Right")?,
-            Key::Up => write!(f, "Up")?,
-            Key::Down => write!(f, "Down")?,
-            Key::Home => write!(f, "Home")?,
-            Key::End => write!(f, "End")?,
-            Key::PageUp => write!(f, "PageUp")?,
-            Key::PageDown => write!(f, "PageDown")?,
-            Key::Tab => write!(f, "Tab")?,
-            Key::BackTab => write!(f, "BackTab")?,
-            Key::Delete => write!(f, "Delete")?,
-            Key::Insert => write!(f, "Insert")?,
-            Key::F(n) => write!(f, "F{n}")?,
-            Key::Escape => write!(f, "Esc")?,
+            Self::Character(c @ ('\\' | '\"' | '\'')) => write!(f, "\\{c}")?,
+            Self::Character(c) => write!(f, "{c}")?,
+            Self::Backspace => write!(f, "Backspace")?,
+            Self::Enter => write!(f, "Enter")?,
+            Self::Left => write!(f, "Left")?,
+            Self::Right => write!(f, "Right")?,
+            Self::Up => write!(f, "Up")?,
+            Self::Down => write!(f, "Down")?,
+            Self::Home => write!(f, "Home")?,
+            Self::End => write!(f, "End")?,
+            Self::PageUp => write!(f, "PageUp")?,
+            Self::PageDown => write!(f, "PageDown")?,
+            Self::Tab => write!(f, "Tab")?,
+            Self::BackTab => write!(f, "BackTab")?,
+            Self::Delete => write!(f, "Delete")?,
+            Self::Insert => write!(f, "Insert")?,
+            Self::F(n) => write!(f, "F{n}")?,
+            Self::Escape => write!(f, "Esc")?,
         }
 
         Ok(())

@@ -329,7 +329,7 @@ fn ansi_c_quote(s: &str) -> String {
 
 // Returns whether or not the given character needs to be escaped (or quoted) if outside
 // quotes.
-fn needs_escaping(c: char) -> bool {
+const fn needs_escaping(c: char) -> bool {
     matches!(
         c,
         '(' | ')'
@@ -356,7 +356,7 @@ fn needs_escaping(c: char) -> bool {
     )
 }
 
-fn needs_ansi_c_quoting(c: char) -> bool {
+const fn needs_ansi_c_quoting(c: char) -> bool {
     c.is_ascii_control()
 }
 

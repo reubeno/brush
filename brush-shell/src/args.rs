@@ -1,3 +1,5 @@
+//! Types for brush command-line parsing.
+
 use clap::{Parser, builder::styling};
 use std::io::IsTerminal;
 
@@ -155,6 +157,7 @@ pub struct CommandLineArgs {
 }
 
 impl CommandLineArgs {
+    /// Returns whether or not the arguments indicate that the shell should run in interactive mode.
     pub fn is_interactive(&self) -> bool {
         if self.interactive {
             return true;

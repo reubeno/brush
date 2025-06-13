@@ -22,26 +22,38 @@ rust-version = "1.85.0"
 
 [workspace.lints.rust]
 warnings = { level = "deny" }
+future_incompatible = { level = "deny" }
+missing_docs = { level = "deny" }
+nonstandard_style = { level = "deny" }
 rust_2018_idioms = { level = "deny", priority = -1 }
 unnameable_types = "deny"
 unsafe_op_in_unsafe_fn = "deny"
+unused_attributes = "deny"
 unused_lifetimes = "deny"
 unused_macro_rules = "deny"
 # For now we allow unknown lints so we can opt into warnings that don't exist on the
 # oldest toolchain we need to support.
 unknown_lints = { level = "allow", priority = -100 }
 
+[workspace.lints.rustdoc]
+all = { level = "deny", priority = -1 }
+
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 cargo = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
+
+# Denied rules
 expect_used = "deny"
 format_push_string = "deny"
 panic = "deny"
 panic_in_result_fn = "deny"
 todo = "deny"
 unwrap_in_result = "deny"
+
+# Allowed rules
 bool_to_int_with_if = "allow"
 collapsible_else_if = "allow"
 collapsible_if = "allow"
@@ -52,8 +64,10 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 multiple_crate_versions = "allow"
 must_use_candidate = "allow"
+option_if_let_else = "allow"
 redundant_closure_for_method_calls = "allow"
 redundant_else = "allow"
+redundant_pub_crate = "allow"
 result_large_err = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"

@@ -68,7 +68,7 @@ async fn apply_unary_predicate(
 pub(crate) fn apply_unary_predicate_to_str(
     op: &ast::UnaryPredicate,
     operand: &str,
-    shell: &mut Shell,
+    shell: &Shell,
     params: &ExecutionParameters,
 ) -> Result<bool, error::Error> {
     #[allow(clippy::match_single_binding)]
@@ -472,7 +472,7 @@ pub(crate) fn apply_binary_predicate_to_strs(
     op: &ast::BinaryPredicate,
     left: &str,
     right: &str,
-    shell: &mut Shell,
+    shell: &Shell,
 ) -> Result<bool, error::Error> {
     match op {
         ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
@@ -555,7 +555,7 @@ fn apply_test_binary_arithmetic_predicate(
 }
 
 fn left_file_is_older_or_does_not_exist_when_right_does(
-    shell: &mut Shell,
+    shell: &Shell,
     left: impl AsRef<str>,
     right: impl AsRef<str>,
 ) -> Result<bool, error::Error> {
@@ -572,7 +572,7 @@ fn left_file_is_older_or_does_not_exist_when_right_does(
 }
 
 fn left_file_is_newer_or_exists_when_right_does_not(
-    shell: &mut Shell,
+    shell: &Shell,
     left: impl AsRef<str>,
     right: impl AsRef<str>,
 ) -> Result<bool, error::Error> {
@@ -589,7 +589,7 @@ fn left_file_is_newer_or_exists_when_right_does_not(
 }
 
 fn files_refer_to_same_device_and_inode_numbers(
-    shell: &mut Shell,
+    shell: &Shell,
     left: impl AsRef<str>,
     right: impl AsRef<str>,
 ) -> Result<bool, error::Error> {

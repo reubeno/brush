@@ -21,10 +21,10 @@ enum Unit {
 }
 
 impl Unit {
-    fn scale(self) -> u64 {
+    const fn scale(self) -> u64 {
         match self {
-            Unit::Block | Unit::HalfKBytes => 512,
-            Unit::KBytes => 1024,
+            Self::Block | Self::HalfKBytes => 512,
+            Self::KBytes => 1024,
             _ => 1,
         }
     }
@@ -39,27 +39,27 @@ enum Virtual {
 impl Virtual {
     fn get(self) -> std::io::Result<(u64, u64)> {
         match self {
-            Virtual::Pipe => {
+            Self::Pipe => {
                 let lim = nix::unistd::PathconfVar::PIPE_BUF as u64 * 512;
                 Ok((lim, lim))
             }
-            Virtual::VMem => rlimit::Resource::AS
+            Self::VMem => rlimit::Resource::AS
                 .get()
                 .or_else(|_| rlimit::Resource::VMEM.get()),
         }
     }
     fn set(self, soft: u64, hard: u64) -> std::io::Result<()> {
         match self {
-            Virtual::Pipe => Err(std::io::Error::from(ErrorKind::Unsupported)),
-            Virtual::VMem => rlimit::Resource::AS
+            Self::Pipe => Err(std::io::Error::from(ErrorKind::Unsupported)),
+            Self::VMem => rlimit::Resource::AS
                 .set(soft, hard)
                 .or_else(|_| rlimit::Resource::VMEM.set(soft, hard)),
         }
     }
-    fn is_supported(self) -> bool {
+    const fn is_supported(self) -> bool {
         match self {
-            Virtual::Pipe => true,
-            Virtual::VMem => {
+            Self::Pipe => true,
+            Self::VMem => {
                 rlimit::Resource::AS.is_supported() || rlimit::Resource::VMEM.is_supported()
             }
         }
@@ -75,20 +75,20 @@ enum Resource {
 impl Resource {
     fn get(self) -> std::io::Result<(u64, u64)> {
         match self {
-            Resource::Phy(res) => res.get(),
-            Resource::Virt(res) => res.get(),
+            Self::Phy(res) => res.get(),
+            Self::Virt(res) => res.get(),
         }
     }
     fn set(self, soft: u64, hard: u64) -> std::io::Result<()> {
         match self {
-            Resource::Phy(res) => res.set(soft, hard),
-            Resource::Virt(res) => res.set(soft, hard),
+            Self::Phy(res) => res.set(soft, hard),
+            Self::Virt(res) => res.set(soft, hard),
         }
     }
-    fn is_supported(self) -> bool {
+    const fn is_supported(self) -> bool {
         match self {
-            Resource::Phy(res) => res.is_supported(),
-            Resource::Virt(res) => res.is_supported(),
+            Self::Phy(res) => res.is_supported(),
+            Self::Virt(res) => res.is_supported(),
         }
     }
 }
@@ -103,147 +103,147 @@ struct ResourceDescription {
 }
 
 impl ResourceDescription {
-    const SBSIZE: ResourceDescription = ResourceDescription {
+    const SBSIZE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::SBSIZE),
         help: "the socket buffer size",
         description: "socket buffer size",
         short: 'b',
         unit: Unit::Bytes,
     };
-    const CORE: ResourceDescription = ResourceDescription {
+    const CORE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::CORE),
         help: "the maximum size of core files created",
         description: "core file size",
         short: 'c',
         unit: Unit::Block,
     };
-    const DATA: ResourceDescription = ResourceDescription {
+    const DATA: Self = Self {
         resource: Resource::Phy(rlimit::Resource::DATA),
         help: "the maximum size of a process's data segment",
         description: "data seg size",
         short: 'd',
         unit: Unit::KBytes,
     };
-    const NICE: ResourceDescription = ResourceDescription {
+    const NICE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NICE),
         help: "the maximum scheduling priority (`nice`)",
         description: "scheduling priority",
         short: 'e',
         unit: Unit::Number,
     };
-    const FSIZE: ResourceDescription = ResourceDescription {
+    const FSIZE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::FSIZE),
         help: "the maximum size of files written by the shell and its children",
         description: "file size",
         short: 'f',
         unit: Unit::Block,
     };
-    const SIGPENDING: ResourceDescription = ResourceDescription {
+    const SIGPENDING: Self = Self {
         resource: Resource::Phy(rlimit::Resource::SIGPENDING),
         help: "the maximum number of pending signals",
         description: "pending signals",
         short: 'i',
         unit: Unit::Number,
     };
-    const MEMLOCK: ResourceDescription = ResourceDescription {
+    const MEMLOCK: Self = Self {
         resource: Resource::Phy(rlimit::Resource::MEMLOCK),
         help: "the maximum size a process may lock into memory",
         description: "max locked memory",
         short: 'l',
         unit: Unit::KBytes,
     };
-    const KQUEUES: ResourceDescription = ResourceDescription {
+    const KQUEUES: Self = Self {
         resource: Resource::Phy(rlimit::Resource::KQUEUES),
         help: "the maximum number of kqueues allocated for this process",
         description: "max kqueues",
         short: 'k',
         unit: Unit::Number,
     };
-    const RSS: ResourceDescription = ResourceDescription {
+    const RSS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RSS),
         help: "the maximum resident set size",
         description: "max memory size",
         short: 'm',
         unit: Unit::KBytes,
     };
-    const LOCKS: ResourceDescription = ResourceDescription {
+    const LOCKS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::LOCKS),
         help: "the maximum number of file locks",
         description: "file locks",
         short: 'x',
         unit: Unit::Number,
     };
-    const NOFILE: ResourceDescription = ResourceDescription {
+    const NOFILE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NOFILE),
         help: "the maximum number of open file descriptors",
         description: "open files",
         short: 'n',
         unit: Unit::Number,
     };
-    const MSGQUEUE: ResourceDescription = ResourceDescription {
+    const MSGQUEUE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::MSGQUEUE),
         help: "the maximum number of bytes in POSIX message queues",
         description: "POSIX message queues",
         short: 'q',
         unit: Unit::Bytes,
     };
-    const PIPE: ResourceDescription = ResourceDescription {
+    const PIPE: Self = Self {
         resource: Resource::Virt(Virtual::Pipe),
         help: "the pipe buffer size",
         description: "pipe size",
         short: 'p',
         unit: Unit::HalfKBytes,
     };
-    const RTPRIO: ResourceDescription = ResourceDescription {
+    const RTPRIO: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RTPRIO),
         help: "the maximum real-time scheduling priority",
         description: "real-time priority",
         short: 'r',
         unit: Unit::Number,
     };
-    const RTTIME: ResourceDescription = ResourceDescription {
+    const RTTIME: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RTTIME),
         help: "the maximum real-time scheduling priority",
         description: "real-time non-blocking time",
         short: 'R',
         unit: Unit::Micros,
     };
-    const STACK: ResourceDescription = ResourceDescription {
+    const STACK: Self = Self {
         resource: Resource::Phy(rlimit::Resource::STACK),
         help: "the maximum stack size",
         description: "stack size",
         short: 's',
         unit: Unit::KBytes,
     };
-    const CPU: ResourceDescription = ResourceDescription {
+    const CPU: Self = Self {
         resource: Resource::Phy(rlimit::Resource::CPU),
         help: "the maximum amount of cpu time in seconds",
         description: "cpu time",
         short: 't',
         unit: Unit::Seconds,
     };
-    const NPROC: ResourceDescription = ResourceDescription {
+    const NPROC: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NPROC),
         help: "the maximum number of user processes",
         description: "max user processes",
         short: 'u',
         unit: Unit::Number,
     };
-    const VMEM: ResourceDescription = ResourceDescription {
+    const VMEM: Self = Self {
         resource: Resource::Virt(Virtual::VMem),
         help: "the size of virtual memory",
         description: "virtual memory",
         short: 'v',
         unit: Unit::KBytes,
     };
-    const THREADS: ResourceDescription = ResourceDescription {
+    const THREADS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::THREADS),
         help: "the maximum number of threads",
         description: "number of threads",
         short: 'T',
         unit: Unit::Number,
     };
-    const NPTS: ResourceDescription = ResourceDescription {
+    const NPTS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NPTS),
         help: "the maximum number of pseudoterminals",
         description: "number of pseudoterminals",
@@ -336,11 +336,11 @@ impl FromStr for LimitValue {
     type Err = <u64 as FromStr>::Err;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let v = match s {
-            "" => LimitValue::Unset,
-            "unlimited" => LimitValue::Unlimited,
-            "soft" => LimitValue::Soft,
-            "hard" => LimitValue::Hard,
-            _ => LimitValue::Value(s.parse()?),
+            "" => Self::Unset,
+            "unlimited" => Self::Unlimited,
+            "soft" => Self::Soft,
+            "hard" => Self::Hard,
+            _ => Self::Value(s.parse()?),
         };
         Ok(v)
     }

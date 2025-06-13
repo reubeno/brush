@@ -1,3 +1,7 @@
+//! Benchmarks for the brush-parser crate.
+
+#![allow(missing_docs)]
+
 #[cfg(unix)]
 mod unix {
     use brush_parser::{Token, parse_tokens};
@@ -67,6 +71,7 @@ criterion::criterion_group! {
     config = criterion::Criterion::default().with_profiler(pprof::criterion::PProfProfiler::new(100, pprof::criterion::Output::Flamegraph(None)));
     targets = unix::criterion_benchmark
 }
+
 #[cfg(unix)]
 criterion::criterion_main!(benches);
 

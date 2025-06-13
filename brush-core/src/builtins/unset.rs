@@ -29,7 +29,7 @@ pub(crate) struct UnsetNameInterpretation {
 }
 
 impl UnsetNameInterpretation {
-    pub fn unspecified(&self) -> bool {
+    pub const fn unspecified(&self) -> bool {
         !self.shell_functions && !self.shell_variables && !self.name_references
     }
 }

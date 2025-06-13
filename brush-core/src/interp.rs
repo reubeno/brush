@@ -45,7 +45,7 @@ impl From<processes::ProcessWaitResult> for ExecutionResult {
 }
 
 impl From<std::process::Output> for ExecutionResult {
-    fn from(output: std::process::Output) -> ExecutionResult {
+    fn from(output: std::process::Output) -> Self {
         if let Some(code) = output.status.code() {
             #[allow(clippy::cast_sign_loss)]
             return Self::new((code & 0xFF) as u8);
@@ -67,25 +67,25 @@ impl ExecutionResult {
     ///
     /// # Parameters
     /// - `exit_code` - The exit code of the command.
-    pub fn new(exit_code: u8) -> ExecutionResult {
-        ExecutionResult {
+    pub fn new(exit_code: u8) -> Self {
+        Self {
             exit_code,
-            ..ExecutionResult::default()
+            ..Self::default()
         }
     }
 
     /// Returns a new `ExecutionResult` with an exit code of 0.
-    pub fn success() -> ExecutionResult {
+    pub fn success() -> Self {
         Self::new(0)
     }
 
     /// Returns whether the command was successful.
-    pub fn is_success(&self) -> bool {
+    pub const fn is_success(&self) -> bool {
         self.exit_code == 0
     }
 
     /// Returns a new `ExecutionResult` reflecting a process that was stopped.
-    pub fn stopped() -> ExecutionResult {
+    pub fn stopped() -> Self {
         // TODO: Decide how to sort this out in a platform-independent way.
         const SIGTSTP: std::os::raw::c_int = 20;
 
@@ -507,10 +507,8 @@ impl ExecuteInPipeline for ast::Command {
         }
 
         match self {
-            ast::Command::Simple(simple) => {
-                simple.execute_in_pipeline(pipeline_context, params).await
-            }
-            ast::Command::Compound(compound, redirects) => {
+            Self::Simple(simple) => simple.execute_in_pipeline(pipeline_context, params).await,
+            Self::Compound(compound, redirects) => {
                 // Set up pipelining.
                 setup_pipeline_redirection(&mut params.open_files, pipeline_context)?;
 
@@ -536,11 +534,11 @@ impl ExecuteInPipeline for ast::Command {
                     Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
                 }
             }
-            ast::Command::Function(func) => {
+            Self::Function(func) => {
                 let result = func.execute(pipeline_context.shell, &params).await?;
                 Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
             }
-            ast::Command::ExtendedTest(e) => {
+            Self::ExtendedTest(e) => {
                 let result =
                     if extendedtests::eval_extended_test_expr(e, pipeline_context.shell, &params)
                         .await?
@@ -568,10 +566,8 @@ impl Execute for ast::CompoundCommand {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         match self {
-            ast::CompoundCommand::BraceGroup(ast::BraceGroupCommand(g)) => {
-                g.execute(shell, params).await
-            }
-            ast::CompoundCommand::Subshell(ast::SubshellCommand(s)) => {
+            Self::BraceGroup(ast::BraceGroupCommand(g)) => g.execute(shell, params).await,
+            Self::Subshell(ast::SubshellCommand(s)) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 let mut subshell = shell.clone();
                 let subshell_result = s.execute(&mut subshell, params).await?;
@@ -580,17 +576,13 @@ impl Execute for ast::CompoundCommand {
                 // the shell, break out of loops, etc.
                 Ok(ExecutionResult::new(subshell_result.exit_code))
             }
-            ast::CompoundCommand::ForClause(f) => f.execute(shell, params).await,
-            ast::CompoundCommand::CaseClause(c) => c.execute(shell, params).await,
-            ast::CompoundCommand::IfClause(i) => i.execute(shell, params).await,
-            ast::CompoundCommand::WhileClause(w) => {
-                (WhileOrUntil::While, w).execute(shell, params).await
-            }
-            ast::CompoundCommand::UntilClause(u) => {
-                (WhileOrUntil::Until, u).execute(shell, params).await
-            }
-            ast::CompoundCommand::Arithmetic(a) => a.execute(shell, params).await,
-            ast::CompoundCommand::ArithmeticForClause(a) => a.execute(shell, params).await,
+            Self::ForClause(f) => f.execute(shell, params).await,
+            Self::CaseClause(c) => c.execute(shell, params).await,
+            Self::IfClause(i) => i.execute(shell, params).await,
+            Self::WhileClause(w) => (WhileOrUntil::While, w).execute(shell, params).await,
+            Self::UntilClause(u) => (WhileOrUntil::Until, u).execute(shell, params).await,
+            Self::Arithmetic(a) => a.execute(shell, params).await,
+            Self::ArithmeticForClause(a) => a.execute(shell, params).await,
         }
     }
 }
@@ -956,12 +948,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
-                    let (installed_fd_num, substitution_file) = setup_process_substitution(
-                        context.shell,
-                        &mut params,
-                        kind,
-                        subshell_command,
-                    )?;
+                    let (installed_fd_num, substitution_file) =
+                        setup_process_substitution(context.shell, &params, kind, subshell_command)?;
 
                     params
                         .open_files
@@ -1605,7 +1593,7 @@ pub(crate) async fn setup_redirect(
     }
 }
 
-fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {
+const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {
     match kind {
         ast::IoFileRedirectKind::Read => 0,
         ast::IoFileRedirectKind::Write => 1,
@@ -1618,8 +1606,8 @@ fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {
 }
 
 fn setup_process_substitution(
-    shell: &mut Shell,
-    params: &mut ExecutionParameters,
+    shell: &Shell,
+    params: &ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
     subshell_cmd: &ast::SubshellCommand,
 ) -> Result<(u32, OpenFile), error::Error> {

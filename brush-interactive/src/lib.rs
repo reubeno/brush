@@ -1,7 +1,5 @@
 //! Library implementing interactive command input and completion for the brush shell.
 
-#![deny(missing_docs)]
-
 mod error;
 pub use error::ShellError;
 

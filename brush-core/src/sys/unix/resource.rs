@@ -20,7 +20,7 @@ pub(crate) fn get_children_user_and_system_time()
     ))
 }
 
-fn convert_rusage_time(time: nix::sys::time::TimeVal) -> std::time::Duration {
+const fn convert_rusage_time(time: nix::sys::time::TimeVal) -> std::time::Duration {
     #[allow(clippy::cast_sign_loss)]
     #[allow(clippy::cast_possible_truncation)]
     std::time::Duration::new(time.tv_sec() as u64, time.tv_usec() as u32 * 1000)

@@ -78,16 +78,16 @@ impl Token {
     /// Returns the string value of the token.
     pub fn to_str(&self) -> &str {
         match self {
-            Token::Operator(s, _) => s,
-            Token::Word(s, _) => s,
+            Self::Operator(s, _) => s,
+            Self::Word(s, _) => s,
         }
     }
 
     /// Returns the location of the token in the source script.
-    pub fn location(&self) -> &TokenLocation {
+    pub const fn location(&self) -> &TokenLocation {
         match self {
-            Token::Operator(_, l) => l,
-            Token::Word(_, l) => l,
+            Self::Operator(_, l) => l,
+            Self::Word(_, l) => l,
         }
     }
 }
@@ -157,7 +157,7 @@ pub enum TokenizerError {
 impl TokenizerError {
     /// Returns true if the error represents an error that could possibly be due
     /// to an incomplete input stream.
-    pub fn is_incomplete(&self) -> bool {
+    pub const fn is_incomplete(&self) -> bool {
         matches!(
             self,
             Self::UnterminatedEscapeSequence
@@ -271,7 +271,7 @@ struct TokenParseState {
 
 impl TokenParseState {
     pub fn new(start_position: &SourcePosition) -> Self {
-        TokenParseState {
+        Self {
             start_position: start_position.clone(),
             token_so_far: String::new(),
             token_is_operator: false,
@@ -311,7 +311,7 @@ impl TokenParseState {
         self.token_so_far.push_str(s);
     }
 
-    pub fn unquoted(&self) -> bool {
+    pub const fn unquoted(&self) -> bool {
         !self.in_escape && matches!(self.quote_mode, QuoteMode::None)
     }
 
@@ -323,7 +323,7 @@ impl TokenParseState {
         self.token_is_operator && self.current_token() == operator
     }
 
-    pub fn in_operator(&self) -> bool {
+    pub const fn in_operator(&self) -> bool {
         self.token_is_operator
     }
 
@@ -536,7 +536,7 @@ pub fn uncached_tokenize_str(
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
-    pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Tokenizer<'a, R> {
+    pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Self {
         Tokenizer {
             options: options.clone(),
             char_reader: reader.chars().peekable(),
@@ -608,10 +608,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     /// * `include_space` - If true, include spaces in the tokenization process. This is not
     ///   typically the case, but can be helpful when needing to preserve the original source text
     ///   embedded within a command substitution or similar construct.
+    #[allow(clippy::cognitive_complexity)]
     #[allow(clippy::if_same_then_else)]
+    #[allow(clippy::panic_in_result_fn)]
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::unwrap_in_result)]
-    #[allow(clippy::panic_in_result_fn)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,
@@ -1168,7 +1169,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         };
 
         let tag_str = if !ends_with_newline {
-            tag_str.strip_suffix('\n').unwrap_or(tag_str.as_ref())
+            tag_str
+                .strip_suffix('\n')
+                .unwrap_or_else(|| tag_str.as_ref())
         } else {
             tag_str.as_ref()
         };
@@ -1194,11 +1197,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Ok(false)
     }
 
-    fn can_start_extglob(c: char) -> bool {
+    const fn can_start_extglob(c: char) -> bool {
         matches!(c, '@' | '!' | '?' | '+' | '*')
     }
 
-    fn can_start_operator(c: char) -> bool {
+    const fn can_start_operator(c: char) -> bool {
         matches!(c, '&' | '(' | ')' | ';' | '\n' | '|' | '<' | '>')
     }
 
@@ -1246,11 +1249,11 @@ impl<R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'_, R> {
     }
 }
 
-fn is_blank(c: char) -> bool {
+const fn is_blank(c: char) -> bool {
     c == ' ' || c == '\t'
 }
 
-fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> bool {
+const fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> bool {
     // If we're currently escaped, then nothing affects quoting.
     if state.in_escape {
         return false;
@@ -1274,7 +1277,7 @@ fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> bool {
     }
 }
 
-fn is_quoting_char(c: char) -> bool {
+const fn is_quoting_char(c: char) -> bool {
     matches!(c, '\\' | '\'' | '\"')
 }
 
