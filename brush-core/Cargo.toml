@@ -21,9 +21,9 @@ async-recursion = "1.1.1"
 async-trait = "0.1.88"
 brush-parser = { version = "^0.2.16", path = "../brush-parser" }
 cached = "0.55.1"
-cfg-if = "1.0.0"
+cfg-if = "1.0.1"
 chrono = "0.4.41"
-clap = { version = "4.5.37", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.40", features = ["derive", "wrap_help"] }
 fancy-regex = "0.14.0"
 futures = "0.3.31"
 indexmap = "2.9.0"
@@ -57,7 +57,7 @@ homedir = "0.3.4"
 whoami = "1.6.0"
 
 [target.'cfg(unix)'.dependencies]
-command-fds = "=0.3.0"
+command-fds = "0.3.1"
 nix = { version = "0.30.1", features = [
     "fs",
     "process",
