@@ -1,7 +1,8 @@
 use clap::Parser;
-use std::io::Write;
+use std::{io::Write, ops::ControlFlow};
+use uucore::format;
 
-use crate::{builtins, commands, escape, expansion};
+use crate::{builtins, commands, error, escape, expansion};
 
 /// Format a string.
 #[derive(Parser)]
@@ -12,7 +13,7 @@ pub(crate) struct PrintfCommand {
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
+    #[arg(trailing_var_arg = true, required = true, allow_hyphen_values = true)]
     format_and_args: Vec<String>,
 }
 
@@ -20,19 +21,26 @@ impl builtins::Command for PrintfCommand {
     async fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        let result = self.evaluate(&context)?;
-
+    ) -> Result<builtins::ExitCode, error::Error> {
         if let Some(variable_name) = &self.output_variable {
+            // Format to a u8 vector.
+            let mut result: Vec<u8> = vec![];
+            format(self.format_and_args.as_slice(), &mut result)?;
+
+            // Convert to a string.
+            let result_str = String::from_utf8(result)
+                .map_err(|_| error::Error::PrintfInvalidUsage("invalid UTF-8 output".into()))?;
+
+            // Assign to the selected variable.
             expansion::assign_to_named_parameter(
                 context.shell,
                 &context.params,
                 variable_name,
-                result,
+                result_str,
             )
             .await?;
         } else {
-            write!(context.stdout(), "{result}")?;
+            format(self.format_and_args.as_slice(), context.stdout())?;
             context.stdout().flush()?;
         }
 
@@ -40,66 +48,132 @@ impl builtins::Command for PrintfCommand {
     }
 }
 
-impl PrintfCommand {
-    fn evaluate(
-        &self,
-        context: &commands::ExecutionContext<'_>,
-    ) -> Result<String, crate::error::Error> {
-        match self.format_and_args.as_slice() {
-            // Special-case common format string: "%s".
-            [fmt, arg] if fmt == "%s" => Ok(arg.clone()),
-            // Special-case invocation of printf with %q-based format string from bash-completion.
-            // It has hard-coded expectation of backslash-style escaping instead of quoting.
-            [fmt, arg] if fmt == "%q" => Ok(Self::evaluate_format_with_percent_q(None, arg)),
-            [fmt, arg] if fmt == "~%q" => Ok(Self::evaluate_format_with_percent_q(Some("~"), arg)),
-            // Fallback to external command.
-            _ => self.evaluate_via_external_command(context),
+fn format(format_and_args: &[String], writer: impl Write) -> Result<(), error::Error> {
+    match format_and_args {
+        // Special-case invocation of printf with %q-based format string from bash-completion.
+        // It has hard-coded expectation of backslash-style escaping instead of quoting.
+        [fmt, arg] if fmt == "%q" => format_special_case_for_percent_q(None, arg, writer),
+        [fmt, arg] if fmt == "~%q" => format_special_case_for_percent_q(Some("~"), arg, writer),
+        // Handle format string with arguments using uucore
+        [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
+        // Handle case with no format string (we shouldn't be able to get here since clap will
+        // fail parsing when the format string is missing)
+        [] => Err(error::Error::PrintfInvalidUsage("missing operand".into())),
+    }
+}
+
+fn format_special_case_for_percent_q(
+    prefix: Option<&str>,
+    arg: &str,
+    mut writer: impl Write,
+) -> Result<(), error::Error> {
+    let mut result = escape::quote_if_needed(arg, escape::QuoteMode::BackslashEscape).to_string();
+
+    if let Some(prefix) = prefix {
+        result.insert_str(0, prefix);
+    }
+
+    write!(writer, "{result}")?;
+
+    Ok(())
+}
+
+fn format_via_uucore(
+    format_string: &str,
+    args: impl Iterator<Item = impl AsRef<str>>,
+    mut writer: impl Write,
+) -> Result<(), error::Error> {
+    // Convert string arguments to FormatArgument::Unparsed
+    let format_args: Vec<_> = args
+        .map(|s| format::FormatArgument::Unparsed(s.as_ref().to_string()))
+        .collect();
+
+    // Parse format string once.
+    let format_items = parse_format_string(format_string)?;
+
+    // Wrap the format arguments.
+    let mut format_args_wrapper = format::FormatArguments::new(&format_args);
+
+    // Keep going until we've exhausted all format arguments. Also make sure to run at least once
+    // even if there's no format arguments.
+    while format_args.is_empty() || !format_args_wrapper.is_exhausted() {
+        // Process all format items, in order. We'll bail when we're told to stop.
+        for item in &format_items {
+            let control_flow = item
+                .write(&mut writer, &mut format_args_wrapper)
+                .map_err(|e| {
+                    error::Error::PrintfInvalidUsage(format!("printf formatting error: {e}"))
+                })?;
+
+            if let ControlFlow::Break(()) = control_flow {
+                break;
+            }
+        }
+
+        // Start next batch if not exhausted
+        if !format_args_wrapper.is_exhausted() {
+            format_args_wrapper.start_next_batch();
+        }
+
+        if format_args.is_empty() {
+            break;
         }
     }
 
-    fn evaluate_format_with_percent_q(prefix: Option<&str>, arg: &str) -> String {
-        let mut result =
-            escape::quote_if_needed(arg, escape::QuoteMode::BackslashEscape).to_string();
+    Ok(())
+}
 
-        if let Some(prefix) = prefix {
-            result.insert_str(0, prefix);
-        }
+fn parse_format_string(
+    format_string: &str,
+) -> Result<Vec<format::FormatItem<format::EscapedChar>>, error::Error> {
+    let format_items: Result<Vec<_>, _> =
+        format::parse_spec_and_escape(format_string.as_bytes()).collect();
 
-        result
+    // Observe any errors we encountered along the way.
+    let format_items = format_items
+        .map_err(|e| error::Error::PrintfInvalidUsage(format!("printf parsing error: {e}")))?;
+
+    Ok(format_items)
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+
+    fn sprintf_via_uucore(
+        format_string: &str,
+        args: impl Iterator<Item = impl AsRef<str>>,
+    ) -> Result<String> {
+        let mut result = vec![];
+        format_via_uucore(format_string, args, &mut result)?;
+
+        Ok(String::from_utf8(result)?)
     }
 
-    #[allow(clippy::unwrap_in_result)]
-    fn evaluate_via_external_command(
-        &self,
-        context: &commands::ExecutionContext<'_>,
-    ) -> Result<String, crate::error::Error> {
-        // TODO: Don't call external printf command.
-        let mut cmd = std::process::Command::new("printf");
+    #[test]
+    fn test_basic_sprintf() -> Result<()> {
+        assert_eq!(sprintf_via_uucore("%s", ["xyz"].iter())?, "xyz");
+        assert_eq!(sprintf_via_uucore(r"%d\n", ["1"].iter())?, "1\n");
 
-        // Clear all environment variables except the PATH we had on launch.
-        // This latter variable is preserved in case the default fallback
-        // PATH isn't sufficient to find printf.
-        cmd.env_clear();
-        if let Ok(orig_path) = std::env::var("PATH") {
-            cmd.env("PATH", orig_path);
-        }
+        Ok(())
+    }
 
-        cmd.args(&self.format_and_args);
+    #[test]
+    fn test_sprintf_without_args() -> Result<()> {
+        let empty: [&str; 0] = [];
 
-        let output = cmd.output()?;
+        assert_eq!(sprintf_via_uucore("xyz", empty.iter())?, "xyz");
+        assert_eq!(sprintf_via_uucore("%s|", empty.iter())?, "|");
 
-        let stdout = String::from_utf8(output.stdout)?;
-        let stderr = String::from_utf8(output.stderr)?;
+        Ok(())
+    }
 
-        write!(context.stderr(), "{stderr}")?;
-        context.stderr().flush()?;
+    #[test]
+    fn test_sprintf_with_cycles() -> Result<()> {
+        assert_eq!(sprintf_via_uucore("%s|", ["x", "y"].iter())?, "x|y|");
 
-        if output.status.success() {
-            Ok(stdout)
-        } else {
-            Err(crate::error::Error::PrintfFailure(
-                output.status.code().unwrap(),
-            ))
-        }
+        Ok(())
     }
 }

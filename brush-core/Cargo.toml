@@ -50,6 +50,7 @@ tokio = { version = "1.45.1", features = [
     "signal",
     "sync",
 ] }
+uucore = { version = "0.1.0", default-features = false, features = ["format"] }
 
 [target.'cfg(windows)'.dependencies]
 homedir = "0.3.4"

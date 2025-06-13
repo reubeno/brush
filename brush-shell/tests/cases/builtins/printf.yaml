@@ -1,5 +1,7 @@
 name: "Builtins: printf"
+
 cases:
+  # Basic functionality tests
   - name: "One-variable printf"
     stdin: |
       printf "%s" "0"
@@ -23,6 +25,7 @@ cases:
     stdin: |
       printf "%s\n" "-v"
 
+  # Bash-specific %q format (shell-safe quoting)
   - name: "printf %q"
     stdin: |
       echo "[1]"
@@ -44,3 +47,288 @@ cases:
 
       echo "[3]"
       printf "~%q" '"'; echo
+
+  # =================================================================
+  # STANDARD C PRINTF FORMAT SPECIFIERS
+  # These should work with external printf and bash builtin printf
+  # =================================================================
+
+  # Integer formatting tests
+  - name: "printf %d with integers"
+    stdin: |
+      printf "%d\n" 42
+      printf "%d\n" -17
+      printf "%d\n" 0
+
+  - name: "printf %o (octal)"
+    stdin: |
+      printf "%o\n" 42
+      printf "%o\n" 8
+      printf "%o\n" 255
+
+  - name: "printf %x and %X (hex)"
+    stdin: |
+      printf "%x\n" 255
+      printf "%X\n" 255
+      printf "%x\n" 42
+
+  # Floating point tests
+  - name: "printf %f (float)"
+    stdin: |
+      printf "%f\n" 3.14159
+      printf "%.2f\n" 3.14159
+      printf "%6.2f\n" 3.14159
+
+  - name: "printf %e and %E (scientific)"
+    stdin: |
+      printf "%e\n" 1234.5
+      printf "%E\n" 1234.5
+
+  - name: "printf %g and %G (general)"
+    stdin: |
+      printf "%g\n" 1234.5
+      printf "%G\n" 0.00012345
+
+  # Character formatting
+  - name: "printf %c (character)"
+    stdin: |
+      printf "%c\n" 65
+      printf "%c\n" 97
+      printf "%c%c%c\n" 72 101 121
+
+  # Width and precision tests
+  - name: "printf width formatting"
+    stdin: |
+      printf "%5s|\n" "hi"
+      printf "%-5s|\n" "hi"
+      printf "%05d|\n" 42
+
+  - name: "printf precision with strings"
+    stdin: |
+      printf "%.3s\n" "hello"
+      printf "%10.3s\n" "hello"
+
+  # Multiple arguments and reuse
+  - name: "printf argument reuse"
+    stdin: |
+      printf "%s %s %s\n" "one" "two"
+      printf "%d %d %d\n" 1 2
+
+  # Special characters and escapes
+  - name: "printf with escape sequences"
+    stdin: |
+      printf "hello\nworld\n"
+      printf "tab\there\n"
+      printf "quote: \"\n"
+
+  - name: "printf with backslash escapes"
+    stdin: |
+      printf "\\n\\t\\r\\\\\n"
+
+  # Missing arguments (bash handles gracefully)
+  - name: "printf missing arguments"
+    stdin: |
+      printf "%s %s\n" "only_one"
+
+  # Empty and edge cases
+  - name: "printf with empty format"
+    stdin: |
+      printf ""
+
+  - name: "printf with just format string"
+    stdin: |
+      printf "just text\n"
+
+  # Type conversion tests (safe cases only)
+  - name: "printf valid string to number conversion"
+    stdin: |
+      printf "%d\n" "42"
+      printf "%d\n" "0"
+
+  - name: "printf with percent literal"
+    stdin: |
+      printf "100%% complete\n"
+
+  - name: "printf %b (backslash escape expansion)"
+    known_failure: true
+    stdin: |
+      printf "%b\n" "hello\\nworld"
+      printf "%b\n" "tab\\there"
+      printf "%b\n" "quote\\\"here"
+
+  - name: "printf %b with field width"
+    known_failure: true
+    stdin: |
+      printf "%10b|\n" "hello\\nworld"
+      printf "%-10b|\n" "tab\\there"
+
+  - name: "printf %T (date/time formatting)"
+    known_failure: true # Not supported by uucore
+    stdin: |
+      printf "%(%Y-%m-%d)T\n" 1234567890
+
+  # Test argument reuse with bash-specific formats
+  - name: "printf %q argument reuse"
+    known_failure: true
+    stdin: |
+      printf "%q %q %q\n" "one with spaces" "two"
+
+  - name: "printf %b argument reuse"
+    stdin: |
+      printf "%b %b %b\n" "one\\ntwo" "three"
+
+  # Test C-style constant interpretation
+  - name: "printf with quoted character arguments"
+    known_failure: true
+    stdin: |
+      printf "%d\n" "'A"
+      printf "%d\n" '"'
+
+  - name: "printf with plus/minus signs in numeric arguments"
+    stdin: |
+      printf "%d\n" "+42"
+      printf "%d\n" "-17"
+
+  # =================================================================
+  # ADDITIONAL STANDARD FORMAT SPECIFIERS
+  # More comprehensive coverage of printf(3) man page features
+  # =================================================================
+
+  # Additional format specifiers from man page
+  - name: "printf %i (signed integer)"
+    stdin: |
+      printf "%i\n" 42
+      printf "%i\n" -17
+
+  - name: "printf %u (unsigned integer)"
+    stdin: |
+      printf "%u\n" 42
+      printf "%u\n" 4294967295
+
+  # Advanced width and precision
+  - name: "printf with asterisk width and precision"
+    stdin: |
+      printf "%*s|\n" 10 "hello"
+      printf "%.*s|\n" 3 "hello world"
+      printf "%*.*s|\n" 10 3 "hello world"
+
+  - name: "printf with zero precision and zero arg"
+    known_failure: true
+    stdin: |
+      printf "%.0d\n" 0
+
+  - name: "printf with zero precision"
+    stdin: |
+      printf "%.0d\n" 42
+
+  # Flag characters
+  - name: "printf with flag characters"
+    stdin: |
+      printf "%+d\n" 42
+      printf "% d\n" 42
+      printf "%#x\n" 255
+      printf "%#o\n" 64
+
+  # Left justification
+  - name: "printf left justification"
+    stdin: |
+      printf "%-10s|\n" "left"
+      printf "%-10d|\n" 42
+
+  # Zero padding
+  - name: "printf zero padding"
+    stdin: |
+      printf "%010d\n" 42
+      printf "%010.2f\n" 3.14
+
+  # Combining flags
+  - name: "printf combining flags"
+    stdin: |
+      printf "%+010d\n" 42
+      printf "%-+10d|\n" 42
+
+  # More precision tests
+  - name: "printf precision with integers"
+    stdin: |
+      printf "%.5d\n" 42
+      printf "%.5o\n" 42
+      printf "%.5x\n" 42
+
+  # Large numbers and edge cases
+  - name: "printf with large numbers"
+    stdin: |
+      printf "%d\n" 2147483647
+      printf "%u\n" 4294967295
+      printf "%x\n" 4294967295
+
+  # More character and escape testing
+  - name: "printf with special characters"
+    stdin: |
+      printf "%c\n" 0
+      printf "%c\n" 32
+      printf "%c\n" 127
+
+  # Negative numbers with different formats
+  - name: "printf negative numbers"
+    stdin: |
+      printf "%d\n" -1
+      printf "%o\n" -1
+      printf "%x\n" -1
+      printf "%u\n" -1
+
+  # Empty string handling
+  - name: "printf with empty strings"
+    stdin: |
+      printf "%s|\n" ""
+      printf "%5s|\n" ""
+      printf "%.5s|\n" ""
+
+  # More empty string handling
+  - name: "printf with empty strings for numbers"
+    known_failure: true
+    stdin: |
+      printf "%d" ""
+      printf "%x" ""
+
+  # Scientific notation edge cases
+  - name: "printf scientific notation edge cases"
+    stdin: |
+      printf "%e\n" 0.0
+      printf "%E\n" 0.0
+      printf "%g\n" 0.0000001
+      printf "%G\n" 1000000.0
+
+  # Mixed format strings
+  - name: "printf mixed formats in one string"
+    stdin: |
+      printf "Dec: %d, Hex: %x, Oct: %o, Char: %c\n" 65 65 65 65
+
+  # Field width larger than content
+  - name: "printf wide fields"
+    stdin: |
+      printf "%20s|\n" "short"
+      printf "%20d|\n" 42
+
+  # Return value testing (should always be 0 for successful printf)
+  - name: "printf return value"
+    stdin: |
+      printf "test"
+      echo " exit: $?"
+
+  # Error handling tests - marked as known failures due to external printf differences
+  - name: "printf with invalid format"
+    ignore_stderr: true
+    stdin: |
+      printf "%z\n" "test"
+
+  - name: "printf with no arguments"
+    ignore_stderr: true
+    stdin: |
+      printf
+      echo "Result: $?"
+
+  - name: "printf string to number conversion with invalid input"
+    known_failure: true # Need to investigate
+    stdin: |
+      printf "%d\n" "abc"
+      echo "Result: $?"

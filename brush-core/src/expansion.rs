@@ -359,6 +359,7 @@ pub(crate) async fn full_expand_and_split_str(
     expander.full_expand_with_splitting(s).await
 }
 
+#[allow(dead_code)]
 pub(crate) async fn assign_to_named_parameter(
     shell: &mut Shell,
     params: &ExecutionParameters,
