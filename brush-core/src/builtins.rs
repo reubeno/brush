@@ -96,11 +96,11 @@ macro_rules! minus_or_plus_flag_arg {
 
         impl $struct_name {
             #[allow(dead_code)]
-            pub fn is_some(&self) -> bool {
+            pub const fn is_some(&self) -> bool {
                 self._enable || self._disable
             }
 
-            pub fn to_bool(&self) -> Option<bool> {
+            pub const fn to_bool(&self) -> Option<bool> {
                 match (self._enable, self._disable) {
                     (true, false) => Some(true),
                     (false, true) => Some(false),
@@ -144,17 +144,17 @@ pub enum ExitCode {
 impl From<ExecutionResult> for ExitCode {
     fn from(result: ExecutionResult) -> Self {
         if let Some(count) = result.continue_loop {
-            ExitCode::ContinueLoop(count)
+            Self::ContinueLoop(count)
         } else if let Some(count) = result.break_loop {
-            ExitCode::BreakLoop(count)
+            Self::BreakLoop(count)
         } else if result.return_from_function_or_script {
-            ExitCode::ReturnFromFunctionOrScript(result.exit_code)
+            Self::ReturnFromFunctionOrScript(result.exit_code)
         } else if result.exit_shell {
-            ExitCode::ExitShell(result.exit_code)
+            Self::ExitShell(result.exit_code)
         } else if result.exit_code == 0 {
-            ExitCode::Success
+            Self::Success
         } else {
-            ExitCode::Custom(result.exit_code)
+            Self::Custom(result.exit_code)
         }
     }
 }
@@ -291,7 +291,7 @@ pub struct Registration {
 impl Registration {
     /// Updates the given registration to mark it for a special builtin.
     #[must_use]
-    pub fn special(self) -> Self {
+    pub const fn special(self) -> Self {
         Self {
             special_builtin: true,
             ..self
@@ -299,7 +299,10 @@ impl Registration {
     }
 }
 
-fn get_builtin_man_page(_name: &str, _command: &clap::Command) -> Result<String, error::Error> {
+const fn get_builtin_man_page(
+    _name: &str,
+    _command: &clap::Command,
+) -> Result<String, error::Error> {
     error::unimp("man page rendering is not yet implemented")
 }
 

@@ -105,7 +105,7 @@ fn format_via_uucore(
                     error::Error::PrintfInvalidUsage(format!("printf formatting error: {e}"))
                 })?;
 
-            if let ControlFlow::Break(()) = control_flow {
+            if control_flow == ControlFlow::Break(()) {
                 break;
             }
         }
@@ -154,8 +154,8 @@ mod tests {
 
     #[test]
     fn test_basic_sprintf() -> Result<()> {
-        assert_eq!(sprintf_via_uucore("%s", ["xyz"].iter())?, "xyz");
-        assert_eq!(sprintf_via_uucore(r"%d\n", ["1"].iter())?, "1\n");
+        assert_eq!(sprintf_via_uucore("%s", std::iter::once(&"xyz"))?, "xyz");
+        assert_eq!(sprintf_via_uucore(r"%d\n", std::iter::once(&"1"))?, "1\n");
 
         Ok(())
     }

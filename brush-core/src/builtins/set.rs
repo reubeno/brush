@@ -178,7 +178,7 @@ impl builtins::Command for SetCommand {
             }
         }
 
-        let (mut this, rest_args) = crate::builtins::try_parse_known::<SetCommand>(updated_args)?;
+        let (mut this, rest_args) = crate::builtins::try_parse_known::<Self>(updated_args)?;
         if let Some(args) = rest_args {
             this.positional_args.extend(args);
         }

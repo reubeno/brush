@@ -22,7 +22,7 @@ pub enum EnvironmentLookup {
 }
 
 /// Represents a shell environment scope.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnvironmentScope {
     /// Scope local to a function instance
     Local,

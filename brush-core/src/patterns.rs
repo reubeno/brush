@@ -16,8 +16,8 @@ pub(crate) enum PatternPiece {
 impl PatternPiece {
     pub fn as_str(&self) -> &str {
         match self {
-            PatternPiece::Pattern(s) => s,
-            PatternPiece::Literal(s) => s,
+            Self::Pattern(s) => s,
+            Self::Literal(s) => s,
         }
     }
 }
@@ -92,7 +92,7 @@ impl Pattern {
     /// # Arguments
     ///
     /// * `value` - Whether or not to enable extended globbing (extglob).
-    pub fn set_extended_globbing(mut self, value: bool) -> Pattern {
+    pub const fn set_extended_globbing(mut self, value: bool) -> Self {
         self.enable_extended_globbing = value;
         self
     }
@@ -103,7 +103,7 @@ impl Pattern {
     ///
     /// * `value` - Whether or not to enable multiline matching.
     #[allow(dead_code)]
-    pub fn set_multiline(mut self, value: bool) -> Pattern {
+    pub const fn set_multiline(mut self, value: bool) -> Self {
         self.multiline = value;
         self
     }
@@ -113,7 +113,7 @@ impl Pattern {
     /// # Arguments
     ///
     /// * `value` - Whether or not to enable case-insensitive matching.
-    pub fn set_case_insensitive(mut self, value: bool) -> Pattern {
+    pub const fn set_case_insensitive(mut self, value: bool) -> Self {
         self.case_insensitive = value;
         self
     }
@@ -124,7 +124,7 @@ impl Pattern {
     }
 
     /// Placeholder function that always returns true.
-    pub(crate) fn accept_all_expand_filter(_path: &Path) -> bool {
+    pub(crate) const fn accept_all_expand_filter(_path: &Path) -> bool {
         true
     }
 
@@ -233,7 +233,7 @@ impl Pattern {
 
             let current_paths = std::mem::take(&mut paths_so_far);
             for current_path in current_paths {
-                let subpattern = Pattern::from(&component)
+                let subpattern = Self::from(&component)
                     .set_extended_globbing(self.enable_extended_globbing)
                     .set_case_insensitive(self.case_insensitive);
 
@@ -657,6 +657,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)]
     fn test_matching() -> Result<()> {
         assert!(Pattern::from("abc").exactly_matches("abc")?);
 

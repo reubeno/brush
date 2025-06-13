@@ -79,8 +79,8 @@ enum FoundCommand {
 impl Display for FoundCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FoundCommand::Builtin(name) => write!(f, "{name}"),
-            FoundCommand::External(path) => write!(f, "{path}"),
+            Self::Builtin(name) => write!(f, "{name}"),
+            Self::External(path) => write!(f, "{path}"),
         }
     }
 }

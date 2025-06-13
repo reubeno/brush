@@ -224,7 +224,7 @@ pub enum Error {
 /// # Arguments
 ///
 /// * `msg` - The message to include in the error
-pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {
+pub(crate) const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
     Err(Error::Unimplemented(msg))
 }
 
@@ -233,6 +233,9 @@ pub(crate) fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 /// # Arguments
 ///
 /// * `msg` - The message to include in the error
-pub(crate) fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
+pub(crate) const fn unimp_with_issue<T>(
+    msg: &'static str,
+    project_issue_id: u32,
+) -> Result<T, Error> {
     Err(Error::UnimplementedAndTracked(msg, project_issue_id))
 }

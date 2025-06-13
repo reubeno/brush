@@ -76,12 +76,14 @@ pub(crate) struct ReedlineHighlighter {
 }
 
 impl reedline::Highlighter for ReedlineHighlighter {
+    #[allow(clippy::significant_drop_tightening)]
     fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {
         let shell = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
         let mut styled_input = StyledInputLine::new(shell.as_ref(), line, cursor);
+
         styled_input.style_and_append_program(line, 0);
 
         styled_input.styled
@@ -258,7 +260,7 @@ impl<'a> StyledInputLine<'a> {
         self.append_style(Style::new(), dest, dest);
     }
 
-    fn set_next_missing_style(&mut self, style: Style) {
+    const fn set_next_missing_style(&mut self, style: Style) {
         self.next_missing_style = Some(style);
     }
 

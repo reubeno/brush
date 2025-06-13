@@ -1,3 +1,5 @@
+//! xtask-style command-line tool for building this project.
+
 use std::path::PathBuf;
 
 use anyhow::Result;

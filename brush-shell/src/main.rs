@@ -1,7 +1,5 @@
 //! Implements the command-line interface for the `brush` shell.
 
-#![deny(missing_docs)]
-
 mod args;
 mod brushctl;
 mod events;
@@ -27,7 +25,7 @@ impl CommandLineArgs {
     // https://github.com/clap-rs/clap/issues/5055
     // This function takes precedence over [`clap::Parser::parse_from`]
     fn parse_from<'a>(itr: impl IntoIterator<Item = &'a String>) -> Self {
-        let (mut this, script_args) = brush_core::builtins::parse_known::<CommandLineArgs, _>(itr);
+        let (mut this, script_args) = brush_core::builtins::parse_known::<Self, _>(itr);
         // if we have `--` and unparsed raw args than
         if let Some(mut args) = script_args {
             // if script_path has not been parsed yet
@@ -168,7 +166,7 @@ async fn run(
 async fn run_impl(
     cli_args: Vec<String>,
     args: CommandLineArgs,
-    factory: impl shell_factory::ShellFactory + 'static,
+    factory: impl shell_factory::ShellFactory + Send + 'static,
 ) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
@@ -221,7 +219,7 @@ async fn run_impl(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-    factory: impl shell_factory::ShellFactory + 'static,
+    factory: impl shell_factory::ShellFactory + Send + 'static,
 ) -> Result<impl brush_interactive::InteractiveShell + 'static, brush_interactive::ShellError> {
     let argv0 = if args.sh_mode {
         // Simulate having been run as "sh".
@@ -276,7 +274,7 @@ async fn instantiate_shell(
     Ok(shell)
 }
 
-fn get_default_input_backend() -> InputBackend {
+const fn get_default_input_backend() -> InputBackend {
     #[cfg(any(windows, unix))]
     {
         InputBackend::Reedline

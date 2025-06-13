@@ -140,7 +140,7 @@ impl builtins::Command for DeclareCommand {
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
-                    if !self.try_display_declaration(&mut context, declaration, verb)? {
+                    if !self.try_display_declaration(&context, declaration, verb)? {
                         result = builtins::ExitCode::Custom(1);
                     }
                 } else {
@@ -152,14 +152,14 @@ impl builtins::Command for DeclareCommand {
         } else {
             // Display matching declarations from the variable environment.
             if !self.function_names_only && !self.function_names_or_defs_only {
-                self.display_matching_env_declarations(&mut context, verb)?;
+                self.display_matching_env_declarations(&context, verb)?;
             }
 
             // Do the same for functions.
             if !matches!(verb, DeclareVerb::Local | DeclareVerb::Readonly)
                 && (!self.print || self.function_names_only || self.function_names_or_defs_only)
             {
-                self.display_matching_functions(&mut context)?;
+                self.display_matching_functions(&context)?;
             }
         }
 
@@ -170,7 +170,7 @@ impl builtins::Command for DeclareCommand {
 impl DeclareCommand {
     fn try_display_declaration(
         &self,
-        context: &mut crate::commands::ExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         declaration: &commands::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, error::Error> {
@@ -390,7 +390,7 @@ impl DeclareCommand {
 
     fn display_matching_env_declarations(
         &self,
-        context: &mut crate::commands::ExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         verb: DeclareVerb,
     ) -> Result<(), error::Error> {
         //
@@ -508,7 +508,7 @@ impl DeclareCommand {
 
     fn display_matching_functions(
         &self,
-        context: &mut crate::commands::ExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
     ) -> Result<(), error::Error> {
         for (name, registration) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {
@@ -522,7 +522,10 @@ impl DeclareCommand {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn apply_attributes_before_update(&self, var: &mut ShellVariable) -> Result<(), error::Error> {
+    const fn apply_attributes_before_update(
+        &self,
+        var: &mut ShellVariable,
+    ) -> Result<(), error::Error> {
         if let Some(value) = self.make_integer.to_bool() {
             if value {
                 var.treat_as_integer();

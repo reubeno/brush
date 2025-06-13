@@ -113,13 +113,11 @@ pub trait Evaluatable {
 impl Evaluatable for ast::ArithmeticExpr {
     fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
         let value = match self {
-            ast::ArithmeticExpr::Literal(l) => *l,
-            ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue)?,
-            ast::ArithmeticExpr::UnaryOp(op, operand) => apply_unary_op(shell, *op, operand)?,
-            ast::ArithmeticExpr::BinaryOp(op, left, right) => {
-                apply_binary_op(shell, *op, left, right)?
-            }
-            ast::ArithmeticExpr::Conditional(condition, then_expr, else_expr) => {
+            Self::Literal(l) => *l,
+            Self::Reference(lvalue) => deref_lvalue(shell, lvalue)?,
+            Self::UnaryOp(op, operand) => apply_unary_op(shell, *op, operand)?,
+            Self::BinaryOp(op, left, right) => apply_binary_op(shell, *op, left, right)?,
+            Self::Conditional(condition, then_expr, else_expr) => {
                 let conditional_eval = condition.eval(shell)?;
 
                 // Ensure we only evaluate the branch indicated by the condition.
@@ -129,20 +127,13 @@ impl Evaluatable for ast::ArithmeticExpr {
                     else_expr.eval(shell)?
                 }
             }
-            ast::ArithmeticExpr::Assignment(lvalue, expr) => {
+            Self::Assignment(lvalue, expr) => {
                 let expr_eval = expr.eval(shell)?;
                 assign(shell, lvalue, expr_eval)?
             }
-            ast::ArithmeticExpr::UnaryAssignment(op, lvalue) => {
-                apply_unary_assignment_op(shell, lvalue, *op)?
-            }
-            ast::ArithmeticExpr::BinaryAssignment(op, lvalue, operand) => {
-                let value = apply_binary_op(
-                    shell,
-                    *op,
-                    &ast::ArithmeticExpr::Reference(lvalue.clone()),
-                    operand,
-                )?;
+            Self::UnaryAssignment(op, lvalue) => apply_unary_assignment_op(shell, lvalue, *op)?,
+            Self::BinaryAssignment(op, lvalue, operand) => {
+                let value = apply_binary_op(shell, *op, &Self::Reference(lvalue.clone()), operand)?;
                 assign(shell, lvalue, value)?
             }
         };
@@ -337,14 +328,14 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
     Ok(value)
 }
 
-fn bool_to_i64(value: bool) -> i64 {
+const fn bool_to_i64(value: bool) -> i64 {
     if value { 1 } else { 0 }
 }
 
 // N.B. We implement our own version of wrapping_pow that takes a 64-bit exponent.
 // This seems to be the best way to guarantee that we handle overflow cases
 // with exponents correctly.
-fn wrapping_pow_u64(mut base: i64, mut exponent: u64) -> i64 {
+const fn wrapping_pow_u64(mut base: i64, mut exponent: u64) -> i64 {
     let mut result: i64 = 1;
 
     while exponent > 0 {

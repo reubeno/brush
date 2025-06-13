@@ -32,7 +32,7 @@ pub struct InteractivePrompt {
 }
 
 /// Represents a shell capable of taking commands from standard input.
-pub trait InteractiveShell {
+pub trait InteractiveShell: Send {
     /// Returns an immutable reference to the inner shell object.
     fn shell(&self) -> impl AsRef<brush_core::Shell> + Send;
 
@@ -67,7 +67,9 @@ pub trait InteractiveShell {
     /// normally exits or until a fatal error occurs.
     // NOTE: we use desugared async here because [async_fn_in_trait] "warning: use of `async fn` in
     // public traits is discouraged as auto trait bounds cannot be specified"
-    fn run_interactively(&mut self) -> impl std::future::Future<Output = Result<(), ShellError>> {
+    fn run_interactively(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), ShellError>> + Send {
         async {
             // TODO: Consider finding a better place for this.
             let _ = brush_core::TerminalControl::acquire()?;
@@ -122,7 +124,8 @@ pub trait InteractiveShell {
     /// Runs the interactive shell loop once, reading a single command from standard input.
     fn run_interactively_once(
         &mut self,
-    ) -> impl std::future::Future<Output = Result<InteractiveExecutionResult, ShellError>> {
+    ) -> impl std::future::Future<Output = Result<InteractiveExecutionResult, ShellError>> + Send
+    {
         async {
             let mut shell = self.shell_mut();
             let shell_mut = shell.as_mut();

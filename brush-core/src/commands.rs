@@ -38,7 +38,7 @@ impl CommandSpawnResult {
     pub async fn wait(self, no_wait: bool) -> Result<CommandWaitResult, error::Error> {
         #[allow(clippy::ignored_unit_patterns)]
         match self {
-            CommandSpawnResult::SpawnedProcess(mut child) => {
+            Self::SpawnedProcess(mut child) => {
                 let process_wait_result = if !no_wait {
                     // Wait for the process to exit or for a relevant signal, whichever happens
                     // first.
@@ -59,37 +59,33 @@ impl CommandSpawnResult {
 
                 Ok(command_wait_result)
             }
-            CommandSpawnResult::ImmediateExit(exit_code) => Ok(
-                CommandWaitResult::CommandCompleted(ExecutionResult::new(exit_code)),
-            ),
-            CommandSpawnResult::ExitShell(exit_code) => {
+            Self::ImmediateExit(exit_code) => Ok(CommandWaitResult::CommandCompleted(
+                ExecutionResult::new(exit_code),
+            )),
+            Self::ExitShell(exit_code) => {
                 Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
                     exit_code,
                     exit_shell: true,
                     ..ExecutionResult::default()
                 }))
             }
-            CommandSpawnResult::ReturnFromFunctionOrScript(exit_code) => {
+            Self::ReturnFromFunctionOrScript(exit_code) => {
                 Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
                     exit_code,
                     return_from_function_or_script: true,
                     ..ExecutionResult::default()
                 }))
             }
-            CommandSpawnResult::BreakLoop(count) => {
-                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
-                    exit_code: 0,
-                    break_loop: Some(count),
-                    ..ExecutionResult::default()
-                }))
-            }
-            CommandSpawnResult::ContinueLoop(count) => {
-                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
-                    exit_code: 0,
-                    continue_loop: Some(count),
-                    ..ExecutionResult::default()
-                }))
-            }
+            Self::BreakLoop(count) => Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
+                exit_code: 0,
+                break_loop: Some(count),
+                ..ExecutionResult::default()
+            })),
+            Self::ContinueLoop(count) => Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
+                exit_code: 0,
+                continue_loop: Some(count),
+                ..ExecutionResult::default()
+            })),
         }
     }
 }
@@ -128,7 +124,7 @@ impl ExecutionContext<'_> {
         self.params.stderr()
     }
 
-    pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
+    pub(crate) const fn should_cmd_lead_own_process_group(&self) -> bool {
         self.shell.options.interactive
             && matches!(
                 self.params.process_group_policy,
@@ -150,29 +146,29 @@ pub enum CommandArg {
 impl Display for CommandArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CommandArg::String(s) => f.write_str(s),
-            CommandArg::Assignment(a) => write!(f, "{a}"),
+            Self::String(s) => f.write_str(s),
+            Self::Assignment(a) => write!(f, "{a}"),
         }
     }
 }
 
 impl From<String> for CommandArg {
     fn from(s: String) -> Self {
-        CommandArg::String(s)
+        Self::String(s)
     }
 }
 
 impl From<&String> for CommandArg {
     fn from(value: &String) -> Self {
-        CommandArg::String(value.clone())
+        Self::String(value.clone())
     }
 }
 
 impl CommandArg {
     pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
-            CommandArg::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
-            CommandArg::Assignment(a) => {
+            Self::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
+            Self::Assignment(a) => {
                 let mut s = a.name.to_string();
                 let op = if a.append { "+=" } else { "=" };
                 s.push_str(op);
@@ -188,7 +184,7 @@ impl CommandArg {
 
 #[allow(unused_variables)]
 pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
-    shell: &mut Shell,
+    shell: &Shell,
     command_name: &str,
     argv0: &str,
     args: &[S],

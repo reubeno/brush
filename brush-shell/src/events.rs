@@ -1,3 +1,5 @@
+//! Facilities for configuring event tracing in the brush shell.
+
 use std::{collections::HashSet, fmt::Display};
 
 use brush_core::Error;
@@ -46,17 +48,17 @@ pub enum TraceEvent {
 impl Display for TraceEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TraceEvent::Arithmetic => write!(f, "arithmetic"),
-            TraceEvent::Commands => write!(f, "commands"),
-            TraceEvent::Complete => write!(f, "complete"),
-            TraceEvent::Expand => write!(f, "expand"),
-            TraceEvent::Functions => write!(f, "functions"),
-            TraceEvent::Input => write!(f, "input"),
-            TraceEvent::Jobs => write!(f, "jobs"),
-            TraceEvent::Parse => write!(f, "parse"),
-            TraceEvent::Pattern => write!(f, "pattern"),
-            TraceEvent::Tokenize => write!(f, "tokenize"),
-            TraceEvent::Unimplemented => write!(f, "unimplemented"),
+            Self::Arithmetic => write!(f, "arithmetic"),
+            Self::Commands => write!(f, "commands"),
+            Self::Complete => write!(f, "complete"),
+            Self::Expand => write!(f, "expand"),
+            Self::Functions => write!(f, "functions"),
+            Self::Input => write!(f, "input"),
+            Self::Jobs => write!(f, "jobs"),
+            Self::Parse => write!(f, "parse"),
+            Self::Pattern => write!(f, "pattern"),
+            Self::Tokenize => write!(f, "tokenize"),
+            Self::Unimplemented => write!(f, "unimplemented"),
         }
     }
 }
@@ -69,15 +71,12 @@ pub(crate) struct TraceEventConfig {
 }
 
 impl TraceEventConfig {
-    pub fn init(
-        enabled_debug_events: &[TraceEvent],
-        disabled_events: &[TraceEvent],
-    ) -> TraceEventConfig {
+    pub fn init(enabled_debug_events: &[TraceEvent], disabled_events: &[TraceEvent]) -> Self {
         let enabled_debug_events: HashSet<TraceEvent> =
             enabled_debug_events.iter().copied().collect();
         let disabled_events: HashSet<TraceEvent> = disabled_events.iter().copied().collect();
 
-        let mut config = TraceEventConfig {
+        let mut config = Self {
             enabled_debug_events,
             disabled_events,
             ..Default::default()
@@ -149,7 +148,7 @@ impl TraceEventConfig {
         }
     }
 
-    pub fn get_enabled_events(&self) -> &HashSet<TraceEvent> {
+    pub const fn get_enabled_events(&self) -> &HashSet<TraceEvent> {
         &self.enabled_debug_events
     }
 
@@ -171,7 +170,7 @@ impl TraceEventConfig {
         self.reload_filter()
     }
 
-    fn reload_filter(&mut self) -> Result<(), Error> {
+    fn reload_filter(&self) -> Result<(), Error> {
         if let Some(handle) = &self.handle {
             if handle.reload(self.compose_filter()).is_ok() {
                 Ok(())

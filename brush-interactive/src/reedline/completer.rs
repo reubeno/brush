@@ -20,8 +20,11 @@ impl ReedlineCompleter {
     async fn complete_async(&self, line: &str, pos: usize) -> Vec<reedline::Suggestion> {
         let mut shell_guard = self.shell.lock().await;
         let shell = shell_guard.borrow_mut().as_mut();
-
         let completions = completion::complete_async(shell, line, pos).await;
+
+        // We're done with the shell, so drop it eagerly.
+        drop(shell_guard);
+
         let insertion_index = completions.insertion_index;
         let delete_count = completions.delete_count;
         let options = completions.options;

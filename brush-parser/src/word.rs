@@ -389,14 +389,14 @@ impl BraceExpressionOrText {
     /// Generates expansions for this value.
     pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
         match self {
-            BraceExpressionOrText::Expr(members) => {
+            Self::Expr(members) => {
                 let mut iters = vec![];
                 for m in members {
                     iters.push(m.generate());
                 }
                 Box::new(iters.into_iter().flatten())
             }
-            BraceExpressionOrText::Text(text) => Box::new(std::iter::once(text)),
+            Self::Text(text) => Box::new(std::iter::once(text)),
         }
     }
 }
@@ -432,7 +432,7 @@ impl BraceExpressionMember {
     #[allow(clippy::cast_sign_loss)]
     pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
         match self {
-            BraceExpressionMember::NumberSequence {
+            Self::NumberSequence {
                 low,
                 high,
                 increment,
@@ -441,7 +441,7 @@ impl BraceExpressionMember {
                     .step_by(increment as usize)
                     .map(|n| n.to_string()),
             ),
-            BraceExpressionMember::CharSequence {
+            Self::CharSequence {
                 low,
                 high,
                 increment,
@@ -450,7 +450,7 @@ impl BraceExpressionMember {
                     .step_by(increment as usize)
                     .map(|c| c.to_string()),
             ),
-            BraceExpressionMember::Text(text) => Box::new(std::iter::once(text)),
+            Self::Text(text) => Box::new(std::iter::once(text)),
         }
     }
 }

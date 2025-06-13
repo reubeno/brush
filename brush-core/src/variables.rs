@@ -65,45 +65,45 @@ impl ShellVariable {
     pub fn new(value: ShellValue) -> Self {
         Self {
             value,
-            ..ShellVariable::default()
+            ..Self::default()
         }
     }
 
     /// Returns the value associated with the variable.
-    pub fn value(&self) -> &ShellValue {
+    pub const fn value(&self) -> &ShellValue {
         &self.value
     }
 
     /// Returns whether or not the variable is exported to child processes.
-    pub fn is_exported(&self) -> bool {
+    pub const fn is_exported(&self) -> bool {
         self.exported
     }
 
     /// Marks the variable as exported to child processes.
-    pub fn export(&mut self) -> &mut Self {
+    pub const fn export(&mut self) -> &mut Self {
         self.exported = true;
         self
     }
 
     /// Marks the variable as not exported to child processes.
-    pub fn unexport(&mut self) -> &mut Self {
+    pub const fn unexport(&mut self) -> &mut Self {
         self.exported = false;
         self
     }
 
     /// Returns whether or not the variable is read-only.
-    pub fn is_readonly(&self) -> bool {
+    pub const fn is_readonly(&self) -> bool {
         self.readonly
     }
 
     /// Marks the variable as read-only.
-    pub fn set_readonly(&mut self) -> &mut Self {
+    pub const fn set_readonly(&mut self) -> &mut Self {
         self.readonly = true;
         self
     }
 
     /// Marks the variable as not read-only.
-    pub fn unset_readonly(&mut self) -> Result<&mut Self, error::Error> {
+    pub const fn unset_readonly(&mut self) -> Result<&mut Self, error::Error> {
         if self.readonly {
             return Err(error::Error::ReadonlyVariable);
         }
@@ -113,73 +113,73 @@ impl ShellVariable {
     }
 
     /// Returns whether or not the variable is traced.
-    pub fn is_trace_enabled(&self) -> bool {
+    pub const fn is_trace_enabled(&self) -> bool {
         self.trace
     }
 
     /// Marks the variable as traced.
-    pub fn enable_trace(&mut self) -> &mut Self {
+    pub const fn enable_trace(&mut self) -> &mut Self {
         self.trace = true;
         self
     }
 
     /// Marks the variable as not traced.
-    pub fn disable_trace(&mut self) -> &mut Self {
+    pub const fn disable_trace(&mut self) -> &mut Self {
         self.trace = false;
         self
     }
 
     /// Returns whether or not the variable should be enumerated in the shell's environment.
-    pub fn is_enumerable(&self) -> bool {
+    pub const fn is_enumerable(&self) -> bool {
         self.enumerable
     }
 
     /// Marks the variable as not enumerable in the shell's environment.
-    pub fn hide_from_enumeration(&mut self) -> &mut Self {
+    pub const fn hide_from_enumeration(&mut self) -> &mut Self {
         self.enumerable = false;
         self
     }
 
     /// Return the update transform associated with the variable.
-    pub fn get_update_transform(&self) -> ShellVariableUpdateTransform {
+    pub const fn get_update_transform(&self) -> ShellVariableUpdateTransform {
         self.transform_on_update
     }
 
     /// Set the update transform associated with the variable.
-    pub fn set_update_transform(&mut self, transform: ShellVariableUpdateTransform) {
+    pub const fn set_update_transform(&mut self, transform: ShellVariableUpdateTransform) {
         self.transform_on_update = transform;
     }
 
     /// Returns whether or not the variable should be treated as an integer.
-    pub fn is_treated_as_integer(&self) -> bool {
+    pub const fn is_treated_as_integer(&self) -> bool {
         self.treat_as_integer
     }
 
     /// Marks the variable as being treated as an integer.
-    pub fn treat_as_integer(&mut self) -> &mut Self {
+    pub const fn treat_as_integer(&mut self) -> &mut Self {
         self.treat_as_integer = true;
         self
     }
 
     /// Marks the variable as not being treated as an integer.
-    pub fn unset_treat_as_integer(&mut self) -> &mut Self {
+    pub const fn unset_treat_as_integer(&mut self) -> &mut Self {
         self.treat_as_integer = false;
         self
     }
 
     /// Returns whether or not the variable should be treated as a name reference.
-    pub fn is_treated_as_nameref(&self) -> bool {
+    pub const fn is_treated_as_nameref(&self) -> bool {
         self.treat_as_nameref
     }
 
     /// Marks the variable as being treated as a name reference.
-    pub fn treat_as_nameref(&mut self) -> &mut Self {
+    pub const fn treat_as_nameref(&mut self) -> &mut Self {
         self.treat_as_nameref = true;
         self
     }
 
     /// Marks the variable as not being treated as a name reference.
-    pub fn unset_treat_as_nameref(&mut self) -> &mut Self {
+    pub const fn unset_treat_as_nameref(&mut self) -> &mut Self {
         self.treat_as_nameref = false;
         self
     }
@@ -548,7 +548,10 @@ impl ShellVariable {
         ) {
             result.push('A');
         }
-        if let ShellVariableUpdateTransform::Capitalize = self.get_update_transform() {
+        if matches!(
+            self.get_update_transform(),
+            ShellVariableUpdateTransform::Capitalize
+        ) {
             result.push('c');
         }
         if self.is_treated_as_integer() {
@@ -560,13 +563,19 @@ impl ShellVariable {
         if self.is_readonly() {
             result.push('r');
         }
-        if let ShellVariableUpdateTransform::Lowercase = self.get_update_transform() {
+        if matches!(
+            self.get_update_transform(),
+            ShellVariableUpdateTransform::Lowercase
+        ) {
             result.push('l');
         }
         if self.is_trace_enabled() {
             result.push('t');
         }
-        if let ShellVariableUpdateTransform::Uppercase = self.get_update_transform() {
+        if matches!(
+            self.get_update_transform(),
+            ShellVariableUpdateTransform::Uppercase
+        ) {
             result.push('u');
         }
         if self.is_exported() {
@@ -623,8 +632,8 @@ pub enum ShellValueLiteral {
 impl ShellValueLiteral {
     pub(crate) fn fmt_for_tracing(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShellValueLiteral::Scalar(s) => Self::fmt_scalar_for_tracing(s.as_str(), f),
-            ShellValueLiteral::Array(elements) => {
+            Self::Scalar(s) => Self::fmt_scalar_for_tracing(s.as_str(), f),
+            Self::Array(elements) => {
                 write!(f, "(")?;
                 for (i, (key, value)) in elements.0.iter().enumerate() {
                     if i > 0 {
@@ -656,19 +665,19 @@ impl Display for ShellValueLiteral {
 
 impl From<&str> for ShellValueLiteral {
     fn from(value: &str) -> Self {
-        ShellValueLiteral::Scalar(value.to_owned())
+        Self::Scalar(value.to_owned())
     }
 }
 
 impl From<String> for ShellValueLiteral {
     fn from(value: String) -> Self {
-        ShellValueLiteral::Scalar(value)
+        Self::Scalar(value)
     }
 }
 
 impl From<Vec<&str>> for ShellValueLiteral {
     fn from(value: Vec<&str>) -> Self {
-        ShellValueLiteral::Array(ArrayLiteral(
+        Self::Array(ArrayLiteral(
             value.into_iter().map(|s| (None, s.to_owned())).collect(),
         ))
     }
@@ -689,20 +698,20 @@ pub enum FormatStyle {
 
 impl ShellValue {
     /// Returns whether or not the value is an array.
-    pub fn is_array(&self) -> bool {
+    pub const fn is_array(&self) -> bool {
         matches!(
             self,
-            ShellValue::IndexedArray(_)
-                | ShellValue::AssociativeArray(_)
-                | ShellValue::Unset(
+            Self::IndexedArray(_)
+                | Self::AssociativeArray(_)
+                | Self::Unset(
                     ShellValueUnsetType::IndexedArray | ShellValueUnsetType::AssociativeArray
                 )
         )
     }
 
     /// Returns whether or not the value is set.
-    pub fn is_set(&self) -> bool {
-        !matches!(self, ShellValue::Unset(_))
+    pub const fn is_set(&self) -> bool {
+        !matches!(self, Self::Unset(_))
     }
 
     /// Returns a new indexed array value constructed from the given slice of owned strings.
@@ -719,7 +728,7 @@ impl ShellValue {
             owned_values.insert(i as u64, value);
         }
 
-        ShellValue::IndexedArray(owned_values)
+        Self::IndexedArray(owned_values)
     }
 
     /// Returns a new indexed array value constructed from the given slice of unowned strings.
@@ -733,7 +742,7 @@ impl ShellValue {
             owned_values.insert(i as u64, (*value).to_string());
         }
 
-        ShellValue::IndexedArray(owned_values)
+        Self::IndexedArray(owned_values)
     }
 
     /// Returns a new indexed array value constructed from the given literals.
@@ -741,11 +750,11 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `literals` - The literals to construct the indexed array from.
-    pub fn indexed_array_from_literals(literals: ArrayLiteral) -> ShellValue {
+    pub fn indexed_array_from_literals(literals: ArrayLiteral) -> Self {
         let mut values = BTreeMap::new();
-        ShellValue::update_indexed_array_from_literals(&mut values, literals);
+        Self::update_indexed_array_from_literals(&mut values, literals);
 
-        ShellValue::IndexedArray(values)
+        Self::IndexedArray(values)
     }
 
     fn update_indexed_array_from_literals(
@@ -773,13 +782,11 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `literals` - The literals to construct the associative array from.
-    pub fn associative_array_from_literals(
-        literals: ArrayLiteral,
-    ) -> Result<ShellValue, error::Error> {
+    pub fn associative_array_from_literals(literals: ArrayLiteral) -> Result<Self, error::Error> {
         let mut values = BTreeMap::new();
-        ShellValue::update_associative_array_from_literals(&mut values, literals)?;
+        Self::update_associative_array_from_literals(&mut values, literals)?;
 
-        Ok(ShellValue::AssociativeArray(values))
+        Ok(Self::AssociativeArray(values))
     }
 
     fn update_associative_array_from_literals(
@@ -815,8 +822,8 @@ impl ShellValue {
     /// * `style` - The style to use for formatting the value.
     pub fn format(&self, style: FormatStyle, shell: &Shell) -> Result<Cow<'_, str>, error::Error> {
         match self {
-            ShellValue::Unset(_) => Ok("".into()),
-            ShellValue::String(s) => match style {
+            Self::Unset(_) => Ok("".into()),
+            Self::String(s) => match style {
                 FormatStyle::Basic => Ok(escape::quote_if_needed(
                     s.as_str(),
                     escape::QuoteMode::SingleQuote,
@@ -825,7 +832,7 @@ impl ShellValue {
                     Ok(escape::force_quote(s.as_str(), escape::QuoteMode::DoubleQuote).into())
                 }
             },
-            ShellValue::AssociativeArray(values) => {
+            Self::AssociativeArray(values) => {
                 let mut result = String::new();
                 result.push('(');
 
@@ -844,7 +851,7 @@ impl ShellValue {
                 result.push(')');
                 Ok(result.into())
             }
-            ShellValue::IndexedArray(values) => {
+            Self::IndexedArray(values) => {
                 let mut result = String::new();
                 result.push('(');
 
@@ -861,7 +868,7 @@ impl ShellValue {
                 result.push(')');
                 Ok(result.into())
             }
-            ShellValue::Dynamic { getter, .. } => {
+            Self::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);
                 let result = dynamic_value.format(style, shell)?.to_string();
                 Ok(result.into())
@@ -876,18 +883,18 @@ impl ShellValue {
     /// * `index` - The index at which to retrieve the value.
     pub fn get_at(&self, index: &str, shell: &Shell) -> Result<Option<Cow<'_, str>>, error::Error> {
         match self {
-            ShellValue::Unset(_) => Ok(None),
-            ShellValue::String(s) => {
+            Self::Unset(_) => Ok(None),
+            Self::String(s) => {
                 if index.parse::<u64>().unwrap_or(0) == 0 {
                     Ok(Some(Cow::Borrowed(s)))
                 } else {
                     Ok(None)
                 }
             }
-            ShellValue::AssociativeArray(values) => {
+            Self::AssociativeArray(values) => {
                 Ok(values.get(index).map(|s| Cow::Borrowed(s.as_str())))
             }
-            ShellValue::IndexedArray(values) => {
+            Self::IndexedArray(values) => {
                 let mut index_value = index.parse::<i64>().unwrap_or(0);
 
                 #[allow(clippy::cast_possible_wrap)]
@@ -905,7 +912,7 @@ impl ShellValue {
 
                 Ok(values.get(&index_value).map(|s| Cow::Borrowed(s.as_str())))
             }
-            ShellValue::Dynamic { getter, .. } => {
+            Self::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);
                 let result = dynamic_value.get_at(index, shell)?;
                 Ok(result.map(|s| s.to_string().into()))
@@ -916,22 +923,22 @@ impl ShellValue {
     /// Returns the keys of the elements in this variable.
     pub fn get_element_keys(&self, shell: &Shell) -> Vec<String> {
         match self {
-            ShellValue::Unset(_) => vec![],
-            ShellValue::String(_) => vec!["0".to_owned()],
-            ShellValue::AssociativeArray(array) => array.keys().map(|k| k.to_owned()).collect(),
-            ShellValue::IndexedArray(array) => array.keys().map(|k| k.to_string()).collect(),
-            ShellValue::Dynamic { getter, .. } => getter(shell).get_element_keys(shell),
+            Self::Unset(_) => vec![],
+            Self::String(_) => vec!["0".to_owned()],
+            Self::AssociativeArray(array) => array.keys().map(|k| k.to_owned()).collect(),
+            Self::IndexedArray(array) => array.keys().map(|k| k.to_string()).collect(),
+            Self::Dynamic { getter, .. } => getter(shell).get_element_keys(shell),
         }
     }
 
     /// Returns the values of the elements in this variable.
     pub fn get_element_values(&self, shell: &Shell) -> Vec<String> {
         match self {
-            ShellValue::Unset(_) => vec![],
-            ShellValue::String(s) => vec![s.to_owned()],
-            ShellValue::AssociativeArray(array) => array.values().map(|v| v.to_owned()).collect(),
-            ShellValue::IndexedArray(array) => array.values().map(|v| v.to_owned()).collect(),
-            ShellValue::Dynamic { getter, .. } => getter(shell).get_element_values(shell),
+            Self::Unset(_) => vec![],
+            Self::String(s) => vec![s.to_owned()],
+            Self::AssociativeArray(array) => array.values().map(|v| v.to_owned()).collect(),
+            Self::IndexedArray(array) => array.values().map(|v| v.to_owned()).collect(),
+            Self::Dynamic { getter, .. } => getter(shell).get_element_values(shell),
         }
     }
 
@@ -949,7 +956,7 @@ impl ShellValue {
     /// or otherwise doesn't exist.
     pub fn try_get_cow_str(&self, shell: &Shell) -> Option<Cow<'_, str>> {
         match self {
-            ShellValue::Dynamic { getter, .. } => {
+            Self::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);
                 dynamic_value
                     .try_get_cow_str(shell)
@@ -961,13 +968,11 @@ impl ShellValue {
 
     fn try_get_cow_str_without_dynamic_support(&self) -> Option<Cow<'_, str>> {
         match self {
-            ShellValue::Unset(_) => None,
-            ShellValue::String(s) => Some(Cow::Borrowed(s.as_str())),
-            ShellValue::AssociativeArray(values) => {
-                values.get("0").map(|s| Cow::Borrowed(s.as_str()))
-            }
-            ShellValue::IndexedArray(values) => values.get(&0).map(|s| Cow::Borrowed(s.as_str())),
-            ShellValue::Dynamic { .. } => None,
+            Self::Unset(_) => None,
+            Self::String(s) => Some(Cow::Borrowed(s.as_str())),
+            Self::AssociativeArray(values) => values.get("0").map(|s| Cow::Borrowed(s.as_str())),
+            Self::IndexedArray(values) => values.get(&0).map(|s| Cow::Borrowed(s.as_str())),
+            Self::Dynamic { .. } => None,
         }
     }
 
@@ -978,11 +983,9 @@ impl ShellValue {
     /// * `index` - The index at which to retrieve the value, if indexing is to be performed.
     pub fn to_assignable_str(&self, index: Option<&str>, shell: &Shell) -> String {
         match self {
-            ShellValue::Unset(_) => String::new(),
-            ShellValue::String(s) => {
-                escape::force_quote(s.as_str(), escape::QuoteMode::SingleQuote)
-            }
-            ShellValue::AssociativeArray(_) | ShellValue::IndexedArray(_) => {
+            Self::Unset(_) => String::new(),
+            Self::String(s) => escape::force_quote(s.as_str(), escape::QuoteMode::SingleQuote),
+            Self::AssociativeArray(_) | Self::IndexedArray(_) => {
                 if let Some(index) = index {
                     if let Ok(Some(value)) = self.get_at(index, shell) {
                         escape::force_quote(value.as_ref(), escape::QuoteMode::SingleQuote)
@@ -995,37 +998,37 @@ impl ShellValue {
                         .into_owned()
                 }
             }
-            ShellValue::Dynamic { getter, .. } => getter(shell).to_assignable_str(index, shell),
+            Self::Dynamic { getter, .. } => getter(shell).to_assignable_str(index, shell),
         }
     }
 }
 
 impl From<&str> for ShellValue {
     fn from(value: &str) -> Self {
-        ShellValue::String(value.to_owned())
+        Self::String(value.to_owned())
     }
 }
 
 impl From<&String> for ShellValue {
     fn from(value: &String) -> Self {
-        ShellValue::String(value.clone())
+        Self::String(value.clone())
     }
 }
 
 impl From<String> for ShellValue {
     fn from(value: String) -> Self {
-        ShellValue::String(value)
+        Self::String(value)
     }
 }
 
 impl From<Vec<String>> for ShellValue {
     fn from(values: Vec<String>) -> Self {
-        ShellValue::indexed_array_from_strings(values)
+        Self::indexed_array_from_strings(values)
     }
 }
 
 impl From<Vec<&str>> for ShellValue {
     fn from(values: Vec<&str>) -> Self {
-        ShellValue::indexed_array_from_strs(values.as_slice())
+        Self::indexed_array_from_strs(values.as_slice())
     }
 }

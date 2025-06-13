@@ -191,7 +191,7 @@ impl RuntimeOptions {
     /// # Arguments
     ///
     /// * `create_options` - The options used to create the shell.
-    pub fn defaults_from(create_options: &CreateOptions) -> RuntimeOptions {
+    pub fn defaults_from(create_options: &CreateOptions) -> Self {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {
             interactive: create_options.interactive,

@@ -305,7 +305,7 @@ impl CompleteCommand {
     }
 
     fn try_display_spec_for_command(
-        context: &mut commands::ExecutionContext<'_>,
+        context: &commands::ExecutionContext<'_>,
         name: &str,
     ) -> Result<bool, error::Error> {
         if let Some(spec) = context.shell.completion_config.get(name) {

@@ -149,7 +149,7 @@ peg::parser! {
 /// # Arguments
 ///
 /// * `c` - The character to check.
-pub fn regex_char_needs_escaping(c: char) -> bool {
+pub const fn regex_char_needs_escaping(c: char) -> bool {
     matches!(
         c,
         '[' | ']' | '(' | ')' | '{' | '}' | '*' | '?' | '.' | '+' | '^' | '$' | '|' | '\\'

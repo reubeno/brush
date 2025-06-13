@@ -67,8 +67,8 @@ impl CommandGroup {
         context: &mut commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         match self {
-            CommandGroup::Process(process) => process.execute(context),
-            CommandGroup::Complete(complete) => complete.execute(context).await,
+            Self::Process(process) => process.execute(context),
+            Self::Complete(complete) => complete.execute(context).await,
         }
     }
 }
@@ -79,11 +79,11 @@ impl ProcessCommand {
         context: &commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         match self {
-            ProcessCommand::ShowProcessId => {
+            Self::ShowProcessId => {
                 writeln!(context.stdout(), "{}", std::process::id())?;
                 Ok(builtins::ExitCode::Success)
             }
-            ProcessCommand::ShowProcessGroupId => {
+            Self::ShowProcessGroupId => {
                 if let Some(pgid) = sys::terminal::get_process_group_id() {
                     writeln!(context.stdout(), "{pgid}")?;
                     Ok(builtins::ExitCode::Success)
@@ -92,7 +92,7 @@ impl ProcessCommand {
                     Ok(builtins::ExitCode::Custom(1))
                 }
             }
-            ProcessCommand::ShowForegroundProcessId => {
+            Self::ShowForegroundProcessId => {
                 if let Some(pid) = sys::terminal::get_foreground_pid() {
                     writeln!(context.stdout(), "{pid}")?;
                     Ok(builtins::ExitCode::Success)
@@ -101,7 +101,7 @@ impl ProcessCommand {
                     Ok(builtins::ExitCode::Custom(1))
                 }
             }
-            ProcessCommand::ShowParentProcessId => {
+            Self::ShowParentProcessId => {
                 if let Some(pid) = sys::terminal::get_parent_process_id() {
                     writeln!(context.stdout(), "{pid}")?;
                     Ok(builtins::ExitCode::Success)
@@ -120,7 +120,7 @@ impl CompleteCommand {
         context: &mut commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         match self {
-            CompleteCommand::Line { cursor_index, line } => {
+            Self::Line { cursor_index, line } => {
                 let completions = context
                     .shell
                     .get_completions(line, cursor_index.unwrap_or(line.len()))

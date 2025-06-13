@@ -383,7 +383,7 @@ impl Spec {
     #[allow(clippy::too_many_lines)]
     async fn generate_action_completions(
         &self,
-        shell: &mut Shell,
+        shell: &Shell,
         context: &Context<'_>,
     ) -> Result<IndexSet<String>, error::Error> {
         let mut candidates = IndexSet::new();
@@ -561,7 +561,7 @@ impl Spec {
 
     async fn call_completion_command(
         &self,
-        shell: &mut Shell,
+        shell: &Shell,
         command_name: &str,
         context: &Context<'_>,
     ) -> Result<IndexSet<String>, error::Error> {
@@ -996,12 +996,12 @@ impl Config {
         }
     }
 
-    fn tokenize_input_for_completion(shell: &mut Shell, input: &str) -> Vec<brush_parser::Token> {
+    fn tokenize_input_for_completion(shell: &Shell, input: &str) -> Vec<brush_parser::Token> {
         const FALLBACK: &str = " \t\n\"\'@><=;|&(:";
 
         let delimiter_str = shell
             .get_env_str("COMP_WORDBREAKS")
-            .unwrap_or(FALLBACK.into());
+            .unwrap_or_else(|| FALLBACK.into());
 
         let delimiters: Vec<_> = delimiter_str.chars().collect();
 
@@ -1204,7 +1204,7 @@ fn completion_filter_pattern_matches(
     pattern: &str,
     candidate: &str,
     token_being_completed: &str,
-    shell: &mut Shell,
+    shell: &Shell,
 ) -> Result<bool, error::Error> {
     let pattern = replace_unescaped_ampersands(pattern, token_being_completed);
 

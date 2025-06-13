@@ -1,3 +1,7 @@
+//! Benchmarks for the brush-core crate.
+
+#![allow(missing_docs)]
+
 #[cfg(unix)]
 mod unix {
     use criterion::{Criterion, black_box};
@@ -151,6 +155,7 @@ criterion::criterion_group! {
                 .with_profiler(pprof::criterion::PProfProfiler::new(100, pprof::criterion::Output::Flamegraph(None)));
     targets = unix::criterion_benchmark
 }
+
 #[cfg(unix)]
 criterion::criterion_main!(benches);
 

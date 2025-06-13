@@ -118,7 +118,7 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
-    fn display_newline(&mut self) -> Result<(), ShellError> {
+    fn display_newline(&self) -> Result<(), ShellError> {
         self.raw_mode.disable()?;
         eprintln!();
         self.raw_mode.enable()?;
@@ -127,7 +127,7 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
-    fn clear_screen(&mut self) -> Result<(), ShellError> {
+    fn clear_screen(&self) -> Result<(), ShellError> {
         std::io::stderr()
             .execute(crossterm::terminal::Clear(
                 crossterm::terminal::ClearType::All,
@@ -237,7 +237,7 @@ impl<'a> ReadLineState<'a> {
     }
 
     fn handle_multiple_completions(
-        &mut self,
+        &self,
         completions: &brush_core::completion::Completions,
     ) -> Result<(), ShellError> {
         // Display replacements.

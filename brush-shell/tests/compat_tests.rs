@@ -410,7 +410,7 @@ impl TestCaseSetResults {
                 "Running test case set".blue(),
                 self.name
                     .as_ref()
-                    .unwrap_or(&("(unnamed)".to_owned()))
+                    .map_or_else(|| "(unnamed)", |n| n.as_str())
                     .italic(),
                 self.config_name.magenta(),
             )?;
@@ -545,7 +545,7 @@ impl TestCaseResult {
             "Test case".bright_yellow(),
             self.name
                 .as_ref()
-                .unwrap_or(&("(unnamed)".to_owned()))
+                .map_or_else(|| "(unnamed)", |n| n.as_str())
                 .italic()
         )?;
 
@@ -1170,7 +1170,7 @@ struct RunComparison {
 }
 
 impl RunComparison {
-    pub fn is_failure(&self) -> bool {
+    pub const fn is_failure(&self) -> bool {
         self.exit_status.is_failure()
             || self.stdout.is_failure()
             || self.stderr.is_failure()
@@ -1212,10 +1212,10 @@ enum ExitStatusComparison {
 }
 
 impl ExitStatusComparison {
-    pub fn is_failure(&self) -> bool {
+    pub const fn is_failure(&self) -> bool {
         matches!(
             self,
-            ExitStatusComparison::TestDiffers {
+            Self::TestDiffers {
                 test_exit_status: _,
                 oracle_exit_status: _
             }
@@ -1237,10 +1237,10 @@ enum StringComparison {
 }
 
 impl StringComparison {
-    pub fn is_failure(&self) -> bool {
+    pub const fn is_failure(&self) -> bool {
         matches!(
             self,
-            StringComparison::TestDiffers {
+            Self::TestDiffers {
                 test_string: _,
                 oracle_string: _
             }
@@ -1261,8 +1261,8 @@ enum DirComparison {
 }
 
 impl DirComparison {
-    pub fn is_failure(&self) -> bool {
-        matches!(self, DirComparison::TestDiffers(_))
+    pub const fn is_failure(&self) -> bool {
+        matches!(self, Self::TestDiffers(_))
     }
 }
 

@@ -187,7 +187,7 @@ fn translate_action_to_reedline_event(action: &KeyAction) -> Option<reedline::Re
     }
 }
 
-fn translate_reedline_keycode(keycode: reedline::KeyCode) -> Option<Key> {
+const fn translate_reedline_keycode(keycode: reedline::KeyCode) -> Option<Key> {
     match keycode {
         reedline::KeyCode::Backspace => Some(Key::Backspace),
         reedline::KeyCode::Enter => Some(Key::Enter),

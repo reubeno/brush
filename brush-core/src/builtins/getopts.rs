@@ -28,7 +28,7 @@ impl builtins::Command for GetOptsCommand {
     where
         I: IntoIterator<Item = String>,
     {
-        let (mut this, rest_args) = crate::builtins::try_parse_known::<GetOptsCommand>(args)?;
+        let (mut this, rest_args) = crate::builtins::try_parse_known::<Self>(args)?;
         if let Some(args) = rest_args {
             this.args.extend(args);
         }

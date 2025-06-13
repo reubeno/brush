@@ -24,7 +24,7 @@ impl ChildProcess {
         }
     }
 
-    pub fn pid(&self) -> Option<sys::process::ProcessId> {
+    pub const fn pid(&self) -> Option<sys::process::ProcessId> {
         self.pid
     }
 
