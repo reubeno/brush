@@ -62,10 +62,13 @@ impl builtins::Command for MapFileCommand {
         let results = self.read_entries(input_file)?;
 
         for (elem_idx, result) in results.0.into_iter().enumerate() {
+            // If the user is getting to wraparounds in *bash*, they got bigger problems.
+            #[allow(clippy::cast_possible_wrap)]
+            let elem_idx = elem_idx as i64;
             // Assign!
             context.shell.env.update_or_add_array_element(
                 &self.array_var_name,
-                (elem_idx as i64 + self.origin).to_string(),
+                (elem_idx + self.origin).to_string(),
                 result.1,
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
