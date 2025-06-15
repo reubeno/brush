@@ -13,7 +13,10 @@ pub(crate) fn kill_process(
 ) -> Result<(), error::Error> {
     let translated_signal = match signal {
         traps::TrapSignal::Signal(signal) => signal,
-        traps::TrapSignal::Debug | traps::TrapSignal::Err | traps::TrapSignal::Exit => {
+        traps::TrapSignal::Debug
+        | traps::TrapSignal::Err
+        | traps::TrapSignal::Exit
+        | traps::TrapSignal::Return => {
             return Err(error::Error::InvalidSignal(signal.to_string()));
         }
     };
