@@ -282,39 +282,46 @@ pub(crate) async fn execute(
     use_functions: bool,
     path_dirs: Option<Vec<String>>,
 ) -> Result<CommandSpawnResult, error::Error> {
-    if !cmd_context.command_name.contains(std::path::MAIN_SEPARATOR) {
-        let builtin = cmd_context
+    // First see if it's the name of a builtin.
+    let builtin = cmd_context
+        .shell
+        .builtins
+        .get(&cmd_context.command_name)
+        .cloned();
+
+    // If we found a special builtin (that's not disabled), then invoke it.
+    if builtin
+        .as_ref()
+        .is_some_and(|r| !r.disabled && r.special_builtin)
+    {
+        return execute_builtin_command(&builtin.unwrap(), cmd_context, args).await;
+    }
+
+    // Assuming we weren't requested not to do so, check if it's the name of
+    // a shell function.
+    if use_functions {
+        if let Some(func_reg) = cmd_context
             .shell
-            .builtins
-            .get(&cmd_context.command_name)
-            .cloned();
-
-        // Ignore the builtin if it's marked as disabled.
-        if builtin
-            .as_ref()
-            .is_some_and(|r| !r.disabled && r.special_builtin)
+            .funcs
+            .get(cmd_context.command_name.as_str())
         {
-            return execute_builtin_command(&builtin.unwrap(), cmd_context, args).await;
+            // Strip the function name off args.
+            return invoke_shell_function(func_reg.definition.clone(), cmd_context, &args[1..])
+                .await;
         }
+    }
 
-        if use_functions {
-            if let Some(func_reg) = cmd_context
-                .shell
-                .funcs
-                .get(cmd_context.command_name.as_str())
-            {
-                // Strip the function name off args.
-                return invoke_shell_function(func_reg.definition.clone(), cmd_context, &args[1..])
-                    .await;
-            }
+    // If we found a (non-special) builtin and it's not disabled, then invoke it.
+    if let Some(builtin) = builtin {
+        if !builtin.disabled {
+            return execute_builtin_command(&builtin, cmd_context, args).await;
         }
+    }
 
-        if let Some(builtin) = builtin {
-            if !builtin.disabled {
-                return execute_builtin_command(&builtin, cmd_context, args).await;
-            }
-        }
-
+    // We still haven't found a command to invoke. We'll need to look for an external command.
+    if !cmd_context.command_name.contains(std::path::MAIN_SEPARATOR) {
+        // All else failed; if we were given path directories to search, try to look through them
+        // for a matching executable. Otherwise, use our default search logic.
         let path = if let Some(path_dirs) = path_dirs {
             cmd_context
                 .shell

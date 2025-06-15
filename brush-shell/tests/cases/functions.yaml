@@ -100,3 +100,11 @@ cases:
       export -f mytestfunc
 
       $0 -c 'mytestfunc'
+
+  - name: "Function names with interesting characters"
+    stdin: |
+      my/func() {
+          echo "In my/func"
+      }
+
+      my/func
