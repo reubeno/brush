@@ -105,7 +105,6 @@ cases:
       echo " 1 << 4 == $((1<<4))"
 
   - name: Shift arithmetic in conditional"
-    known_failure: true
     stdin: |
       (( 1 >> 1 )) && echo "1. true"
       (( 1 << 1 )) && echo "2. true"
