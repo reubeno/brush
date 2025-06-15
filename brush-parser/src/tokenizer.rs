@@ -739,15 +739,24 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // track that the *next* token should be the here-tag.
                     //
                     if self.cross_state.arithmetic_expansion {
-                        // Nothing to do; we're in an arithmetic expansion so << and <<-
-                        // are not here-docs, they're either a left-shift operator or
-                        // a left-shift operator followed by a unary minus operator.
+                        //
+                        // We're in an arithmetic context; don't consider << and <<-
+                        // special. They're not here-docs, they're either a left-shift
+                        // operator or a left-shift operator followed by a unary
+                        // minus operator.
+                        //
+
+                        if state.is_specific_operator(")") && c == ')' {
+                            self.cross_state.arithmetic_expansion = false;
+                        }
                     } else if state.is_specific_operator("<<") {
                         self.cross_state.here_state =
                             HereState::NextTokenIsHereTag { remove_tabs: false };
                     } else if state.is_specific_operator("<<-") {
                         self.cross_state.here_state =
                             HereState::NextTokenIsHereTag { remove_tabs: true };
+                    } else if state.is_specific_operator("(") && c == '(' {
+                        self.cross_state.arithmetic_expansion = true;
                     }
 
                     let reason = if state.current_token() == "\n" {

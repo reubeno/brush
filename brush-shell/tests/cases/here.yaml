@@ -19,6 +19,19 @@ cases:
           echo "This is after"
     args: ["./script.sh"]
 
+  - name: "Here doc in a function"
+    stdin: |
+      function myfunc() {
+        if true
+        then
+          cat << END-MARKER
+      Something here...
+      END-MARKER
+        fi
+      }
+
+      myfunc
+
   - name: "Here doc with expansions"
     stdin: |
       cat <<END-MARKER
