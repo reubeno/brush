@@ -19,6 +19,8 @@ pub enum TrapSignal {
     Err,
     /// The `EXIT` trap.
     Exit,
+    /// The `RETURN` trp.
+    Return,
 }
 
 impl Display for TrapSignal {
@@ -50,6 +52,7 @@ impl TrapSignal {
             Self::Debug => "DEBUG",
             Self::Err => "ERR",
             Self::Exit => "EXIT",
+            Self::Return => "RETURN",
         }
     }
 }
@@ -115,6 +118,7 @@ impl TryFrom<&str> for TrapSignal {
             "DEBUG" => Self::Debug,
             "ERR" => Self::Err,
             "EXIT" => Self::Exit,
+            "RETURN" => Self::Return,
 
             #[cfg(unix)]
             _ => {
