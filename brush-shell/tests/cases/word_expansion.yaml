@@ -38,9 +38,17 @@ cases:
       single_quoted='\n'
       echo "Single quoted len: ${#single_quoted}"
       echo -n '\n' | hexdump -C
+
       ansi_c_quoted=$'\n'
       echo "ANSI-C quoted len: ${#ansi_c_quoted}"
       echo -n $'\n' | hexdump -C
+
+  - name: "ANSI-C quotes with escaped single quote"
+    known_failure: true
+    stdin: |
+      ansi_c_quoted=$'\''
+      echo "ANSI-C quoted single quote len: ${#ansi_c_quoted}"
+      echo -n $'\'' | hexdump -C
 
   - name: "gettext style quotes"
     stdin: |
