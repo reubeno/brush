@@ -112,6 +112,10 @@ pub enum TokenizerError {
     #[error("unterminated single quote at {0}")]
     UnterminatedSingleQuote(SourcePosition),
 
+    /// An unterminated ANSI C-quoted substring was encountered at the end of the input stream.
+    #[error("unterminated ANSI C quote at {0}")]
+    UnterminatedAnsiCQuote(SourcePosition),
+
     /// An unterminated double-quoted substring was encountered at the end of the input stream.
     #[error("unterminated double quote at {0}")]
     UnterminatedDoubleQuote(SourcePosition),
@@ -161,6 +165,7 @@ impl TokenizerError {
         matches!(
             self,
             Self::UnterminatedEscapeSequence
+                | Self::UnterminatedAnsiCQuote(..)
                 | Self::UnterminatedSingleQuote(..)
                 | Self::UnterminatedDoubleQuote(..)
                 | Self::UnterminatedBackquote(..)
@@ -182,6 +187,7 @@ pub(crate) struct Tokens<'a> {
 #[derive(Clone, Debug)]
 enum QuoteMode {
     None,
+    AnsiC(SourcePosition),
     Single(SourcePosition),
     Double(SourcePosition),
 }
@@ -641,6 +647,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 }
                 match state.quote_mode {
                     QuoteMode::None => (),
+                    QuoteMode::AnsiC(pos) => {
+                        return Err(TokenizerError::UnterminatedAnsiCQuote(pos));
+                    }
                     QuoteMode::Single(pos) => {
                         return Err(TokenizerError::UnterminatedSingleQuote(pos));
                     }
@@ -767,7 +776,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         state.append_char(c);
                     }
                 } else if c == '\'' {
-                    state.quote_mode = QuoteMode::Single(self.cross_state.cursor.clone());
+                    if state.token_so_far.ends_with('$') {
+                        state.quote_mode = QuoteMode::AnsiC(self.cross_state.cursor.clone());
+                    } else {
+                        state.quote_mode = QuoteMode::Single(self.cross_state.cursor.clone());
+                    }
+
                     self.consume_char()?;
                     state.append_char(c);
                 } else if c == '\"' {
@@ -777,16 +791,19 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 }
             }
             //
-            // Handle end of single-quote or double-quote.
+            // Handle end of single-quote, double-quote, or ANSI-C quote.
             else if !state.in_escape
-                && matches!(state.quote_mode, QuoteMode::Single(_))
+                && matches!(
+                    state.quote_mode,
+                    QuoteMode::Single(..) | QuoteMode::AnsiC(..)
+                )
                 && c == '\''
             {
                 state.quote_mode = QuoteMode::None;
                 self.consume_char()?;
                 state.append_char(c);
             } else if !state.in_escape
-                && matches!(state.quote_mode, QuoteMode::Double(_))
+                && matches!(state.quote_mode, QuoteMode::Double(..))
                 && c == '\"'
             {
                 state.quote_mode = QuoteMode::None;
@@ -1260,8 +1277,9 @@ const fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> boo
     }
 
     match state.quote_mode {
-        // When we're in a double quote, only a subset of escape sequences are recognized.
-        QuoteMode::Double(_) => {
+        // When we're in a double quote or ANSI-C quote, only a subset of escape
+        // sequences are recognized.
+        QuoteMode::Double(_) | QuoteMode::AnsiC(_) => {
             if c == '\\' {
                 // TODO: handle backslash in double quote
                 true
