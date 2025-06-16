@@ -84,7 +84,7 @@ jobs:
 
       - name: "Installing musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@92f69c195229fe62d58b4d697ab4bc75def98e76 # v2.52.7
+        uses: taiki-e/install-action@7b20dfd705618832f20d29066e34aa2f2f6194c2 # v2.52.8
         with:
           tool: cross
 
@@ -93,7 +93,7 @@ jobs:
         run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
 
       - name: "Build and upload binaries to release"
-        uses: taiki-e/upload-rust-binary-action@db101489b509ad1c7acce163e118eb36a1650f98 # v1.26.0
+        uses: taiki-e/upload-rust-binary-action@3962470d6e7f1993108411bc3f75a135ec67fc8c # v1.27.0
         id: upload-release
         with:
           dry-run: ${{ github.event_name != 'release' }}
@@ -107,6 +107,6 @@ jobs:
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: "${{ steps.upload-release.outputs.archive }}.*"
