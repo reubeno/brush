@@ -25,7 +25,9 @@ ParseResult(
           ),
         ), Sequence),
       ]))), Some(RedirectList([
-        File(Some(2), DuplicateOutput, Fd(1)),
+        File(Some(2), DuplicateOutput, Duplicate(W(
+          v: "1",
+        ))),
       ]))),
       source: "",
     )),
