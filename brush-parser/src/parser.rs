@@ -658,16 +658,15 @@ peg::parser! {
         // N.B. Process substitution forms are extensions to the POSIX standard.
         rule io_file() -> (ast::IoFileRedirectKind, ast::IoFileRedirectTarget) =
             specific_operator("<")  f:io_filename() { (ast::IoFileRedirectKind::Read, f) } /
-            specific_operator("<&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
+            specific_operator("<&") f:io_fd_duplication_source() { (ast::IoFileRedirectKind::DuplicateInput, f) } /
             specific_operator(">")  f:io_filename() { (ast::IoFileRedirectKind::Write, f) } /
-            specific_operator(">&") f:io_filename_or_fd() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
+            specific_operator(">&") f:io_fd_duplication_source() { (ast::IoFileRedirectKind::DuplicateOutput, f) } /
             specific_operator(">>") f:io_filename() { (ast::IoFileRedirectKind::Append, f) } /
             specific_operator("<>") f:io_filename() { (ast::IoFileRedirectKind::ReadAndWrite, f) } /
             specific_operator(">|") f:io_filename() { (ast::IoFileRedirectKind::Clobber, f) }
 
-        rule io_filename_or_fd() -> ast::IoFileRedirectTarget =
-            fd:io_fd() { ast::IoFileRedirectTarget::Fd(fd) } /
-            io_filename()
+        rule io_fd_duplication_source() -> ast::IoFileRedirectTarget =
+            w:word() { ast::IoFileRedirectTarget::Duplicate(ast::Word::from(w)) }
 
         rule io_fd() -> u32 =
             w:[Token::Word(_, _)] {? w.to_str().parse().or(Err("io_fd u32")) }

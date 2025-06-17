@@ -935,16 +935,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    match setup_redirect(context.shell, &mut params, redirect).await {
-                        Err(e) => {
-                            writeln!(params.stderr(), "error: {e}")?;
-                            return Ok(CommandSpawnResult::ImmediateExit(1));
-                        }
-                        Ok(None) => {
-                            // Something went wrong.
-                            return Ok(CommandSpawnResult::ImmediateExit(1));
-                        }
-                        Ok(_) => (),
+                    if let Err(e) = setup_redirect(context.shell, &mut params, redirect).await {
+                        writeln!(params.stderr(), "error: {e}")?;
+                        return Ok(CommandSpawnResult::ImmediateExit(1));
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
@@ -1405,7 +1398,7 @@ pub(crate) async fn setup_redirect(
     shell: &mut Shell,
     params: &'_ mut ExecutionParameters,
     redirect: &ast::IoRedirect,
-) -> Result<Option<u32>, error::Error> {
+) -> Result<(), error::Error> {
     match redirect {
         ast::IoRedirect::OutputAndError(f, append) => {
             let mut expanded_fields =
@@ -1435,12 +1428,9 @@ pub(crate) async fn setup_redirect(
 
             params.open_files.files.insert(1, stdout_file);
             params.open_files.files.insert(2, stderr_file);
-
-            Ok(Some(1))
         }
+
         ast::IoRedirect::File(specified_fd_num, kind, target) => {
-            let fd_num;
-            let target_file;
             match target {
                 ast::IoFileRedirectTarget::Filename(f) => {
                     let mut options = std::fs::File::options();
@@ -1502,7 +1492,7 @@ pub(crate) async fn setup_redirect(
                         }
                     }
 
-                    fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+                    let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
                     let opened_file =
                         options.open(expanded_file_path.as_path()).map_err(|err| {
@@ -1511,8 +1501,12 @@ pub(crate) async fn setup_redirect(
                                 err,
                             )
                         })?;
-                    target_file = OpenFile::File(opened_file);
+
+                    let target_file = OpenFile::File(opened_file);
+
+                    params.open_files.files.insert(fd_num, target_file);
                 }
+
                 ast::IoFileRedirectTarget::Fd(fd) => {
                     let default_fd_if_unspecified = match kind {
                         ast::IoFileRedirectKind::DuplicateInput => 0,
@@ -1522,15 +1516,70 @@ pub(crate) async fn setup_redirect(
                         }
                     };
 
-                    fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+                    let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
                     if let Some(f) = params.open_files.files.get(fd) {
-                        target_file = f.try_dup()?;
+                        let target_file = f.try_dup()?;
+
+                        params.open_files.files.insert(fd_num, target_file);
                     } else {
-                        tracing::error!("{}: Bad file descriptor", fd);
-                        return Ok(None);
+                        return Err(error::Error::BadFileDescriptor(*fd));
                     }
                 }
+
+                ast::IoFileRedirectTarget::Duplicate(word) => {
+                    let default_fd_if_unspecified = match kind {
+                        ast::IoFileRedirectKind::DuplicateInput => 0,
+                        ast::IoFileRedirectKind::DuplicateOutput => 1,
+                        _ => {
+                            return error::unimp("unexpected redirect kind");
+                        }
+                    };
+
+                    let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+
+                    let mut expanded_fields =
+                        expansion::full_expand_and_split_word(shell, params, word).await?;
+
+                    if expanded_fields.len() != 1 {
+                        return Err(error::Error::InvalidRedirection);
+                    }
+
+                    let mut expanded = expanded_fields.remove(0);
+
+                    let dash = if expanded.ends_with('-') {
+                        expanded.pop();
+                        true
+                    } else {
+                        false
+                    };
+
+                    if expanded.is_empty() {
+                        // Nothing to do
+                    } else if expanded.chars().all(|c: char| c.is_ascii_digit()) {
+                        let source_fd_num = expanded
+                            .parse::<u32>()
+                            .map_err(|_| error::Error::InvalidRedirection)?;
+
+                        // Duplicate the fd.
+                        let target_file =
+                            if let Some(f) = params.open_files.files.get(&source_fd_num) {
+                                f.try_dup()?
+                            } else {
+                                return Err(error::Error::BadFileDescriptor(source_fd_num));
+                            };
+
+                        params.open_files.files.insert(fd_num, target_file);
+                    } else {
+                        return Err(error::Error::InvalidRedirection);
+                    }
+
+                    if dash {
+                        // Close the specified fd. Ignore it if it's not valid.
+                        params.open_files.files.remove(&fd_num);
+                    }
+                }
+
                 ast::IoFileRedirectTarget::ProcessSubstitution(substitution_kind, subshell_cmd) => {
                     match kind {
                         ast::IoFileRedirectKind::Read
@@ -1545,23 +1594,23 @@ pub(crate) async fn setup_redirect(
                                 subshell_cmd,
                             )?;
 
-                            target_file = substitution_file.try_dup()?;
+                            let target_file = substitution_file.try_dup()?;
                             params
                                 .open_files
                                 .files
                                 .insert(substitution_fd, substitution_file);
 
-                            fd_num = specified_fd_num
+                            let fd_num = specified_fd_num
                                 .unwrap_or_else(|| get_default_fd_for_redirect_kind(kind));
+
+                            params.open_files.files.insert(fd_num, target_file);
                         }
                         _ => return error::unimp("invalid process substitution"),
                     }
                 }
             }
-
-            params.open_files.files.insert(fd_num, target_file);
-            Ok(Some(fd_num))
         }
+
         ast::IoRedirect::HereDocument(fd_num, io_here) => {
             // If not specified, default to stdin (fd 0).
             let fd_num = fd_num.unwrap_or(0);
@@ -1576,8 +1625,8 @@ pub(crate) async fn setup_redirect(
             let f = setup_open_file_with_contents(io_here_doc.as_str())?;
 
             params.open_files.files.insert(fd_num, f);
-            Ok(Some(fd_num))
         }
+
         ast::IoRedirect::HereString(fd_num, word) => {
             // If not specified, default to stdin (fd 0).
             let fd_num = fd_num.unwrap_or(0);
@@ -1588,9 +1637,10 @@ pub(crate) async fn setup_redirect(
             let f = setup_open_file_with_contents(expanded_word.as_str())?;
 
             params.open_files.files.insert(fd_num, f);
-            Ok(Some(fd_num))
         }
     }
+
+    Ok(())
 }
 
 const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {

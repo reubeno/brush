@@ -35,7 +35,9 @@ ParseResult(
                             Word(W(
                               v: "\"${f@L}\"",
                             )),
-                            IoRedirect(File(None, DuplicateOutput, Fd(2))),
+                            IoRedirect(File(None, DuplicateOutput, Duplicate(W(
+                              v: "2",
+                            )))),
                           ])),
                         )),
                       ],

@@ -115,3 +115,84 @@ cases:
     ignore_stderr: true
     stdin: |
       echo hi > /non-existent-dir/file.txt; echo following-command
+
+  - name: "Redirection for opening read and write"
+    stdin: |
+      echo hi >file.txt
+      cat <>file.txt
+
+  - name: "Close output file descriptor"
+    ignore_stderr: true
+    stdin: |
+      # Open a new output fd (3).
+      exec 3>test.txt
+      # Write to the file.
+      echo "test" >&3
+      # Close the file.
+      exec 3>&-
+      # Make sure we can't write to it.
+      echo "after close" >&3 || echo "Cannot write to closed fd"
+
+  - name: "Close input file descriptor"
+    ignore_stderr: true
+    test_files:
+      - path: "input.txt"
+        contents: |
+          line1
+          line2
+    stdin: |
+      # Open an input file descriptor (3).
+      exec 3<input.txt
+      # Read from the file.
+      read line <&3
+      echo "Read: $line"
+      # Close the file descriptor.
+      exec 3<&-
+      # Make sure we can't read from it.
+      read line <&3 2>/dev/null || echo "Cannot read from closed fd"
+
+  - name: "Duplicate input file descriptor"
+    test_files:
+      - path: "input.txt"
+        contents: |
+          test input line
+    stdin: |
+      # Open an input file descriptor (3).
+      exec 3<input.txt
+      # Duplicate it to another descriptor (4).
+      exec 4<&3
+      # Read from the new descriptor.
+      read line <&4
+      echo "Read: $line"
+
+  - name: "Input file descriptor duplication from stdin"
+    stdin: |
+      exec 3<&0
+      echo "test" | { read line <&3; echo "Read: $line"; }
+
+  - name: "Multiple file descriptor redirections"
+    ignore_stderr: true
+    stdin: |
+      # Open multiple new output fds
+      exec 3>fd3.txt 4>fd4.txt 5>fd5.txt
+      # Write to the new fds
+      echo "fd3" >&3
+      echo "fd4" >&4
+      echo "fd5" >&5
+      # Close the fds
+      exec 3>&- 4>&- 5>&-
+      # Read from the files to verify
+      echo "[3]"
+      cat fd3.txt
+      echo "[4]"
+      fd4.txt
+      echo "[5]"
+      fd5.txt
+
+  - name: "High file descriptor numbers"
+    stdin: |
+      # Open high numbered file descriptor
+      echo "test" 10>fd10.txt >&10
+      # Dump the file
+      echo "[10]"
+      cat fd10.txt

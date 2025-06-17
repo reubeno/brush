@@ -1033,6 +1033,10 @@ pub enum IoFileRedirectTarget {
     /// Process substitution: substitution with the results of executing the given
     /// command in a subshell.
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
+    /// Item to duplicate in a word redirection. After expansion, this could be a
+    /// filename, a file descriptor, or a file descriptor and a "-" to indicate
+    /// requested closure.
+    Duplicate(Word),
 }
 
 impl Display for IoFileRedirectTarget {
@@ -1043,6 +1047,7 @@ impl Display for IoFileRedirectTarget {
             Self::ProcessSubstitution(kind, subshell_command) => {
                 write!(f, "{kind}{subshell_command}")
             }
+            Self::Duplicate(word) => write!(f, "{word}"),
         }
     }
 }
