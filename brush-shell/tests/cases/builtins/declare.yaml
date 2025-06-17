@@ -162,6 +162,16 @@ cases:
 
       test
 
+  - name: "Using local to detect function presence"
+    stdin: |
+      function test {
+        local something 2>/dev/null && echo "In function"
+      }
+
+      local something 2>/dev/null || echo "Not in function"
+
+      test
+
   - name: "Displaying function names"
     stdin: |
       echo "Dumping function names"
