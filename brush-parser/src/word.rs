@@ -407,18 +407,18 @@ pub enum BraceExpressionMember {
     /// An inclusive numerical sequence.
     NumberSequence {
         /// Start of the sequence.
-        low: i64,
+        start: i64,
         /// Inclusive end of the sequence.
-        high: i64,
+        end: i64,
         /// Increment value.
         increment: i64,
     },
     /// An inclusive character sequence.
     CharSequence {
         /// Start of the sequence.
-        low: char,
+        start: char,
         /// Inclusive end of the sequence.
-        high: char,
+        end: char,
         /// Increment value.
         increment: i64,
     },
@@ -433,23 +433,47 @@ impl BraceExpressionMember {
     pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
         match self {
             Self::NumberSequence {
-                low,
-                high,
+                start,
+                end,
                 increment,
-            } => Box::new(
-                (low..=high)
-                    .step_by(increment as usize)
-                    .map(|n| n.to_string()),
-            ),
+            } => {
+                let increment = increment.unsigned_abs() as usize;
+
+                if start <= end {
+                    Box::new((start..=end).step_by(increment).map(|n| n.to_string()))
+                } else {
+                    Box::new(
+                        (end..=start)
+                            .step_by(increment)
+                            .map(|n| n.to_string())
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev(),
+                    )
+                }
+            }
+
             Self::CharSequence {
-                low,
-                high,
+                start,
+                end,
                 increment,
-            } => Box::new(
-                (low..=high)
-                    .step_by(increment as usize)
-                    .map(|c| c.to_string()),
-            ),
+            } => {
+                let increment = increment.unsigned_abs() as usize;
+
+                if start <= end {
+                    Box::new((start..=end).step_by(increment).map(|c| c.to_string()))
+                } else {
+                    Box::new(
+                        (end..=start)
+                            .step_by(increment)
+                            .map(|c| c.to_string())
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev(),
+                    )
+                }
+            }
+
             Self::Text(text) => Box::new(std::iter::once(text)),
         }
     }
@@ -571,14 +595,23 @@ peg::parser! {
             }
 
         rule brace_sequence_expr() -> BraceExpressionMember =
-            low:number() ".." high:number() increment:(".." n:number() { n })? {
-                BraceExpressionMember::NumberSequence { low, high, increment: increment.unwrap_or(1) }
+            start:number() ".." end:number() increment:(".." n:number() { n })? {
+                BraceExpressionMember::NumberSequence { start, end, increment: increment.unwrap_or(1) }
             } /
-            low:character() ".." high:character() increment:(".." n:number() { n })? {
-                BraceExpressionMember::CharSequence { low, high, increment: increment.unwrap_or(1) }
+            start:character() ".." end:character() increment:(".." n:number() { n })? {
+                BraceExpressionMember::CharSequence { start, end, increment: increment.unwrap_or(1) }
             }
 
-        rule number() -> i64 = n:$(['0'..='9']+) { n.parse().unwrap() }
+        rule number() -> i64 = sign:number_sign()? n:$(['0'..='9']+) {
+            let sign = sign.unwrap_or(1);
+            let num: i64 = n.parse().unwrap();
+            num * sign
+        }
+
+        rule number_sign() -> i64 =
+            ['-'] { -1 } /
+            ['+'] { 1 }
+
         rule character() -> char = ['a'..='z' | 'A'..='Z']
 
         pub(crate) rule is_arithmetic_word() =

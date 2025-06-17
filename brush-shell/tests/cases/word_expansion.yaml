@@ -912,7 +912,7 @@ cases:
       declare -ia arr=(1 2 3)
       echo "\${arr@a}: ${arr@a}"
 
-  - name: "Expansion with curly braces"
+  - name: "Expansion with curly braces: commas"
     stdin: |
       echo "{a,b} =>"
       echo {a,b}
@@ -946,26 +946,6 @@ cases:
       echo {a,b}{1,2}
       echo
 
-      echo "{a..f} =>"
-      echo {a..f}
-      echo
-
-      echo "{a..f..2} =>"
-      echo {a..f..2}
-      echo
-
-      echo "{2..9} =>"
-      echo {2..9}
-      echo
-
-      echo "{2..9..2} =>"
-      echo {2..9..2}
-      echo
-
-      echo "W{{1..3},a,x}Y =>"
-      echo W{{1..3},a,x}Y
-      echo
-
       echo 'W\{1,2}X =>'
       echo W\{1,2}X
       echo
@@ -986,6 +966,60 @@ cases:
 
       echo '\${a,b} =>'
       echo \${a,b}
+      echo
+
+  - name: "Expansion with curly braces: alpha ranges"
+    stdin: |
+      echo "{a..f} =>"
+      echo {a..f}
+      echo
+
+      echo "{a..f..2} =>"
+      echo {a..f..2}
+      echo
+
+  - name: "Expansion with curly braces: numeric ranges"
+    stdin: |
+      echo "{2..9} =>"
+      echo {2..9}
+      echo
+
+      echo "{+2..+9} =>"
+      echo {+2..+9}
+      echo
+
+      echo "{2..2} =>"
+      echo {2..2}
+      echo
+
+      echo "{2..1} =>"
+      echo {2..1}
+      echo
+
+      echo "{10..2..2} =>"
+      echo {10..2..2}
+      echo
+
+      echo "{10..2..-2} =>"
+      echo {10..2..-2}
+      echo
+
+      echo "{2..9..2} =>"
+      echo {2..9..2}
+      echo
+
+      echo "{-1..-10} =>"
+      echo {-1..-10}
+      echo
+
+      echo "{-10..-1} =>"
+      echo {-10..-1}
+      echo
+
+  - name: "Expansion with curly braces: nested"
+    stdin: |
+      echo "W{{1..3},a,x}Y =>"
+      echo W{{1..3},a,x}Y
       echo
 
   - name: "Iterate through modified array"
