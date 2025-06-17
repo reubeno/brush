@@ -132,6 +132,11 @@ impl builtins::Command for DeclareCommand {
             _ => DeclareVerb::Declare,
         };
 
+        if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
+            writeln!(context.stderr(), "can only be used in a function")?;
+            return Ok(builtins::ExitCode::Custom(1));
+        }
+
         if self.locals_inherit_from_prev_scope {
             return error::unimp("declare -I");
         }
