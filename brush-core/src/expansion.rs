@@ -1245,7 +1245,7 @@ impl<'a> WordExpander<'a> {
         if !indirect {
             Ok(self.try_resolve_parameter_to_variable_without_indirect(parameter))
         } else {
-            let expansion = self.expand_parameter(parameter, true).await?;
+            let expansion = self.expand_parameter(parameter, false).await?;
             let parameter_str: String = expansion.into();
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;

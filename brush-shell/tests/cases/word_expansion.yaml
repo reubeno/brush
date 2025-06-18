@@ -912,6 +912,9 @@ cases:
       declare -ia arr=(1 2 3)
       echo "\${arr@a}: ${arr@a}"
 
+      ref="arr"
+      echo "\${!ref@a}: ${!ref@a}"
+
   - name: "Expansion with curly braces: commas"
     stdin: |
       echo "{a,b} =>"
