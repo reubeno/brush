@@ -169,6 +169,8 @@ pub struct CreateOptions {
     pub no_profile: bool,
     /// Whether to skip sourcing the user's rc file.
     pub no_rc: bool,
+    /// Explicit override of rc file to load in interactive mode.
+    pub rc_file: Option<PathBuf>,
     /// Whether to skip inheriting environment variables from the calling process.
     pub do_not_inherit_env: bool,
     /// Whether the shell is in POSIX compliance mode.
@@ -768,19 +770,25 @@ impl Shell {
                     return Ok(());
                 }
 
-                //
-                // For non-login interactive shells, load in this order:
-                //
-                //     /etc/bash.bashrc
-                //     ~/.bashrc
-                //
-                self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
-                    .await?;
-                if let Some(home_path) = self.get_home_dir() {
-                    self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
+                // If an rc file was specified, then source it.
+                if let Some(rc_file) = &options.rc_file {
+                    // If an explicit rc file is provided, source it.
+                    self.source_if_exists(rc_file, &params).await?;
+                } else {
+                    //
+                    // Otherwise, for non-login interactive shells, load in this order:
+                    //
+                    //     /etc/bash.bashrc
+                    //     ~/.bashrc
+                    //
+                    self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
                         .await?;
-                    self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
-                        .await?;
+                    if let Some(home_path) = self.get_home_dir() {
+                        self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
+                            .await?;
+                        self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
+                            .await?;
+                    }
                 }
             } else {
                 let env_var_name = if options.sh_mode { "ENV" } else { "BASH_ENV" };

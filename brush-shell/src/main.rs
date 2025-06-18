@@ -264,6 +264,7 @@ async fn instantiate_shell(
             no_editing: args.no_editing,
             no_profile: args.no_profile,
             no_rc: args.no_rc,
+            rc_file: args.rc_file.clone(),
             do_not_inherit_env: args.do_not_inherit_env,
             posix: args.posix || args.sh_mode,
             print_commands_and_arguments: args.print_commands_and_arguments,
