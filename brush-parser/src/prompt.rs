@@ -78,6 +78,8 @@ pub enum PromptTimeFormat {
     TwelveHourAM,
     /// A twelve-hour time format (HHMMSS).
     TwelveHourHHMMSS,
+    /// A twenty-four-hour time format (HHMM).
+    TwentyFourHourHHMM,
     /// A twenty-four-hour time format (HHMMSS).
     TwentyFourHourHHMMSS,
 }
@@ -96,6 +98,7 @@ peg::parser! {
         //
         rule special_sequence() -> PromptPiece =
             "\\a" { PromptPiece::BellCharacter } /
+            "\\A" { PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMM) } /
             "\\d" { PromptPiece::Date(PromptDateFormat::WeekdayMonthDate) } /
             "\\D{" f:date_format() "}" { PromptPiece::Date(PromptDateFormat::Custom(f)) } /
             "\\e" { PromptPiece::EscapeCharacter } /
