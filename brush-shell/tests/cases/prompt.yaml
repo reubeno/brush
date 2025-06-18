@@ -70,6 +70,13 @@ cases:
       prompt='\d{%Y}'
       echo "Date format with year: '${prompt@P}'"
 
+  - name: "Time format: A"
+    stdin: |
+      prompt='\A'
+      expanded=${prompt@P}
+      roundtripped=$(date --date="${expanded}" +'%H:%M')
+      [[ ${expanded} == ${roundtripped} ]] && echo "Time matches"
+
   - name: "Time format: @"
     stdin: |
       prompt='\@'
