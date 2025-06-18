@@ -804,17 +804,17 @@ peg::parser! {
             "!" variable_name:variable_name() "[@]" {
                 ParameterExpr::MemberKeys { variable_name: variable_name.to_owned(), concatenate: false }
             } /
-            "!" prefix:variable_name() "*" {
-                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: true }
-            } /
-            "!" prefix:variable_name() "@" {
-                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: false }
-            } /
             indirect:parameter_indirection() parameter:parameter() ":" offset:substring_offset() length:(":" l:substring_length() { l })? {
                 ParameterExpr::Substring { parameter, indirect, offset, length }
             } /
             indirect:parameter_indirection() parameter:parameter() "@" op:non_posix_parameter_transformation_op() {
                 ParameterExpr::Transform { parameter, indirect, op }
+            } /
+            "!" prefix:variable_name() "*" {
+                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: true }
+            } /
+            "!" prefix:variable_name() "@" {
+                ParameterExpr::VariableNames { prefix: prefix.to_owned(), concatenate: false }
             } /
             indirect:parameter_indirection() parameter:parameter() "/#" pattern:parameter_search_pattern() replacement:parameter_replacement_str()? {
                 ParameterExpr::ReplaceSubstring { parameter, indirect, pattern, replacement, match_kind: SubstringMatchKind::Prefix }
