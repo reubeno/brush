@@ -1,7 +1,7 @@
 //! Types for brush command-line parsing.
 
 use clap::{Parser, builder::styling};
-use std::io::IsTerminal;
+use std::{io::IsTerminal, path::PathBuf};
 
 use crate::{events, productinfo};
 
@@ -99,6 +99,10 @@ pub struct CommandLineArgs {
     /// Disable non-POSIX extensions.
     #[clap(long = "posix")]
     pub posix: bool,
+
+    /// Path to the rc file to load in interactive shells (instead of bash.bashrc and ~/.bashrc).
+    #[clap(long = "rcfile", alias = "init-file", value_name = "FILE")]
+    pub rc_file: Option<PathBuf>,
 
     /// Read commands from standard input.
     #[clap(short = 's')]
