@@ -44,7 +44,6 @@ cases:
       echo -n $'\n' | hexdump -C
 
   - name: "ANSI-C quotes with escaped single quote"
-    known_failure: true
     stdin: |
       ansi_c_quoted=$'\''
       echo "ANSI-C quoted single quote len: ${#ansi_c_quoted}"
