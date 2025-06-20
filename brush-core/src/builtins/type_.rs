@@ -105,7 +105,8 @@ impl builtins::Command for TypeCommand {
                         }
                         ResolvedType::File { path, hashed } => {
                             if hashed && self.all_locations && !self.force_path_search {
-                                // Do nothing.
+                                // Do nothing. When we're displaying all locations, then
+                                // we don't show hashed paths.
                             } else if self.show_path_only || self.force_path_search {
                                 writeln!(context.stdout(), "{}", path.to_string_lossy())?;
                                 if hashed {
@@ -149,23 +150,35 @@ impl TypeCommand {
             // Check for aliases.
             if let Some(a) = shell.aliases.get(name) {
                 types.push(ResolvedType::Alias(a.clone()));
+                if !self.all_locations {
+                    return types;
+                }
             }
 
             // Check for keywords.
             if keywords::is_keyword(shell, name) {
                 types.push(ResolvedType::Keyword);
+                if !self.all_locations {
+                    return types;
+                }
             }
 
             // Check for functions.
             if !self.suppress_func_lookup {
                 if let Some(registration) = shell.funcs.get(name) {
                     types.push(ResolvedType::Function(registration.definition.clone()));
+                    if !self.all_locations {
+                        return types;
+                    }
                 }
             }
 
             // Check for builtins.
             if shell.builtins.get(name).is_some_and(|b| !b.disabled) {
                 types.push(ResolvedType::Builtin);
+                if !self.all_locations {
+                    return types;
+                }
             }
         }
 
@@ -176,10 +189,17 @@ impl TypeCommand {
                     path: PathBuf::from(name),
                     hashed: false,
                 });
+
+                if !self.all_locations {
+                    return types;
+                }
             }
         } else {
             if let Some(path) = shell.program_location_cache.get(name) {
                 types.push(ResolvedType::File { path, hashed: true });
+                if !self.all_locations {
+                    return types;
+                }
             }
 
             for item in shell.find_executables_in_path(name) {
@@ -187,6 +207,10 @@ impl TypeCommand {
                     path: item,
                     hashed: false,
                 });
+
+                if !self.all_locations {
+                    return types;
+                }
             }
         }
 

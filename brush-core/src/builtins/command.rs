@@ -1,7 +1,10 @@
 use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
-use crate::{ExecutionResult, builtins, commands, error, shell, sys, sys::fs::PathExt};
+use crate::{
+    ExecutionResult, builtins, commands, error, pathsearch, shell,
+    sys::{self, fs::PathExt},
+};
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Parser)]
@@ -111,9 +114,9 @@ impl CommandCommand {
 
             if use_default_path {
                 let dirs = sys::fs::get_default_standard_utils_paths();
-                shell
-                    .find_executables_in(dirs.iter(), command_name)
-                    .first()
+
+                pathsearch::search_for_executable(dirs.iter().map(String::as_str), command_name)
+                    .next()
                     .map(|path| FoundCommand::External(path.to_string_lossy().to_string()))
             } else {
                 shell

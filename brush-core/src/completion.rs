@@ -1091,10 +1091,12 @@ async fn get_file_completions(
 
 fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<String> {
     let mut candidates = IndexSet::new();
-    let glob_pattern = std::format!("{}*", context.token_to_complete);
 
     // Look for external commands.
-    for path in shell.find_executables_in_path(&glob_pattern) {
+    for path in shell.find_executables_in_path_with_prefix(
+        context.token_to_complete,
+        shell.options.case_insensitive_pathname_expansion,
+    ) {
         if let Some(file_name) = path.file_name() {
             candidates.insert(file_name.to_string_lossy().to_string());
         }

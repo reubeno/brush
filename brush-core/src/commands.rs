@@ -12,7 +12,7 @@ use crate::{
     ExecutionParameters, ExecutionResult, Shell, builtins, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
-    processes, sys, trace_categories,
+    pathsearch, processes, sys, trace_categories,
 };
 
 /// Represents the result of spawning a command.
@@ -323,11 +323,11 @@ pub(crate) async fn execute(
         // All else failed; if we were given path directories to search, try to look through them
         // for a matching executable. Otherwise, use our default search logic.
         let path = if let Some(path_dirs) = path_dirs {
-            cmd_context
-                .shell
-                .find_executables_in(path_dirs.iter(), &cmd_context.command_name)
-                .first()
-                .cloned()
+            pathsearch::search_for_executable(
+                path_dirs.iter().map(String::as_str),
+                cmd_context.command_name.as_str(),
+            )
+            .next()
         } else {
             cmd_context
                 .shell

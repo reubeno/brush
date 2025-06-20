@@ -17,9 +17,9 @@ use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellValue, ShellVariable};
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
-    patterns, prompt, sys::users, traps,
+    prompt, sys::users, traps,
 };
-use crate::{interfaces, pathcache, sys, trace_categories};
+use crate::{interfaces, pathcache, pathsearch, sys, trace_categories};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -1403,51 +1403,35 @@ impl Shell {
     /// # Arguments
     ///
     /// * `required_glob_pattern` - The glob pattern to match against.
-    pub fn find_executables_in_path(&self, required_glob_pattern: &str) -> Vec<PathBuf> {
-        self.find_executables_in(
-            self.env
-                .get_str("PATH", self)
-                .unwrap_or_default()
-                .split(':'),
-            required_glob_pattern,
-        )
+    pub fn find_executables_in_path<'a>(
+        &'a self,
+        filename: &'a str,
+    ) -> impl Iterator<Item = PathBuf> + 'a {
+        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let paths = path_var.split(':').map(|s| s.to_owned());
+
+        pathsearch::search_for_executable(paths.into_iter(), filename)
     }
 
-    /// Finds executables in the given paths, matching the given glob pattern.
+    /// Finds executables in the shell's current default PATH, with filenames matching the
+    /// given prefix.
     ///
     /// # Arguments
     ///
-    /// * `paths` - The paths to search in
-    /// * `required_glob_pattern` - The glob pattern to match against.
-    #[allow(clippy::manual_flatten)]
-    pub fn find_executables_in<T: AsRef<str>>(
+    /// * `filename_prefix` - The prefix to match against executable filenames.
+    pub fn find_executables_in_path_with_prefix(
         &self,
-        paths: impl Iterator<Item = T>,
-        required_glob_pattern: &str,
-    ) -> Vec<PathBuf> {
-        let is_executable = |path: &Path| path.is_file() && path.executable();
+        filename_prefix: &str,
+        case_insensitive: bool,
+    ) -> impl Iterator<Item = PathBuf> {
+        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let paths = path_var.split(':').map(|s| s.to_owned());
 
-        let mut executables = vec![];
-        for dir_str in paths {
-            let dir_str = dir_str.as_ref();
-            let pattern =
-                patterns::Pattern::from(std::format!("{dir_str}/{required_glob_pattern}"))
-                    .set_extended_globbing(self.options.extended_globbing)
-                    .set_case_insensitive(self.options.case_insensitive_pathname_expansion);
-
-            // TODO: Pass through quoting.
-            if let Ok(entries) = pattern.expand(
-                &self.working_dir,
-                Some(&is_executable),
-                &patterns::FilenameExpansionOptions::default(),
-            ) {
-                for entry in entries {
-                    executables.push(PathBuf::from(entry));
-                }
-            }
-        }
-
-        executables
+        pathsearch::search_for_executable_with_prefix(
+            paths.into_iter(),
+            filename_prefix,
+            case_insensitive,
+        )
     }
 
     /// Determines whether the given filename is the name of an executable in one of the
