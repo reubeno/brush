@@ -1,7 +1,5 @@
 //! Parser for shell prompt syntax (e.g., `PS1`).
 
-use crate::error;
-
 /// A piece of a prompt string.
 #[derive(Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
@@ -84,64 +82,73 @@ pub enum PromptTimeFormat {
     TwentyFourHourHHMMSS,
 }
 
-peg::parser! {
-    grammar prompt_parser() for str {
-        pub(crate) rule prompt() -> Vec<PromptPiece> =
-            pieces:prompt_piece()*
+/// peg parser for prompt lines
+pub mod peg {
+    use super::{PromptDateFormat, PromptPiece, PromptTimeFormat};
+    use crate::error;
 
-        rule prompt_piece() -> PromptPiece =
-            special_sequence() /
-            literal_sequence()
+    peg::parser! {
+        grammar prompt_parser() for str {
+            pub(crate) rule prompt() -> Vec<PromptPiece> =
+                pieces:prompt_piece()*
 
-        //
-        // Reference: https://www.gnu.org/software/bash/manual/bash.html#Controlling-the-Prompt
-        //
-        rule special_sequence() -> PromptPiece =
-            "\\a" { PromptPiece::BellCharacter } /
-            "\\A" { PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMM) } /
-            "\\d" { PromptPiece::Date(PromptDateFormat::WeekdayMonthDate) } /
-            "\\D{" f:date_format() "}" { PromptPiece::Date(PromptDateFormat::Custom(f)) } /
-            "\\e" { PromptPiece::EscapeCharacter } /
-            "\\h" { PromptPiece::Hostname { only_up_to_first_dot: true } } /
-            "\\H" { PromptPiece::Hostname { only_up_to_first_dot: false } } /
-            "\\j" { PromptPiece::NumberOfManagedJobs } /
-            "\\l" { PromptPiece::TerminalDeviceBaseName } /
-            "\\n" { PromptPiece::Newline } /
-            "\\r" { PromptPiece::CarriageReturn } /
-            "\\s" { PromptPiece::ShellBaseName } /
-            "\\t" { PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMMSS ) } /
-            "\\T" { PromptPiece::Time(PromptTimeFormat::TwelveHourHHMMSS ) } /
-            "\\@" { PromptPiece::Time(PromptTimeFormat::TwelveHourAM ) } /
-            "\\u" { PromptPiece::CurrentUser } /
-            "\\v" { PromptPiece::ShellVersion } /
-            "\\V" { PromptPiece::ShellRelease } /
-            "\\w" { PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: false, } } /
-            "\\W" { PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: true, } } /
-            "\\!" { PromptPiece::CurrentHistoryNumber } /
-            "\\#" { PromptPiece::CurrentCommandNumber } /
-            "\\$" { PromptPiece::DollarOrPound } /
-            "\\" n:octal_number() { PromptPiece::AsciiCharacter(n) } /
-            "\\\\" { PromptPiece::Backslash } /
-            "\\[" { PromptPiece::StartNonPrintingSequence } /
-            "\\]" { PromptPiece::EndNonPrintingSequence }
+            rule prompt_piece() -> PromptPiece =
+                special_sequence() /
+                literal_sequence()
 
-        rule literal_sequence() -> PromptPiece =
-            s:$((!special_sequence() [c])+) { PromptPiece::Literal(s.to_owned()) }
+            //
+            // Reference: https://www.gnu.org/software/bash/manual/bash.html#Controlling-the-Prompt
+            //
+            rule special_sequence() -> PromptPiece =
+                "\\a" { PromptPiece::BellCharacter } /
+                "\\A" { PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMM) } /
+                "\\d" { PromptPiece::Date(PromptDateFormat::WeekdayMonthDate) } /
+                "\\D{" f:date_format() "}" { PromptPiece::Date(PromptDateFormat::Custom(f)) } /
+                "\\e" { PromptPiece::EscapeCharacter } /
+                "\\h" { PromptPiece::Hostname { only_up_to_first_dot: true } } /
+                "\\H" { PromptPiece::Hostname { only_up_to_first_dot: false } } /
+                "\\j" { PromptPiece::NumberOfManagedJobs } /
+                "\\l" { PromptPiece::TerminalDeviceBaseName } /
+                "\\n" { PromptPiece::Newline } /
+                "\\r" { PromptPiece::CarriageReturn } /
+                "\\s" { PromptPiece::ShellBaseName } /
+                "\\t" { PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMMSS ) } /
+                "\\T" { PromptPiece::Time(PromptTimeFormat::TwelveHourHHMMSS ) } /
+                "\\@" { PromptPiece::Time(PromptTimeFormat::TwelveHourAM ) } /
+                "\\u" { PromptPiece::CurrentUser } /
+                "\\v" { PromptPiece::ShellVersion } /
+                "\\V" { PromptPiece::ShellRelease } /
+                "\\w" { PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: false, } } /
+                "\\W" { PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: true, } } /
+                "\\!" { PromptPiece::CurrentHistoryNumber } /
+                "\\#" { PromptPiece::CurrentCommandNumber } /
+                "\\$" { PromptPiece::DollarOrPound } /
+                "\\" n:octal_number() { PromptPiece::AsciiCharacter(n) } /
+                "\\\\" { PromptPiece::Backslash } /
+                "\\[" { PromptPiece::StartNonPrintingSequence } /
+                "\\]" { PromptPiece::EndNonPrintingSequence }
 
-        rule date_format() -> String =
-            s:$([c if c != '}']*) { s.to_owned() }
+            rule literal_sequence() -> PromptPiece =
+                s:$((!special_sequence() [c])+) { PromptPiece::Literal(s.to_owned()) }
 
-        rule octal_number() -> u32 =
-            s:$(['0'..='9']*<3,3>) {? u32::from_str_radix(s, 8).or(Err("invalid octal number")) }
+            rule date_format() -> String =
+                s:$([c if c != '}']*) { s.to_owned() }
+
+            rule octal_number() -> u32 =
+                s:$(['0'..='9']*<3,3>) {? u32::from_str_radix(s, 8).or(Err("invalid octal number")) }
+        }
+    }
+
+    /// Parses a shell prompt string.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The prompt string to parse.
+    pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
+        let result =
+            prompt_parser::prompt(s).map_err(|e| error::WordParseError::Prompt(e.into()))?;
+        Ok(result)
     }
 }
 
-/// Parses a shell prompt string.
-///
-/// # Arguments
-///
-/// * `s` - The prompt string to parse.
-pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
-    let result = prompt_parser::prompt(s).map_err(|e| error::WordParseError::Prompt(e.into()))?;
-    Ok(result)
-}
+pub use peg::parse;
