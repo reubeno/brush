@@ -414,6 +414,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "utf8-chars",
+ "winnow",
 ]
 
 [[package]]
