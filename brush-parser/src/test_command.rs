@@ -10,8 +10,7 @@ use crate::{ast, error};
 pub fn parse(input: &[String]) -> Result<ast::TestExpr, error::TestCommandParseError> {
     let input: Vec<_> = input.iter().map(|s| s.as_str()).collect();
 
-    let expr = test_command::full_expression(input.as_slice())
-        .map_err(error::TestCommandParseError::TestCommand)?;
+    let expr = test_command::full_expression(input.as_slice())?;
 
     Ok(expr)
 }

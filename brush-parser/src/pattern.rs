@@ -27,7 +27,7 @@ pub fn pattern_to_regex_str(
     enable_extended_globbing: bool,
 ) -> Result<String, error::WordParseError> {
     let regex_str = pattern_to_regex_translator::pattern(pattern, enable_extended_globbing)
-        .map_err(error::WordParseError::Pattern)?;
+        .map_err(|e| error::WordParseError::Pattern(e.into()))?;
     Ok(regex_str)
 }
 

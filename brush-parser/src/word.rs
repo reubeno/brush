@@ -500,7 +500,7 @@ fn cacheable_parse(
     tracing::debug!(target: "expansion", "Parsing word '{}'", word);
 
     let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
-        .map_err(|err| error::WordParseError::Word(word.clone(), err))?;
+        .map_err(|err| error::WordParseError::Word(word.clone(), err.into()))?;
 
     tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word, pieces);
 
@@ -518,7 +518,7 @@ pub fn parse_parameter(
     options: &ParserOptions,
 ) -> Result<Parameter, error::WordParseError> {
     expansion_parser::parameter(word, options)
-        .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err))
+        .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err.into()))
 }
 
 /// Parse brace expansion from a given word .
@@ -532,7 +532,7 @@ pub fn parse_brace_expansions(
     options: &ParserOptions,
 ) -> Result<Option<Vec<BraceExpressionOrText>>, error::WordParseError> {
     expansion_parser::brace_expansions(word, options)
-        .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err))
+        .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err.into()))
 }
 
 peg::parser! {
