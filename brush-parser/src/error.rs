@@ -52,11 +52,8 @@ pub enum WordParseError {
 
 /// Represents an error that occurred while parsing a (non-extended) test command.
 #[derive(Debug, thiserror::Error)]
-pub enum TestCommandParseError {
-    /// An error occurred while parsing a test command.
-    #[error("failed to parse test command")]
-    TestCommand(peg::error::ParseError<usize>),
-}
+#[error(transparent)]
+pub struct TestCommandParseError(#[from] peg::error::ParseError<usize>);
 
 /// Represents an error that occurred while parsing a key-binding specification.
 #[derive(Debug, thiserror::Error)]
