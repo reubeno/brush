@@ -142,6 +142,6 @@ peg::parser! {
 ///
 /// * `s` - The prompt string to parse.
 pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
-    let result = prompt_parser::prompt(s).map_err(error::WordParseError::Prompt)?;
+    let result = prompt_parser::prompt(s).map_err(|e| error::WordParseError::Prompt(e.into()))?;
     Ok(result)
 }
