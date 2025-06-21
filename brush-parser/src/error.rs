@@ -21,13 +21,36 @@ pub enum ParseError {
         position: Option<tokenizer::SourcePosition>,
     },
 }
+#[derive(Debug, thiserror::Error)]
+enum ErrorLocation {
+    #[error("{0}")]
+    Peg(peg::error::ParseError<peg::str::LineCol>),
+    #[error("parsing error")]
+    Chumsky { err: Vec<chumsky::error::EmptyErr> },
+}
 
 /// Represents a parsing error with its location information
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct ParseErrorLocation {
     #[from]
-    inner: peg::error::ParseError<peg::str::LineCol>,
+    inner: ErrorLocation,
+}
+
+impl From<peg::error::ParseError<peg::str::LineCol>> for ParseErrorLocation {
+    fn from(err: peg::error::ParseError<peg::str::LineCol>) -> Self {
+        ParseErrorLocation {
+            inner: ErrorLocation::Peg(err),
+        }
+    }
+}
+
+impl From<Vec<chumsky::error::EmptyErr>> for ParseErrorLocation {
+    fn from(err: Vec<chumsky::error::EmptyErr>) -> Self {
+        ParseErrorLocation {
+            inner: ErrorLocation::Chumsky { err },
+        }
+    }
 }
 
 /// Represents an error that occurred while parsing a word.

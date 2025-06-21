@@ -83,7 +83,7 @@ pub enum PromptTimeFormat {
 }
 
 /// peg parser for prompt lines
-pub mod peg {
+mod peg {
     use super::{PromptDateFormat, PromptPiece, PromptTimeFormat};
     use crate::error;
 
@@ -147,6 +147,121 @@ pub mod peg {
     pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
         let result =
             prompt_parser::prompt(s).map_err(|e| error::WordParseError::Prompt(e.into()))?;
+        Ok(result)
+    }
+}
+
+/// chumsky parser for prompt lines
+pub mod chumsky {
+    use chumsky::{
+        IterParser, Parser,
+        error::EmptyErr,
+        prelude::{any, choice, just},
+        text,
+    };
+
+    use super::{PromptDateFormat, PromptPiece, PromptTimeFormat};
+    use crate::error;
+
+    fn date<'a>() -> impl Parser<'a, &'a str, PromptPiece> {
+        any()
+            .filter(|c: &char| c.ne(&'}'))
+            .repeated()
+            .at_least(1)
+            .collect::<String>()
+            .delimited_by(just('{'), just('}'))
+            .map(|d| PromptPiece::Date(PromptDateFormat::Custom(d)))
+    }
+
+    fn octal_number<'a>() -> impl Parser<'a, &'a str, PromptPiece> {
+        text::digits(8)
+            .at_least(1)
+            .at_most(3)
+            .to_slice()
+            .try_map(|s: &str, _| {
+                u32::from_str_radix(s, 8)
+                    .map(PromptPiece::AsciiCharacter)
+                    .map_err(|_| EmptyErr::default())
+            })
+    }
+
+    fn escaped_char<'a>() -> impl Parser<'a, &'a str, PromptPiece> {
+        let a = choice((
+            just('a').to(PromptPiece::BellCharacter),
+            just('A').to(PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMM)),
+            just('d').to(PromptPiece::Date(PromptDateFormat::WeekdayMonthDate)),
+            just('e').to(PromptPiece::EscapeCharacter),
+            just('h').to(PromptPiece::Hostname {
+                only_up_to_first_dot: true,
+            }),
+            just('H').to(PromptPiece::Hostname {
+                only_up_to_first_dot: false,
+            }),
+            just('j').to(PromptPiece::NumberOfManagedJobs),
+            just('l').to(PromptPiece::TerminalDeviceBaseName),
+            just('n').to(PromptPiece::Newline),
+            just('r').to(PromptPiece::CarriageReturn),
+            just('s').to(PromptPiece::ShellBaseName),
+            just('t').to(PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMMSS)),
+            just('T').to(PromptPiece::Time(PromptTimeFormat::TwelveHourHHMMSS)),
+            just('@').to(PromptPiece::Time(PromptTimeFormat::TwelveHourAM)),
+        ));
+
+        let b = choice((
+            just('u').to(PromptPiece::CurrentUser),
+            just('v').to(PromptPiece::ShellVersion),
+            just('V').to(PromptPiece::ShellRelease),
+            just('w').to(PromptPiece::CurrentWorkingDirectory {
+                tilde_replaced: true,
+                basename: false,
+            }),
+            just('W').to(PromptPiece::CurrentWorkingDirectory {
+                tilde_replaced: true,
+                basename: true,
+            }),
+            just('!').to(PromptPiece::CurrentHistoryNumber),
+            just('#').to(PromptPiece::CurrentCommandNumber),
+            just('$').to(PromptPiece::DollarOrPound),
+            just('\\').to(PromptPiece::Backslash),
+            just('[').to(PromptPiece::StartNonPrintingSequence),
+            just(']').to(PromptPiece::EndNonPrintingSequence),
+            just('D').ignore_then(date()),
+            octal_number(),
+        ));
+
+        choice((a, b))
+    }
+
+    fn escaped_special<'a>() -> impl Parser<'a, &'a str, PromptPiece> {
+        just('\\').ignore_then(escaped_char())
+    }
+
+    fn literal_sequence<'a>() -> impl Parser<'a, &'a str, PromptPiece> {
+        any()
+            .filter(|c: &char| c.ne(&'{'))
+            .repeated()
+            .collect::<String>()
+            .map(|l| PromptPiece::Literal(l))
+    }
+
+    fn prompt_piece<'a>() -> impl Parser<'a, &'a str, PromptPiece> {
+        choice((escaped_special(), literal_sequence()))
+    }
+
+    fn prompt<'a>() -> impl Parser<'a, &'a str, Vec<PromptPiece>> {
+        prompt_piece().repeated().collect()
+    }
+    /// Parses a shell prompt string.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The prompt string to parse.
+    pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
+        let result = prompt()
+            .parse(s)
+            .into_result()
+            .map_err(|e| error::WordParseError::Prompt(e.into()))?;
+
         Ok(result)
     }
 }
