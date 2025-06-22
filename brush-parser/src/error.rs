@@ -22,41 +22,46 @@ pub enum ParseError {
     },
 }
 
+/// Represents a parsing error with its location information
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct ParseErrorLocation {
+    #[from]
+    inner: peg::error::ParseError<peg::str::LineCol>,
+}
+
 /// Represents an error that occurred while parsing a word.
 #[derive(Debug, thiserror::Error)]
 pub enum WordParseError {
     /// An error occurred while parsing an arithmetic expression.
     #[error("failed to parse arithmetic expression")]
-    ArithmeticExpression(peg::error::ParseError<peg::str::LineCol>),
+    ArithmeticExpression(ParseErrorLocation),
 
     /// An error occurred while parsing a shell pattern.
     #[error("failed to parse pattern")]
-    Pattern(peg::error::ParseError<peg::str::LineCol>),
+    Pattern(ParseErrorLocation),
 
     /// An error occurred while parsing a prompt string.
     #[error("failed to parse prompt string")]
-    Prompt(peg::error::ParseError<peg::str::LineCol>),
+    Prompt(ParseErrorLocation),
 
     /// An error occurred while parsing a parameter.
     #[error("failed to parse parameter '{0}'")]
-    Parameter(String, peg::error::ParseError<peg::str::LineCol>),
+    Parameter(String, ParseErrorLocation),
 
     /// An error occurred while parsing for brace expansion.
     #[error("failed to parse for brace expansion: '{0}'")]
-    BraceExpansion(String, peg::error::ParseError<peg::str::LineCol>),
+    BraceExpansion(String, ParseErrorLocation),
 
     /// An error occurred while parsing a word.
     #[error("failed to parse word '{0}'")]
-    Word(String, peg::error::ParseError<peg::str::LineCol>),
+    Word(String, ParseErrorLocation),
 }
 
 /// Represents an error that occurred while parsing a (non-extended) test command.
 #[derive(Debug, thiserror::Error)]
-pub enum TestCommandParseError {
-    /// An error occurred while parsing a test command.
-    #[error("failed to parse test command")]
-    TestCommand(peg::error::ParseError<usize>),
-}
+#[error(transparent)]
+pub struct TestCommandParseError(#[from] peg::error::ParseError<usize>);
 
 /// Represents an error that occurred while parsing a key-binding specification.
 #[derive(Debug, thiserror::Error)]
