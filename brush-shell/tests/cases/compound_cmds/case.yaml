@@ -121,3 +121,9 @@ cases:
       x) yield 12;;
       esac
       echo "4: $?"
+
+  - name: "Case with reserved words"
+    stdin: |
+      case case in
+      case) echo "saw case";;
+      esac

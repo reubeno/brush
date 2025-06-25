@@ -476,13 +476,11 @@ peg::parser! {
         rule _in() -> () =
             specific_word("in") { }
 
-        // TODO: validate if this should call non_reserved_word() or word()
         rule wordlist() -> Vec<ast::Word> =
-            (w:non_reserved_word() { ast::Word::from(w) })+
+            (w:word() { ast::Word::from(w) })+
 
-        // TODO: validate if this should call non_reserved_word() or word()
         pub(crate) rule case_clause() -> ast::CaseClauseCommand =
-            specific_word("case") w:non_reserved_word() linebreak() _in() linebreak() first_items:case_item()* last_item:case_item_ns()? specific_word("esac") {
+            specific_word("case") w:word() linebreak() _in() linebreak() first_items:case_item()* last_item:case_item_ns()? specific_word("esac") {
                 let mut cases = first_items;
 
                 if let Some(last_item) = last_item {
@@ -519,7 +517,6 @@ peg::parser! {
                 ast::CaseItemPostAction::UnconditionallyExecuteNextCaseItem
             }
 
-        // TODO: validate if this should call non_reserved_word() or word()
         rule pattern() -> Vec<ast::Word> =
             (w:word() { ast::Word::from(w) }) ++ specific_operator("|")
 

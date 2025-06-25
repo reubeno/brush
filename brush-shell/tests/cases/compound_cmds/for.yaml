@@ -156,3 +156,7 @@ cases:
   - name: "For loop output redirection"
     stdin: |
       for f in a b c; do echo $f; done > ./out.txt
+
+  - name: "For reserved word handling"
+    stdin: |
+      for for in for; do echo $for; done
