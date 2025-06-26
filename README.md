@@ -72,7 +72,11 @@ on your system, you may author a `~/.brushrc` file._
 <details open>
 <summary>🚀 <b>Installing prebuilt binaries from GitHub</b></summary>
 
-We publish prebuilt binaries of `brush` for Linux (x86_64, aarch64) and macOS (aarch64) to GitHub for official [releases](https://github.com/reubeno/brush/releases).
+We publish prebuilt binaries of `brush` for Linux (x86_64, aarch64) and macOS (aarch64) to GitHub for official [releases](https://github.com/reubeno/brush/releases). You can manually download and extract the `brush` binary from one of the archives published there, or otherwise use the GitHub CLI to download it, e.g.:
+
+```bash
+gh release download --repo reubeno/brush --pattern "brush-x86_64-unknown-linux-gnu.*"
+```
 
 After downloading the archive for your platform, you may verify its authenticity using the [GitHub CLI](https://cli.github.com/), e.g.:
 
