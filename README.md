@@ -65,33 +65,66 @@ Available for use and distribution under the [MIT license](LICENSE).
 
 ## ⌨️ Installation
 
-When you run `brush`, it should look exactly as `bash` does on your system: it processes your `.bashrc` and
+_When you run `brush`, it should look exactly as `bash` does on your system: it processes your `.bashrc` and
 other standard configuration. If you'd like to distinguish the look of `brush` from the other shells
-on your system, you may author a `~/.brushrc` file.
+on your system, you may author a `~/.brushrc` file._
 
-### 🔨 Building from sources
+<details open>
+<summary>🚀 <b>Installing prebuilt binaries from GitHub</b></summary>
 
-We don't (yet) publish binary releases of `brush` (but will Real Soon Now). To build from sources, first install a working `rust` toolchain; we recommend installing it via [`rustup`](https://rustup.rs/). Then run:
+We publish prebuilt binaries of `brush` for Linux (x86_64, aarch64) and macOS (aarch64) to GitHub for official [releases](https://github.com/reubeno/brush/releases). You can manually download and extract the `brush` binary from one of the archives published there, or otherwise use the GitHub CLI to download it, e.g.:
+
+```bash
+gh release download --repo reubeno/brush --pattern "brush-x86_64-unknown-linux-gnu.*"
+```
+
+After downloading the archive for your platform, you may verify its authenticity using the [GitHub CLI](https://cli.github.com/), e.g.:
+
+```bash
+gh attestation verify brush-x86_64-unknown-linux-gnu.tar.gz --repo reubeno/brush
+```
+</details>
+
+<details open>
+<summary>🚀 <b>Installing prebuilt binaries via `cargo binstall`</b></summary>
+
+You may use [cargo binstall](https://github.com/cargo-bins/cargo-binstall) to install pre-built `brush` binaries. Once you've installed `cargo-binstall` you can run:
+
+```bash
+cargo binstall brush-shell
+```
+
+</details>
+
+<details>
+<summary> 🔨 <b>Installing from sources</b></summary>
+
+To build from sources, first install a working (and recent) `rust` toolchain; we recommend installing it via [`rustup`](https://rustup.rs/). Then run:
 
 ```bash
 cargo install --locked brush-shell
 ```
+</details>
 
-### 🐧 Nix
+<details>
+<summary>🐧 <b>Installing using Nix</b></summary>
 
-If you are a Nix user, you can also use the registered version.
+If you are a Nix user, you can use the registered version:
 
 ```bash
 nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 ```
+</details>
 
-### 🐧 Arch Linux
+<details>
+<summary>🐧 <b>Installing on Arch Linux</b></summary>
 
-Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/packages/brush) with their [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, e.g.
+Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/packages/brush) with their [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, e.g.:
 
 ```bash
 paru -S brush
 ```
+</details>
 
 ## 👥 Community
 
