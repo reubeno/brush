@@ -80,6 +80,7 @@ impl TestShellWithBashCompletion {
     }
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_relative_file_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -96,6 +97,7 @@ async fn complete_relative_file_path() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_relative_file_path_ignoring_case() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -113,6 +115,7 @@ async fn complete_relative_file_path_ignoring_case() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_relative_dir_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -129,6 +132,7 @@ async fn complete_relative_dir_path() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_under_empty_dir() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -144,6 +148,7 @@ async fn complete_under_empty_dir() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_nonexistent_relative_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -156,6 +161,7 @@ async fn complete_nonexistent_relative_path() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_absolute_paths() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -189,6 +195,7 @@ async fn complete_absolute_paths() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_path_with_var() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -221,6 +228,7 @@ async fn complete_path_with_var() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_path_with_tilde() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -264,6 +272,7 @@ async fn complete_path_with_tilde() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_variable_names() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -279,6 +288,7 @@ async fn complete_variable_names() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_variable_names_with_braces() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -294,6 +304,7 @@ async fn complete_variable_names_with_braces() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_help_topic() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -305,6 +316,7 @@ async fn complete_help_topic() -> Result<()> {
     Ok(())
 }
 
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_command_option() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -318,6 +330,7 @@ async fn complete_command_option() -> Result<()> {
 
 /// Tests completion with some well-known programs that have been good manual test cases
 /// for us in the past.
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_path_args_to_well_known_programs() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
@@ -335,6 +348,7 @@ async fn complete_path_args_to_well_known_programs() -> Result<()> {
 }
 
 /// Tests some 'find' completion.
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test]
 async fn complete_find_command() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
