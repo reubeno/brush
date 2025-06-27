@@ -55,6 +55,7 @@ unwrap_in_result = "deny"
 
 # Allowed rules
 bool_to_int_with_if = "allow"
+cognitive_complexity = "allow"
 collapsible_else_if = "allow"
 collapsible_if = "allow"
 if_not_else = "allow"
