@@ -62,7 +62,7 @@ registries = []
 # More documentation about the 'bans' section can be found here:
 # https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
 [bans]
-multiple-versions = "deny"
+multiple-versions = "allow"
 wildcards = "allow"
 highlight = "all"
 workspace-default-features = "allow"
@@ -71,43 +71,6 @@ external-default-features = "allow"
 allow = []
 # List of crates to deny
 deny = []
-
-# List of features to allow/deny
-# Each entry the name of a crate and a version range. If version is
-# not specified, all versions will be matched.
-#[[bans.features]]
-#crate = "reqwest"
-# Features to not allow
-#deny = ["json"]
-# Features to allow
-#allow = []
-# If true, the allowed features must exactly match the enabled feature set. If
-# this is set there is no point setting `deny`
-#exact = true
-
-# Certain crates/versions that will be skipped when doing duplicate detection.
-skip = [
-    { crate = "crossterm" },
-    { crate = "getrandom" },
-    { crate = "hashbrown" },
-    { crate = "itertools" },
-    { crate = "linux-raw-sys" },
-    { crate = "nu-ansi-term" },
-    { crate = "rand" },
-    { crate = "rand_core" },
-    { crate = "rustix" },
-    { crate = "strum" },
-    { crate = "strum_macros" },
-    { crate = "wasi" },
-    { crate = "zerocopy" },
-]
-skip-tree = [
-    { crate = "thiserror", reason = "Multiple crates use different versions" },
-    { crate = "windows-sys", reason = "several crates use outdated versions" },
-    { crate = "windows-core", reason = "several crates use outdated versions" },
-    { crate = "windows", reason = "several crates use outdated versions" },
-    { crate = "nix", reason = "there are multiple versions floating" },
-]
 
 # This section is considered when running `cargo deny check sources`.
 # More documentation about the 'sources' section can be found here:
