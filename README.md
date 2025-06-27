@@ -85,7 +85,7 @@ gh attestation verify brush-x86_64-unknown-linux-gnu.tar.gz --repo reubeno/brush
 ```
 </details>
 
-<details>
+<details open>
 <summary>🚀 <b>Installing prebuilt binaries via `cargo binstall`</b></summary>
 
 You may use [cargo binstall](https://github.com/cargo-bins/cargo-binstall) to install pre-built `brush` binaries. Once you've installed `cargo-binstall` you can run:
@@ -97,7 +97,7 @@ cargo binstall brush-shell
 </details>
 
 <details>
-<summary> 🔨 <b>Building from sources</b></summary>
+<summary> 🔨 <b>Installing from sources</b></summary>
 
 To build from sources, first install a working (and recent) `rust` toolchain; we recommend installing it via [`rustup`](https://rustup.rs/). Then run:
 
