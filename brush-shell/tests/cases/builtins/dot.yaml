@@ -51,6 +51,16 @@ cases:
       source .
       echo "Result: $?"
 
+  - name: "Source script without args"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In sourced script"
+          echo "Args: $@"
+    stdin: |
+      set -- outer1 outer2 outer3
+      source script.sh
+
   - name: "Source script with args"
     test_files:
       - path: "script.sh"
@@ -58,7 +68,8 @@ cases:
           echo "In sourced script"
           echo "Args: $@"
     stdin: |
-      source script.sh arg1 arg2
+      set -- outer1 outer2 outer3
+      source script.sh inner1 inner2
 
   - name: "Source with redirection"
     test_files:

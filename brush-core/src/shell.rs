@@ -900,15 +900,21 @@ impl Shell {
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse_program();
 
-        let mut other_positional_parameters = args.map(|s| s.as_ref().to_owned()).collect();
+        let mut other_positional_parameters: Vec<_> = args.map(|s| s.as_ref().to_owned()).collect();
         let mut other_shell_name = Some(source_info.source.clone());
+        let positional_params_given = !other_positional_parameters.is_empty();
 
         // TODO: Find a cleaner way to change args.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
-        std::mem::swap(
-            &mut self.positional_parameters,
-            &mut other_positional_parameters,
-        );
+
+        // NOTE: We only shadow the original positional parameters if any were explicitly given
+        // for the script sourcing.
+        if positional_params_given {
+            std::mem::swap(
+                &mut self.positional_parameters,
+                &mut other_positional_parameters,
+            );
+        }
 
         self.script_call_stack
             .push_front((call_type.clone(), source_info.source.clone()));
@@ -921,10 +927,14 @@ impl Shell {
 
         // Restore.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
-        std::mem::swap(
-            &mut self.positional_parameters,
-            &mut other_positional_parameters,
-        );
+
+        // We only restore the original positional parameters if we needed to shadow them.
+        if positional_params_given {
+            std::mem::swap(
+                &mut self.positional_parameters,
+                &mut other_positional_parameters,
+            );
+        }
 
         result
     }
