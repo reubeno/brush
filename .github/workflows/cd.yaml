@@ -3,6 +3,7 @@
 #
 
 name: CD # Continuous Deployment
+run-name: CD${{ github.event_name == 'release' && '' || ' (dry run)' }}
 
 on:
   release:
@@ -40,7 +41,7 @@ jobs:
       id-token: write
       attestations: write
 
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && github.repository_owner == 'reubeno' && startsWith(github.event.release.tag_name, 'brush-shell-v'))
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || (github.event_name == 'release' && github.repository_owner == 'reubeno' && startsWith(github.event.release.tag_name, 'brush-shell-v'))
     runs-on: ${{ matrix.os }}
     strategy:
       # Run all jobs to completion regardless of errors.
