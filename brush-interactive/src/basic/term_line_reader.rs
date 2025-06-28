@@ -69,6 +69,7 @@ impl<'a> ReadLineState<'a> {
             (_, crossterm::event::KeyCode::Enter)
             | (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('j')) => {
                 self.display_newline()?;
+                self.line.push('\n');
                 let line = std::mem::take(&mut self.line);
                 return Ok(Some(ReadResult::Input(line)));
             }
