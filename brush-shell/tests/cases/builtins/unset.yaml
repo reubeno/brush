@@ -121,3 +121,19 @@ cases:
       echo "before calls: var=${var}"
       firstfunc
       echo "after calls: var=${var}"
+
+  - name: "Unset with nameref"
+    known_failure: true # Issue #497
+    stdin: |
+      declare -n ref=var
+      var="value"
+
+      echo "[Before unset]"
+      echo "ref: ${ref}"
+      echo "var: ${var}"
+
+      unset ref
+
+      echo "[After unset]"
+      echo "ref: ${ref}"
+      echo "var: ${var}"
