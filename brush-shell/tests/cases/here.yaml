@@ -95,6 +95,32 @@ cases:
 
       echo "${test1}"
 
+  - name: "Here doc in a command substitution with quotes"
+    known_failure: true # Issue #421
+    stdin: |
+      test1=$(cat <<EOF
+      something "quoted"
+      EOF
+      )
+
+      echo "${test1}"
+
+  - name: "Here doc in a command substitution with parentheses"
+    known_failure: true # Issue #419
+    stdin: |
+      test1=$(cat <<EOF
+      (something)
+      EOF
+      )
+
+      echo "${test1}"
+
+  - name: "Here doc with parentheses"
+    stdin: |
+      cat <<EOF
+      (something)
+      EOF
+
   - name: "Multiple here docs in a command substitution"
     stdin: |
       test1=$(cat <<EOF1 <<EOF2
