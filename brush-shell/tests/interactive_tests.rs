@@ -12,6 +12,7 @@ use expectrl::{
     stream::log::LogStream,
 };
 
+#[test_with::executable(ping)]
 #[test]
 fn run_suspend_and_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
@@ -50,6 +51,7 @@ fn run_suspend_and_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test_with::executable(ping)]
 #[test]
 fn run_in_bg_then_fg() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
@@ -90,6 +92,7 @@ fn run_in_bg_then_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test_with::executable(less)]
 #[test]
 fn run_pipeline_interactively() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
