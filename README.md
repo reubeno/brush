@@ -6,28 +6,29 @@
 
 <!-- Primary badges -->
 <p align="center">
+  <!-- crates.io version badge -->
   <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/v/brush-shell?style=flat-square"/></a>
-  <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/d/brush-shell?style=flat-square"/></a>
+  <!-- msrv badge -->
   <img src="https://img.shields.io/crates/msrv/brush-shell"/>
+  <!-- LoC badge -->
   <img src="https://tokei.rs/b1/github/reubeno/brush?category=code"/>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/></a>
+  <!-- license badge -->
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
+  <!-- CI status badge -->
   <a href="https://github.com/reubeno/brush/actions/workflows/ci.yaml"><img src="https://github.com/reubeno/brush/actions/workflows/ci.yaml/badge.svg"/></a>
-
   <br/>
-
+  <!-- crates.io download badge -->
+  <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/d/brush-shell?style=flat-square"/></a>
+  <!-- Packaging badges -->
+  <a href="https://repology.org/project/brush/versions">
+    <img src="https://repology.org/badge/tiny-repos/brush.svg" alt="Packaging status"/>
+  </a>
+  <!-- Dependencies badges -->
+  <a href="https://deps.rs/repo/github/reubeno/brush"><img src="https://deps.rs/repo/github/reubeno/brush/status.svg" alt="Dependency status"/></a>
   <!-- Social badges -->
   <a href="https://discord.gg/kPRgC9j3Tj">
     <img src="https://dcbadge.limes.pink/api/server/https://discord.gg/kPRgC9j3Tj?compact=true&style=flat" alt="Discord invite"/>
   </a>
-
-  <!-- Packaging badges -->
-  <a href="https://repology.org/project/brush/versions">
-    <img src="https://repology.org/badge/version-for-repo/aur/brush.svg" alt="AUR package"/>
-  </a>
-  <a href="https://repology.org/project/brush/versions">
-    <img src="https://repology.org/badge/version-for-repo/nix_unstable/brush.svg" alt="AUR package"/>
-  </a>
-
 </p>
 
 <a href="https://repology.org/project/brush/versions">
