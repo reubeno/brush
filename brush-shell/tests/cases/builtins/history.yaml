@@ -1,0 +1,163 @@
+name: "Builtins: history"
+cases:
+  - name: "basic history saving"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo something
+      echo else
+
+  - name: "existing history file"
+    known_failure: true
+    pty: true
+    env:
+      HOME: "."
+    test_files:
+      - path: ".bash_history"
+        contents: |
+          a b c
+          1 2 3
+    stdin: |
+      #expect-prompt
+      history >history-output.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "existing history file with timestamps"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          #1750000000
+          a b c
+          #1750000001
+          1 2 3
+    stdin: |
+      history
+
+  - name: "history N"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      history 2
+
+  - name: "history -c"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      history -c
+      history
+
+  - name: "history -d"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      history -d 1
+      history
+
+  - name: "history -d: negative offset"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      history -d -2
+      history
+
+  - name: "history -a"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo "[histfile]"
+      cat $HISTFILE
+
+      history -a
+
+      echo "[histfile after -a]"
+      cat $HISTFILE
+
+      history -a
+
+      echo "[histfile after second -a]"
+      cat $HISTFILE
+
+  - name: "history -w"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo "[histfile]"
+      cat $HISTFILE
+
+      history -w
+
+      echo "[histfile after -w]"
+      cat $HISTFILE
+
+      history -w
+
+      echo "[histfile after second -w]"
+      cat $HISTFILE
+
+  - name: "history -w with explicit file"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      history -w some-file.txt
+
+  - name: "history -s"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -s a b c
+      history
+
+  - name: "HISTCMD"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      echo $HISTCMD
+      : cmd2
+      echo $HISTCMD
+      : cmd3
+      echo $HISTCMD
+
+  - name: "HISTTIMEFORMAT"
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTTIMEFORMAT: "century=%C "
+    stdin: |
+      : cmd1
+      : cmd2
+      history
