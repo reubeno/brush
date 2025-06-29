@@ -253,9 +253,11 @@ async fn instantiate_shell(
     // Compose the options we'll use to create the shell.
     let options = brush_interactive::Options {
         shell: brush_core::CreateOptions {
+            disabled_options: args.disabled_options.clone(),
             disabled_shopt_options: args.disabled_shopt_options.clone(),
             disallow_overwriting_regular_files_via_output_redirection: args
                 .disallow_overwriting_regular_files_via_output_redirection,
+            enabled_options: args.enabled_options.clone(),
             enabled_shopt_options: args.enabled_shopt_options.clone(),
             do_not_execute_commands: args.do_not_execute_commands,
             exit_after_one_command: args.exit_after_one_command,

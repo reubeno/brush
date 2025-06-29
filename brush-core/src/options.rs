@@ -230,6 +230,18 @@ impl RuntimeOptions {
             options.expand_aliases = true;
         }
 
+        // Update any options.
+        for enabled_option in &create_options.enabled_options {
+            if let Some(option) = crate::namedoptions::SET_O_OPTIONS.get(enabled_option.as_str()) {
+                (option.setter)(&mut options, true);
+            }
+        }
+        for disabled_option in &create_options.disabled_options {
+            if let Some(option) = crate::namedoptions::SET_O_OPTIONS.get(disabled_option.as_str()) {
+                (option.setter)(&mut options, false);
+            }
+        }
+
         // Update any shopt options.
         for enabled_option in &create_options.enabled_shopt_options {
             if let Some(shopt_option) =
