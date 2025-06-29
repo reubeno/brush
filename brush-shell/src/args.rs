@@ -88,11 +88,19 @@ pub struct CommandLineArgs {
     #[clap(long = "noenv")]
     pub do_not_inherit_env: bool,
 
-    /// Enable shell option.
-    #[clap(short = 'O', value_name = "OPTION")]
+    /// Enable option (set -o option).
+    #[clap(short = 'o', value_name = "OPTION")]
+    pub enabled_options: Vec<String>,
+
+    /// Disable option (set -o option).
+    #[clap(long = "+o", hide = true)]
+    pub disabled_options: Vec<String>,
+
+    /// Enable shopt option.
+    #[clap(short = 'O', value_name = "SHOPT_OPTION")]
     pub enabled_shopt_options: Vec<String>,
 
-    /// Disable shell option.
+    /// Disable shopt option.
     #[clap(long = "+O", hide = true)]
     pub disabled_shopt_options: Vec<String>,
 
@@ -144,8 +152,13 @@ pub struct CommandLineArgs {
     #[clap(long = "debug", alias = "log-enable", value_name = "EVENT")]
     pub enabled_debug_events: Vec<events::TraceEvent>,
 
-    /// Disable logging for classes of tracing events.
-    #[clap(long = "disable-event", alias = "log-disable", value_name = "EVENT")]
+    /// Disable logging for classes of tracing events (takes same event types as --debug).
+    #[clap(
+        long = "disable-event",
+        alias = "log-disable",
+        value_name = "EVENT",
+        hide_possible_values = true
+    )]
     pub disabled_events: Vec<events::TraceEvent>,
 
     /// Path to script to execute.

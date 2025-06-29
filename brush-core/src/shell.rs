@@ -149,6 +149,10 @@ impl AsMut<Self> for Shell {
 /// Options for creating a new shell.
 #[derive(Default)]
 pub struct CreateOptions {
+    /// Disabled options.
+    pub disabled_options: Vec<String>,
+    /// Enabled options.
+    pub enabled_options: Vec<String>,
     /// Disabled shopt options.
     pub disabled_shopt_options: Vec<String>,
     /// Enabled shopt options.
