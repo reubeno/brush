@@ -2478,9 +2478,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "ping"
-version = "0.5.2"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "122ee1f5a6843bec84fcbd5c6ba3622115337a6b8965b93a61aad347648f4e8d"
+checksum = "591fab231233fc7e6f2fcbc2647944f0684c9608dea4f267b319bf21b46dc0fa"
 dependencies = [
  "rand 0.8.5",
  "socket2 0.4.10",
@@ -3574,9 +3574,9 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-with"
-version = "0.15.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26aefab4498058583289ebe70bd5ae056bc188b3fe66e676461f13d8fb55b8c9"
+checksum = "8bb2a43a245ab793321d71ff9f2be21785999c9aa5b2ea93dc507e97572be843"
 dependencies = [
  "byte-unit",
  "chrono",
