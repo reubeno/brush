@@ -674,7 +674,10 @@ impl Spec {
         // handler depth count to suppress any debug traps.
         shell.traps.handler_depth += 1;
 
-        let invoke_result = shell.invoke_function(function_name, &args).await;
+        let params = shell.default_exec_params();
+        let invoke_result = shell
+            .invoke_function(function_name, args.iter(), &params)
+            .await;
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 
         shell.traps.handler_depth -= 1;

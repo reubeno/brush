@@ -14,7 +14,7 @@ use crate::error;
 use crate::sys;
 
 /// Represents a file open in a shell context.
-pub(crate) enum OpenFile {
+pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin,
     /// The original standard output this process was started with.
@@ -26,9 +26,9 @@ pub(crate) enum OpenFile {
     /// A file open for reading or writing.
     File(std::fs::File),
     /// A read end of a pipe.
-    PipeReader(sys::pipes::PipeReader),
+    PipeReader(OpenPipeReader),
     /// A write end of a pipe.
-    PipeWriter(sys::pipes::PipeWriter),
+    PipeWriter(OpenPipeWriter),
 }
 
 impl Clone for OpenFile {
@@ -46,8 +46,8 @@ impl OpenFile {
             Self::Stderr => Self::Stderr,
             Self::Null => Self::Null,
             Self::File(f) => Self::File(f.try_clone()?),
-            Self::PipeReader(f) => Self::PipeReader(f.try_clone()?),
-            Self::PipeWriter(f) => Self::PipeWriter(f.try_clone()?),
+            Self::PipeReader(f) => Self::PipeReader(f.0.try_clone()?.into()),
+            Self::PipeWriter(f) => Self::PipeWriter(f.0.try_clone()?.into()),
         };
 
         Ok(result)
@@ -62,8 +62,8 @@ impl OpenFile {
             Self::Stderr => Ok(std::io::stderr().as_fd().try_clone_to_owned()?),
             Self::Null => error::unimp("to_owned_fd for null open file"),
             Self::File(f) => Ok(f.into()),
-            Self::PipeReader(r) => Ok(OwnedFd::from(r)),
-            Self::PipeWriter(w) => Ok(OwnedFd::from(w)),
+            Self::PipeReader(r) => Ok(OwnedFd::from(r.0)),
+            Self::PipeWriter(w) => Ok(OwnedFd::from(w.0)),
         }
     }
 
@@ -77,8 +77,8 @@ impl OpenFile {
             Self::Stderr => Ok(std::io::stderr().as_raw_fd()),
             Self::Null => error::unimp("as_raw_fd for null open file"),
             Self::File(f) => Ok(f.as_raw_fd()),
-            Self::PipeReader(r) => Ok(r.as_raw_fd()),
-            Self::PipeWriter(w) => Ok(w.as_raw_fd()),
+            Self::PipeReader(r) => Ok(r.0.as_raw_fd()),
+            Self::PipeWriter(w) => Ok(w.0.as_raw_fd()),
         }
     }
 
@@ -152,8 +152,8 @@ impl From<OpenFile> for Stdio {
             OpenFile::Stderr => Self::inherit(),
             OpenFile::Null => Self::null(),
             OpenFile::File(f) => f.into(),
-            OpenFile::PipeReader(f) => f.into(),
-            OpenFile::PipeWriter(f) => f.into(),
+            OpenFile::PipeReader(f) => f.0.into(),
+            OpenFile::PipeWriter(f) => f.0.into(),
         }
     }
 }
@@ -170,7 +170,7 @@ impl std::io::Read for OpenFile {
             ))),
             Self::Null => Ok(0),
             Self::File(f) => f.read(buf),
-            Self::PipeReader(reader) => reader.read(buf),
+            Self::PipeReader(reader) => reader.0.read(buf),
             Self::PipeWriter(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
                 "pipe writer",
             ))),
@@ -191,7 +191,7 @@ impl std::io::Write for OpenFile {
             Self::PipeReader(_) => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
                 "pipe reader",
             ))),
-            Self::PipeWriter(writer) => writer.write(buf),
+            Self::PipeWriter(writer) => writer.0.write(buf),
         }
     }
 
@@ -203,7 +203,7 @@ impl std::io::Write for OpenFile {
             Self::Null => Ok(()),
             Self::File(f) => f.flush(),
             Self::PipeReader(_) => Ok(()),
-            Self::PipeWriter(writer) => writer.flush(),
+            Self::PipeWriter(writer) => writer.0.flush(),
         }
     }
 }
@@ -212,16 +212,16 @@ impl std::io::Write for OpenFile {
 #[derive(Clone)]
 pub struct OpenFiles {
     /// Maps shell file descriptors to open files.
-    pub(crate) files: HashMap<u32, OpenFile>,
+    files: HashMap<u32, OpenFile>,
 }
 
 impl Default for OpenFiles {
     fn default() -> Self {
         Self {
             files: HashMap::from([
-                (0, OpenFile::Stdin),
-                (1, OpenFile::Stdout),
-                (2, OpenFile::Stderr),
+                (Self::STDIN_FD, OpenFile::Stdin),
+                (Self::STDOUT_FD, OpenFile::Stdout),
+                (Self::STDERR_FD, OpenFile::Stderr),
             ]),
         }
     }
@@ -229,6 +229,13 @@ impl Default for OpenFiles {
 
 #[allow(dead_code)]
 impl OpenFiles {
+    /// File descriptor used for standard input.
+    pub const STDIN_FD: u32 = 0;
+    /// File descriptor used for standard output.
+    pub const STDOUT_FD: u32 = 1;
+    /// File descriptor used for standard error.
+    pub const STDERR_FD: u32 = 2;
+
     /// Tries to clone the open files.
     pub fn try_clone(&self) -> Result<Self, error::Error> {
         let mut files = HashMap::new();
@@ -252,5 +259,106 @@ impl OpenFiles {
     /// Retrieves the file backing standard error in this context.
     pub fn stderr(&self) -> Option<&OpenFile> {
         self.files.get(&2)
+    }
+
+    /// Tries to remove an open file by its file descriptor. If the file descriptor
+    /// is not used, `None` will be returned; otherwise, the removed file will
+    /// be returned.
+    ///
+    /// Arguments:
+    ///
+    /// * `fd`: The file descriptor to remove.
+    pub fn remove(&mut self, fd: u32) -> Option<OpenFile> {
+        self.files.remove(&fd)
+    }
+
+    /// Tries to lookup the `OpenFile` associated with a file descriptor. If the
+    /// file descriptor is not used, `None` will be returned; otherwise, a reference
+    /// to the `OpenFile` will be returned.
+    ///
+    /// Arguments:
+    ///
+    /// * `fd`: The file descriptor to lookup.
+    pub fn get(&self, fd: u32) -> Option<&OpenFile> {
+        self.files.get(&fd)
+    }
+
+    /// Checks if the given file descriptor is in use.
+    pub fn contains(&self, fd: u32) -> bool {
+        self.files.contains_key(&fd)
+    }
+
+    /// Checks if there are no open files in this context.
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty()
+    }
+
+    /// Associates the given file descriptor with the provided file. If the file descriptor
+    /// is already in use, the previous file will be returned; otherwise, `None`
+    /// will be returned.
+    ///
+    /// Arguments:
+    ///
+    /// * `fd`: The file descriptor to associate with the file.
+    /// * `file`: The file to associate with the file descriptor.
+    pub fn set(&mut self, fd: u32, file: OpenFile) -> Option<OpenFile> {
+        self.files.insert(fd, file)
+    }
+}
+
+impl IntoIterator for OpenFiles {
+    type Item = (u32, OpenFile);
+    type IntoIter = <std::collections::HashMap<u32, OpenFile> as std::iter::IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.files.into_iter()
+    }
+}
+
+/// Creates a new pipe, returning its reader and writer ends.
+pub fn pipe() -> Result<(OpenPipeReader, OpenPipeWriter), error::Error> {
+    let (reader, writer) = sys::pipes::pipe()?;
+    Ok((OpenPipeReader(reader), OpenPipeWriter(writer)))
+}
+
+/// An opaque wrapper around a pipe reader implementation.
+pub struct OpenPipeReader(sys::pipes::PipeReader);
+
+impl From<sys::pipes::PipeReader> for OpenPipeReader {
+    fn from(reader: sys::pipes::PipeReader) -> Self {
+        Self(reader)
+    }
+}
+
+impl From<OpenPipeReader> for OpenFile {
+    fn from(value: OpenPipeReader) -> Self {
+        Self::PipeReader(value)
+    }
+}
+
+impl From<OpenPipeReader> for sys::pipes::PipeReader {
+    fn from(reader: OpenPipeReader) -> Self {
+        reader.0
+    }
+}
+
+/// An opaque wrapper around a pipe writer implementation.
+pub struct OpenPipeWriter(sys::pipes::PipeWriter);
+
+impl From<sys::pipes::PipeWriter> for OpenPipeWriter {
+    fn from(writer: sys::pipes::PipeWriter) -> Self {
+        Self(writer)
+    }
+}
+
+impl From<OpenPipeWriter> for OpenFile {
+    fn from(value: OpenPipeWriter) -> Self {
+        Self::PipeWriter(value)
+    }
+}
+
+impl From<OpenPipeWriter> for sys::pipes::PipeWriter {
+    fn from(writer: OpenPipeWriter) -> Self {
+        writer.0
     }
 }

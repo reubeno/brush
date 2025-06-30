@@ -38,6 +38,7 @@ pub use arithmetic::EvalError;
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::Error;
 pub use interp::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy};
+pub use openfiles::{OpenFile, OpenFiles, OpenPipeReader, OpenPipeWriter};
 pub use shell::{CreateOptions, Shell};
 pub use terminal::TerminalControl;
 pub use variables::{ShellValue, ShellVariable};
