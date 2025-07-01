@@ -15,3 +15,4 @@ cargo binstall --no-confirm cargo-audit
 cargo binstall --no-confirm cargo-deny
 # cargo binstall --no-confirm cargo-flamegraph
 cargo binstall --no-confirm cargo-llvm-cov
+cargo binstall --no-confirm cargo-nextest
