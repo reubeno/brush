@@ -950,10 +950,10 @@ impl Shell {
     /// * `name` - The name of the function to invoke.
     /// * `args` - The arguments to pass to the function.
     /// * `params` - Execution parameters to use for the invocation.
-    pub async fn invoke_function(
+    pub async fn invoke_function<N: AsRef<str>, I: IntoIterator<Item = A>, A: AsRef<str>>(
         &mut self,
-        name: impl AsRef<str>,
-        args: impl Iterator<Item = impl AsRef<str>>,
+        name: N,
+        args: I,
         params: &ExecutionParameters,
     ) -> Result<u8, error::Error> {
         let name = name.as_ref();
@@ -973,6 +973,7 @@ impl Shell {
         };
 
         let command_args = args
+            .into_iter()
             .map(|s| commands::CommandArg::String(String::from(s.as_ref())))
             .collect::<Vec<_>>();
 
