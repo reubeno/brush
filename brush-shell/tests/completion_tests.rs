@@ -75,7 +75,7 @@ impl TestShellWithBashCompletion {
     pub fn set_var(&mut self, name: &str, value: &str) -> Result<()> {
         self.shell
             .env
-            .set_global(name, brush_core::ShellVariable::new(value.into()))?;
+            .set_global(name, brush_core::ShellVariable::new(value))?;
         Ok(())
     }
 }
