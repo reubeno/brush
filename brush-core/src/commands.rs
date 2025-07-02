@@ -225,7 +225,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stdin, if applicable.
-    match open_files.files.remove(&0) {
+    match open_files.remove(OpenFiles::STDIN_FD) {
         Some(OpenFile::Stdin) | None => (),
         Some(stdin_file) => {
             let as_stdio: Stdio = stdin_file.into();
@@ -234,7 +234,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stdout, if applicable.
-    match open_files.files.remove(&1) {
+    match open_files.remove(OpenFiles::STDOUT_FD) {
         Some(OpenFile::Stdout) | None => (),
         Some(stdout_file) => {
             let as_stdio: Stdio = stdout_file.into();
@@ -243,7 +243,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stderr, if applicable.
-    match open_files.files.remove(&2) {
+    match open_files.remove(OpenFiles::STDERR_FD) {
         Some(OpenFile::Stderr) | None => {}
         Some(stderr_file) => {
             let as_stdio: Stdio = stderr_file.into();
@@ -255,7 +255,6 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     #[cfg(unix)]
     {
         let fd_mappings = open_files
-            .files
             .into_iter()
             .map(|(child_fd, open_file)| FdMapping {
                 child_fd: i32::try_from(child_fd).unwrap(),
@@ -267,7 +266,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
     #[cfg(not(unix))]
     {
-        if !open_files.files.is_empty() {
+        if !open_files.is_empty() {
             return error::unimp("fd redirections on non-Unix platform");
         }
     }
@@ -596,11 +595,8 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     // Set up pipe so we can read the output.
-    let (reader, writer) = sys::pipes::pipe()?;
-    params
-        .open_files
-        .files
-        .insert(1, openfiles::OpenFile::PipeWriter(writer));
+    let (reader, writer) = openfiles::pipe()?;
+    params.open_files.set(OpenFiles::STDOUT_FD, writer.into());
 
     // Run the command.
     let result = subshell.run_string(s, &params).await?;
@@ -614,7 +610,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     shell.last_exit_status = result.exit_code;
 
     // Extract output.
-    let output_str = std::io::read_to_string(reader)?;
+    let output_str = std::io::read_to_string(OpenFile::from(reader))?;
 
     Ok(output_str)
 }

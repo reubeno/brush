@@ -38,7 +38,7 @@ pub struct Shell {
     /// Trap handler configuration for the shell.
     pub traps: traps::TrapHandlerConfig,
     /// Manages files opened and accessible via redirection operators.
-    open_files: openfiles::OpenFiles,
+    pub open_files: openfiles::OpenFiles,
     /// The current working directory.
     pub working_dir: PathBuf,
     /// The shell environment, containing shell variables.
@@ -949,10 +949,14 @@ impl Shell {
     ///
     /// * `name` - The name of the function to invoke.
     /// * `args` - The arguments to pass to the function.
-    pub async fn invoke_function(&mut self, name: &str, args: &[&str]) -> Result<u8, error::Error> {
-        // TODO: Figure out if *all* callers have the same process group policy.
-        let params = self.default_exec_params();
-
+    /// * `params` - Execution parameters to use for the invocation.
+    pub async fn invoke_function<N: AsRef<str>, I: IntoIterator<Item = A>, A: AsRef<str>>(
+        &mut self,
+        name: N,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<u8, error::Error> {
+        let name = name.as_ref();
         let command_name = String::from(name);
 
         let func_registration = self
@@ -965,12 +969,12 @@ impl Shell {
         let context = commands::ExecutionContext {
             shell: self,
             command_name,
-            params,
+            params: params.clone(),
         };
 
         let command_args = args
-            .iter()
-            .map(|s| commands::CommandArg::String(String::from(*s)))
+            .into_iter()
+            .map(|s| commands::CommandArg::String(String::from(s.as_ref())))
             .collect::<Vec<_>>();
 
         match commands::invoke_shell_function(func, context, &command_args).await? {
@@ -1523,7 +1527,7 @@ impl Shell {
             if parent == Path::new("/dev/fd") {
                 if let Some(filename) = path_to_open.file_name() {
                     if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
-                        if let Some(open_file) = params.open_files.files.get(&fd_num) {
+                        if let Some(open_file) = params.open_files.get(fd_num) {
                             return open_file.try_dup();
                         }
                     }
@@ -1625,13 +1629,13 @@ impl Shell {
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> impl std::io::Write {
-        self.open_files.files.get(&1).unwrap().try_dup().unwrap()
+        self.open_files.get(1).unwrap().try_dup().unwrap()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write {
-        self.open_files.files.get(&2).unwrap().try_dup().unwrap()
+        self.open_files.get(2).unwrap().try_dup().unwrap()
     }
 
     /// Outputs `set -x` style trace output for a command.
