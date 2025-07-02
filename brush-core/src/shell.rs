@@ -311,7 +311,7 @@ impl Shell {
         let shell_version = options.shell_version.clone();
         self.env.set_global(
             "BRUSH_VERSION",
-            ShellVariable::new(shell_version.unwrap_or_default().into()),
+            ShellVariable::new(shell_version.unwrap_or_default()),
         )?;
 
         // TODO(#479): implement $_
@@ -319,7 +319,7 @@ impl Shell {
         // BASH
         if let Some(shell_name) = &options.shell_name {
             self.env
-                .set_global("BASH", ShellVariable::new(shell_name.into()))?;
+                .set_global("BASH", ShellVariable::new(shell_name))?;
         }
 
         // BASHOPTS
@@ -425,17 +425,14 @@ impl Shell {
         // This is the Bash interface version. See BRUSH_VERSION for its implementation version.
         self.env.set_global(
             "BASH_VERSION",
-            ShellVariable::new(
-                std::format!("{BASH_MAJOR}.{BASH_MINOR}.{BASH_PATCH}({BASH_BUILD})-{BASH_RELEASE}")
-                    .into(),
-            ),
+            ShellVariable::new(std::format!(
+                "{BASH_MAJOR}.{BASH_MINOR}.{BASH_PATCH}({BASH_BUILD})-{BASH_RELEASE}"
+            )),
         )?;
 
         // COMP_WORDBREAKS
-        self.env.set_global(
-            "COMP_WORDBREAKS",
-            ShellVariable::new(" \t\n\"\'@><=;|&(:".into()),
-        )?;
+        self.env
+            .set_global("COMP_WORDBREAKS", ShellVariable::new(" \t\n\"\'@><=;|&(:"))?;
 
         // DIRSTACK
         self.env.set_global(
@@ -539,8 +536,7 @@ impl Shell {
                 sys::network::get_hostname()
                     .unwrap_or_default()
                     .to_string_lossy()
-                    .to_string()
-                    .into(),
+                    .to_string(),
             ),
         )?;
 
@@ -550,14 +546,13 @@ impl Shell {
             if let Ok(info) = nix::sys::utsname::uname() {
                 self.env.set_global(
                     "HOSTTYPE",
-                    ShellVariable::new(info.machine().to_string_lossy().to_string().into()),
+                    ShellVariable::new(info.machine().to_string_lossy().to_string()),
                 )?;
             }
         }
 
         // IFS
-        self.env
-            .set_global("IFS", ShellVariable::new(" \t\n".into()))?;
+        self.env.set_global("IFS", ShellVariable::new(" \t\n"))?;
 
         // LINENO
         self.env.set_global(
@@ -570,7 +565,7 @@ impl Shell {
 
         // MACHTYPE
         self.env
-            .set_global("MACHTYPE", ShellVariable::new(BASH_MACHINE.into()))?;
+            .set_global("MACHTYPE", ShellVariable::new(BASH_MACHINE))?;
 
         // OLDPWD (initialization)
         if !self.env.is_set("OLDPWD") {
@@ -581,11 +576,10 @@ impl Shell {
         }
 
         // OPTERR
-        self.env
-            .set_global("OPTERR", ShellVariable::new("1".into()))?;
+        self.env.set_global("OPTERR", ShellVariable::new("1"))?;
 
         // OPTIND
-        let mut optind_var = ShellVariable::new("1".into());
+        let mut optind_var = ShellVariable::new("1");
         optind_var.treat_as_integer();
         self.env.set_global("OPTIND", optind_var)?;
 
@@ -595,15 +589,14 @@ impl Shell {
             "windows" => "windows",
             _ => "unknown",
         };
-        self.env
-            .set_global("OSTYPE", ShellVariable::new(os_type.into()))?;
+        self.env.set_global("OSTYPE", ShellVariable::new(os_type))?;
 
         // PATH (if not already set)
         #[cfg(unix)]
         if !self.env.is_set("PATH") {
             let default_path_str = sys::fs::get_default_executable_search_paths().join(":");
             self.env
-                .set_global("PATH", ShellVariable::new(default_path_str.into()))?;
+                .set_global("PATH", ShellVariable::new(default_path_str))?;
         }
 
         // PIPESTATUS
@@ -623,7 +616,7 @@ impl Shell {
 
         // PPID
         if let Some(ppid) = sys::terminal::get_parent_process_id() {
-            let mut ppid_var = ShellVariable::new(ppid.to_string().into());
+            let mut ppid_var = ShellVariable::new(ppid.to_string());
             ppid_var.treat_as_integer().set_readonly();
             self.env.set_global("PPID", ppid_var)?;
         }
@@ -658,7 +651,7 @@ impl Shell {
         if let Ok(exe_path) = std::env::current_exe() {
             self.env.set_global(
                 "SHELL",
-                ShellVariable::new(exe_path.to_string_lossy().to_string().into()),
+                ShellVariable::new(exe_path.to_string_lossy().to_string()),
             )?;
         }
 
@@ -673,7 +666,7 @@ impl Shell {
         // SHLVL
         let input_shlvl = self.get_env_str("SHLVL").unwrap_or_else(|| "0".into());
         let updated_shlvl = input_shlvl.as_ref().parse::<u32>().unwrap_or(0) + 1;
-        let mut shlvl_var = ShellVariable::new(updated_shlvl.to_string().into());
+        let mut shlvl_var = ShellVariable::new(updated_shlvl.to_string());
         shlvl_var.export();
         self.env.set_global("SHLVL", shlvl_var)?;
 
@@ -689,19 +682,17 @@ impl Shell {
         if options.interactive {
             if !self.env.is_set("PS1") {
                 self.env
-                    .set_global("PS1", ShellVariable::new(r"\s-\v\$ ".into()))?;
+                    .set_global("PS1", ShellVariable::new(r"\s-\v\$ "))?;
             }
 
             if !self.env.is_set("PS2") {
-                self.env
-                    .set_global("PS2", ShellVariable::new("> ".into()))?;
+                self.env.set_global("PS2", ShellVariable::new("> "))?;
             }
         }
 
         // PS4
         if !self.env.is_set("PS4") {
-            self.env
-                .set_global("PS4", ShellVariable::new("+ ".into()))?;
+            self.env.set_global("PS4", ShellVariable::new("+ "))?;
         }
 
         //
@@ -712,7 +703,7 @@ impl Shell {
         // will be handled by set_working_dir().
         //
         let pwd = self.working_dir.to_string_lossy().to_string();
-        let mut pwd_var = ShellVariable::new(pwd.into());
+        let mut pwd_var = ShellVariable::new(pwd);
         pwd_var.export();
         self.env.set_global("PWD", pwd_var)?;
 
@@ -1713,12 +1704,10 @@ impl Shell {
     /// * `cursor` - The cursor position in the edit buffer.
     pub fn set_edit_buffer(&mut self, contents: String, cursor: usize) -> Result<(), error::Error> {
         self.env
-            .set_global("READLINE_LINE", ShellVariable::new(contents.into()))?;
+            .set_global("READLINE_LINE", ShellVariable::new(contents))?;
 
-        self.env.set_global(
-            "READLINE_POINT",
-            ShellVariable::new(cursor.to_string().into()),
-        )?;
+        self.env
+            .set_global("READLINE_POINT", ShellVariable::new(cursor.to_string()))?;
 
         Ok(())
     }
