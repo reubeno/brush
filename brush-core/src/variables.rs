@@ -62,9 +62,9 @@ impl ShellVariable {
     /// # Arguments
     ///
     /// * `value` - The value to associate with the variable.
-    pub fn new(value: ShellValue) -> Self {
+    pub fn new<I: Into<ShellValue>>(value: I) -> Self {
         Self {
-            value,
+            value: value.into(),
             ..Self::default()
         }
     }
