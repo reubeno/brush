@@ -20,7 +20,7 @@ impl reedline::History for ReedlineHistory {
     /// * `item` - The history item to save.
     fn save(&mut self, item: reedline::HistoryItem) -> reedline::Result<reedline::HistoryItem> {
         //
-        // TODO: Evaluate a way to rationalize betwen this and the shared
+        // TODO: Evaluate a way to rationalize between this and the shared
         // history saving. For now, we need to do nothing here to avoid
         // duplicate history items since we are auto-updating the history
         // in a non-reedline-specific way.
