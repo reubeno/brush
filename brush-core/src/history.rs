@@ -152,7 +152,7 @@ impl History {
         if append {
             file_options.append(true);
         } else {
-            file_options.write(true);
+            file_options.write(true).truncate(true);
         }
 
         let mut file = file_options.create(true).open(history_file_path.as_ref())?;
