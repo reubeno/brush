@@ -1,9 +1,6 @@
 [alias]
 xtask = "run --package xtask --"
 
-[build]
-rustflags = ["-C", "target-cpu=native"]
-
 [target.wasm32-unknown-unknown]
 # Select a getrandom backend that will work for this target
 rustflags = ["--cfg", 'getrandom_backend="wasm_js"']
