@@ -3,7 +3,7 @@
 #
 
 name: CD # Continuous Deployment
-run-name: CD${{ github.event_name == 'release' && '' || ' (dry run)' }}
+run-name: CD${{ github.event_name == 'release' && ' (release)' || ' (dry run)' }}
 
 on:
   release:
