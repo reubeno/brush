@@ -120,10 +120,10 @@ nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 <details>
 <summary>🐧 <b>Installing on Arch Linux</b></summary>
 
-Arch Linux users can install `brush` [from the AUR](https://aur.archlinux.org/packages/brush) with their [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, e.g.:
+Arch Linux users can install `brush` from the official [extra repository](https://archlinux.org/packages/extra/x86_64/brush/):
 
 ```bash
-paru -S brush
+pacman -S brush
 ```
 </details>
 
