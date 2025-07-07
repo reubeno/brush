@@ -61,10 +61,6 @@ impl InteractiveShell for BasicShell {
 
         Ok(ReadResult::Input(result))
     }
-
-    fn update_history(&mut self) -> Result<(), ShellError> {
-        Ok(())
-    }
 }
 
 impl BasicShell {

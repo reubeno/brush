@@ -30,10 +30,6 @@ impl brush_interactive::InteractiveShell for StubShell {
     ) -> Result<brush_interactive::ReadResult, brush_interactive::ShellError> {
         Err(brush_interactive::ShellError::InputBackendNotSupported)
     }
-
-    fn update_history(&mut self) -> Result<(), brush_interactive::ShellError> {
-        Err(brush_interactive::ShellError::InputBackendNotSupported)
-    }
 }
 
 #[allow(clippy::panic)]

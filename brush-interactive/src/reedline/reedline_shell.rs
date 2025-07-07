@@ -3,7 +3,7 @@ use reedline::MenuBuilder;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::{completer, edit_mode, highlighter, refs, validator};
+use super::{completer, edit_mode, highlighter, history, refs, validator};
 use crate::{InteractiveShell, ReadResult, ShellError, interactive_shell::InteractivePrompt};
 
 /// Represents an interactive shell capable of taking commands from standard input
@@ -33,7 +33,6 @@ impl ReedlineShell {
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
         let shell = brush_core::Shell::new(&options.shell).await?;
-        let history_file_path = shell.get_history_file_path();
 
         // Wrap the shell in an Arc<Mutex> so we can share it with the helper
         // objects we'll need to set up for reedline.
@@ -48,6 +47,9 @@ impl ReedlineShell {
             shell: shell_ref.clone(),
         };
         let highlighter = highlighter::ReedlineHighlighter {
+            shell: shell_ref.clone(),
+        };
+        let history = history::ReedlineHistory {
             shell: shell_ref.clone(),
         };
 
@@ -83,20 +85,12 @@ impl ReedlineShell {
             .with_validator(Box::new(validator))
             .with_hinter(Box::new(hinter))
             .with_menu(reedline::ReedlineMenu::EngineCompleter(completion_menu))
-            .with_edit_mode(Box::new(mutable_edit_mode));
+            .with_edit_mode(Box::new(mutable_edit_mode))
+            .with_history(Box::new(history));
 
         // If requested, apply some additional niceties.
         if !options.disable_highlighting && !options.disable_color {
             reedline = reedline.with_highlighter(Box::new(highlighter));
-        }
-
-        // If we have a history file, wire it up.
-        if let Some(history_file_path) = history_file_path {
-            if let Ok(history) =
-                reedline::FileBackedHistory::with_file(reedline::HISTORY_SIZE, history_file_path)
-            {
-                reedline = reedline.with_history(Box::new(history));
-            }
         }
 
         Ok(Self {
@@ -177,12 +171,6 @@ impl InteractiveShell for ReedlineShell {
                 },
             ]);
         }
-    }
-
-    /// Update history, if relevant.
-    fn update_history(&mut self) -> Result<(), ShellError> {
-        // N.B. With our current usage, reedline auto-updates the history file.
-        Ok(())
     }
 }
 
