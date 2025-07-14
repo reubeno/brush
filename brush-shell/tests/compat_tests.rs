@@ -351,6 +351,8 @@ struct TestCase {
     #[serde(default)]
     pub min_oracle_version: Option<String>,
     #[serde(default)]
+    pub max_oracle_version: Option<String>,
+    #[serde(default)]
     pub timeout_in_seconds: Option<u64>,
 }
 
@@ -806,21 +808,35 @@ impl TestCase {
             return Ok(true);
         }
 
-        // Make sure the oracle meets any min version listed.
-        if let Some(min_oracle_version_str) = &self.min_oracle_version {
+        // Make sure the oracle meets any version constraints listed.
+        if self.min_oracle_version.is_some() || self.max_oracle_version.is_some() {
             if let Some(actual_oracle_version_str) = &test_config.oracle_version_str {
                 let actual_oracle_version =
                     version_compare::Version::from(actual_oracle_version_str.as_str())
                         .ok_or_else(|| anyhow::anyhow!("failed to parse oracle version"))?;
 
-                let min_oracle_version = version_compare::Version::from(min_oracle_version_str)
-                    .ok_or_else(|| anyhow::anyhow!("failed to parse min oracle version"))?;
+                if let Some(min_oracle_version_str) = &self.min_oracle_version {
+                    let min_oracle_version = version_compare::Version::from(min_oracle_version_str)
+                        .ok_or_else(|| anyhow::anyhow!("failed to parse min oracle version"))?;
 
-                if matches!(
-                    actual_oracle_version.compare(min_oracle_version),
-                    version_compare::Cmp::Lt
-                ) {
-                    return Ok(true);
+                    if matches!(
+                        actual_oracle_version.compare(min_oracle_version),
+                        version_compare::Cmp::Lt
+                    ) {
+                        return Ok(true);
+                    }
+                }
+
+                if let Some(max_oracle_version_str) = &self.max_oracle_version {
+                    let max_oracle_version = version_compare::Version::from(max_oracle_version_str)
+                        .ok_or_else(|| anyhow::anyhow!("failed to parse max oracle version"))?;
+
+                    if matches!(
+                        actual_oracle_version.compare(max_oracle_version),
+                        version_compare::Cmp::Gt
+                    ) {
+                        return Ok(true);
+                    }
                 }
             }
         }

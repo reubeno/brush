@@ -65,6 +65,7 @@ cases:
       type -P ls
 
   - name: Test type -P -a with hashed path
+    min_oracle_version: 5.3 # Behavior changed in bash 5.3
     stdin: |
       hash -p /some/ls ls
       type -P -a ls

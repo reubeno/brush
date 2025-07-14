@@ -13,10 +13,12 @@ cases:
     args: ["-i", "-c", "shopt | sort | grep -v extglob"]
 
   - name: "shopt -o defaults"
+    min_oracle_version: 5.3 # Spacing changed in bash 5.3
     stdin: |
       shopt -o | sort
 
   - name: "shopt -o interactive defaults"
+    min_oracle_version: 5.3 # Spacing changed in bash 5.3
     pty: true
     args: ["-i", "-c", "shopt -o | sort | grep -v monitor"]
 
@@ -31,10 +33,12 @@ cases:
     known_failure: true
 
   - name: "shopt -o interactive monitor default"
+    min_oracle_version: 5.3 # Spacing changed in bash 5.3
     pty: true
     args: ["-i", "-c", "shopt -o monitor"]
 
   - name: "shopt toggle"
+    min_oracle_version: 5.3 # Spacing changed in bash 5.3
     stdin: |
       echo "Setting checkwinsize"
       shopt -s checkwinsize
@@ -51,6 +55,7 @@ cases:
       shopt -p checkwinsize
 
   - name: "shopt -o usage"
+    min_oracle_version: 5.3 # Spacing changed in bash 5.3
     stdin: |
       echo "Setting emacs"
       shopt -o -s emacs
