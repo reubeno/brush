@@ -215,8 +215,15 @@ jobs:
       - name: "Install recent bash for tests"
         if: ${{ matrix.homebrew_supported }}
         run: |
-          brew install bash
+          # Set up custom local tap
+          brew tap-new $USER/local-tap
+          # Find our intended version of bash
+          brew extract --version=5.2.15 bash $USER/local-tap
+          # Install it
+          brew install bash@5.2.15
+          # Find the path
           BASH_PATH="$(brew --prefix bash)/bin/bash"
+          # Log what we're using
           echo "Using bash from: ${BASH_PATH}"
           echo "bash version:"
           ${BASH_PATH} --version
