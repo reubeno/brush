@@ -46,15 +46,19 @@ cases:
     stdin: |
       mkdir ./my_home
       export HOME="$(realpath ./my_home)"
+      echo "Set HOME: $(basename $HOME)"
       (
+        echo "Subshell 1: HOME=$(basename $HOME)"
         cd ~
         echo "pwd: $(basename $PWD)"
       )
       (
+        echo "Subshell 2: HOME=$(basename $HOME)"
         cd -L ~
         echo "pwd: $(basename $PWD)"
       )
       (
+        echo "Subshell 3: HOME=$(basename $HOME)"
         cd -P ~
         echo "pwd: $(basename $PWD)"
       )
