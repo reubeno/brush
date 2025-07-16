@@ -47,6 +47,7 @@ cases:
   - name: "dirs with tilde replacement"
     stdin: |
       HOME=/usr
+      echo "Updated HOME: $HOME"
       cd ~
       echo "PWD: $PWD"
       dirs

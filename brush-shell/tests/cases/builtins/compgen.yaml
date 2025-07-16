@@ -86,6 +86,7 @@ cases:
     stdin: |
       touch item1
       HOME=$(pwd)
+      echo "Updated HOME base: $(basename $HOME)"
 
       echo "[0]"
       for p in $(compgen -f ~); do
