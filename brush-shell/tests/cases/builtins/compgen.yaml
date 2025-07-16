@@ -84,9 +84,13 @@ cases:
 
   - name: "compgen -f with tilde"
     stdin: |
-      touch item1
+      mkdir testhome && cd testhome
+
       HOME=$(pwd)
       echo "Updated HOME base: $(basename $HOME)"
+      echo "Updated ~ base:" $(basename ~)
+
+      touch item1
 
       echo "[0]"
       for p in $(compgen -f ~); do
