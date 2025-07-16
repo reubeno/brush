@@ -230,7 +230,7 @@ jobs:
 
           # Install it
           brew install bash@5.2.15
-          brew info bash
+          brew link --overwrite bash@5.2.15
 
           # Find the path
           BASH_PATH="$(brew --prefix bash)/bin/bash"
