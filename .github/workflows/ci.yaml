@@ -230,10 +230,9 @@ jobs:
 
           # Install it
           brew install bash@5.2.15
-          brew link --overwrite bash@5.2.15
 
           # Find the path
-          BASH_PATH="$(brew --prefix bash)/bin/bash"
+          BASH_PATH="$(brew --prefix bash@5.2.15)/bin/bash"
 
           # Log what we're using
           echo "Using bash from: ${BASH_PATH}"
