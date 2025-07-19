@@ -51,13 +51,13 @@ const_format = "0.2.34"
 git-version = "0.3.9"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
-human-panic = "2.0.2"
+human-panic = "2.0.3"
 
 [target.'cfg(not(any(windows, unix)))'.dependencies]
 brush-interactive = { version = "^0.2.20", path = "../brush-interactive", features = [
     "minimal",
 ] }
-tokio = { version = "1.46.0", features = ["rt", "sync"] }
+tokio = { version = "1.46.1", features = ["rt", "sync"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.20", path = "../brush-interactive", features = [
@@ -86,6 +86,6 @@ regex = "1.11.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
-test-with = { version = "0.15.2", default-features = false, features = ["executable"] }
+test-with = { version = "0.15.3", default-features = false, features = ["executable"] }
 version-compare = "0.2.0"
 walkdir = "2.5.0"

@@ -18,5 +18,5 @@ workspace = true
 anyhow = "1.0.98"
 brush-shell = { version = "^0.2.20", path = "../brush-shell" }
 clap = { version = "4.5.40", features = ["derive"] }
-clap_mangen = "0.2.27"
+clap_mangen = "0.2.28"
 clap-markdown = "0.1.5"
