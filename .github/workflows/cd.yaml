@@ -85,7 +85,7 @@ jobs:
 
       - name: "Installing musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@f3a27926ea13d7be3ee2f4cbb925883cf9442b56 # v2.56.7
+        uses: taiki-e/install-action@c99cc51b309eee71a866715cfa08c922f11cf898 # v2.56.19
         with:
           tool: cross
 
