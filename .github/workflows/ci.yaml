@@ -217,22 +217,11 @@ jobs:
         run: |
           set -x
 
-          # git setup to pacify brew
-          git config --global user.name "Brush CI"
-          git config --global user.email "brush@example.com"
-
-          # Set up custom local tap
-          brew tap-new $USER/local-tap
-
-          # Find our intended version of bash
-          brew tap homebrew/core --force
-          brew extract --version=5.2.15 bash $USER/local-tap
-
           # Install it
-          brew install bash@5.2.15
+          brew install bash
 
           # Find the path
-          BASH_PATH="$(brew --prefix bash@5.2.15)/bin/bash"
+          BASH_PATH="$(brew --prefix bash)/bin/bash"
 
           # Log what we're using
           echo "Using bash from: ${BASH_PATH}"
