@@ -22,7 +22,7 @@ workspace = true
 anyhow = "1.0.98"
 assert_cmd = "2.0.17"
 libfuzzer-sys = "0.4"
-tokio = { version = "1.46.0", features = ["rt"] }
+tokio = { version = "1.46.1", features = ["rt"] }
 
 [dependencies.brush-core]
 path = "../brush-core"
