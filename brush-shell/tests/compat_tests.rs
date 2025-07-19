@@ -23,6 +23,50 @@ use std::{
 struct ShellConfig {
     pub which: WhichShell,
     pub default_args: Vec<String>,
+    pub default_path_var: Option<String>,
+}
+
+impl ShellConfig {
+    #[allow(clippy::unnecessary_wraps)]
+    fn compute_test_path_var(&self) -> Result<String> {
+        let mut dirs = vec![];
+
+        // Start with any default we were provided.
+        if let Some(default_path_var) = &self.default_path_var {
+            dirs.extend(
+                std::env::split_paths(default_path_var).map(|p| p.to_string_lossy().to_string()),
+            );
+        }
+
+        // Add hard-coded paths that will work on *most* Unix-like systems.
+        dirs.extend([
+            "/usr/local/sbin".into(),
+            "/usr/local/bin".into(),
+            "/usr/sbin".into(),
+            "/usr/bin".into(),
+            "/sbin".into(),
+            "/bin".into(),
+        ]);
+
+        //
+        // Handle systems that are more... interesting (i.e., store their standard
+        // POSIX binaries elsewhere). As a concrete example, NixOS has an interesting
+        // set of paths that must be consulted, and unfortunately doesn't accurately
+        // return them via confstr(). For these systems, we go through the host's
+        // PATH variable, and include any paths that contain 'sh'.
+        //
+
+        if let Some(host_path) = std::env::var_os("PATH") {
+            for path in std::env::split_paths(&host_path) {
+                let path_str = path.to_string_lossy().to_string();
+                if !dirs.contains(&path_str) && path.join("sh").is_file() {
+                    dirs.push(path_str);
+                }
+            }
+        }
+
+        Ok(dirs.join(":"))
+    }
 }
 
 #[derive(Clone)]
@@ -48,6 +92,7 @@ impl TestConfig {
             oracle_shell: ShellConfig {
                 which: WhichShell::NamedShell(options.bash_path.clone()),
                 default_args: vec![String::from("--norc"), String::from("--noprofile")],
+                default_path_var: options.test_path_var.clone(),
             },
             oracle_version_str: Some(bash_version_str),
             test_shell: ShellConfig {
@@ -60,6 +105,7 @@ impl TestConfig {
                     "--disable-bracketed-paste".into(),
                     "--disable-color".into(),
                 ],
+                default_path_var: options.test_path_var.clone(),
             },
             options: options.clone(),
         })
@@ -73,6 +119,7 @@ impl TestConfig {
             oracle_shell: ShellConfig {
                 which: WhichShell::NamedShell(PathBuf::from("sh")),
                 default_args: vec![],
+                default_path_var: options.test_path_var.clone(),
             },
             oracle_version_str: None,
             test_shell: ShellConfig {
@@ -84,6 +131,7 @@ impl TestConfig {
                     String::from("--noprofile"),
                     String::from("--disable-bracketed-paste"),
                 ],
+                default_path_var: options.test_path_var.clone(),
             },
             options: options.clone(),
         })
@@ -350,6 +398,8 @@ struct TestCase {
     pub incompatible_configs: HashSet<String>,
     #[serde(default)]
     pub min_oracle_version: Option<String>,
+    #[serde(default)]
+    pub max_oracle_version: Option<String>,
     #[serde(default)]
     pub timeout_in_seconds: Option<u64>,
 }
@@ -806,21 +856,35 @@ impl TestCase {
             return Ok(true);
         }
 
-        // Make sure the oracle meets any min version listed.
-        if let Some(min_oracle_version_str) = &self.min_oracle_version {
+        // Make sure the oracle meets any version constraints listed.
+        if self.min_oracle_version.is_some() || self.max_oracle_version.is_some() {
             if let Some(actual_oracle_version_str) = &test_config.oracle_version_str {
                 let actual_oracle_version =
                     version_compare::Version::from(actual_oracle_version_str.as_str())
                         .ok_or_else(|| anyhow::anyhow!("failed to parse oracle version"))?;
 
-                let min_oracle_version = version_compare::Version::from(min_oracle_version_str)
-                    .ok_or_else(|| anyhow::anyhow!("failed to parse min oracle version"))?;
+                if let Some(min_oracle_version_str) = &self.min_oracle_version {
+                    let min_oracle_version = version_compare::Version::from(min_oracle_version_str)
+                        .ok_or_else(|| anyhow::anyhow!("failed to parse min oracle version"))?;
 
-                if matches!(
-                    actual_oracle_version.compare(min_oracle_version),
-                    version_compare::Cmp::Lt
-                ) {
-                    return Ok(true);
+                    if matches!(
+                        actual_oracle_version.compare(min_oracle_version),
+                        version_compare::Cmp::Lt
+                    ) {
+                        return Ok(true);
+                    }
+                }
+
+                if let Some(max_oracle_version_str) = &self.max_oracle_version {
+                    let max_oracle_version = version_compare::Version::from(max_oracle_version_str)
+                        .ok_or_else(|| anyhow::anyhow!("failed to parse max oracle version"))?;
+
+                    if matches!(
+                        actual_oracle_version.compare(max_oracle_version),
+                        version_compare::Cmp::Gt
+                    ) {
+                        return Ok(true);
+                    }
                 }
             }
         }
@@ -1011,7 +1075,7 @@ impl TestCase {
         // Try to get decent backtraces when problems get hit.
         test_cmd.env("RUST_BACKTRACE", "1");
         // Compute a PATH that contains what we need.
-        test_cmd.env("PATH", compute_test_path_var().unwrap());
+        test_cmd.env("PATH", shell_config.compute_test_path_var().unwrap());
 
         // Set up any env vars needed for collecting coverage data.
         if let Some(coverage_target_dir) = &coverage_target_dir {
@@ -1402,6 +1466,10 @@ struct TestOptions {
     #[clap(long = "test-cases-path", env = "BRUSH_COMPAT_TEST_CASES")]
     pub test_cases_path: Option<PathBuf>,
 
+    /// Optionally specify PATH variable to use in shells
+    #[clap(long = "test-path-var", env = "BRUSH_COMPAT_TEST_PATH_VAR")]
+    pub test_path_var: Option<String>,
+
     /// Show output from test cases (for compatibility only, has no effect)
     #[clap(long = "show-output")]
     pub show_output: bool,
@@ -1548,38 +1616,6 @@ fn get_bash_version_str(bash_path: &Path) -> Result<String> {
     let ver_str = String::from_utf8(output)?;
 
     Ok(ver_str)
-}
-
-#[allow(clippy::unnecessary_wraps)]
-fn compute_test_path_var() -> Result<String> {
-    // Start with hard-coded paths that will work on *most* Unix-like systems.
-    let mut dirs = vec![
-        "/usr/local/sbin".into(),
-        "/usr/local/bin".into(),
-        "/usr/sbin".into(),
-        "/usr/bin".into(),
-        "/sbin".into(),
-        "/bin".into(),
-    ];
-
-    //
-    // Handle systems that are more... interesting (i.e., store their standard
-    // POSIX binaries elsewhere). As a concrete example, NixOS has an interesting
-    // set of paths that must be consulted, and unfortunately doesn't accurately
-    // return them via confstr(). For these systems, we go through the host's
-    // PATH variable, and include any paths that contain 'sh'.
-    //
-
-    if let Some(host_path) = std::env::var_os("PATH") {
-        for path in std::env::split_paths(&host_path) {
-            let path_str = path.to_string_lossy().to_string();
-            if !dirs.contains(&path_str) && path.join("sh").is_file() {
-                dirs.push(path_str);
-            }
-        }
-    }
-
-    Ok(dirs.join(":"))
 }
 
 fn main() -> Result<()> {

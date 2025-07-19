@@ -63,13 +63,14 @@ cases:
 
       echo "BASHOPTS: $BASHOPTS"
 
-  - name: "BASH_SOURCE and FUNCNAME"
+  - name: "BASH_SOURCE"
+    max_oracle_version: "5.2" # Behavior changed in bash 5.3; still needs investigation
     stdin: |
-      echo "Input entry"; declare -p BASH_SOURCE FUNCNAME
+      echo "Input entry"; declare -p BASH_SOURCE
 
       function myfunc() {
           echo "In function: \$1: $1"
-          declare -p BASH_SOURCE FUNCNAME
+          declare -p BASH_SOURCE
 
           if [[ $1 -gt 0 ]]; then
               myfunc $(( $1 - 1 ))
@@ -78,7 +79,24 @@ cases:
 
       myfunc 4
 
-      echo "Input exit"; declare -p BASH_SOURCE FUNCNAME
+      echo "Input exit"; declare -p BASH_SOURCE
+
+  - name: "FUNCNAME"
+    stdin: |
+      echo "Input entry"; declare -p FUNCNAME
+
+      function myfunc() {
+          echo "In function: \$1: $1"
+          declare -p FUNCNAME
+
+          if [[ $1 -gt 0 ]]; then
+              myfunc $(( $1 - 1 ))
+          fi
+      }
+
+      myfunc 4
+
+      echo "Input exit"; declare -p FUNCNAME
 
   - name: "BASH_SUBSHELL"
     stdin: |

@@ -215,8 +215,15 @@ jobs:
       - name: "Install recent bash for tests"
         if: ${{ matrix.homebrew_supported }}
         run: |
+          set -x
+
+          # Install it
           brew install bash
+
+          # Find the path
           BASH_PATH="$(brew --prefix bash)/bin/bash"
+
+          # Log what we're using
           echo "Using bash from: ${BASH_PATH}"
           echo "bash version:"
           ${BASH_PATH} --version
@@ -537,6 +544,9 @@ jobs:
 
           # Provide alternate path for bash-completion
           echo "BASH_COMPLETION_PATH=$(nix path-info 'nixpkgs#bash-completion')/share/bash-completion/bash_completion">>"$GITHUB_ENV"
+
+          # Forcibly add system paths
+          echo "BRUSH_COMPAT_TEST_PATH_VAR=$PATH">>"$GITHUB_ENV"
 
       # Checkout sources for YAML-based test cases
       - name: Checkout
