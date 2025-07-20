@@ -24,7 +24,12 @@ version = 2
 yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    # fancy_regex uses derivative, which is unmaintained; but the next version of fancy_regex
+    # drops this dependency. we ignore for now with the expectation that this will go away
+    # very soon
+    "RUSTSEC-2024-0388",
+]
 #git-fetch-with-cli = true
 
 # This section is considered when running `cargo deny check licenses`

@@ -24,7 +24,7 @@ cached = "0.55.1"
 cfg-if = "1.0.1"
 chrono = "0.4.41"
 clap = { version = "4.5.40", features = ["derive", "wrap_help"] }
-fancy-regex = "0.14.0"
+fancy-regex = "0.15.0"
 futures = "0.3.31"
 indexmap = "2.10.0"
 itertools = "0.14.0"
@@ -36,7 +36,7 @@ thiserror = "2.0.12"
 tracing = "0.1.41"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.46.0", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.46.1", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.1"
