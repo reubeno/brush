@@ -115,9 +115,10 @@ impl HistoryCommand {
         }
 
         if let Some(append_option) = &self.append_session_to_file {
-            if let Some(file_path) =
-                get_effective_history_file_path(config.default_history_file_path, append_option)
-            {
+            if let Some(file_path) = get_effective_history_file_path(
+                config.default_history_file_path,
+                append_option.as_ref(),
+            ) {
                 history.flush(
                     file_path,
                     true,                         /*append?*/
@@ -138,9 +139,10 @@ impl HistoryCommand {
         }
 
         if let Some(write_option) = &self.write_session_to_file {
-            if let Some(file_path) =
-                get_effective_history_file_path(config.default_history_file_path, write_option)
-            {
+            if let Some(file_path) = get_effective_history_file_path(
+                config.default_history_file_path,
+                write_option.as_ref(),
+            ) {
                 history.flush(
                     file_path,
                     false,                        /*append?*/
@@ -206,12 +208,11 @@ fn display_history(
     Ok(())
 }
 
-#[allow(clippy::ref_option)]
 fn get_effective_history_file_path(
     default_history_file_path: Option<PathBuf>,
-    option: &Option<String>,
+    option: Option<&String>,
 ) -> Option<PathBuf> {
-    option.as_ref().map_or_else(
+    option.map_or_else(
         || default_history_file_path,
         |file_path| Some(PathBuf::from(file_path)),
     )
