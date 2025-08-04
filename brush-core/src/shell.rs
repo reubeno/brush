@@ -1819,6 +1819,11 @@ impl Shell {
     pub const fn history_mut(&mut self) -> Option<&mut history::History> {
         self.history.as_mut()
     }
+
+    /// Returns whether or not this shell is a subshell.
+    pub const fn is_subshell(&self) -> bool {
+        self.depth > 0
+    }
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]

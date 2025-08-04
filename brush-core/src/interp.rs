@@ -219,7 +219,7 @@ impl Execute for ast::CompoundList {
                 let job = spawn_ao_list_in_task(ao_list, shell, params);
                 let job_formatted = job.to_pid_style_string();
 
-                if shell.options.interactive {
+                if shell.options.interactive && !shell.is_subshell() {
                     writeln!(shell.stderr(), "{job_formatted}")?;
                 }
 
