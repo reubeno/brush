@@ -24,7 +24,6 @@ reedline = ["dep:reedline", "dep:nu-ansi-term"]
 workspace = true
 
 [dependencies]
-async-trait = "0.1.88"
 brush-parser = { version = "^0.2.18", path = "../brush-parser" }
 brush-core = { version = "^0.3.3", path = "../brush-core" }
 crossterm = { version = "0.29.0", features = ["serde"], optional = true }
@@ -35,7 +34,7 @@ thiserror = "2.0.12"
 tracing = "0.1.41"
 
 [target.'cfg(any(windows, unix))'.dependencies]
-tokio = { version = "1.46.1", features = ["macros", "signal"] }
+tokio = { version = "1.47.1", features = ["macros", "signal"] }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.3.3", features = ["wasm_js"] }

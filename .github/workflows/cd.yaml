@@ -83,11 +83,19 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
-      - name: "Installing musl cross tools"
+      - name: "Install musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@c99cc51b309eee71a866715cfa08c922f11cf898 # v2.56.19
+        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
         with:
           tool: cross
+
+      - name: "Install cargo-about"
+        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        with:
+          tool: cargo-about
+
+      - name: "Generate license notices"
+        run: cd brush-shell && cargo about generate -o ../LICENSE_NOTICES.html about.hbs
 
       - name: "Update build flags"
         if: endsWith(matrix.target, 'windows-msvc')
@@ -105,6 +113,7 @@ jobs:
           zip: windows
           checksum: sha256,sha512
           token: ${{ secrets.GITHUB_TOKEN }}
+          include: "LICENSE_NOTICES.html"
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'

@@ -13,7 +13,8 @@ cases:
     stdin: |
       declare -p > ./vars.txt
       # Filter out variables set by test infrastructure.
-      cat vars.txt | grep '^declare ' | grep -v LLVM | sed -e 's/=.*//'
+      # Filter out brush-specific variables.
+      cat vars.txt | grep '^declare ' | grep -v LLVM | grep -v BRUSH | sed -e 's/=.*//'
       rm vars.txt
 
   - name: "Static well-known variables"

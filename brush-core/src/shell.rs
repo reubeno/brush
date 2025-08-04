@@ -21,7 +21,7 @@ use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     prompt, sys::users, traps,
 };
-use crate::{interfaces, pathcache, pathsearch, sys, trace_categories};
+use crate::{history, interfaces, pathcache, pathsearch, sys, trace_categories};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -103,6 +103,9 @@ pub struct Shell {
 
     /// Key bindings for the shell, optionally implemented by an interactive shell.
     pub key_bindings: Option<KeyBindingsHelper>,
+
+    /// History of commands executed in the shell.
+    history: Option<history::History>,
 }
 
 impl Clone for Shell {
@@ -131,6 +134,7 @@ impl Clone for Shell {
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
             key_bindings: self.key_bindings.clone(),
+            history: self.history.clone(),
             depth: self.depth + 1,
         }
     }
@@ -251,6 +255,7 @@ impl Shell {
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
             key_bindings: options.key_bindings.clone(),
+            history: None,
             depth: 0,
         };
 
@@ -260,6 +265,19 @@ impl Shell {
 
         // Initialize environment.
         shell.initialize_vars(options)?;
+
+        // Set up history, if relevant.
+        if shell.options.enable_command_history {
+            if let Some(history_path) = shell.get_history_file_path() {
+                if history_path.exists() {
+                    shell.history = Some(history::History::import(history_path.as_path())?);
+                }
+            }
+
+            if shell.history.is_none() {
+                shell.history = Some(history::History::default());
+            }
+        }
 
         // Load profiles/configuration.
         shell.load_config(options).await?;
@@ -518,7 +536,18 @@ impl Shell {
             }),
         )?;
 
-        // TODO(vars): implement HISTCMD
+        // HISTCMD
+        let mut histcmd_var = ShellVariable::new(ShellValue::Dynamic {
+            getter: |shell| {
+                shell
+                    .history
+                    .as_ref()
+                    .map_or("0".into(), |h| h.count().to_string().into())
+            },
+            setter: |_| (),
+        });
+        histcmd_var.treat_as_integer();
+        self.env.set_global("HISTCMD", histcmd_var)?;
 
         // HISTFILE (if not already set)
         if !self.env.is_set("HISTFILE") {
@@ -1374,6 +1403,54 @@ impl Shell {
             .map(|s| PathBuf::from(s.into_owned()))
     }
 
+    /// Returns the path to the history file used by the shell, if one is set.
+    pub fn get_history_time_format(&self) -> Option<String> {
+        self.get_env_str("HISTTIMEFORMAT").map(|s| s.into_owned())
+    }
+
+    /// Saves history back to any backing storage.
+    pub fn save_history(&mut self) -> Result<(), error::Error> {
+        if let Some(history_file_path) = self.get_history_file_path() {
+            if let Some(history) = &mut self.history {
+                // See if there's *any* time format configured. That triggers writing out timestamps.
+                let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
+
+                // TODO: Observe options.append_to_history_file
+                history.flush(
+                    history_file_path,
+                    true, /*append?*/
+                    true, /*unsaved items only?*/
+                    write_timestamps,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Adds a command to history.
+    pub fn add_to_history(&mut self, command: &str) -> Result<(), error::Error> {
+        if let Some(history) = &mut self.history {
+            // Trim.
+            let command = command.trim();
+
+            // For now, discard empty commands.
+            if command.is_empty() {
+                return Ok(());
+            }
+
+            // Add it to history.
+            history.add(history::Item {
+                id: 0,
+                command_line: command.to_owned(),
+                timestamp: Some(chrono::Utc::now()),
+                dirty: true,
+            })?;
+        }
+
+        Ok(())
+    }
+
     /// Returns the number of the line being executed in the currently executing program.
     pub(crate) const fn get_current_input_line_number(&self) -> u32 {
         self.current_line_number
@@ -1773,6 +1850,16 @@ impl Shell {
         } else {
             Ok(None)
         }
+    }
+
+    /// Returns the shell's history, if it exists.
+    pub const fn history(&self) -> Option<&history::History> {
+        self.history.as_ref()
+    }
+
+    /// Returns a mutable reference to the shell's history, if it exists.
+    pub const fn history_mut(&mut self) -> Option<&mut history::History> {
+        self.history.as_mut()
     }
 }
 
