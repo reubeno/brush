@@ -306,8 +306,8 @@ pub(crate) fn get_default_builtins(
         // Input configuration builtins
         m.insert("bind".into(), builtin::<bind::BindCommand>());
 
-        // TODO(#469): implement history builtin
-        m.insert("history".into(), builtin::<unimp::UnimplementedCommand>());
+        // History
+        m.insert("history".into(), builtin::<history::HistoryCommand>());
 
         // TODO: implement caller builtin
         m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
