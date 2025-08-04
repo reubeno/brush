@@ -96,7 +96,7 @@ impl HistoryCommand {
             if offset > 0 {
                 // Convert to 0-based index.
                 let index = (offset - 1) as usize;
-                if history.remove_nth_item(index).is_none() {
+                if !history.remove_nth_item(index) {
                     writeln!(params.stderr(), "index past end of history")?;
                     return Ok(builtins::ExitCode::InvalidUsage);
                 }
