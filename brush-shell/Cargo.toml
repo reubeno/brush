@@ -42,10 +42,7 @@ reedline = ["brush-interactive/reedline"]
 workspace = true
 
 [dependencies]
-async-trait = "0.1.88"
-brush-parser = { version = "^0.2.18", path = "../brush-parser" }
 brush-core = { version = "^0.3.3", path = "../brush-core" }
-cfg-if = "1.0.1"
 clap = { version = "4.5.40", features = ["derive", "env", "wrap_help"] }
 const_format = "0.2.34"
 git-version = "0.3.9"
@@ -86,6 +83,8 @@ regex = "1.11.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
-test-with = { version = "0.15.3", default-features = false, features = ["executable"] }
+test-with = { version = "0.15.3", default-features = false, features = [
+    "executable",
+] }
 version-compare = "0.2.0"
 walkdir = "2.5.0"
