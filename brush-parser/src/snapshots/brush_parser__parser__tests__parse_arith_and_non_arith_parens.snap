@@ -1,0 +1,62 @@
+---
+source: brush-parser/src/parser.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "( : && ( (( 0 )) || : ) )",
+  result: Program(
+    cmds: [
+      List([
+        Item(AndOr(
+          first: Pipeline(
+            seq: [
+              Compound(Subshell(SubshellCommand(List([
+                Item(AndOr(
+                  first: Pipeline(
+                    seq: [
+                      Simple(Simple(
+                        w: Some(W(
+                          v: ":",
+                        )),
+                      )),
+                    ],
+                  ),
+                  additional: [
+                    And(Pipeline(
+                      seq: [
+                        Compound(Subshell(SubshellCommand(List([
+                          Item(AndOr(
+                            first: Pipeline(
+                              seq: [
+                                Compound(Arithmetic(ArithmeticCommand(
+                                  expr: UnexpandedArithmeticExpr(
+                                    value: "0",
+                                  ),
+                                )), None),
+                              ],
+                            ),
+                            additional: [
+                              Or(Pipeline(
+                                seq: [
+                                  Simple(Simple(
+                                    w: Some(W(
+                                      v: ":",
+                                    )),
+                                  )),
+                                ],
+                              )),
+                            ],
+                          ), Sequence),
+                        ]))), None),
+                      ],
+                    )),
+                  ],
+                ), Sequence),
+              ]))), None),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

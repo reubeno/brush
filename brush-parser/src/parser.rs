@@ -331,8 +331,13 @@ peg::parser! {
             raw_expr:$(arithmetic_expression_piece()*) { ast::UnexpandedArithmeticExpr { value: raw_expr } }
 
         rule arithmetic_expression_piece() =
+            // Allow a parenthesized expression (with matching opening and closing parens).
             specific_operator("(") (!specific_operator(")") arithmetic_expression_piece())* specific_operator(")") {} /
-            !arithmetic_end() [_] {}
+            // Otherwise consume any token that's neither the normal end of the entire arithmetic expression, nor an
+            // unexpected mismatched closing parenthesis. In the latter case, it may be that this really was never an
+            // arithmetic expression in the first place and we need to backtrack and instead try parsing as a subshell
+            // command instead.
+            !arithmetic_end() !specific_operator(")") [_] {}
 
         // TODO: evaluate arithmetic end; the semicolon is used in arithmetic for loops.
         rule arithmetic_end() -> () =
@@ -1011,6 +1016,27 @@ esac\
         assert_ron_snapshot!(ParseResult {
             input,
             result: &command
+        });
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arith_and_non_arith_parens() -> Result<()> {
+        let input = r"( : && ( (( 0 )) || : ) )";
+
+        let tokens = tokenize_str(input)?;
+        let result = super::token_parser::program(
+            &Tokens {
+                tokens: tokens.as_slice(),
+            },
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )?;
+
+        assert_ron_snapshot!(ParseResult {
+            input,
+            result: &result
         });
 
         Ok(())
