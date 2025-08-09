@@ -31,7 +31,7 @@ cases:
       unset -f myfunc
       myfunc
 
-  - name: "Unset array element"
+  - name: "Unset indexed array element"
     stdin: |
       declare -a myarray=(a b c)
 
@@ -45,6 +45,30 @@ cases:
       declare -p myarray
 
       unset myarray[1]
+      declare -p myarray
+
+  - name: "Unset associative array element"
+    stdin: |
+      echo "[1]"
+
+      declare -A myarray=([key]=value)
+
+      unset myarray[key]
+      declare -p myarray
+
+      echo "[2]"
+
+      declare -A myarray=([key]=value)
+
+      unset "myarray[key]"
+      declare -p myarray
+
+      echo "[3]"
+
+      declare -A myarray=([key]=value)
+      key="x:y:z"
+
+      unset "myarray[key]"
       declare -p myarray
 
   - name: "Unset array element with interesting expression"
