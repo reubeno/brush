@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+
 use clap::Parser;
 
-use crate::{builtins, commands};
+use crate::{Shell, ShellValue, builtins, commands, error, variables::ShellValueUnsetType};
 
 /// Unset a variable.
 #[derive(Parser)]
@@ -61,14 +63,7 @@ impl builtins::Command for UnsetCommand {
                         context.shell.env.unset(name.as_str())?.is_some()
                     }
                     brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                        // First evaluate the index expression.
-                        let index_as_expr = brush_parser::arithmetic::parse(index.as_str())?;
-                        let evaluated_index = context.shell.eval_arithmetic(&index_as_expr)?;
-
-                        context
-                            .shell
-                            .env
-                            .unset_index(name.as_str(), evaluated_index.to_string().as_str())?
+                        unset_array_index(context.shell, name.as_str(), index.as_str())?
                     }
                     brush_parser::word::Parameter::NamedWithAllIndices {
                         name: _,
@@ -91,4 +86,31 @@ impl builtins::Command for UnsetCommand {
 
         Ok(builtins::ExitCode::Success)
     }
+}
+
+fn unset_array_index(shell: &mut Shell, name: &str, index: &str) -> Result<bool, error::Error> {
+    // First check to see if it's an associative array.
+    let is_assoc_array = if let Some((_, var)) = shell.env.get(name) {
+        matches!(
+            var.value(),
+            ShellValue::AssociativeArray(_)
+                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+        )
+    } else {
+        false
+    };
+
+    // Compute which index we should actually use. For indexed arrays, we need to evaluate
+    // the index string as an arithmetic expression first.
+    let index_to_use: Cow<'_, str> = if is_assoc_array {
+        index.into()
+    } else {
+        // First evaluate the index expression.
+        let index_as_expr = brush_parser::arithmetic::parse(index)?;
+        let evaluated_index = shell.eval_arithmetic(&index_as_expr)?;
+        evaluated_index.to_string().into()
+    };
+
+    // Now we can try to unset, and return the result.
+    shell.env.unset_index(name, index_to_use.as_ref())
 }
