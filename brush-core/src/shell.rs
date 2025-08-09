@@ -5,6 +5,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use directories::BaseDirs;
+
 use normalize_path::NormalizePath;
 use rand::Rng;
 use tokio::sync::Mutex;
@@ -765,13 +767,25 @@ impl Shell {
             //     * ~/.bash_profile
             //     * ~/.bash_login
             //     * ~/.profile
+            //     config_dir/brush/.profile
             //
             self.source_if_exists(Path::new("/etc/profile"), &params)
                 .await?;
             if let Some(home_path) = self.get_home_dir() {
                 if options.sh_mode {
-                    self.source_if_exists(home_path.join(".profile").as_path(), &params)
-                        .await?;
+                    if !self
+                        .source_if_exists(home_path.join(".profile").as_path(), &params)
+                        .await?
+                    {
+                        if let Some(base_dirs) = BaseDirs::new() {
+                            let config_dir = base_dirs.config_dir();
+                            self.source_if_exists(
+                                config_dir.join("brush").join(".profile").as_path(),
+                                &params,
+                            )
+                            .await?;
+                        }
+                    }
                 } else {
                     if !self
                         .source_if_exists(home_path.join(".bash_profile").as_path(), &params)
@@ -781,8 +795,19 @@ impl Shell {
                             .source_if_exists(home_path.join(".bash_login").as_path(), &params)
                             .await?
                         {
-                            self.source_if_exists(home_path.join(".profile").as_path(), &params)
-                                .await?;
+                            if !self
+                                .source_if_exists(home_path.join(".profile").as_path(), &params)
+                                .await?
+                            {
+                                if let Some(base_dirs) = BaseDirs::new() {
+                                    let config_dir = base_dirs.config_dir();
+                                    self.source_if_exists(
+                                        config_dir.join("brush").join(".profile").as_path(),
+                                        &params,
+                                    )
+                                    .await?;
+                                }
+                            }
                         }
                     }
                 }
@@ -804,14 +829,31 @@ impl Shell {
                     //
                     //     /etc/bash.bashrc
                     //     ~/.bashrc
+                    //     ~/.brushrc
+                    //     config_dir/brush/.bashrc
+                    //     config_dir/brush/.brushrc
                     //
                     self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
                         .await?;
+
                     if let Some(home_path) = self.get_home_dir() {
                         self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
                             .await?;
                         self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
                             .await?;
+                    }
+                    if let Some(base_dirs) = BaseDirs::new() {
+                        let config_dir = base_dirs.config_dir();
+                        self.source_if_exists(
+                            config_dir.join("brush").join(".bashrc").as_path(),
+                            &params,
+                        )
+                        .await?;
+                        self.source_if_exists(
+                            config_dir.join("brush").join(".brushrc").as_path(),
+                            &params,
+                        )
+                        .await?;
                     }
                 }
             } else {
