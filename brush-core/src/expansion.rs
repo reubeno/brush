@@ -9,6 +9,7 @@ use itertools::Itertools;
 use crate::ExecutionParameters;
 use crate::arithmetic;
 use crate::arithmetic::ExpandAndEvaluate;
+use crate::braceexpansion;
 use crate::commands;
 use crate::env;
 use crate::error;
@@ -518,10 +519,10 @@ impl<'a> WordExpander<'a> {
         if let Some(brace_expansion_pieces) = brace_expansion_pieces {
             tracing::debug!(target: trace_categories::EXPANSION, "Brace expansion pieces: {brace_expansion_pieces:?}");
 
-            let result = generate_and_combine_brace_expansions(brace_expansion_pieces);
-            let result = result
-                .into_iter()
-                .map(|s| if s.is_empty() { "\"\"".into() } else { s });
+            let result =
+                braceexpansion::generate_and_combine_brace_expansions(brace_expansion_pieces)
+                    .into_iter()
+                    .map(|s| if s.is_empty() { "\"\"".into() } else { s });
             let result = result.map(|s| s.into()).collect();
 
             Ok(result)
@@ -1715,21 +1716,6 @@ fn may_contain_braces_to_expand(s: &str) -> bool {
     saw_opening_brace && saw_closing_brace
 }
 
-fn generate_and_combine_brace_expansions(
-    pieces: Vec<brush_parser::word::BraceExpressionOrText>,
-) -> Vec<String> {
-    let expansions: Vec<Vec<String>> = pieces
-        .into_iter()
-        .map(|piece| piece.generate().collect())
-        .collect();
-
-    expansions
-        .into_iter()
-        .multi_cartesian_product()
-        .map(|v| v.join(""))
-        .collect()
-}
-
 #[allow(clippy::panic_in_result_fn)]
 #[allow(clippy::needless_return)]
 #[cfg(test)]
@@ -1795,6 +1781,10 @@ mod tests {
         );
         assert_eq!(expander.brace_expand_if_needed("a{}b")?, ["a{}b"]);
         assert_eq!(expander.brace_expand_if_needed("a{ }b")?, ["a{ }b"]);
+        assert_eq!(
+            expander.brace_expand_if_needed("{a,b{1,2}}")?,
+            ["a", "b1", "b2"]
+        );
 
         Ok(())
     }
