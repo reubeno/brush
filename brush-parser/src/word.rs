@@ -375,6 +375,7 @@ pub enum ParameterTransformOp {
 
 /// Represents a sub-word that is either a brace expression or some other word text.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum BraceExpressionOrText {
     /// A brace expression.
     Expr(BraceExpression),
@@ -385,24 +386,9 @@ pub enum BraceExpressionOrText {
 /// Represents a brace expression to be expanded.
 pub type BraceExpression = Vec<BraceExpressionMember>;
 
-impl BraceExpressionOrText {
-    /// Generates expansions for this value.
-    pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
-        match self {
-            Self::Expr(members) => {
-                let mut iters = vec![];
-                for m in members {
-                    iters.push(m.generate());
-                }
-                Box::new(iters.into_iter().flatten())
-            }
-            Self::Text(text) => Box::new(std::iter::once(text)),
-        }
-    }
-}
-
 /// Member of a brace expression.
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum BraceExpressionMember {
     /// An inclusive numerical sequence.
     NumberSequence {
@@ -422,61 +408,8 @@ pub enum BraceExpressionMember {
         /// Increment value.
         increment: i64,
     },
-    /// Text.
-    Text(String),
-}
-
-impl BraceExpressionMember {
-    /// Generates expansions for this member.
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::cast_sign_loss)]
-    pub fn generate(self) -> Box<dyn Iterator<Item = String>> {
-        match self {
-            Self::NumberSequence {
-                start,
-                end,
-                increment,
-            } => {
-                let increment = increment.unsigned_abs() as usize;
-
-                if start <= end {
-                    Box::new((start..=end).step_by(increment).map(|n| n.to_string()))
-                } else {
-                    Box::new(
-                        (end..=start)
-                            .step_by(increment)
-                            .map(|n| n.to_string())
-                            .collect::<Vec<_>>()
-                            .into_iter()
-                            .rev(),
-                    )
-                }
-            }
-
-            Self::CharSequence {
-                start,
-                end,
-                increment,
-            } => {
-                let increment = increment.unsigned_abs() as usize;
-
-                if start <= end {
-                    Box::new((start..=end).step_by(increment).map(|c| c.to_string()))
-                } else {
-                    Box::new(
-                        (end..=start)
-                            .step_by(increment)
-                            .map(|c| c.to_string())
-                            .collect::<Vec<_>>()
-                            .into_iter()
-                            .rev(),
-                    )
-                }
-            }
-
-            Self::Text(text) => Box::new(std::iter::once(text)),
-        }
-    }
+    /// Child text or expressions.
+    Child(Vec<BraceExpressionOrText>),
 }
 
 /// Parse a word into its constituent pieces.
@@ -561,40 +494,51 @@ peg::parser! {
                 all_pieces
             }
 
+        // Takes a word as input.
         pub(crate) rule brace_expansions() -> Option<Vec<BraceExpressionOrText>> =
-            pieces:(brace_expansion_piece()+) { Some(pieces) } /
+            pieces:(brace_expansion_piece(<![_]>)+) { Some(pieces) } /
             [_]* { None }
 
-        rule brace_expansion_piece() -> BraceExpressionOrText =
+        // Returns either a complete brace expression (without any prefix or suffix), or a
+        // non-brace-expression string.
+        rule brace_expansion_piece<T>(stop_condition: rule<T>) -> BraceExpressionOrText =
             expr:brace_expr() {
                 BraceExpressionOrText::Expr(expr)
             } /
-            text:$(non_brace_expr_text()+) { BraceExpressionOrText::Text(text.to_owned()) }
+            text:$(non_brace_expr_text(<stop_condition()>)+) { BraceExpressionOrText::Text(text.to_owned()) }
 
-        rule non_brace_expr_text() -> () =
-            !"{" word_piece(<['{']>, false) {} /
-            !brace_expr() "{" {}
+        // Parses text that is not considered to contain a brace expression.
+        rule non_brace_expr_text<T>(stop_condition: rule<T>) -> () =
+            !"{" word_piece(<['{'] {} / stop_condition() {}>, false) {} /
+            !brace_expr() !stop_condition() "{" {}
 
-        rule brace_expr() -> BraceExpression =
+        // Parses a complete brace expression, with no prefix or suffix.
+        pub(crate) rule brace_expr() -> BraceExpression =
             "{" inner:brace_expr_inner() "}" { inner }
 
-        rule brace_expr_inner() -> BraceExpression =
+        // Parses the text inside a complete brace expression; basically the complete brace
+        // expression without the opening and closing brace characters.
+        pub(crate) rule brace_expr_inner() -> BraceExpression =
             brace_text_list_expr() /
             seq:brace_sequence_expr() { vec![seq] }
 
-        rule brace_text_list_expr() -> BraceExpression =
-            members:(brace_text_list_member() **<2,> ",") {
-                members.into_iter().flatten().collect()
+        // Parses a list of brace expression members, including the separating commas; does
+        // not include the opening and closing braces.
+        pub(crate) rule brace_text_list_expr() -> BraceExpression =
+            brace_text_list_member() **<2,> ","
+
+        // Parses an element that can occur in a brace expression member list, not including the
+        // terminating comma or closing brace.
+        pub(crate) rule brace_text_list_member() -> BraceExpressionMember =
+            // Matches an empty-string member, without consuming the comma or closing brace that terminates it.
+            &[',' | '}'] { BraceExpressionMember::Child(vec![BraceExpressionOrText::Text(String::new())]) } /
+            // Matches a nested string that may include some combination of concatenated textual strings
+            // and brace expressions.
+            child_pieces:(brace_expansion_piece(<[',' | '}']>)+) {
+                BraceExpressionMember::Child(child_pieces)
             }
 
-        rule brace_text_list_member() -> BraceExpression =
-            &[',' | '}'] { vec![BraceExpressionMember::Text(String::new())] } /
-            brace_expr() /
-            text:$(word_piece(<[',' | '}']>, false)) {
-                vec![BraceExpressionMember::Text(text.to_owned())]
-            }
-
-        rule brace_sequence_expr() -> BraceExpressionMember =
+        pub(crate) rule brace_sequence_expr() -> BraceExpressionMember =
             start:number() ".." end:number() increment:(".." n:number() { n })? {
                 BraceExpressionMember::NumberSequence { start, end, increment: increment.unwrap_or(1) }
             } /
@@ -1071,5 +1015,20 @@ mod tests {
         assert!(super::expansion_parser::is_arithmetic_word_piece("(a", &options).is_err());
         assert!(super::expansion_parser::is_arithmetic_word_piece("(a))", &options).is_err());
         assert!(super::expansion_parser::is_arithmetic_word_piece("((a)", &options).is_err());
+    }
+
+    #[test]
+    fn test_brace_expansion_parsing() -> Result<()> {
+        let options = ParserOptions::default();
+
+        let inputs = ["x{a,b}y", "{a,b{1,2}}"];
+
+        for input in inputs {
+            assert_ron_snapshot!(super::parse_brace_expansions(input, &options)?.ok_or_else(
+                || anyhow::anyhow!("Expected brace expansion to be parsed successfully")
+            )?);
+        }
+
+        Ok(())
     }
 }
