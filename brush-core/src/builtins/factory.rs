@@ -151,7 +151,9 @@ async fn exec_declaration_builtin_impl<T: builtins::DeclarationCommand + Send + 
 
     for (i, arg) in args.into_iter().enumerate() {
         match arg {
-            CommandArg::String(s) if i == 0 || s.starts_with('-') || s.starts_with('+') => {
+            CommandArg::String(s)
+                if i == 0 || (s.len() > 1 && (s.starts_with('-') || s.starts_with('+'))) =>
+            {
                 options.push(s);
             }
             _ => declarations.push(arg),

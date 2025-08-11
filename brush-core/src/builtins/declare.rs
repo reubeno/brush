@@ -1,10 +1,11 @@
 use clap::Parser;
 use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
+use tracing::warn;
 
 use crate::{
     builtins, commands,
-    env::{EnvironmentLookup, EnvironmentScope},
+    env::{self, EnvironmentLookup, EnvironmentScope},
     error,
     variables::{
         self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
@@ -251,6 +252,24 @@ impl DeclareCommand {
         // Extract the variable name and the initial value being assigned (if any).
         let (name, assigned_index, initial_value, name_is_array) =
             Self::declaration_to_name_and_value(declaration)?;
+
+        // Special-case: `local -`
+        if name == "-" && matches!(verb, DeclareVerb::Local) {
+            // TODO: `local -` allows shadowing the current `set` options (i.e., $-), with
+            // subsequent updates getting discarded when the current local scope is popped.
+            warn!("not yet implemented: local -");
+            return Ok(true);
+        }
+
+        // Make sure it's a valid name.
+        if !env::valid_variable_name(name.as_str()) {
+            writeln!(
+                context.stderr(),
+                "{}: {name}: not a valid variable name",
+                context.command_name
+            )?;
+            return Ok(false);
+        }
 
         // Figure out where we should look.
         let lookup = if create_var_local {

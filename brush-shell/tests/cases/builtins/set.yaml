@@ -88,3 +88,16 @@ cases:
 
       set a +x
       echo ${*}
+
+  - name: "function-local set"
+    known_failure: true
+    stdin: |
+      function f() {
+          local -
+          set -x
+          echo "In func"
+      }
+
+      echo "Before func"
+      f
+      echo "After func"

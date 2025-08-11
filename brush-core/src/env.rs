@@ -576,3 +576,35 @@ impl ShellVariableMap {
         self.variables.insert(name.into(), var)
     }
 }
+
+pub(crate) fn valid_variable_name(s: &str) -> bool {
+    let mut cs = s.chars();
+    match cs.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+            cs.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        Some(_) | None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_variable_name() {
+        assert!(!valid_variable_name(""));
+        assert!(!valid_variable_name("1"));
+        assert!(!valid_variable_name(" a"));
+        assert!(!valid_variable_name(" "));
+
+        assert!(valid_variable_name("_"));
+        assert!(valid_variable_name("_a"));
+        assert!(valid_variable_name("_1"));
+        assert!(valid_variable_name("_a1"));
+        assert!(valid_variable_name("a"));
+        assert!(valid_variable_name("A"));
+        assert!(valid_variable_name("a1"));
+        assert!(valid_variable_name("A1"));
+    }
+}

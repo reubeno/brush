@@ -347,3 +347,9 @@ cases:
       declare -c another
       another+=eFg
       declare -p another
+
+  - name: "Declare invalid identifiers"
+    ignore_stderr: true
+    stdin: |
+      declare 1=x && echo "Set 1"
+      declare @=10 && echo "Set @"
