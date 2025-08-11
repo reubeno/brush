@@ -1315,7 +1315,7 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::Parameter::Special(s) => Ok(self.expand_special_parameter(s)),
             brush_parser::word::Parameter::Named(n) => {
-                if !valid_variable_name(n.as_str()) {
+                if !env::valid_variable_name(n.as_str()) {
                     Err(error::Error::BadSubstitution)
                 } else if let Some((_, var)) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
@@ -1661,16 +1661,6 @@ fn to_initial_capitals(s: &str) -> String {
     result
 }
 
-fn valid_variable_name(s: &str) -> bool {
-    let mut cs = s.chars();
-    match cs.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
-            cs.all(|c| c.is_ascii_alphanumeric() || c == '_')
-        }
-        Some(_) | None => false,
-    }
-}
-
 fn transform_expansion(
     expansion: Expansion,
     mut f: impl FnMut(String) -> Result<String, error::Error>,
@@ -1822,22 +1812,5 @@ mod tests {
         assert_eq!(to_initial_capitals("ab bc cd"), String::from("Ab Bc Cd"));
         assert_eq!(to_initial_capitals(" a "), String::from(" A "));
         assert_eq!(to_initial_capitals(""), String::new());
-    }
-
-    #[test]
-    fn test_valid_variable_name() {
-        assert!(!valid_variable_name(""));
-        assert!(!valid_variable_name("1"));
-        assert!(!valid_variable_name(" a"));
-        assert!(!valid_variable_name(" "));
-
-        assert!(valid_variable_name("_"));
-        assert!(valid_variable_name("_a"));
-        assert!(valid_variable_name("_1"));
-        assert!(valid_variable_name("_a1"));
-        assert!(valid_variable_name("a"));
-        assert!(valid_variable_name("A"));
-        assert!(valid_variable_name("a1"));
-        assert!(valid_variable_name("A1"));
     }
 }
