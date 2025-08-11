@@ -40,9 +40,17 @@ cases:
     test_files:
       - path: "script.sh"
         contents: |
-          echo 'hi'
+          echo "ARGS: $@"
           exit 22
-    args: ["./script.sh"]
+    args: ["./script.sh", 1, 2, 3]
+
+  - name: "Passing option-like arg to script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "ARGS: $@"
+          exit 22
+    args: ["./script.sh", "-v"]
 
   - name: "Ensure ~ is resolvable"
     stdin: "test ~"
