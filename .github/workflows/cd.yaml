@@ -79,18 +79,18 @@ jobs:
 
       - name: "Setup cross-compiling toolchain"
         if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
-        uses: taiki-e/setup-cross-toolchain-action@0123528f956f923e7a476f4cc04882bc005e7c89 # v1.29.1
+        uses: taiki-e/setup-cross-toolchain-action@4c366193ea262ae0c17c6b79c3edc3d4f1394263 # v1.30.0
         with:
           target: ${{ matrix.target }}
 
       - name: "Install musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        uses: taiki-e/install-action@5f6f3e0538d249cb0b47f8d5b636c120babeb082 # v2.58.6
         with:
           tool: cross
 
       - name: "Install cargo-about"
-        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        uses: taiki-e/install-action@5f6f3e0538d249cb0b47f8d5b636c120babeb082 # v2.58.6
         with:
           tool: cargo-about
 

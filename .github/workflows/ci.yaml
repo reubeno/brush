@@ -117,7 +117,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        uses: taiki-e/install-action@5f6f3e0538d249cb0b47f8d5b636c120babeb082 # v2.58.6
         with:
           tool: cross
 
@@ -194,12 +194,12 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        uses: taiki-e/install-action@5f6f3e0538d249cb0b47f8d5b636c120babeb082 # v2.58.6
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        uses: taiki-e/install-action@5f6f3e0538d249cb0b47f8d5b636c120babeb082 # v2.58.6
         with:
           tool: cargo-llvm-cov
 
@@ -327,7 +327,7 @@ jobs:
         run: cargo check --all-features --all-targets
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        uses: taiki-e/install-action@5f6f3e0538d249cb0b47f8d5b636c120babeb082 # v2.58.6
         with:
           tool: cargo-deny
 
@@ -354,7 +354,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@d31232495ad76f47aad66e3501e47780b49f0f3e # v2.57.5
+        uses: taiki-e/install-action@5f6f3e0538d249cb0b47f8d5b636c120babeb082 # v2.58.6
         with:
           tool: cargo-udeps
 
@@ -434,7 +434,7 @@ jobs:
           path: "bash-completion"
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: "binaries-x86_64-linux"
           path: "binaries"
@@ -556,13 +556,13 @@ jobs:
           path: sources
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: binaries-x86_64-linux
           path: binaries
 
       - name: Download integration test binaries
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: integration-tests-x86_64-linux
           path: binaries
