@@ -27,19 +27,8 @@ impl CommandLineArgs {
     fn parse_from<'a>(itr: impl IntoIterator<Item = &'a String>) -> Self {
         let (mut this, script_args) = brush_core::builtins::parse_known::<Self, _>(itr);
         // if we have `--` and unparsed raw args than
-        if let Some(mut args) = script_args {
-            // if script_path has not been parsed yet
-            // use the first script_args[0] (it is `--`)
-            // as script_path
-            let first = args.next();
-            if this.script_path.is_none() {
-                this.script_path = first.cloned();
-                this.script_args.extend(args.cloned());
-            } else {
-                // if script_path already exists, everyone goes into script_args
-                this.script_args
-                    .extend(first.into_iter().chain(args).cloned());
-            }
+        if let Some(args) = script_args {
+            this.script_args.extend(args.cloned());
         }
         this
     }
@@ -183,10 +172,11 @@ async fn run_impl(
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
         // Pass through args.
-        if let Some(script_path) = args.script_path {
-            shell.shell_mut().as_mut().shell_name = Some(script_path);
+        if !args.script_args.is_empty() {
+            shell.shell_mut().as_mut().shell_name = Some(args.script_args[0].clone());
         }
-        shell.shell_mut().as_mut().positional_parameters = args.script_args;
+        shell.shell_mut().as_mut().positional_parameters =
+            args.script_args.iter().skip(1).cloned().collect();
 
         // Execute the command string.
         let params = shell.shell().as_ref().default_exec_params();
@@ -200,21 +190,26 @@ async fn run_impl(
     // args) passed on the command line via positional arguments, then we copy over the
     // parameters but do *not* execute it.
     } else if args.read_commands_from_stdin {
-        if let Some(script_path) = args.script_path {
-            shell.shell_mut().as_mut().positional_parameters = std::iter::once(script_path)
-                .chain(args.script_args.into_iter())
-                .collect();
+        if !args.script_args.is_empty() {
+            shell
+                .shell_mut()
+                .as_mut()
+                .positional_parameters
+                .clone_from(&args.script_args);
         }
 
         shell.run_interactively().await?;
 
     // If a script path was provided, then run the script.
-    } else if let Some(script_path) = args.script_path {
+    } else if !args.script_args.is_empty() {
         // The path to a script was provided on the command line; run the script.
         shell
             .shell_mut()
             .as_mut()
-            .run_script(Path::new(&script_path), args.script_args.iter())
+            .run_script(
+                Path::new(&args.script_args[0]),
+                args.script_args.iter().skip(1),
+            )
             .await?;
 
     // If we got down here, then we don't have any commands to run. We'll be reading
@@ -246,7 +241,7 @@ async fn instantiate_shell(
     // Commands are read from stdin if -s was provided, or if no command was specified (either via
     // -c or as a positional argument).
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
-        || (args.script_path.is_none() && args.command.is_none());
+        || (args.script_args.is_empty() && args.command.is_none());
 
     let interactive = args.is_interactive();
 
