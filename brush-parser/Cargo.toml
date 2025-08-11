@@ -24,7 +24,7 @@ debug-tracing = ["peg/trace"]
 [dependencies]
 arbitrary = { version = "1.4.1", optional = true, features = ["derive"] }
 cached = "0.56.0"
-indenter = "0.3.3"
+indenter = "0.3.4"
 peg = "0.8.5"
 thiserror = "2.0.12"
 tracing = "0.1.41"
