@@ -71,3 +71,15 @@ cases:
   - name: "Positional parameter count not mistaken for comment (backticks)"
     stdin: |
       echo `echo $#`
+
+  - name: "Command substitution with only input redir"
+    stdin: |
+      echo "Some text" >file.txt
+      x=$(<file.txt)
+      echo "x: $x"
+
+  - name: "Backquote with only input redir"
+    stdin: |
+      echo "Some text" >file.txt
+      x=`<file.txt`
+      echo "x: $x"

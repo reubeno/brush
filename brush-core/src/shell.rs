@@ -1118,7 +1118,7 @@ impl Shell {
         .await
     }
 
-    async fn run_parsed_result(
+    pub(crate) async fn run_parsed_result(
         &mut self,
         parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
         source_info: &brush_parser::SourceInfo,
