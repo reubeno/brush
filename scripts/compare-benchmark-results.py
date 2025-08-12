@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 import argparse
-import datetime
 import re
 from dataclasses import dataclass
 from typing import Dict
