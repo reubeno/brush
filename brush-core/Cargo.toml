@@ -35,6 +35,7 @@ strum = "0.27.2"
 strum_macros = "0.27.2"
 thiserror = "2.0.12"
 tracing = "0.1.41"
+directories = "6.0.0"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 tokio = { version = "1.47.1", features = ["io-util", "macros", "rt"] }
