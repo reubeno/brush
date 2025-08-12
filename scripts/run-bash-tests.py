@@ -108,7 +108,7 @@ elif args.command == "diff":
 
         test_cmd += ["-c", f"source {test_script_name} >{out_path} 2>&1"]
 
-        test_result = subprocess.run(test_cmd, cwd=bash_tests_dir, env=env, check=False)
+        subprocess.run(test_cmd, cwd=bash_tests_dir, env=env, check=False)
 
         # ---------------------
 
