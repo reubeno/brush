@@ -99,7 +99,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
@@ -182,7 +182,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: stable
           components: llvm-tools-preview
@@ -309,7 +309,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up rust toolchain (${{ matrix.rust-version }})
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: ${{ matrix.rust-version }}
           components: clippy, rustfmt
@@ -349,7 +349,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up nightly rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: nightly
 
@@ -381,7 +381,7 @@ jobs:
           ref: main
 
       - name: Set up rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
         with:
           toolchain: stable
 

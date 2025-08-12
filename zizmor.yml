@@ -2,5 +2,3 @@ rules:
   unpinned-uses:
     config:
       policies:
-        # For now, we allow rust-toolchain to be used with a branch.
-        dtolnay/rust-toolchain: any
