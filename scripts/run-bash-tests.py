@@ -124,7 +124,7 @@ elif args.command == "diff":
 
         oracle_cmd += ["-c", f"source {test_script_name} >{oracle_out_path} 2>&1"]
 
-        oracle_test_result = subprocess.run(oracle_cmd, cwd=bash_tests_dir, env=env, check=False)
+        subprocess.run(oracle_cmd, cwd=bash_tests_dir, env=env, check=False)
 
         # -----------------------
 
