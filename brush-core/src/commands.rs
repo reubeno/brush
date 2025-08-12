@@ -588,7 +588,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     s: String,
 ) -> Result<String, error::Error> {
     // Instantiate a subshell to run the command in.
-    let mut subshell = shell.clone();
+    let subshell = shell.clone();
 
     // Get our own set of parameters we can customize and use.
     let mut params = params.clone();
@@ -598,13 +598,11 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     let (reader, writer) = openfiles::pipe()?;
     params.open_files.set(OpenFiles::STDOUT_FD, writer.into());
 
-    // Run the command.
-    let result = subshell.run_string(s, &params).await?;
-
-    // Make sure the subshell and params are closed; among other things, this
-    // ensures they're not holding onto the write end of the pipe.
-    drop(subshell);
-    drop(params);
+    // Run the command. Pass ownership of the subshell and params to
+    // run_substitution_command; we must ensure that they're both dropped
+    // by the time the call returns (so they're not holding onto the write
+    // end of the pipe).
+    let result = run_substitution_command(subshell, params, s).await?;
 
     // Store the status.
     shell.last_exit_status = result.exit_code;
@@ -613,4 +611,86 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     let output_str = std::io::read_to_string(OpenFile::from(reader))?;
 
     Ok(output_str)
+}
+
+async fn run_substitution_command(
+    mut shell: Shell,
+    mut params: ExecutionParameters,
+    command: String,
+) -> Result<ExecutionResult, error::Error> {
+    // Parse the string into a whole shell program.
+    let parse_result = shell.parse_string(command);
+
+    // Check for a command that is only an input redirection ("< file").
+    // If detected, emulate `cat file` to stdout and return immediately.
+    // If we failed to parse, then we'll fall below and handle it there.
+    if let Ok(program) = &parse_result {
+        if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
+            interp::setup_redirect(&mut shell, &mut params, redir).await?;
+            std::io::copy(&mut params.stdin(), &mut params.stdout())?;
+            return Ok(ExecutionResult::new(0));
+        }
+    }
+
+    let source_info = brush_parser::SourceInfo {
+        source: String::from("main"),
+    };
+
+    // Handle the parse result using default shell behavior.
+    shell
+        .run_parsed_result(parse_result, &source_info, &params)
+        .await
+}
+
+// Detects a subshell command that consists solely of a single input redirection
+// (e.g., "< file"), returning the IoRedirect when present.
+fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::IoRedirect> {
+    // We're looking for exactly one complete command...
+    let [complete] = program.complete_commands.as_slice() else {
+        return None;
+    };
+
+    // ...a single list item...
+    let ast::CompoundList(items) = complete;
+    let [item] = items.as_slice() else {
+        return None;
+    };
+
+    // ...with a single pipeline (no && or || chaining)...
+    let and_or = &item.0;
+    if !and_or.additional.is_empty() {
+        return None;
+    }
+
+    // ...not negated...
+    let pipeline = &and_or.first;
+    if pipeline.bang {
+        return None;
+    }
+
+    // ...with a single command in the pipeline...
+    let [ast::Command::Simple(simple_cmd)] = pipeline.seq.as_slice() else {
+        return None;
+    };
+
+    // ...with no program word/name and no suffix...
+    if simple_cmd.word_or_name.is_some() || simple_cmd.suffix.is_some() {
+        return None;
+    }
+
+    // ...and exactly one prefix containing an I/O redirect...
+    let prefix = simple_cmd.prefix.as_ref()?;
+    let [ast::CommandPrefixOrSuffixItem::IoRedirect(redir)] = prefix.0.as_slice() else {
+        return None;
+    };
+
+    // ...that is a file input redirection to a filename, targeting stdin.
+    match redir {
+        ast::IoRedirect::File(
+            fd,
+            ast::IoFileRedirectKind::Read,
+            ast::IoFileRedirectTarget::Filename(..),
+        ) if fd.is_none_or(|fd| fd == openfiles::OpenFiles::STDIN_FD) => Some(redir),
+        _ => None,
+    }
 }
