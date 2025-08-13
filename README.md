@@ -127,6 +127,16 @@ pacman -S brush
 ```
 </details>
 
+<details>
+<summary>🍺 <b>Installing using Homebrew</b></summary>
+
+Homebrew users can install using [the `brush` formula](https://formulae.brew.sh/formula/brush):
+
+```bash
+brew install brush
+```
+</details>
+
 ## 👥 Community
 
 `brush` has a community Discord server, available [here](https://discord.gg/kPRgC9j3Tj).
