@@ -151,8 +151,12 @@ pub trait InteractiveShell: Send {
                     let mut shell_mut = self.shell_mut();
 
                     let nonempty_buffer = if let Some((buffer, cursor)) = buffer_info {
-                        shell_mut.as_mut().set_edit_buffer(buffer, cursor)?;
-                        true
+                        if !buffer.is_empty() {
+                            shell_mut.as_mut().set_edit_buffer(buffer, cursor)?;
+                            true
+                        } else {
+                            false
+                        }
                     } else {
                         false
                     };
