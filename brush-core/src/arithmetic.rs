@@ -219,8 +219,8 @@ fn apply_binary_op(
     let left = left.eval(shell)?;
     let right = right.eval(shell)?;
 
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_sign_loss)]
     match op {
         ast::BinaryOperator::Power => {
             if right >= 0 {

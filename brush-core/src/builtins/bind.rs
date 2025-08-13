@@ -25,7 +25,7 @@ impl BindKeyMap {
         matches!(self, Self::ViCommand | Self::ViInsert)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     const fn is_emacs(&self) -> bool {
         matches!(
             self,

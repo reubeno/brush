@@ -10,13 +10,13 @@ impl RawModeToggle {
         Ok(Self { initial })
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self)]
     pub fn enable(&self) -> Result<(), ShellError> {
         crossterm::terminal::enable_raw_mode()?;
         Ok(())
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self)]
     pub fn disable(&self) -> Result<(), ShellError> {
         crossterm::terminal::disable_raw_mode()?;
         Ok(())

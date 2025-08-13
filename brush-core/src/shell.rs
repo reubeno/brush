@@ -305,8 +305,8 @@ impl Shell {
         Ok(())
     }
 
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::too_many_lines)]
+    #[expect(clippy::unwrap_in_result)]
     fn initialize_vars(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
         // Seed parameters from environment (unless requested not to do so).
         if !options.do_not_inherit_env {
@@ -1213,7 +1213,6 @@ impl Shell {
     }
 
     /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
-    #[allow(clippy::unused_async)]
     pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
         // This is a brush extension.
         self.expand_prompt_var("BRUSH_PS_ALT", "").await
@@ -1611,7 +1610,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `open_files` - The new file descriptor table to use.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "not used on some platforms")]
     pub(crate) fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
         self.open_files = open_files;
     }

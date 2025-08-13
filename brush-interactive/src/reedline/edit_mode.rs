@@ -219,7 +219,7 @@ const fn translate_reedline_keycode(keycode: reedline::KeyCode) -> Option<Key> {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option<KeyAction> {
     match event {
         reedline::ReedlineEvent::Edit(cmds) => {

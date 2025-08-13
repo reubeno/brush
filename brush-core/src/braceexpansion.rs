@@ -27,8 +27,7 @@ fn expand_brace_expr_or_text(
     }
 }
 
-#[allow(clippy::cast_possible_truncation)]
-#[allow(clippy::cast_sign_loss)]
+#[expect(clippy::cast_possible_truncation)]
 fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterator<Item = String>> {
     match bem {
         word::BraceExpressionMember::NumberSequence {

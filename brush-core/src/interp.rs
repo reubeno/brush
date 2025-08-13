@@ -47,13 +47,13 @@ impl From<processes::ProcessWaitResult> for ExecutionResult {
 impl From<std::process::Output> for ExecutionResult {
     fn from(output: std::process::Output) -> Self {
         if let Some(code) = output.status.code() {
-            #[allow(clippy::cast_sign_loss)]
+            #[expect(clippy::cast_sign_loss)]
             return Self::new((code & 0xFF) as u8);
         }
 
         #[cfg(unix)]
         if let Some(signal) = output.status.signal() {
-            #[allow(clippy::cast_sign_loss)]
+            #[expect(clippy::cast_sign_loss)]
             return Self::new((signal & 0xFF) as u8 + 128);
         }
 
@@ -89,7 +89,7 @@ impl ExecutionResult {
         // TODO: Decide how to sort this out in a platform-independent way.
         const SIGTSTP: std::os::raw::c_int = 20;
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         Self::new(128 + SIGTSTP as u8)
     }
 }
@@ -132,7 +132,7 @@ impl ExecutionParameters {
     }
 
     /// Returns the file descriptor with the given number.
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::unwrap_in_result)]
     pub(crate) fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
         self.open_files.get(fd).map(|f| f.try_dup().unwrap())
     }
@@ -145,7 +145,7 @@ impl ExecutionParameters {
         self.fd(1).unwrap()
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn stderr_file(&self) -> openfiles::OpenFile {
         self.fd(2).unwrap()
     }
@@ -912,7 +912,6 @@ impl Execute for ast::FunctionDefinition {
 
 #[async_trait::async_trait]
 impl ExecuteInPipeline for ast::SimpleCommand {
-    #[allow(clippy::too_many_lines)] // TODO: refactor this function
     async fn execute_in_pipeline(
         &self,
         context: &mut PipelineExecutionContext<'_>,
@@ -1215,7 +1214,7 @@ async fn expand_assignment_value(
     Ok(expanded)
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell,
@@ -1391,7 +1390,7 @@ fn setup_pipeline_redirection(
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 pub(crate) async fn setup_redirect(
     shell: &mut Shell,
     params: &'_ mut ExecutionParameters,
@@ -1699,15 +1698,16 @@ fn setup_process_substitution(
     Ok((candidate_fd_num, target_file))
 }
 
-#[allow(unused_variables)]
 fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
     let (reader, mut writer) = sys::pipes::pipe()?;
 
     let bytes = contents.as_bytes();
-    let len = i32::try_from(bytes.len())?;
 
     #[cfg(target_os = "linux")]
-    nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
+    {
+        let len = i32::try_from(bytes.len())?;
+        nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
+    }
 
     writer.write_all(bytes)?;
     drop(writer);

@@ -955,7 +955,6 @@ fn parse_array_assignment(
 }
 
 #[cfg(test)]
-#[allow(clippy::panic_in_result_fn)]
 mod tests {
 
     use super::*;

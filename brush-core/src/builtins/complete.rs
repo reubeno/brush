@@ -317,7 +317,7 @@ impl CompleteCommand {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     fn display_spec(
         context: &commands::ExecutionContext<'_>,
         special_name: Option<&str>,

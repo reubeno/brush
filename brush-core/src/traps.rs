@@ -111,7 +111,7 @@ impl TryFrom<i32> for TrapSignal {
 impl TryFrom<&str> for TrapSignal {
     type Error = error::Error;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        #[allow(unused_mut)] // on not unix platforms
+        #[allow(unused_mut, reason = "only mutated on some platforms")]
         let mut s = value.to_ascii_uppercase();
 
         Ok(match s.as_str() {

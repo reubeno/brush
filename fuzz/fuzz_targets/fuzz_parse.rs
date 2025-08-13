@@ -17,7 +17,7 @@ static SHELL_TEMPLATE: LazyLock<brush_core::Shell> = LazyLock::new(|| {
     TOKIO_RT.block_on(brush_core::Shell::new(&options)).unwrap()
 });
 
-#[allow(clippy::unused_async)]
+#[expect(clippy::unused_async)]
 async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
     const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
 

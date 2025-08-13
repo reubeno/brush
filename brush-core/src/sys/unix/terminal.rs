@@ -42,12 +42,12 @@ pub(crate) fn set_term_attr_now<Fd: AsFd>(
     Ok(())
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_parent_process_id() -> Option<sys::process::ProcessId> {
     Some(nix::unistd::getppid().as_raw())
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_process_group_id() -> Option<sys::process::ProcessId> {
     Some(nix::unistd::getpgrp().as_raw())
 }

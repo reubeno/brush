@@ -228,7 +228,7 @@ impl ShellVariable {
     ///
     /// * `value` - The value to assign to the variable.
     /// * `append` - Whether or not to append the value to the preexisting value.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     pub fn assign(&mut self, value: ShellValueLiteral, append: bool) -> Result<(), error::Error> {
         if self.is_readonly() {
             return Err(error::Error::ReadonlyVariable);
@@ -371,7 +371,6 @@ impl ShellVariable {
     /// * `value` - The value to assign to the variable at the given index.
     /// * `append` - Whether or not to append the value to the preexisting value stored at the given
     ///   index.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn assign_at_index(
         &mut self,
         array_index: String,
@@ -897,7 +896,7 @@ impl ShellValue {
             Self::IndexedArray(values) => {
                 let mut index_value = index.parse::<i64>().unwrap_or(0);
 
-                #[allow(clippy::cast_possible_wrap)]
+                #[expect(clippy::cast_possible_wrap)]
                 if index_value < 0 {
                     index_value += values.len() as i64;
                     if index_value < 0 {
@@ -907,7 +906,7 @@ impl ShellValue {
 
                 // Now that we've confirmed that the index is non-negative, we can safely convert it
                 // to a u64 without any fuss.
-                #[allow(clippy::cast_sign_loss)]
+                #[expect(clippy::cast_sign_loss)]
                 let index_value = index_value as u64;
 
                 Ok(values.get(&index_value).map(|s| Cow::Borrowed(s.as_str())))

@@ -16,7 +16,7 @@ impl builtins::Command for ReturnCommand {
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
         let code_8bit: u8;
-        #[allow(clippy::cast_sign_loss)]
+        #[expect(clippy::cast_sign_loss)]
         if let Some(code_32bit) = &self.code {
             code_8bit = (code_32bit & 0xFF) as u8;
         } else {

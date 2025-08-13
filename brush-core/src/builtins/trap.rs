@@ -61,7 +61,6 @@ impl builtins::Command for TrapCommand {
     }
 }
 
-#[allow(unused_variables)]
 impl TrapCommand {
     fn display_all_handlers(context: &commands::ExecutionContext<'_>) -> Result<(), error::Error> {
         for signal in context.shell.traps.handlers.keys() {

@@ -5,7 +5,7 @@ use std::{io::Write, path::PathBuf};
 /// Query or manipulate the shell's command history.
 // TODO: Evaluate which of the options conflict with each other.
 #[derive(Parser)]
-#[allow(clippy::option_option)]
+#[expect(clippy::option_option)]
 pub(crate) struct HistoryCommand {
     /// Clears all history.
     #[arg(short = 'c')]
@@ -74,9 +74,9 @@ impl builtins::Command for HistoryCommand {
 }
 
 impl HistoryCommand {
-    #[allow(clippy::cast_possible_wrap)]
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_wrap)]
+    #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_sign_loss)]
     fn execute_with_history(
         &self,
         params: &ExecutionParameters,
@@ -219,7 +219,6 @@ fn get_effective_history_file_path(
 }
 
 #[cfg(test)]
-#[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;

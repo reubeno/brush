@@ -21,8 +21,7 @@ impl builtins::Command for SuspendCommand {
             return Ok(builtins::ExitCode::InvalidUsage);
         }
 
-        #[allow(clippy::cast_possible_truncation)]
-        #[allow(clippy::cast_possible_wrap)]
+        #[expect(clippy::cast_possible_wrap)]
         crate::sys::signal::kill_process(
             std::process::id() as i32,
             crate::traps::TrapSignal::Signal(nix::sys::signal::SIGSTOP),

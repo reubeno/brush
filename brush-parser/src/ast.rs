@@ -95,7 +95,7 @@ impl PartialEq<AndOr> for PipelineOperator {
 }
 
 // We cannot losslessly convert into `AndOr`, hence we can only do `Into`.
-#[allow(clippy::from_over_into)]
+#[expect(clippy::from_over_into)]
 impl Into<PipelineOperator> for AndOr {
     fn into(self) -> PipelineOperator {
         match self {

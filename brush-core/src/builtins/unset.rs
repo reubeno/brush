@@ -50,7 +50,7 @@ impl builtins::Command for UnsetCommand {
 
         let unspecified = self.name_interpretation.unspecified();
 
-        #[allow(clippy::needless_continue)]
+        #[expect(clippy::needless_continue)]
         for name in &self.names {
             if unspecified || self.name_interpretation.shell_variables {
                 let parameter =

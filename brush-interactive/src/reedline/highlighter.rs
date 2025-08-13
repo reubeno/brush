@@ -76,7 +76,7 @@ pub(crate) struct ReedlineHighlighter {
 }
 
 impl reedline::Highlighter for ReedlineHighlighter {
-    #[allow(clippy::significant_drop_tightening)]
+    #[expect(clippy::significant_drop_tightening)]
     fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {
         let shell = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.shell.lock())
@@ -122,7 +122,7 @@ impl<'a> StyledInputLine<'a> {
     }
 
     fn style_and_append_program(&mut self, line: &str, global_offset: usize) {
-        #[allow(clippy::cast_sign_loss)]
+        #[expect(clippy::cast_sign_loss)]
         if let Ok(tokens) = brush_parser::tokenize_str_with_options(
             line,
             &(self.shell.parser_options().tokenizer_options()),
@@ -312,7 +312,7 @@ impl<'a> StyledInputLine<'a> {
         }
 
         // Short-circuit if the cursor is still in this token.
-        #[allow(clippy::cast_sign_loss)]
+        #[expect(clippy::cast_sign_loss)]
         if (self.cursor >= token_location.start.index as usize)
             && (self.cursor <= token_location.end.index as usize)
         {

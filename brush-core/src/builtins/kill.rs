@@ -51,8 +51,8 @@ impl builtins::Command for KillCommand {
 
         // Try parsing the signal number (if specified).
         if let Some(signal_number) = &self.signal_number {
-            #[allow(clippy::cast_possible_truncation)]
-            #[allow(clippy::cast_possible_wrap)]
+            #[expect(clippy::cast_possible_truncation)]
+            #[expect(clippy::cast_possible_wrap)]
             if let Ok(parsed_trap_signal) = TrapSignal::try_from(*signal_number as i32) {
                 trap_signal = parsed_trap_signal;
             } else {

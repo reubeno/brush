@@ -61,7 +61,7 @@ impl InteractiveShell for MinimalShell {
 }
 
 impl MinimalShell {
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self)]
     fn should_display_prompt(&self) -> bool {
         std::io::stdin().is_terminal()
     }
