@@ -32,9 +32,15 @@ pub(crate) fn read_line(
 }
 
 struct ReadLineState<'a> {
+    // Current line of input
     line: String,
+    // Current position of cursor, expressed as a byte offset from the
+    // start of `line`. We maintain the invariant that it will always
+    // be at a clean character boundary.
     cursor: usize,
+    // Current prompt to use.
     prompt: &'a str,
+    // State of input mode.
     raw_mode: raw_mode::RawModeToggle,
 }
 
@@ -112,7 +118,7 @@ impl<'a> ReadLineState<'a> {
 
     fn on_char(&mut self, c: char) -> Result<(), ShellError> {
         self.line.insert(self.cursor, c);
-        self.cursor += 1;
+        self.cursor += c.len_utf8();
         eprint!("{c}");
         std::io::stderr().flush()?;
 
@@ -141,13 +147,17 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
+    #[allow(clippy::string_slice, reason = "it's calculated based on char indices")]
     fn backspace(&mut self) -> Result<(), ShellError> {
-        if self.cursor == 0 {
-            return Ok(());
-        }
+        let char_indices = self.line.char_indices();
 
-        self.cursor -= 1;
-        self.line.remove(self.cursor);
+        let Some((last_char_index, _)) = char_indices.last() else {
+            return Ok(());
+        };
+
+        self.cursor = last_char_index;
+        self.line.truncate(last_char_index);
+
         self.raw_mode.disable()?;
         eprint!("{BACKSPACE}");
         eprint!("{} ", &self.line[self.cursor..]);
@@ -155,7 +165,9 @@ impl<'a> ReadLineState<'a> {
             "{}",
             repeated_char_str(BACKSPACE, self.line.len() + 1 - self.cursor)
         );
+
         self.raw_mode.enable()?;
+
         std::io::stderr().flush()?;
         Ok(())
     }
@@ -166,11 +178,11 @@ impl<'a> ReadLineState<'a> {
         self.raw_mode.enable()?;
         std::io::stderr().flush()?;
 
-        if self.cursor == 0 {
-            return Ok(());
-        }
+        self.cursor = self.cursor.saturating_sub(1);
 
-        self.cursor -= 1;
+        while self.cursor > 0 && !self.line.is_char_boundary(self.cursor) {
+            self.cursor -= 1;
+        }
 
         Ok(())
     }
@@ -190,6 +202,10 @@ impl<'a> ReadLineState<'a> {
     }
 
     #[allow(clippy::unwrap_in_result)]
+    #[allow(
+        clippy::string_slice,
+        reason = "all offsets are expected to be at char boundaries"
+    )]
     fn handle_single_completion(
         &mut self,
         completions: &brush_core::completion::Completions,
@@ -269,6 +285,7 @@ impl<'a> ReadLineState<'a> {
     }
 }
 
+#[allow(clippy::string_slice)]
 fn format_completion_candidate(
     mut candidate: &str,
     options: &brush_core::completion::ProcessingOptions,
@@ -278,7 +295,7 @@ fn format_completion_candidate(
             .strip_suffix(std::path::MAIN_SEPARATOR)
             .unwrap_or(candidate);
         if let Some(index) = trimmed.rfind(std::path::MAIN_SEPARATOR) {
-            candidate = &candidate[index + 1..];
+            candidate = &candidate[index + std::path::MAIN_SEPARATOR.len_utf8()..];
         }
     }
 
