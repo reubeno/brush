@@ -441,8 +441,8 @@ impl<'a> Iterator for Search<'a> {
                 if let Some(item) = self.history.id_map.get(&id) {
                     // Filter based on max_items. Once we hit the limit,
                     // we stop searching.
-                    #[allow(clippy::cast_possible_truncation)]
-                    #[allow(clippy::cast_sign_loss)]
+                    #[expect(clippy::cast_possible_truncation)]
+                    #[expect(clippy::cast_sign_loss)]
                     if self
                         .query
                         .max_items

@@ -16,7 +16,6 @@ pub(crate) async fn eval_extended_test_expr(
     shell: &mut Shell,
     params: &ExecutionParameters,
 ) -> Result<bool, error::Error> {
-    #[allow(clippy::single_match_else)]
     match expr {
         ast::ExtendedTestExpr::UnaryTest(op, operand) => {
             apply_unary_predicate(op, operand, shell, params).await
@@ -64,14 +63,13 @@ async fn apply_unary_predicate(
     apply_unary_predicate_to_str(op, expanded_operand.as_str(), shell, params)
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 pub(crate) fn apply_unary_predicate_to_str(
     op: &ast::UnaryPredicate,
     operand: &str,
     shell: &Shell,
     params: &ExecutionParameters,
 ) -> Result<bool, error::Error> {
-    #[allow(clippy::match_single_binding)]
     match op {
         ast::UnaryPredicate::StringHasNonZeroLength => Ok(!operand.is_empty()),
         ast::UnaryPredicate::StringHasZeroLength => Ok(operand.is_empty()),
@@ -187,7 +185,7 @@ pub(crate) fn apply_unary_predicate_to_str(
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 async fn apply_binary_predicate(
     op: &ast::BinaryPredicate,
     left: &ast::Word,
@@ -195,7 +193,6 @@ async fn apply_binary_predicate(
     shell: &mut Shell,
     params: &ExecutionParameters,
 ) -> Result<bool, error::Error> {
-    #[allow(clippy::single_match_else)]
     match op {
         ast::BinaryPredicate::StringMatchesRegex => {
             let s = expansion::basic_expand_word(shell, params, left).await?;

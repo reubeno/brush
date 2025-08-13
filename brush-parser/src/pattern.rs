@@ -161,7 +161,7 @@ fn escape_char_class_char_list(s: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic_in_result_fn)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;

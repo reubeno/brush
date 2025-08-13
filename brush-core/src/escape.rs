@@ -10,7 +10,7 @@ pub(crate) enum EscapeExpansionMode {
     AnsiCQuotes,
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 pub(crate) fn expand_backslash_escapes(
     s: &str,
     mode: EscapeExpansionMode,

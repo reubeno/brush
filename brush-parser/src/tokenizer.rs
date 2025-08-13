@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use utf8_chars::BufReadCharsExt;
 
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) enum TokenEndReason {
     /// End of input was reached.
@@ -242,7 +241,6 @@ pub struct TokenizerOptions {
     /// Whether or not to enable extended globbing patterns (extglob).
     pub enable_extended_globbing: bool,
     /// Whether or not to operate in POSIX compliance mode.
-    #[allow(unused)]
     pub posix_mode: bool,
     /// Whether or not we're running in SH emulation mode.
     pub sh_mode: bool,
@@ -560,7 +558,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         }
     }
 
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(clippy::unnecessary_wraps)]
     pub fn current_location(&self) -> Option<SourcePosition> {
         Some(self.cross_state.cursor.clone())
     }
@@ -614,11 +612,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     /// * `include_space` - If true, include spaces in the tokenization process. This is not
     ///   typically the case, but can be helpful when needing to preserve the original source text
     ///   embedded within a command substitution or similar construct.
-    #[allow(clippy::cognitive_complexity)]
-    #[allow(clippy::if_same_then_else)]
-    #[allow(clippy::panic_in_result_fn)]
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::cognitive_complexity)]
+    #[expect(clippy::if_same_then_else)]
+    #[expect(clippy::panic_in_result_fn)]
+    #[expect(clippy::too_many_lines)]
+    #[expect(clippy::unwrap_in_result)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,
@@ -1265,7 +1263,7 @@ impl<R: ?Sized + std::io::BufRead> Iterator for Tokenizer<'_, R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_token() {
-            #[allow(clippy::manual_map)]
+            #[expect(clippy::manual_map)]
             Ok(result) => match result.token {
                 Some(_) => Some(Ok(result)),
                 None => None,
@@ -1333,7 +1331,6 @@ pub fn unquote_str(s: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic_in_result_fn)]
 mod tests {
 
     use super::*;

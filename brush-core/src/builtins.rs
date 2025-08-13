@@ -96,7 +96,7 @@ macro_rules! minus_or_plus_flag_arg {
         }
 
         impl $struct_name {
-            #[allow(dead_code)]
+            #[allow(dead_code, reason = "may not be used in all macro instantiations")]
             pub const fn is_some(&self) -> bool {
                 self._enable || self._disable
             }
@@ -115,7 +115,6 @@ macro_rules! minus_or_plus_flag_arg {
 pub(crate) use minus_or_plus_flag_arg;
 
 /// Result of executing a built-in command.
-#[allow(clippy::module_name_repetitions)]
 pub struct BuiltinResult {
     /// The exit code from the command.
     pub exit_code: ExitCode,

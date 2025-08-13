@@ -20,7 +20,7 @@ impl builtins::Command for ShiftCommand {
             return Ok(builtins::ExitCode::InvalidUsage);
         }
 
-        #[allow(clippy::cast_sign_loss)]
+        #[expect(clippy::cast_sign_loss)]
         let n = n as usize;
 
         if n > context.shell.positional_parameters.len() {

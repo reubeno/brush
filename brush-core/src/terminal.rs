@@ -1,7 +1,6 @@
 use crate::{error, sys};
 
 /// Encapsulates the state of a controlled terminal.
-#[allow(clippy::module_name_repetitions)]
 pub struct TerminalControl {
     prev_fg_pid: Option<sys::process::ProcessId>,
 }

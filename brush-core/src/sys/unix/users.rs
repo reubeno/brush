@@ -25,12 +25,12 @@ pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
     None
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_effective_uid() -> Result<u32, error::Error> {
     Ok(uzers::get_effective_uid())
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_effective_gid() -> Result<u32, error::Error> {
     Ok(uzers::get_effective_gid())
 }
@@ -47,14 +47,14 @@ pub(crate) fn get_user_group_ids() -> Result<Vec<u32>, error::Error> {
     Ok(groups.into_iter().map(|g| g.gid()).collect())
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
     // TODO(#475): uzers::all_users() is available but unsafe
     tracing::debug!(target: trace_categories::UNIMPLEMENTED, "get_all_users");
     Ok(vec![])
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
     // TODO(#475): uzers::all_groups() is available but unsafe
     tracing::debug!(target: trace_categories::UNIMPLEMENTED, "get_all_groups");

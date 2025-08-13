@@ -360,7 +360,6 @@ pub(crate) async fn full_expand_and_split_str(
     expander.full_expand_with_splitting(s).await
 }
 
-#[allow(dead_code)]
 pub(crate) async fn assign_to_named_parameter(
     shell: &mut Shell,
     params: &ExecutionParameters,
@@ -396,7 +395,7 @@ impl<'a> WordExpander<'a> {
         Ok(String::from(self.basic_expand(word).await?))
     }
 
-    #[allow(clippy::ref_option)]
+    #[expect(clippy::ref_option)]
     async fn basic_expand_opt_pattern(
         &mut self,
         word: &Option<String>,
@@ -420,7 +419,7 @@ impl<'a> WordExpander<'a> {
         let expansion = self.basic_expand(word).await?;
 
         // TODO: Use IFS instead for separator?
-        #[allow(unstable_name_collisions)]
+        #[expect(unstable_name_collisions)]
         let pattern_pieces: Vec<_> = expansion
             .fields
             .into_iter()
@@ -447,7 +446,7 @@ impl<'a> WordExpander<'a> {
         let expansion = self.basic_expand(word).await?;
 
         // TODO: Use IFS instead for separator?
-        #[allow(unstable_name_collisions)]
+        #[expect(unstable_name_collisions)]
         let regex_pieces: Vec<_> = expansion
             .fields
             .into_iter()
@@ -623,7 +622,6 @@ impl<'a> WordExpander<'a> {
     }
 
     #[async_recursion::async_recursion]
-    #[allow(clippy::too_many_lines)]
     async fn expand_word_piece(
         &mut self,
         word_piece: brush_parser::word::WordPiece,
@@ -659,7 +657,7 @@ impl<'a> WordExpander<'a> {
                     } = self.expand_word_piece(piece.piece).await?;
 
                     let fields_to_append = if concatenate {
-                        #[allow(unstable_name_collisions)]
+                        #[expect(unstable_name_collisions)]
                         let mut concatenated: Vec<ExpansionPiece> = this_fields
                             .into_iter()
                             .map(|WordField(pieces)| {
@@ -758,12 +756,12 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     async fn expand_parameter_expr(
         &mut self,
         expr: brush_parser::word::ParameterExpr,
     ) -> Result<Expansion, error::Error> {
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         match expr {
             brush_parser::word::ParameterExpr::Parameter {
                 parameter,
@@ -939,7 +937,7 @@ impl<'a> WordExpander<'a> {
                     );
                 }
 
-                #[allow(clippy::cast_possible_wrap)]
+                #[expect(clippy::cast_possible_wrap)]
                 let expanded_parameter_len = expanded_parameter.polymorphic_len() as i64;
 
                 let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
@@ -978,7 +976,7 @@ impl<'a> WordExpander<'a> {
                     expanded_parameter_len
                 };
 
-                #[allow(clippy::cast_sign_loss)]
+                #[expect(clippy::cast_sign_loss)]
                 Ok(expanded_parameter
                     .polymorphic_subslice(expanded_offset as usize, end_offset as usize))
             }
@@ -1456,8 +1454,8 @@ impl<'a> WordExpander<'a> {
         Ok(value.to_string())
     }
 
-    #[allow(clippy::unwrap_in_result)]
-    #[allow(clippy::ref_option)]
+    #[expect(clippy::unwrap_in_result)]
+    #[expect(clippy::ref_option)]
     fn uppercase_first_char(
         s: String,
         pattern: &Option<patterns::Pattern>,
@@ -1482,8 +1480,8 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::unwrap_in_result)]
-    #[allow(clippy::ref_option)]
+    #[expect(clippy::unwrap_in_result)]
+    #[expect(clippy::ref_option)]
     fn lowercase_first_char(
         s: String,
         pattern: &Option<patterns::Pattern>,
@@ -1508,7 +1506,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::ref_option)]
+    #[expect(clippy::ref_option)]
     fn uppercase_pattern(
         s: &str,
         pattern: &Option<patterns::Pattern>,
@@ -1528,7 +1526,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[allow(clippy::ref_option)]
+    #[expect(clippy::ref_option)]
     fn lowercase_pattern(
         s: &str,
         pattern: &Option<patterns::Pattern>,
@@ -1706,8 +1704,7 @@ fn may_contain_braces_to_expand(s: &str) -> bool {
     saw_opening_brace && saw_closing_brace
 }
 
-#[allow(clippy::panic_in_result_fn)]
-#[allow(clippy::needless_return)]
+#[expect(clippy::panic_in_result_fn)]
 #[cfg(test)]
 mod tests {
     use super::*;

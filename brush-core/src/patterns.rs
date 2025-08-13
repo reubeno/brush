@@ -134,8 +134,8 @@ impl Pattern {
     ///
     /// * `working_dir` - The current working directory, used for relative paths.
     /// * `path_filter` - Optionally provides a function that filters paths after expansion.
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::too_many_lines)]
+    #[expect(clippy::unwrap_in_result)]
     pub(crate) fn expand<PF>(
         &self,
         working_dir: &Path,
@@ -395,7 +395,7 @@ fn pattern_to_regex_str(
 ///
 /// * `s` - The string to remove the prefix from.
 /// * `pattern` - The pattern to match.
-#[allow(clippy::ref_option)]
+#[expect(clippy::ref_option)]
 pub(crate) fn remove_largest_matching_prefix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
@@ -426,7 +426,7 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
 ///
 /// * `s` - The string to remove the prefix from.
 /// * `pattern` - The pattern to match.
-#[allow(clippy::ref_option)]
+#[expect(clippy::ref_option)]
 pub(crate) fn remove_smallest_matching_prefix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
@@ -455,7 +455,7 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 ///
 /// * `s` - The string to remove the suffix from.
 /// * `pattern` - The pattern to match.
-#[allow(clippy::ref_option)]
+#[expect(clippy::ref_option)]
 pub(crate) fn remove_largest_matching_suffix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
@@ -481,7 +481,7 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
 ///
 /// * `s` - The string to remove the suffix from.
 /// * `pattern` - The pattern to match.
-#[allow(clippy::ref_option)]
+#[expect(clippy::ref_option)]
 pub(crate) fn remove_smallest_matching_suffix<'a>(
     s: &'a str,
     pattern: &Option<Pattern>,
@@ -502,7 +502,7 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
 }
 
 #[cfg(test)]
-#[allow(clippy::panic_in_result_fn)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
+    #[expect(clippy::cognitive_complexity)]
     fn test_matching() -> Result<()> {
         assert!(Pattern::from("abc").exactly_matches("abc")?);
 

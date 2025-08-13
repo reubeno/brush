@@ -229,7 +229,7 @@ impl Spec {
     ///
     /// * `shell` - The shell instance to use for completion generation.
     /// * `context` - The context in which completion is being generated.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell,
@@ -380,7 +380,7 @@ impl Spec {
         Ok(Answer::Candidates(candidates, processing_options))
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     async fn generate_action_completions(
         &self,
         shell: &Shell,
@@ -892,8 +892,8 @@ impl Config {
     /// * `shell` - The shell instance to use for completion generation.
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
-    #[allow(clippy::cast_sign_loss)]
-    #[allow(clippy::string_slice)]
+    #[expect(clippy::cast_sign_loss)]
+    #[expect(clippy::string_slice)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell,
@@ -1171,8 +1171,8 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
     Answer::Candidates(candidates, ProcessingOptions::default())
 }
 
-#[allow(clippy::cast_possible_truncation)]
-#[allow(clippy::cast_possible_wrap)]
+#[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_wrap)]
 fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_parser::Token> {
     //
     // This is an overly naive tokenization.

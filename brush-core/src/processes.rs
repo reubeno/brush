@@ -29,9 +29,7 @@ impl ChildProcess {
     }
 
     pub async fn wait(&mut self) -> Result<ProcessWaitResult, error::Error> {
-        #[allow(unused_mut)]
         let mut sigtstp = sys::signal::tstp_signal_listener()?;
-        #[allow(unused_mut)]
         let mut sigchld = sys::signal::chld_signal_listener()?;
 
         loop {

@@ -67,7 +67,6 @@ impl reedline::History for ReedlineHistory {
     /// # Arguments
     ///
     /// * `query` - The search query to match against history items.
-    #[allow(clippy::significant_drop_tightening)]
     fn count(&self, query: reedline::SearchQuery) -> reedline::Result<i64> {
         let query = reedline_history_query_into_brush(query)?;
 
@@ -75,7 +74,7 @@ impl reedline::History for ReedlineHistory {
         let count = get_shell_history(&shell)?.search(query).iter().count();
         drop(shell);
 
-        #[allow(clippy::cast_possible_wrap)]
+        #[expect(clippy::cast_possible_wrap)]
         Ok(count as i64)
     }
 
@@ -84,7 +83,7 @@ impl reedline::History for ReedlineHistory {
     /// # Arguments
     ///
     /// * `query` - The search query to match against history items.
-    #[allow(clippy::significant_drop_tightening)]
+    #[expect(clippy::significant_drop_tightening)]
     fn search(&self, query: reedline::SearchQuery) -> reedline::Result<Vec<reedline::HistoryItem>> {
         let query = reedline_history_query_into_brush(query)?;
         let shell = self.lock_shell();
@@ -163,7 +162,7 @@ fn brush_history_item_to_reedline(item: &brush_core::history::Item) -> reedline:
     rl_item
 }
 
-#[allow(unused)]
+#[expect(unused)]
 fn reedline_history_item_to_brush(item: &reedline::HistoryItem) -> brush_core::history::Item {
     // TODO: implement more fields when they are added to Item
     brush_core::history::Item {
@@ -178,7 +177,6 @@ fn brush_error_to_reedline(error: brush_core::Error) -> reedline::ReedlineError 
     reedline::ReedlineError::from(std::io::Error::other(error))
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn reedline_history_query_into_brush(
     query: reedline::SearchQuery,
 ) -> reedline::Result<brush_core::history::Query> {

@@ -63,7 +63,7 @@ cfg_if! {
             status.umask.ok_or_else(|| error::Error::InvalidUmask)
         }
     } else {
-        #[allow(clippy::unnecessary_wraps)]
+        #[expect(clippy::unnecessary_wraps)]
         fn get_umask() -> Result<u32, error::Error> {
             let u = nix::sys::stat::umask(Mode::empty());
             nix::sys::stat::umask(u);

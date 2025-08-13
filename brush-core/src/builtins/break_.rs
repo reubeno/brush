@@ -20,7 +20,7 @@ impl builtins::Command for BreakCommand {
             return Ok(builtins::ExitCode::InvalidUsage);
         }
 
-        #[allow(clippy::cast_sign_loss)]
+        #[expect(clippy::cast_sign_loss)]
         Ok(builtins::ExitCode::BreakLoop((self.which_loop - 1) as u8))
     }
 }

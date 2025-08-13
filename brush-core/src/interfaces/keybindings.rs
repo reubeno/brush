@@ -24,7 +24,7 @@ impl Display for KeyAction {
 /// Defines all input functions.
 #[derive(Debug, strum_macros::EnumString, strum_macros::Display, strum_macros::EnumIter)]
 #[strum(serialize_all = "kebab-case")]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub enum InputFunction {
     Abort,
     AcceptLine,

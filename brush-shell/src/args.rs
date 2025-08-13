@@ -41,7 +41,6 @@ pub enum InputBackend {
        disable_help_flag = true,
        disable_version_flag = true,
        styles = brush_help_styles())]
-#[allow(clippy::module_name_repetitions)]
 pub struct CommandLineArgs {
     /// Display usage information.
     #[clap(long = "help", action = clap::ArgAction::HelpLong)]

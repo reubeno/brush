@@ -89,7 +89,6 @@ impl Display for FoundCommand {
 }
 
 impl CommandCommand {
-    #[allow(clippy::unwrap_in_result)]
     fn try_find_command(
         shell: &mut shell::Shell,
         command_name: &str,
@@ -144,8 +143,6 @@ impl CommandCommand {
         // We do not have an existing process group to place this into.
         let mut pgid = None;
 
-        #[allow(clippy::cast_possible_truncation)]
-        #[allow(clippy::cast_sign_loss)]
         match commands::execute(
             context,
             &mut pgid,
