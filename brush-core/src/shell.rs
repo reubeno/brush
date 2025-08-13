@@ -1610,6 +1610,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `open_files` - The new file descriptor table to use.
+    #[allow(dead_code, reason = "not used on some platforms")]
     pub(crate) fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
         self.open_files = open_files;
     }

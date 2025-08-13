@@ -7,7 +7,7 @@ pub(crate) trait ShellFactory {
     ) -> Result<Self::ShellType, brush_interactive::ShellError>;
 }
 
-#[expect(dead_code)]
+#[allow(dead_code, reason = "unused on some platforms")]
 pub(crate) struct StubShell;
 
 #[expect(clippy::panic)]
@@ -48,6 +48,7 @@ impl AsMut<brush_core::Shell> for StubShell {
 
 pub(crate) struct ReedlineShellFactory;
 
+#[allow(unused_variables, reason = "options are not used on all platforms")]
 impl ShellFactory for ReedlineShellFactory {
     #[cfg(all(feature = "reedline", any(windows, unix)))]
     type ShellType = brush_interactive::ReedlineShell;
@@ -71,6 +72,7 @@ impl ShellFactory for ReedlineShellFactory {
 
 pub(crate) struct BasicShellFactory;
 
+#[allow(unused_variables, reason = "options are not used on all platforms")]
 impl ShellFactory for BasicShellFactory {
     #[cfg(feature = "basic")]
     type ShellType = brush_interactive::BasicShell;

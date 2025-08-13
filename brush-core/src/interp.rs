@@ -1702,10 +1702,12 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     let (reader, mut writer) = sys::pipes::pipe()?;
 
     let bytes = contents.as_bytes();
-    let len = i32::try_from(bytes.len())?;
 
     #[cfg(target_os = "linux")]
-    nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
+    {
+        let len = i32::try_from(bytes.len())?;
+        nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
+    }
 
     writer.write_all(bytes)?;
     drop(writer);

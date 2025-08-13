@@ -180,6 +180,7 @@ impl CommandArg {
     }
 }
 
+#[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
 pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     shell: &Shell,
     command_name: &str,
@@ -374,6 +375,7 @@ pub(crate) fn execute_external_command(
     }
 
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
+    #[cfg(unix)]
     let child_stdin_is_terminal = context
         .params
         .open_files
@@ -387,6 +389,7 @@ pub(crate) fn execute_external_command(
     let mut stderr = context.stderr();
 
     // Compose the std::process::Command that encapsulates what we want to launch.
+    #[allow(unused_mut, reason = "only mutated on unix platforms")]
     let mut cmd = compose_std_command(
         context.shell,
         executable_path,
@@ -401,10 +404,12 @@ pub(crate) fn execute_external_command(
         // We need to set up a new process group.
         #[cfg(unix)]
         cmd.process_group(0);
-    } else if let Some(pgid) = process_group_id {
+    } else {
         // We need to join an established process group.
         #[cfg(unix)]
-        cmd.process_group(*pgid);
+        if let Some(pgid) = process_group_id {
+            cmd.process_group(*pgid);
+        }
     }
 
     // Register some code to run in the forked child process before it execs
