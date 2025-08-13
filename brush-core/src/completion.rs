@@ -891,6 +891,7 @@ impl Config {
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
     #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::string_slice)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell,

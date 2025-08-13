@@ -129,11 +129,9 @@ impl JobManager {
     ///
     /// * `job_spec` - The job specification to resolve.
     pub fn resolve_job_spec(&mut self, job_spec: &str) -> Option<&mut Job> {
-        if !job_spec.starts_with('%') {
-            return None;
-        }
+        let remainder = job_spec.strip_prefix('%')?;
 
-        match &job_spec[1..] {
+        match remainder {
             "%" | "+" => self.current_job_mut(),
             "-" => self.prev_job_mut(),
             s if s.chars().all(char::is_numeric) => {
