@@ -401,11 +401,20 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
     pattern: &Option<Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
-        for i in (0..s.len()).rev() {
-            let prefix = &s[0..=i];
+        let indices = s.char_indices().rev();
+        let mut last_idx = s.len();
+
+        #[allow(
+            clippy::string_slice,
+            reason = "because we get the indices from char_indices()"
+        )]
+        for (idx, _) in indices {
+            let prefix = &s[0..last_idx];
             if pattern.exactly_matches(prefix)? {
-                return Ok(&s[i + 1..]);
+                return Ok(&s[last_idx..]);
             }
+
+            last_idx = idx;
         }
     }
     Ok(s)
@@ -423,10 +432,17 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
     pattern: &Option<Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
-        for i in 0..s.len() {
-            let prefix = &s[0..=i];
+        let mut indices = s.char_indices();
+
+        #[allow(
+            clippy::string_slice,
+            reason = "because we get the indices from char_indices()"
+        )]
+        while indices.next().is_some() {
+            let next_index = indices.offset();
+            let prefix = &s[0..next_index];
             if pattern.exactly_matches(prefix)? {
-                return Ok(&s[i + 1..]);
+                return Ok(&s[next_index..]);
             }
         }
     }
@@ -445,10 +461,14 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
     pattern: &Option<Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
-        for i in 0..s.len() {
-            let suffix = &s[i..];
+        #[allow(
+            clippy::string_slice,
+            reason = "because we get the indices from char_indices()"
+        )]
+        for (idx, _) in s.char_indices() {
+            let suffix = &s[idx..];
             if pattern.exactly_matches(suffix)? {
-                return Ok(&s[..i]);
+                return Ok(&s[..idx]);
             }
         }
     }
@@ -467,10 +487,14 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
     pattern: &Option<Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
-        for i in (0..s.len()).rev() {
-            let suffix = &s[i..];
+        #[allow(
+            clippy::string_slice,
+            reason = "because we get the indices from char_indices()"
+        )]
+        for (idx, _) in s.char_indices().rev() {
+            let suffix = &s[idx..];
             if pattern.exactly_matches(suffix)? {
-                return Ok(&s[..i]);
+                return Ok(&s[..idx]);
             }
         }
     }
@@ -570,6 +594,10 @@ mod tests {
             remove_largest_matching_prefix("ooof", &Some(Pattern::from("o*")))?,
             ""
         );
+        assert_eq!(
+            remove_largest_matching_prefix("🚀🚀🚀rocket", &Some(Pattern::from("🚀")))?,
+            "🚀🚀rocket"
+        );
         Ok(())
     }
 
@@ -599,6 +627,10 @@ mod tests {
             remove_smallest_matching_prefix("ooof", &Some(Pattern::from("ooof")))?,
             ""
         );
+        assert_eq!(
+            remove_smallest_matching_prefix("🚀🚀🚀rocket", &Some(Pattern::from("🚀")))?,
+            "🚀🚀rocket"
+        );
         Ok(())
     }
 
@@ -623,6 +655,10 @@ mod tests {
         assert_eq!(
             remove_largest_matching_suffix("foo", &Some(Pattern::from("foo")))?,
             ""
+        );
+        assert_eq!(
+            remove_largest_matching_suffix("rocket🚀🚀🚀", &Some(Pattern::from("🚀")))?,
+            "rocket🚀🚀"
         );
         Ok(())
     }
@@ -652,6 +688,10 @@ mod tests {
         assert_eq!(
             remove_smallest_matching_suffix("fooo", &Some(Pattern::from("fooo")))?,
             ""
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("rocket🚀🚀🚀", &Some(Pattern::from("🚀")))?,
+            "rocket🚀🚀"
         );
         Ok(())
     }

@@ -38,6 +38,10 @@ impl ReedlineCompleter {
             .collect()
     }
 
+    #[allow(
+        clippy::string_slice,
+        reason = "all indices + counts are expected to be at char boundaries"
+    )]
     fn to_suggestion(
         line: &str,
         mut candidate: String,

@@ -50,6 +50,7 @@ expect_used = "deny"
 format_push_string = "deny"
 panic = "deny"
 panic_in_result_fn = "deny"
+string_slice = "deny"
 todo = "deny"
 unwrap_in_result = "deny"
 

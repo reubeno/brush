@@ -728,9 +728,11 @@ impl Spec {
 /// Represents a set of generated command completions.
 #[derive(Debug, Default)]
 pub struct Completions {
-    /// The index in the input line where the completions should be inserted.
+    /// The index in the input line where the completions should be inserted. Represented
+    /// as a byte offset into the input line; must be at a clean character boundary.
     pub insertion_index: usize,
-    /// The number of chars in the input line that should be removed before insertion.
+    /// The number of elements in the input line that should be removed before insertion.
+    /// Represented as a byte count; must capture an exact character boundary.
     pub delete_count: usize,
     /// The ordered set of completions.
     pub candidates: IndexSet<String>,
@@ -891,6 +893,7 @@ impl Config {
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
     #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::string_slice)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell,
