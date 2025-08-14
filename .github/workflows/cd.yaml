@@ -95,7 +95,7 @@ jobs:
           tool: cargo-about
 
       - name: "Generate license notices"
-        run: cd brush-shell && cargo about generate -o ../LICENSE_NOTICES.html about.hbs
+        run: cd brush-shell && cargo about generate -o ../THIRD_PARTY_LICENSES.html about.hbs
 
       - name: "Update build flags"
         if: endsWith(matrix.target, 'windows-msvc')
@@ -113,7 +113,7 @@ jobs:
           zip: windows
           checksum: sha256,sha512
           token: ${{ secrets.GITHUB_TOKEN }}
-          include: "LICENSE_NOTICES.html"
+          include: "LICENSE,THIRD_PARTY_LICENSES.html"
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'
