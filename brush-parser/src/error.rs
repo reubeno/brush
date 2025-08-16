@@ -22,6 +22,49 @@ pub enum ParseError {
     },
 }
 
+#[cfg(feature = "diagnostics")]
+pub mod miette {
+    use super::ParseError;
+    use miette::SourceOffset;
+
+    impl ParseError {
+        /// Convert the original error to one miette can pretty print
+        pub fn to_pretty_error(self, input: impl Into<String>) -> PrettyError {
+            let input = input.into();
+            let location = match self {
+                ParseError::ParsingNearToken(ref token) => Some(SourceOffset::from_location(
+                    &input,
+                    token.location().start.line as usize,
+                    token.location().start.column as usize,
+                )),
+                ParseError::Tokenizing { ref position, .. } => position.as_ref().map(|p| {
+                    SourceOffset::from_location(&input, p.line as usize, p.column as usize)
+                }),
+                ParseError::ParsingAtEndOfInput => {
+                    Some(SourceOffset::from_location(&input, usize::MAX, usize::MAX))
+                }
+            };
+
+            PrettyError {
+                cause: self,
+                input,
+                location,
+            }
+        }
+    }
+
+    /// Represents an error that occurred while parsing tokens.
+    #[derive(thiserror::Error, Debug, miette::Diagnostic)]
+    #[error("Cannot parse the input script")]
+    pub struct PrettyError {
+        cause: ParseError,
+        #[source_code]
+        input: String,
+        #[label("{cause}")]
+        location: Option<SourceOffset>,
+    }
+}
+
 /// Represents a parsing error with its location information
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
