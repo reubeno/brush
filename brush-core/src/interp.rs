@@ -16,9 +16,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{
-    error, expansion, extendedtests, functions, jobs, openfiles, processes, sys, timing, traps,
-};
+use crate::{error, expansion, extendedtests, functions, jobs, openfiles, processes, sys, timing};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -1080,51 +1078,14 @@ async fn execute_command(
             .await?;
     }
 
-    // TODO: This is adding more complexity here; should be factored out into an appropriate
-    // helper.
-    if context.shell.traps.handler_depth == 0 {
-        let debug_trap_handler = context
-            .shell
-            .traps
-            .handlers
-            .get(&traps::TrapSignal::Debug)
-            .cloned();
-        if let Some(debug_trap_handler) = debug_trap_handler {
-            // TODO: Confirm whether trap handlers should be executed in the same process
-            // group.
-            let handler_params = ExecutionParameters {
-                open_files: params.open_files.clone(),
-                process_group_policy: ProcessGroupPolicy::SameProcessGroup,
-            };
-
-            let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
-
-            // TODO: This shouldn't *just* be set in a trap situation.
-            context.shell.env.update_or_add(
-                "BASH_COMMAND",
-                ShellValueLiteral::Scalar(full_cmd),
-                |_| Ok(()),
-                EnvironmentLookup::Anywhere,
-                EnvironmentScope::Global,
-            )?;
-
-            context.shell.traps.handler_depth += 1;
-
-            // TODO: Discard result?
-            let _ = context
-                .shell
-                .run_string(debug_trap_handler, &handler_params)
-                .await?;
-
-            context.shell.traps.handler_depth -= 1;
-        }
-    }
-
-    let cmd_context = commands::ExecutionContext {
+    let mut cmd_context = commands::ExecutionContext {
         shell: context.shell,
         command_name: cmd_name,
         params,
     };
+
+    // Run through any pre-execution hooks.
+    commands::on_preexecute(&mut cmd_context, args.as_slice()).await?;
 
     // Execute.
     let execution_result = commands::execute(

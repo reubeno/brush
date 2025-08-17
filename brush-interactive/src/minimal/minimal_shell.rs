@@ -47,6 +47,10 @@ impl InteractiveShell for MinimalShell {
                         break;
                     }
                 }
+                ReadResult::BoundCommand(s) => {
+                    result.push_str(s.as_str());
+                    break;
+                }
                 ReadResult::Eof => break,
                 ReadResult::Interrupted => return Ok(ReadResult::Interrupted),
             }
