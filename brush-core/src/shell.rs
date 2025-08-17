@@ -150,50 +150,145 @@ impl AsMut<Self> for Shell {
     }
 }
 
+impl<S> ShellBuilder<S>
+where
+    S: shell_builder::IsComplete,
+{
+    /// Returns a new shell instance created with the options provided
+    pub async fn build(self) -> Result<Shell, error::Error> {
+        let options = self.build_settings();
+
+        Shell::new(&options).await
+    }
+}
+
+impl<S> ShellBuilder<S>
+where
+    S: shell_builder::State,
+{
+    /// Add a disabled option
+    pub fn disable_option(mut self, option: impl Into<String>) -> Self {
+        self.disabled_options.push(option.into());
+        self
+    }
+    /// Add an enabled option
+    pub fn enable_option(mut self, option: impl Into<String>) -> Self {
+        self.enabled_options.push(option.into());
+        self
+    }
+    /// Add many disabled options
+    pub fn disable_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
+        self.disabled_options
+            .extend(options.into_iter().map(Into::into));
+        self
+    }
+    /// Add many enabled options
+    pub fn enable_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
+        self.enabled_options
+            .extend(options.into_iter().map(Into::into));
+        self
+    }
+
+    /// Add a disabled shopt option
+    pub fn disable_shopt_option(mut self, option: impl Into<String>) -> Self {
+        self.disabled_shopt_options.push(option.into());
+        self
+    }
+    /// Add an enabled shopt option
+    pub fn enable_shopt_option(mut self, option: impl Into<String>) -> Self {
+        self.enabled_shopt_options.push(option.into());
+        self
+    }
+    /// Add many disabled shopt options
+    pub fn disable_shopt_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
+        self.disabled_shopt_options
+            .extend(options.into_iter().map(Into::into));
+        self
+    }
+    /// Add many enabled shopt options
+    pub fn enable_shopt_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
+        self.enabled_shopt_options
+            .extend(options.into_iter().map(Into::into));
+        self
+    }
+}
+
 /// Options for creating a new shell.
-#[derive(Default)]
+#[derive(Default, bon::Builder)]
+#[builder(
+    builder_type(
+        name = ShellBuilder,
+        doc {
+        /// Builder for [Shell]
+    }),
+    finish_fn(
+        name = build_settings,
+        vis = "pub(self)",
+    ),
+    start_fn(
+        vis = "pub(self)"
+    )
+)]
 pub struct CreateOptions {
     /// Disabled options.
+    #[builder(field)]
     pub disabled_options: Vec<String>,
     /// Enabled options.
+    #[builder(field)]
     pub enabled_options: Vec<String>,
     /// Disabled shopt options.
+    #[builder(field)]
     pub disabled_shopt_options: Vec<String>,
     /// Enabled shopt options.
+    #[builder(field)]
     pub enabled_shopt_options: Vec<String>,
     /// Disallow overwriting regular files via output redirection.
+    #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
     /// Do not execute commands.
+    #[builder(default)]
     pub do_not_execute_commands: bool,
     /// Exit after one command.
+    #[builder(default)]
     pub exit_after_one_command: bool,
     /// Whether the shell is interactive.
+    #[builder(default)]
     pub interactive: bool,
     /// Whether the shell is a login shell.
+    #[builder(default)]
     pub login: bool,
     /// Whether to skip using a readline-like interface for input.
+    #[builder(default)]
     pub no_editing: bool,
     /// Whether to skip sourcing the system profile.
+    #[builder(default)]
     pub no_profile: bool,
     /// Whether to skip sourcing the user's rc file.
+    #[builder(default)]
     pub no_rc: bool,
     /// Explicit override of rc file to load in interactive mode.
     pub rc_file: Option<PathBuf>,
     /// Whether to skip inheriting environment variables from the calling process.
+    #[builder(default)]
     pub do_not_inherit_env: bool,
     /// Whether the shell is in POSIX compliance mode.
+    #[builder(default)]
     pub posix: bool,
     /// Whether to print commands and arguments as they are read.
+    #[builder(default)]
     pub print_commands_and_arguments: bool,
     /// Whether commands are being read from stdin.
+    #[builder(default)]
     pub read_commands_from_stdin: bool,
     /// The name of the shell.
     pub shell_name: Option<String>,
     /// Optionally provides a display string describing the version and variant of the shell.
     pub shell_product_display_str: Option<String>,
     /// Whether to run in maximal POSIX sh compatibility mode.
+    #[builder(default)]
     pub sh_mode: bool,
     /// Whether to print verbose output.
+    #[builder(default)]
     pub verbose: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
@@ -222,6 +317,11 @@ pub struct FunctionCall {
 }
 
 impl Shell {
+    /// Create an instance of [Shell] using the builder syntax
+    pub fn builder() -> ShellBuilder<shell_builder::Empty> {
+        CreateOptions::builder()
+    }
+
     /// Returns a new shell instance created with the given options.
     ///
     /// # Arguments
