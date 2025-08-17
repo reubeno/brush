@@ -49,6 +49,10 @@ impl InteractiveShell for BasicShell {
                         break;
                     }
                 }
+                ReadResult::BoundCommand(s) => {
+                    result.push_str(s.as_str());
+                    break;
+                }
                 ReadResult::Eof => {
                     if result.is_empty() {
                         return Ok(ReadResult::Eof);

@@ -9,10 +9,10 @@ use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
 
 use crate::{
-    ExecutionParameters, ExecutionResult, Shell, builtins, error, escape,
+    ExecutionParameters, ExecutionResult, Shell, builtins, env, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
-    pathsearch, processes, sys, trace_categories,
+    pathsearch, processes, sys, trace_categories, traps, variables,
 };
 
 /// Represents the result of spawning a command.
@@ -270,6 +270,61 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     Ok(cmd)
+}
+
+pub(crate) async fn on_preexecute(
+    context: &mut ExecutionContext<'_>,
+    args: &[CommandArg],
+) -> Result<(), error::Error> {
+    // See if we have a DEBUG trap handler registered; call it if we do.
+    invoke_debug_trap_handler_if_registered(context, args).await?;
+
+    Ok(())
+}
+
+async fn invoke_debug_trap_handler_if_registered(
+    context: &mut ExecutionContext<'_>,
+    args: &[CommandArg],
+) -> Result<(), error::Error> {
+    if context.shell.traps.handler_depth == 0 {
+        let debug_trap_handler = context
+            .shell
+            .traps
+            .handlers
+            .get(&traps::TrapSignal::Debug)
+            .cloned();
+        if let Some(debug_trap_handler) = debug_trap_handler {
+            // TODO: Confirm whether trap handlers should be executed in the same process
+            // group.
+            let handler_params = ExecutionParameters {
+                open_files: context.params.open_files.clone(),
+                process_group_policy: ProcessGroupPolicy::SameProcessGroup,
+            };
+
+            let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
+
+            // TODO: This shouldn't *just* be set in a trap situation.
+            context.shell.env.update_or_add(
+                "BASH_COMMAND",
+                variables::ShellValueLiteral::Scalar(full_cmd),
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+
+            context.shell.traps.handler_depth += 1;
+
+            // TODO: Discard result?
+            let _ = context
+                .shell
+                .run_string(debug_trap_handler, &handler_params)
+                .await?;
+
+            context.shell.traps.handler_depth -= 1;
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) async fn execute(

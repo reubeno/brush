@@ -140,7 +140,13 @@ impl InteractiveShell for ReedlineShell {
     fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
         if let Some(reedline) = &mut self.reedline {
             match reedline.read_line(&prompt) {
-                Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
+                Ok(reedline::Signal::Success(s)) => {
+                    if edit_mode::is_reedline_host_command(s.as_str()) {
+                        Ok(ReadResult::BoundCommand(s))
+                    } else {
+                        Ok(ReadResult::Input(s))
+                    }
+                }
                 Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
                 Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
                 Err(err) => Err(ShellError::IoError(err)),

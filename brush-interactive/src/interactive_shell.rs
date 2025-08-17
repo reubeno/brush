@@ -5,6 +5,8 @@ use std::io::{IsTerminal, Write};
 pub enum ReadResult {
     /// The user entered a line of input.
     Input(String),
+    /// A bound key sequence yielded a registered command.
+    BoundCommand(String),
     /// End of input was reached.
     Eof,
     /// The user interrupted the input operation.
@@ -146,51 +148,10 @@ pub trait InteractiveShell: Send {
 
             match self.read_line(prompt)? {
                 ReadResult::Input(read_result) => {
-                    let buffer_info = self.get_read_buffer();
-
-                    let mut shell_mut = self.shell_mut();
-
-                    let nonempty_buffer = if let Some((buffer, cursor)) = buffer_info {
-                        if !buffer.is_empty() {
-                            shell_mut.as_mut().set_edit_buffer(buffer, cursor)?;
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
-
-                    // Display the pre-command prompt (if there is one).
-                    let precmd_prompt = shell_mut.as_mut().compose_precmd_prompt().await?;
-                    if !precmd_prompt.is_empty() {
-                        print!("{precmd_prompt}");
-                    }
-
-                    // Update history (if applicable).
-                    shell_mut
-                        .as_mut()
-                        .add_to_history(read_result.trim_end_matches('\n'))?;
-
-                    // Execute the command.
-                    let params = shell_mut.as_mut().default_exec_params();
-                    let result = match shell_mut.as_mut().run_string(read_result, &params).await {
-                        Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
-                        Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
-                    };
-
-                    if nonempty_buffer {
-                        let (updated_buffer, updated_cursor) = shell_mut
-                            .as_mut()
-                            .pop_edit_buffer()?
-                            .unwrap_or((String::new(), 0));
-
-                        drop(shell_mut);
-
-                        self.set_read_buffer(updated_buffer, updated_cursor);
-                    }
-
-                    result
+                    self.execute_line(read_result, true /*user input*/).await
+                }
+                ReadResult::BoundCommand(read_result) => {
+                    self.execute_line(read_result, false /*user input*/).await
                 }
                 ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
                 ReadResult::Interrupted => {
@@ -201,6 +162,66 @@ pub trait InteractiveShell: Send {
                     ))
                 }
             }
+        }
+    }
+
+    /// Executes the given line of input.
+    fn execute_line(
+        &mut self,
+        read_result: String,
+        user_input: bool,
+    ) -> impl std::future::Future<Output = Result<InteractiveExecutionResult, ShellError>> + Send
+    {
+        async move {
+            let buffer_info = self.get_read_buffer();
+
+            let mut shell_mut = self.shell_mut();
+
+            let nonempty_buffer = if let Some((buffer, cursor)) = buffer_info {
+                if !buffer.is_empty() {
+                    shell_mut.as_mut().set_edit_buffer(buffer, cursor)?;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            // If the line came from direct user input (as opposed to a key binding, say), then we
+            // need to do a few more things before executing it.
+            if user_input {
+                // Display the pre-command prompt (if there is one).
+                let precmd_prompt = shell_mut.as_mut().compose_precmd_prompt().await?;
+                if !precmd_prompt.is_empty() {
+                    print!("{precmd_prompt}");
+                }
+
+                // Update history (if applicable).
+                shell_mut
+                    .as_mut()
+                    .add_to_history(read_result.trim_end_matches('\n'))?;
+            }
+
+            // Execute the command.
+            let params = shell_mut.as_mut().default_exec_params();
+            let result = match shell_mut.as_mut().run_string(read_result, &params).await {
+                Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
+                Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
+            };
+
+            if nonempty_buffer {
+                let (updated_buffer, updated_cursor) = shell_mut
+                    .as_mut()
+                    .pop_edit_buffer()?
+                    .unwrap_or((String::new(), 0));
+
+                drop(shell_mut);
+
+                self.set_read_buffer(updated_buffer, updated_cursor);
+            }
+
+            result
         }
     }
 }
