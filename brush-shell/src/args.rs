@@ -5,13 +5,17 @@ use std::{io::IsTerminal, path::PathBuf};
 
 use crate::{events, productinfo};
 
-const SHORT_DESCRIPTION: &str = "Bo[u]rn[e] RUsty SHell";
+const SHORT_DESCRIPTION: &str = "Bo[u]rn[e] RUsty SHell 🦀 (https://brush.sh)";
 
-const LONG_DESCRIPTION: &str = r"
-brush is a Rust-implemented, POSIX-style shell that aims to be compatible with bash.
+const LONG_DESCRIPTION: &str = r"brush is a bash-compatible, Rust-implemented, POSIX-style shell.
 
-brush is a work in progress. If you encounter any issues or discrepancies in behavior from bash, please report them at https://github.com/reubeno/brush.
-";
+brush is distributed under the terms of the MIT license. If you encounter any issues or discrepancies in behavior from bash, please report them at https://github.com/reubeno/brush.
+
+For more information, visit https://brush.sh.";
+
+const USAGE: &str = color_print::cstr!(
+    "<bold>brush</bold> <italics>[OPTIONS]</italics>... <italics>[SCRIPT_PATH [SCRIPT_ARGS]...]</italics>"
+);
 
 const VERSION: &str = const_format::concatcp!(
     productinfo::PRODUCT_VERSION,
@@ -19,6 +23,10 @@ const VERSION: &str = const_format::concatcp!(
     productinfo::PRODUCT_GIT_VERSION,
     ")"
 );
+
+const HEADING_STANDARD_OPTIONS: &str = "Standard shell options";
+
+const HEADING_UI_OPTIONS: &str = "User interface options";
 
 /// Identifies the input backend to use for the shell.
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -38,130 +46,136 @@ pub enum InputBackend {
        about = SHORT_DESCRIPTION,
        long_about = LONG_DESCRIPTION,
        author,
+       override_usage = USAGE,
        disable_help_flag = true,
        disable_version_flag = true,
        styles = brush_help_styles())]
 pub struct CommandLineArgs {
     /// Display usage information.
-    #[clap(long = "help", action = clap::ArgAction::HelpLong)]
+    #[clap(long = "help", action = clap::ArgAction::HelpShort)]
     pub help: Option<bool>,
 
     /// Display shell version.
     #[clap(long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
 
-    /// Enable noclobber shell option.
-    #[arg(short = 'C')]
+    /// Enable `noclobber` shell option.
+    #[arg(short = 'C', help_heading = HEADING_STANDARD_OPTIONS)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
 
     /// Execute the provided command and then exit.
-    #[arg(short = 'c', value_name = "COMMAND")]
+    #[arg(short = 'c', value_name = "COMMAND", help_heading = HEADING_STANDARD_OPTIONS)]
     pub command: Option<String>,
 
     /// Run in interactive mode.
-    #[clap(short = 'i')]
+    #[clap(short = 'i', help_heading = HEADING_STANDARD_OPTIONS)]
     pub interactive: bool,
 
     /// Make shell act as if it had been invoked as a login shell.
-    #[clap(short = 'l', long = "login")]
+    #[clap(short = 'l', long = "login", help_heading = HEADING_STANDARD_OPTIONS)]
     pub login: bool,
 
     /// Do not execute commands.
-    #[clap(short = 'n')]
+    #[clap(short = 'n', help_heading = HEADING_STANDARD_OPTIONS)]
     pub do_not_execute_commands: bool,
 
     /// Don't use readline for input.
-    #[clap(long = "noediting")]
+    #[clap(long = "noediting", help_heading = HEADING_STANDARD_OPTIONS)]
     pub no_editing: bool,
 
     /// Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`,
     /// `~/.profile`).
-    #[clap(long = "noprofile")]
+    #[clap(long = "noprofile", help_heading = HEADING_STANDARD_OPTIONS)]
     pub no_profile: bool,
 
     /// Don't process "rc" files if the shell is interactive (e.g., `~/.bashrc`, `~/.brushrc`).
-    #[clap(long = "norc")]
+    #[clap(long = "norc", help_heading = HEADING_STANDARD_OPTIONS)]
     pub no_rc: bool,
 
     /// Don't inherit environment variables from the calling process.
-    #[clap(long = "noenv")]
+    #[clap(long = "noenv", help_heading = HEADING_STANDARD_OPTIONS)]
     pub do_not_inherit_env: bool,
 
-    /// Enable option (set -o option).
-    #[clap(short = 'o', value_name = "OPTION")]
+    /// Enable option (`set -o` option).
+    #[clap(short = 'o', value_name = "OPTION", help_heading = HEADING_STANDARD_OPTIONS)]
     pub enabled_options: Vec<String>,
 
-    /// Disable option (set -o option).
-    #[clap(long = "+o", hide = true)]
+    /// Disable option (`set -o` option).
+    #[clap(long = "+o", value_name = "OPTION", hide = true, help_heading = HEADING_STANDARD_OPTIONS)]
     pub disabled_options: Vec<String>,
 
-    /// Enable shopt option.
-    #[clap(short = 'O', value_name = "SHOPT_OPTION")]
+    /// Enable `shopt` option.
+    #[clap(short = 'O', value_name = "SHOPT_OPTION", help_heading = HEADING_STANDARD_OPTIONS)]
     pub enabled_shopt_options: Vec<String>,
 
-    /// Disable shopt option.
-    #[clap(long = "+O", hide = true)]
+    /// Disable `shopt` option.
+    #[clap(long = "+O", value_name = "SHOPT_OPTION", hide = true, help_heading = HEADING_STANDARD_OPTIONS)]
     pub disabled_shopt_options: Vec<String>,
 
     /// Disable non-POSIX extensions.
-    #[clap(long = "posix")]
+    #[clap(long = "posix", help_heading = HEADING_STANDARD_OPTIONS)]
     pub posix: bool,
 
-    /// Path to the rc file to load in interactive shells (instead of bash.bashrc and ~/.bashrc).
-    #[clap(long = "rcfile", alias = "init-file", value_name = "FILE")]
+    /// Path to the rc file to load in interactive shells (instead of `bash.bashrc` and `~/.bashrc`).
+    #[clap(long = "rcfile", alias = "init-file", value_name = "FILE", help_heading = HEADING_STANDARD_OPTIONS)]
     pub rc_file: Option<PathBuf>,
 
     /// Read commands from standard input.
-    #[clap(short = 's')]
+    #[clap(short = 's', help_heading = HEADING_STANDARD_OPTIONS)]
     pub read_commands_from_stdin: bool,
 
-    /// Run in sh compatibility mode.
+    /// Run in `sh` compatibility mode, as if run as `/bin/sh`.
     #[clap(long = "sh")]
     pub sh_mode: bool,
 
-    /// Run only one command.
-    #[clap(short = 't')]
+    /// Run only one command and then exit.
+    #[clap(short = 't', help_heading = HEADING_STANDARD_OPTIONS)]
     pub exit_after_one_command: bool,
 
     /// Print input when it's processed.
-    #[clap(short = 'v', long = "verbose")]
+    #[clap(short = 'v', long = "verbose", help_heading = HEADING_STANDARD_OPTIONS)]
     pub verbose: bool,
 
     /// Print commands as they execute.
-    #[clap(short = 'x')]
+    #[clap(short = 'x', help_heading = HEADING_STANDARD_OPTIONS)]
     pub print_commands_and_arguments: bool,
 
     /// Disable bracketed paste.
-    #[clap(long = "disable-bracketed-paste")]
+    #[clap(long = "disable-bracketed-paste", help_heading = HEADING_UI_OPTIONS)]
     pub disable_bracketed_paste: bool,
 
     /// Disable colorized output.
-    #[clap(long = "disable-color")]
+    #[clap(long = "disable-color", help_heading = HEADING_UI_OPTIONS)]
     pub disable_color: bool,
 
     /// Enable syntax highlighting (experimental).
-    #[clap(long = "enable-highlighting")]
+    #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS)]
     pub enable_highlighting: bool,
 
     /// Input backend.
-    #[clap(long = "input-backend")]
+    #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
     pub input_backend: Option<InputBackend>,
 
     /// Enable debug logging for classes of tracing events.
-    #[clap(long = "debug", alias = "log-enable", value_name = "EVENT")]
+    #[clap(long = "debug", alias = "log-enable", value_name = "EVENT", help_heading = HEADING_UI_OPTIONS)]
     pub enabled_debug_events: Vec<events::TraceEvent>,
 
-    /// Disable logging for classes of tracing events (takes same event types as --debug).
+    /// Disable logging for classes of tracing events (takes same event types as `--debug`).
     #[clap(
         long = "disable-event",
         alias = "log-disable",
         value_name = "EVENT",
-        hide_possible_values = true
+        hide_possible_values = true,
+        help_heading = HEADING_UI_OPTIONS
     )]
     pub disabled_events: Vec<events::TraceEvent>,
 
     /// Path and arguments for script to execute (optional).
-    #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[clap(
+        trailing_var_arg = true,
+        allow_hyphen_values = false,
+        value_name = "SCRIPT_PATH [SCRIPT_ARGS]..."
+    )]
     pub script_args: Vec<String>,
 }
 

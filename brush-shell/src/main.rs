@@ -24,13 +24,15 @@ impl CommandLineArgs {
     // TODO: We can safely remove this `impl` after the issue is resolved
     // https://github.com/clap-rs/clap/issues/5055
     // This function takes precedence over [`clap::Parser::parse_from`]
-    fn parse_from<'a>(itr: impl IntoIterator<Item = &'a String>) -> Self {
-        let (mut this, script_args) = brush_core::builtins::parse_known::<Self, _>(itr);
+    fn try_parse_from(itr: impl IntoIterator<Item = String>) -> Result<Self, clap::Error> {
+        let (mut this, script_args) = brush_core::builtins::try_parse_known::<Self>(itr)?;
+
         // if we have `--` and unparsed raw args than
         if let Some(args) = script_args {
-            this.script_args.extend(args.cloned());
+            this.script_args.extend(args);
         }
-        this
+
+        Ok(this)
     }
 }
 
@@ -53,7 +55,13 @@ fn main() {
         }
     }
 
-    let parsed_args = CommandLineArgs::parse_from(&args);
+    let parsed_args = match CommandLineArgs::try_parse_from(args.iter().cloned()) {
+        Ok(parsed_args) => parsed_args,
+        Err(e) => {
+            let _ = e.print();
+            std::process::exit(1);
+        }
+    };
 
     //
     // Run.
@@ -308,4 +316,60 @@ fn get_default_input_backend() -> InputBackend {
 
 pub(crate) fn get_event_config() -> Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> {
     TRACE_EVENT_CONFIG.clone()
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use pretty_assertions::{assert_eq, assert_matches};
+
+    #[test]
+    fn parse_empty_args() -> Result<()> {
+        let args = vec!["brush"];
+        let args = args.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        let parsed_args = CommandLineArgs::try_parse_from(args)?;
+        assert_matches!(parsed_args.script_args.as_slice(), []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_script_and_args() -> Result<()> {
+        let args = vec!["brush", "some-script", "-x", "1", "--option"];
+        let args = args.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        let parsed_args = CommandLineArgs::try_parse_from(args)?;
+        assert_eq!(
+            parsed_args.script_args,
+            ["some-script", "-x", "1", "--option"]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_script_and_args_with_double_dash_in_script_args() -> Result<()> {
+        let args = vec!["brush", "some-script", "--"];
+        let args = args.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        let parsed_args = CommandLineArgs::try_parse_from(args)?;
+        assert_eq!(parsed_args.script_args, ["some-script", "--"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_unknown_args() {
+        let args = vec!["brush", "--unknown-option"];
+        let args = args.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        let result = CommandLineArgs::try_parse_from(args);
+        if let Ok(parsed_args) = &result {
+            assert_matches!(parsed_args.script_args.as_slice(), []);
+            assert!(result.is_err());
+        }
+    }
 }
