@@ -23,7 +23,7 @@ brush-parser = { version = "^0.2.19", path = "../brush-parser" }
 cached = "0.56.0"
 cfg-if = "1.0.1"
 chrono = "0.4.41"
-clap = { version = "4.5.40", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.45", features = ["derive", "wrap_help"] }
 fancy-regex = "0.16.1"
 futures = "0.3.31"
 indexmap = "2.10.0"
