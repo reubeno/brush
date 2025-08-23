@@ -150,50 +150,94 @@ impl AsMut<Self> for Shell {
     }
 }
 
+impl<S> ShellBuilder<S>
+where
+    S: shell_builder::IsComplete,
+{
+    /// Returns a new shell instance created with the options provided
+    pub async fn build(self) -> Result<Shell, error::Error> {
+        let options = self.build_settings();
+
+        Shell::new(&options).await
+    }
+}
+
 /// Options for creating a new shell.
-#[derive(Default)]
+#[derive(Default, bon::Builder)]
+#[builder(
+    builder_type(
+        name = ShellBuilder,
+        doc {
+        /// Builder for [Shell]
+    }),
+    finish_fn(
+        name = build_settings,
+        vis = "pub(crate)",
+    ),
+    start_fn(
+        vis = "pub(crate)"
+    )
+)]
 pub struct CreateOptions {
     /// Disabled options.
+    #[builder(default)]
     pub disabled_options: Vec<String>,
     /// Enabled options.
+    #[builder(default)]
     pub enabled_options: Vec<String>,
     /// Disabled shopt options.
+    #[builder(default)]
     pub disabled_shopt_options: Vec<String>,
     /// Enabled shopt options.
+    #[builder(default)]
     pub enabled_shopt_options: Vec<String>,
     /// Disallow overwriting regular files via output redirection.
+    #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
     /// Do not execute commands.
+    #[builder(default)]
     pub do_not_execute_commands: bool,
     /// Exit after one command.
+    #[builder(default)]
     pub exit_after_one_command: bool,
     /// Whether the shell is interactive.
+    #[builder(default)]
     pub interactive: bool,
     /// Whether the shell is a login shell.
+    #[builder(default)]
     pub login: bool,
     /// Whether to skip using a readline-like interface for input.
+    #[builder(default)]
     pub no_editing: bool,
     /// Whether to skip sourcing the system profile.
+    #[builder(default)]
     pub no_profile: bool,
     /// Whether to skip sourcing the user's rc file.
+    #[builder(default)]
     pub no_rc: bool,
     /// Explicit override of rc file to load in interactive mode.
     pub rc_file: Option<PathBuf>,
     /// Whether to skip inheriting environment variables from the calling process.
+    #[builder(default)]
     pub do_not_inherit_env: bool,
     /// Whether the shell is in POSIX compliance mode.
+    #[builder(default)]
     pub posix: bool,
     /// Whether to print commands and arguments as they are read.
+    #[builder(default)]
     pub print_commands_and_arguments: bool,
     /// Whether commands are being read from stdin.
+    #[builder(default)]
     pub read_commands_from_stdin: bool,
     /// The name of the shell.
     pub shell_name: Option<String>,
     /// Optionally provides a display string describing the version and variant of the shell.
     pub shell_product_display_str: Option<String>,
     /// Whether to run in maximal POSIX sh compatibility mode.
+    #[builder(default)]
     pub sh_mode: bool,
     /// Whether to print verbose output.
+    #[builder(default)]
     pub verbose: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
@@ -222,6 +266,11 @@ pub struct FunctionCall {
 }
 
 impl Shell {
+    /// Create an instance of [Shell] using the builder syntax
+    pub fn builder() -> ShellBuilder<shell_builder::Empty> {
+        CreateOptions::builder()
+    }
+
     /// Returns a new shell instance created with the given options.
     ///
     /// # Arguments
