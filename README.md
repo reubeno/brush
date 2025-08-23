@@ -148,10 +148,7 @@ There are some known gaps in compatibility. Most notably:
 * **Some `set` and `shopt` options.**
   The `set` builtin is implemented, as is `set -x` and many frequently used `set`/`shopt` options, but a number aren't fully implemented. For example, `set -e` will execute but its semantics aren't applied across execution.
 
-* **The `history` builtin and support for programmatically manipulating command history.**
-  This is something we're actively working on, with promises for supporting shell extensions like [atuin](https://atuin.sh/).
-
-If you feel so inclined, we'd love contributions toward any of the above, with broadening test coverage, deeper compatibility evaluation, or really any other opportunities you can find to help us make this project better.
+If you're interested, we'd love contributions to improve compatibility, broaden test coverage, or really any other opportunities you can find to help us make this project better.
 
 ## 🧪 Testing strategy
 
