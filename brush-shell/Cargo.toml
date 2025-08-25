@@ -81,7 +81,7 @@ glob = "0.3.2"
 indent = "0.1.1"
 junit-report = "0.8.3"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
-regex = "1.11.1"
+regex = "1.11.2"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
