@@ -15,13 +15,12 @@ impl builtins::Command for ReturnCommand {
         &self,
         context: commands::ExecutionContext<'_>,
     ) -> Result<crate::builtins::ExitCode, crate::error::Error> {
-        let code_8bit: u8;
         #[expect(clippy::cast_sign_loss)]
-        if let Some(code_32bit) = &self.code {
-            code_8bit = (code_32bit & 0xFF) as u8;
+        let code_8bit = if let Some(code_32bit) = &self.code {
+            (code_32bit & 0xFF) as u8
         } else {
-            code_8bit = context.shell.last_exit_status;
-        }
+            context.shell.last_exit_status
+        };
 
         if context.shell.in_function() || context.shell.in_sourced_script() {
             Ok(builtins::ExitCode::ReturnFromFunctionOrScript(code_8bit))

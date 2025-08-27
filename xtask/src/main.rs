@@ -31,15 +31,15 @@ enum DocsCommand {
 
 #[derive(Parser)]
 enum CompletionCommand {
-    /// Generate completion script for bash.
+    /// Generate completion script for `bash`.
     Bash,
-    /// Generate completion script for elvish.
+    /// Generate completion script for `elvish`.
     Elvish,
-    /// Generate completion script for fish.
+    /// Generate completion script for `fish`.
     Fish,
-    /// Generate completion script for PowerShell.
+    /// Generate completion script for `PowerShell`.
     PowerShell,
-    /// Generate completion script for zsh.
+    /// Generate completion script for `zsh`.
     Zsh,
 }
 

@@ -430,7 +430,7 @@ impl ShellVariable {
                         new_value.push_str(value.as_str());
                     }
 
-                    arr.insert(array_index, new_value.to_string());
+                    arr.insert(array_index, new_value.clone());
                 } else {
                     arr.insert(array_index, value);
                 }

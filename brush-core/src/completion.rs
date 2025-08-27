@@ -395,7 +395,7 @@ impl Spec {
                 CompleteAction::Alias => {
                     for name in shell.aliases.keys() {
                         if name.starts_with(token) {
-                            candidates.insert(name.to_string());
+                            candidates.insert(name.clone());
                         }
                     }
                 }
