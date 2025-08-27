@@ -540,7 +540,7 @@ impl Shell {
                 shell
                     .history
                     .as_ref()
-                    .map_or("0".into(), |h| h.count().to_string().into())
+                    .map_or_else(|| "0".into(), |h| h.count().to_string().into())
             },
             setter: |_| (),
         });

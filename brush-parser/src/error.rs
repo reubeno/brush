@@ -23,6 +23,7 @@ pub enum ParseError {
 }
 
 #[cfg(feature = "diagnostics")]
+#[allow(clippy::cast_sign_loss)]
 pub mod miette {
     use super::ParseError;
     use miette::SourceOffset;
@@ -32,15 +33,15 @@ pub mod miette {
         pub fn to_pretty_error(self, input: impl Into<String>) -> PrettyError {
             let input = input.into();
             let location = match self {
-                ParseError::ParsingNearToken(ref token) => Some(SourceOffset::from_location(
+                Self::ParsingNearToken(ref token) => Some(SourceOffset::from_location(
                     &input,
                     token.location().start.line as usize,
                     token.location().start.column as usize,
                 )),
-                ParseError::Tokenizing { ref position, .. } => position.as_ref().map(|p| {
+                Self::Tokenizing { ref position, .. } => position.as_ref().map(|p| {
                     SourceOffset::from_location(&input, p.line as usize, p.column as usize)
                 }),
-                ParseError::ParsingAtEndOfInput => {
+                Self::ParsingAtEndOfInput => {
                     Some(SourceOffset::from_location(&input, usize::MAX, usize::MAX))
                 }
             };

@@ -336,7 +336,7 @@ jobs:
 
       - name: Clippy check
         if: matrix.rust-version == 'stable'
-        run: cargo clippy --all-features --all-targets
+        run: cargo clippy --workspace --all-features --all-targets
 
   # Check for unneeded dependencies.
   check-deps:
