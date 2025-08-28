@@ -1,8 +1,10 @@
 #![allow(dead_code)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::needless_pass_by_ref_mut)]
 #![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::unnecessary_wraps)]
 #![allow(clippy::unused_async)]
 #![allow(clippy::unused_self)]
-#![allow(clippy::unnecessary_wraps)]
 
 pub(crate) mod fs;
 pub(crate) mod input;

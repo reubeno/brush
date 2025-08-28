@@ -2,7 +2,7 @@
 
 // Only compile this for Unix-like platforms (Linux, macOS) because they have an oracle to compare
 // against.
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
@@ -11,6 +11,7 @@ use colored::Colorize;
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
 use std::{
     collections::{HashMap, HashSet},
@@ -932,6 +933,7 @@ impl TestCase {
                 test_file_path.write_str(test_file.contents.as_str())?;
             }
 
+            #[cfg(unix)]
             if test_file.executable {
                 // chmod u+x
                 let mut perms = test_file_path.metadata()?.permissions();
@@ -1094,6 +1096,13 @@ impl TestCase {
     }
 
     #[expect(clippy::unused_async)]
+    #[cfg(not(unix))]
+    async fn run_command_with_pty(&self, _cmd: std::process::Command) -> Result<RunResult> {
+        Err(anyhow::anyhow!("pty test not supported on this platform"))
+    }
+
+    #[expect(clippy::unused_async)]
+    #[cfg(unix)]
     async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
         use expectrl::Expect;
 
@@ -1553,6 +1562,7 @@ impl TestOptions {
     }
 }
 
+#[cfg(unix)]
 fn read_expectrl_log(log: Vec<u8>) -> Result<String> {
     let output_str = String::from_utf8(log)?;
     let output: String = output_str

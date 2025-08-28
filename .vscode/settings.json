@@ -13,5 +13,8 @@
     "rewrap.wrappingColumn": 90,
     "rust-analyzer.debug.openDebugPane": true,
     "rust-analyzer.testExplorer": true,
-    "rust-analyzer.check.features": "all"
+    "rust-analyzer.check.features": "all",
+    "rust-analyzer.check.allTargets": true,
+    "rust-analyzer.check.workspace": true,
+    "sarif-viewer.connectToGithubCodeScanning": "on",
 }
