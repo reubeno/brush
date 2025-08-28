@@ -76,4 +76,4 @@ criterion::criterion_group! {
 criterion::criterion_main!(benches);
 
 #[cfg(not(unix))]
-fn main() -> () {}
+fn main() {}

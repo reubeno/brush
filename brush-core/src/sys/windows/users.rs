@@ -1,3 +1,5 @@
+#![allow(clippy::missing_const_for_fn)]
+
 use crate::error;
 use std::path::PathBuf;
 
@@ -31,6 +33,7 @@ pub(crate) fn get_current_username() -> Result<String, error::Error> {
     Ok(username)
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_user_group_ids() -> Result<Vec<u32>, error::Error> {
     // TODO: implement some version of this for Windows
     Ok(vec![])

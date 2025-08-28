@@ -34,6 +34,7 @@ impl ChildProcess {
         #[allow(unused_mut, reason = "only mutated on some platforms")]
         let mut sigchld = sys::signal::chld_signal_listener()?;
 
+        #[allow(clippy::ignored_unit_patterns)]
         loop {
             tokio::select! {
                 output = &mut self.exec_future => {

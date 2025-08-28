@@ -4,14 +4,14 @@ pub(crate) struct PipeReader {}
 
 impl PipeReader {
     /// Tries to clone the reader.
-    pub fn try_clone(&self) -> std::io::Result<PipeReader> {
+    pub fn try_clone(&self) -> std::io::Result<Self> {
         Ok((*self).clone())
     }
 }
 
 impl From<PipeReader> for std::process::Stdio {
     fn from(_reader: PipeReader) -> Self {
-        std::process::Stdio::null()
+        Self::null()
     }
 }
 
@@ -28,14 +28,14 @@ pub(crate) struct PipeWriter {}
 
 impl PipeWriter {
     /// Tries to clone the writer.
-    pub fn try_clone(&self) -> std::io::Result<PipeWriter> {
+    pub fn try_clone(&self) -> std::io::Result<Self> {
         Ok((*self).clone())
     }
 }
 
 impl From<PipeWriter> for std::process::Stdio {
     fn from(_writer: PipeWriter) -> Self {
-        std::process::Stdio::null()
+        Self::null()
     }
 }
 
