@@ -5,6 +5,7 @@
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Context;
+use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn get_version_variables() -> anyhow::Result<()> {
@@ -17,6 +18,37 @@ fn get_version_variables() -> anyhow::Result<()> {
         brush_ver_str, bash_ver_str,
         "Should differ for scripting use-case"
     );
+
+    Ok(())
+}
+
+#[test]
+fn version_exit_code() -> anyhow::Result<()> {
+    let mut cmd = assert_cmd::Command::cargo_bin("brush")?;
+    let assert = cmd.arg("--version").assert();
+    assert
+        .success()
+        .stdout(predicates::str::contains(env!("CARGO_PKG_VERSION")));
+
+    Ok(())
+}
+
+#[test]
+fn help_exit_code() -> anyhow::Result<()> {
+    let mut cmd = assert_cmd::Command::cargo_bin("brush")?;
+    let assert = cmd.arg("--help").assert();
+    assert.success().stdout(predicates::str::is_empty().not());
+
+    Ok(())
+}
+
+#[test]
+fn invalid_option_exit_code() -> anyhow::Result<()> {
+    let mut cmd = assert_cmd::Command::cargo_bin("brush")?;
+    let assert = cmd.arg("--unknown-argument-here").assert();
+    assert
+        .failure()
+        .stderr(predicates::str::contains("unexpected argument"));
 
     Ok(())
 }

@@ -59,7 +59,16 @@ fn main() {
         Ok(parsed_args) => parsed_args,
         Err(e) => {
             let _ = e.print();
-            std::process::exit(1);
+
+            // Check for whether this is something we'd truly consider fatal. clap returns
+            // errors for `--help`, `--version`, etc.
+            let exit_code = match e.kind() {
+                clap::error::ErrorKind::DisplayVersion => 0,
+                clap::error::ErrorKind::DisplayHelp => 0,
+                _ => 1,
+            };
+
+            std::process::exit(exit_code);
         }
     };
 
