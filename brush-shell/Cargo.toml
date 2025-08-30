@@ -1,7 +1,7 @@
 [package]
 name = "brush-shell"
 description = "Rust-implemented shell focused on POSIX and bash compatibility"
-version = "0.2.22"
+version = "0.2.23"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true

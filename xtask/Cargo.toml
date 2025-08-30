@@ -16,7 +16,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.98"
-brush-shell = { version = "^0.2.22", path = "../brush-shell" }
+brush-shell = { version = "^0.2.23", path = "../brush-shell" }
 clap = { version = "4.5.45", features = ["derive"] }
 clap_complete = "4.5.57"
 clap_mangen = "0.2.29"
