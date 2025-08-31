@@ -48,7 +48,7 @@ pub struct Shell {
     /// Runtime shell options.
     pub options: RuntimeOptions,
     /// State of managed jobs.
-    pub(crate) jobs: jobs::JobManager,
+    pub jobs: jobs::JobManager,
     /// Shell aliases.
     pub aliases: HashMap<String, String>,
 
@@ -94,7 +94,7 @@ pub struct Shell {
     pub builtins: HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
-    pub(crate) program_location_cache: pathcache::PathCache,
+    pub program_location_cache: pathcache::PathCache,
 
     /// Last "SECONDS" captured time.
     last_stopwatch_time: std::time::SystemTime,
@@ -215,6 +215,20 @@ where
             .extend(options.into_iter().map(Into::into));
         self
     }
+
+    /// Add a single builtin registration
+    pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration) -> Self {
+        self.builtins.insert(name.into(), reg);
+        self
+    }
+    /// Add many builtin registrations
+    pub fn builtins(
+        mut self,
+        builtins: impl IntoIterator<Item = (String, builtins::Registration)>,
+    ) -> Self {
+        self.builtins.extend(builtins);
+        self
+    }
 }
 
 /// Options for creating a new shell.
@@ -246,6 +260,9 @@ pub struct CreateOptions {
     /// Enabled shopt options.
     #[builder(field)]
     pub enabled_shopt_options: Vec<String>,
+    /// Registered builtins.
+    #[builder(field)]
+    pub builtins: HashMap<String, builtins::Registration>,
     /// Disallow overwriting regular files via output redirection.
     #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
@@ -332,13 +349,6 @@ impl Shell {
     ///
     /// * `options` - The options to use when creating the shell.
     pub async fn new(options: CreateOptions) -> Result<Self, error::Error> {
-        // Select the set of default builtins to use.
-        let builtin_set = if options.sh_mode {
-            builtins::BuiltinSet::ShMode
-        } else {
-            builtins::BuiltinSet::BashMode
-        };
-
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
@@ -360,7 +370,7 @@ impl Shell {
             directory_stack: vec![],
             current_line_number: 0,
             completion_config: completion::Config::default(),
-            builtins: builtins::default_builtins(builtin_set),
+            builtins: options.builtins,
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
@@ -1396,14 +1406,14 @@ impl Shell {
     }
 
     /// Returns whether or not the shell is actively executing in a sourced script.
-    pub(crate) fn in_sourced_script(&self) -> bool {
+    pub fn in_sourced_script(&self) -> bool {
         self.script_call_stack
             .front()
             .is_some_and(|(ty, _)| matches!(ty, ScriptCallType::Sourced))
     }
 
     /// Returns whether or not the shell is actively executing in a shell function.
-    pub(crate) fn in_function(&self) -> bool {
+    pub fn in_function(&self) -> bool {
         !self.function_call_stack.is_empty()
     }
 
@@ -1585,7 +1595,7 @@ impl Shell {
     }
 
     /// Returns the current value of the IFS variable, or the default value if it is not set.
-    pub(crate) fn get_ifs(&self) -> Cow<'_, str> {
+    pub fn get_ifs(&self) -> Cow<'_, str> {
         self.get_env_str("IFS").unwrap_or_else(|| " \t\n".into())
     }
 
@@ -1733,16 +1743,6 @@ impl Shell {
         Ok(std::fs::File::open(path_to_open)?.into())
     }
 
-    /// Replaces the shell's file descriptor table with the given one.
-    ///
-    /// # Arguments
-    ///
-    /// * `open_files` - The new file descriptor table to use.
-    #[allow(dead_code, reason = "not used on some platforms")]
-    pub(crate) fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
-        self.open_files = open_files;
-    }
-
     /// Sets the shell's current working directory to the given path.
     ///
     /// # Arguments
@@ -1798,7 +1798,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `s` - The string to shorten.
-    pub(crate) fn tilde_shorten(&self, s: String) -> String {
+    pub fn tilde_shorten(&self, s: String) -> String {
         if let Some(home_dir) = self.get_home_dir() {
             if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
                 return format!("~{stripped}");

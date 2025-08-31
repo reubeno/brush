@@ -1,118 +1,10 @@
-//! Infrastructure for shell built-in commands.
+//! Facilities for implementing and managing builtins
 
-use clap::Parser;
 use clap::builder::styling;
 use futures::future::BoxFuture;
+use std::io::Write;
 
-use crate::ExecutionResult;
-use crate::commands;
-use crate::error;
-
-mod alias;
-mod bg;
-mod bind;
-mod break_;
-mod brushinfo;
-mod builtin_;
-mod cd;
-mod colon;
-mod command;
-mod complete;
-mod continue_;
-mod declare;
-mod dirs;
-mod dot;
-mod echo;
-mod enable;
-mod eval;
-#[cfg(unix)]
-mod exec;
-mod exit;
-mod export;
-mod factory;
-mod false_;
-mod fg;
-mod getopts;
-mod hash;
-mod help;
-mod history;
-mod jobs;
-#[cfg(unix)]
-mod kill;
-mod let_;
-mod mapfile;
-mod popd;
-#[cfg(any(unix, windows))]
-mod printf;
-mod pushd;
-mod pwd;
-mod read;
-mod return_;
-mod set;
-mod shift;
-mod shopt;
-#[cfg(unix)]
-mod suspend;
-mod test;
-mod times;
-mod trap;
-mod true_;
-mod type_;
-#[cfg(unix)]
-mod ulimit;
-#[cfg(unix)]
-mod umask;
-mod unalias;
-mod unimp;
-mod unset;
-mod wait;
-
-pub(crate) use factory::{BuiltinSet, default_builtins};
-pub use factory::{SimpleCommand, builtin, simple_builtin};
-
-/// Macro to define a struct that represents a shell built-in flag argument that can be
-/// enabled or disabled by specifying an option with a leading '+' or '-' character.
-///
-/// # Arguments
-///
-/// - `$struct_name` - The identifier to be used for the struct to define.
-/// - `$flag_char` - The character to use as the flag.
-/// - `$desc` - The string description of the flag.
-#[macro_export]
-macro_rules! minus_or_plus_flag_arg {
-    ($struct_name:ident, $flag_char:literal, $desc:literal) => {
-        #[derive(clap::Parser)]
-        pub(crate) struct $struct_name {
-            #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue, help = $desc)]
-            _enable: bool,
-            #[arg(long = concat!("+", $flag_char), name = concat!(stringify!($struct_name), "_disable"), action = clap::ArgAction::SetTrue, hide = true)]
-            _disable: bool,
-        }
-
-        impl From<$struct_name> for Option<bool> {
-            fn from(value: $struct_name) -> Self {
-                value.to_bool()
-            }
-        }
-
-        impl $struct_name {
-            #[allow(dead_code, reason = "may not be used in all macro instantiations")]
-            pub const fn is_some(&self) -> bool {
-                self._enable || self._disable
-            }
-
-            pub const fn to_bool(&self) -> Option<bool> {
-                match (self._enable, self._disable) {
-                    (true, false) => Some(true),
-                    (false, true) => Some(false),
-                    _ => None,
-                }
-            }
-        }
-    };
-}
-
-pub(crate) use minus_or_plus_flag_arg;
+use crate::{CommandArg, ExecutionResult, commands, error};
 
 /// Result of executing a built-in command.
 pub struct BuiltinResult {
@@ -179,7 +71,7 @@ pub type CommandExecuteFunc = fn(
 pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Error>;
 
 /// Trait implemented by built-in shell commands.
-pub trait Command: Parser {
+pub trait Command: clap::Parser {
     /// Instantiates the built-in command with the given arguments.
     ///
     /// # Arguments
@@ -434,12 +326,12 @@ fn brush_help_styles() -> clap::builder::Styles {
 ///    }
 ///
 ///    let (mut parsed_args, raw_args) =
-///        brush_core::builtins::parse_known::<CommandLineArgs, _>(std::env::args());
+///        brush_core::parse_known::<CommandLineArgs, _>(std::env::args());
 ///    if raw_args.is_some() {
 ///        parsed_args.script_args = raw_args.unwrap().collect();
 ///    }
 /// ```
-pub fn parse_known<T: Parser, S>(
+pub fn parse_known<T: clap::Parser, S>(
     args: impl IntoIterator<Item = S>,
 ) -> (T, Option<impl Iterator<Item = S>>)
 where
@@ -464,8 +356,8 @@ where
 
 /// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
 /// This function is used to parse arguments in builtins such as
-/// `crate::builtins::echo::EchoCommand`
-pub fn try_parse_known<T: Parser>(
+/// `crate::echo::EchoCommand`
+pub fn try_parse_known<T: clap::Parser>(
     args: impl IntoIterator<Item = String>,
 ) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {
     let mut args = args.into_iter();
@@ -481,4 +373,191 @@ pub fn try_parse_known<T: Parser>(
 
     let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
     Ok((parsed_args, raw_args))
+}
+
+/// A simple command that can be registered as a built-in.
+pub trait SimpleCommand {
+    /// Returns the content of the built-in command.
+    fn get_content(name: &str, content_type: ContentType) -> Result<String, error::Error>;
+
+    /// Executes the built-in command.
+    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
+        context: commands::ExecutionContext<'_>,
+        args: I,
+    ) -> Result<BuiltinResult, error::Error>;
+}
+
+/// Returns a built-in command registration, given an implementation of the
+/// `SimpleCommand` trait.
+pub fn simple_builtin<B: SimpleCommand + Send + Sync>() -> Registration {
+    Registration {
+        execute_func: exec_simple_builtin::<B>,
+        content_func: B::get_content,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: false,
+    }
+}
+
+/// Returns a built-in command registration, given an implementation of the
+/// `Command` trait.
+pub fn builtin<B: Command + Send + Sync>() -> Registration {
+    Registration {
+        execute_func: exec_builtin::<B>,
+        content_func: get_builtin_content::<B>,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: false,
+    }
+}
+
+/// Returns a built-in command registration, given an implementation of the
+/// `DeclarationCommand` trait. Used for select commands that can take parsed
+/// declarations as arguments.
+pub fn decl_builtin<B: DeclarationCommand + Send + Sync>() -> Registration {
+    Registration {
+        execute_func: exec_declaration_builtin::<B>,
+        content_func: get_builtin_content::<B>,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: true,
+    }
+}
+
+#[allow(clippy::too_long_first_doc_paragraph)]
+/// Returns a built-in command registration, given an implementation of the
+/// `DeclarationCommand` trait that can be default-constructed. The command
+/// implementation is expected to implement clap's `Parser` trait solely
+/// for help/usage information. Arguments are passed directly to the command
+/// via `set_declarations`. This is primarily only expected to be used with
+/// select builtin commands that wrap other builtins (e.g., "builtin").
+pub fn raw_arg_builtin<B: DeclarationCommand + Default + Send + Sync>() -> Registration {
+    Registration {
+        execute_func: exec_raw_arg_builtin::<B>,
+        content_func: get_builtin_content::<B>,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: true,
+    }
+}
+
+fn get_builtin_content<T: Command + Send + Sync>(
+    name: &str,
+    content_type: ContentType,
+) -> Result<String, error::Error> {
+    T::get_content(name, content_type)
+}
+
+fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+    Box::pin(async move { exec_simple_builtin_impl::<T>(context, args).await })
+}
+
+#[expect(clippy::unused_async)]
+async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<BuiltinResult, error::Error> {
+    let plain_args = args.into_iter().map(|arg| match arg {
+        CommandArg::String(s) => s,
+        CommandArg::Assignment(a) => a.to_string(),
+    });
+
+    T::execute(context, plain_args)
+}
+
+fn exec_builtin<T: Command + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+    Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
+}
+
+async fn exec_builtin_impl<T: Command + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<BuiltinResult, error::Error> {
+    let plain_args = args.into_iter().map(|arg| match arg {
+        CommandArg::String(s) => s,
+        CommandArg::Assignment(a) => a.to_string(),
+    });
+
+    let result = T::new(plain_args);
+    let command = match result {
+        Ok(command) => command,
+        Err(e) => {
+            writeln!(context.stderr(), "{e}")?;
+            return Ok(BuiltinResult {
+                exit_code: ExitCode::InvalidUsage,
+            });
+        }
+    };
+
+    Ok(BuiltinResult {
+        exit_code: command.execute(context).await?,
+    })
+}
+
+fn exec_declaration_builtin<T: DeclarationCommand + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+    Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
+}
+
+async fn exec_declaration_builtin_impl<T: DeclarationCommand + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<BuiltinResult, error::Error> {
+    let mut options = vec![];
+    let mut declarations = vec![];
+
+    for (i, arg) in args.into_iter().enumerate() {
+        match arg {
+            CommandArg::String(s)
+                if i == 0 || (s.len() > 1 && (s.starts_with('-') || s.starts_with('+'))) =>
+            {
+                options.push(s);
+            }
+            _ => declarations.push(arg),
+        }
+    }
+
+    let result = T::new(options);
+    let mut command = match result {
+        Ok(command) => command,
+        Err(e) => {
+            writeln!(context.stderr(), "{e}")?;
+            return Ok(BuiltinResult {
+                exit_code: ExitCode::InvalidUsage,
+            });
+        }
+    };
+
+    command.set_declarations(declarations);
+
+    Ok(BuiltinResult {
+        exit_code: command.execute(context).await?,
+    })
+}
+
+fn exec_raw_arg_builtin<T: DeclarationCommand + Default + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+    Box::pin(async move { exec_raw_arg_builtin_impl::<T>(context, args).await })
+}
+
+async fn exec_raw_arg_builtin_impl<T: DeclarationCommand + Default + Send + Sync>(
+    context: commands::ExecutionContext<'_>,
+    args: Vec<CommandArg>,
+) -> Result<BuiltinResult, error::Error> {
+    let mut command = T::default();
+    command.set_declarations(args);
+
+    Ok(BuiltinResult {
+        exit_code: command.execute(context).await?,
+    })
 }

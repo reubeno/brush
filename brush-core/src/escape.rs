@@ -1,20 +1,31 @@
+//! String escaping utilities
+
 use std::borrow::Cow;
 
 use itertools::Itertools;
 
 use crate::error;
 
+/// Escape expansion mode.
 #[derive(Clone, Copy)]
-pub(crate) enum EscapeExpansionMode {
+pub enum EscapeExpansionMode {
+    /// echo builtin mode.
     EchoBuiltin,
+    /// ANSI-C quotes.
     AnsiCQuotes,
 }
 
+/// Expands backslash escapes in the provided string.
+///
+/// # Arguments
+///
+/// * `s` - The string to expand.
+/// * `mode` - The mode to use for expansion.
 #[expect(clippy::too_many_lines)]
-pub(crate) fn expand_backslash_escapes(
+pub fn expand_backslash_escapes(
     s: &str,
     mode: EscapeExpansionMode,
-) -> Result<(Vec<u8>, bool), crate::error::Error> {
+) -> Result<(Vec<u8>, bool), error::Error> {
     let mut result: Vec<u8> = vec![];
     let mut it = s.chars();
     while let Some(c) = it.next() {
@@ -167,11 +178,15 @@ pub(crate) fn expand_backslash_escapes(
     Ok((result, true))
 }
 
+/// Quoting mode to use for escaping.
 #[derive(Clone, Copy, Default)]
-pub(crate) enum QuoteMode {
+pub enum QuoteMode {
+    /// Single-quote.
     #[default]
     SingleQuote,
+    /// Double-quote.
     DoubleQuote,
+    /// Backslash-escape.
     BackslashEscape,
 }
 
@@ -213,7 +228,13 @@ pub(crate) fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
     }
 }
 
-pub(crate) fn force_quote(s: &str, mode: QuoteMode) -> String {
+/// Escape the given string, forcing quoting.
+///
+/// # Arguments
+///
+/// * `s` - The string to escape.
+/// * `mode` - The quoting mode to use.
+pub fn force_quote(s: &str, mode: QuoteMode) -> String {
     let options = QuoteOptions {
         always_quote: true,
         preferred_mode: mode,
@@ -223,7 +244,13 @@ pub(crate) fn force_quote(s: &str, mode: QuoteMode) -> String {
     quote(s, &options).to_string()
 }
 
-pub(crate) fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
+/// Applies the given quoting mode to the provided string, only changing it if required.
+///
+/// # Arguments
+///
+/// * `s` - The string to escape.
+/// * `mode` - The quoting mode to use.
+pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
     let options = QuoteOptions {
         always_quote: false,
         preferred_mode: mode,

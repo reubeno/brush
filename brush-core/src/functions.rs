@@ -77,6 +77,11 @@ impl From<brush_parser::ast::FunctionDefinition> for FunctionRegistration {
 }
 
 impl FunctionRegistration {
+    /// Returns a reference to the function definition.
+    pub fn definition(&self) -> &brush_parser::ast::FunctionDefinition {
+        &self.definition
+    }
+
     /// Marks the function for export.
     pub const fn export(&mut self) {
         self.exported = true;

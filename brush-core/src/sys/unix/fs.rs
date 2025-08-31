@@ -1,3 +1,5 @@
+//! Filesystem utilities.
+
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
@@ -84,7 +86,7 @@ pub(crate) fn get_default_executable_search_paths() -> Vec<String> {
 
 /// Retrieves the platform-specific set of paths that should contain standard system
 /// utilities. Used by `command -p`, for example.
-pub(crate) fn get_default_standard_utils_paths() -> Vec<String> {
+pub fn get_default_standard_utils_paths() -> Vec<String> {
     //
     // Try to call confstr(_CS_PATH). If that fails, can't find a string value, or
     // finds an empty string, then we'll fall back to hard-coded defaults.
@@ -148,4 +150,12 @@ fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io
     buffer.pop();
 
     Ok(Some(std::ffi::OsString::from_vec(buffer)))
+}
+
+/// Opens a null file that will discard all I/O.
+pub fn open_null_file() -> Result<std::fs::File, std::io::Error> {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/null")
 }

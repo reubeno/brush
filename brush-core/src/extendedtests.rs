@@ -171,8 +171,10 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::ShellOptionEnabled => {
             let shopt_name = operand;
-            if let Some(option) = namedoptions::SET_O_OPTIONS.get(shopt_name) {
-                Ok((option.getter)(&shell.options))
+            if let Some(option) =
+                namedoptions::options(namedoptions::ShellOptionKind::SetO).get(shopt_name)
+            {
+                Ok(option.get(&shell.options))
             } else {
                 Ok(false)
             }

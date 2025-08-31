@@ -1,3 +1,5 @@
+//! Word expansion utilities.
+
 use std::borrow::Cow;
 use std::cmp::min;
 
@@ -360,8 +362,17 @@ pub(crate) async fn full_expand_and_split_str(
     expander.full_expand_with_splitting(s).await
 }
 
-#[allow(dead_code, reason = "unused on some platforms")]
-pub(crate) async fn assign_to_named_parameter(
+/// Assigns a value to a named parameter.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform the assignment.
+/// * `params` - The execution parameters to use during the assignment.
+/// * `name` - The name of the parameter to assign to. May be a variable name,
+///   or a more complex, assignable parameter expression (e.g., an array
+///   element).
+/// * `value` - The value to assign to the parameter.
+pub async fn assign_to_named_parameter(
     shell: &mut Shell,
     params: &ExecutionParameters,
     name: &str,

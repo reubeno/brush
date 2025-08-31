@@ -163,6 +163,22 @@ pub struct TrapHandlerConfig {
 }
 
 impl TrapHandlerConfig {
+    /// Iterates over the registered handlers for trap signals.
+    pub fn iter_handlers(&self) -> impl Iterator<Item = (TrapSignal, &str)> {
+        self.handlers
+            .iter()
+            .map(|(signal, cmd)| (*signal, cmd.as_str()))
+    }
+
+    /// Tries to find the handler associated with the given signal.
+    ///
+    /// # Arguments
+    ///
+    /// * `signal_type` - The type of signal to get the handler for.
+    pub fn get_handler(&self, signal_type: TrapSignal) -> Option<&str> {
+        self.handlers.get(&signal_type).map(|s| s.as_str())
+    }
+
     /// Registers a handler for a trap signal.
     ///
     /// # Arguments

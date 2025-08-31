@@ -2,7 +2,7 @@
 
 use itertools::Itertools;
 
-use crate::CreateOptions;
+use crate::{CreateOptions, namedoptions};
 
 /// Runtime changeable options for a shell instance.
 #[derive(Clone, Default)]
@@ -232,29 +232,33 @@ impl RuntimeOptions {
 
         // Update any options.
         for enabled_option in &create_options.enabled_options {
-            if let Some(option) = crate::namedoptions::SET_O_OPTIONS.get(enabled_option.as_str()) {
-                (option.setter)(&mut options, true);
+            if let Some(option) = namedoptions::options(namedoptions::ShellOptionKind::SetO)
+                .get(enabled_option.as_str())
+            {
+                option.set(&mut options, true);
             }
         }
         for disabled_option in &create_options.disabled_options {
-            if let Some(option) = crate::namedoptions::SET_O_OPTIONS.get(disabled_option.as_str()) {
-                (option.setter)(&mut options, false);
+            if let Some(option) = namedoptions::options(namedoptions::ShellOptionKind::SetO)
+                .get(disabled_option.as_str())
+            {
+                option.set(&mut options, false);
             }
         }
 
         // Update any shopt options.
         for enabled_option in &create_options.enabled_shopt_options {
-            if let Some(shopt_option) =
-                crate::namedoptions::SHOPT_OPTIONS.get(enabled_option.as_str())
+            if let Some(shopt_option) = namedoptions::options(namedoptions::ShellOptionKind::Shopt)
+                .get(enabled_option.as_str())
             {
-                (shopt_option.setter)(&mut options, true);
+                shopt_option.set(&mut options, true);
             }
         }
         for disabled_option in &create_options.disabled_shopt_options {
-            if let Some(shopt_option) =
-                crate::namedoptions::SHOPT_OPTIONS.get(disabled_option.as_str())
+            if let Some(shopt_option) = namedoptions::options(namedoptions::ShellOptionKind::Shopt)
+                .get(disabled_option.as_str())
             {
-                (shopt_option.setter)(&mut options, false);
+                shopt_option.set(&mut options, false);
             }
         }
 
@@ -265,9 +269,9 @@ impl RuntimeOptions {
     pub fn get_option_flags(&self) -> String {
         let mut cs = vec![];
 
-        for (x, y) in crate::namedoptions::SET_OPTIONS.iter() {
-            if (y.getter)(self) {
-                cs.push(*x);
+        for o in namedoptions::options(namedoptions::ShellOptionKind::Set).iter() {
+            if o.definition.get(self) {
+                cs.push(o.name.chars().next().unwrap());
             }
         }
 
@@ -295,9 +299,9 @@ impl RuntimeOptions {
     pub fn get_set_o_optstr(&self) -> String {
         let mut cs = vec![];
 
-        for (x, y) in crate::namedoptions::SET_O_OPTIONS.iter() {
-            if (y.getter)(self) {
-                cs.push(*x);
+        for option in namedoptions::options(namedoptions::ShellOptionKind::SetO).iter() {
+            if option.definition.get(self) {
+                cs.push(option.name);
             }
         }
 
@@ -309,9 +313,9 @@ impl RuntimeOptions {
     pub fn get_shopt_optstr(&self) -> String {
         let mut cs = vec![];
 
-        for (x, y) in crate::namedoptions::SHOPT_OPTIONS.iter() {
-            if (y.getter)(self) {
-                cs.push(*x);
+        for option in namedoptions::options(namedoptions::ShellOptionKind::Shopt).iter() {
+            if option.definition.get(self) {
+                cs.push(option.name);
             }
         }
 

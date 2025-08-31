@@ -1,3 +1,5 @@
+//! Error facilities
+
 use std::path::PathBuf;
 
 /// Monolithic error type for the shell
@@ -228,7 +230,7 @@ pub enum Error {
 /// # Arguments
 ///
 /// * `msg` - The message to include in the error
-pub(crate) const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
+pub const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
     Err(Error::Unimplemented(msg))
 }
 
@@ -237,9 +239,8 @@ pub(crate) const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 /// # Arguments
 ///
 /// * `msg` - The message to include in the error
-pub(crate) const fn unimp_with_issue<T>(
-    msg: &'static str,
-    project_issue_id: u32,
-) -> Result<T, Error> {
+/// * `project_issue_id` - The GitHub issue ID where the implementation is tracked.
+#[allow(unused)]
+pub const fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
     Err(Error::UnimplementedAndTracked(msg, project_issue_id))
 }

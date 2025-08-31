@@ -1,3 +1,5 @@
+//! Job management
+
 use std::collections::VecDeque;
 use std::fmt::Display;
 
@@ -37,6 +39,7 @@ pub enum JobTaskWaitResult {
 }
 
 impl JobTask {
+    /// Waits for the task to complete. Returns the result of the wait.
     pub async fn wait(&mut self) -> Result<JobTaskWaitResult, error::Error> {
         match self {
             Self::External(process) => {
@@ -67,7 +70,6 @@ impl JobTask {
     }
 }
 
-#[expect(dead_code)]
 impl JobManager {
     /// Returns a new job manager.
     pub fn new() -> Self {
@@ -195,7 +197,6 @@ impl JobManager {
 #[derive(Clone)]
 pub enum JobState {
     /// Unknown state.
-    #[expect(dead_code)]
     Unknown,
     /// The job is running.
     Running,
@@ -271,7 +272,6 @@ impl Display for Job {
     }
 }
 
-#[expect(dead_code)]
 impl Job {
     /// Returns a new job object.
     ///
@@ -326,7 +326,6 @@ impl Job {
     }
 
     /// Polls whether the job has completed.
-    #[expect(clippy::unnecessary_wraps)]
     pub fn poll_done(
         &mut self,
     ) -> Result<Option<Result<ExecutionResult, error::Error>>, error::Error> {
@@ -410,6 +409,10 @@ impl Job {
     }
 
     /// Kills the job.
+    ///
+    /// # Arguments
+    ///
+    /// * `signal` - The signal to send to the job.
     pub fn kill(&self, signal: traps::TrapSignal) -> Result<(), error::Error> {
         if let Some(pid) = self.get_process_group_id() {
             sys::signal::kill_process(pid, signal)
@@ -433,6 +436,7 @@ impl Job {
         None
     }
 
+    /// Tries to retrieve the process group ID (PGID) of the job.
     pub fn get_process_group_id(&self) -> Option<sys::process::ProcessId> {
         // TODO: Don't assume that the first PID is the PGID.
         self.pgid.or_else(|| self.get_representative_pid())

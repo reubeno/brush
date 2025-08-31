@@ -1,3 +1,5 @@
+//! Path cache
+
 use crate::{error, variables};
 use std::path::PathBuf;
 
@@ -28,6 +30,7 @@ impl PathCache {
     /// # Arguments
     ///
     /// * `name` - The name to set.
+    /// * `path` - The path to associate with the name.
     pub fn set<S: AsRef<str>>(&mut self, name: S, path: PathBuf) {
         self.cache.insert(name.as_ref().to_string(), path);
     }

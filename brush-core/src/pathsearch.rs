@@ -1,8 +1,11 @@
+//! Path searching utilities.
+
 use std::{collections::VecDeque, path::PathBuf};
 
 use crate::sys::fs::PathExt;
 
-pub(crate) struct ExecutablePathSearch<PI, N>
+/// Encapsulates the result of a path search.
+pub struct ExecutablePathSearch<PI, N>
 where
     PI: AsRef<str>,
     N: AsRef<str>,
@@ -86,7 +89,13 @@ where
     }
 }
 
-pub(crate) fn search_for_executable<P, PI, N>(paths: P, filename: N) -> ExecutablePathSearch<PI, N>
+/// Search for the given executable name in the provided paths.
+///
+/// # Arguments
+///
+/// * `paths` - An iterator over the paths to search.
+/// * `filename` - The name of the executable file to search for.
+pub fn search_for_executable<P, PI, N>(paths: P, filename: N) -> ExecutablePathSearch<PI, N>
 where
     P: Iterator<Item = PI>,
     PI: AsRef<str>,

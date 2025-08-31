@@ -262,6 +262,12 @@ async fn instantiate_shell(
 
     let interactive = args.is_interactive();
 
+    let builtins = brush_builtins::default_builtins(if args.sh_mode {
+        brush_builtins::BuiltinSet::ShMode
+    } else {
+        brush_builtins::BuiltinSet::BashMode
+    });
+
     // Compose the options we'll use to create the shell.
     let options = brush_interactive::Options {
         shell: brush_core::CreateOptions {
@@ -290,6 +296,7 @@ async fn instantiate_shell(
             max_function_call_depth: None,
             key_bindings: None,
             shell_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            builtins,
         },
         disable_bracketed_paste: args.disable_bracketed_paste,
         disable_color: args.disable_color,

@@ -1,9 +1,9 @@
 pub(crate) use crate::sys::os_pipe as pipes;
-pub(crate) mod fs;
-pub(crate) mod input;
+pub mod fs;
+pub mod input;
 pub(crate) mod network;
 pub(crate) use crate::sys::tokio_process as process;
-pub(crate) mod resource;
-pub(crate) mod signal;
-pub(crate) mod terminal;
+pub mod resource;
+pub mod signal;
+pub mod terminal;
 pub(crate) mod users;

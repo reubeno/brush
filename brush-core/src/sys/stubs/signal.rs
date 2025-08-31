@@ -1,10 +1,15 @@
+//! Signal processing utilities
+
 use crate::{error, sys, traps};
 
 pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     error::unimp("continue process")
 }
 
-pub(crate) fn kill_process(
+/// Sends a signal to a specific process.
+///
+/// This is a stub implementation that returns an unimplemented error.
+pub fn kill_process(
     _pid: sys::process::ProcessId,
     _signal: traps::TrapSignal,
 ) -> Result<(), error::Error> {

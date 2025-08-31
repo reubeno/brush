@@ -63,8 +63,9 @@ impl From<std::process::Output> for ExecutionResult {
 impl ExecutionResult {
     /// Returns a new `ExecutionResult` with the given exit code.
     ///
-    /// # Parameters
-    /// - `exit_code` - The exit code of the command.
+    /// # Arguments
+    ///
+    /// * `exit_code` - The exit code of the command.
     pub fn new(exit_code: u8) -> Self {
         Self {
             exit_code,
@@ -129,23 +130,15 @@ impl ExecutionParameters {
         self.fd(2).unwrap()
     }
 
-    /// Returns the file descriptor with the given number.
+    /// Returns the file descriptor with the given number. Returns `None`
+    /// if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - The file descriptor number to retrieve.
     #[expect(clippy::unwrap_in_result)]
-    pub(crate) fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
+    pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
         self.open_files.get(fd).map(|f| f.try_dup().unwrap())
-    }
-
-    pub(crate) fn stdin_file(&self) -> openfiles::OpenFile {
-        self.fd(0).unwrap()
-    }
-
-    pub(crate) fn stdout_file(&self) -> openfiles::OpenFile {
-        self.fd(1).unwrap()
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn stderr_file(&self) -> openfiles::OpenFile {
-        self.fd(2).unwrap()
     }
 }
 
@@ -1335,7 +1328,7 @@ fn setup_pipeline_redirection(
                 OpenFile::PipeReader(preceding_output_reader),
             );
         } else {
-            open_files.set(OpenFiles::STDIN_FD, OpenFile::Null);
+            open_files.set(OpenFiles::STDIN_FD, openfiles::null()?);
         }
     }
 

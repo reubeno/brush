@@ -1,6 +1,10 @@
+//! Resource utilities
+
 use crate::error;
 
-pub(crate) fn get_self_user_and_system_time()
+/// Returns the user and system CPU time used by the current process;
+/// expressed as a tuple containing user time and system time, in that order.
+pub fn get_self_user_and_system_time()
 -> Result<(std::time::Duration, std::time::Duration), error::Error> {
     let usage = nix::sys::resource::getrusage(nix::sys::resource::UsageWho::RUSAGE_SELF)?;
     Ok((
@@ -9,7 +13,9 @@ pub(crate) fn get_self_user_and_system_time()
     ))
 }
 
-pub(crate) fn get_children_user_and_system_time()
+/// Returns the user and system CPU time used by child processes; expressed
+/// as a tuple containing user time and system time, in that order.
+pub fn get_children_user_and_system_time()
 -> Result<(std::time::Duration, std::time::Duration), error::Error> {
     let usage = nix::sys::resource::getrusage(nix::sys::resource::UsageWho::RUSAGE_CHILDREN)?;
     Ok((

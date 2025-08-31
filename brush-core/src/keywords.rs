@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-use crate::Shell;
-
 fn get_keywords(sh_mode_only: bool) -> HashSet<String> {
     let mut keywords = HashSet::new();
     keywords.insert(String::from("!"));
@@ -37,11 +35,3 @@ fn get_keywords(sh_mode_only: bool) -> HashSet<String> {
 pub(crate) static SH_MODE_KEYWORDS: LazyLock<HashSet<String>> =
     LazyLock::new(|| get_keywords(true));
 pub(crate) static KEYWORDS: LazyLock<HashSet<String>> = LazyLock::new(|| get_keywords(false));
-
-pub fn is_keyword(shell: &Shell, name: &str) -> bool {
-    if shell.options.sh_mode {
-        SH_MODE_KEYWORDS.contains(name)
-    } else {
-        KEYWORDS.contains(name)
-    }
-}

@@ -46,6 +46,7 @@ workspace = true
 
 [dependencies]
 brush-core = { version = "^0.3.5", path = "../brush-core" }
+brush-builtins = { version = "^0.1.0", path = "../brush-builtins" }
 clap = { version = "4.5.47", features = ["derive", "env"] }
 color-print = "0.3.7"
 const_format = "0.2.34"
