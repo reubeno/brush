@@ -54,7 +54,7 @@ tokio = { version = "1.47.0", features = [
 uucore = { version = "0.1.0", default-features = false, features = ["format"] }
 
 [target.'cfg(windows)'.dependencies]
-homedir = "0.3.4"
+homedir = "0.3.5"
 whoami = "1.6.0"
 
 [target.'cfg(unix)'.dependencies]
@@ -72,7 +72,7 @@ terminfo = "0.9.0"
 uzers = "0.12.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.17.0"
+procfs = "0.18.0"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
