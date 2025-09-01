@@ -72,7 +72,7 @@ terminfo = "0.9.0"
 uzers = "0.12.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.17.0"
+procfs = "0.18.0"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
