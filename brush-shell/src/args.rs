@@ -170,6 +170,10 @@ pub struct CommandLineArgs {
     )]
     pub disabled_events: Vec<events::TraceEvent>,
 
+    /// Path to a UNIX domain socket on which to serve an RPC interface.
+    #[clap(long = "rpc-socket", value_name = "PATH", help_heading = HEADING_UI_OPTIONS)]
+    pub rpc_socket: Option<PathBuf>,
+
     /// Path and arguments for script to execute (optional).
     #[clap(
         trailing_var_arg = true,

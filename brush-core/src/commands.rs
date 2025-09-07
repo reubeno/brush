@@ -12,7 +12,9 @@ use crate::{
     ExecutionParameters, ExecutionResult, Shell, builtins, env, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
-    pathsearch, processes, sys, trace_categories, traps, variables,
+    pathsearch,
+    process_events::{self, ProcessEvent},
+    processes, sys, trace_categories, traps, variables,
 };
 
 /// Represents the result of spawning a command.
@@ -47,7 +49,14 @@ impl CommandSpawnResult {
 
                 let command_wait_result = match process_wait_result {
                     processes::ProcessWaitResult::Completed(output) => {
-                        CommandWaitResult::CommandCompleted(ExecutionResult::from(output))
+                        let exec_result = ExecutionResult::from(output);
+                        if let Some(pid) = child.pid() {
+                            process_events::emit(ProcessEvent::Exit {
+                                pid,
+                                exit_code: i32::from(exec_result.exit_code),
+                            });
+                        }
+                        CommandWaitResult::CommandCompleted(exec_result)
                     }
                     processes::ProcessWaitResult::Stopped => CommandWaitResult::CommandStopped(
                         ExecutionResult::from(processes::ProcessWaitResult::Stopped),
@@ -422,12 +431,13 @@ pub(crate) fn execute_external_command(
     args: &[CommandArg],
 ) -> Result<CommandSpawnResult, error::Error> {
     // Filter out the args; we only want strings.
-    let mut cmd_args = vec![];
+    let mut cmd_args: Vec<&String> = Vec::new();
     for arg in args {
         if let CommandArg::String(s) = arg {
             cmd_args.push(s);
         }
     }
+    let spawn_args: Vec<String> = cmd_args.iter().map(|s| (*s).clone()).collect();
 
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
     #[cfg(unix)]
@@ -491,10 +501,19 @@ pub(crate) fn execute_external_command(
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
             let pid = child.id().map(|id| id as i32);
-            if let Some(pid) = &pid {
+            if let Some(pid_value) = &pid {
                 if new_pg {
-                    *process_group_id = Some(*pid);
+                    *process_group_id = Some(*pid_value);
                 }
+                #[expect(clippy::cast_possible_wrap)]
+                let ppid = std::process::id() as i32;
+                process_events::emit(ProcessEvent::Spawn {
+                    ppid,
+                    pid: *pid_value,
+                    command: executable_path.to_string(),
+                    args: spawn_args.clone(),
+                    cwd: context.shell.working_dir.clone(),
+                });
             } else {
                 tracing::warn!("could not retrieve pid for child process");
             }
@@ -551,6 +570,16 @@ async fn execute_builtin_command(
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<CommandSpawnResult, error::Error> {
+    // Emit builtin-specific events with a distinct id.
+    let builtin_id = crate::next_builtin_id();
+    let spawn_args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    crate::emit_builtin_event(crate::BuiltinEvent::Spawn {
+        id: builtin_id,
+        name: context.command_name.clone(),
+        args: spawn_args,
+        cwd: context.shell.working_dir.clone(),
+    });
+
     let exit_code = match (builtin.execute_func)(context, args).await {
         Ok(builtin_result) => match builtin_result.exit_code {
             builtins::ExitCode::Success => 0,
@@ -581,6 +610,11 @@ async fn execute_builtin_command(
             1
         }
     };
+
+    crate::emit_builtin_event(crate::BuiltinEvent::Exit {
+        id: builtin_id,
+        exit_code: i32::from(exit_code),
+    });
 
     Ok(CommandSpawnResult::ImmediateExit(exit_code))
 }
