@@ -246,6 +246,12 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
+version = "0.21.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
+
+[[package]]
+name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
@@ -323,6 +329,7 @@ dependencies = [
  "rand 0.9.2",
  "rlimit",
  "rpds",
+ "serde",
  "strum 0.27.2",
  "strum_macros 0.27.2",
  "terminfo",
@@ -391,6 +398,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
+ "base64 0.21.7",
  "brush-core",
  "brush-interactive",
  "clap",
@@ -411,6 +419,7 @@ dependencies = [
  "pretty_assertions",
  "regex",
  "serde",
+ "serde_json",
  "serde_yaml",
  "strip-ansi-escapes",
  "test-with",
@@ -2657,6 +2666,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
+name = "socket2"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "233504af464074f9d066d7b5416c5f9b894a5862a6506e306f7b816cdd6f1807"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "spin"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2954,6 +2973,7 @@ dependencies = [
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
+ "socket2",
  "tokio-macros",
  "windows-sys 0.59.0",
 ]

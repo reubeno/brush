@@ -1,7 +1,11 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtins, commands};
+use crate::{
+    builtins,
+    commands,
+    alias_events::{self, AliasEvent},
+};
 
 /// Unset a shell alias.
 #[derive(Parser)]
@@ -22,7 +26,11 @@ impl builtins::Command for UnaliasCommand {
         let mut exit_code = builtins::ExitCode::Success;
 
         if self.remove_all {
+            let removed: Vec<String> = context.shell.aliases.keys().cloned().collect();
             context.shell.aliases.clear();
+            for name in removed {
+                alias_events::emit(AliasEvent::Unset { name });
+            }
         } else {
             for alias in &self.aliases {
                 if context.shell.aliases.remove(alias).is_none() {
@@ -33,6 +41,10 @@ impl builtins::Command for UnaliasCommand {
                         alias
                     )?;
                     exit_code = builtins::ExitCode::Custom(1);
+                } else {
+                    alias_events::emit(AliasEvent::Unset {
+                        name: alias.to_owned(),
+                    });
                 }
             }
         }
