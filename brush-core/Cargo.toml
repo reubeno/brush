@@ -52,7 +52,7 @@ tokio = { version = "1.47.0", features = [
     "signal",
     "sync",
 ] }
-uucore = { version = "0.1.0", default-features = false, features = ["format"] }
+uucore = { version = "0.2.0", default-features = false, features = ["format"] }
 
 [target.'cfg(windows)'.dependencies]
 homedir = "0.3.4"
@@ -77,7 +77,7 @@ procfs = "0.18.0"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
-uuid = { version = "1.17.0", features = ["js"] }
+uuid = { version = "1.18.1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.98"
