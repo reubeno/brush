@@ -4,6 +4,8 @@ mod args;
 mod brushctl;
 mod events;
 mod productinfo;
+#[cfg(unix)]
+mod rpc;
 mod shell_factory;
 
 use crate::args::{CommandLineArgs, InputBackend};
@@ -185,6 +187,18 @@ async fn run_impl(
 
     // Instantiate an appropriately configured shell.
     let mut shell = instantiate_shell(&args, cli_args, factory).await?;
+
+    // If RPC socket specified, serve RPC interface instead of interactive mode.
+    #[cfg(unix)]
+    if let Some(socket_path) = &args.rpc_socket {
+        rpc::serve_rpc(socket_path, &mut shell).await?;
+        let result = shell.shell().as_ref().last_result();
+        return Ok(result);
+    }
+    #[cfg(not(unix))]
+    if args.rpc_socket.is_some() {
+        tracing::error!("RPC socket mode is only supported on Unix platforms");
+    }
 
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {

@@ -1,7 +1,11 @@
 use clap::Parser;
 use std::io::Write;
 
-use crate::{builtins, commands};
+use crate::{
+    builtins,
+    commands,
+    alias_events::{self, AliasEvent},
+};
 
 /// Manage aliases within the shell.
 #[derive(Parser)]
@@ -33,6 +37,10 @@ impl builtins::Command for AliasCommand {
                         .shell
                         .aliases
                         .insert(name.to_owned(), unexpanded_value.to_owned());
+                    alias_events::emit(AliasEvent::Set {
+                        name: name.to_owned(),
+                        value: unexpanded_value.to_owned(),
+                    });
                 } else if let Some(value) = context.shell.aliases.get(alias) {
                     writeln!(context.stdout(), "alias {alias}='{value}'")?;
                 } else {

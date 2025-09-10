@@ -38,3 +38,8 @@ impl Drop for TerminalControl {
         self.try_release();
     }
 }
+
+/// Returns the PID of the current foreground process group, if available.
+pub fn get_foreground_pid() -> Option<sys::process::ProcessId> {
+    sys::terminal::get_foreground_pid()
+}

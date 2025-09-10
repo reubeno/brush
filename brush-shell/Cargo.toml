@@ -32,6 +32,10 @@ path = "tests/interactive_tests.rs"
 name = "brush-completion-tests"
 path = "tests/completion_tests.rs"
 
+[[test]]
+name = "rpc-tests"
+path = "tests/rpc_tests.rs"
+
 [features]
 default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
@@ -50,12 +54,15 @@ git-version = "0.3.9"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.20"
 human-panic = "2.0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.21"
 
 [target.'cfg(not(any(windows, unix)))'.dependencies]
 brush-interactive = { version = "^0.2.22", path = "../brush-interactive", features = [
     "minimal",
 ] }
-tokio = { version = "1.47.1", features = ["rt", "sync"] }
+tokio = { version = "1.47.1", features = ["rt", "sync", "net", "io-util"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 brush-interactive = { version = "^0.2.22", path = "../brush-interactive", features = [
@@ -63,7 +70,7 @@ brush-interactive = { version = "^0.2.22", path = "../brush-interactive", featur
     "reedline",
 ] }
 crossterm = "0.29.0"
-tokio = { version = "1.47.0", features = ["rt", "rt-multi-thread", "sync"] }
+tokio = { version = "1.47.0", features = ["rt", "rt-multi-thread", "sync", "net", "io-util"] }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
