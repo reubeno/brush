@@ -2,6 +2,8 @@ use crate::ast::{self, SeparatorOperator};
 use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 
+use bon::Builder;
+
 /// Options used to control the behavior of the parser.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ParserOptions {
@@ -38,9 +40,15 @@ impl ParserOptions {
 }
 
 /// Implements parsing for shell programs.
-pub struct Parser<R> {
+#[derive(Builder)]
+pub struct Parser<R: std::io::BufRead> {
+    /// The reader to use for input
     reader: R,
+    /// Parsing options
+    #[builder(default)]
     options: ParserOptions,
+    /// Information about the source of the tokens
+    #[builder(default)]
     source_info: SourceInfo,
 }
 
