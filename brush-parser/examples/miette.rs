@@ -1,6 +1,8 @@
 //! Simple example of miette usage
 
-use brush_parser::{ParserOptions, SourceInfo, parse_tokens, tokenize_str};
+use std::io::Cursor;
+
+use brush_parser::Parser;
 use miette::{IntoDiagnostic, miette};
 
 fn main() -> miette::Result<()> {
@@ -9,9 +11,11 @@ fn main() -> miette::Result<()> {
         .ok_or_else(|| miette!("Please provide a file name"))?;
 
     let source = std::fs::read_to_string(&f).into_diagnostic()?;
-    let tokens = tokenize_str(&source).into_diagnostic()?;
+    let reader = Cursor::new(&source);
+    let mut parser = Parser::builder().reader(reader).build();
 
-    let ast = parse_tokens(&tokens, &ParserOptions::default(), &SourceInfo::default())
+    let ast = parser
+        .parse_program()
         .map_err(|e| e.to_pretty_error(&source))?;
 
     println!("{ast:#?}");
