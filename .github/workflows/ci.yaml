@@ -301,8 +301,8 @@ jobs:
       matrix:
         # Test latest stable as well as MSRV.
         rust-version: ["stable", "1.85.0"]
-        # Test Linux and Windows.
-        os: ["ubuntu-24.04", "windows-2025"]
+        # Run checks on Linux, Windows, and macOS.
+        os: ["ubuntu-24.04", "windows-2025", "macos-latest"]
 
     steps:
       - name: Checkout
