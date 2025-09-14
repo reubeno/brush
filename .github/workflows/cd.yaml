@@ -89,6 +89,9 @@ jobs:
         with:
           tool: cross
 
+      - name: "Workaround: clean cache"
+        run: cargo clean
+
       - name: "Install cargo-about"
         uses: taiki-e/install-action@57511bcdf8cdb0eab6448cb7fa632952d9f25742 # v2.59.1
         with:
