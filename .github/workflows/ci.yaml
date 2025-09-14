@@ -300,7 +300,7 @@ jobs:
     strategy:
       matrix:
         # Test latest stable as well as MSRV.
-        rust-version: ["stable", "1.88.0"]
+        rust-version: ["stable", "1.85.0"]
         # Test Linux and Windows.
         os: ["ubuntu-24.04", "windows-2025"]
 
