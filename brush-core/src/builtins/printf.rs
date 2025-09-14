@@ -85,7 +85,7 @@ fn format_via_uucore(
 ) -> Result<(), error::Error> {
     // Convert string arguments to FormatArgument::Unparsed
     let format_args: Vec<_> = args
-        .map(|s| format::FormatArgument::Unparsed(s.as_ref().to_string()))
+        .map(|s| format::FormatArgument::Unparsed(s.as_ref().to_string().into()))
         .collect();
 
     // Parse format string once.
