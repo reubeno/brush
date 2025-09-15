@@ -39,7 +39,7 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 insta = { version = "1.43.2", features = ["glob", "ron", "yaml"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
-serde = { version = "1.0.221", features = ["derive"] }
+serde = { version = "1.0.223", features = ["derive"] }
 serde_yaml = "0.9.34"
 
 [target.'cfg(unix)'.dev-dependencies]
