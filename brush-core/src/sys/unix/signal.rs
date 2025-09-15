@@ -99,7 +99,7 @@ fn waitid_all(
         nix::errno::Errno::result(nix::libc::waitid(
             nix::libc::P_ALL,
             0,
-            &mut siginfo,
+            &raw mut siginfo,
             flags.bits(),
         ))?;
         siginfo

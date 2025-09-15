@@ -295,12 +295,14 @@ jobs:
   # Static analysis of the code.
   check:
     name: "Source code checks"
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
 
     strategy:
       matrix:
         # Test latest stable as well as MSRV.
         rust-version: ["stable", "1.85.0"]
+        # Run checks on Linux, Windows, and macOS.
+        os: ["ubuntu-24.04", "windows-2025", "macos-latest"]
 
     steps:
       - name: Checkout
