@@ -1177,7 +1177,9 @@ impl TestCase {
             expectrl::process::unix::WaitStatus::Signaled(_, _, _) => {
                 Err(anyhow::anyhow!("process was signaled"))
             }
-            _ => Err(anyhow::anyhow!("unexpected status for process: {wait_status:?}")),
+            _ => Err(anyhow::anyhow!(
+                "unexpected status for process: {wait_status:?}"
+            )),
         }
     }
 
