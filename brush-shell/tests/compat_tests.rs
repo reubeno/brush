@@ -1178,8 +1178,7 @@ impl TestCase {
                 Err(anyhow::anyhow!("process was signaled"))
             }
             _ => Err(anyhow::anyhow!(
-                "unexpected status for process: {:?}",
-                wait_status
+                "unexpected status for process: {wait_status:?}"
             )),
         }
     }
