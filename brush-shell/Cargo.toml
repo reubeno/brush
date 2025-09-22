@@ -70,7 +70,7 @@ getrandom = { version = "0.3.3", features = ["wasm_js"] }
 uuid = { version = "1.18.1", features = ["js"] }
 
 [dev-dependencies]
-anyhow = "1.0.99"
+anyhow = "1.0.100"
 assert_cmd = "2.0.17"
 assert_fs = "1.1.3"
 colored = "3.0.0"
@@ -83,7 +83,7 @@ junit-report = "0.8.3"
 predicates = "3.1.3"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 regex = "1.11.2"
-serde = { version = "1.0.223", features = ["derive"] }
+serde = { version = "1.0.226", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
 test-with = { version = "0.15.3", default-features = false, features = [
