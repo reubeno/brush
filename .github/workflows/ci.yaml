@@ -105,7 +105,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           key: "${{ matrix.target }}"
 
@@ -117,7 +117,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@67cc679904bee382389bf22082124fa963c6f6bd # v2.61.3
+        uses: taiki-e/install-action@d6912b47771be2c443ec90dbb3d28e023987e782 # v2.62.1
         with:
           tool: cross
 
@@ -188,18 +188,18 @@ jobs:
           components: llvm-tools-preview
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@67cc679904bee382389bf22082124fa963c6f6bd # v2.61.3
+        uses: taiki-e/install-action@d6912b47771be2c443ec90dbb3d28e023987e782 # v2.62.1
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@67cc679904bee382389bf22082124fa963c6f6bd # v2.61.3
+        uses: taiki-e/install-action@d6912b47771be2c443ec90dbb3d28e023987e782 # v2.62.1
         with:
           tool: cargo-llvm-cov
 
@@ -317,7 +317,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
@@ -329,7 +329,7 @@ jobs:
         run: cargo check --all-features --all-targets
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@67cc679904bee382389bf22082124fa963c6f6bd # v2.61.3
+        uses: taiki-e/install-action@d6912b47771be2c443ec90dbb3d28e023987e782 # v2.62.1
         with:
           tool: cargo-deny
 
@@ -356,7 +356,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@67cc679904bee382389bf22082124fa963c6f6bd # v2.61.3
+        uses: taiki-e/install-action@d6912b47771be2c443ec90dbb3d28e023987e782 # v2.62.1
         with:
           tool: cargo-udeps
 
@@ -388,7 +388,7 @@ jobs:
           toolchain: stable
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           workspaces: |
             ./pr
