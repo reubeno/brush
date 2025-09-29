@@ -1,4 +1,4 @@
-use clap::{Parser, arg};
+use clap::Parser;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
