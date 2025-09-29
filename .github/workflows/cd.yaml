@@ -75,7 +75,7 @@ jobs:
           persist-credentials: false
 
       - name: "Install Rust toolchain"
-        uses: actions-rust-lang/setup-rust-toolchain@2fcdc490d667999e01ddbbf0f2823181beef6b39 # v1.15.0
+        uses: actions-rust-lang/setup-rust-toolchain@02be93da58aa71fb456aa9c43b301149248829d8 # v1.15.1
 
       - name: "Setup cross-compiling toolchain"
         if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
@@ -85,7 +85,7 @@ jobs:
 
       - name: "Install musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@d6912b47771be2c443ec90dbb3d28e023987e782 # v2.62.1
+        uses: taiki-e/install-action@efd8b64311f7a0a9b888ed13d0df78ec9184c163 # v2.62.11
         with:
           tool: cross
 
@@ -93,7 +93,7 @@ jobs:
         run: cargo clean
 
       - name: "Install cargo-about"
-        uses: taiki-e/install-action@d6912b47771be2c443ec90dbb3d28e023987e782 # v2.62.1
+        uses: taiki-e/install-action@efd8b64311f7a0a9b888ed13d0df78ec9184c163 # v2.62.11
         with:
           tool: cargo-about
 
