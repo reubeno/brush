@@ -105,9 +105,11 @@ mod unset;
 #[cfg(feature = "builtin.wait")]
 mod wait;
 
+mod builder;
 mod factory;
 mod unimp;
 
+pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be

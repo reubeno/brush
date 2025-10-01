@@ -35,6 +35,11 @@ path = "tests/interactive_tests.rs"
 name = "brush-completion-tests"
 path = "tests/completion_tests.rs"
 
+[[bench]]
+name = "shell"
+path = "benches/shell.rs"
+harness = false
+
 [features]
 default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
@@ -100,7 +105,3 @@ walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }
-
-[[bench]]
-name = "shell"
-harness = false

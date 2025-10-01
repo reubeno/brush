@@ -1,26 +1,25 @@
-//! Benchmarks for the brush-core crate.
+//! Benchmarks for the brush-shell crate.
 
 #![allow(missing_docs)]
 
 #[cfg(unix)]
 mod unix {
+    use brush_builtins::ShellBuilderExt;
     use criterion::{Criterion, black_box};
 
     async fn instantiate_shell() -> brush_core::Shell {
-        let builtins = brush_builtins::default_builtins(brush_builtins::BuiltinSet::BashMode);
         brush_core::Shell::builder()
-            .builtins(builtins)
+            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await
             .unwrap()
     }
 
     async fn instantiate_shell_with_init_scripts() -> brush_core::Shell {
-        let builtins = brush_builtins::default_builtins(brush_builtins::BuiltinSet::BashMode);
         brush_core::Shell::builder()
             .interactive(true)
             .read_commands_from_stdin(true)
-            .builtins(builtins)
+            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await
             .unwrap()

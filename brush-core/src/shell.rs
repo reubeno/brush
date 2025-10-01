@@ -154,10 +154,9 @@ impl AsMut<Self> for Shell {
     }
 }
 
-impl<S> ShellBuilder<S>
-where
-    S: shell_builder::IsComplete,
-{
+pub use shell_builder::State as ShellBuilderState;
+
+impl<S: shell_builder::IsComplete> ShellBuilder<S> {
     /// Returns a new shell instance created with the options provided
     pub async fn build(self) -> Result<Shell, error::Error> {
         let options = self.build_settings();
@@ -166,10 +165,7 @@ where
     }
 }
 
-impl<S> ShellBuilder<S>
-where
-    S: shell_builder::State,
-{
+impl<S: shell_builder::State> ShellBuilder<S> {
     /// Add a disabled option
     pub fn disable_option(mut self, option: impl Into<String>) -> Self {
         self.disabled_options.push(option.into());
