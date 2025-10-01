@@ -4,6 +4,8 @@ use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 
+use crate::error;
+
 const DEFAULT_EXECUTABLE_SEARCH_PATHS: &[&str] = &[
     "/usr/local/sbin",
     "/usr/local/bin",
@@ -153,9 +155,11 @@ fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io
 }
 
 /// Opens a null file that will discard all I/O.
-pub fn open_null_file() -> Result<std::fs::File, std::io::Error> {
-    std::fs::OpenOptions::new()
+pub fn open_null_file() -> Result<std::fs::File, error::Error> {
+    let f = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open("/dev/null")
+        .open("/dev/null")?;
+
+    Ok(f)
 }

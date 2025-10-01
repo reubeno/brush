@@ -1,5 +1,7 @@
 //! Filesystem utilities.
 
+use crate::error;
+
 #[cfg(not(unix))]
 impl crate::sys::fs::PathExt for std::path::Path {
     fn readable(&self) -> bool {
@@ -72,6 +74,6 @@ pub fn get_default_standard_utils_paths() -> Vec<String> {
 /// Opens a null file that will discard all I/O.
 ///
 /// This is a stub implementation that returns an error.
-pub fn open_null_file() -> Result<std::fs::File, std::io::Error> {
+pub fn open_null_file() -> Result<std::fs::File, error::Error> {
     error::unimp("null file")
 }
