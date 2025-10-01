@@ -32,7 +32,7 @@ pub mod fs;
 pub use platform::input;
 pub(crate) use platform::network;
 pub(crate) use platform::pipes;
-pub(crate) use platform::process;
+pub use platform::process;
 pub use platform::resource;
 pub use platform::signal;
 pub use platform::terminal;
