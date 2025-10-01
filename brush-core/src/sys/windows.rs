@@ -11,5 +11,5 @@ pub mod signal {
 }
 
 pub use crate::sys::stubs::terminal;
-pub(crate) use crate::sys::tokio_process as process;
+pub use crate::sys::tokio_process as process;
 pub(crate) mod users;

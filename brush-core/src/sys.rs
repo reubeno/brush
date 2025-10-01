@@ -25,7 +25,7 @@ pub(crate) mod hostname;
 #[cfg(any(unix, windows))]
 pub(crate) mod os_pipe;
 #[cfg(any(unix, windows))]
-pub(crate) mod tokio_process;
+pub mod tokio_process;
 
 pub mod fs;
 
