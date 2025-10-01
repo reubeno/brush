@@ -1463,14 +1463,14 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "homedir"
-version = "0.3.5"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8c5f196574c4116f643489730d89a7a8ebea7047ac67244b8dc778e1fa5bd88"
+checksum = "5bdbbd5bc8c5749697ccaa352fa45aff8730cf21c68029c0eef1ffed7c3d6ba2"
 dependencies = [
  "cfg-if",
- "nix 0.30.1",
+ "nix 0.29.0",
  "widestring",
- "windows 0.61.3",
+ "windows 0.57.0",
 ]
 
 [[package]]
