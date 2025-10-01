@@ -7,17 +7,16 @@ mod unix {
     use criterion::{Criterion, black_box};
 
     async fn instantiate_shell() -> brush_core::Shell {
-        let options = brush_core::CreateOptions::default();
-        brush_core::Shell::new(&options).await.unwrap()
+        brush_core::Shell::builder().build().await.unwrap()
     }
 
     async fn instantiate_shell_with_init_scripts() -> brush_core::Shell {
-        let options = brush_core::CreateOptions {
-            interactive: true,
-            read_commands_from_stdin: true,
-            ..brush_core::CreateOptions::default()
-        };
-        brush_core::Shell::new(&options).await.unwrap()
+        brush_core::Shell::builder()
+            .interactive(true)
+            .read_commands_from_stdin(true)
+            .build()
+            .await
+            .unwrap()
     }
 
     async fn run_one_command(shell: &mut brush_core::Shell, command: &str) {

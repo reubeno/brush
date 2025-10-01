@@ -9,12 +9,14 @@ static TOKIO_RT: LazyLock<tokio::runtime::Runtime> =
     LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
 static SHELL_TEMPLATE: LazyLock<brush_core::Shell> = LazyLock::new(|| {
-    let options = brush_core::CreateOptions {
-        no_profile: true,
-        no_rc: true,
-        ..Default::default()
-    };
-    TOKIO_RT.block_on(brush_core::Shell::new(&options)).unwrap()
+    TOKIO_RT
+        .block_on(
+            brush_core::Shell::builder()
+                .no_profile(true)
+                .no_rc(true)
+                .build(),
+        )
+        .unwrap()
 });
 
 #[expect(clippy::unused_async)]
