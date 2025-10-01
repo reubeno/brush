@@ -66,6 +66,9 @@ pub struct Shell {
     /// Shell name (a.k.a. $0)
     pub shell_name: Option<String>,
 
+    /// Shell version
+    pub shell_version: Option<String>,
+
     /// Positional parameters stack ($1 and beyond)
     pub positional_parameters: Vec<String>,
 
@@ -121,6 +124,7 @@ impl Clone for Shell {
             last_pipeline_statuses: self.last_pipeline_statuses.clone(),
             positional_parameters: self.positional_parameters.clone(),
             shell_name: self.shell_name.clone(),
+            shell_version: self.shell_version.clone(),
             shell_product_display_str: self.shell_product_display_str.clone(),
             function_call_stack: self.function_call_stack.clone(),
             script_call_stack: self.script_call_stack.clone(),
@@ -158,7 +162,7 @@ where
     pub async fn build(self) -> Result<Shell, error::Error> {
         let options = self.build_settings();
 
-        Shell::new(&options).await
+        Shell::new(options).await
     }
 }
 
@@ -327,7 +331,14 @@ impl Shell {
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub async fn new(options: &CreateOptions) -> Result<Self, error::Error> {
+    pub async fn new(options: CreateOptions) -> Result<Self, error::Error> {
+        // Select the set of default builtins to use.
+        let builtin_set = if options.sh_mode {
+            builtins::BuiltinSet::ShMode
+        } else {
+            builtins::BuiltinSet::BashMode
+        };
+
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
@@ -335,24 +346,25 @@ impl Shell {
             working_dir: std::env::current_dir()?,
             env: env::ShellEnvironment::new(),
             funcs: functions::FunctionEnv::default(),
-            options: RuntimeOptions::defaults_from(options),
+            options: RuntimeOptions::defaults_from(&options),
             jobs: jobs::JobManager::new(),
             aliases: HashMap::default(),
             last_exit_status: 0,
             last_pipeline_statuses: vec![0],
             positional_parameters: vec![],
-            shell_name: options.shell_name.clone(),
-            shell_product_display_str: options.shell_product_display_str.clone(),
+            shell_name: options.shell_name,
+            shell_version: options.shell_version,
+            shell_product_display_str: options.shell_product_display_str,
             function_call_stack: VecDeque::new(),
             script_call_stack: VecDeque::new(),
             directory_stack: vec![],
             current_line_number: 0,
             completion_config: completion::Config::default(),
-            builtins: builtins::get_default_builtins(options),
+            builtins: builtins::default_builtins(builtin_set),
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
-            key_bindings: options.key_bindings.clone(),
+            key_bindings: options.key_bindings,
             history: None,
             depth: 0,
         };
@@ -362,7 +374,7 @@ impl Shell {
         shell.options.extended_globbing = true;
 
         // Initialize environment.
-        shell.initialize_vars(options)?;
+        shell.initialize_vars(options.do_not_inherit_env)?;
 
         // Set up history, if relevant.
         if shell.options.enable_command_history {
@@ -378,7 +390,13 @@ impl Shell {
         }
 
         // Load profiles/configuration.
-        shell.load_config(options).await?;
+        shell
+            .load_config(
+                options.no_profile,
+                options.no_rc,
+                options.rc_file.as_deref(),
+            )
+            .await?;
 
         Ok(shell)
     }
@@ -407,9 +425,9 @@ impl Shell {
 
     #[expect(clippy::too_many_lines)]
     #[expect(clippy::unwrap_in_result)]
-    fn initialize_vars(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
+    fn initialize_vars(&mut self, do_not_inherit_env: bool) -> Result<(), error::Error> {
         // Seed parameters from environment (unless requested not to do so).
-        if !options.do_not_inherit_env {
+        if !do_not_inherit_env {
             for (k, v) in std::env::vars() {
                 // See if it's a function exported by an ancestor process.
                 if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
@@ -426,7 +444,8 @@ impl Shell {
                 self.env.set_global(k, var)?;
             }
         }
-        let shell_version = options.shell_version.clone();
+
+        let shell_version = self.shell_version.clone();
         self.env.set_global(
             "BRUSH_VERSION",
             ShellVariable::new(shell_version.unwrap_or_default()),
@@ -435,7 +454,7 @@ impl Shell {
         // TODO(#479): implement $_
 
         // BASH
-        if let Some(shell_name) = &options.shell_name {
+        if let Some(shell_name) = &self.shell_name {
             self.env
                 .set_global("BASH", ShellVariable::new(shell_name))?;
         }
@@ -808,7 +827,7 @@ impl Shell {
         self.env.set_global("SRANDOM", random_var)?;
 
         // PS1 / PS2
-        if options.interactive {
+        if self.options.interactive {
             if !self.env.is_set("PS1") {
                 self.env
                     .set_global("PS1", ShellVariable::new(r"\s-\v\$ "))?;
@@ -848,13 +867,18 @@ impl Shell {
         Ok(())
     }
 
-    async fn load_config(&mut self, options: &CreateOptions) -> Result<(), error::Error> {
+    async fn load_config(
+        &mut self,
+        skip_profile: bool,
+        skip_rc: bool,
+        rc_file: Option<&Path>,
+    ) -> Result<(), error::Error> {
         let mut params = self.default_exec_params();
         params.process_group_policy = interp::ProcessGroupPolicy::SameProcessGroup;
 
-        if options.login {
+        if self.options.login_shell {
             // --noprofile means skip this.
-            if options.no_profile {
+            if skip_profile {
                 return Ok(());
             }
 
@@ -869,7 +893,7 @@ impl Shell {
             self.source_if_exists(Path::new("/etc/profile"), &params)
                 .await?;
             if let Some(home_path) = self.get_home_dir() {
-                if options.sh_mode {
+                if self.options.sh_mode {
                     self.source_if_exists(home_path.join(".profile").as_path(), &params)
                         .await?;
                 } else {
@@ -888,14 +912,14 @@ impl Shell {
                 }
             }
         } else {
-            if options.interactive {
+            if self.options.interactive {
                 // --norc means skip this. Also skip in sh mode.
-                if options.no_rc || options.sh_mode {
+                if skip_rc || self.options.sh_mode {
                     return Ok(());
                 }
 
                 // If an rc file was specified, then source it.
-                if let Some(rc_file) = &options.rc_file {
+                if let Some(rc_file) = rc_file {
                     // If an explicit rc file is provided, source it.
                     self.source_if_exists(rc_file, &params).await?;
                 } else {
@@ -915,7 +939,11 @@ impl Shell {
                     }
                 }
             } else {
-                let env_var_name = if options.sh_mode { "ENV" } else { "BASH_ENV" };
+                let env_var_name = if self.options.sh_mode {
+                    "ENV"
+                } else {
+                    "BASH_ENV"
+                };
 
                 if self.env.is_set(env_var_name) {
                     //

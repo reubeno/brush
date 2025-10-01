@@ -32,7 +32,7 @@ impl ReedlineShell {
 
         // Set up shell first. Its initialization may influence how the
         // editor needs to operate.
-        let shell = brush_core::Shell::new(&options.shell).await?;
+        let shell = brush_core::Shell::new(options.shell).await?;
 
         // Wrap the shell in an Arc<Mutex> so we can share it with the helper
         // objects we'll need to set up for reedline.

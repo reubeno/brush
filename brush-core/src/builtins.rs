@@ -67,7 +67,7 @@ mod unimp;
 mod unset;
 mod wait;
 
-pub(crate) use factory::get_default_builtins;
+pub(crate) use factory::{BuiltinSet, default_builtins};
 pub use factory::{SimpleCommand, builtin, simple_builtin};
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be

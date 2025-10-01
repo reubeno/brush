@@ -197,9 +197,21 @@ async fn exec_raw_arg_builtin_impl<T: builtins::DeclarationCommand + Default + S
     })
 }
 
-pub(crate) fn get_default_builtins(
-    options: &crate::CreateOptions,
-) -> HashMap<String, builtins::Registration> {
+/// Identifies well-known sets of builtins.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum BuiltinSet {
+    /// Identifies builtins appropriate for POSIX `sh` compatibility.
+    ShMode,
+    /// Identifies builtins appropriate for a more full-featured `bash`-compatible shell.
+    BashMode,
+}
+
+/// Returns the default set of built-in commands.
+///
+/// # Arguments
+///
+/// * `set` - The set of built-ins to return.
+pub(crate) fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registration> {
     let mut m = HashMap::<String, builtins::Registration>::new();
 
     //
@@ -273,7 +285,7 @@ pub(crate) fn get_default_builtins(
     // TODO: implement fc builtin; should be done after history.
     m.insert("fc".into(), builtin::<unimp::UnimplementedCommand>());
 
-    if !options.sh_mode {
+    if matches!(set, BuiltinSet::BashMode) {
         m.insert(
             "builtin".into(),
             raw_arg_builtin::<builtin_::BuiltinCommand>(),
