@@ -3,9 +3,7 @@
 use anyhow::Result;
 
 async fn instantiate_shell() -> Result<brush_core::Shell> {
-    let options = brush_core::CreateOptions::default();
-    let shell = brush_core::Shell::new(&options).await?;
-
+    let shell = brush_core::Shell::builder().build().await?;
     Ok(shell)
 }
 
