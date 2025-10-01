@@ -88,7 +88,11 @@ impl builtins::Command for UnsetCommand {
     }
 }
 
-fn unset_array_index(shell: &mut Shell, name: &str, index: &str) -> Result<bool, brush_core::Error> {
+fn unset_array_index(
+    shell: &mut Shell,
+    name: &str,
+    index: &str,
+) -> Result<bool, brush_core::Error> {
     // First check to see if it's an associative array.
     let is_assoc_array = if let Some((_, var)) = shell.env.get(name) {
         matches!(

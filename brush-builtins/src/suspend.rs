@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{builtins, };
+use brush_core::builtins;
 
 /// Suspend the shell.
 #[derive(Parser)]

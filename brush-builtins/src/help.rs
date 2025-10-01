@@ -1,4 +1,4 @@
-use brush_core::{builtins, };
+use brush_core::builtins;
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
