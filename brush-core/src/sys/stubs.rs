@@ -10,7 +10,7 @@ pub mod fs;
 pub mod input;
 pub(crate) mod network;
 pub(crate) mod pipes;
-pub(crate) mod process;
+pub mod process;
 pub mod resource;
 pub mod signal;
 pub mod terminal;
