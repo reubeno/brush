@@ -79,11 +79,3 @@ uuid = { version = "1.18.1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.100"
-criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
-
-[target.'cfg(unix)'.dev-dependencies]
-pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }
-
-[[bench]]
-name = "shell"
-harness = false

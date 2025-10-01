@@ -7,13 +7,20 @@ mod unix {
     use criterion::{Criterion, black_box};
 
     async fn instantiate_shell() -> brush_core::Shell {
-        brush_core::Shell::builder().build().await.unwrap()
+        let builtins = brush_builtins::default_builtins(brush_builtins::BuiltinSet::BashMode);
+        brush_core::Shell::builder()
+            .builtins(builtins)
+            .build()
+            .await
+            .unwrap()
     }
 
     async fn instantiate_shell_with_init_scripts() -> brush_core::Shell {
+        let builtins = brush_builtins::default_builtins(brush_builtins::BuiltinSet::BashMode);
         brush_core::Shell::builder()
             .interactive(true)
             .read_commands_from_stdin(true)
+            .builtins(builtins)
             .build()
             .await
             .unwrap()
