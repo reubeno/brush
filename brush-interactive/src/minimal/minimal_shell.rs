@@ -17,8 +17,8 @@ impl MinimalShell {
     /// # Arguments
     ///
     /// * `options` - Options for creating the interactive shell.
-    pub async fn new(options: &crate::Options) -> Result<Self, ShellError> {
-        let shell = brush_core::Shell::new(&options.shell).await?;
+    pub async fn new(options: crate::Options) -> Result<Self, ShellError> {
+        let shell = brush_core::Shell::new(options.shell).await?;
         Ok(Self { shell })
     }
 }

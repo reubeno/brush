@@ -17,17 +17,15 @@ const DEFAULT_BASH_COMPLETION_SCRIPT: &str = "/usr/share/bash-completion/bash_co
 
 impl TestShellWithBashCompletion {
     async fn new() -> Result<Self> {
+        let mut shell = brush_core::Shell::builder()
+            .no_profile(true)
+            .no_rc(true)
+            .build()
+            .await?;
+
         let temp_dir = assert_fs::TempDir::new()?;
-
-        let create_options = brush_core::CreateOptions {
-            no_profile: true,
-            no_rc: true,
-            ..Default::default()
-        };
-
         let bash_completion_script_path = Self::find_bash_completion_script()?;
 
-        let mut shell = brush_core::Shell::new(&create_options).await?;
         let exec_params = shell.default_exec_params();
         let source_result = shell
             .source_script(

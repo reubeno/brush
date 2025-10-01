@@ -85,7 +85,7 @@ impl ShellFactory for BasicShellFactory {
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
         #[cfg(feature = "basic")]
         {
-            brush_interactive::BasicShell::new(&options).await
+            brush_interactive::BasicShell::new(options).await
         }
         #[cfg(not(feature = "basic"))]
         {
@@ -108,7 +108,7 @@ impl ShellFactory for MinimalShellFactory {
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
         #[cfg(feature = "minimal")]
         {
-            brush_interactive::MinimalShell::new(&options).await
+            brush_interactive::MinimalShell::new(options).await
         }
         #[cfg(not(feature = "minimal"))]
         {
