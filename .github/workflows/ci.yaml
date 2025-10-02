@@ -384,6 +384,9 @@ jobs:
         with:
           tool: cargo-public-api
 
+      - name: Fetch main branch
+        run: git fetch origin main
+
       - name: Compare public APIs with main
         run: |
           set -euxo pipefail
