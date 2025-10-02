@@ -374,10 +374,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up rust toolchain
+      - name: Set up nightly rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
+          toolchain: nightly
 
       - name: Install cargo-public-api
         uses: taiki-e/install-action@efd8b64311f7a0a9b888ed13d0df78ec9184c163 # v2.62.11
