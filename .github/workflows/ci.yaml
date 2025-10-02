@@ -384,8 +384,12 @@ jobs:
         with:
           tool: cargo-public-api
 
-      - name: Fetch main branch
-        run: git fetch origin main
+      - name: Set up branches
+        run: |
+          set -euo pipefail
+
+          git checkout -b target
+          git fetch origin main
 
       - name: Compare public APIs with main
         run: |
@@ -395,10 +399,8 @@ jobs:
 
           for crate in $(./scripts/enum-lib-crates.sh); do
             echo "# Public API diff for crate: ${crate}" >./diffs/api-diff-${crate}.md
-            cargo public-api diff -p $crate origin/main..${GITHUB_REF} --color=always >>./diffs/api-diff-${crate} || true
+            cargo public-api diff -p $crate origin/main..target --color=always >>./diffs/api-diff-${crate} || true
           done
-        env:
-          GITHUB_REF: ${{ github.ref }}
 
       - name: Upload test report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
