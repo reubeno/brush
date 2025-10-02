@@ -1,3 +1,7 @@
+//! Platform abstraction facilities
+
+#![allow(unused)]
+
 #[cfg(unix)]
 pub(crate) mod unix;
 #[cfg(unix)]
@@ -21,15 +25,15 @@ pub(crate) mod hostname;
 #[cfg(any(unix, windows))]
 pub(crate) mod os_pipe;
 #[cfg(any(unix, windows))]
-pub(crate) mod tokio_process;
+pub mod tokio_process;
 
-pub(crate) mod fs;
+pub mod fs;
 
-pub(crate) use platform::input;
+pub use platform::input;
 pub(crate) use platform::network;
 pub(crate) use platform::pipes;
-pub(crate) use platform::process;
-pub(crate) use platform::resource;
-pub(crate) use platform::signal;
-pub(crate) use platform::terminal;
+pub use platform::process;
+pub use platform::resource;
+pub use platform::signal;
+pub use platform::terminal;
 pub(crate) use platform::users;

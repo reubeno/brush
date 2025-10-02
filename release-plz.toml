@@ -10,7 +10,12 @@ publish = true
 name = "brush-shell"
 changelog_update = true
 changelog_path = "./CHANGELOG.md"
-changelog_include = ["brush-core", "brush-interactive-shell", "brush-parser"]
+changelog_include = [
+    "brush-core",
+    "brush-interactive-shell",
+    "brush-parser",
+    "brush-builtins",
+]
 git_release_latest = true
 git_release_draft = true
 git_release_enable = true
@@ -24,4 +29,3 @@ git_release_body = """
 {% endfor %}
 {% endif %}
 """
-

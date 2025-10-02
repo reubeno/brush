@@ -1,3 +1,5 @@
+//! Process management
+
 use futures::FutureExt;
 
 use crate::{error, sys};
@@ -8,7 +10,7 @@ pub(crate) type WaitableChildProcess = std::pin::Pin<
 >;
 
 /// Tracks a child process being awaited.
-pub(crate) struct ChildProcess {
+pub struct ChildProcess {
     /// If available, the process ID of the child.
     pid: Option<sys::process::ProcessId>,
     /// A waitable future that will yield the results of a child process's execution.
@@ -24,10 +26,12 @@ impl ChildProcess {
         }
     }
 
+    /// Returns the process's ID.
     pub const fn pid(&self) -> Option<sys::process::ProcessId> {
         self.pid
     }
 
+    /// Waits for the process to exit.
     pub async fn wait(&mut self) -> Result<ProcessWaitResult, error::Error> {
         #[allow(unused_mut, reason = "only mutated on some platforms")]
         let mut sigtstp = sys::signal::tstp_signal_listener()?;
@@ -66,7 +70,7 @@ impl ChildProcess {
 }
 
 /// Represents the result of waiting for an executing process.
-pub(crate) enum ProcessWaitResult {
+pub enum ProcessWaitResult {
     /// The process completed.
     Completed(std::process::Output),
     /// The process stopped and has not yet completed.

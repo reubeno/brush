@@ -1,3 +1,5 @@
+//! Signal processing utilities
+
 use crate::{error, sys, traps};
 
 pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
@@ -6,7 +8,12 @@ pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error
     Ok(())
 }
 
-pub(crate) fn kill_process(
+/// Sends a signal to a specific process.
+///
+/// # Arguments
+/// * `pid` - The process ID to send the signal to
+/// * `signal` - The signal to send (must be a real signal, not a trap signal)
+pub fn kill_process(
     pid: sys::process::ProcessId,
     signal: traps::TrapSignal,
 ) -> Result<(), error::Error> {

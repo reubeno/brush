@@ -1,3 +1,5 @@
+//! Arithmetic evaluation
+
 use std::borrow::Cow;
 
 use crate::{ExecutionParameters, Shell, env, expansion, variables};
@@ -40,7 +42,7 @@ pub enum EvalError {
 }
 
 /// Trait implemented by arithmetic expressions that can be evaluated.
-pub trait ExpandAndEvaluate {
+pub(crate) trait ExpandAndEvaluate {
     /// Evaluate the given expression, returning the resulting numeric value.
     ///
     /// # Arguments

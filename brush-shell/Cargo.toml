@@ -35,6 +35,11 @@ path = "tests/interactive_tests.rs"
 name = "brush-completion-tests"
 path = "tests/completion_tests.rs"
 
+[[bench]]
+name = "shell"
+path = "benches/shell.rs"
+harness = false
+
 [features]
 default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
@@ -46,6 +51,7 @@ workspace = true
 
 [dependencies]
 brush-core = { version = "^0.3.5", path = "../brush-core" }
+brush-builtins = { version = "^0.1.0", path = "../brush-builtins" }
 clap = { version = "4.5.47", features = ["derive", "env"] }
 color-print = "0.3.7"
 const_format = "0.2.34"
@@ -74,9 +80,11 @@ uuid = { version = "1.18.1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.100"
+brush-parser = { version = "^0.2.20", path = "../brush-parser" }
 assert_cmd = "2.0.17"
 assert_fs = "1.1.3"
 colored = "3.0.0"
+criterion = { version = "0.5.1", features = ["async_tokio", "html_reports"] }
 descape = "3.0.0"
 diff = "0.1.13"
 expectrl = { git = "https://github.com/zhiburt/expectrl", rev = "a0f4f7816b9a47a191dd858080e8fd80ff71cd96" }
@@ -94,3 +102,6 @@ test-with = { version = "0.15.3", default-features = false, features = [
 ] }
 version-compare = "0.2.0"
 walkdir = "2.5.0"
+
+[target.'cfg(unix)'.dev-dependencies]
+pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }

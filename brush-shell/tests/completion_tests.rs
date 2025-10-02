@@ -6,6 +6,7 @@
 
 use anyhow::Result;
 use assert_fs::prelude::*;
+use brush_builtins::ShellBuilderExt;
 use std::path::PathBuf;
 
 struct TestShellWithBashCompletion {
@@ -20,6 +21,7 @@ impl TestShellWithBashCompletion {
         let mut shell = brush_core::Shell::builder()
             .no_profile(true)
             .no_rc(true)
+            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await?;
 

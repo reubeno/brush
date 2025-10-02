@@ -1,3 +1,5 @@
+//! Terminal input utilities
+
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use terminfo::capability as cap;
@@ -65,7 +67,13 @@ fn build_terminfo_key_map() -> HashMap<Vec<u8>, interfaces::Key> {
 pub(crate) static TERMINFO_KEY_MAP: LazyLock<HashMap<Vec<u8>, interfaces::Key>> =
     LazyLock::new(build_terminfo_key_map);
 
-pub(crate) fn get_key_from_key_code(key_code: &[u8]) -> Result<interfaces::Key, error::Error> {
+/// Translates a key code (byte sequence) into a `Key` enum value. Returns an
+/// error if the key code is not recognized.
+///
+/// # Arguments
+///
+/// * `key_code`: The byte sequence representing the key code.
+pub fn get_key_from_key_code(key_code: &[u8]) -> Result<interfaces::Key, error::Error> {
     if let Some(key) = TERMINFO_KEY_MAP.get(key_code) {
         Ok(key.clone())
     } else if key_code.len() == 1 && !key_code[0].is_ascii_control() {

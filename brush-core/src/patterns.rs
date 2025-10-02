@@ -1,3 +1,5 @@
+//! Shell patterns
+
 use crate::{error, regex, trace_categories};
 use std::{
     collections::VecDeque,
@@ -92,6 +94,7 @@ impl Pattern {
     /// # Arguments
     ///
     /// * `value` - Whether or not to enable extended globbing (extglob).
+    #[must_use]
     pub const fn set_extended_globbing(mut self, value: bool) -> Self {
         self.enable_extended_globbing = value;
         self
@@ -102,7 +105,7 @@ impl Pattern {
     /// # Arguments
     ///
     /// * `value` - Whether or not to enable multiline matching.
-    #[allow(dead_code)]
+    #[must_use]
     pub const fn set_multiline(mut self, value: bool) -> Self {
         self.multiline = value;
         self
@@ -113,6 +116,7 @@ impl Pattern {
     /// # Arguments
     ///
     /// * `value` - Whether or not to enable case-insensitive matching.
+    #[must_use]
     pub const fn set_case_insensitive(mut self, value: bool) -> Self {
         self.case_insensitive = value;
         self
@@ -363,12 +367,14 @@ impl Pattern {
         Ok(re)
     }
 
-    /// Checks if the pattern exactly matches the given string.
+    /// Checks if the pattern exactly matches the given string. An error result
+    /// is returned if the pattern is found to be invalid or malformed
+    /// during processing.
     ///
     /// # Arguments
     ///
     /// * `value` - The string to check for a match.
-    pub(crate) fn exactly_matches(&self, value: &str) -> Result<bool, error::Error> {
+    pub fn exactly_matches(&self, value: &str) -> Result<bool, error::Error> {
         let re = self.to_regex(true, true)?;
         Ok(re.is_match(value)?)
     }

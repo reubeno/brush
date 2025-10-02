@@ -577,7 +577,8 @@ impl ShellVariableMap {
     }
 }
 
-pub(crate) fn valid_variable_name(s: &str) -> bool {
+/// Checks if the given name is a valid variable name.
+pub fn valid_variable_name(s: &str) -> bool {
     let mut cs = s.chars();
     match cs.next() {
         Some(c) if c.is_ascii_alphabetic() || c == '_' => {

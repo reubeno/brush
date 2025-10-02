@@ -509,16 +509,18 @@ impl Spec {
                     tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -A service");
                 }
                 CompleteAction::SetOpt => {
-                    for (name, _) in namedoptions::SET_O_OPTIONS.iter() {
-                        if name.starts_with(token) {
-                            candidates.insert((*name).to_owned());
+                    for option in namedoptions::options(namedoptions::ShellOptionKind::SetO).iter()
+                    {
+                        if option.name.starts_with(token) {
+                            candidates.insert(option.name.to_owned());
                         }
                     }
                 }
                 CompleteAction::ShOpt => {
-                    for (name, _) in namedoptions::SHOPT_OPTIONS.iter() {
-                        if name.starts_with(token) {
-                            candidates.insert((*name).to_owned());
+                    for option in namedoptions::options(namedoptions::ShellOptionKind::Shopt).iter()
+                    {
+                        if option.name.starts_with(token) {
+                            candidates.insert(option.name.to_owned());
                         }
                     }
                 }

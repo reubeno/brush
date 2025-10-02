@@ -1,3 +1,5 @@
+//! Command execution
+
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -16,7 +18,7 @@ use crate::{
 };
 
 /// Represents the result of spawning a command.
-pub(crate) enum CommandSpawnResult {
+pub enum CommandSpawnResult {
     /// The child process was spawned.
     SpawnedProcess(processes::ChildProcess),
     /// The command immediately exited with the given numeric exit code.
@@ -33,7 +35,11 @@ pub(crate) enum CommandSpawnResult {
 }
 
 impl CommandSpawnResult {
-    // TODO: jobs: remove `no_wait`; it doesn't make any sense
+    /// Waits for the command to complete.
+    ///
+    /// # Arguments
+    ///
+    /// * `no_wait` - If true, do not wait for the command to complete; return immediately.
     pub async fn wait(self, no_wait: bool) -> Result<CommandWaitResult, error::Error> {
         match self {
             Self::SpawnedProcess(mut child) => {
@@ -89,7 +95,7 @@ impl CommandSpawnResult {
 }
 
 /// Encapsulates the result of waiting for a command to complete.
-pub(crate) enum CommandWaitResult {
+pub enum CommandWaitResult {
     /// The command completed.
     CommandCompleted(ExecutionResult),
     /// The command was stopped before it completed.
@@ -180,8 +186,22 @@ impl CommandArg {
     }
 }
 
+/// Composes a `std::process::Command` to execute the given command. Appropriately
+/// configures the command name and arguments, redirections, injected file
+/// descriptors, environment variables, etc.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which the command is being executed.
+/// * `command_name` - The name of the command to execute.
+/// * `argv0` - The value to use for `argv[0]` (may be different from the command).
+/// * `args` - The arguments to pass to the command.
+/// * `open_files` - The set of open files to use for the command.
+/// * `empty_env` - If true, the command will be executed with an empty
+///   environment; if false, the command will inherit environment variables
+///   marked as exported in the provided `Shell`.
 #[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
-pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
+pub fn compose_std_command<S: AsRef<OsStr>>(
     shell: &Shell,
     command_name: &str,
     argv0: &str,
@@ -224,7 +244,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
 
     // Redirect stdin, if applicable.
     match open_files.remove(OpenFiles::STDIN_FD) {
-        Some(OpenFile::Stdin) | None => (),
+        Some(OpenFile::Stdin(_)) | None => (),
         Some(stdin_file) => {
             let as_stdio: Stdio = stdin_file.into();
             cmd.stdin(as_stdio);
@@ -233,7 +253,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
 
     // Redirect stdout, if applicable.
     match open_files.remove(OpenFiles::STDOUT_FD) {
-        Some(OpenFile::Stdout) | None => (),
+        Some(OpenFile::Stdout(_)) | None => (),
         Some(stdout_file) => {
             let as_stdio: Stdio = stdout_file.into();
             cmd.stdout(as_stdio);
@@ -242,7 +262,7 @@ pub(crate) fn compose_std_command<S: AsRef<OsStr>>(
 
     // Redirect stderr, if applicable.
     match open_files.remove(OpenFiles::STDERR_FD) {
-        Some(OpenFile::Stderr) | None => {}
+        Some(OpenFile::Stderr(_)) | None => {}
         Some(stderr_file) => {
             let as_stdio: Stdio = stderr_file.into();
             cmd.stderr(as_stdio);
@@ -327,7 +347,25 @@ async fn invoke_debug_trap_handler_if_registered(
     Ok(())
 }
 
-pub(crate) async fn execute(
+/// Executes a simple command.
+///
+/// The command may be a builtin, a shell function, or an externally
+/// executed command. This function's implementation is responsible for
+/// dispatching it appropriately according to the context provided.
+///
+/// # Arguments
+///
+/// * `cmd_context` - The context in which the command is being executed.
+/// * `process_group_id` - The process group ID to use for externally
+///   executed commands. This may be modified if a new process group is
+///   created.
+/// * `args` - The arguments to the command.
+/// * `use_functions` - If true, the command name will be checked against
+///   shell functions; if not, shell functions will not be consulted.
+/// * `path_dirs` - If provided, these directories will be searched for
+///   external commands; if not provided, the default search logic will
+///   be used.
+pub async fn execute(
     cmd_context: ExecutionContext<'_>,
     process_group_id: &mut Option<i32>,
     args: Vec<CommandArg>,

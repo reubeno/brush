@@ -1,0 +1,172 @@
+[package]
+name = "brush-builtins"
+description = "Builtins for a POSIX/bash shell (used by brush-shell)"
+version = "0.1.0"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+bench = false
+
+[features]
+default = [
+    'builtin.alias',
+    'builtin.bg',
+    'builtin.bind',
+    'builtin.break',
+    'builtin.brushinfo',
+    'builtin.builtin',
+    'builtin.cd',
+    'builtin.colon',
+    'builtin.command',
+    'builtin.compgen',
+    'builtin.compopt',
+    'builtin.complete',
+    'builtin.continue',
+    'builtin.declare',
+    'builtin.dirs',
+    'builtin.dot',
+    'builtin.echo',
+    'builtin.enable',
+    'builtin.eval',
+    'builtin.exec',
+    'builtin.exit',
+    'builtin.export',
+    'builtin.false',
+    'builtin.fg',
+    'builtin.getopts',
+    'builtin.hash',
+    'builtin.help',
+    'builtin.history',
+    'builtin.jobs',
+    'builtin.kill',
+    'builtin.let',
+    'builtin.mapfile',
+    'builtin.popd',
+    'builtin.printf',
+    'builtin.pushd',
+    'builtin.pwd',
+    'builtin.read',
+    'builtin.return',
+    'builtin.set',
+    'builtin.shift',
+    'builtin.shopt',
+    'builtin.suspend',
+    'builtin.test',
+    'builtin.times',
+    'builtin.trap',
+    'builtin.true',
+    'builtin.type',
+    'builtin.ulimit',
+    'builtin.umask',
+    'builtin.unalias',
+    'builtin.unset',
+    'builtin.wait',
+]
+
+'builtin.alias' = []
+'builtin.bg' = []
+'builtin.bind' = []
+'builtin.break' = []
+'builtin.brushinfo' = []
+'builtin.builtin' = []
+'builtin.cd' = []
+'builtin.colon' = []
+'builtin.command' = []
+'builtin.compgen' = []
+'builtin.complete' = []
+'builtin.compopt' = []
+'builtin.continue' = []
+'builtin.declare' = []
+'builtin.dirs' = []
+'builtin.dot' = []
+'builtin.echo' = []
+'builtin.enable' = []
+'builtin.eval' = []
+'builtin.exec' = []
+'builtin.exit' = []
+'builtin.export' = []
+'builtin.false' = []
+'builtin.fg' = []
+'builtin.getopts' = []
+'builtin.hash' = []
+'builtin.help' = []
+'builtin.history' = []
+'builtin.jobs' = []
+'builtin.kill' = []
+'builtin.let' = []
+'builtin.mapfile' = []
+'builtin.popd' = []
+'builtin.printf' = []
+'builtin.pushd' = []
+'builtin.pwd' = []
+'builtin.read' = []
+'builtin.return' = []
+'builtin.set' = []
+'builtin.shift' = []
+'builtin.shopt' = []
+'builtin.suspend' = []
+'builtin.test' = []
+'builtin.times' = []
+'builtin.trap' = []
+'builtin.true' = []
+'builtin.type' = []
+'builtin.ulimit' = []
+'builtin.umask' = []
+'builtin.unalias' = []
+'builtin.unset' = []
+'builtin.wait' = []
+
+[lints]
+workspace = true
+
+[dependencies]
+brush-core = { version = "^0.3.5", path = "../brush-core" }
+brush-parser = { version = "^0.2.20", path = "../brush-parser" }
+cfg-if = "1.0.3"
+chrono = "0.4.41"
+clap = { version = "4.5.45", features = ["derive", "wrap_help"] }
+fancy-regex = "0.16.1"
+futures = "0.3.31"
+itertools = "0.14.0"
+strum = "0.27.2"
+strum_macros = "0.27.2"
+tracing = "0.1.41"
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+tokio = { version = "1.47.1", features = ["io-util", "macros", "rt"] }
+
+[target.'cfg(any(windows, unix))'.dependencies]
+tokio = { version = "1.47.0", features = [
+    "io-util",
+    "macros",
+    "process",
+    "rt",
+    "rt-multi-thread",
+    "signal",
+    "sync",
+] }
+uucore = { version = "0.1.0", default-features = false, features = ["format"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30.1", features = [
+    "fs",
+    "process",
+    "resource",
+    "signal",
+    "term",
+    "user",
+] }
+rlimit = "0.10.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = "0.17.0"
+
+[dev-dependencies]
+anyhow = "1.0.98"
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }
