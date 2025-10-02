@@ -29,8 +29,59 @@ pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 /// Type for storing an error formatter.
 pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 
+pub type Filter<A> = Arc<Mutex<dyn crate::filter::OpFilter<A>>>;
+
+/// Type for storing a simple command filter.
+pub type ExecSimpleCommandFilter =
+    Arc<Mutex<dyn for<'a> crate::filter::OpFilter<commands::SimpleCommand<'a>>>>;
+
+/// Type for storing an external command filter.
+pub type ExecExternalCommandFilter = Filter<commands::ExecuteExternalCommand>;
+
+/// Type for storing a word expansion filter.
+pub type ExpandWordFilter =
+    Arc<Mutex<dyn for<'a> crate::filter::OpFilter<expansion::ExpandWordOp<'a>>>>;
+
+/// Type for storing a source script filter.
+pub type SourceScriptFilter = Arc<Mutex<dyn for<'a> crate::filter::OpFilter<SourceScriptOp<'a>>>>;
+
+/// Input for the source script operation.
+#[derive(Clone, Debug)]
+pub struct ScriptArgs<'a> {
+    /// The path to the script to source.
+    pub path: &'a Path,
+    /// The arguments to pass to the script as positional parameters.
+    pub args: Vec<&'a str>,
+}
+
+/// Marker type for source script filtering.
+///
+/// This type defines the input/output signature for filtering script
+/// sourcing operations.
+pub struct SourceScriptOp<'a> {
+    marker: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> crate::filter::FilterableOp for SourceScriptOp<'a> {
+    type Input = ScriptArgs<'a>;
+    type Output = Result<ExecutionResult, error::Error>;
+}
+
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
+
+/// Collection of filters applied to shell operations.
+#[derive(Clone, Default)]
+pub struct ShellFilters {
+    /// Simple command filter.
+    pub exec_simple_command: Option<ExecSimpleCommandFilter>,
+    /// External command filter.
+    pub exec_external_command: Option<ExecExternalCommandFilter>,
+    /// Word expansion filter.
+    pub expand_word: Option<ExpandWordFilter>,
+    /// Source script filter.
+    pub source_script: Option<SourceScriptFilter>,
+}
 
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -117,6 +168,10 @@ pub struct Shell {
     /// Error formatter for customizing error display.
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: ErrorFormatterHelper,
+
+    /// Filters
+    #[cfg_attr(feature = "serde", serde(skip))]
+    filters: ShellFilters,
 }
 
 impl Clone for Shell {
@@ -147,6 +202,7 @@ impl Clone for Shell {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             error_formatter: self.error_formatter.clone(),
+            filters: self.filters.clone(),
             depth: self.depth + 1,
         }
     }
@@ -372,6 +428,14 @@ pub struct CreateOptions {
     pub key_bindings: Option<KeyBindingsHelper>,
     /// Error formatter helper for the shell to use.
     pub error_formatter: Option<ErrorFormatterHelper>,
+    /// Filter for simple command execution.
+    pub exec_simple_command_filter: Option<ExecSimpleCommandFilter>,
+    /// Filter for external command execution.
+    pub exec_external_command_filter: Option<ExecExternalCommandFilter>,
+    /// Filter for word expansion operations.
+    pub expand_word_filter: Option<ExpandWordFilter>,
+    /// Filter for source script operations.
+    pub source_script_filter: Option<SourceScriptFilter>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
 }
@@ -405,6 +469,7 @@ impl Default for Shell {
             key_bindings: None,
             history: None,
             error_formatter: default_error_formatter(),
+            filters: ShellFilters::default(),
         }
     }
 }
@@ -436,6 +501,12 @@ impl Shell {
             error_formatter: options
                 .error_formatter
                 .unwrap_or_else(default_error_formatter),
+            filters: ShellFilters {
+                exec_simple_command: options.exec_simple_command_filter,
+                exec_external_command: options.exec_external_command_filter,
+                expand_word: options.expand_word_filter,
+                source_script: options.source_script_filter,
+            },
             ..Self::default()
         };
 
@@ -490,6 +561,11 @@ impl Shell {
     /// Returns the call stack for the shell.
     pub const fn call_stack(&self) -> &callstack::CallStack {
         &self.call_stack
+    }
+
+    /// Returns the filters applied to the shell.
+    pub const fn filters(&self) -> &ShellFilters {
+        &self.filters
     }
 
     /// Increments the interactive line offset in the shell by the indicated number
@@ -822,12 +898,23 @@ impl Shell {
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(
-            path.as_ref(),
-            args,
-            params,
-            callstack::ScriptCallType::Source,
-        )
+        // Collect iterator items first so we can borrow from them.
+        let args: Vec<_> = args.collect();
+        let input = ScriptArgs {
+            path: path.as_ref(),
+            args: args.iter().map(AsRef::as_ref).collect(),
+        };
+
+        let filter = self.filters.source_script.clone();
+        crate::filter::do_with_filter(input, &filter, async |input| {
+            self.parse_and_execute_script_file(
+                &input.path,
+                input.args.iter(),
+                params,
+                callstack::ScriptCallType::Source,
+            )
+            .await
+        })
         .await
     }
 

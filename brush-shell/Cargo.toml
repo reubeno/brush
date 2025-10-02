@@ -60,6 +60,7 @@ clap = { version = "4.5.51", features = ["derive", "env"] }
 color-print = "0.3.7"
 const_format = "0.2.35"
 git-version = "0.3.9"
+itertools = "0.14.0"
 serde_json = { version = "1.0.138", optional = true }
 tracing = "0.1.43"
 tracing-subscriber = "0.3.22"

@@ -12,6 +12,7 @@ pub mod error;
 pub mod escape;
 pub mod expansion;
 mod extendedtests;
+pub mod filter;
 pub mod functions;
 pub mod history;
 pub mod interfaces;
@@ -52,6 +53,9 @@ pub use error::{BuiltinError, Error, ErrorKind};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
-pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
+pub use shell::{
+    CreateOptions, ScriptArgs, Shell, ShellBuilder, ShellBuilderState, ShellFd, ShellFilters,
+    SourceScriptOp,
+};
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
