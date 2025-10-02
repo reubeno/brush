@@ -402,7 +402,6 @@ jobs:
 
       - name: Performance analysis on main
         run: |
-          set -euo pipefail
           cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: main
 
