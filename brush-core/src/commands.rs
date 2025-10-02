@@ -14,11 +14,11 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, commands, env, error, escape, functions,
+    builtins, commands, env, error, escape, filter, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
-    results::ExecutionSpawnResult,
+    results::{self, ExecutionSpawnResult},
     sys, trace_categories, traps, variables,
 };
 
@@ -373,12 +373,18 @@ impl<'a> SimpleCommand<'a> {
         }
     }
 
+    /// Executes the simple command, applying any registered filters.
+    pub async fn execute(self) -> Result<ExecutionSpawnResult, error::Error> {
+        let filter = self.shell.filters().exec_simple_command.clone();
+        filter::do_with_filter(self, &filter, |cmd| cmd.execute_impl()).await
+    }
+
     /// Executes the simple command.
     ///
     /// The command may be a builtin, a shell function, or an externally
     /// executed command. This function's implementation is responsible for
     /// dispatching it appropriately according to the context provided.
-    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+    async fn execute_impl(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 
@@ -424,7 +430,7 @@ impl<'a> SimpleCommand<'a> {
             };
 
             if let Some(path) = path {
-                self.execute_via_external(&path)
+                self.execute_via_external(&path).await
             } else {
                 if let Some(post_execute) = self.post_execute {
                     let _ = post_execute(&mut self.shell);
@@ -434,7 +440,7 @@ impl<'a> SimpleCommand<'a> {
             }
         } else {
             let command_name = PathBuf::from(self.command_name.clone());
-            self.execute_via_external(command_name.as_path())
+            self.execute_via_external(command_name.as_path()).await
         }
     }
 
@@ -524,7 +530,7 @@ impl<'a> SimpleCommand<'a> {
         result
     }
 
-    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
+    async fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
 
         let cmd_context = ExecutionContext {
@@ -539,7 +545,8 @@ impl<'a> SimpleCommand<'a> {
             resolved_path.as_ref(),
             self.process_group_id,
             &self.args[1..],
-        );
+        )
+        .await;
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
@@ -549,7 +556,12 @@ impl<'a> SimpleCommand<'a> {
     }
 }
 
-pub(crate) fn execute_external_command(
+impl filter::FilterableOp for commands::SimpleCommand<'_> {
+    type Input = Self;
+    type Output = Result<results::ExecutionSpawnResult, error::Error>;
+}
+
+pub(crate) async fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
     process_group_id: Option<i32>,
@@ -609,7 +621,8 @@ pub(crate) fn execute_external_command(
             .join(" ")
     );
 
-    match sys::process::spawn(cmd) {
+    let filter = &context.shell.filters().exec_external_command;
+    match filter::do_with_filter(cmd, filter, |cmd| async { sys::process::spawn(cmd) }).await {
         Ok(child) => {
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
@@ -649,6 +662,18 @@ pub(crate) fn execute_external_command(
             }
         }
     }
+}
+
+/// Marker type for external command execution filtering.
+///
+/// This type defines the input/output signature for filtering external
+/// command spawns. It does not contain execution logic; that is provided
+/// at the call site.
+pub struct ExecuteExternalCommand;
+
+impl filter::FilterableOp for ExecuteExternalCommand {
+    type Input = std::process::Command;
+    type Output = Result<sys::process::Child, std::io::Error>;
 }
 
 async fn execute_builtin_command(
