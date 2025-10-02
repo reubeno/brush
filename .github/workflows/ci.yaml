@@ -395,11 +395,15 @@ jobs:
             ./main
 
       - name: Performance analysis on PR
-        run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt
+        run: |
+          set -euo pipefail
+          cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: pr
 
       - name: Performance analysis on main
-        run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt
+        run: |
+          set -euo pipefail
+          cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: main
 
       - name: Compare benchmark results

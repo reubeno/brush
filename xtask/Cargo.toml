@@ -11,6 +11,11 @@ readme.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+bench = false
+
 [lints]
 workspace = true
 
