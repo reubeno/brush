@@ -363,19 +363,57 @@ jobs:
       - name: Check for unused dependencies
         run: cargo udeps --workspace --all-targets --all-features
 
-  # Performance analysis of the code.
-  benchmark:
+  # Analyze public API surface
+  analyze-public-api:
     if: github.event_name == 'pull_request'
-    name: "Benchmarks"
+    name: "Analyze public API"
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
+
+      - name: Set up rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-public-api
+        uses: taiki-e/install-action@efd8b64311f7a0a9b888ed13d0df78ec9184c163 # v2.62.11
+        with:
+          tool: cargo-public-api
+
+      - name: Compare public APIs with main
+        run: |
+          set -euo pipefail
+
+          mkdir diffs
+
+          for crate in $(./scripts/enum-lib-crates.sh); do
+            echo "# Public API diff for crate: ${crate}"
+            cargo public-api diff -p $crate main..${{ github.ref }} --color=always || true
+          done > ./diffs/api-diff-${crate}.md
+
+      - name: Upload test report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports-public-api
+          path: diffs/api-diff-*.md
+
+  # Performance analysis of the code.
+  benchmark:
+    if: github.event_name == 'pull_request'
+    name: "Benchmarks"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
           path: pr
 
-      - name: Checkout
+      - name: Checkout main sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
