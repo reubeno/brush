@@ -297,18 +297,18 @@ impl Job {
     /// Returns a pid-style string for the job.
     pub fn to_pid_style_string(&self) -> String {
         let display_pid = self
-            .get_representative_pid()
+            .representative_pid()
             .map_or_else(|| String::from("<pid unknown>"), |pid| pid.to_string());
         std::format!("[{}]{}\t{}", self.id, self.annotation, display_pid)
     }
 
     /// Returns the annotation of the job.
-    pub fn get_annotation(&self) -> JobAnnotation {
+    pub fn annotation(&self) -> JobAnnotation {
         self.annotation.clone()
     }
 
     /// Returns the command name of the job.
-    pub fn get_command_name(&self) -> &str {
+    pub fn command_name(&self) -> &str {
         self.command_line
             .split_ascii_whitespace()
             .next()
@@ -378,7 +378,7 @@ impl Job {
     /// Moves the job to execute in the background.
     pub fn move_to_background(&mut self) -> Result<(), error::Error> {
         if matches!(self.state, JobState::Stopped) {
-            if let Some(pgid) = self.get_process_group_id() {
+            if let Some(pgid) = self.process_group_id() {
                 sys::signal::continue_process(pgid)?;
                 self.state = JobState::Running;
                 Ok(())
@@ -393,7 +393,7 @@ impl Job {
     /// Moves the job to execute in the foreground.
     pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
         if matches!(self.state, JobState::Stopped) {
-            if let Some(pgid) = self.get_process_group_id() {
+            if let Some(pgid) = self.process_group_id() {
                 sys::signal::continue_process(pgid)?;
                 self.state = JobState::Running;
             } else {
@@ -401,7 +401,7 @@ impl Job {
             }
         }
 
-        if let Some(pgid) = self.get_process_group_id() {
+        if let Some(pgid) = self.process_group_id() {
             sys::terminal::move_to_foreground(pgid)?;
         }
 
@@ -414,7 +414,7 @@ impl Job {
     ///
     /// * `signal` - The signal to send to the job.
     pub fn kill(&self, signal: traps::TrapSignal) -> Result<(), error::Error> {
-        if let Some(pid) = self.get_process_group_id() {
+        if let Some(pid) = self.process_group_id() {
             sys::signal::kill_process(pid, signal)
         } else {
             Err(error::Error::FailedToSendSignal)
@@ -422,7 +422,7 @@ impl Job {
     }
 
     /// Tries to retrieve a "representative" pid for the job.
-    pub fn get_representative_pid(&self) -> Option<sys::process::ProcessId> {
+    pub fn representative_pid(&self) -> Option<sys::process::ProcessId> {
         for task in &self.tasks {
             match task {
                 JobTask::External(p) => {
@@ -437,8 +437,8 @@ impl Job {
     }
 
     /// Tries to retrieve the process group ID (PGID) of the job.
-    pub fn get_process_group_id(&self) -> Option<sys::process::ProcessId> {
+    pub fn process_group_id(&self) -> Option<sys::process::ProcessId> {
         // TODO: Don't assume that the first PID is the PGID.
-        self.pgid.or_else(|| self.get_representative_pid())
+        self.pgid.or_else(|| self.representative_pid())
     }
 }

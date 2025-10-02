@@ -570,7 +570,7 @@ impl<'a> WordExpander<'a> {
     }
 
     fn split_fields(&self, expansion: Expansion) -> Vec<WordField> {
-        let ifs = self.shell.get_ifs();
+        let ifs = self.shell.ifs();
 
         let mut fields: Vec<WordField> = vec![];
         let mut current_field = WordField::new();
@@ -620,7 +620,7 @@ impl<'a> WordExpander<'a> {
 
         let expansions = pattern
             .expand(
-                self.shell.working_dir.as_path(),
+                self.shell.working_dir(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
                 &options,
             )
@@ -761,7 +761,7 @@ impl<'a> WordExpander<'a> {
                 || std::format!("~{prefix}"),
                 |p| p.to_string_lossy().to_string(),
             ))
-        } else if let Some(home_dir) = self.shell.get_home_dir() {
+        } else if let Some(home_dir) = self.shell.home_dir() {
             Ok(home_dir.to_string_lossy().to_string())
         } else {
             Err(error::Error::TildeWithoutValidHome)
@@ -1001,7 +1001,7 @@ impl<'a> WordExpander<'a> {
                     .try_resolve_parameter_to_variable(&parameter, indirect)
                     .await?
                 {
-                    Ok(var.get_attribute_flags(self.shell).into())
+                    Ok(var.attribute_flags(self.shell).into())
                 } else {
                     Ok(String::new().into())
                 }
@@ -1018,7 +1018,7 @@ impl<'a> WordExpander<'a> {
                     let assignable_value_str =
                         var.value().to_assignable_str(index.as_deref(), self.shell);
 
-                    let mut attr_str = var.get_attribute_flags(self.shell);
+                    let mut attr_str = var.attribute_flags(self.shell);
                     if attr_str.is_empty() {
                         attr_str.push('-');
                     }
@@ -1177,7 +1177,7 @@ impl<'a> WordExpander<'a> {
                 concatenate,
             } => {
                 let keys = if let Some((_, var)) = self.shell.env.get(variable_name) {
-                    var.value().get_element_keys(self.shell)
+                    var.value().element_keys(self.shell)
                 } else {
                     vec![]
                 };
@@ -1372,7 +1372,7 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 if let Some((_, var)) = self.shell.env.get(name) {
-                    let values = var.value().get_element_values(self.shell);
+                    let values = var.value().element_values(self.shell);
 
                     Ok(Expansion {
                         fields: values
@@ -1433,17 +1433,17 @@ impl<'a> WordExpander<'a> {
                 Expansion::from(self.shell.positional_parameters.len().to_string())
             }
             brush_parser::word::SpecialParameter::LastExitStatus => {
-                Expansion::from(self.shell.last_exit_status.to_string())
+                Expansion::from(self.shell.last_result().to_string())
             }
             brush_parser::word::SpecialParameter::CurrentOptionFlags => {
-                Expansion::from(self.shell.options.get_option_flags())
+                Expansion::from(self.shell.options.option_flags())
             }
             brush_parser::word::SpecialParameter::ProcessId => {
                 Expansion::from(std::process::id().to_string())
             }
             brush_parser::word::SpecialParameter::LastBackgroundProcessId => {
                 if let Some(job) = self.shell.jobs.current_job() {
-                    if let Some(pid) = job.get_representative_pid() {
+                    if let Some(pid) = job.representative_pid() {
                         return Expansion::from(pid.to_string());
                     }
                 }

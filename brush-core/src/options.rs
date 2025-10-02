@@ -266,7 +266,7 @@ impl RuntimeOptions {
     }
 
     /// Returns a string representing the current `set`-style option flags set in the shell.
-    pub fn get_option_flags(&self) -> String {
+    pub fn option_flags(&self) -> String {
         let mut cs = vec![];
 
         for o in namedoptions::options(namedoptions::ShellOptionKind::Set).iter() {
@@ -296,7 +296,7 @@ impl RuntimeOptions {
     }
 
     /// Returns a colon-separated list of sorted 'set -o' options enabled.
-    pub fn get_set_o_optstr(&self) -> String {
+    pub fn seto_optstr(&self) -> String {
         let mut cs = vec![];
 
         for option in namedoptions::options(namedoptions::ShellOptionKind::SetO).iter() {
@@ -310,7 +310,7 @@ impl RuntimeOptions {
     }
 
     /// Returns a colon-separated list of sorted 'shopt' options enabled.
-    pub fn get_shopt_optstr(&self) -> String {
+    pub fn shopt_optstr(&self) -> String {
         let mut cs = vec![];
 
         for option in namedoptions::options(namedoptions::ShellOptionKind::Shopt).iter() {

@@ -88,7 +88,7 @@ pub enum Error {
 
     /// An error occurred while redirecting input or output with the given file.
     #[error("failed to redirect to {0}: {1}")]
-    RedirectionFailure(String, std::io::Error),
+    RedirectionFailure(String, String),
 
     /// An error occurred evaluating an arithmetic expression.
     #[error("arithmetic evaluation error: {0}")]

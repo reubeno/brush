@@ -96,7 +96,7 @@ impl CommandCommand {
     ) -> Option<FoundCommand> {
         // Look in path.
         if command_name.contains(std::path::MAIN_SEPARATOR) {
-            let candidate_path = shell.get_absolute_path(Path::new(command_name));
+            let candidate_path = shell.absolute_path(Path::new(command_name));
             if candidate_path.executable() {
                 Some(FoundCommand::External(
                     candidate_path.to_string_lossy().to_string(),
@@ -105,7 +105,7 @@ impl CommandCommand {
                 None
             }
         } else {
-            if let Some(builtin_cmd) = shell.builtins.get(command_name) {
+            if let Some(builtin_cmd) = shell.builtins().get(command_name) {
                 if !builtin_cmd.disabled {
                     return Some(FoundCommand::Builtin(command_name.to_owned()));
                 }

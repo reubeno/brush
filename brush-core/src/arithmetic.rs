@@ -146,9 +146,7 @@ impl Evaluatable for ast::ArithmeticExpr {
 
 fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
     let value_str: Cow<'_, str> = match lvalue {
-        ast::ArithmeticTarget::Variable(name) => {
-            shell.get_env_str(name).unwrap_or(Cow::Borrowed(""))
-        }
+        ast::ArithmeticTarget::Variable(name) => shell.env_str(name).unwrap_or(Cow::Borrowed("")),
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = index_expr.eval(shell)?.to_string();
 

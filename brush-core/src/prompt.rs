@@ -109,7 +109,7 @@ fn format_prompt_piece(
 }
 
 fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basename: bool) -> String {
-    let mut working_dir_str = shell.working_dir.to_string_lossy().to_string();
+    let mut working_dir_str = shell.working_dir().to_string_lossy().to_string();
 
     if tilde_replaced {
         working_dir_str = shell.tilde_shorten(working_dir_str);

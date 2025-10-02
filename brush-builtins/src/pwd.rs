@@ -19,7 +19,7 @@ impl builtins::Command for PwdCommand {
         &self,
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut cwd: Cow<'_, Path> = context.shell.working_dir.as_path().into();
+        let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();
 
         let should_canonicalize = self.physical
             || context

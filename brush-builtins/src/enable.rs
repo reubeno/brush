@@ -52,7 +52,7 @@ impl builtins::Command for EnableCommand {
 
         if !self.names.is_empty() {
             for name in &self.names {
-                if let Some(builtin) = context.shell.builtins.get_mut(name) {
+                if let Some(builtin) = context.shell.builtin_mut(name) {
                     builtin.disabled = self.disable;
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
@@ -62,7 +62,7 @@ impl builtins::Command for EnableCommand {
         } else {
             let builtins: Vec<_> = context
                 .shell
-                .builtins
+                .builtins()
                 .iter()
                 .sorted_by_key(|(name, _reg)| *name)
                 .collect();

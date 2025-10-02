@@ -78,7 +78,7 @@ impl builtins::Command for UnsetCommand {
 
             // TODO: Deal with readonly functions
             if unspecified || self.name_interpretation.shell_functions {
-                if context.shell.funcs.remove(name).is_some() {
+                if context.shell.undefine_func(name) {
                     continue;
                 }
             }

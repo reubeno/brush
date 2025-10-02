@@ -35,10 +35,13 @@ pub mod timing;
 pub mod trace_categories;
 pub mod traps;
 pub mod variables;
+mod wellknownvars;
 
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::Error;
 pub use interp::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy};
-pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState};
+pub use shell::{
+    CreateOptions, FunctionCall, ScriptCallType, Shell, ShellBuilder, ShellBuilderState,
+};
 pub use terminal::TerminalControl;
 pub use variables::{ShellValue, ShellVariable};

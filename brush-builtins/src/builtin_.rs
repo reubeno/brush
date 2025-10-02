@@ -32,7 +32,7 @@ impl builtins::Command for BuiltinCommand {
 
         let builtin_name = args[0].to_string();
 
-        if let Some(builtin) = context.shell.builtins.get(&builtin_name) {
+        if let Some(builtin) = context.shell.builtins().get(&builtin_name) {
             context.command_name = builtin_name;
 
             (builtin.execute_func)(context, args)

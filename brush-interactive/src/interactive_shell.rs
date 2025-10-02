@@ -156,7 +156,7 @@ pub trait InteractiveShell: Send {
                 ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
                 ReadResult::Interrupted => {
                     let mut shell_mut = self.shell_mut();
-                    shell_mut.as_mut().last_exit_status = 130;
+                    *shell_mut.as_mut().last_exit_status_mut() = 130;
                     Ok(InteractiveExecutionResult::Executed(
                         brush_core::ExecutionResult::new(130),
                     ))
@@ -228,7 +228,7 @@ pub trait InteractiveShell: Send {
 
 async fn run_pre_prompt_commands(shell: &mut brush_core::Shell) -> Result<(), ShellError> {
     // If there's a variable called PROMPT_COMMAND, then run it first.
-    if let Some(prompt_cmd_var) = shell.get_env_var("PROMPT_COMMAND") {
+    if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
         match prompt_cmd_var.value() {
             brush_core::ShellValue::String(cmd_str) => {
                 run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
@@ -252,7 +252,7 @@ async fn run_pre_prompt_command(
     prompt_cmd: impl Into<String>,
 ) -> Result<(), ShellError> {
     // Save (and later restore) the last exit status.
-    let prev_last_result = shell.last_exit_status;
+    let prev_last_result = shell.last_result();
     let prev_last_pipeline_statuses = shell.last_pipeline_statuses.clone();
 
     // Run the command.
@@ -261,7 +261,7 @@ async fn run_pre_prompt_command(
 
     // Restore the last exit status.
     shell.last_pipeline_statuses = prev_last_pipeline_statuses;
-    shell.last_exit_status = prev_last_result;
+    *shell.last_exit_status_mut() = prev_last_result;
 
     Ok(())
 }

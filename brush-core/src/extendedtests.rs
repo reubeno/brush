@@ -74,47 +74,47 @@ pub(crate) fn apply_unary_predicate_to_str(
         ast::UnaryPredicate::StringHasNonZeroLength => Ok(!operand.is_empty()),
         ast::UnaryPredicate::StringHasZeroLength => Ok(operand.is_empty()),
         ast::UnaryPredicate::FileExists => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists())
         }
         ast::UnaryPredicate::FileExistsAndIsBlockSpecialFile => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists_and_is_block_device())
         }
         ast::UnaryPredicate::FileExistsAndIsCharSpecialFile => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists_and_is_char_device())
         }
         ast::UnaryPredicate::FileExistsAndIsDir => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.is_dir())
         }
         ast::UnaryPredicate::FileExistsAndIsRegularFile => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.is_file())
         }
         ast::UnaryPredicate::FileExistsAndIsSetgid => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists_and_is_setgid())
         }
         ast::UnaryPredicate::FileExistsAndIsSymlink => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.is_symlink())
         }
         ast::UnaryPredicate::FileExistsAndHasStickyBit => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists_and_is_sticky_bit())
         }
         ast::UnaryPredicate::FileExistsAndIsFifo => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists_and_is_fifo())
         }
         ast::UnaryPredicate::FileExistsAndIsReadable => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.readable())
         }
         ast::UnaryPredicate::FileExistsAndIsNotZeroLength => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             if let Ok(metadata) = path.metadata() {
                 Ok(metadata.len() > 0)
             } else {
@@ -133,19 +133,19 @@ pub(crate) fn apply_unary_predicate_to_str(
             }
         }
         ast::UnaryPredicate::FileExistsAndIsSetuid => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists_and_is_setuid())
         }
         ast::UnaryPredicate::FileExistsAndIsWritable => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.writable())
         }
         ast::UnaryPredicate::FileExistsAndIsExecutable => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.executable())
         }
         ast::UnaryPredicate::FileExistsAndOwnedByEffectiveGroupId => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             if !path.exists() {
                 return Ok(false);
             }
@@ -157,7 +157,7 @@ pub(crate) fn apply_unary_predicate_to_str(
             error::unimp("unary extended test predicate: FileExistsAndModifiedSinceLastRead")
         }
         ast::UnaryPredicate::FileExistsAndOwnedByEffectiveUserId => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             if !path.exists() {
                 return Ok(false);
             }
@@ -166,7 +166,7 @@ pub(crate) fn apply_unary_predicate_to_str(
             Ok(md.uid() == users::get_effective_uid()?)
         }
         ast::UnaryPredicate::FileExistsAndIsSocket => {
-            let path = shell.get_absolute_path(Path::new(operand));
+            let path = shell.absolute_path(Path::new(operand));
             Ok(path.exists_and_is_socket())
         }
         ast::UnaryPredicate::ShellOptionEnabled => {
@@ -559,8 +559,8 @@ fn left_file_is_older_or_does_not_exist_when_right_does(
     right: impl AsRef<str>,
 ) -> Result<bool, error::Error> {
     let (l_path, r_path) = (
-        shell.get_absolute_path(Path::new(left.as_ref())),
-        shell.get_absolute_path(Path::new(right.as_ref())),
+        shell.absolute_path(Path::new(left.as_ref())),
+        shell.absolute_path(Path::new(right.as_ref())),
     );
 
     match (l_path.metadata(), r_path.metadata()) {
@@ -576,8 +576,8 @@ fn left_file_is_newer_or_exists_when_right_does_not(
     right: impl AsRef<str>,
 ) -> Result<bool, error::Error> {
     let (l_path, r_path) = (
-        shell.get_absolute_path(Path::new(left.as_ref())),
-        shell.get_absolute_path(Path::new(right.as_ref())),
+        shell.absolute_path(Path::new(left.as_ref())),
+        shell.absolute_path(Path::new(right.as_ref())),
     );
 
     match (l_path.metadata(), r_path.metadata()) {
@@ -593,8 +593,8 @@ fn files_refer_to_same_device_and_inode_numbers(
     right: impl AsRef<str>,
 ) -> Result<bool, error::Error> {
     let (l_path, r_path) = (
-        shell.get_absolute_path(Path::new(left.as_ref())),
-        shell.get_absolute_path(Path::new(right.as_ref())),
+        shell.absolute_path(Path::new(left.as_ref())),
+        shell.absolute_path(Path::new(right.as_ref())),
     );
 
     if !l_path.readable() || !r_path.readable() {

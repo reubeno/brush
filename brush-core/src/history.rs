@@ -2,7 +2,7 @@
 
 use chrono::Utc;
 use std::{
-    io::{BufRead, Write},
+    io::{BufRead, Read, Write},
     path::Path,
 };
 
@@ -21,20 +21,19 @@ pub struct History {
 }
 
 impl History {
-    /// Constructs a new `History` instance, with its contents initialized from the given saved
-    /// history file.
+    /// Constructs a new `History` instance, with its contents initialized from the given readable
+    /// stream.
     ///
     /// # Arguments
     ///
-    /// * `path` - The path to the history file.
-    pub fn import(path: impl AsRef<Path>) -> Result<Self, error::Error> {
+    /// * `reader` - The readable stream to import history from.
+    pub fn import(reader: impl Read) -> Result<Self, error::Error> {
         let mut history = Self::default();
 
-        let file = std::fs::File::open(path.as_ref())?;
-        let reader = std::io::BufReader::new(file);
+        let buf_reader = std::io::BufReader::new(reader);
 
         let mut next_timestamp = None;
-        for line in reader.lines() {
+        for line in buf_reader.lines() {
             let line = line?;
 
             if let Some(comment) = line.strip_prefix("#") {
@@ -165,7 +164,7 @@ impl History {
         write_timestamps: bool,
     ) -> Result<(), error::Error> {
         // Open the file
-        let mut file_options = std::fs::OpenOptions::new();
+        let mut file_options = std::fs::File::options();
 
         if append {
             file_options.append(true);

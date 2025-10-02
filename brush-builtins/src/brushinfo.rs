@@ -123,7 +123,7 @@ impl CompleteCommand {
             Self::Line { cursor_index, line } => {
                 let completions = context
                     .shell
-                    .get_completions(line, cursor_index.unwrap_or(line.len()))
+                    .complete(line, cursor_index.unwrap_or(line.len()))
                     .await?;
                 for candidate in completions.candidates {
                     writeln!(context.stdout(), "{candidate}")?;

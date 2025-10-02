@@ -68,7 +68,7 @@ impl TestShellWithBashCompletion {
     }
 
     pub async fn complete(&mut self, line: &str, pos: usize) -> Result<Vec<String>> {
-        let completions = self.shell.get_completions(line, pos).await?;
+        let completions = self.shell.complete(line, pos).await?;
         Ok(completions.candidates.into_iter().collect())
     }
 

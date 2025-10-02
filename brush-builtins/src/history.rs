@@ -57,8 +57,8 @@ impl builtins::Command for HistoryCommand {
     ) -> Result<builtins::ExitCode, brush_core::Error> {
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
-            default_history_file_path: context.shell.get_history_file_path(),
-            time_format: context.shell.get_history_time_format(),
+            default_history_file_path: context.shell.history_file_path(),
+            time_format: context.shell.history_time_format(),
         };
 
         if let Some(history) = context.shell.history_mut() {

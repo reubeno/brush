@@ -44,7 +44,7 @@ async fn run(suppress_stdout: bool) -> Result<()> {
 
     define_func(&mut shell).await?;
 
-    for (name, _) in shell.funcs.iter() {
+    for (name, _) in shell.funcs().iter() {
         eprintln!("[Found function: {name}]");
     }
 

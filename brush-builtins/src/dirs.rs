@@ -33,9 +33,16 @@ impl builtins::Command for DirsCommand {
         if self.clear {
             context.shell.directory_stack.clear();
         } else {
-            let dirs = vec![&context.shell.working_dir]
+            let dirs = vec![context.shell.working_dir()]
                 .into_iter()
-                .chain(context.shell.directory_stack.iter().rev())
+                .chain(
+                    context
+                        .shell
+                        .directory_stack
+                        .iter()
+                        .rev()
+                        .map(|p| p.as_path()),
+                )
                 .collect::<Vec<_>>();
 
             let one_per_line = self.print_one_per_line || self.print_one_per_line_with_index;

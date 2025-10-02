@@ -305,9 +305,9 @@ impl<'a> StyledInputLine<'a> {
             return CommandType::Keyword;
         } else if self.shell.aliases.contains_key(name) {
             return CommandType::Alias;
-        } else if self.shell.funcs.get(name).is_some() {
+        } else if self.shell.funcs().get(name).is_some() {
             return CommandType::Function;
-        } else if self.shell.builtins.contains_key(name) {
+        } else if self.shell.builtins().contains_key(name) {
             return CommandType::Builtin;
         }
 
@@ -321,7 +321,7 @@ impl<'a> StyledInputLine<'a> {
 
         if name.contains(std::path::MAIN_SEPARATOR) {
             // TODO: Should check for executable-ness.
-            let candidate_path = self.shell.get_absolute_path(std::path::Path::new(name));
+            let candidate_path = self.shell.absolute_path(std::path::Path::new(name));
             if candidate_path.exists() {
                 CommandType::External
             } else {
