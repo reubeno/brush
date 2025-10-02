@@ -396,17 +396,26 @@ jobs:
           set -euxo pipefail
 
           mkdir diffs
+          mkdir reports
 
           for crate in $(./scripts/enum-lib-crates.sh); do
-            echo "# Public API diff for crate: ${crate}" >./diffs/api-diff-${crate}.md
-            cargo public-api diff -p $crate origin/main..target --color=always >>./diffs/api-diff-${crate} || true
+            out=./diffs/${crate}.txt
+            cargo public-api diff -p $crate origin/main..target --color=always >${out}
+
+            # Generate no-op diff as point of comparison
+            cargo public-api diff -p $crate target..target --color=always >${crate}.nop.txt
+
+            if [[ $(cat ${out}) != $(cat ${crate}.nop.txt) ]]; then
+              echo "# Public API changes for crate: ${crate}" >./reports/api-diff-${crate}.md
+              cat ${out} >>./reports/api-diff-${crate}.md
+            fi
           done
 
       - name: Upload test report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-reports-public-api
-          path: diffs/api-diff-*.md
+          path: reports/*.md
 
   # Performance analysis of the code.
   benchmark:
