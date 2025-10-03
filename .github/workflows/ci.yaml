@@ -399,15 +399,15 @@ jobs:
           mkdir reports
 
           for crate in $(./scripts/enum-lib-crates.sh); do
-            out=./diffs/${crate}.txt
-            cargo public-api diff -sss -p $crate origin/main..target >${out}
+            diff=./diffs/${crate}.txt
+            report=./reports/api-diff-${crate}.md
 
-            # Generate no-op diff as point of comparison
-            cargo public-api diff -p $crate target..target >${crate}.nop.txt
+            cargo public-api diff -sss -p $crate origin/main..target >${diff}
+            ./scripts/format-api-diff-report.py ${diff} -p ${crate} >${report}
 
-            if [[ $(cat ${out}) != $(cat ${crate}.nop.txt) ]]; then
-              echo "# Public API changes for crate: ${crate}" >./reports/api-diff-${crate}.md
-              cat ${out} >>./reports/api-diff-${crate}.md
+            # If the report is empty, remove it.
+            if [[ ! -s ${report} ]]; then
+              rm -f ${report}
             fi
           done
 
