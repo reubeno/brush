@@ -303,7 +303,7 @@ impl TokenParseState {
         token
     }
 
-    pub fn started_token(&self) -> bool {
+    pub const fn started_token(&self) -> bool {
         !self.token_so_far.is_empty()
     }
 
