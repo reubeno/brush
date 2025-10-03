@@ -71,7 +71,7 @@ impl ExportCommand {
                 if self.names_are_functions {
                     // Try to find the function already present; if we find it, then mark it
                     // exported.
-                    if let Some(func) = context.shell.funcs.get_mut(s) {
+                    if let Some(func) = context.shell.func_mut(s) {
                         if self.unexport {
                             func.unexport();
                         } else {

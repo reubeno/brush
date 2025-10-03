@@ -156,7 +156,7 @@ fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io
 
 /// Opens a null file that will discard all I/O.
 pub fn open_null_file() -> Result<std::fs::File, error::Error> {
-    let f = std::fs::OpenOptions::new()
+    let f = std::fs::File::options()
         .read(true)
         .write(true)
         .open("/dev/null")?;

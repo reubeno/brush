@@ -363,19 +363,73 @@ jobs:
       - name: Check for unused dependencies
         run: cargo udeps --workspace --all-targets --all-features
 
-  # Performance analysis of the code.
-  benchmark:
+  # Analyze public API surface
+  analyze-public-api:
     if: github.event_name == 'pull_request'
-    name: "Benchmarks"
+    name: "Analyze public API"
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
+
+      - name: Set up nightly rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: nightly
+
+      - name: Install cargo-public-api
+        uses: taiki-e/install-action@efd8b64311f7a0a9b888ed13d0df78ec9184c163 # v2.62.11
+        with:
+          tool: cargo-public-api
+
+      - name: Set up branches
+        run: |
+          set -euo pipefail
+
+          git checkout -b target
+          git fetch origin main
+
+      - name: Compare public APIs with main
+        run: |
+          set -euxo pipefail
+
+          mkdir diffs
+          mkdir reports
+
+          for crate in $(./scripts/enum-lib-crates.sh); do
+            diff=./diffs/${crate}.txt
+            report=./reports/api-diff-${crate}.md
+
+            cargo public-api diff -sss -p $crate origin/main..target >${diff}
+            ./scripts/format-api-diff-report.py ${diff} -p ${crate} >${report}
+
+            # If the report is empty, remove it.
+            if [[ ! -s ${report} ]]; then
+              rm -f ${report}
+            fi
+          done
+
+      - name: Upload test report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports-public-api
+          path: reports/*.md
+
+  # Performance analysis of the code.
+  benchmark:
+    if: github.event_name == 'pull_request'
+    name: "Benchmarks"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
           path: pr
 
-      - name: Checkout
+      - name: Checkout main sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false

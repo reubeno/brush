@@ -19,7 +19,7 @@ impl builtins::Command for ReturnCommand {
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8
         } else {
-            context.shell.last_exit_status
+            context.shell.last_result()
         };
 
         if context.shell.in_function() || context.shell.in_sourced_script() {

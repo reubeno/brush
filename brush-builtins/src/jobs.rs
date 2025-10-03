@@ -69,7 +69,7 @@ impl JobsCommand {
         }
 
         if self.show_pids_only {
-            if let Some(pid) = job.get_representative_pid() {
+            if let Some(pid) = job.representative_pid() {
                 writeln!(context.stdout(), "{pid}")?;
             }
         } else {

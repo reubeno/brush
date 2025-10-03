@@ -45,7 +45,7 @@ impl HelpCommand {
     ) -> Result<(), brush_core::Error> {
         const COLUMN_COUNT: usize = 3;
 
-        if let Some(display_str) = &context.shell.shell_product_display_str {
+        if let Some(display_str) = context.shell.product_display_str() {
             writeln!(context.stdout(), "{display_str}\n")?;
         }
 
@@ -129,7 +129,7 @@ fn get_builtins_sorted_by_name<'a>(
 ) -> Vec<(&'a String, &'a builtins::Registration)> {
     context
         .shell
-        .builtins
+        .builtins()
         .iter()
         .sorted_by_key(|(name, _)| *name)
         .collect()

@@ -529,7 +529,7 @@ impl ShellVariable {
     }
 
     /// Returns the canonical attribute flag string for this variable.
-    pub fn get_attribute_flags(&self, shell: &Shell) -> String {
+    pub fn attribute_flags(&self, shell: &Shell) -> String {
         let value = self.resolve_value(shell);
 
         let mut result = String::new();
@@ -920,24 +920,24 @@ impl ShellValue {
     }
 
     /// Returns the keys of the elements in this variable.
-    pub fn get_element_keys(&self, shell: &Shell) -> Vec<String> {
+    pub fn element_keys(&self, shell: &Shell) -> Vec<String> {
         match self {
             Self::Unset(_) => vec![],
             Self::String(_) => vec!["0".to_owned()],
             Self::AssociativeArray(array) => array.keys().map(|k| k.to_owned()).collect(),
             Self::IndexedArray(array) => array.keys().map(|k| k.to_string()).collect(),
-            Self::Dynamic { getter, .. } => getter(shell).get_element_keys(shell),
+            Self::Dynamic { getter, .. } => getter(shell).element_keys(shell),
         }
     }
 
     /// Returns the values of the elements in this variable.
-    pub fn get_element_values(&self, shell: &Shell) -> Vec<String> {
+    pub fn element_values(&self, shell: &Shell) -> Vec<String> {
         match self {
             Self::Unset(_) => vec![],
             Self::String(s) => vec![s.to_owned()],
             Self::AssociativeArray(array) => array.values().map(|v| v.to_owned()).collect(),
             Self::IndexedArray(array) => array.values().map(|v| v.to_owned()).collect(),
-            Self::Dynamic { getter, .. } => getter(shell).get_element_values(shell),
+            Self::Dynamic { getter, .. } => getter(shell).element_values(shell),
         }
     }
 

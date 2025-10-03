@@ -16,7 +16,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{error, expansion, extendedtests, functions, jobs, openfiles, processes, sys, timing};
+use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, timing};
 
 /// Encapsulates the result of executing a command.
 #[derive(Debug, Default)]
@@ -186,7 +186,7 @@ impl Execute for ast::Program {
             }
         }
 
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
         Ok(result)
     }
 }
@@ -230,7 +230,7 @@ impl Execute for ast::CompoundList {
             }
         }
 
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
         Ok(result)
     }
 }
@@ -334,7 +334,7 @@ impl Execute for ast::Pipeline {
         }
 
         // Update statuses.
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
 
         // If requested, report timing.
         if let Some(timed) = &self.timed {
@@ -451,12 +451,12 @@ async fn wait_for_pipeline_processes_and_update_status(
         match child.wait(!stopped_children.is_empty()).await? {
             commands::CommandWaitResult::CommandCompleted(current_result) => {
                 result = current_result;
-                shell.last_exit_status = result.exit_code;
+                *shell.last_exit_status_mut() = result.exit_code;
                 shell.last_pipeline_statuses.push(result.exit_code);
             }
             commands::CommandWaitResult::CommandStopped(current_result, child) => {
                 result = current_result;
-                shell.last_exit_status = result.exit_code;
+                *shell.last_exit_status_mut() = result.exit_code;
                 shell.last_pipeline_statuses.push(result.exit_code);
 
                 stopped_children.push(jobs::JobTask::External(child));
@@ -650,7 +650,7 @@ impl Execute for ast::ForClauseCommand {
             }
         }
 
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
         Ok(result)
     }
 }
@@ -711,7 +711,7 @@ impl Execute for ast::CaseClauseCommand {
             }
         }
 
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
 
         Ok(result)
     }
@@ -747,7 +747,7 @@ impl Execute for ast::IfClauseCommand {
         }
 
         let result = ExecutionResult::success();
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
 
         Ok(result)
     }
@@ -825,7 +825,7 @@ impl Execute for ast::ArithmeticCommand {
             ExecutionResult::new(1)
         };
 
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
 
         Ok(result)
     }
@@ -877,7 +877,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
         }
 
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
         Ok(result)
     }
 }
@@ -889,13 +889,10 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell.funcs.update(
-            self.fname.clone(),
-            functions::FunctionRegistration::from(self.clone()),
-        );
+        shell.define_func(self.fname.clone(), self.clone());
 
         let result = ExecutionResult::success();
-        shell.last_exit_status = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code;
 
         Ok(result)
     }
@@ -996,7 +993,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             // That will change how we parse and process args.
                             if context
                                 .shell
-                                .builtins
+                                .builtins()
                                 .get(first_arg)
                                 .is_some_and(|r| !r.disabled && r.declaration_builtin)
                             {
@@ -1016,7 +1013,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             execute_command(context, params, cmd_name, assignments, args).await
         } else {
             // Reset last status.
-            context.shell.last_exit_status = 0;
+            *context.shell.last_exit_status_mut() = 0;
 
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
@@ -1034,7 +1031,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             // Return the last exit status we have; in some cases, an expansion
             // might result in a non-zero exit status stored in the shell.
             Ok(CommandSpawnResult::ImmediateExit(
-                context.shell.last_exit_status,
+                context.shell.last_result(),
             ))
         }
     }
@@ -1359,22 +1356,24 @@ pub(crate) async fn setup_redirect(
             }
 
             let expanded_file_path: PathBuf =
-                shell.get_absolute_path(Path::new(expanded_fields.remove(0).as_str()));
+                shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
-            let opened_file = std::fs::File::options()
+            let mut file_options = std::fs::File::options();
+            file_options
                 .create(true)
                 .write(true)
                 .truncate(!*append)
-                .append(*append)
-                .open(expanded_file_path.as_path())
+                .append(*append);
+
+            let stdout_file = shell
+                .open_file(&file_options, &expanded_file_path, params)
                 .map_err(|err| {
                     error::Error::RedirectionFailure(
                         expanded_file_path.to_string_lossy().to_string(),
-                        err,
+                        err.to_string(),
                     )
                 })?;
 
-            let stdout_file = OpenFile::File(opened_file);
             let stderr_file = stdout_file.try_dup()?;
 
             params.open_files.set(OpenFiles::STDOUT_FD, stdout_file);
@@ -1394,7 +1393,7 @@ pub(crate) async fn setup_redirect(
                     }
 
                     let expanded_file_path: PathBuf =
-                        shell.get_absolute_path(Path::new(expanded_fields.remove(0).as_str()));
+                        shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
                     let default_fd_if_unspecified = get_default_fd_for_redirect_kind(kind);
                     match kind {
@@ -1445,17 +1444,16 @@ pub(crate) async fn setup_redirect(
 
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
-                    let opened_file =
-                        options.open(expanded_file_path.as_path()).map_err(|err| {
+                    let opened_file = shell
+                        .open_file(&options, &expanded_file_path, params)
+                        .map_err(|err| {
                             error::Error::RedirectionFailure(
                                 expanded_file_path.to_string_lossy().to_string(),
-                                err,
+                                err.to_string(),
                             )
                         })?;
 
-                    let target_file = OpenFile::File(opened_file);
-
-                    params.open_files.set(fd_num, target_file);
+                    params.open_files.set(fd_num, opened_file);
                 }
 
                 ast::IoFileRedirectTarget::Fd(fd) => {

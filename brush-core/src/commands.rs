@@ -219,7 +219,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     cmd.args(args);
 
     // Use the shell's current working dir.
-    cmd.current_dir(shell.working_dir.as_path());
+    cmd.current_dir(shell.working_dir());
 
     // Start with a clear environment.
     cmd.env_clear();
@@ -233,7 +233,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
 
     // Add in exported functions.
     if !empty_env {
-        for (func_name, registration) in shell.funcs.iter() {
+        for (func_name, registration) in shell.funcs().iter() {
             if registration.is_exported() {
                 let var_name = std::format!("BASH_FUNC_{func_name}%%");
                 let value = std::format!("() {}", registration.definition.body);
@@ -375,7 +375,7 @@ pub async fn execute(
     // First see if it's the name of a builtin.
     let builtin = cmd_context
         .shell
-        .builtins
+        .builtins()
         .get(&cmd_context.command_name)
         .cloned();
 
@@ -392,7 +392,7 @@ pub async fn execute(
     if use_functions {
         if let Some(func_reg) = cmd_context
             .shell
-            .funcs
+            .funcs()
             .get(cmd_context.command_name.as_str())
         {
             // Strip the function name off args.
@@ -546,20 +546,20 @@ pub(crate) fn execute_external_command(
                 sys::terminal::move_self_to_foreground()?;
             }
 
-            if !context.shell.working_dir.exists() {
+            if !context.shell.working_dir().exists() {
                 // We may have failed because the working directory doesn't exist.
                 writeln!(
                     stderr,
                     "{}: working directory does not exist: {}",
                     context.shell.shell_name.as_ref().unwrap_or(&String::new()),
-                    context.shell.working_dir.display()
+                    context.shell.working_dir().display()
                 )?;
             } else if context.shell.options.sh_mode {
                 writeln!(
                     stderr,
                     "{}: {}: {}: not found",
                     context.shell.shell_name.as_ref().unwrap_or(&String::new()),
-                    context.shell.get_current_input_line_number(),
+                    context.shell.current_line_number(),
                     context.command_name
                 )?;
             } else {
@@ -696,7 +696,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     let result = run_substitution_command(subshell, params, s).await?;
 
     // Store the status.
-    shell.last_exit_status = result.exit_code;
+    *shell.last_exit_status_mut() = result.exit_code;
 
     // Extract output.
     let output_str = std::io::read_to_string(OpenFile::from(reader))?;

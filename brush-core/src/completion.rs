@@ -259,7 +259,7 @@ impl Spec {
                 .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
 
             let expansions = pattern.expand(
-                shell.working_dir.as_path(),
+                shell.working_dir(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
                 &patterns::FilenameExpansionOptions::default(),
             )?;
@@ -410,7 +410,7 @@ impl Spec {
                     tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -A binding");
                 }
                 CompleteAction::Builtin => {
-                    for name in shell.builtins.keys() {
+                    for name in shell.builtins().keys() {
                         if name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
@@ -426,14 +426,14 @@ impl Spec {
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Disabled => {
-                    for (name, registration) in &shell.builtins {
+                    for (name, registration) in shell.builtins() {
                         if registration.disabled && name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Enabled => {
-                    for (name, registration) in &shell.builtins {
+                    for (name, registration) in shell.builtins() {
                         if !registration.disabled && name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
@@ -452,7 +452,7 @@ impl Spec {
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Function => {
-                    for (name, _) in shell.funcs.iter() {
+                    for (name, _) in shell.funcs().iter() {
                         candidates.insert(name.to_owned());
                     }
                 }
@@ -465,7 +465,7 @@ impl Spec {
                 }
                 CompleteAction::HelpTopic => {
                     // For now, we only have help topics for built-in commands.
-                    for name in shell.builtins.keys() {
+                    for name in shell.builtins().keys() {
                         if name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
@@ -482,7 +482,7 @@ impl Spec {
                 }
                 CompleteAction::Job => {
                     for job in &shell.jobs.jobs {
-                        let command_name = job.get_command_name();
+                        let command_name = job.command_name();
                         if command_name.starts_with(token) {
                             candidates.insert(command_name.to_owned());
                         }
@@ -498,7 +498,7 @@ impl Spec {
                 CompleteAction::Running => {
                     for job in &shell.jobs.jobs {
                         if matches!(job.state, jobs::JobState::Running) {
-                            let command_name = job.get_command_name();
+                            let command_name = job.command_name();
                             if command_name.starts_with(token) {
                                 candidates.insert(command_name.to_owned());
                             }
@@ -534,9 +534,9 @@ impl Spec {
                 CompleteAction::Stopped => {
                     for job in &shell.jobs.jobs {
                         if matches!(job.state, jobs::JobState::Stopped) {
-                            let command_name = job.get_command_name();
+                            let command_name = job.command_name();
                             if command_name.starts_with(token) {
-                                candidates.insert(job.get_command_name().to_owned());
+                                candidates.insert(job.command_name().to_owned());
                             }
                         }
                     }
@@ -1008,7 +1008,7 @@ impl Config {
         const FALLBACK: &str = " \t\n\"\'@><=;|&(:";
 
         let delimiter_str = shell
-            .get_env_str("COMP_WORDBREAKS")
+            .env_str("COMP_WORDBREAKS")
             .unwrap_or_else(|| FALLBACK.into());
 
         let delimiters: Vec<_> = delimiter_str.chars().collect();
@@ -1080,7 +1080,7 @@ async fn get_file_completions(
 
     let glob = std::format!("{expanded_token}*");
 
-    let path_filter = |path: &Path| !must_be_dir || shell.get_absolute_path(path).is_dir();
+    let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
 
     let pattern = patterns::Pattern::from(glob)
         .set_extended_globbing(shell.options.extended_globbing)
@@ -1088,7 +1088,7 @@ async fn get_file_completions(
 
     pattern
         .expand(
-            shell.working_dir.as_path(),
+            shell.working_dir(),
             Some(&path_filter),
             &patterns::FilenameExpansionOptions::default(),
         )
@@ -1131,14 +1131,14 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
         candidates.append(&mut command_completions);
 
         // Add built-in commands.
-        for (name, registration) in &shell.builtins {
+        for (name, registration) in shell.builtins() {
             if !registration.disabled && name.starts_with(context.token_to_complete) {
                 candidates.insert(name.to_owned());
             }
         }
 
         // Add shell functions.
-        for (name, _) in shell.funcs.iter() {
+        for (name, _) in shell.funcs().iter() {
             if name.starts_with(context.token_to_complete) {
                 candidates.insert(name.to_owned());
             }

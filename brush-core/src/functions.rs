@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 /// An environment for defined, named functions.
 #[derive(Clone, Default)]
 pub struct FunctionEnv {
-    functions: HashMap<String, FunctionRegistration>,
+    functions: HashMap<String, Registration>,
 }
 
 impl FunctionEnv {
@@ -14,7 +14,7 @@ impl FunctionEnv {
     /// # Arguments
     ///
     /// * `name` - The name of the function to retrieve.
-    pub fn get(&self, name: &str) -> Option<&FunctionRegistration> {
+    pub fn get(&self, name: &str) -> Option<&Registration> {
         self.functions.get(name)
     }
 
@@ -24,7 +24,7 @@ impl FunctionEnv {
     /// # Arguments
     ///
     /// * `name` - The name of the function to retrieve.
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut FunctionRegistration> {
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Registration> {
         self.functions.get_mut(name)
     }
 
@@ -33,7 +33,7 @@ impl FunctionEnv {
     /// # Arguments
     ///
     /// * `name` - The name of the function to remove.
-    pub fn remove(&mut self, name: &str) -> Option<FunctionRegistration> {
+    pub fn remove(&mut self, name: &str) -> Option<Registration> {
         self.functions.remove(name)
     }
 
@@ -43,7 +43,7 @@ impl FunctionEnv {
     ///
     /// * `name` - The name of the function to update.
     /// * `registration` - The new registration for the function.
-    pub fn update(&mut self, name: String, registration: FunctionRegistration) {
+    pub fn update(&mut self, name: String, registration: Registration) {
         self.functions.insert(name, registration);
     }
 
@@ -53,21 +53,21 @@ impl FunctionEnv {
     }
 
     /// Returns an iterator over the functions registered in this environment.
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &FunctionRegistration)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Registration)> {
         self.functions.iter()
     }
 }
 
 /// Encapsulates a registration for a defined function.
 #[derive(Clone)]
-pub struct FunctionRegistration {
+pub struct Registration {
     /// The definition of the function.
     pub(crate) definition: Arc<brush_parser::ast::FunctionDefinition>,
     /// Whether or not this function definition should be exported to children.
     exported: bool,
 }
 
-impl From<brush_parser::ast::FunctionDefinition> for FunctionRegistration {
+impl From<brush_parser::ast::FunctionDefinition> for Registration {
     fn from(definition: brush_parser::ast::FunctionDefinition) -> Self {
         Self {
             definition: Arc::new(definition),
@@ -76,7 +76,7 @@ impl From<brush_parser::ast::FunctionDefinition> for FunctionRegistration {
     }
 }
 
-impl FunctionRegistration {
+impl Registration {
     /// Returns a reference to the function definition.
     pub fn definition(&self) -> &brush_parser::ast::FunctionDefinition {
         &self.definition

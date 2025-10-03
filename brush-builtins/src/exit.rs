@@ -18,7 +18,7 @@ impl builtins::Command for ExitCommand {
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8
         } else {
-            context.shell.last_exit_status
+            context.shell.last_result()
         };
 
         Ok(builtins::ExitCode::ExitShell(code_8bit))

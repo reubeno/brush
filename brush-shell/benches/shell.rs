@@ -112,7 +112,7 @@ mod unix {
 
         // Benchmark: function invocation.
         let mut shell = rt.block_on(instantiate_shell());
-        shell.funcs.update(
+        shell.define_func(
             String::from("testfunc"),
             brush_parser::ast::FunctionDefinition {
                 fname: String::from("testfunc"),
@@ -125,8 +125,7 @@ mod unix {
                     None,
                 ),
                 source: String::from("/some/path"),
-            }
-            .into(),
+            },
         );
         c.bench_function("function_call", |b| {
             b.iter_batched_ref(

@@ -423,7 +423,7 @@ fn display_all(context: &brush_core::ExecutionContext<'_>) -> Result<(), brush_c
 
     // Display functions... unless we're in posix compliance mode.
     if !context.shell.options.posix_mode {
-        for (_name, registration) in context.shell.funcs.iter().sorted_by_key(|v| v.0) {
+        for (_name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
             writeln!(context.stdout(), "{}", registration.definition())?;
         }
     }

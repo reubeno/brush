@@ -90,7 +90,7 @@ impl builtins::Command for BindCommand {
         &self,
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        if let Some(key_bindings) = &context.shell.key_bindings {
+        if let Some(key_bindings) = context.shell.key_bindings() {
             Ok(self.execute_impl(key_bindings, &context).await?)
         } else {
             writeln!(

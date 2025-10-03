@@ -161,7 +161,7 @@ impl TypeCommand {
 
             // Check for functions.
             if !self.suppress_func_lookup {
-                if let Some(registration) = shell.funcs.get(name) {
+                if let Some(registration) = shell.funcs().get(name) {
                     types.push(ResolvedType::Function(registration.definition()));
                     if !self.all_locations {
                         return types;
@@ -170,7 +170,7 @@ impl TypeCommand {
             }
 
             // Check for builtins.
-            if shell.builtins.get(name).is_some_and(|b| !b.disabled) {
+            if shell.builtins().get(name).is_some_and(|b| !b.disabled) {
                 types.push(ResolvedType::Builtin);
                 if !self.all_locations {
                     return types;
@@ -180,7 +180,7 @@ impl TypeCommand {
 
         // Look in path.
         if name.contains(std::path::MAIN_SEPARATOR) {
-            if shell.get_absolute_path(Path::new(name)).executable() {
+            if shell.absolute_path(Path::new(name)).executable() {
                 types.push(ResolvedType::File {
                     path: PathBuf::from(name),
                     hashed: false,

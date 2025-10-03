@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use normalize_path::NormalizePath;
-use rand::Rng;
 use tokio::sync::Mutex;
 
 use crate::arithmetic::Evaluatable;
@@ -14,48 +13,44 @@ use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
 use crate::options::RuntimeOptions;
 use crate::sys::fs::PathExt;
-use crate::variables::{self, ShellValue, ShellVariable};
+use crate::variables::{self, ShellVariable};
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     prompt, sys::users, traps,
 };
-use crate::{history, interfaces, pathcache, pathsearch, sys, trace_categories};
-
-const BASH_MAJOR: u32 = 5;
-const BASH_MINOR: u32 = 2;
-const BASH_PATCH: u32 = 15;
-const BASH_BUILD: u32 = 1;
-const BASH_RELEASE: &str = "release";
-const BASH_MACHINE: &str = "unknown";
+use crate::{history, interfaces, pathcache, pathsearch, trace_categories, wellknownvars};
 
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 
 /// Represents an instance of a shell.
 pub struct Shell {
-    //
-    // Core state required by specification
     /// Trap handler configuration for the shell.
     pub traps: traps::TrapHandlerConfig,
+
     /// Manages files opened and accessible via redirection operators.
     pub open_files: openfiles::OpenFiles,
+
     /// The current working directory.
-    pub working_dir: PathBuf,
+    working_dir: PathBuf,
+
     /// The shell environment, containing shell variables.
     pub env: ShellEnvironment,
+
     /// Shell function definitions.
-    pub funcs: functions::FunctionEnv,
+    funcs: functions::FunctionEnv,
+
     /// Runtime shell options.
     pub options: RuntimeOptions,
+
     /// State of managed jobs.
     pub jobs: jobs::JobManager,
+
     /// Shell aliases.
     pub aliases: HashMap<String, String>,
 
-    //
-    // Additional state
     /// The status of the last completed command.
-    pub last_exit_status: u8,
+    last_exit_status: u8,
 
     /// The status of each of the commands in the last pipeline.
     pub last_pipeline_statuses: Vec<u8>,
@@ -67,13 +62,13 @@ pub struct Shell {
     pub shell_name: Option<String>,
 
     /// Shell version
-    pub shell_version: Option<String>,
+    version: Option<String>,
 
     /// Positional parameters stack ($1 and beyond)
     pub positional_parameters: Vec<String>,
 
     /// Detailed display string for the shell
-    pub shell_product_display_str: Option<String>,
+    product_display_str: Option<String>,
 
     /// Script call stack.
     script_call_stack: VecDeque<(ScriptCallType, String)>,
@@ -91,7 +86,7 @@ pub struct Shell {
     pub completion_config: completion::Config,
 
     /// Shell built-in commands.
-    pub builtins: HashMap<String, builtins::Registration>,
+    builtins: HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
     pub program_location_cache: pathcache::PathCache,
@@ -103,7 +98,7 @@ pub struct Shell {
     last_stopwatch_offset: u32,
 
     /// Key bindings for the shell, optionally implemented by an interactive shell.
-    pub key_bindings: Option<KeyBindingsHelper>,
+    key_bindings: Option<KeyBindingsHelper>,
 
     /// History of commands executed in the shell.
     history: Option<history::History>,
@@ -124,8 +119,8 @@ impl Clone for Shell {
             last_pipeline_statuses: self.last_pipeline_statuses.clone(),
             positional_parameters: self.positional_parameters.clone(),
             shell_name: self.shell_name.clone(),
-            shell_version: self.shell_version.clone(),
-            shell_product_display_str: self.shell_product_display_str.clone(),
+            version: self.version.clone(),
+            product_display_str: self.product_display_str.clone(),
             function_call_stack: self.function_call_stack.clone(),
             script_call_stack: self.script_call_stack.clone(),
             directory_stack: self.directory_stack.clone(),
@@ -171,17 +166,20 @@ impl<S: shell_builder::State> ShellBuilder<S> {
         self.disabled_options.push(option.into());
         self
     }
+
     /// Add an enabled option
     pub fn enable_option(mut self, option: impl Into<String>) -> Self {
         self.enabled_options.push(option.into());
         self
     }
+
     /// Add many disabled options
     pub fn disable_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
         self.disabled_options
             .extend(options.into_iter().map(Into::into));
         self
     }
+
     /// Add many enabled options
     pub fn enable_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
         self.enabled_options
@@ -194,17 +192,20 @@ impl<S: shell_builder::State> ShellBuilder<S> {
         self.disabled_shopt_options.push(option.into());
         self
     }
+
     /// Add an enabled shopt option
     pub fn enable_shopt_option(mut self, option: impl Into<String>) -> Self {
         self.enabled_shopt_options.push(option.into());
         self
     }
+
     /// Add many disabled shopt options
     pub fn disable_shopt_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
         self.disabled_shopt_options
             .extend(options.into_iter().map(Into::into));
         self
     }
+
     /// Add many enabled shopt options
     pub fn enable_shopt_options(mut self, options: impl IntoIterator<Item: Into<String>>) -> Self {
         self.enabled_shopt_options
@@ -217,6 +218,7 @@ impl<S: shell_builder::State> ShellBuilder<S> {
         self.builtins.insert(name.into(), reg);
         self
     }
+
     /// Add many builtin registrations
     pub fn builtins(
         mut self,
@@ -328,9 +330,9 @@ pub enum ScriptCallType {
 #[derive(Clone, Debug)]
 pub struct FunctionCall {
     /// The name of the function invoked.
-    function_name: String,
+    pub function_name: String,
     /// The definition of the invoked function.
-    function_definition: Arc<brush_parser::ast::FunctionDefinition>,
+    pub function_definition: Arc<brush_parser::ast::FunctionDefinition>,
 }
 
 impl Shell {
@@ -359,8 +361,8 @@ impl Shell {
             last_pipeline_statuses: vec![0],
             positional_parameters: vec![],
             shell_name: options.shell_name,
-            shell_version: options.shell_version,
-            shell_product_display_str: options.shell_product_display_str,
+            version: options.shell_version,
+            product_display_str: options.shell_product_display_str,
             function_call_stack: VecDeque::new(),
             script_call_stack: VecDeque::new(),
             directory_stack: vec![],
@@ -380,13 +382,18 @@ impl Shell {
         shell.options.extended_globbing = true;
 
         // Initialize environment.
-        shell.initialize_vars(options.do_not_inherit_env)?;
+        wellknownvars::initialize_vars(&mut shell, options.do_not_inherit_env)?;
 
         // Set up history, if relevant.
         if shell.options.enable_command_history {
-            if let Some(history_path) = shell.get_history_file_path() {
-                if history_path.exists() {
-                    shell.history = Some(history::History::import(history_path.as_path())?);
+            if let Some(history_path) = shell.history_file_path() {
+                let mut options = std::fs::File::options();
+                options.read(true);
+
+                if let Ok(history_file) =
+                    shell.open_file(&options, history_path, &shell.default_exec_params())
+                {
+                    shell.history = Some(history::History::import(history_file)?);
                 }
             }
 
@@ -407,470 +414,138 @@ impl Shell {
         Ok(shell)
     }
 
-    fn initialize_exported_func(
+    /// Returns the current source line number being processed.
+    pub const fn current_line_number(&self) -> u32 {
+        self.current_line_number
+    }
+
+    /// Returns the shell's official version string (if available).
+    pub const fn version(&self) -> &Option<String> {
+        &self.version
+    }
+
+    /// Returns the exit status of the last command executed in this shell.
+    pub const fn last_result(&self) -> u8 {
+        self.last_exit_status
+    }
+
+    /// Returns a reference to the current function call stack for the shell.
+    pub const fn function_call_stack(&self) -> &VecDeque<FunctionCall> {
+        &self.function_call_stack
+    }
+
+    /// Returns a reference to the current script call stack for the shell.
+    pub const fn script_call_stack(&self) -> &VecDeque<(ScriptCallType, String)> {
+        &self.script_call_stack
+    }
+
+    /// Returns a mutable reference to the last exit status.
+    pub const fn last_exit_status_mut(&mut self) -> &mut u8 {
+        &mut self.last_exit_status
+    }
+
+    /// Returns the key bindings helper for the shell.
+    pub const fn key_bindings(&self) -> &Option<KeyBindingsHelper> {
+        &self.key_bindings
+    }
+
+    /// Returns the registered builtins for the shell.
+    pub const fn builtins(&self) -> &HashMap<String, builtins::Registration> {
+        &self.builtins
+    }
+
+    /// Returns the shell's current working directory.
+    pub fn working_dir(&self) -> &Path {
+        &self.working_dir
+    }
+
+    /// Returns a mutable reference to the shell's current working directory.
+    /// This is only accessible within the crate.
+    pub(crate) const fn working_dir_mut(&mut self) -> &mut PathBuf {
+        &mut self.working_dir
+    }
+
+    /// Returns the product display name for this shell.
+    pub const fn product_display_str(&self) -> &Option<String> {
+        &self.product_display_str
+    }
+
+    /// Returns the function definition environment for this shell.
+    pub const fn funcs(&self) -> &functions::FunctionEnv {
+        &self.funcs
+    }
+
+    /// Tries to undefine a function in the shell's environment. Returns whether or
+    /// not a definition was removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to undefine.
+    pub fn undefine_func(&mut self, name: &str) -> bool {
+        self.funcs.remove(name).is_some()
+    }
+
+    /// Defines a function in the shell's environment. If a function already exists
+    /// with the given name, it is replaced with the new definition.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to define.
+    /// * `definition` - The function's definition.
+    pub fn define_func(
         &mut self,
-        func_name: &str,
+        name: impl Into<String>,
+        definition: brush_parser::ast::FunctionDefinition,
+    ) {
+        self.funcs.update(name.into(), definition.into());
+    }
+
+    /// Tries to return a mutable reference to the registration for a named function.
+    /// Returns `None` if no such function was found.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to lookup
+    pub fn func_mut(&mut self, name: &str) -> Option<&mut functions::Registration> {
+        self.funcs.get_mut(name)
+    }
+
+    /// Tries to define a function in the shell's environment using the given
+    /// string as its body.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function
+    /// * `body_text` - The body of the function, expected to start with "()".
+    pub fn define_func_from_str(
+        &mut self,
+        name: impl Into<String>,
         body_text: &str,
     ) -> Result<(), error::Error> {
+        let name = name.into();
+
         let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
         let func_body = parser.parse_function_parens_and_body()?;
 
-        let func_def = brush_parser::ast::FunctionDefinition {
-            fname: func_name.to_owned(),
+        let def = brush_parser::ast::FunctionDefinition {
+            fname: name.clone(),
             body: func_body,
             source: String::new(),
         };
 
-        let mut registration = functions::FunctionRegistration::from(func_def);
-        registration.export();
-
-        self.funcs.update(func_name.to_owned(), registration);
+        self.define_func(name, def);
 
         Ok(())
     }
 
-    #[expect(clippy::too_many_lines)]
-    #[expect(clippy::unwrap_in_result)]
-    fn initialize_vars(&mut self, do_not_inherit_env: bool) -> Result<(), error::Error> {
-        // Seed parameters from environment (unless requested not to do so).
-        if !do_not_inherit_env {
-            for (k, v) in std::env::vars() {
-                // See if it's a function exported by an ancestor process.
-                if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
-                    if let Some(func_name) = func_name.strip_suffix("%%") {
-                        // Intentionally best-effort; don't fail out of the shell if we can't
-                        // parse an incoming function.
-                        let _ = self.initialize_exported_func(func_name, v.as_str());
-                        continue;
-                    }
-                }
+    /// Returns the last "SECONDS" captured time.
+    pub const fn last_stopwatch_time(&self) -> std::time::SystemTime {
+        self.last_stopwatch_time
+    }
 
-                let mut var = ShellVariable::new(ShellValue::String(v));
-                var.export();
-                self.env.set_global(k, var)?;
-            }
-        }
-
-        let shell_version = self.shell_version.clone();
-        self.env.set_global(
-            "BRUSH_VERSION",
-            ShellVariable::new(shell_version.unwrap_or_default()),
-        )?;
-
-        // TODO(#479): implement $_
-
-        // BASH
-        if let Some(shell_name) = &self.shell_name {
-            self.env
-                .set_global("BASH", ShellVariable::new(shell_name))?;
-        }
-
-        // BASHOPTS
-        let mut bashopts_var = ShellVariable::new(ShellValue::Dynamic {
-            getter: |shell| shell.options.get_shopt_optstr().into(),
-            setter: |_| (),
-        });
-        bashopts_var.set_readonly();
-        self.env.set_global("BASHOPTS", bashopts_var)?;
-
-        // BASHPID
-        #[cfg(not(target_family = "wasm"))]
-        {
-            let mut bashpid_var =
-                ShellVariable::new(ShellValue::String(std::process::id().to_string()));
-            bashpid_var.treat_as_integer();
-            self.env.set_global("BASHPID", bashpid_var)?;
-        }
-
-        // BASH_ALIASES
-        self.env.set_global(
-            "BASH_ALIASES",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| {
-                    let values = variables::ArrayLiteral(
-                        shell
-                            .aliases
-                            .iter()
-                            .map(|(k, v)| (Some(k.to_owned()), v.to_owned()))
-                            .collect::<Vec<_>>(),
-                    );
-
-                    ShellValue::associative_array_from_literals(values).unwrap()
-                },
-                setter: |_| (),
-            }),
-        )?;
-
-        // TODO(vars): when extdebug is enabled, BASH_ARGC and BASH_ARGV are set to valid values
-        // TODO(vars): implement BASH_ARGC
-        // TODO(vars): implement BASH_ARGV
-
-        // BASH_ARGV0
-        self.env.set_global(
-            "BASH_ARGV0",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| {
-                    let argv0 = shell.shell_name.as_deref().unwrap_or_default();
-                    argv0.to_string().into()
-                },
-                // TODO(vars): implement updating BASH_ARGV0
-                setter: |_| (),
-            }),
-        )?;
-
-        // TODO(vars): implement mutation of BASH_CMDS
-        self.env.set_global(
-            "BASH_CMDS",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| shell.program_location_cache.to_value().unwrap(),
-                setter: |_| (),
-            }),
-        )?;
-
-        // TODO(vars): implement BASH_COMMAND
-        // TODO(vars): implement BASH_EXECUTIION_STRING
-        // TODO(vars): implement BASH_LINENO
-
-        // BASH_SOURCE
-        self.env.set_global(
-            "BASH_SOURCE",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| shell.get_bash_source_value(),
-                setter: |_| (),
-            }),
-        )?;
-
-        // BASH_SUBSHELL
-        self.env.set_global(
-            "BASH_SUBSHELL",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| shell.depth.to_string().into(),
-                setter: |_| (),
-            }),
-        )?;
-
-        // BASH_VERSINFO
-        let mut bash_versinfo_var = ShellVariable::new(ShellValue::indexed_array_from_strs(
-            [
-                BASH_MAJOR.to_string().as_str(),
-                BASH_MINOR.to_string().as_str(),
-                BASH_PATCH.to_string().as_str(),
-                BASH_BUILD.to_string().as_str(),
-                BASH_RELEASE,
-                BASH_MACHINE,
-            ]
-            .as_slice(),
-        ));
-        bash_versinfo_var.set_readonly();
-        self.env.set_global("BASH_VERSINFO", bash_versinfo_var)?;
-
-        // BASH_VERSION
-        // This is the Bash interface version. See BRUSH_VERSION for its implementation version.
-        self.env.set_global(
-            "BASH_VERSION",
-            ShellVariable::new(std::format!(
-                "{BASH_MAJOR}.{BASH_MINOR}.{BASH_PATCH}({BASH_BUILD})-{BASH_RELEASE}"
-            )),
-        )?;
-
-        // COMP_WORDBREAKS
-        self.env
-            .set_global("COMP_WORDBREAKS", ShellVariable::new(" \t\n\"\'@><=;|&(:"))?;
-
-        // DIRSTACK
-        self.env.set_global(
-            "DIRSTACK",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| {
-                    shell
-                        .directory_stack
-                        .iter()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .collect::<Vec<_>>()
-                        .into()
-                },
-                setter: |_| (),
-            }),
-        )?;
-
-        // EPOCHREALTIME
-        self.env.set_global(
-            "EPOCHREALTIME",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |_shell| {
-                    let now = std::time::SystemTime::now();
-                    let since_epoch = now
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default();
-                    since_epoch.as_secs_f64().to_string().into()
-                },
-                setter: |_| (),
-            }),
-        )?;
-
-        // EPOCHSECONDS
-        self.env.set_global(
-            "EPOCHSECONDS",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |_shell| {
-                    let now = std::time::SystemTime::now();
-                    let since_epoch = now
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default();
-                    since_epoch.as_secs().to_string().into()
-                },
-                setter: |_| (),
-            }),
-        )?;
-
-        // EUID
-        #[cfg(unix)]
-        {
-            let mut euid_var = ShellVariable::new(ShellValue::String(format!(
-                "{}",
-                uzers::get_effective_uid()
-            )));
-            euid_var.treat_as_integer().set_readonly();
-            self.env.set_global("EUID", euid_var)?;
-        }
-
-        // FUNCNAME
-        self.env.set_global(
-            "FUNCNAME",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| shell.get_funcname_value(),
-                setter: |_| (),
-            }),
-        )?;
-
-        // GROUPS
-        // N.B. We could compute this up front, but we choose to make it dynamic so that we
-        // don't have to make costly system calls if the user never accesses it.
-        self.env.set_global(
-            "GROUPS",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |_shell| {
-                    let groups = get_current_user_gids();
-                    ShellValue::indexed_array_from_strings(
-                        groups.into_iter().map(|gid| gid.to_string()),
-                    )
-                },
-                setter: |_| (),
-            }),
-        )?;
-
-        // HISTCMD
-        let mut histcmd_var = ShellVariable::new(ShellValue::Dynamic {
-            getter: |shell| {
-                shell
-                    .history
-                    .as_ref()
-                    .map_or_else(|| "0".into(), |h| h.count().to_string().into())
-            },
-            setter: |_| (),
-        });
-        histcmd_var.treat_as_integer();
-        self.env.set_global("HISTCMD", histcmd_var)?;
-
-        // HISTFILE (if not already set)
-        if !self.env.is_set("HISTFILE") {
-            if let Some(home_dir) = self.get_home_dir() {
-                let histfile = home_dir.join(".brush_history");
-                self.env.set_global(
-                    "HISTFILE",
-                    ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
-                )?;
-            }
-        }
-
-        // HOSTNAME
-        self.env.set_global(
-            "HOSTNAME",
-            ShellVariable::new(
-                sys::network::get_hostname()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string(),
-            ),
-        )?;
-
-        // HOSTTYPE
-        #[cfg(unix)]
-        {
-            if let Ok(info) = nix::sys::utsname::uname() {
-                self.env.set_global(
-                    "HOSTTYPE",
-                    ShellVariable::new(info.machine().to_string_lossy().to_string()),
-                )?;
-            }
-        }
-
-        // IFS
-        self.env.set_global("IFS", ShellVariable::new(" \t\n"))?;
-
-        // LINENO
-        self.env.set_global(
-            "LINENO",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| shell.current_line_number.to_string().into(),
-                setter: |_| (),
-            }),
-        )?;
-
-        // MACHTYPE
-        self.env
-            .set_global("MACHTYPE", ShellVariable::new(BASH_MACHINE))?;
-
-        // OLDPWD (initialization)
-        if !self.env.is_set("OLDPWD") {
-            let mut oldpwd_var =
-                ShellVariable::new(ShellValue::Unset(variables::ShellValueUnsetType::Untyped));
-            oldpwd_var.export();
-            self.env.set_global("OLDPWD", oldpwd_var)?;
-        }
-
-        // OPTERR
-        self.env.set_global("OPTERR", ShellVariable::new("1"))?;
-
-        // OPTIND
-        let mut optind_var = ShellVariable::new("1");
-        optind_var.treat_as_integer();
-        self.env.set_global("OPTIND", optind_var)?;
-
-        // OSTYPE
-        let os_type = match std::env::consts::OS {
-            "linux" => "linux-gnu",
-            "windows" => "windows",
-            _ => "unknown",
-        };
-        self.env.set_global("OSTYPE", ShellVariable::new(os_type))?;
-
-        // PATH (if not already set)
-        #[cfg(unix)]
-        if !self.env.is_set("PATH") {
-            let default_path_str = sys::fs::get_default_executable_search_paths().join(":");
-            self.env
-                .set_global("PATH", ShellVariable::new(default_path_str))?;
-        }
-
-        // PIPESTATUS
-        // TODO: Investigate what happens if this gets unset.
-        // TODO: Investigate if this needs to be saved/preserved across prompt display.
-        self.env.set_global(
-            "PIPESTATUS",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| {
-                    ShellValue::indexed_array_from_strings(
-                        shell.last_pipeline_statuses.iter().map(|s| s.to_string()),
-                    )
-                },
-                setter: |_| (),
-            }),
-        )?;
-
-        // PPID
-        if let Some(ppid) = sys::terminal::get_parent_process_id() {
-            let mut ppid_var = ShellVariable::new(ppid.to_string());
-            ppid_var.treat_as_integer().set_readonly();
-            self.env.set_global("PPID", ppid_var)?;
-        }
-
-        // RANDOM
-        let mut random_var = ShellVariable::new(ShellValue::Dynamic {
-            getter: get_random_value,
-            setter: |_| (),
-        });
-        random_var.treat_as_integer();
-        self.env.set_global("RANDOM", random_var)?;
-
-        // SECONDS
-        self.env.set_global(
-            "SECONDS",
-            ShellVariable::new(ShellValue::Dynamic {
-                getter: |shell| {
-                    let now = std::time::SystemTime::now();
-                    let since_last = now
-                        .duration_since(shell.last_stopwatch_time)
-                        .unwrap_or_default();
-                    let total_seconds =
-                        since_last.as_secs() + u64::from(shell.last_stopwatch_offset);
-                    total_seconds.to_string().into()
-                },
-                // TODO(vars): implement updating SECONDS
-                setter: |_| (),
-            }),
-        )?;
-
-        // SHELL
-        if let Ok(exe_path) = std::env::current_exe() {
-            self.env.set_global(
-                "SHELL",
-                ShellVariable::new(exe_path.to_string_lossy().to_string()),
-            )?;
-        }
-
-        // SHELLOPTS
-        let mut shellopts_var = ShellVariable::new(ShellValue::Dynamic {
-            getter: |shell| shell.options.get_set_o_optstr().into(),
-            setter: |_| (),
-        });
-        shellopts_var.set_readonly();
-        self.env.set_global("SHELLOPTS", shellopts_var)?;
-
-        // SHLVL
-        let input_shlvl = self.get_env_str("SHLVL").unwrap_or_else(|| "0".into());
-        let updated_shlvl = input_shlvl.as_ref().parse::<u32>().unwrap_or(0) + 1;
-        let mut shlvl_var = ShellVariable::new(updated_shlvl.to_string());
-        shlvl_var.export();
-        self.env.set_global("SHLVL", shlvl_var)?;
-
-        // SRANDOM
-        let mut random_var = ShellVariable::new(ShellValue::Dynamic {
-            getter: get_srandom_value,
-            setter: |_| (),
-        });
-        random_var.treat_as_integer();
-        self.env.set_global("SRANDOM", random_var)?;
-
-        // PS1 / PS2
-        if self.options.interactive {
-            if !self.env.is_set("PS1") {
-                self.env
-                    .set_global("PS1", ShellVariable::new(r"\s-\v\$ "))?;
-            }
-
-            if !self.env.is_set("PS2") {
-                self.env.set_global("PS2", ShellVariable::new("> "))?;
-            }
-        }
-
-        // PS4
-        if !self.env.is_set("PS4") {
-            self.env.set_global("PS4", ShellVariable::new("+ "))?;
-        }
-
-        //
-        // PWD
-        //
-        // Reflect our actual working directory. There's a chance
-        // we inherited an out-of-sync version of the variable. Future updates
-        // will be handled by set_working_dir().
-        //
-        let pwd = self.working_dir.to_string_lossy().to_string();
-        let mut pwd_var = ShellVariable::new(pwd);
-        pwd_var.export();
-        self.env.set_global("PWD", pwd_var)?;
-
-        // UID
-        #[cfg(unix)]
-        {
-            let mut uid_var =
-                ShellVariable::new(ShellValue::String(format!("{}", uzers::get_current_uid())));
-            uid_var.treat_as_integer().set_readonly();
-            self.env.set_global("UID", uid_var)?;
-        }
-
-        Ok(())
+    /// Returns the last "SECONDS" offset requested.
+    pub const fn last_stopwatch_offset(&self) -> u32 {
+        self.last_stopwatch_offset
     }
 
     async fn load_config(
@@ -898,7 +573,7 @@ impl Shell {
             //
             self.source_if_exists(Path::new("/etc/profile"), &params)
                 .await?;
-            if let Some(home_path) = self.get_home_dir() {
+            if let Some(home_path) = self.home_dir() {
                 if self.options.sh_mode {
                     self.source_if_exists(home_path.join(".profile").as_path(), &params)
                         .await?;
@@ -937,7 +612,7 @@ impl Shell {
                     //
                     self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
                         .await?;
-                    if let Some(home_path) = self.get_home_dir() {
+                    if let Some(home_path) = self.home_dir() {
                         self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
                             .await?;
                         self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
@@ -1015,8 +690,12 @@ impl Shell {
     ) -> Result<ExecutionResult, error::Error> {
         let path = path.as_ref();
         tracing::debug!("sourcing: {}", path.display());
+
+        let mut options = std::fs::File::options();
+        options.read(true);
+
         let opened_file: openfiles::OpenFile = self
-            .open_file(path, params)
+            .open_file(&options, path, params)
             .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e.into()))?;
 
         if opened_file.is_dir() {
@@ -1269,7 +948,7 @@ impl Shell {
                 Ok(result) => result,
                 Err(e) => {
                     tracing::error!("error: {:#}", e);
-                    self.last_exit_status = 1;
+                    *self.last_exit_status_mut() = 1;
                     ExecutionResult::new(1)
                 }
             },
@@ -1283,13 +962,13 @@ impl Shell {
                     error_loc.line,
                     error_loc.column,
                 );
-                self.last_exit_status = 2;
+                *self.last_exit_status_mut() = 2;
                 ExecutionResult::new(2)
             }
             Err(brush_parser::ParseError::ParsingAtEndOfInput) => {
                 tracing::error!("{}syntax error at end of input", error_prefix);
 
-                self.last_exit_status = 2;
+                *self.last_exit_status_mut() = 2;
                 ExecutionResult::new(2)
             }
             Err(brush_parser::ParseError::Tokenizing { inner, position }) => {
@@ -1306,7 +985,7 @@ impl Shell {
 
                 tracing::error!("{}", error_message);
 
-                self.last_exit_status = 2;
+                *self.last_exit_status_mut() = 2;
                 ExecutionResult::new(2)
             }
         };
@@ -1381,13 +1060,8 @@ impl Shell {
         expansion::basic_expand_str(self, &params, &formatted_prompt).await
     }
 
-    /// Returns the exit status of the last command executed in this shell.
-    pub const fn last_result(&self) -> u8 {
-        self.last_exit_status
-    }
-
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
-        self.get_env_str(name).unwrap_or_else(|| default.into())
+        self.env_str(name).unwrap_or_else(|| default.into())
     }
 
     /// Returns the options that should be used for parsing shell programs; reflects
@@ -1461,47 +1135,20 @@ impl Shell {
         Ok(())
     }
 
-    fn get_funcname_value(&self) -> variables::ShellValue {
-        if self.function_call_stack.is_empty() {
-            ShellValue::Unset(variables::ShellValueUnsetType::IndexedArray)
-        } else {
-            self.function_call_stack
-                .iter()
-                .map(|s| s.function_name.as_str())
-                .collect::<Vec<_>>()
-                .into()
-        }
-    }
-
-    fn get_bash_source_value(&self) -> variables::ShellValue {
-        if self.function_call_stack.is_empty() {
-            self.script_call_stack
-                .front()
-                .map_or_else(Vec::new, |(_call_type, s)| vec![s.as_ref()])
-                .into()
-        } else {
-            self.function_call_stack
-                .iter()
-                .map(|s| s.function_definition.source.as_ref())
-                .collect::<Vec<_>>()
-                .into()
-        }
-    }
-
     /// Returns the path to the history file used by the shell, if one is set.
-    pub fn get_history_file_path(&self) -> Option<PathBuf> {
-        self.get_env_str("HISTFILE")
+    pub fn history_file_path(&self) -> Option<PathBuf> {
+        self.env_str("HISTFILE")
             .map(|s| PathBuf::from(s.into_owned()))
     }
 
     /// Returns the path to the history file used by the shell, if one is set.
-    pub fn get_history_time_format(&self) -> Option<String> {
-        self.get_env_str("HISTTIMEFORMAT").map(|s| s.into_owned())
+    pub fn history_time_format(&self) -> Option<String> {
+        self.env_str("HISTTIMEFORMAT").map(|s| s.into_owned())
     }
 
     /// Saves history back to any backing storage.
     pub fn save_history(&mut self) -> Result<(), error::Error> {
-        if let Some(history_file_path) = self.get_history_file_path() {
+        if let Some(history_file_path) = self.history_file_path() {
             if let Some(history) = &mut self.history {
                 // See if there's *any* time format configured. That triggers writing out timestamps.
                 let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
@@ -1542,18 +1189,13 @@ impl Shell {
         Ok(())
     }
 
-    /// Returns the number of the line being executed in the currently executing program.
-    pub(crate) const fn get_current_input_line_number(&self) -> u32 {
-        self.current_line_number
-    }
-
     /// Tries to retrieve a variable from the shell's environment, converting it into its
     /// string form.
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the variable to retrieve.
-    pub fn get_env_str(&self, name: &str) -> Option<Cow<'_, str>> {
+    pub fn env_str(&self, name: &str) -> Option<Cow<'_, str>> {
         self.env.get_str(name, self)
     }
 
@@ -1562,7 +1204,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `name` - The name of the variable to retrieve.
-    pub fn get_env_var(&self, name: &str) -> Option<&ShellVariable> {
+    pub fn env_var(&self, name: &str) -> Option<&ShellVariable> {
         self.env.get(name).map(|(_, var)| var)
     }
 
@@ -1590,14 +1232,24 @@ impl Shell {
         self.builtins.insert(name.into(), registration);
     }
 
+    /// Tries to retrieve a mutable reference to an existing builtin registration.
+    /// Returns `None` if no such registration exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the builtin to lookup.
+    pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration> {
+        self.builtins.get_mut(name)
+    }
+
     /// Returns the current value of the IFS variable, or the default value if it is not set.
-    pub fn get_ifs(&self) -> Cow<'_, str> {
-        self.get_env_str("IFS").unwrap_or_else(|| " \t\n".into())
+    pub fn ifs(&self) -> Cow<'_, str> {
+        self.env_str("IFS").unwrap_or_else(|| " \t\n".into())
     }
 
     /// Returns the first character of the IFS variable, or a space if it is not set.
     pub(crate) fn get_ifs_first_char(&self) -> char {
-        self.get_ifs().chars().next().unwrap_or(' ')
+        self.ifs().chars().next().unwrap_or(' ')
     }
 
     /// Generates command completions for the shell.
@@ -1606,7 +1258,7 @@ impl Shell {
     ///
     /// * `input` - The input string to generate completions for.
     /// * `position` - The position in the input string to generate completions at.
-    pub async fn get_completions(
+    pub async fn complete(
         &mut self,
         input: &str,
         position: usize,
@@ -1663,7 +1315,7 @@ impl Shell {
         &self,
         candidate_name: S,
     ) -> Option<PathBuf> {
-        for dir_str in self.get_env_str("PATH").unwrap_or_default().split(':') {
+        for dir_str in self.env_str("PATH").unwrap_or_default().split(':') {
             let candidate_path = Path::new(dir_str).join(candidate_name.as_ref());
             if candidate_path.executable() {
                 return Some(candidate_path);
@@ -1699,27 +1351,29 @@ impl Shell {
     /// # Arguments
     ///
     /// * `path` - The path to get the absolute form of.
-    pub fn get_absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
+    pub fn absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
         let path = path.as_ref();
         if path.as_os_str().is_empty() || path.is_absolute() {
             path.to_owned()
         } else {
-            self.working_dir.join(path)
+            self.working_dir().join(path)
         }
     }
 
-    /// Opens the given file.
+    /// Opens the given file, using the context of this shell and the provided execution parameters.
     ///
     /// # Arguments
     ///
+    /// * `options` - The options to use opening the file.
     /// * `path` - The path to the file to open; may be relative to the shell's working directory.
     /// * `params` - Execution parameters.
     pub(crate) fn open_file(
         &self,
+        options: &std::fs::OpenOptions,
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, error::Error> {
-        let path_to_open = self.get_absolute_path(path.as_ref());
+        let path_to_open = self.absolute_path(path.as_ref());
 
         // See if this is a reference to a file descriptor, in which case the actual
         // /dev/fd* file path for this process may not match with what's in the execution
@@ -1736,7 +1390,7 @@ impl Shell {
             }
         }
 
-        Ok(std::fs::File::open(path_to_open)?.into())
+        Ok(options.open(path_to_open)?.into())
     }
 
     /// Sets the shell's current working directory to the given path.
@@ -1745,7 +1399,7 @@ impl Shell {
     ///
     /// * `target_dir` - The path to set as the working directory.
     pub fn set_working_dir(&mut self, target_dir: impl AsRef<Path>) -> Result<(), error::Error> {
-        let abs_path = self.get_absolute_path(target_dir.as_ref());
+        let abs_path = self.absolute_path(target_dir.as_ref());
 
         match std::fs::metadata(&abs_path) {
             Ok(m) => {
@@ -1773,7 +1427,7 @@ impl Shell {
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
         )?;
-        let oldpwd = std::mem::replace(&mut self.working_dir, cleaned_path);
+        let oldpwd = std::mem::replace(self.working_dir_mut(), cleaned_path);
 
         self.env.update_or_add(
             "OLDPWD",
@@ -1795,7 +1449,7 @@ impl Shell {
     ///
     /// * `s` - The string to shorten.
     pub fn tilde_shorten(&self, s: String) -> String {
-        if let Some(home_dir) = self.get_home_dir() {
+        if let Some(home_dir) = self.home_dir() {
             if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
                 return format!("~{stripped}");
             }
@@ -1804,12 +1458,8 @@ impl Shell {
     }
 
     /// Returns the shell's current home directory, if available.
-    pub(crate) fn get_home_dir(&self) -> Option<PathBuf> {
-        Self::get_home_dir_with_env(&self.env, self)
-    }
-
-    fn get_home_dir_with_env(env: &ShellEnvironment, shell: &Self) -> Option<PathBuf> {
-        if let Some(home) = env.get_str("HOME", shell) {
+    pub(crate) fn home_dir(&self) -> Option<PathBuf> {
+        if let Some(home) = self.env.get_str("HOME", self) {
             Some(PathBuf::from(home.to_string()))
         } else {
             // HOME isn't set, so let's sort it out ourselves.
@@ -1947,6 +1597,11 @@ impl Shell {
     pub const fn is_subshell(&self) -> bool {
         self.depth > 0
     }
+
+    /// Returns the current subshell depth; 0 is returned if this shell is not a subshell.
+    pub const fn depth(&self) -> usize {
+        self.depth
+    }
 }
 
 #[cached::proc_macro::cached(size = 64, result = true)]
@@ -1974,37 +1629,4 @@ fn create_parser<R: Read>(
 
 fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
-}
-
-fn get_random_value(_shell: &Shell) -> ShellValue {
-    let mut rng = rand::rng();
-    let num = rng.random_range(0..32768);
-    let str = num.to_string();
-    str.into()
-}
-
-fn get_srandom_value(_shell: &Shell) -> ShellValue {
-    let mut rng = rand::rng();
-    let num: u32 = rng.random();
-    let str = num.to_string();
-    str.into()
-}
-
-/// Returns a list of the current user's group IDs, with the effective GID at the front.
-fn get_current_user_gids() -> Vec<u32> {
-    let mut groups = sys::users::get_user_group_ids().unwrap_or_default();
-
-    // If the effective GID is present but not in the first position in the list, then move
-    // it there.
-    if let Ok(gid) = sys::users::get_effective_gid() {
-        if let Some(index) = groups.iter().position(|&g| g == gid) {
-            if index > 0 {
-                // Move it to the front.
-                groups.remove(index);
-                groups.insert(0, gid);
-            }
-        }
-    }
-
-    groups
 }

@@ -94,7 +94,7 @@ impl builtins::Command for ReadCommand {
         };
 
         // Retrieve effective value of IFS for splitting.
-        let ifs = context.shell.get_ifs();
+        let ifs = context.shell.ifs();
 
         let stdout_file = context
             .params

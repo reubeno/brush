@@ -10,10 +10,10 @@ pub(crate) async fn complete_async(
     line: &str,
     pos: usize,
 ) -> brush_core::completion::Completions {
-    let working_dir = shell.working_dir.clone();
+    let working_dir = shell.working_dir().to_path_buf();
 
     // Intentionally ignore any errors that arise.
-    let completion_future = shell.get_completions(line, pos);
+    let completion_future = shell.complete(line, pos);
     tokio::pin!(completion_future);
 
     // Wait for the completions to come back or interruption, whichever happens first.
