@@ -268,14 +268,14 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
 }
 
 impl ExpansionPiece {
-    fn as_str(&self) -> &str {
+    const fn as_str(&self) -> &str {
         match self {
             Self::Unsplittable(s) => s.as_str(),
             Self::Splittable(s) => s.as_str(),
         }
     }
 
-    fn len(&self) -> usize {
+    const fn len(&self) -> usize {
         match self {
             Self::Unsplittable(s) => s.len(),
             Self::Splittable(s) => s.len(),
