@@ -24,9 +24,9 @@ pub enum OpenFile {
     /// A file open for reading or writing.
     File(std::fs::File),
     /// A read end of a pipe.
-    PipeReader(OpenPipeReader),
+    PipeReader(std::io::PipeReader),
     /// A write end of a pipe.
-    PipeWriter(OpenPipeWriter),
+    PipeWriter(std::io::PipeWriter),
 }
 
 /// Returns an open file that will discard all I/O.
@@ -49,8 +49,8 @@ impl OpenFile {
             Self::Stdout(_) => Self::Stdout(std::io::stdout()),
             Self::Stderr(_) => Self::Stderr(std::io::stderr()),
             Self::File(f) => Self::File(f.try_clone()?),
-            Self::PipeReader(f) => Self::PipeReader(f.0.try_clone()?.into()),
-            Self::PipeWriter(f) => Self::PipeWriter(f.0.try_clone()?.into()),
+            Self::PipeReader(f) => Self::PipeReader(f.try_clone()?),
+            Self::PipeWriter(f) => Self::PipeWriter(f.try_clone()?),
         };
 
         Ok(result)
@@ -64,8 +64,8 @@ impl OpenFile {
             Self::Stdout(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stderr(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::File(f) => Ok(f.into()),
-            Self::PipeReader(r) => Ok(OwnedFd::from(r.0)),
-            Self::PipeWriter(w) => Ok(OwnedFd::from(w.0)),
+            Self::PipeReader(r) => Ok(OwnedFd::from(r)),
+            Self::PipeWriter(w) => Ok(OwnedFd::from(w)),
         }
     }
 
@@ -78,8 +78,8 @@ impl OpenFile {
             Self::Stdout(f) => f.as_raw_fd(),
             Self::Stderr(f) => f.as_raw_fd(),
             Self::File(f) => f.as_raw_fd(),
-            Self::PipeReader(r) => r.0.as_raw_fd(),
-            Self::PipeWriter(w) => w.0.as_raw_fd(),
+            Self::PipeReader(r) => r.as_raw_fd(),
+            Self::PipeWriter(w) => w.as_raw_fd(),
         }
     }
 
@@ -111,8 +111,8 @@ impl std::os::fd::AsFd for OpenFile {
             Self::Stdout(f) => f.as_fd(),
             Self::Stderr(f) => f.as_fd(),
             Self::File(f) => f.as_fd(),
-            Self::PipeReader(r) => r.0.as_fd(),
-            Self::PipeWriter(w) => w.0.as_fd(),
+            Self::PipeReader(r) => r.as_fd(),
+            Self::PipeWriter(w) => w.as_fd(),
         }
     }
 }
@@ -123,6 +123,18 @@ impl From<std::fs::File> for OpenFile {
     }
 }
 
+impl From<std::io::PipeReader> for OpenFile {
+    fn from(reader: std::io::PipeReader) -> Self {
+        Self::PipeReader(reader)
+    }
+}
+
+impl From<std::io::PipeWriter> for OpenFile {
+    fn from(writer: std::io::PipeWriter) -> Self {
+        Self::PipeWriter(writer)
+    }
+}
+
 impl From<OpenFile> for Stdio {
     fn from(open_file: OpenFile) -> Self {
         match open_file {
@@ -130,8 +142,8 @@ impl From<OpenFile> for Stdio {
             OpenFile::Stdout(_) => Self::inherit(),
             OpenFile::Stderr(_) => Self::inherit(),
             OpenFile::File(f) => f.into(),
-            OpenFile::PipeReader(f) => f.0.into(),
-            OpenFile::PipeWriter(f) => f.0.into(),
+            OpenFile::PipeReader(f) => f.into(),
+            OpenFile::PipeWriter(f) => f.into(),
         }
     }
 }
@@ -147,7 +159,7 @@ impl std::io::Read for OpenFile {
                 "stderr",
             ))),
             Self::File(f) => f.read(buf),
-            Self::PipeReader(reader) => reader.0.read(buf),
+            Self::PipeReader(reader) => reader.read(buf),
             Self::PipeWriter(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
                 "pipe writer",
             ))),
@@ -167,7 +179,7 @@ impl std::io::Write for OpenFile {
             Self::PipeReader(_) => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
                 "pipe reader",
             ))),
-            Self::PipeWriter(writer) => writer.0.write(buf),
+            Self::PipeWriter(writer) => writer.write(buf),
         }
     }
 
@@ -178,7 +190,7 @@ impl std::io::Write for OpenFile {
             Self::Stderr(f) => f.flush(),
             Self::File(f) => f.flush(),
             Self::PipeReader(_) => Ok(()),
-            Self::PipeWriter(writer) => writer.0.flush(),
+            Self::PipeWriter(writer) => writer.flush(),
         }
     }
 }
@@ -286,53 +298,5 @@ impl IntoIterator for OpenFiles {
 
     fn into_iter(self) -> Self::IntoIter {
         self.files.into_iter()
-    }
-}
-
-/// Creates a new pipe, returning its reader and writer ends.
-pub fn pipe() -> Result<(OpenPipeReader, OpenPipeWriter), error::Error> {
-    let (reader, writer) = sys::pipes::pipe()?;
-    Ok((OpenPipeReader(reader), OpenPipeWriter(writer)))
-}
-
-/// An opaque wrapper around a pipe reader implementation.
-pub struct OpenPipeReader(sys::pipes::PipeReader);
-
-impl From<sys::pipes::PipeReader> for OpenPipeReader {
-    fn from(reader: sys::pipes::PipeReader) -> Self {
-        Self(reader)
-    }
-}
-
-impl From<OpenPipeReader> for OpenFile {
-    fn from(value: OpenPipeReader) -> Self {
-        Self::PipeReader(value)
-    }
-}
-
-impl From<OpenPipeReader> for sys::pipes::PipeReader {
-    fn from(reader: OpenPipeReader) -> Self {
-        reader.0
-    }
-}
-
-/// An opaque wrapper around a pipe writer implementation.
-pub struct OpenPipeWriter(sys::pipes::PipeWriter);
-
-impl From<sys::pipes::PipeWriter> for OpenPipeWriter {
-    fn from(writer: sys::pipes::PipeWriter) -> Self {
-        Self(writer)
-    }
-}
-
-impl From<OpenPipeWriter> for OpenFile {
-    fn from(value: OpenPipeWriter) -> Self {
-        Self::PipeWriter(value)
-    }
-}
-
-impl From<OpenPipeWriter> for sys::pipes::PipeWriter {
-    fn from(writer: OpenPipeWriter) -> Self {
-        writer.0
     }
 }
