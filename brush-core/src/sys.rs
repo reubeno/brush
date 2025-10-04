@@ -23,15 +23,12 @@ pub(crate) mod stubs;
 #[cfg(any(unix, windows))]
 pub(crate) mod hostname;
 #[cfg(any(unix, windows))]
-pub(crate) mod os_pipe;
-#[cfg(any(unix, windows))]
 pub mod tokio_process;
 
 pub mod fs;
 
 pub use platform::input;
 pub(crate) use platform::network;
-pub(crate) use platform::pipes;
 pub use platform::process;
 pub use platform::resource;
 pub use platform::signal;

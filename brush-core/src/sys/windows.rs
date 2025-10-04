@@ -1,4 +1,3 @@
-pub(crate) use crate::sys::os_pipe as pipes;
 pub use crate::sys::stubs::fs;
 pub use crate::sys::stubs::input;
 pub(crate) mod network;

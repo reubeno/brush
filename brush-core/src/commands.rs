@@ -686,7 +686,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     // Set up pipe so we can read the output.
-    let (reader, writer) = openfiles::pipe()?;
+    let (reader, writer) = std::io::pipe()?;
     params.open_files.set(OpenFiles::STDOUT_FD, writer.into());
 
     // Run the command. Pass ownership of the subshell and params to
@@ -699,7 +699,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     *shell.last_exit_status_mut() = result.exit_code;
 
     // Extract output.
-    let output_str = std::io::read_to_string(OpenFile::from(reader))?;
+    let output_str = std::io::read_to_string(reader)?;
 
     Ok(output_str)
 }

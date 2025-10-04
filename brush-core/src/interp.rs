@@ -100,7 +100,7 @@ struct PipelineExecutionContext<'a> {
 
     current_pipeline_index: usize,
     pipeline_len: usize,
-    output_pipes: &'a mut Vec<openfiles::OpenPipeReader>,
+    output_pipes: &'a mut Vec<std::io::PipeReader>,
 
     process_group_id: Option<i32>,
 }
@@ -1320,10 +1320,7 @@ fn setup_pipeline_redirection(
         // Find the stdout from the preceding process.
         if let Some(preceding_output_reader) = context.output_pipes.pop() {
             // Set up stdin of this process to take stdout of the preceding process.
-            open_files.set(
-                OpenFiles::STDIN_FD,
-                OpenFile::PipeReader(preceding_output_reader),
-            );
+            open_files.set(OpenFiles::STDIN_FD, preceding_output_reader.into());
         } else {
             open_files.set(OpenFiles::STDIN_FD, openfiles::null()?);
         }
@@ -1333,7 +1330,7 @@ fn setup_pipeline_redirection(
     // to a pipe that we can read later.
     if context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1 {
         // Set up stdout of this process to go to stdin of the succeeding process.
-        let (reader, writer) = openfiles::pipe()?;
+        let (reader, writer) = std::io::pipe()?;
         context.output_pipes.push(reader);
         open_files.set(OpenFiles::STDOUT_FD, writer.into());
     }
@@ -1615,7 +1612,7 @@ fn setup_process_substitution(
     child_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     // Set up pipe so we can connect to the command.
-    let (reader, writer) = openfiles::pipe()?;
+    let (reader, writer) = std::io::pipe()?;
     let (reader, writer) = (reader.into(), writer.into());
 
     let target_file = match kind {
@@ -1651,7 +1648,7 @@ fn setup_process_substitution(
 }
 
 fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
-    let (reader, mut writer) = sys::pipes::pipe()?;
+    let (reader, mut writer) = std::io::pipe()?;
 
     let bytes = contents.as_bytes();
 
@@ -1664,7 +1661,5 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     writer.write_all(bytes)?;
     drop(writer);
 
-    Ok(OpenFile::PipeReader(openfiles::OpenPipeReader::from(
-        reader,
-    )))
+    Ok(reader.into())
 }

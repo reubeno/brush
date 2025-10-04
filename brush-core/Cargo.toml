@@ -42,7 +42,6 @@ tokio = { version = "1.47.1", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 hostname = "0.4.1"
-os_pipe = { version = "1.2.2", features = ["io_safety"] }
 tokio = { version = "1.47.1", features = [
     "io-util",
     "macros",

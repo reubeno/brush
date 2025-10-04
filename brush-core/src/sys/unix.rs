@@ -1,4 +1,3 @@
-pub(crate) use crate::sys::os_pipe as pipes;
 pub mod fs;
 pub mod input;
 pub(crate) mod network;
