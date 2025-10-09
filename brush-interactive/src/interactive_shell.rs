@@ -201,6 +201,9 @@ pub trait InteractiveShell: Send {
                 shell_mut
                     .as_mut()
                     .add_to_history(read_result.trim_end_matches('\n'))?;
+
+                // Run any pre-execute commands.
+                run_pre_run_commands(shell_mut.as_mut(), read_result.as_str()).await?;
             }
 
             // Execute the command.
@@ -244,6 +247,23 @@ async fn run_pre_prompt_commands(shell: &mut brush_core::Shell) -> Result<(), Sh
         }
     }
 
+    // If there's a variable called precmd_functions, then call them.
+    if let Some(brush_core::ShellValue::IndexedArray(precmd_funcs)) = shell
+        .get_env_var("precmd_functions")
+        .map(|var| var.value())
+        .cloned()
+    {
+        for func_name in precmd_funcs.values() {
+            let _ = shell
+                .invoke_function(
+                    func_name,
+                    std::iter::empty::<&str>(),
+                    &shell.default_exec_params(),
+                )
+                .await;
+        }
+    }
+
     Ok(())
 }
 
@@ -262,6 +282,26 @@ async fn run_pre_prompt_command(
     // Restore the last exit status.
     shell.last_pipeline_statuses = prev_last_pipeline_statuses;
     *shell.last_exit_status_mut() = prev_last_result;
+
+    Ok(())
+}
+
+async fn run_pre_run_commands(
+    shell: &mut brush_core::Shell,
+    command_line: &str,
+) -> Result<(), ShellError> {
+    // If there's a variable called preexec_functions, then call them.
+    if let Some(brush_core::ShellValue::IndexedArray(preexec_funcs)) = shell
+        .get_env_var("preexec_functions")
+        .map(|var| var.value())
+        .cloned()
+    {
+        for func_name in preexec_funcs.values() {
+            let _ = shell
+                .invoke_function(func_name, &[command_line], &shell.default_exec_params())
+                .await;
+        }
+    }
 
     Ok(())
 }
