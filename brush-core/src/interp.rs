@@ -1136,9 +1136,7 @@ async fn expand_assignment_value(
     let expanded = match value {
         ast::AssignmentValue::Scalar(s) => {
             let expanded_word = expansion::basic_expand_word(shell, params, s).await?;
-            ast::AssignmentValue::Scalar(ast::Word {
-                value: expanded_word,
-            })
+            ast::AssignmentValue::Scalar(ast::Word::from(expanded_word))
         }
         ast::AssignmentValue::Array(arr) => {
             let mut expanded_values = vec![];
