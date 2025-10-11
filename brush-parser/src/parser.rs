@@ -477,7 +477,7 @@ peg::parser! {
         // of unescaped operators in regex words.
         rule regex_word() -> ast::Word =
             value:$((!specific_word("]]") regex_word_piece())+) {
-                ast::Word { value }
+                ast::Word::from(value)
             }
 
         rule regex_word_piece() =
@@ -801,11 +801,11 @@ peg::parser! {
                 }
                 all_as_word.push(')');
 
-                Ok((parsed, ast::Word { value: all_as_word }))
+                Ok((parsed, ast::Word::from(all_as_word)))
             } /
             [Token::Word(w, _)] {?
                 let parsed = parse_assignment_word(w.as_str())?;
-                Ok((parsed, ast::Word { value: w.to_owned() }))
+                Ok((parsed, ast::Word::from(w.to_owned())))
             }
 
         rule array_elements() -> Vec<&'input String> =
@@ -888,7 +888,7 @@ peg::parser! {
             ['_' | 'a'..='z' | 'A'..='Z'] {}
 
         rule scalar_value() -> ast::AssignmentValue =
-            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word { value: v.to_owned() }) }
+            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word::from(v.to_owned())) }
     }
 }
 
