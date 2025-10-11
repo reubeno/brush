@@ -3,7 +3,7 @@
 
 use std::fmt::{Display, Write};
 
-use crate::tokenizer;
+use crate::{TokenLocation, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
 
@@ -1313,6 +1313,8 @@ pub struct Word {
     /// Raw text of the word.
     #[cfg_attr(test, serde(rename = "v"))]
     pub value: String,
+    /// Location of the word
+    pub loc: Option<TokenLocation>,
 }
 
 impl Display for Word {
@@ -1324,11 +1326,13 @@ impl Display for Word {
 impl From<&tokenizer::Token> for Word {
     fn from(t: &tokenizer::Token) -> Self {
         match t {
-            tokenizer::Token::Word(value, _) => Self {
+            tokenizer::Token::Word(value, loc) => Self {
                 value: value.clone(),
+                loc: Some(loc.clone()),
             },
-            tokenizer::Token::Operator(value, _) => Self {
+            tokenizer::Token::Operator(value, loc) => Self {
                 value: value.clone(),
+                loc: Some(loc.clone()),
             },
         }
     }
@@ -1336,7 +1340,10 @@ impl From<&tokenizer::Token> for Word {
 
 impl From<String> for Word {
     fn from(s: String) -> Self {
-        Self { value: s }
+        Self {
+            value: s,
+            loc: None,
+        }
     }
 }
 
@@ -1345,6 +1352,15 @@ impl Word {
     pub fn new(s: &str) -> Self {
         Self {
             value: s.to_owned(),
+            loc: None,
+        }
+    }
+
+    /// Constructs a new `Word` from a given string and location.
+    pub fn with_location(s: &str, loc: &TokenLocation) -> Self {
+        Self {
+            value: s.to_owned(),
+            loc: Some(loc.to_owned()),
         }
     }
 
