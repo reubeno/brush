@@ -1,6 +1,6 @@
 use crate::ast::{self, SeparatorOperator};
-use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
+use crate::{TokenLocation, error};
 
 use bon::Builder;
 
@@ -788,7 +788,7 @@ peg::parser! {
         }
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
-            non_posix_extensions_enabled() [Token::Word(w, _)] specific_operator("(") elements:array_elements() specific_operator(")") {?
+            non_posix_extensions_enabled() [Token::Word(w, l)] specific_operator("(") elements:array_elements() end:specific_operator(")") {?
                 let parsed = parse_array_assignment(w.as_str(), elements.as_slice())?;
 
                 let mut all_as_word = w.to_owned();
@@ -801,11 +801,16 @@ peg::parser! {
                 }
                 all_as_word.push(')');
 
-                Ok((parsed, ast::Word::from(all_as_word)))
+                let loc = TokenLocation {
+                    start: l.start.clone(),
+                    end: end.location().end.clone(),
+                };
+
+                Ok((parsed, ast::Word::with_location(&all_as_word, &loc)))
             } /
-            [Token::Word(w, _)] {?
+            [Token::Word(w, l)] {?
                 let parsed = parse_assignment_word(w.as_str())?;
-                Ok((parsed, ast::Word::from(w.to_owned())))
+                Ok((parsed, ast::Word::with_location(w, l)))
             }
 
         rule array_elements() -> Vec<&'input String> =
