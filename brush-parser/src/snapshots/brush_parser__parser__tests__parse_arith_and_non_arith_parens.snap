@@ -17,6 +17,18 @@ ParseResult(
                       Simple(Simple(
                         w: Some(W(
                           v: ":",
+                          loc: Some(Loc(
+                            start: Pos(
+                              idx: 2,
+                              line: 1,
+                              col: 3,
+                            ),
+                            end: Pos(
+                              idx: 3,
+                              line: 1,
+                              col: 4,
+                            ),
+                          )),
                         )),
                       )),
                     ],
@@ -41,6 +53,18 @@ ParseResult(
                                   Simple(Simple(
                                     w: Some(W(
                                       v: ":",
+                                      loc: Some(Loc(
+                                        start: Pos(
+                                          idx: 20,
+                                          line: 1,
+                                          col: 21,
+                                        ),
+                                        end: Pos(
+                                          idx: 21,
+                                          line: 1,
+                                          col: 22,
+                                        ),
+                                      )),
                                     )),
                                   )),
                                 ],
