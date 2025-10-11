@@ -14,10 +14,34 @@ ParseResult(
               Simple(Simple(
                 w: Some(W(
                   v: "echo",
+                  loc: Some(Loc(
+                    start: Pos(
+                      idx: 8,
+                      line: 1,
+                      col: 9,
+                    ),
+                    end: Pos(
+                      idx: 12,
+                      line: 1,
+                      col: 13,
+                    ),
+                  )),
                 )),
                 suffix: Some(Suffix([
                   Word(W(
                     v: "1",
+                    loc: Some(Loc(
+                      start: Pos(
+                        idx: 13,
+                        line: 1,
+                        col: 14,
+                      ),
+                      end: Pos(
+                        idx: 14,
+                        line: 1,
+                        col: 15,
+                      ),
+                    )),
                   )),
                 ])),
               )),
@@ -32,6 +56,18 @@ ParseResult(
     Simple(Simple(
       w: Some(W(
         v: "cat",
+        loc: Some(Loc(
+          start: Pos(
+            idx: 21,
+            line: 1,
+            col: 22,
+          ),
+          end: Pos(
+            idx: 24,
+            line: 1,
+            col: 25,
+          ),
+        )),
       )),
     )),
   ],

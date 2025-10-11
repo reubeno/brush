@@ -8,6 +8,18 @@ ParseResult(
     Simple(Simple(
       w: Some(W(
         v: "echo",
+        loc: Some(Loc(
+          start: Pos(
+            idx: 0,
+            line: 1,
+            col: 1,
+          ),
+          end: Pos(
+            idx: 4,
+            line: 1,
+            col: 5,
+          ),
+        )),
       )),
       suffix: Some(Suffix([
         IoRedirect(File(Some(2), DuplicateOutput, Fd(1))),
@@ -16,6 +28,18 @@ ParseResult(
     Simple(Simple(
       w: Some(W(
         v: "wc",
+        loc: Some(Loc(
+          start: Pos(
+            idx: 8,
+            line: 1,
+            col: 9,
+          ),
+          end: Pos(
+            idx: 10,
+            line: 1,
+            col: 11,
+          ),
+        )),
       )),
     )),
   ],
