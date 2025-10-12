@@ -907,7 +907,7 @@ impl Config {
         // Make a best-effort attempt to tokenize.
         let tokens = Self::tokenize_input_for_completion(shell, input);
 
-        let cursor = i32::try_from(position)?;
+        let cursor = position;
         let mut preceding_token = None;
         let mut completion_prefix = "";
         let mut insertion_index = cursor;
@@ -1181,13 +1181,13 @@ fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_
     //
 
     let mut tokens = vec![];
-    let mut start: i32 = 0;
+    let mut start = 0;
 
     for piece in input.split_inclusive(delimiters) {
-        let next_start = start + piece.len() as i32;
+        let next_start = start + piece.len();
 
         let piece = piece.strip_suffix(delimiters).unwrap_or(piece);
-        let end: i32 = start + piece.len() as i32;
+        let end = start + piece.len();
         tokens.push(brush_parser::Token::Word(
             piece.to_string(),
             brush_parser::TokenLocation {
@@ -1195,12 +1195,14 @@ fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_
                     index: start,
                     line: 1,
                     column: start + 1,
-                },
+                }
+                .into(),
                 end: brush_parser::SourcePosition {
                     index: end,
                     line: 1,
                     column: end + 1,
-                },
+                }
+                .into(),
             },
         ));
 
