@@ -60,6 +60,15 @@ pub struct TokenLocation {
     pub end: SourcePosition,
 }
 
+impl TokenLocation {
+    pub(crate) fn within(start: &Self, end: &Self) -> Self {
+        Self {
+            start: start.start.clone(),
+            end: end.end.clone(),
+        }
+    }
+}
+
 /// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
