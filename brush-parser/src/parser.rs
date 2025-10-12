@@ -338,10 +338,10 @@ peg::parser! {
 
         pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
             start:specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") end:specific_operator(")") {
-                let loc = TokenLocation {
-                    start: start.location().start.clone(),
-                    end: end.location().end.clone(),
-                };
+                let loc = TokenLocation::within(
+                    start.location(),
+                    end.location()
+                );
                 ast::ArithmeticCommand { expr, loc }
             }
 
@@ -606,10 +606,16 @@ peg::parser! {
             w:[Token::Word(word, l) if !word.ends_with('=')] { ast::Word::with_location(word, l) }
 
         rule brace_group() -> ast::BraceGroupCommand =
-            specific_word("{") c:compound_list() specific_word("}") { ast::BraceGroupCommand(c) }
+            start:specific_word("{") list:compound_list() end:specific_word("}") {
+                let loc = TokenLocation::within(start.location(), end.location());
+                ast::BraceGroupCommand { list, loc }
+            }
 
         rule do_group() -> ast::DoGroupCommand =
-            specific_word("do") c:compound_list() specific_word("done") { ast::DoGroupCommand(c) }
+            start:specific_word("do") list:compound_list() end:specific_word("done") {
+                let loc = TokenLocation::within(start.location(), end.location());
+                ast::DoGroupCommand { list, loc }
+            }
 
         rule simple_command() -> ast::SimpleCommand =
             prefix:cmd_prefix() word_and_suffix:(word_or_name:cmd_word() suffix:cmd_suffix()? { (word_or_name, suffix) })? {

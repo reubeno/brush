@@ -662,12 +662,21 @@ impl Display for FunctionBody {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-pub struct BraceGroupCommand(pub CompoundList);
+pub struct BraceGroupCommand {
+    /// List of commands
+    pub list: CompoundList,
+    /// Location of the group
+    pub loc: TokenLocation,
+}
 
 impl Display for BraceGroupCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{ ")?;
-        write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", self.0)?;
+        write!(
+            indenter::indented(f).with_str(DISPLAY_INDENT),
+            "{}",
+            self.list
+        )?;
         writeln!(f)?;
         write!(f, "}}")?;
 
@@ -679,12 +688,21 @@ impl Display for BraceGroupCommand {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-pub struct DoGroupCommand(pub CompoundList);
+pub struct DoGroupCommand {
+    /// List of commands
+    pub list: CompoundList,
+    /// Location of the group
+    pub loc: TokenLocation,
+}
 
 impl Display for DoGroupCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "do")?;
-        write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{}", self.0)?;
+        write!(
+            indenter::indented(f).with_str(DISPLAY_INDENT),
+            "{}",
+            self.list
+        )?;
         writeln!(f)?;
         write!(f, "done")
     }
