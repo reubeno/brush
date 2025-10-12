@@ -322,7 +322,7 @@ impl Display for CompoundCommand {
 pub struct ArithmeticCommand {
     /// The raw, unparsed and unexpanded arithmetic expression.
     pub expr: UnexpandedArithmeticExpr,
-    /// Location of the word
+    /// Location of the command
     pub loc: TokenLocation,
 }
 
