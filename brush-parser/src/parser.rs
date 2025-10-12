@@ -363,7 +363,10 @@ peg::parser! {
             specific_operator(";") {}
 
         rule subshell() -> ast::SubshellCommand =
-            specific_operator("(") c:compound_list() specific_operator(")") { ast::SubshellCommand(c) }
+            start:specific_operator("(") list:compound_list() end:specific_operator(")") {
+                let loc = TokenLocation::within(start.location(), end.location());
+                ast::SubshellCommand { list, loc }
+            }
 
         rule compound_list() -> ast::CompoundList =
             linebreak() first:and_or() remainder:(s:separator() l:and_or() { (s, l) })* last_sep:separator()? {

@@ -336,12 +336,17 @@ impl Display for ArithmeticCommand {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-pub struct SubshellCommand(pub CompoundList);
+pub struct SubshellCommand {
+    /// Command list in the subshell
+    pub list: CompoundList,
+    /// Location of the subshell
+    pub loc: TokenLocation,
+}
 
 impl Display for SubshellCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "( ")?;
-        write!(f, "{}", self.0)?;
+        write!(f, "{}", self.list)?;
         write!(f, " )")
     }
 }
