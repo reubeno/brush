@@ -582,10 +582,10 @@ peg::parser! {
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function")? fname:fname() body:function_parens_and_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname, body, source: source_info.source.clone() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname, body, source: source_info.source.clone() }
             } /
             expected!("function definition")
 
@@ -595,11 +595,11 @@ peg::parser! {
         rule function_body() -> ast::FunctionBody =
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
 
-        rule fname() -> &'input str =
+        rule fname() -> ast::Word =
             // Special-case: don't allow it to end with an equals sign, to avoid the challenge of
             // misinterpreting certain declaration assignments as function definitions.
             // TODO: Find a way to make this still work without requiring this targeted exception.
-            w:[Token::Word(word, _) if !word.ends_with('=')] { w.to_str() }
+            w:[Token::Word(word, l) if !word.ends_with('=')] { ast::Word::with_location(word, l) }
 
         rule brace_group() -> ast::BraceGroupCommand =
             specific_word("{") c:compound_list() specific_word("}") { ast::BraceGroupCommand(c) }
