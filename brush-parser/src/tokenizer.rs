@@ -328,7 +328,7 @@ impl TokenParseState {
             Token::Word(std::mem::take(&mut self.token_so_far), token_location)
         };
 
-        self.start_position = end_position.to_owned();
+        end_position.clone_into(&mut self.start_position);
         self.in_escape = false;
         self.quote_mode = QuoteMode::None;
 
