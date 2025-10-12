@@ -7,6 +7,12 @@ use crate::{TokenLocation, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
 
+/// Provides the source location for the syntax item
+pub trait SourceLocation {
+    /// The location of the syntax item, when known
+    fn location(&self) -> Option<TokenLocation>;
+}
+
 /// Represents a complete shell program.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
@@ -1315,6 +1321,12 @@ pub struct Word {
     pub value: String,
     /// Location of the word
     pub loc: Option<TokenLocation>,
+}
+
+impl SourceLocation for Word {
+    fn location(&self) -> Option<TokenLocation> {
+        self.loc.clone()
+    }
 }
 
 impl Display for Word {
