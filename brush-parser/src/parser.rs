@@ -337,8 +337,12 @@ peg::parser! {
             expected!("compound command")
 
         pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
-            specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") specific_operator(")") {
-                ast::ArithmeticCommand { expr }
+            start:specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") end:specific_operator(")") {
+                let loc = TokenLocation {
+                    start: start.location().start.clone(),
+                    end: end.location().end.clone(),
+                };
+                ast::ArithmeticCommand { expr, loc }
             }
 
         pub(crate) rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
