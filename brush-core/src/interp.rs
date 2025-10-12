@@ -557,7 +557,9 @@ impl Execute for ast::CompoundCommand {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         match self {
-            Self::BraceGroup(ast::BraceGroupCommand(g)) => g.execute(shell, params).await,
+            Self::BraceGroup(ast::BraceGroupCommand { list, .. }) => {
+                list.execute(shell, params).await
+            }
             Self::Subshell(ast::SubshellCommand(s)) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 let mut subshell = shell.clone();
@@ -627,7 +629,7 @@ impl Execute for ast::ForClauseCommand {
                 EnvironmentScope::Global,
             )?;
 
-            result = self.body.0.execute(shell, params).await?;
+            result = self.body.list.execute(shell, params).await?;
             if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
@@ -784,7 +786,7 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
                 break;
             }
 
-            result = body.0.execute(shell, params).await?;
+            result = body.list.execute(shell, params).await?;
             if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
@@ -850,7 +852,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
                 }
             }
 
-            result = self.body.0.execute(shell, params).await?;
+            result = self.body.list.execute(shell, params).await?;
             if result.exit_shell || result.return_from_function_or_script {
                 break;
             }
@@ -889,7 +891,7 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell.define_func(self.fname.clone(), self.clone());
+        shell.define_func(self.fname.value.clone(), self.clone());
 
         let result = ExecutionResult::success();
         *shell.last_exit_status_mut() = result.exit_code;
