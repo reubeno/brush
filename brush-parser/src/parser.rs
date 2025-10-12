@@ -805,10 +805,7 @@ peg::parser! {
                 }
                 all_as_word.push(')');
 
-                let loc = TokenLocation {
-                    start: l.start.clone(),
-                    end: end.location().end.clone(),
-                };
+                let loc = TokenLocation::within(l, end.location());
 
                 Ok((parsed, ast::Word::with_location(&all_as_word, &loc)))
             } /
