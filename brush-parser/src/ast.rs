@@ -289,6 +289,17 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
 }
 
+impl SourceLocation for CompoundCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        match self {
+            Self::Arithmetic(a) => a.location(),
+            Self::BraceGroup(b) => b.location(),
+            Self::Subshell(s) => s.location(),
+            _ => None,
+        }
+    }
+}
+
 impl Display for CompoundCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -326,6 +337,12 @@ pub struct ArithmeticCommand {
     pub loc: TokenLocation,
 }
 
+impl SourceLocation for ArithmeticCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.loc.clone())
+    }
+}
+
 impl Display for ArithmeticCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(({}))", self.expr)
@@ -341,6 +358,12 @@ pub struct SubshellCommand {
     pub list: CompoundList,
     /// Location of the subshell
     pub loc: TokenLocation,
+}
+
+impl SourceLocation for SubshellCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.loc.clone())
+    }
 }
 
 impl Display for SubshellCommand {
@@ -672,6 +695,12 @@ pub struct BraceGroupCommand {
     pub list: CompoundList,
     /// Location of the group
     pub loc: TokenLocation,
+}
+
+impl SourceLocation for BraceGroupCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.loc.clone())
+    }
 }
 
 impl Display for BraceGroupCommand {
