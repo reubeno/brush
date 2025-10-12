@@ -624,7 +624,7 @@ impl Display for WhileOrUntilClauseCommand {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct FunctionDefinition {
     /// The name of the function.
-    pub fname: String,
+    pub fname: Word,
     /// The body of the function.
     pub body: FunctionBody,
     /// The source of the function definition.
@@ -633,7 +633,7 @@ pub struct FunctionDefinition {
 
 impl Display for FunctionDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{} () ", self.fname)?;
+        writeln!(f, "{} () ", self.fname.value)?;
         write!(f, "{}", self.body)?;
         Ok(())
     }
