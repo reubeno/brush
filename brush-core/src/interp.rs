@@ -490,10 +490,10 @@ impl Execute for ast::CompoundCommand {
             Self::BraceGroup(ast::BraceGroupCommand { list, .. }) => {
                 list.execute(shell, params).await
             }
-            Self::Subshell(ast::SubshellCommand(s)) => {
+            Self::Subshell(ast::SubshellCommand { list, .. }) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 let mut subshell = shell.clone();
-                let subshell_result = s.execute(&mut subshell, params).await?;
+                let subshell_result = list.execute(&mut subshell, params).await?;
 
                 // Preserve the subshell's exit code, but don't honor any of its requests to exit
                 // the shell, break out of loops, etc.
@@ -1558,7 +1558,10 @@ fn setup_process_substitution(
     let subshell_cmd = subshell_cmd.to_owned();
     tokio::spawn(async move {
         // Intentionally ignore the result of the subshell command.
-        let _ = subshell_cmd.0.execute(&mut subshell, &child_params).await;
+        let _ = subshell_cmd
+            .list
+            .execute(&mut subshell, &child_params)
+            .await;
     });
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
