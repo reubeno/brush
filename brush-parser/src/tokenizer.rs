@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Display;
+use std::sync::Arc;
 use utf8_chars::BufReadCharsExt;
 
 #[derive(Clone, Debug)]
@@ -63,9 +64,9 @@ impl From<&SourcePosition> for miette::SourceOffset {
 #[cfg_attr(test, serde(rename = "Loc"))]
 pub struct TokenLocation {
     /// The start position of the token.
-    pub start: SourcePosition,
+    pub start: Arc<SourcePosition>,
     /// The end position of the token (exclusive).
-    pub end: SourcePosition,
+    pub end: Arc<SourcePosition>,
 }
 
 impl TokenLocation {
@@ -306,7 +307,7 @@ struct TokenParseState {
 impl TokenParseState {
     pub fn new(start_position: &SourcePosition) -> Self {
         Self {
-            start_position: start_position.clone(),
+            start_position: start_position.to_owned(),
             token_so_far: String::new(),
             token_is_operator: false,
             in_escape: false,
@@ -315,9 +316,10 @@ impl TokenParseState {
     }
 
     pub fn pop(&mut self, end_position: &SourcePosition) -> Token {
+        let end = Arc::new(end_position.to_owned());
         let token_location = TokenLocation {
-            start: std::mem::take(&mut self.start_position),
-            end: end_position.clone(),
+            start: Arc::new(std::mem::take(&mut self.start_position)),
+            end,
         };
 
         let token = if std::mem::take(&mut self.token_is_operator) {
@@ -326,7 +328,7 @@ impl TokenParseState {
             Token::Word(std::mem::take(&mut self.token_so_far), token_location)
         };
 
-        self.start_position = end_position.clone();
+        self.start_position = end_position.to_owned();
         self.in_escape = false;
         self.quote_mode = QuoteMode::None;
 

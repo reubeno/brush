@@ -946,7 +946,8 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
     Ok(())
 }
 
-const fn locations_are_contiguous(
+#[inline]
+fn locations_are_contiguous(
     loc_left: &crate::TokenLocation,
     loc_right: &crate::TokenLocation,
 ) -> bool {
