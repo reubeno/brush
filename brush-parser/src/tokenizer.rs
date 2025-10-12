@@ -73,6 +73,12 @@ impl TokenLocation {
     #[allow(clippy::cast_sign_loss)]
     pub const fn length(&self) -> usize {
         (self.end.index - self.start.index) as usize
+
+    pub(crate) fn within(start: &Self, end: &Self) -> Self {
+        Self {
+            start: start.start.clone(),
+            end: end.end.clone(),
+        }
     }
 }
 
