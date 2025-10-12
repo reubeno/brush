@@ -34,12 +34,12 @@ pub(crate) enum TokenEndReason {
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
     #[cfg_attr(test, serde(rename = "idx"))]
-    pub index: i32,
+    pub index: usize,
     /// The 1-based line number.
-    pub line: i32,
+    pub line: usize,
     /// The 1-based column number.
     #[cfg_attr(test, serde(rename = "col"))]
-    pub column: i32,
+    pub column: usize,
 }
 
 impl Display for SourcePosition {
