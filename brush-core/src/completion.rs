@@ -894,7 +894,6 @@ impl Config {
     /// * `shell` - The shell instance to use for completion generation.
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
-    #[expect(clippy::cast_sign_loss)]
     #[expect(clippy::string_slice)]
     pub async fn get_completions(
         &self,
@@ -939,7 +938,7 @@ impl Config {
                 insertion_index = token.location().start.index;
 
                 // Update prefix.
-                let offset_into_token = (cursor - insertion_index) as usize;
+                let offset_into_token = cursor - insertion_index;
                 let token_str = token.to_str();
                 completion_prefix = &token_str[..offset_into_token];
 
@@ -990,13 +989,13 @@ impl Config {
 
         match result {
             Answer::Candidates(candidates, options) => Ok(Completions {
-                insertion_index: insertion_index as usize,
+                insertion_index,
                 delete_count: completion_prefix.len(),
                 candidates,
                 options,
             }),
             Answer::RestartCompletionProcess => Ok(Completions {
-                insertion_index: insertion_index as usize,
+                insertion_index,
                 delete_count: 0,
                 candidates: IndexSet::new(),
                 options: ProcessingOptions::default(),
@@ -1173,8 +1172,6 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
     Answer::Candidates(candidates, ProcessingOptions::default())
 }
 
-#[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::cast_possible_wrap)]
 fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_parser::Token> {
     //
     // This is an overly naive tokenization.
