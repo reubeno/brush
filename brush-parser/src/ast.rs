@@ -23,6 +23,25 @@ pub struct Program {
     pub complete_commands: Vec<CompleteCommand>,
 }
 
+impl SourceLocation for Program {
+    fn location(&self) -> Option<TokenLocation> {
+        let start = self
+            .complete_commands
+            .first()
+            .and_then(SourceLocation::location);
+        let end = self
+            .complete_commands
+            .last()
+            .and_then(SourceLocation::location);
+
+        if let (Some(s), Some(e)) = (start, end) {
+            Some(TokenLocation::within(&s, &e))
+        } else {
+            None
+        }
+    }
+}
+
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for complete_command in &self.complete_commands {
@@ -49,6 +68,13 @@ pub enum SeparatorOperator {
     Sequence,
 }
 
+// TODO: add loc
+impl SourceLocation for SeparatorOperator {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for SeparatorOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -69,6 +95,19 @@ pub struct AndOrList {
     /// Any additional command pipelines, in sequence order.
     #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
     pub additional: Vec<AndOr>,
+}
+
+impl SourceLocation for AndOrList {
+    fn location(&self) -> Option<TokenLocation> {
+        let start = self.first.location();
+        let last = self.additional.last();
+        let end = last.and_then(SourceLocation::location);
+
+        match (start, end) {
+            (Some(s), Some(e)) => Some(TokenLocation::within(&s, &e)),
+            (start, _) => start,
+        }
+    }
 }
 
 impl Display for AndOrList {
@@ -174,6 +213,13 @@ pub enum AndOr {
     Or(Pipeline),
 }
 
+// TODO: add a loc
+impl SourceLocation for AndOr {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for AndOr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -212,6 +258,13 @@ pub struct Pipeline {
     pub seq: Vec<Command>,
 }
 
+// TODO: add a loc here
+impl SourceLocation for Pipeline {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for Pipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.bang {
@@ -242,6 +295,22 @@ pub enum Command {
     Function(FunctionDefinition),
     /// A command that evaluates an extended test expression.
     ExtendedTest(ExtendedTestExpr),
+}
+
+impl SourceLocation for Command {
+    fn location(&self) -> Option<TokenLocation> {
+        match self {
+            Self::Simple(s) => s.location(),
+            Self::Compound(c, r) => {
+                match (c.location(), r.as_ref().and_then(SourceLocation::location)) {
+                    (Some(s), Some(e)) => Some(TokenLocation::within(&s, &e)),
+                    (s, _) => s,
+                }
+            }
+            Self::Function(f) => f.location(),
+            Self::ExtendedTest(e) => e.location(),
+        }
+    }
 }
 
 impl Display for Command {
@@ -289,6 +358,7 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
 }
 
+// TODO: complete the list
 impl SourceLocation for CompoundCommand {
     fn location(&self) -> Option<TokenLocation> {
         match self {
@@ -478,6 +548,20 @@ impl Display for CaseClauseCommand {
 #[cfg_attr(test, serde(rename = "List"))]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
+// TODO: doublecheck
+impl SourceLocation for CompoundList {
+    fn location(&self) -> Option<TokenLocation> {
+        let start = self.0.first().and_then(SourceLocation::location);
+        let end = self.0.last().and_then(SourceLocation::location);
+
+        if let (Some(s), Some(e)) = (start, end) {
+            Some(TokenLocation::within(&s, &e))
+        } else {
+            None
+        }
+    }
+}
+
 impl Display for CompoundList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
@@ -506,6 +590,18 @@ impl Display for CompoundList {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 #[cfg_attr(test, serde(rename = "Item"))]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
+
+impl SourceLocation for CompoundListItem {
+    fn location(&self) -> Option<TokenLocation> {
+        let start = self.0.location();
+        let end = self.1.location();
+
+        match (start, end) {
+            (Some(s), Some(e)) => Some(TokenLocation::within(&s, &e)),
+            _ => None,
+        }
+    }
+}
 
 impl Display for CompoundListItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -661,6 +757,13 @@ pub struct FunctionDefinition {
     pub source: String,
 }
 
+// TODO: complete
+impl SourceLocation for FunctionDefinition {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for FunctionDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{} () ", self.fname.value)?;
@@ -760,6 +863,13 @@ pub struct SimpleCommand {
     pub suffix: Option<CommandSuffix>,
 }
 
+// TODO: complete
+impl SourceLocation for SimpleCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for SimpleCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut wrote_something = false;
@@ -801,6 +911,13 @@ impl Display for SimpleCommand {
 #[cfg_attr(test, serde(rename = "Prefix"))]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
+// TODO: complete
+impl SourceLocation for CommandPrefix {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for CommandPrefix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
@@ -820,6 +937,13 @@ impl Display for CommandPrefix {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 #[cfg_attr(test, serde(rename = "Suffix"))]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
+
+// TODO: complete
+impl SourceLocation for CommandSuffix {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
 
 impl Display for CommandSuffix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -870,6 +994,13 @@ pub enum CommandPrefixOrSuffixItem {
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
 }
 
+// TODO: complete
+impl SourceLocation for CommandPrefixOrSuffixItem {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for CommandPrefixOrSuffixItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -896,6 +1027,13 @@ pub struct Assignment {
     /// Whether or not to append to the preexisting value associated with the named variable.
     #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub append: bool,
+}
+
+// TODO: complete
+impl SourceLocation for Assignment {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
 }
 
 impl Display for Assignment {
@@ -942,6 +1080,13 @@ pub enum AssignmentValue {
     Array(Vec<(Option<Word>, Word)>),
 }
 
+// TODO: complete
+impl SourceLocation for AssignmentValue {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for AssignmentValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -969,6 +1114,13 @@ impl Display for AssignmentValue {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct RedirectList(pub Vec<IoRedirect>);
 
+// TODO: complete
+impl SourceLocation for RedirectList {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 impl Display for RedirectList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for item in &self.0 {
@@ -991,6 +1143,13 @@ pub enum IoRedirect {
     HereString(Option<u32>, Word),
     /// Redirection of both standard output and standard error (with optional append).
     OutputAndError(Word, bool),
+}
+
+// TODO: complete
+impl SourceLocation for IoRedirect {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
 }
 
 impl Display for IoRedirect {
@@ -1129,6 +1288,13 @@ pub struct IoHereDocument {
     pub doc: Word,
 }
 
+// TODO: complete
+impl SourceLocation for IoHereDocument {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 /// A (non-extended) test expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
@@ -1149,6 +1315,13 @@ pub enum TestExpr {
     UnaryTest(UnaryPredicate, String),
     /// A binary test operation.
     BinaryTest(BinaryPredicate, String, String),
+}
+
+// TODO: complete
+impl SourceLocation for TestExpr {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
 }
 
 impl Display for TestExpr {
@@ -1183,6 +1356,13 @@ pub enum ExtendedTestExpr {
     UnaryTest(UnaryPredicate, Word),
     /// A binary test operation.
     BinaryTest(BinaryPredicate, Word, Word),
+}
+
+// TODO: complete
+impl SourceLocation for ExtendedTestExpr {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
 }
 
 impl Display for ExtendedTestExpr {
@@ -1473,6 +1653,13 @@ pub enum ArithmeticExpr {
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
 
+// TODO: complete and add loc for literal
+impl SourceLocation for ArithmeticExpr {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
+}
+
 #[cfg(feature = "fuzz-testing")]
 impl<'a> arbitrary::Arbitrary<'a> for ArithmeticExpr {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
@@ -1687,6 +1874,13 @@ pub enum ArithmeticTarget {
     Variable(String),
     /// An element in an array.
     ArrayElement(String, Box<ArithmeticExpr>),
+}
+
+// TODO: complete and add loc
+impl SourceLocation for ArithmeticTarget {
+    fn location(&self) -> Option<TokenLocation> {
+        None
+    }
 }
 
 impl Display for ArithmeticTarget {
