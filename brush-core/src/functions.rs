@@ -1,6 +1,11 @@
-//! Structures for managing function registrations.
+//! Structures for managing function registrations and calls.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
+
+use brush_parser::ast;
 
 /// An environment for defined, named functions.
 #[derive(Clone, Default)]
@@ -95,5 +100,78 @@ impl Registration {
     /// Returns whether this function is exported.
     pub const fn is_exported(&self) -> bool {
         self.exported
+    }
+}
+
+/// Represents an active shell function call.
+#[derive(Clone, Debug)]
+pub struct FunctionCall {
+    /// The name of the function invoked.
+    pub function_name: String,
+    /// The definition of the invoked function.
+    pub function_definition: Arc<brush_parser::ast::FunctionDefinition>,
+}
+
+/// Encapsulates a function call stack.
+#[derive(Clone, Debug, Default)]
+pub struct CallStack {
+    frames: VecDeque<FunctionCall>,
+}
+
+impl std::fmt::Display for CallStack {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_empty() {
+            return Ok(());
+        }
+
+        writeln!(f, "Function call stack (most recent first):")?;
+
+        for (index, frame) in self.iter().enumerate() {
+            writeln!(f, "  #{}| {}", index, frame.function_name)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl CallStack {
+    /// Creates a new empty function call stack.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Removes the top from from the stack. If the stack is empty, does nothing and
+    /// returns `None`; otherwise, returns the removed call frame.
+    pub fn pop(&mut self) -> Option<FunctionCall> {
+        self.frames.pop_front()
+    }
+
+    /// Pushes a new frame onto the stack.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function being called.
+    /// * `function_def` - The definition of the function being called.
+    pub fn push(&mut self, name: impl Into<String>, function_def: &Arc<ast::FunctionDefinition>) {
+        self.frames.push_front(FunctionCall {
+            function_name: name.into(),
+            function_definition: function_def.clone(),
+        });
+    }
+
+    /// Returns the current depth of the function call stack.
+    pub fn depth(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Returns whether or not the function call stack is empty.
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    /// Returns an iterator over the function call frames, starting from the most
+    /// recent.
+    pub fn iter(&self) -> impl Iterator<Item = &FunctionCall> {
+        self.frames.iter()
     }
 }
