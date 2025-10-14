@@ -185,3 +185,9 @@ cases:
       : cmd1
       : cmd2
       history
+
+  - name: "history file with unreadable lines"
+    ignore_stderr: true # Ignore brush's warnings about unreadable lines
+    stdin: |
+      bash -c 'printf "\xff\xfe\xfd" >history-file.txt'
+      HISTFILE=history-file.txt $0 -o history -c 'echo hi'

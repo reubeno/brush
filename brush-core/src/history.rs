@@ -22,7 +22,9 @@ pub struct History {
 
 impl History {
     /// Constructs a new `History` instance, with its contents initialized from the given readable
-    /// stream.
+    /// stream. If errors are encountered reading lines from the stream, unreadable lines will
+    /// be skipped but the call will still return successfully, with a warning logged. An error
+    /// result will be returned only if an internal error occurs updating the history.
     ///
     /// # Arguments
     ///
@@ -33,9 +35,18 @@ impl History {
         let buf_reader = std::io::BufReader::new(reader);
 
         let mut next_timestamp = None;
-        for line in buf_reader.lines() {
-            let line = line?;
+        for line_result in buf_reader.lines() {
+            // If we couldn't decode the line (perhaps it wasn't valid UTF8?), skip it and make
+            // a best-effort attempt to proceed on. We'll later warn the user.
+            let line = match line_result {
+                Ok(line) => line,
+                Err(err) => {
+                    tracing::warn!("unreadable history line; {err}");
+                    continue;
+                }
+            };
 
+            // Look for timestamp comments; ignore other comment lines.
             if let Some(comment) = line.strip_prefix("#") {
                 if let Ok(seconds_since_epoch) = comment.trim().parse() {
                     next_timestamp =
