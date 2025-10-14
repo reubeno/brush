@@ -10,7 +10,6 @@ use clap::Parser;
 use colored::Colorize;
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
-use std::fs;
 #[cfg(unix)]
 use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
 use std::{
@@ -19,6 +18,7 @@ use std::{
     path::{Path, PathBuf},
     process::ExitStatus,
 };
+use std::{fs, io::Read};
 
 #[derive(Clone)]
 struct ShellConfig {
@@ -1375,15 +1375,28 @@ fn diff_dirs(oracle_path: &Path, test_path: &Path) -> Result<DirComparison> {
         let test_file_path = test_path.join(filename);
 
         if file_type.is_file() {
-            let oracle_contents = fs::read_to_string(&oracle_file_path)?;
-            let test_contents = fs::read_to_string(&test_file_path)?;
+            let mut oracle_file = std::fs::OpenOptions::new()
+                .read(true)
+                .open(&oracle_file_path)?;
+            let mut oracle_bytes = vec![];
+            oracle_file.read_to_end(&mut oracle_bytes)?;
 
-            if oracle_contents != test_contents {
+            let mut test_file = std::fs::OpenOptions::new()
+                .read(true)
+                .open(&test_file_path)?;
+            let mut test_bytes = vec![];
+            test_file.read_to_end(&mut test_bytes)?;
+
+            if oracle_bytes != test_bytes {
+                // Convert using lossy conversion to avoid issues with invalid UTF-8.
+                let oracle_display_text = String::from_utf8_lossy(&oracle_bytes);
+                let test_display_text = String::from_utf8_lossy(&test_bytes);
+
                 entries.push(DirComparisonEntry::Different(
                     oracle_file_path,
-                    oracle_contents,
+                    oracle_display_text.to_string(),
                     test_file_path,
-                    test_contents,
+                    test_display_text.to_string(),
                 ));
             }
         } else if file_type.is_dir() {
