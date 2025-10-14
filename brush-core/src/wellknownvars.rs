@@ -513,10 +513,9 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
 
 fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
     if shell.function_call_stack().is_empty() {
-        shell
-            .script_call_stack()
-            .front()
-            .map_or_else(Vec::new, |(_call_type, s)| vec![s.as_ref()])
+        let top_frame = shell.script_call_stack().iter().next();
+        top_frame
+            .map_or_else(Vec::new, |frame| vec![frame.source.as_ref()])
             .into()
     } else {
         shell

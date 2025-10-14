@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     prompt, sys::users, traps,
 };
-use crate::{history, interfaces, pathcache, pathsearch, trace_categories, wellknownvars};
+use crate::{history, interfaces, pathcache, pathsearch, scripts, trace_categories, wellknownvars};
 
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
@@ -71,10 +71,10 @@ pub struct Shell {
     product_display_str: Option<String>,
 
     /// Script call stack.
-    script_call_stack: VecDeque<(ScriptCallType, String)>,
+    script_call_stack: scripts::CallStack,
 
     /// Function call stack.
-    function_call_stack: VecDeque<FunctionCall>,
+    function_call_stack: functions::CallStack,
 
     /// Directory stack used by pushd et al.
     pub directory_stack: Vec<PathBuf>,
@@ -317,24 +317,6 @@ pub struct CreateOptions {
     pub shell_version: Option<String>,
 }
 
-/// Represents an executing script.
-#[derive(Clone, Debug)]
-pub enum ScriptCallType {
-    /// The script was sourced.
-    Sourced,
-    /// The script was executed.
-    Executed,
-}
-
-/// Represents an active shell function call.
-#[derive(Clone, Debug)]
-pub struct FunctionCall {
-    /// The name of the function invoked.
-    pub function_name: String,
-    /// The definition of the invoked function.
-    pub function_definition: Arc<brush_parser::ast::FunctionDefinition>,
-}
-
 impl Shell {
     /// Create an instance of [Shell] using the builder syntax
     pub fn builder() -> ShellBuilder<shell_builder::Empty> {
@@ -363,8 +345,8 @@ impl Shell {
             shell_name: options.shell_name,
             version: options.shell_version,
             product_display_str: options.shell_product_display_str,
-            function_call_stack: VecDeque::new(),
-            script_call_stack: VecDeque::new(),
+            function_call_stack: functions::CallStack::new(),
+            script_call_stack: scripts::CallStack::new(),
             directory_stack: vec![],
             current_line_number: 0,
             completion_config: completion::Config::default(),
@@ -430,12 +412,12 @@ impl Shell {
     }
 
     /// Returns a reference to the current function call stack for the shell.
-    pub const fn function_call_stack(&self) -> &VecDeque<FunctionCall> {
+    pub const fn function_call_stack(&self) -> &functions::CallStack {
         &self.function_call_stack
     }
 
     /// Returns a reference to the current script call stack for the shell.
-    pub const fn script_call_stack(&self) -> &VecDeque<(ScriptCallType, String)> {
+    pub const fn script_call_stack(&self) -> &scripts::CallStack {
         &self.script_call_stack
     }
 
@@ -669,7 +651,7 @@ impl Shell {
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(path.as_ref(), args, params, ScriptCallType::Sourced)
+        self.parse_and_execute_script_file(path.as_ref(), args, params, scripts::CallType::Sourced)
             .await
     }
 
@@ -686,7 +668,7 @@ impl Shell {
         path: P,
         args: I,
         params: &ExecutionParameters,
-        call_type: ScriptCallType,
+        call_type: scripts::CallType,
     ) -> Result<ExecutionResult, error::Error> {
         let path = path.as_ref();
         tracing::debug!("sourcing: {}", path.display());
@@ -728,7 +710,7 @@ impl Shell {
         source_info: &brush_parser::SourceInfo,
         args: I,
         params: &ExecutionParameters,
-        call_type: ScriptCallType,
+        call_type: scripts::CallType,
     ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
         let mut parser =
@@ -754,13 +736,13 @@ impl Shell {
         }
 
         self.script_call_stack
-            .push_front((call_type.clone(), source_info.source.clone()));
+            .push(call_type, source_info.source.clone());
 
         let result = self
             .run_parsed_result(parse_result, source_info, params)
             .await;
 
-        self.script_call_stack.pop_front();
+        self.script_call_stack.pop();
 
         // Restore.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
@@ -926,7 +908,7 @@ impl Shell {
             script_path.as_ref(),
             args,
             &params,
-            ScriptCallType::Executed,
+            scripts::CallType::Executed,
         )
         .await
     }
@@ -1077,9 +1059,7 @@ impl Shell {
 
     /// Returns whether or not the shell is actively executing in a sourced script.
     pub fn in_sourced_script(&self) -> bool {
-        self.script_call_stack
-            .front()
-            .is_some_and(|(ty, _)| matches!(ty, ScriptCallType::Sourced))
+        self.script_call_stack.in_sourced_script()
     }
 
     /// Returns whether or not the shell is actively executing in a shell function.
@@ -1100,22 +1080,20 @@ impl Shell {
         function_def: &Arc<brush_parser::ast::FunctionDefinition>,
     ) -> Result<(), error::Error> {
         if let Some(max_call_depth) = self.options.max_function_call_depth {
-            if self.function_call_stack.len() >= max_call_depth {
+            if self.function_call_stack.depth() >= max_call_depth {
                 return Err(error::Error::MaxFunctionCallDepthExceeded);
             }
         }
 
         if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
-            let depth = self.function_call_stack.len();
+            let depth = self.function_call_stack.depth();
             let prefix = repeated_char_str(' ', depth);
             tracing::debug!(target: trace_categories::FUNCTIONS, "Entering func [depth={depth}]: {prefix}{name}");
         }
 
-        self.function_call_stack.push_front(FunctionCall {
-            function_name: name.to_owned(),
-            function_definition: function_def.clone(),
-        });
+        self.function_call_stack.push(name, function_def);
         self.env.push_scope(env::EnvironmentScope::Local);
+
         Ok(())
     }
 
@@ -1124,9 +1102,9 @@ impl Shell {
     pub(crate) fn leave_function(&mut self) -> Result<(), error::Error> {
         self.env.pop_scope(env::EnvironmentScope::Local)?;
 
-        if let Some(exited_call) = self.function_call_stack.pop_front() {
+        if let Some(exited_call) = self.function_call_stack.pop() {
             if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
-                let depth = self.function_call_stack.len();
+                let depth = self.function_call_stack.depth();
                 let prefix = repeated_char_str(' ', depth);
                 tracing::debug!(target: trace_categories::FUNCTIONS, "Exiting func  [depth={depth}]: {prefix}{}", exited_call.function_name);
             }
@@ -1492,7 +1470,7 @@ impl Shell {
 
         let mut prefix = ps4;
 
-        let additional_depth = self.script_call_stack.len() + self.depth;
+        let additional_depth = self.script_call_stack.depth() + self.depth;
         if let Some(c) = prefix.chars().next() {
             for _ in 0..additional_depth {
                 prefix.insert(0, c);

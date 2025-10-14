@@ -27,6 +27,7 @@ pub mod patterns;
 pub mod processes;
 mod prompt;
 mod regex;
+pub mod scripts;
 mod shell;
 pub mod sys;
 mod terminal;
@@ -40,8 +41,6 @@ mod wellknownvars;
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::Error;
 pub use interp::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy};
-pub use shell::{
-    CreateOptions, FunctionCall, ScriptCallType, Shell, ShellBuilder, ShellBuilderState,
-};
+pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState};
 pub use terminal::TerminalControl;
 pub use variables::{ShellValue, ShellVariable};
