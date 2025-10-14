@@ -24,6 +24,7 @@ pub enum ParseError {
 
 #[cfg(feature = "diagnostics")]
 #[allow(clippy::cast_sign_loss)]
+#[allow(unused)] // Workaround unused warnings in nightly versions of the compiler
 pub mod miette {
     use super::ParseError;
     use miette::SourceOffset;
