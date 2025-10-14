@@ -1,6 +1,6 @@
 use crate::ast::{self, SeparatorOperator};
-use crate::error;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
+use crate::{TokenLocation, error};
 
 use bon::Builder;
 
@@ -331,8 +331,12 @@ peg::parser! {
             expected!("compound command")
 
         pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
-            specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") specific_operator(")") {
-                ast::ArithmeticCommand { expr }
+            start:specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") end:specific_operator(")") {
+                let loc = TokenLocation::within(
+                    start.location(),
+                    end.location()
+                );
+                ast::ArithmeticCommand { expr, loc }
             }
 
         pub(crate) rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
@@ -353,7 +357,10 @@ peg::parser! {
             specific_operator(";") {}
 
         rule subshell() -> ast::SubshellCommand =
-            specific_operator("(") c:compound_list() specific_operator(")") { ast::SubshellCommand(c) }
+            start:specific_operator("(") list:compound_list() end:specific_operator(")") {
+                let loc = TokenLocation::within(start.location(), end.location());
+                ast::SubshellCommand { list, loc }
+            }
 
         rule compound_list() -> ast::CompoundList =
             linebreak() first:and_or() remainder:(s:separator() l:and_or() { (s, l) })* last_sep:separator()? {
@@ -471,7 +478,7 @@ peg::parser! {
         // of unescaped operators in regex words.
         rule regex_word() -> ast::Word =
             value:$((!specific_word("]]") regex_word_piece())+) {
-                ast::Word { value }
+                ast::Word::from(value)
             }
 
         rule regex_word_piece() =
@@ -576,10 +583,10 @@ peg::parser! {
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function")? fname:fname() body:function_parens_and_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname, body, source: source_info.source.clone() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
-                ast::FunctionDefinition { fname: fname.to_owned(), body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname, body, source: source_info.source.clone() }
             } /
             expected!("function definition")
 
@@ -589,17 +596,23 @@ peg::parser! {
         rule function_body() -> ast::FunctionBody =
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
 
-        rule fname() -> &'input str =
+        rule fname() -> ast::Word =
             // Special-case: don't allow it to end with an equals sign, to avoid the challenge of
             // misinterpreting certain declaration assignments as function definitions.
             // TODO: Find a way to make this still work without requiring this targeted exception.
-            w:[Token::Word(word, _) if !word.ends_with('=')] { w.to_str() }
+            w:[Token::Word(word, l) if !word.ends_with('=')] { ast::Word::with_location(word, l) }
 
         rule brace_group() -> ast::BraceGroupCommand =
-            specific_word("{") c:compound_list() specific_word("}") { ast::BraceGroupCommand(c) }
+            start:specific_word("{") list:compound_list() end:specific_word("}") {
+                let loc = TokenLocation::within(start.location(), end.location());
+                ast::BraceGroupCommand { list, loc }
+            }
 
         rule do_group() -> ast::DoGroupCommand =
-            specific_word("do") c:compound_list() specific_word("done") { ast::DoGroupCommand(c) }
+            start:specific_word("do") list:compound_list() end:specific_word("done") {
+                let loc = TokenLocation::within(start.location(), end.location());
+                ast::DoGroupCommand { list, loc }
+            }
 
         rule simple_command() -> ast::SimpleCommand =
             prefix:cmd_prefix() word_and_suffix:(word_or_name:cmd_word() suffix:cmd_suffix()? { (word_or_name, suffix) })? {
@@ -782,7 +795,7 @@ peg::parser! {
         }
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
-            non_posix_extensions_enabled() [Token::Word(w, _)] specific_operator("(") elements:array_elements() specific_operator(")") {?
+            non_posix_extensions_enabled() [Token::Word(w, l)] specific_operator("(") elements:array_elements() end:specific_operator(")") {?
                 let parsed = parse_array_assignment(w.as_str(), elements.as_slice())?;
 
                 let mut all_as_word = w.to_owned();
@@ -795,11 +808,13 @@ peg::parser! {
                 }
                 all_as_word.push(')');
 
-                Ok((parsed, ast::Word { value: all_as_word }))
+                let loc = TokenLocation::within(l, end.location());
+
+                Ok((parsed, ast::Word::with_location(&all_as_word, &loc)))
             } /
-            [Token::Word(w, _)] {?
+            [Token::Word(w, l)] {?
                 let parsed = parse_assignment_word(w.as_str())?;
-                Ok((parsed, ast::Word { value: w.to_owned() }))
+                Ok((parsed, ast::Word::with_location(w, l)))
             }
 
         rule array_elements() -> Vec<&'input String> =
@@ -882,7 +897,7 @@ peg::parser! {
             ['_' | 'a'..='z' | 'A'..='Z'] {}
 
         rule scalar_value() -> ast::AssignmentValue =
-            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word { value: v.to_owned() }) }
+            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word::from(v.to_owned())) }
     }
 }
 
@@ -925,7 +940,8 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
     Ok(())
 }
 
-const fn locations_are_contiguous(
+#[inline]
+fn locations_are_contiguous(
     loc_left: &crate::TokenLocation,
     loc_right: &crate::TokenLocation,
 ) -> bool {
