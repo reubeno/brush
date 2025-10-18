@@ -235,9 +235,25 @@ impl Display for AndOr {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum PipelineTimed {
     /// The pipeline should be timed with bash-like output.
-    Timed,
+    Timed(TokenLocation),
     /// The pipeline should be timed with POSIX-like output.
-    TimedWithPosixOutput,
+    TimedWithPosixOutput(TokenLocation),
+}
+
+impl SourceLocation for PipelineTimed {
+    fn location(&self) -> Option<TokenLocation> {
+        match self {
+            Self::Timed(t) => Some(t.to_owned()),
+            Self::TimedWithPosixOutput(t) => Some(t.to_owned()),
+        }
+    }
+}
+
+impl PipelineTimed {
+    /// Returns true if the pipeline should be timed with POSIX-like output.
+    pub fn is_posix_output(&self) -> bool {
+        matches!(self, Self::TimedWithPosixOutput(_))
+    }
 }
 
 /// A pipeline of commands, where each command's output is passed as standard input
