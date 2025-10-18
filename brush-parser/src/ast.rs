@@ -57,6 +57,7 @@ pub type CompleteCommand = CompoundList;
 /// Represents a complete shell command item.
 pub type CompleteCommandItem = CompoundListItem;
 
+// TODO: decide if we want to trace this location or consider it a whitespace separator
 /// Indicates whether the preceding command is executed synchronously or asynchronously.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
@@ -66,13 +67,6 @@ pub enum SeparatorOperator {
     Async,
     /// The preceding command is executed synchronously.
     Sequence,
-}
-
-// TODO: add loc
-impl SourceLocation for SeparatorOperator {
-    fn location(&self) -> Option<TokenLocation> {
-        None
-    }
 }
 
 impl Display for SeparatorOperator {
@@ -216,7 +210,10 @@ pub enum AndOr {
 // TODO: add a loc
 impl SourceLocation for AndOr {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        match self {
+            Self::And(p) => p.location(),
+            Self::Or(p) => p.location(),
+        }
     }
 }
 
@@ -274,10 +271,19 @@ pub struct Pipeline {
     pub seq: Vec<Command>,
 }
 
-// TODO: add a loc here
 impl SourceLocation for Pipeline {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        let start = self
+            .timed
+            .as_ref()
+            .and_then(SourceLocation::location)
+            .or_else(|| self.seq.first().and_then(SourceLocation::location));
+        let end = self.seq.last().and_then(SourceLocation::location);
+
+        match (start, end) {
+            (Some(start), Some(end)) => Some(TokenLocation::within(&start, &end)),
+            _ => None,
+        }
     }
 }
 
@@ -609,13 +615,7 @@ pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
 impl SourceLocation for CompoundListItem {
     fn location(&self) -> Option<TokenLocation> {
-        let start = self.0.location();
-        let end = self.1.location();
-
-        match (start, end) {
-            (Some(s), Some(e)) => Some(TokenLocation::within(&s, &e)),
-            _ => None,
-        }
+        self.0.location()
     }
 }
 
@@ -773,10 +773,16 @@ pub struct FunctionDefinition {
     pub source: String,
 }
 
-// TODO: complete
 impl SourceLocation for FunctionDefinition {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        let start = self.fname.location();
+        let end = self.body.location();
+
+        if let (Some(s), Some(e)) = (start, end) {
+            Some(TokenLocation::within(&s, &e))
+        } else {
+            None
+        }
     }
 }
 
@@ -793,6 +799,20 @@ impl Display for FunctionDefinition {
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
+
+impl SourceLocation for FunctionBody {
+    fn location(&self) -> Option<TokenLocation> {
+        let start = self.0.location();
+
+        let end = self.1.as_ref().and_then(SourceLocation::location);
+
+        if let (Some(s), Some(e)) = (start, end) {
+            Some(TokenLocation::within(&s, &e))
+        } else {
+            None
+        }
+    }
+}
 
 impl Display for FunctionBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
