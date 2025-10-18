@@ -284,25 +284,22 @@ impl Execute for ast::Pipeline {
             if let Some(stderr) = params.open_files.stderr() {
                 let timing = stopwatch.unwrap().stop()?;
 
-                match timed {
-                    ast::PipelineTimed::Timed => {
-                        std::write!(
-                            stderr.to_owned(),
-                            "\nreal\t{}\nuser\t{}\nsys\t{}\n",
-                            timing::format_duration_non_posixly(&timing.wall),
-                            timing::format_duration_non_posixly(&timing.user),
-                            timing::format_duration_non_posixly(&timing.system),
-                        )?;
-                    }
-                    ast::PipelineTimed::TimedWithPosixOutput => {
-                        std::write!(
-                            stderr.to_owned(),
-                            "real {}\nuser {}\nsys {}\n",
-                            timing::format_duration_posixly(&timing.wall),
-                            timing::format_duration_posixly(&timing.user),
-                            timing::format_duration_posixly(&timing.system),
-                        )?;
-                    }
+                if timed.is_posix_output() {
+                    std::write!(
+                        stderr.to_owned(),
+                        "real {}\nuser {}\nsys {}\n",
+                        timing::format_duration_posixly(&timing.wall),
+                        timing::format_duration_posixly(&timing.user),
+                        timing::format_duration_posixly(&timing.system),
+                    )?;
+                } else {
+                    std::write!(
+                        stderr.to_owned(),
+                        "\nreal\t{}\nuser\t{}\nsys\t{}\n",
+                        timing::format_duration_non_posixly(&timing.wall),
+                        timing::format_duration_non_posixly(&timing.user),
+                        timing::format_duration_non_posixly(&timing.system),
+                    )?;
                 }
             }
         }

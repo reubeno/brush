@@ -286,11 +286,12 @@ peg::parser! {
             timed:pipeline_timed()? bang:bang()? seq:pipe_sequence() { ast::Pipeline { timed, bang: bang.is_some(), seq } }
 
         rule pipeline_timed() -> ast::PipelineTimed =
-            non_posix_extensions_enabled() specific_word("time") posix_output:specific_word("-p")? {
-                if posix_output.is_some() {
-                    ast::PipelineTimed::TimedWithPosixOutput
+            non_posix_extensions_enabled() s:specific_word("time") posix_output:specific_word("-p")? {
+                let start = s.location();
+                if let Some(end) = posix_output {
+                    ast::PipelineTimed::TimedWithPosixOutput(TokenLocation::within(start, end.location()))
                 } else {
-                    ast::PipelineTimed::Timed
+                    ast::PipelineTimed::Timed(start.to_owned())
                 }
             }
 
