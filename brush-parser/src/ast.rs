@@ -1011,10 +1011,12 @@ impl Display for SimpleCommand {
 #[cfg_attr(test, serde(rename = "Prefix"))]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
-// TODO: complete
 impl SourceLocation for CommandPrefix {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        let start = self.0.first().and_then(SourceLocation::location);
+        let end = self.0.last().and_then(SourceLocation::location);
+
+        maybe_location(start.as_ref(), end.as_ref())
     }
 }
 
@@ -1038,10 +1040,12 @@ impl Display for CommandPrefix {
 #[cfg_attr(test, serde(rename = "Suffix"))]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
-// TODO: complete
 impl SourceLocation for CommandSuffix {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        let start = self.0.first().and_then(SourceLocation::location);
+        let end = self.0.last().and_then(SourceLocation::location);
+
+        maybe_location(start.as_ref(), end.as_ref())
     }
 }
 
@@ -1097,7 +1101,10 @@ pub enum CommandPrefixOrSuffixItem {
 // TODO: complete
 impl SourceLocation for CommandPrefixOrSuffixItem {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        match self {
+            Self::Word(w) => w.location(),
+            _ => None,
+        }
     }
 }
 
