@@ -394,7 +394,8 @@ impl SourceLocation for CompoundCommand {
             Self::ForClause(f) => f.location(),
             Self::CaseClause(c) => c.location(),
             Self::IfClause(i) => i.location(),
-            _ => None,
+            Self::WhileClause(w) => w.location(),
+            Self::UntilClause(u) => u.location(),
         }
     }
 }
@@ -800,7 +801,13 @@ impl Display for CaseItemPostAction {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand);
+pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand, pub TokenLocation);
+
+impl SourceLocation for WhileOrUntilClauseCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.2.to_owned())
+    }
+}
 
 impl Display for WhileOrUntilClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
