@@ -401,7 +401,7 @@ peg::parser! {
 
         // N.B. The arithmetic for loop is a non-sh extension.
         rule arithmetic_for_clause() -> ast::ArithmeticForClauseCommand =
-            specific_word("for")
+            s:specific_word("for")
             specific_operator("(") specific_operator("(")
                 initializer:arithmetic_expression()? specific_operator(";")
                 condition:arithmetic_expression()? specific_operator(";")
@@ -409,7 +409,10 @@ peg::parser! {
             specific_operator(")") specific_operator(")")
             sequential_sep()
             body:do_group() {
-                ast::ArithmeticForClauseCommand { initializer, condition, updater, body }
+                let start = s.location();
+                let end = &body.loc;
+                let loc = TokenLocation::within(start, end);
+                ast::ArithmeticForClauseCommand { initializer, condition, updater, body, loc }
             }
 
         rule extended_test_command() -> ast::ExtendedTestExpr =
