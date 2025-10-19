@@ -130,6 +130,18 @@ ParseResult(
                     ),
                   ),
                 ),
+                loc: Loc(
+                  start: Pos(
+                    idx: 23,
+                    line: 5,
+                    col: 1,
+                  ),
+                  end: Pos(
+                    idx: 86,
+                    line: 10,
+                    col: 8,
+                  ),
+                ),
               )), None),
             ],
           ),

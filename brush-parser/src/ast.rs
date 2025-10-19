@@ -388,6 +388,7 @@ impl SourceLocation for CompoundCommand {
             Self::ArithmeticForClause(a) => a.location(),
             Self::BraceGroup(b) => b.location(),
             Self::Subshell(s) => s.location(),
+            Self::ForClause(f) => f.location(),
 
             _ => None,
         }
@@ -479,6 +480,14 @@ pub struct ForClauseCommand {
     pub values: Option<Vec<Word>>,
     /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
+    /// Location of the for loop
+    pub loc: TokenLocation,
+}
+
+impl SourceLocation for ForClauseCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.loc.to_owned())
+    }
 }
 
 impl Display for ForClauseCommand {

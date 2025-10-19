@@ -392,11 +392,17 @@ peg::parser! {
             }
 
         rule for_clause() -> ast::ForClauseCommand =
-            specific_word("for") n:name() linebreak() _in() w:wordlist()? sequential_sep() d:do_group() {
-                ast::ForClauseCommand { variable_name: n.to_owned(), values: w, body: d }
+            s:specific_word("for") n:name() linebreak() _in() w:wordlist()? sequential_sep() d:do_group() {
+                let start = s.location();
+                let end = &d.loc;
+                let loc = TokenLocation::within(start, end);
+                ast::ForClauseCommand { variable_name: n.to_owned(), values: w, body: d, loc }
             } /
-            specific_word("for") n:name() sequential_sep()? d:do_group() {
-                ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d }
+            s:specific_word("for") n:name() sequential_sep()? d:do_group() {
+                let start = s.location();
+                let end = &d.loc;
+                let loc = TokenLocation::within(start, end);
+                ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d, loc }
             }
 
         // N.B. The arithmetic for loop is a non-sh extension.
