@@ -617,10 +617,22 @@ peg::parser! {
              }
 
         rule while_clause() -> ast::WhileOrUntilClauseCommand =
-            specific_word("while") c:compound_list() d:do_group() { ast::WhileOrUntilClauseCommand(c, d) }
+            s:specific_word("while") c:compound_list() d:do_group() {
+                let start = s.location();
+                let end = &d.loc;
+                let loc = TokenLocation::within(start, end);
+
+                ast::WhileOrUntilClauseCommand(c, d, loc)
+            }
 
         rule until_clause() -> ast::WhileOrUntilClauseCommand =
-            specific_word("until") c:compound_list() d:do_group() { ast::WhileOrUntilClauseCommand(c, d) }
+            s:specific_word("until") c:compound_list() d:do_group() {
+                let start = s.location();
+                let end = &d.loc;
+                let loc = TokenLocation::within(start, end);
+
+                ast::WhileOrUntilClauseCommand(c, d, loc)
+            }
 
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         rule function_definition() -> ast::FunctionDefinition =
