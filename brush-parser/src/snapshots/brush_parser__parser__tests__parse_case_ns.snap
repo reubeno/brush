@@ -89,9 +89,9 @@ ParseResult(
             col: 1,
           ),
           end: Pos(
-            idx: 23,
+            idx: 25,
             line: 4,
-            col: 9,
+            col: 11,
           ),
         )),
       ),
