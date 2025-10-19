@@ -393,6 +393,7 @@ impl SourceLocation for CompoundCommand {
             Self::Subshell(s) => s.location(),
             Self::ForClause(f) => f.location(),
             Self::CaseClause(c) => c.location(),
+            Self::IfClause(i) => i.location(),
             _ => None,
         }
     }
@@ -670,6 +671,14 @@ pub struct IfClauseCommand {
     /// Optionally, `else` clauses that will be evaluated if the condition is false.
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pub elses: Option<Vec<ElseClause>>,
+    /// Location of the if clause
+    pub loc: TokenLocation,
+}
+
+impl SourceLocation for IfClauseCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.loc.to_owned())
+    }
 }
 
 impl Display for IfClauseCommand {

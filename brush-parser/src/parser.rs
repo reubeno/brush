@@ -578,11 +578,16 @@ peg::parser! {
             (w:word() { ast::Word::from(w) }) ++ specific_operator("|")
 
         rule if_clause() -> ast::IfClauseCommand =
-            specific_word("if") condition:compound_list() specific_word("then") then:compound_list() elses:else_part()? specific_word("fi") {
+            s:specific_word("if") condition:compound_list() specific_word("then") then:compound_list() elses:else_part()? e:specific_word("fi") {
+                let start = s.location();
+                let end = s.location();
+                let loc = TokenLocation::within(start, end);
+
                 ast::IfClauseCommand {
                     condition,
                     then,
                     elses,
+                    loc
                 }
             }
 
