@@ -491,7 +491,7 @@ pub struct ForClauseCommand {
 
 impl SourceLocation for ForClauseCommand {
     fn location(&self) -> Option<TokenLocation> {
-        Some(self.loc.to_owned())
+        Some(self.loc.clone())
     }
 }
 
@@ -534,7 +534,7 @@ pub struct ArithmeticForClauseCommand {
 
 impl SourceLocation for ArithmeticForClauseCommand {
     fn location(&self) -> Option<TokenLocation> {
-        Some(self.loc.to_owned())
+        Some(self.loc.clone())
     }
 }
 
@@ -678,7 +678,7 @@ pub struct IfClauseCommand {
 
 impl SourceLocation for IfClauseCommand {
     fn location(&self) -> Option<TokenLocation> {
-        Some(self.loc.to_owned())
+        Some(self.loc.clone())
     }
 }
 
@@ -749,7 +749,7 @@ pub struct CaseItem {
 
 impl SourceLocation for CaseItem {
     fn location(&self) -> Option<TokenLocation> {
-        self.loc.to_owned()
+        self.loc.clone()
     }
 }
 
@@ -805,7 +805,7 @@ pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand, pub T
 
 impl SourceLocation for WhileOrUntilClauseCommand {
     fn location(&self) -> Option<TokenLocation> {
-        Some(self.2.to_owned())
+        Some(self.2.clone())
     }
 }
 
@@ -964,8 +964,8 @@ impl SourceLocation for SimpleCommand {
         let end = self.suffix.as_ref().and_then(SourceLocation::location);
 
         maybe_location(
-            start.as_ref().or_else(|| mid.as_ref()),
-            end.as_ref().or_else(|| mid.as_ref()),
+            start.as_ref().or(mid.as_ref()),
+            end.as_ref().or(mid.as_ref()),
         )
     }
 }
@@ -1503,7 +1503,7 @@ pub struct ExtendedTestExprCommand {
 
 impl SourceLocation for ExtendedTestExprCommand {
     fn location(&self) -> Option<TokenLocation> {
-        Some(self.loc.to_owned())
+        Some(self.loc.clone())
     }
 }
 
