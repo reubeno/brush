@@ -248,7 +248,7 @@ impl SourceLocation for PipelineTimed {
 
 impl PipelineTimed {
     /// Returns true if the pipeline should be timed with POSIX-like output.
-    pub fn is_posix_output(&self) -> bool {
+    pub const fn is_posix_output(&self) -> bool {
         matches!(self, Self::TimedWithPosixOutput(_))
     }
 }
