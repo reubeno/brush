@@ -534,7 +534,7 @@ peg::parser! {
 
         pub(crate) rule case_item_ns() -> ast::CaseItem =
             s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
-                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let start = s.map(|s| s.location()).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = c.location();
 
                 let loc = maybe_location(start, end.as_ref());
@@ -542,7 +542,7 @@ peg::parser! {
                 ast::CaseItem { patterns: p, cmd: Some(c), post_action: ast::CaseItemPostAction::ExitCase, loc }
             } /
             s:specific_operator("(")? p:pattern() e:specific_operator(")") linebreak() {
-                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let start = s.map(|s| s.location()).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = Some(e.location());
 
                 let loc = maybe_location(start, end);
@@ -551,13 +551,13 @@ peg::parser! {
 
         pub(crate) rule case_item() -> ast::CaseItem =
             s:specific_operator("(")? p:pattern() specific_operator(")") linebreak() post_action:case_item_post_action() linebreak() {
-                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let start = s.map(|s| s.location()).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = Some(post_action.1);
                 let loc = maybe_location(start, end);
                 ast::CaseItem { patterns: p, cmd: None, post_action: post_action.0, loc }
             } /
             s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() post_action:case_item_post_action() linebreak() {
-                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let start = s.map(|s| s.location()).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = Some(post_action.1);
                 let loc = maybe_location(start, end);
                 ast::CaseItem { patterns: p, cmd: Some(c), post_action: post_action.0, loc }
