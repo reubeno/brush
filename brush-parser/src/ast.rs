@@ -319,7 +319,7 @@ pub enum Command {
     /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
     /// A command that evaluates an extended test expression.
-    ExtendedTest(ExtendedTestExpr),
+    ExtendedTest(ExtendedTestExprCommand),
 }
 
 impl SourceLocation for Command {
@@ -1442,13 +1442,6 @@ pub enum ExtendedTestExpr {
     BinaryTest(BinaryPredicate, Word, Word),
 }
 
-// TODO: complete
-impl SourceLocation for ExtendedTestExpr {
-    fn location(&self) -> Option<TokenLocation> {
-        None
-    }
-}
-
 impl Display for ExtendedTestExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1471,6 +1464,29 @@ impl Display for ExtendedTestExpr {
                 write!(f, "{left} {pred} {right}")
             }
         }
+    }
+}
+
+/// An extended test expression command.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+pub struct ExtendedTestExprCommand {
+    /// The extended test expression
+    pub expr: ExtendedTestExpr,
+    /// Location of the expression
+    pub loc: TokenLocation,
+}
+
+impl SourceLocation for ExtendedTestExprCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.loc.to_owned())
+    }
+}
+
+impl Display for ExtendedTestExprCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.expr.fmt(f)
     }
 }
 

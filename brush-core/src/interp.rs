@@ -527,14 +527,17 @@ impl ExecuteInPipeline for ast::Command {
                 Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
             }
             Self::ExtendedTest(e) => {
-                let result =
-                    if extendedtests::eval_extended_test_expr(e, pipeline_context.shell, &params)
-                        .await?
-                    {
-                        0
-                    } else {
-                        1
-                    };
+                let result = if extendedtests::eval_extended_test_expr(
+                    &e.expr,
+                    pipeline_context.shell,
+                    &params,
+                )
+                .await?
+                {
+                    0
+                } else {
+                    1
+                };
                 Ok(CommandSpawnResult::ImmediateExit(result))
             }
         }
