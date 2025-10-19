@@ -678,13 +678,14 @@ impl Shell {
 
         let opened_file: openfiles::OpenFile = self
             .open_file(&options, path, params)
-            .map_err(|e| error::Error::FailedSourcingFile(path.to_owned(), e.into()))?;
+            .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
 
         if opened_file.is_dir() {
-            return Err(error::Error::FailedSourcingFile(
+            return Err(error::ErrorKind::FailedSourcingFile(
                 path.to_owned(),
-                error::Error::IsADirectory.into(),
-            ));
+                std::io::Error::from(std::io::ErrorKind::IsADirectory),
+            )
+            .into());
         }
 
         let source_info = brush_parser::SourceInfo {
@@ -777,7 +778,7 @@ impl Shell {
         let func_registration = self
             .funcs
             .get(name)
-            .ok_or_else(|| error::Error::FunctionNotFound(name.to_owned()))?;
+            .ok_or_else(|| error::ErrorKind::FunctionNotFound(name.to_owned()))?;
 
         let func = func_registration.definition.clone();
 
@@ -1081,7 +1082,7 @@ impl Shell {
     ) -> Result<(), error::Error> {
         if let Some(max_call_depth) = self.options.max_function_call_depth {
             if self.function_call_stack.depth() >= max_call_depth {
-                return Err(error::Error::MaxFunctionCallDepthExceeded);
+                return Err(error::ErrorKind::MaxFunctionCallDepthExceeded.into());
             }
         }
 
@@ -1350,7 +1351,7 @@ impl Shell {
         options: &std::fs::OpenOptions,
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
-    ) -> Result<openfiles::OpenFile, error::Error> {
+    ) -> Result<openfiles::OpenFile, std::io::Error> {
         let path_to_open = self.absolute_path(path.as_ref());
 
         // See if this is a reference to a file descriptor, in which case the actual
@@ -1382,7 +1383,7 @@ impl Shell {
         match std::fs::metadata(&abs_path) {
             Ok(m) => {
                 if !m.is_dir() {
-                    return Err(error::Error::NotADirectory(abs_path));
+                    return Err(error::ErrorKind::NotADirectory(abs_path).into());
                 }
             }
             Err(e) => {

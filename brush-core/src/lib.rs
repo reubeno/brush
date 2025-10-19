@@ -39,7 +39,7 @@ pub mod variables;
 mod wellknownvars;
 
 pub use commands::{CommandArg, ExecutionContext};
-pub use error::Error;
+pub use error::{Error, ErrorKind};
 pub use interp::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy};
 pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState};
 pub use terminal::TerminalControl;

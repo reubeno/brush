@@ -61,7 +61,9 @@ impl EventsCommand {
         let event_config = crate::get_event_config();
 
         let mut event_config = event_config.try_lock().map_err(|_| {
-            brush_core::Error::Unimplemented("Failed to acquire lock on event configuration")
+            brush_core::Error::from(brush_core::ErrorKind::Unimplemented(
+                "Failed to acquire lock on event configuration",
+            ))
         })?;
 
         if let Some(event_config) = event_config.as_mut() {
@@ -80,9 +82,7 @@ impl EventsCommand {
 
             Ok(brush_core::builtins::ExitCode::Success)
         } else {
-            Err(brush_core::Error::Unimplemented(
-                "event configuration not initialized",
-            ))
+            Err(brush_core::ErrorKind::Unimplemented("event configuration not initialized").into())
         }
     }
 }

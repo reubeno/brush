@@ -17,10 +17,8 @@ mod snapshot_tests;
 
 pub use error::{
     BindingParseError, ParseError, ParseErrorLocation, TestCommandParseError, WordParseError,
+    miette::PrettyError,
 };
-
-#[cfg(feature = "diagnostics")]
-pub use error::miette::PrettyError;
 
 pub use parser::{Parser, ParserBuilder, ParserOptions, SourceInfo, parse_tokens};
 pub use tokenizer::{

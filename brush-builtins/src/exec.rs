@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
-use brush_core::{Error, builtins, commands};
+use brush_core::{ErrorKind, builtins, commands};
 
 /// Exec the provided command.
 #[derive(Parser)]
@@ -56,7 +56,7 @@ impl builtins::Command for ExecCommand {
         if exec_error.kind() == std::io::ErrorKind::NotFound {
             Ok(builtins::ExitCode::Custom(127))
         } else {
-            Err(Error::from(exec_error))
+            Err(ErrorKind::from(exec_error).into())
         }
     }
 }

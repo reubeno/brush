@@ -77,7 +77,7 @@ impl ShellEnvironment {
         // TODO: Should we panic instead on failure? It's effectively a broken invariant.
         match self.scopes.pop() {
             Some((actual_scope_type, _)) if actual_scope_type == expected_scope_type => Ok(()),
-            _ => Err(error::Error::MissingScope),
+            _ => Err(error::ErrorKind::MissingScope.into()),
         }
     }
 
@@ -287,7 +287,7 @@ impl ShellEnvironment {
         name: &str,
     ) -> Result<Option<ShellVariable>, error::Error> {
         match map.get(name).map(|v| v.is_readonly()) {
-            Some(true) => Err(error::Error::ReadonlyVariable),
+            Some(true) => Err(error::ErrorKind::ReadonlyVariable.into()),
             Some(false) => Ok(map.unset(name)),
             None => Ok(None),
         }
@@ -500,7 +500,7 @@ impl ShellEnvironment {
             }
         }
 
-        Err(error::Error::MissingScope)
+        Err(error::ErrorKind::MissingScope.into())
     }
 
     /// Sets a global variable in the environment.

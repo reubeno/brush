@@ -193,10 +193,7 @@ impl Registration {
     }
 }
 
-const fn get_builtin_man_page(
-    _name: &str,
-    _command: &clap::Command,
-) -> Result<String, error::Error> {
+fn get_builtin_man_page(_name: &str, _command: &clap::Command) -> Result<String, error::Error> {
     error::unimp("man page rendering is not yet implemented")
 }
 

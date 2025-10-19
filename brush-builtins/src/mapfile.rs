@@ -2,7 +2,7 @@ use std::io::Read;
 
 use clap::Parser;
 
-use brush_core::{Error, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, builtins, env, error, sys, variables};
 
 /// Inspect and modify key bindings and other input configuration.
 #[derive(Parser)]
@@ -61,7 +61,7 @@ impl builtins::Command for MapFileCommand {
         let input_file = context
             .params
             .fd(self.fd)
-            .ok_or_else(|| Error::BadFileDescriptor(self.fd))?;
+            .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
         // Read!
         let results = self.read_entries(input_file)?;

@@ -112,7 +112,7 @@ pub(crate) fn compile_regex(
 
     match builder.build() {
         Ok(re) => Ok(re),
-        Err(e) => Err(error::Error::InvalidRegexError(e, regex_str.to_string())),
+        Err(e) => Err(error::ErrorKind::InvalidRegexError(e, regex_str.to_string()).into()),
     }
 }
 

@@ -280,7 +280,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
             })
             .collect();
         cmd.fd_mappings(fd_mappings)
-            .map_err(|_e| error::Error::ChildCreationFailure)?;
+            .map_err(|_e| error::ErrorKind::ChildCreationFailure)?;
     }
     #[cfg(not(unix))]
     {

@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 
-use brush_core::{Error, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, builtins, env, error, sys, variables};
 
 use std::io::{Read, Write};
 
@@ -85,7 +85,7 @@ impl builtins::Command for ReadCommand {
             context
                 .params
                 .fd(fd_num)
-                .ok_or_else(|| Error::BadFileDescriptor(fd_num))?
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?
         } else {
             context
                 .params

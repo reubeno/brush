@@ -92,7 +92,7 @@ impl History {
         let existing_item = self
             .id_map
             .get_mut(&id)
-            .ok_or(error::Error::HistoryItemNotFound)?;
+            .ok_or(error::ErrorKind::HistoryItemNotFound)?;
         *existing_item = item;
         Ok(())
     }

@@ -1349,7 +1349,7 @@ pub(crate) async fn setup_redirect(
             let mut expanded_fields =
                 expansion::full_expand_and_split_word(shell, params, f).await?;
             if expanded_fields.len() != 1 {
-                return Err(error::Error::InvalidRedirection);
+                return Err(error::ErrorKind::InvalidRedirection.into());
             }
 
             let expanded_file_path: PathBuf =
@@ -1365,7 +1365,7 @@ pub(crate) async fn setup_redirect(
             let stdout_file = shell
                 .open_file(&file_options, &expanded_file_path, params)
                 .map_err(|err| {
-                    error::Error::RedirectionFailure(
+                    error::ErrorKind::RedirectionFailure(
                         expanded_file_path.to_string_lossy().to_string(),
                         err.to_string(),
                     )
@@ -1386,7 +1386,7 @@ pub(crate) async fn setup_redirect(
                         expansion::full_expand_and_split_word(shell, params, f).await?;
 
                     if expanded_fields.len() != 1 {
-                        return Err(error::Error::InvalidRedirection);
+                        return Err(error::ErrorKind::InvalidRedirection.into());
                     }
 
                     let expanded_file_path: PathBuf =
@@ -1444,7 +1444,7 @@ pub(crate) async fn setup_redirect(
                     let opened_file = shell
                         .open_file(&options, &expanded_file_path, params)
                         .map_err(|err| {
-                            error::Error::RedirectionFailure(
+                            error::ErrorKind::RedirectionFailure(
                                 expanded_file_path.to_string_lossy().to_string(),
                                 err.to_string(),
                             )
@@ -1469,7 +1469,7 @@ pub(crate) async fn setup_redirect(
 
                         params.open_files.set(fd_num, target_file);
                     } else {
-                        return Err(error::Error::BadFileDescriptor(*fd));
+                        return Err(error::ErrorKind::BadFileDescriptor(*fd).into());
                     }
                 }
 
@@ -1488,7 +1488,7 @@ pub(crate) async fn setup_redirect(
                         expansion::full_expand_and_split_word(shell, params, word).await?;
 
                     if expanded_fields.len() != 1 {
-                        return Err(error::Error::InvalidRedirection);
+                        return Err(error::ErrorKind::InvalidRedirection.into());
                     }
 
                     let mut expanded = expanded_fields.remove(0);
@@ -1505,18 +1505,18 @@ pub(crate) async fn setup_redirect(
                     } else if expanded.chars().all(|c: char| c.is_ascii_digit()) {
                         let source_fd_num = expanded
                             .parse::<u32>()
-                            .map_err(|_| error::Error::InvalidRedirection)?;
+                            .map_err(|_| error::ErrorKind::InvalidRedirection)?;
 
                         // Duplicate the fd.
                         let target_file = if let Some(f) = params.open_files.get(source_fd_num) {
                             f.try_dup()?
                         } else {
-                            return Err(error::Error::BadFileDescriptor(source_fd_num));
+                            return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
                         };
 
                         params.open_files.set(fd_num, target_file);
                     } else {
-                        return Err(error::Error::InvalidRedirection);
+                        return Err(error::ErrorKind::InvalidRedirection.into());
                     }
 
                     if dash {

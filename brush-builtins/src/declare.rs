@@ -4,7 +4,7 @@ use std::{io::Write, sync::LazyLock};
 use tracing::warn;
 
 use brush_core::{
-    Error, builtins,
+    ErrorKind, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
     variables::{
@@ -373,7 +373,7 @@ impl DeclareCommand {
                             assignment.value,
                             brush_parser::ast::AssignmentValue::Array(_)
                         ) {
-                            return Err(Error::AssigningListToArrayMember);
+                            return Err(ErrorKind::AssigningListToArrayMember.into());
                         }
 
                         name = var_name.to_owned();

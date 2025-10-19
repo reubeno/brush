@@ -764,7 +764,7 @@ impl<'a> WordExpander<'a> {
         } else if let Some(home_dir) = self.shell.home_dir() {
             Ok(home_dir.to_string_lossy().to_string())
         } else {
-            Err(error::Error::TildeWithoutValidHome)
+            Err(error::ErrorKind::TildeWithoutValidHome.into())
         }
     }
 
@@ -838,9 +838,10 @@ impl<'a> WordExpander<'a> {
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Err(error::Error::CheckedExpansionError(
+                    _ => Err(error::ErrorKind::CheckedExpansionError(
                         self.basic_expand_to_str(error_message).await?,
-                    )),
+                    )
+                    .into()),
                 }
             }
             brush_parser::word::ParameterExpr::UseAlternativeValue {
@@ -1224,7 +1225,7 @@ impl<'a> WordExpander<'a> {
                 concatenate: _,
             }
             | brush_parser::word::Parameter::Special(_) => {
-                return Err(error::Error::CannotAssignToSpecialParameter);
+                return Err(error::ErrorKind::CannotAssignToSpecialParameter.into());
             }
         };
 
@@ -1326,7 +1327,7 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::Parameter::Special(s) => Ok(self.expand_special_parameter(s)),
             brush_parser::word::Parameter::Named(n) => {
                 if !env::valid_variable_name(n.as_str()) {
-                    Err(error::Error::BadSubstitution)
+                    Err(error::ErrorKind::BadSubstitution(n.clone()).into())
                 } else if let Some((_, var)) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         Ok(Expansion::undefined())

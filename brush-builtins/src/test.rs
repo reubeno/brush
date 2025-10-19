@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{Error, ExecutionParameters, Shell, builtins, tests};
+use brush_core::{ErrorKind, ExecutionParameters, Shell, builtins, tests};
 
 /// Evaluate test expression.
 #[derive(Parser)]
@@ -44,6 +44,6 @@ fn execute_test(
     args: &[String],
 ) -> Result<bool, brush_core::Error> {
     let test_command =
-        brush_parser::test_command::parse(args).map_err(Error::TestCommandParseError)?;
+        brush_parser::test_command::parse(args).map_err(ErrorKind::TestCommandParseError)?;
     tests::eval_expr(&test_command, shell, params)
 }

@@ -48,6 +48,13 @@ impl Display for SourcePosition {
     }
 }
 
+impl From<&SourcePosition> for miette::SourceOffset {
+    #[allow(clippy::cast_sign_loss)]
+    fn from(position: &SourcePosition) -> Self {
+        (position.index as usize).into()
+    }
+}
+
 /// Represents the location of a token in its source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
@@ -58,6 +65,14 @@ pub struct TokenLocation {
     pub start: SourcePosition,
     /// The end position of the token (exclusive).
     pub end: SourcePosition,
+}
+
+impl TokenLocation {
+    /// Returns the length of the token in characters.
+    #[allow(clippy::cast_sign_loss)]
+    pub const fn length(&self) -> usize {
+        (self.end.index - self.start.index) as usize
+    }
 }
 
 /// Represents a token extracted from a shell script.
@@ -88,6 +103,13 @@ impl Token {
             Self::Operator(_, l) => l,
             Self::Word(_, l) => l,
         }
+    }
+}
+
+impl From<&Token> for miette::SourceSpan {
+    fn from(token: &Token) -> Self {
+        let start = &(token.location().start);
+        Self::new(start.into(), token.location().length())
     }
 }
 

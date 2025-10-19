@@ -2,9 +2,18 @@
 
 use std::path::PathBuf;
 
+/// Unified error type for this crate. Contains just a kind for now,
+/// but will be extended later with additional context.
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct Error {
+    /// The kind of error.
+    kind: ErrorKind,
+}
+
 /// Monolithic error type for the shell
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub enum ErrorKind {
     /// A local variable was set outside of a function
     #[error("can't set local variable outside of function")]
     SetLocalVarOutsideFunction,
@@ -26,8 +35,8 @@ pub enum Error {
     ConvertingIndexedArrayToAssociativeArray,
 
     /// An error occurred while sourcing the indicated script file.
-    #[error("failed to source file: {0}; {1}")]
-    FailedSourcingFile(PathBuf, Box<Error>),
+    #[error("failed to source file: {0}")]
+    FailedSourcingFile(PathBuf, #[source] std::io::Error),
 
     /// The shell failed to send a signal to a process.
     #[error("failed to send signal to process")]
@@ -131,35 +140,31 @@ pub enum Error {
     IoError(#[from] std::io::Error),
 
     /// Invalid substitution syntax.
-    #[error("bad substitution")]
-    BadSubstitution,
-
-    /// Invalid arguments were provided to the command.
-    #[error("invalid arguments")]
-    InvalidArguments,
+    #[error("bad substitution: {0}")]
+    BadSubstitution(String),
 
     /// An error occurred while creating a child process.
     #[error("failed to create child process")]
     ChildCreationFailure,
 
     /// An error occurred while formatting a string.
-    #[error("{0}")]
+    #[error(transparent)]
     FormattingError(#[from] std::fmt::Error),
 
     /// An error occurred while parsing.
-    #[error("{0}")]
+    #[error(transparent)]
     ParseError(#[from] brush_parser::ParseError),
 
     /// An error occurred while parsing a word.
-    #[error("{0}")]
+    #[error(transparent)]
     WordParseError(#[from] brush_parser::WordParseError),
 
     /// Unable to parse a test command.
-    #[error("{0}")]
+    #[error(transparent)]
     TestCommandParseError(#[from] brush_parser::TestCommandParseError),
 
     /// Unable to parse a key binding specification.
-    #[error("{0}")]
+    #[error(transparent)]
     BindingParseError(#[from] brush_parser::BindingParseError),
 
     /// A threading error occurred.
@@ -217,12 +222,23 @@ pub enum Error {
     TimeError(#[from] std::time::SystemTimeError),
 
     /// Array index out of range.
-    #[error("array index out of range")]
-    ArrayIndexOutOfRange,
+    #[error("array index out of range: {0}")]
+    ArrayIndexOutOfRange(i64),
 
     /// Unhandled key code.
     #[error("unhandled key code: {0:?}")]
     UnhandledKeyCode(Vec<u8>),
+}
+
+impl<T> From<T> for Error
+where
+    ErrorKind: From<T>,
+{
+    fn from(convertible_to_kind: T) -> Self {
+        Self {
+            kind: convertible_to_kind.into(),
+        }
+    }
 }
 
 /// Convenience function for returning an error for unimplemented functionality.
@@ -230,8 +246,8 @@ pub enum Error {
 /// # Arguments
 ///
 /// * `msg` - The message to include in the error
-pub const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
-    Err(Error::Unimplemented(msg))
+pub fn unimp<T>(msg: &'static str) -> Result<T, Error> {
+    Err(ErrorKind::Unimplemented(msg).into())
 }
 
 /// Convenience function for returning an error for *tracked*, unimplemented functionality.
@@ -241,6 +257,6 @@ pub const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 /// * `msg` - The message to include in the error
 /// * `project_issue_id` - The GitHub issue ID where the implementation is tracked.
 #[allow(unused)]
-pub const fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
-    Err(Error::UnimplementedAndTracked(msg, project_issue_id))
+pub fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
+    Err(ErrorKind::UnimplementedAndTracked(msg, project_issue_id).into())
 }

@@ -43,7 +43,7 @@ impl Clone for OpenFile {
 
 impl OpenFile {
     /// Tries to duplicate the open file.
-    pub fn try_dup(&self) -> Result<Self, error::Error> {
+    pub fn try_dup(&self) -> Result<Self, std::io::Error> {
         let result = match self {
             Self::Stdin(_) => Self::Stdin(std::io::stdin()),
             Self::Stdout(_) => Self::Stdout(std::io::stdout()),
@@ -152,17 +152,17 @@ impl std::io::Read for OpenFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Stdin(f) => f.read(buf),
-            Self::Stdout(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
-                "stdout",
-            ))),
-            Self::Stderr(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
-                "stderr",
-            ))),
+            Self::Stdout(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stdout"),
+            )),
+            Self::Stderr(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stderr"),
+            )),
             Self::File(f) => f.read(buf),
             Self::PipeReader(reader) => reader.read(buf),
-            Self::PipeWriter(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
-                "pipe writer",
-            ))),
+            Self::PipeWriter(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("pipe writer"),
+            )),
         }
     }
 }
@@ -170,15 +170,15 @@ impl std::io::Read for OpenFile {
 impl std::io::Write for OpenFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            Self::Stdin(_) => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
-                "stdin",
-            ))),
+            Self::Stdin(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("stdin"),
+            )),
             Self::Stdout(f) => f.write(buf),
             Self::Stderr(f) => f.write(buf),
             Self::File(f) => f.write(buf),
-            Self::PipeReader(_) => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
-                "pipe reader",
-            ))),
+            Self::PipeReader(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("pipe reader"),
+            )),
             Self::PipeWriter(writer) => writer.write(buf),
         }
     }
