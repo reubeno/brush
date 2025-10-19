@@ -385,8 +385,10 @@ impl SourceLocation for CompoundCommand {
     fn location(&self) -> Option<TokenLocation> {
         match self {
             Self::Arithmetic(a) => a.location(),
+            Self::ArithmeticForClause(a) => a.location(),
             Self::BraceGroup(b) => b.location(),
             Self::Subshell(s) => s.location(),
+
             _ => None,
         }
     }
@@ -512,6 +514,14 @@ pub struct ArithmeticForClauseCommand {
     pub updater: Option<UnexpandedArithmeticExpr>,
     /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
+    /// Location of the clause
+    pub loc: TokenLocation,
+}
+
+impl SourceLocation for ArithmeticForClauseCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        Some(self.loc.to_owned())
+    }
 }
 
 impl Display for ArithmeticForClauseCommand {
