@@ -13,6 +13,17 @@ pub trait SourceLocation {
     fn location(&self) -> Option<TokenLocation>;
 }
 
+pub(crate) fn maybe_location(
+    start: Option<&TokenLocation>,
+    end: Option<&TokenLocation>,
+) -> Option<TokenLocation> {
+    if let (Some(s), Some(e)) = (start, end) {
+        Some(TokenLocation::within(s, e))
+    } else {
+        None
+    }
+}
+
 /// Represents a complete shell program.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
@@ -33,12 +44,7 @@ impl SourceLocation for Program {
             .complete_commands
             .last()
             .and_then(SourceLocation::location);
-
-        if let (Some(s), Some(e)) = (start, end) {
-            Some(TokenLocation::within(&s, &e))
-        } else {
-            None
-        }
+        maybe_location(start.as_ref(), end.as_ref())
     }
 }
 
@@ -280,10 +286,7 @@ impl SourceLocation for Pipeline {
             .or_else(|| self.seq.first().and_then(SourceLocation::location));
         let end = self.seq.last().and_then(SourceLocation::location);
 
-        match (start, end) {
-            (Some(start), Some(end)) => Some(TokenLocation::within(&start, &end)),
-            _ => None,
-        }
+        maybe_location(start.as_ref(), end.as_ref())
     }
 }
 
@@ -389,7 +392,7 @@ impl SourceLocation for CompoundCommand {
             Self::BraceGroup(b) => b.location(),
             Self::Subshell(s) => s.location(),
             Self::ForClause(f) => f.location(),
-
+            Self::CaseClause(c) => c.location(),
             _ => None,
         }
     }
@@ -571,6 +574,15 @@ pub struct CaseClauseCommand {
     pub cases: Vec<CaseItem>,
 }
 
+impl SourceLocation for CaseClauseCommand {
+    fn location(&self) -> Option<TokenLocation> {
+        let start = self.value.location();
+        let end = self.cases.last().and_then(SourceLocation::location);
+
+        maybe_location(start.as_ref(), end.as_ref())
+    }
+}
+
 impl Display for CaseClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "case {} in", self.value)?;
@@ -721,6 +733,14 @@ pub struct CaseItem {
     pub cmd: Option<CompoundList>,
     /// When the case branch is selected, the action to take after the command is executed.
     pub post_action: CaseItemPostAction,
+    /// Location of the item
+    pub loc: Option<TokenLocation>,
+}
+
+impl SourceLocation for CaseItem {
+    fn location(&self) -> Option<TokenLocation> {
+        self.loc.to_owned()
+    }
 }
 
 impl Display for CaseItem {
@@ -918,10 +938,19 @@ pub struct SimpleCommand {
     pub suffix: Option<CommandSuffix>,
 }
 
-// TODO: complete
 impl SourceLocation for SimpleCommand {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        let mid = &self
+            .word_or_name
+            .as_ref()
+            .and_then(SourceLocation::location);
+        let start = self.prefix.as_ref().and_then(SourceLocation::location);
+        let end = self.suffix.as_ref().and_then(SourceLocation::location);
+
+        maybe_location(
+            start.as_ref().or_else(|| mid.as_ref()),
+            end.as_ref().or_else(|| mid.as_ref()),
+        )
     }
 }
 

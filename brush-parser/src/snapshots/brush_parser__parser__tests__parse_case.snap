@@ -82,6 +82,18 @@ ParseResult(
           ), Sequence),
         ])),
         post_action: ExitCase,
+        loc: Some(Loc(
+          start: Pos(
+            idx: 12,
+            line: 3,
+            col: 1,
+          ),
+          end: Pos(
+            idx: 27,
+            line: 4,
+            col: 13,
+          ),
+        )),
       ),
     ],
   ),

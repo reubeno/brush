@@ -1,4 +1,4 @@
-use crate::ast::{self, SeparatorOperator};
+use crate::ast::{self, SeparatorOperator, SourceLocation, maybe_location};
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 use crate::{TokenLocation, error};
 
@@ -527,30 +527,45 @@ peg::parser! {
             }
 
         pub(crate) rule case_item_ns() -> ast::CaseItem =
-            specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
-                ast::CaseItem { patterns: p, cmd: Some(c), post_action: ast::CaseItemPostAction::ExitCase }
+            s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
+                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let end = c.location();
+
+                let loc = maybe_location(start, end.as_ref());
+
+                ast::CaseItem { patterns: p, cmd: Some(c), post_action: ast::CaseItemPostAction::ExitCase, loc }
             } /
-            specific_operator("(")? p:pattern() specific_operator(")") linebreak() {
-                ast::CaseItem { patterns: p, cmd: None, post_action: ast::CaseItemPostAction::ExitCase }
+            s:specific_operator("(")? p:pattern() e:specific_operator(")") linebreak() {
+                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let end = Some(e.location());
+
+                let loc = maybe_location(start, end);
+                ast::CaseItem { patterns: p, cmd: None, post_action: ast::CaseItemPostAction::ExitCase, loc }
             }
 
         pub(crate) rule case_item() -> ast::CaseItem =
-            specific_operator("(")? p:pattern() specific_operator(")") linebreak() post_action:case_item_post_action() linebreak() {
-                ast::CaseItem { patterns: p, cmd: None, post_action }
+            s:specific_operator("(")? p:pattern() specific_operator(")") linebreak() post_action:case_item_post_action() linebreak() {
+                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let end = Some(post_action.1);
+                let loc = maybe_location(start, end);
+                ast::CaseItem { patterns: p, cmd: None, post_action: post_action.0, loc }
             } /
-            specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() post_action:case_item_post_action() linebreak() {
-                ast::CaseItem { patterns: p, cmd: Some(c), post_action }
+            s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() post_action:case_item_post_action() linebreak() {
+                let start = s.and_then(|s| Some(s.location())).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
+                let end = Some(post_action.1);
+                let loc = maybe_location(start, end);
+                ast::CaseItem { patterns: p, cmd: Some(c), post_action: post_action.0, loc }
             }
 
-        rule case_item_post_action() -> ast::CaseItemPostAction =
-            specific_operator(";;") {
-                ast::CaseItemPostAction::ExitCase
+        rule case_item_post_action() -> (ast::CaseItemPostAction, &'input TokenLocation)  =
+            s:specific_operator(";;") {
+                (ast::CaseItemPostAction::ExitCase, s.location())
             } /
-            non_posix_extensions_enabled() specific_operator(";;&") {
-                ast::CaseItemPostAction::ContinueEvaluatingCases
+            non_posix_extensions_enabled() s:specific_operator(";;&") {
+                (ast::CaseItemPostAction::ContinueEvaluatingCases, s.location())
             } /
-            non_posix_extensions_enabled() specific_operator(";&") {
-                ast::CaseItemPostAction::UnconditionallyExecuteNextCaseItem
+            non_posix_extensions_enabled() s:specific_operator(";&") {
+                (ast::CaseItemPostAction::UnconditionallyExecuteNextCaseItem, s.location())
             }
 
         rule pattern() -> Vec<ast::Word> =
