@@ -128,7 +128,7 @@ workspace = true
 [dependencies]
 brush-core = { version = "^0.3.5", path = "../brush-core" }
 brush-parser = { version = "^0.2.20", path = "../brush-parser" }
-cfg-if = "1.0.3"
+cfg-if = "1.0.4"
 chrono = "0.4.42"
 clap = { version = "4.5.48", features = ["derive", "wrap_help"] }
 fancy-regex = "0.16.2"
@@ -139,7 +139,7 @@ strum_macros = "0.27.2"
 tracing = "0.1.41"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.47.1", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.48.0", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(windows, unix))'.dependencies]
 tokio = { version = "1.47.1", features = [
