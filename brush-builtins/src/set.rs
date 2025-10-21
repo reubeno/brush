@@ -185,12 +185,14 @@ impl builtins::Command for SetCommand {
         Ok(this)
     }
 
+    type Error = brush_core::Error;
+
     #[expect(clippy::too_many_lines)]
     #[allow(clippy::useless_let_if_seq)]
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
         let mut saw_option = false;

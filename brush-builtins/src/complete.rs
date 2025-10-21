@@ -219,10 +219,12 @@ pub(crate) struct CompleteCommand {
 }
 
 impl builtins::Command for CompleteCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
         // If -D, -E, or -I are specified, then any names provided are ignored.
@@ -486,10 +488,12 @@ pub(crate) struct CompGenCommand {
 }
 
 impl builtins::Command for CompGenCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut spec = self
             .common_args
             .create_spec(context.shell.options.extended_globbing);
@@ -564,10 +568,12 @@ pub(crate) struct CompOptCommand {
 }
 
 impl builtins::Command for CompOptCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut options = HashMap::new();
         for option in &self.disabled_options {
             options.insert(option.clone(), false);

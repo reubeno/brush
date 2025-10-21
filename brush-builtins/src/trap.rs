@@ -19,10 +19,12 @@ pub(crate) struct TrapCommand {
 }
 
 impl builtins::Command for TrapCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         if self.list_signals {
             brush_core::traps::format_signals(context.stdout(), TrapSignal::iterator())
                 .map(|()| ExecutionResult::success())

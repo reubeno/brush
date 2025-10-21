@@ -33,10 +33,12 @@ impl CommandCommand {
 }
 
 impl builtins::Command for CommandCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
             if self.print_description || self.print_verbose_description {

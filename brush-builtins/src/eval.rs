@@ -10,10 +10,12 @@ pub(crate) struct EvalCommand {
 }
 
 impl builtins::Command for EvalCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if !self.args.is_empty() {
             let args_concatenated = self.args.join(" ");
 

@@ -23,10 +23,12 @@ pub(crate) struct HelpCommand {
 }
 
 impl builtins::Command for HelpCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
         } else {

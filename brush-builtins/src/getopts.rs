@@ -21,6 +21,8 @@ pub(crate) struct GetOptsCommand {
 const VAR_GETOPTS_NEXT_CHAR_INDEX: &str = "__GETOPTS_NEXT_CHAR";
 
 impl builtins::Command for GetOptsCommand {
+    type Error = brush_core::Error;
+
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
     /// to `--`. See [`builtins::parse_known`] for more information
     /// TODO: we can safely remove this after the issue is resolved
@@ -39,7 +41,7 @@ impl builtins::Command for GetOptsCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut args = HashMap::<char, bool>::new();
         let mut treat_unknown_options_as_failure = true;
 

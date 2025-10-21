@@ -38,10 +38,12 @@ pub(crate) struct EnableCommand {
 }
 
 impl builtins::Command for EnableCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
         if self.shared_object_path.is_some() {

@@ -32,10 +32,12 @@ pub(crate) struct JobsCommand {
 }
 
 impl builtins::Command for JobsCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.also_show_pids {
             return error::unimp("jobs -l");
         }

@@ -53,10 +53,12 @@ enum CompleteCommand {
 }
 
 impl builtins::Command for BrushInfoCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         self.command_group.execute(&mut context).await
     }
 }

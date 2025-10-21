@@ -44,10 +44,12 @@ enum ResolvedType<'a> {
 }
 
 impl builtins::Command for TypeCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
         for name in &self.names {

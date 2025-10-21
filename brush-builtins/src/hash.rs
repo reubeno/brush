@@ -30,10 +30,12 @@ pub(crate) struct HashCommand {
 }
 
 impl builtins::Command for HashCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
         if self.remove_all {

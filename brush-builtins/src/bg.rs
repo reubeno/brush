@@ -11,10 +11,12 @@ pub(crate) struct BgCommand {
 }
 
 impl builtins::Command for BgCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
 
         if !self.job_specs.is_empty() {

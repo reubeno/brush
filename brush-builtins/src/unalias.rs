@@ -15,10 +15,12 @@ pub(crate) struct UnaliasCommand {
 }
 
 impl builtins::Command for UnaliasCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
 
         if self.remove_all {

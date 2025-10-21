@@ -26,10 +26,12 @@ pub(crate) struct DirsCommand {
 }
 
 impl builtins::Command for DirsCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.clear {
             context.shell.directory_stack.clear();
         } else {

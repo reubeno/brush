@@ -31,10 +31,12 @@ pub(crate) struct CdCommand {
 }
 
 impl builtins::Command for CdCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         // TODO: implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");

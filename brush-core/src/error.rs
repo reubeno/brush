@@ -14,10 +14,6 @@ pub struct Error {
 /// Monolithic error type for the shell
 #[derive(thiserror::Error, Debug)]
 pub enum ErrorKind {
-    /// A local variable was set outside of a function
-    #[error("can't set local variable outside of function")]
-    SetLocalVarOutsideFunction,
-
     /// A tilde expression was used without a valid HOME variable
     #[error("cannot expand tilde expression with HOME not set")]
     TildeWithoutValidHome,
@@ -228,6 +224,10 @@ pub enum ErrorKind {
     /// Unhandled key code.
     #[error("unhandled key code: {0:?}")]
     UnhandledKeyCode(Vec<u8>),
+
+    /// An error occurred in a built-in command.
+    #[error(transparent)]
+    BuiltinError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl<T> From<T> for Error

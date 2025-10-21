@@ -43,10 +43,12 @@ enum EventsCommand {
 }
 
 impl brush_core::builtins::Command for BrushCtlCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         match self.command_group {
             CommandGroup::Events(ref events) => events.execute(&context),
         }

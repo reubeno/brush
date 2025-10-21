@@ -16,10 +16,12 @@ pub(crate) struct PushdCommand {
 }
 
 impl builtins::Command for PushdCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.no_directory_change {
             context
                 .shell

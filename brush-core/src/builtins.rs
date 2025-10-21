@@ -27,6 +27,9 @@ pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Err
 
 /// Trait implemented by built-in shell commands.
 pub trait Command: clap::Parser {
+    /// The error type returned by the command.
+    type Error: std::error::Error + Send + Sync + 'static;
+
     /// Instantiates the built-in command with the given arguments.
     ///
     /// # Arguments
@@ -70,7 +73,7 @@ pub trait Command: clap::Parser {
     fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> impl std::future::Future<Output = Result<results::ExecutionResult, error::Error>>
+    ) -> impl std::future::Future<Output = Result<results::ExecutionResult, Self::Error>>
     + std::marker::Send;
 
     /// Returns the textual help content associated with the command.
@@ -446,7 +449,12 @@ async fn exec_builtin_impl<T: Command + Send + Sync>(
         }
     };
 
-    command.execute(context).await
+    let result = command
+        .execute(context)
+        .await
+        .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e)))?;
+
+    Ok(result)
 }
 
 fn exec_declaration_builtin<T: DeclarationCommand + Send + Sync>(
@@ -485,7 +493,12 @@ async fn exec_declaration_builtin_impl<T: DeclarationCommand + Send + Sync>(
 
     command.set_declarations(declarations);
 
-    command.execute(context).await
+    let result = command
+        .execute(context)
+        .await
+        .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e)))?;
+
+    Ok(result)
 }
 
 fn exec_raw_arg_builtin<T: DeclarationCommand + Default + Send + Sync>(
@@ -502,5 +515,10 @@ async fn exec_raw_arg_builtin_impl<T: DeclarationCommand + Default + Send + Sync
     let mut command = T::default();
     command.set_declarations(args);
 
-    command.execute(context).await
+    let result = command
+        .execute(context)
+        .await
+        .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e)))?;
+
+    Ok(result)
 }

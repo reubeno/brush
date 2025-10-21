@@ -24,10 +24,12 @@ pub(crate) struct WaitCommand {
 }
 
 impl builtins::Command for WaitCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         if self.wait_for_terminate {
             return error::unimp("wait -f");
         }

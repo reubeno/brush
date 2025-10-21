@@ -11,10 +11,12 @@ pub(crate) struct FgCommand {
 }
 
 impl builtins::Command for FgCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut stderr = context.stdout();
 
         if let Some(job_spec) = &self.job_spec {

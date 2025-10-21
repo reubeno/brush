@@ -14,10 +14,12 @@ pub(crate) struct TestCommand {
 }
 
 impl builtins::Command for TestCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut args = self.args.as_slice();
 
         if context.command_name == "[" {

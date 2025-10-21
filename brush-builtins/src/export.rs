@@ -38,10 +38,12 @@ impl builtins::DeclarationCommand for ExportCommand {
 }
 
 impl builtins::Command for ExportCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.declarations.is_empty() {
             display_all_exported_vars(&context)?;
             return Ok(ExecutionResult::success());

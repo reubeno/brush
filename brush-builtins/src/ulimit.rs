@@ -430,10 +430,12 @@ pub(crate) struct ULimitCommand {
 }
 
 impl builtins::Command for ULimitCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let exit_code = ExecutionResult::success();
         let mut resources_to_set = Vec::new();
         let mut resources_to_get = Vec::new();

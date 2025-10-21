@@ -21,10 +21,12 @@ pub(crate) struct UmaskCommand {
 }
 
 impl builtins::Command for UmaskCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
                 let parsed = nix::sys::stat::mode_t::from_str_radix(mode.as_str(), 8)?;

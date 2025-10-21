@@ -14,10 +14,12 @@ pub(crate) struct PopdCommand {
 }
 
 impl builtins::Command for PopdCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(popped) = context.shell.directory_stack.pop() {
             if !self.no_directory_change {
                 context.shell.set_working_dir(&popped)?;

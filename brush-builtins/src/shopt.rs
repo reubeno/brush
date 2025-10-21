@@ -32,11 +32,13 @@ pub(crate) struct ShoptCommand {
 }
 
 impl builtins::Command for ShoptCommand {
+    type Error = brush_core::Error;
+
     #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.set && self.unset {
             writeln!(
                 context.stderr(),

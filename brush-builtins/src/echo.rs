@@ -25,6 +25,8 @@ pub(crate) struct EchoCommand {
 }
 
 impl builtins::Command for EchoCommand {
+    type Error = brush_core::Error;
+
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
     /// to `--`. See [`builtins::parse_known`] for more information
     /// TODO: we can safely remove this after the issue is resolved
@@ -42,7 +44,7 @@ impl builtins::Command for EchoCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut trailing_newline = !self.no_trailing_newline;
         let mut s;
         if self.interpret_backslash_escapes {

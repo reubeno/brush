@@ -88,10 +88,12 @@ pub(crate) struct BindCommand {
 const BIND_FEATURE_ISSUE_ID: u32 = 380;
 
 impl builtins::Command for BindCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(key_bindings) = context.shell.key_bindings() {
             Ok(self.execute_impl(key_bindings, &context).await?)
         } else {

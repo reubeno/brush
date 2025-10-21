@@ -16,10 +16,12 @@ pub(crate) struct DotCommand {
 }
 
 impl builtins::Command for DotCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // TODO: Handle trap inheritance.
         let params = context.params.clone();
         let result = context
