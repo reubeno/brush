@@ -4,7 +4,7 @@ use std::{io::Write, sync::LazyLock};
 use tracing::warn;
 
 use brush_core::{
-    ErrorKind, builtins,
+    ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
     variables::{
@@ -125,7 +125,7 @@ impl builtins::Command for DeclareCommand {
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let verb = match context.command_name.as_str() {
             "local" => DeclareVerb::Local,
             "readonly" => DeclareVerb::Readonly,
@@ -134,23 +134,23 @@ impl builtins::Command for DeclareCommand {
 
         if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
             writeln!(context.stderr(), "can only be used in a function")?;
-            return Ok(builtins::ExitCode::Custom(1));
+            return Ok(ExecutionResult::new(1));
         }
 
         if self.locals_inherit_from_prev_scope {
             return error::unimp("declare -I");
         }
 
-        let mut result = builtins::ExitCode::Success;
+        let mut result = ExecutionResult::success();
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
                     if !self.try_display_declaration(&context, declaration, verb)? {
-                        result = builtins::ExitCode::Custom(1);
+                        result = ExecutionResult::new(1);
                     }
                 } else {
                     if !self.process_declaration(&mut context, declaration, verb)? {
-                        result = builtins::ExitCode::Custom(1);
+                        result = ExecutionResult::new(1);
                     }
                 }
             }

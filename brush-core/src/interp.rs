@@ -9,31 +9,20 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
-use crate::commands::{self, CommandArg, CommandSpawnResult};
+use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
+use crate::results::{
+    self, ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult,
+    ExecutionWaitResult,
+};
 use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
 use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, timing};
 
-/// Encapsulates the result of executing a command.
-#[derive(Debug, Default)]
-pub struct ExecutionResult {
-    /// The numerical exit code of the command.
-    pub exit_code: u8,
-    /// Whether the shell should exit after this command.
-    pub exit_shell: bool,
-    /// Whether the shell should return from the current function or script.
-    pub return_from_function_or_script: bool,
-    /// If the command was executed in a loop, this is the number of levels to break out of.
-    pub break_loop: Option<u8>,
-    /// If the command was executed in a loop, this is the number of levels to continue.
-    pub continue_loop: Option<u8>,
-}
-
-impl From<processes::ProcessWaitResult> for ExecutionResult {
+impl From<processes::ProcessWaitResult> for results::ExecutionResult {
     fn from(wait_result: processes::ProcessWaitResult) -> Self {
         match wait_result {
             processes::ProcessWaitResult::Completed(output) => output.into(),
@@ -42,7 +31,7 @@ impl From<processes::ProcessWaitResult> for ExecutionResult {
     }
 }
 
-impl From<std::process::Output> for ExecutionResult {
+impl From<std::process::Output> for results::ExecutionResult {
     fn from(output: std::process::Output) -> Self {
         if let Some(code) = output.status.code() {
             #[expect(clippy::cast_sign_loss)]
@@ -57,39 +46,6 @@ impl From<std::process::Output> for ExecutionResult {
 
         tracing::error!("unhandled process exit");
         Self::new(127)
-    }
-}
-
-impl ExecutionResult {
-    /// Returns a new `ExecutionResult` with the given exit code.
-    ///
-    /// # Arguments
-    ///
-    /// * `exit_code` - The exit code of the command.
-    pub fn new(exit_code: u8) -> Self {
-        Self {
-            exit_code,
-            ..Self::default()
-        }
-    }
-
-    /// Returns a new `ExecutionResult` with an exit code of 0.
-    pub fn success() -> Self {
-        Self::new(0)
-    }
-
-    /// Returns whether the command was successful.
-    pub const fn is_success(&self) -> bool {
-        self.exit_code == 0
-    }
-
-    /// Returns a new `ExecutionResult` reflecting a process that was stopped.
-    pub fn stopped() -> Self {
-        // TODO: Decide how to sort this out in a platform-independent way.
-        const SIGTSTP: std::os::raw::c_int = 20;
-
-        #[expect(clippy::cast_possible_truncation)]
-        Self::new(128 + SIGTSTP as u8)
     }
 }
 
@@ -167,7 +123,7 @@ trait ExecuteInPipeline {
         &self,
         context: &mut PipelineExecutionContext<'_>,
         params: ExecutionParameters,
-    ) -> Result<CommandSpawnResult, error::Error>;
+    ) -> Result<ExecutionSpawnResult, error::Error>;
 }
 
 #[async_trait::async_trait]
@@ -181,12 +137,12 @@ impl Execute for ast::Program {
 
         for command in &self.complete_commands {
             result = command.execute(shell, params).await?;
-            if result.exit_shell || result.return_from_function_or_script {
+            if result.is_early_return() {
                 break;
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
         Ok(result)
     }
 }
@@ -219,18 +175,19 @@ impl Execute for ast::CompoundList {
                 result = ao_list.execute(shell, params).await?;
             }
 
-            // Check for early return.
-            if result.exit_shell || result.return_from_function_or_script {
+            if result.is_early_return() {
                 break;
             }
 
-            // TODO: Check to make sure continue/break is under a for/while/until loop.
-            if result.continue_loop.is_some() || result.break_loop.is_some() {
+            if matches!(
+                result.next_control_flow,
+                ExecutionControlFlow::ContinueLoop { .. } | ExecutionControlFlow::BreakLoop { .. }
+            ) {
                 break;
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
         Ok(result)
     }
 }
@@ -272,13 +229,17 @@ impl Execute for ast::AndOrList {
 
         for next_ao in &self.additional {
             // Check for exit/return
-            if result.exit_shell || result.return_from_function_or_script {
+            if result.is_early_return() {
                 break;
             }
 
             // Check for continue/break
             // TODO: Validate that we're in a loop?
-            if result.continue_loop.is_some() || result.break_loop.is_some() {
+            if matches!(
+                result.next_control_flow,
+                results::ExecutionControlFlow::ContinueLoop { .. }
+                    | results::ExecutionControlFlow::BreakLoop { .. }
+            ) {
                 break;
             }
 
@@ -330,11 +291,11 @@ impl Execute for ast::Pipeline {
 
         // Invert the exit code if requested.
         if self.bang {
-            result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
+            result.exit_code = ExecutionExitCode::from(if result.is_success() { 1 } else { 0 });
         }
 
         // Update statuses.
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
 
         // If requested, report timing.
         if let Some(timed) = &self.timed {
@@ -372,7 +333,7 @@ async fn spawn_pipeline_processes(
     pipeline: &ast::Pipeline,
     shell: &mut Shell,
     params: &ExecutionParameters,
-) -> Result<VecDeque<CommandSpawnResult>, error::Error> {
+) -> Result<VecDeque<ExecutionSpawnResult>, error::Error> {
     let pipeline_len = pipeline.seq.len();
     let mut output_pipes = vec![];
     let mut spawn_results = VecDeque::new();
@@ -438,7 +399,7 @@ async fn spawn_pipeline_processes(
 
 async fn wait_for_pipeline_processes_and_update_status(
     pipeline: &ast::Pipeline,
-    mut process_spawn_results: VecDeque<CommandSpawnResult>,
+    mut process_spawn_results: VecDeque<ExecutionSpawnResult>,
     shell: &mut Shell,
 ) -> Result<ExecutionResult, error::Error> {
     let mut result = ExecutionResult::success();
@@ -449,15 +410,15 @@ async fn wait_for_pipeline_processes_and_update_status(
 
     while let Some(child) = process_spawn_results.pop_front() {
         match child.wait(!stopped_children.is_empty()).await? {
-            commands::CommandWaitResult::CommandCompleted(current_result) => {
+            ExecutionWaitResult::Completed(current_result) => {
                 result = current_result;
-                *shell.last_exit_status_mut() = result.exit_code;
-                shell.last_pipeline_statuses.push(result.exit_code);
+                *shell.last_exit_status_mut() = result.exit_code.into();
+                shell.last_pipeline_statuses.push(result.exit_code.into());
             }
-            commands::CommandWaitResult::CommandStopped(current_result, child) => {
-                result = current_result;
-                *shell.last_exit_status_mut() = result.exit_code;
-                shell.last_pipeline_statuses.push(result.exit_code);
+            ExecutionWaitResult::Stopped(child) => {
+                result = ExecutionResult::stopped();
+                *shell.last_exit_status_mut() = result.exit_code.into();
+                shell.last_pipeline_statuses.push(result.exit_code.into());
 
                 stopped_children.push(jobs::JobTask::External(child));
             }
@@ -492,9 +453,9 @@ impl ExecuteInPipeline for ast::Command {
         &self,
         pipeline_context: &mut PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
-    ) -> Result<CommandSpawnResult, error::Error> {
+    ) -> Result<ExecutionSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
-            return Ok(CommandSpawnResult::ImmediateExit(0));
+            return Ok(ExecutionSpawnResult::Completed(ExecutionResult::success()));
         }
 
         match self {
@@ -510,25 +471,12 @@ impl ExecuteInPipeline for ast::Command {
                     }
                 }
 
-                let result = compound.execute(pipeline_context.shell, &params).await?;
-                if result.exit_shell {
-                    Ok(CommandSpawnResult::ExitShell(result.exit_code))
-                } else if result.return_from_function_or_script {
-                    Ok(CommandSpawnResult::ReturnFromFunctionOrScript(
-                        result.exit_code,
-                    ))
-                } else if let Some(count) = result.break_loop {
-                    Ok(CommandSpawnResult::BreakLoop(count))
-                } else if let Some(count) = result.continue_loop {
-                    Ok(CommandSpawnResult::ContinueLoop(count))
-                } else {
-                    Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
-                }
+                Ok(compound
+                    .execute(pipeline_context.shell, &params)
+                    .await?
+                    .into())
             }
-            Self::Function(func) => {
-                let result = func.execute(pipeline_context.shell, &params).await?;
-                Ok(CommandSpawnResult::ImmediateExit(result.exit_code))
-            }
+            Self::Function(func) => Ok(func.execute(pipeline_context.shell, &params).await?.into()),
             Self::ExtendedTest(e) => {
                 let result =
                     if extendedtests::eval_extended_test_expr(e, pipeline_context.shell, &params)
@@ -538,7 +486,7 @@ impl ExecuteInPipeline for ast::Command {
                     } else {
                         1
                     };
-                Ok(CommandSpawnResult::ImmediateExit(result))
+                Ok(ExecutionResult::new(result).into())
             }
         }
     }
@@ -565,7 +513,7 @@ impl Execute for ast::CompoundCommand {
 
                 // Preserve the subshell's exit code, but don't honor any of its requests to exit
                 // the shell, break out of loops, etc.
-                Ok(ExecutionResult::new(subshell_result.exit_code))
+                Ok(ExecutionResult::from(subshell_result.exit_code))
             }
             Self::ForClause(f) => f.execute(shell, params).await,
             Self::CaseClause(c) => c.execute(shell, params).await,
@@ -628,29 +576,39 @@ impl Execute for ast::ForClauseCommand {
             )?;
 
             result = self.body.0.execute(shell, params).await?;
-            if result.exit_shell || result.return_from_function_or_script {
+            if result.is_early_return() {
                 break;
             }
 
-            if let Some(continue_count) = &result.continue_loop {
+            if let ExecutionControlFlow::ContinueLoop {
+                levels: continue_count,
+            } = &result.next_control_flow
+            {
                 if *continue_count == 0 {
-                    result.continue_loop = None;
+                    result.next_control_flow = ExecutionControlFlow::Normal;
                 } else {
-                    result.continue_loop = Some(*continue_count - 1);
+                    result.next_control_flow = ExecutionControlFlow::ContinueLoop {
+                        levels: *continue_count - 1,
+                    };
                     break;
                 }
             }
-            if let Some(break_count) = &result.break_loop {
+            if let ExecutionControlFlow::BreakLoop {
+                levels: break_count,
+            } = &result.next_control_flow
+            {
                 if *break_count == 0 {
-                    result.break_loop = None;
+                    result.next_control_flow = ExecutionControlFlow::Normal;
                 } else {
-                    result.break_loop = Some(*break_count - 1);
+                    result.next_control_flow = ExecutionControlFlow::BreakLoop {
+                        levels: *break_count - 1,
+                    };
                 }
                 break;
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
         Ok(result)
     }
 }
@@ -711,7 +669,7 @@ impl Execute for ast::CaseClauseCommand {
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
 
         Ok(result)
     }
@@ -747,7 +705,7 @@ impl Execute for ast::IfClauseCommand {
         }
 
         let result = ExecutionResult::success();
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
 
         Ok(result)
     }
@@ -772,11 +730,8 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
         loop {
             let condition_result = test_condition.execute(shell, params).await?;
 
-            if condition_result.exit_shell || condition_result.return_from_function_or_script {
-                result.exit_code = condition_result.exit_code;
-                result.exit_shell = condition_result.exit_shell;
-                result.return_from_function_or_script =
-                    condition_result.return_from_function_or_script;
+            if condition_result.is_early_return() {
+                result = condition_result;
                 break;
             }
 
@@ -785,23 +740,33 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             }
 
             result = body.0.execute(shell, params).await?;
-            if result.exit_shell || result.return_from_function_or_script {
+            if result.is_early_return() {
                 break;
             }
 
-            if let Some(continue_count) = &result.continue_loop {
+            if let ExecutionControlFlow::ContinueLoop {
+                levels: continue_count,
+            } = &result.next_control_flow
+            {
                 if *continue_count == 0 {
-                    result.continue_loop = None;
+                    result.next_control_flow = ExecutionControlFlow::Normal;
                 } else {
-                    result.continue_loop = Some(*continue_count - 1);
+                    result.next_control_flow = ExecutionControlFlow::ContinueLoop {
+                        levels: *continue_count - 1,
+                    };
                     break;
                 }
             }
-            if let Some(break_count) = &result.break_loop {
+            if let ExecutionControlFlow::BreakLoop {
+                levels: break_count,
+            } = &result.next_control_flow
+            {
                 if *break_count == 0 {
-                    result.break_loop = None;
+                    result.next_control_flow = ExecutionControlFlow::Normal;
                 } else {
-                    result.break_loop = Some(*break_count - 1);
+                    result.next_control_flow = ExecutionControlFlow::BreakLoop {
+                        levels: *break_count - 1,
+                    };
                 }
                 break;
             }
@@ -825,7 +790,7 @@ impl Execute for ast::ArithmeticCommand {
             ExecutionResult::new(1)
         };
 
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
 
         Ok(result)
     }
@@ -851,23 +816,33 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             result = self.body.0.execute(shell, params).await?;
-            if result.exit_shell || result.return_from_function_or_script {
+            if result.is_early_return() {
                 break;
             }
 
-            if let Some(continue_count) = &result.continue_loop {
+            if let ExecutionControlFlow::ContinueLoop {
+                levels: continue_count,
+            } = &result.next_control_flow
+            {
                 if *continue_count == 0 {
-                    result.continue_loop = None;
+                    result.next_control_flow = ExecutionControlFlow::Normal;
                 } else {
-                    result.continue_loop = Some(*continue_count - 1);
+                    result.next_control_flow = ExecutionControlFlow::ContinueLoop {
+                        levels: *continue_count - 1,
+                    };
                     break;
                 }
             }
-            if let Some(break_count) = &result.break_loop {
+            if let ExecutionControlFlow::BreakLoop {
+                levels: break_count,
+            } = &result.next_control_flow
+            {
                 if *break_count == 0 {
-                    result.break_loop = None;
+                    result.next_control_flow = ExecutionControlFlow::Normal;
                 } else {
-                    result.break_loop = Some(*break_count - 1);
+                    result.next_control_flow = ExecutionControlFlow::BreakLoop {
+                        levels: *break_count - 1,
+                    };
                 }
                 break;
             }
@@ -877,7 +852,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
         Ok(result)
     }
 }
@@ -892,7 +867,7 @@ impl Execute for ast::FunctionDefinition {
         shell.define_func(self.fname.clone(), self.clone());
 
         let result = ExecutionResult::success();
-        *shell.last_exit_status_mut() = result.exit_code;
+        *shell.last_exit_status_mut() = result.exit_code.into();
 
         Ok(result)
     }
@@ -904,7 +879,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         &self,
         context: &mut PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
-    ) -> Result<CommandSpawnResult, error::Error> {
+    ) -> Result<ExecutionSpawnResult, error::Error> {
         let prefix_iter = self.prefix.as_ref().map(|s| s.0.iter()).unwrap_or_default();
         let suffix_iter = self.suffix.as_ref().map(|s| s.0.iter()).unwrap_or_default();
         let cmd_name_items = self
@@ -924,7 +899,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
                     if let Err(e) = setup_redirect(context.shell, &mut params, redirect).await {
                         writeln!(params.stderr(), "error: {e}")?;
-                        return Ok(CommandSpawnResult::ImmediateExit(1));
+                        return Ok(ExecutionResult::new(1).into());
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
@@ -1030,9 +1005,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             // Return the last exit status we have; in some cases, an expansion
             // might result in a non-zero exit status stored in the shell.
-            Ok(CommandSpawnResult::ImmediateExit(
-                context.shell.last_result(),
-            ))
+            Ok(ExecutionResult::new(context.shell.last_result()).into())
         }
     }
 }
@@ -1043,7 +1016,7 @@ async fn execute_command(
     cmd_name: String,
     assignments: Vec<&ast::Assignment>,
     args: Vec<CommandArg>,
-) -> Result<CommandSpawnResult, error::Error> {
+) -> Result<ExecutionSpawnResult, error::Error> {
     // Push a new ephemeral environment scope for the duration of the command. We'll
     // set command-scoped variable assignments after doing so, and revert them before
     // returning.

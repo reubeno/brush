@@ -3,7 +3,9 @@ use std::{io::Write, sync::Arc};
 use strum::IntoEnumIterator;
 use tokio::sync::Mutex;
 
-use brush_core::{builtins, error, interfaces, sys, trace_categories};
+use brush_core::{
+    ExecutionExitCode, ExecutionResult, builtins, error, interfaces, sys, trace_categories,
+};
 
 /// Identifier for a keymap
 #[derive(Clone, ValueEnum)]
@@ -89,7 +91,7 @@ impl builtins::Command for BindCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if let Some(key_bindings) = context.shell.key_bindings() {
             Ok(self.execute_impl(key_bindings, &context).await?)
         } else {
@@ -98,7 +100,7 @@ impl builtins::Command for BindCommand {
                 "bind: key bindings not supported in this config"
             )?;
 
-            Ok(builtins::ExitCode::Unimplemented)
+            Ok(ExecutionExitCode::Unimplemented.into())
         }
     }
 }
@@ -108,7 +110,7 @@ impl BindCommand {
         &self,
         bindings: &Arc<Mutex<dyn interfaces::KeyBindings>>,
         context: &brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         let mut bindings = bindings.lock().await;
 
         if self.list_funcs {
@@ -170,7 +172,7 @@ impl BindCommand {
         if !self.key_seq_bindings.is_empty() {
             if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
                 // Quietly ignore since we don't support vi mode.
-                return Ok(builtins::ExitCode::Success);
+                return Ok(ExecutionResult::success());
             }
 
             for key_seq_and_command in &self.key_seq_bindings {
@@ -185,17 +187,17 @@ impl BindCommand {
         if let Some(key_sequence) = &self.key_sequence {
             if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
                 // Quietly ignore since we don't support vi mode.
-                return Ok(builtins::ExitCode::Success);
+                return Ok(ExecutionResult::success());
             }
 
             tracing::warn!(target: trace_categories::UNIMPLEMENTED,
                 "bind: key seq not implemented: {key_sequence}"
             );
 
-            return Ok(builtins::ExitCode::Unimplemented);
+            return Ok(ExecutionExitCode::Unimplemented.into());
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

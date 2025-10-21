@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{builtins, jobs, sys};
+use brush_core::{ExecutionResult, builtins, jobs, sys};
 
 /// Move a specified job to the foreground.
 #[derive(Parser)]
@@ -14,7 +14,7 @@ impl builtins::Command for FgCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut stderr = context.stdout();
 
         if let Some(job_spec) = &self.job_spec {
@@ -33,14 +33,14 @@ impl builtins::Command for FgCommand {
                     writeln!(context.stderr(), "\r{formatted}")?;
                 }
 
-                Ok(builtins::ExitCode::from(result))
+                Ok(result)
             } else {
                 writeln!(
                     stderr,
                     "{}: {}: no such job",
                     job_spec, context.command_name
                 )?;
-                Ok(builtins::ExitCode::Custom(1))
+                Ok(ExecutionResult::new(1))
             }
         } else {
             if let Some(job) = context.shell.jobs.current_job_mut() {
@@ -58,10 +58,10 @@ impl builtins::Command for FgCommand {
                     writeln!(context.stderr(), "\r{formatted}")?;
                 }
 
-                Ok(builtins::ExitCode::from(result))
+                Ok(result)
             } else {
                 writeln!(stderr, "{}: no current job", context.command_name)?;
-                Ok(builtins::ExitCode::Custom(1))
+                Ok(ExecutionResult::new(1))
             }
         }
     }

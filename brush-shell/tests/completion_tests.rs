@@ -37,7 +37,7 @@ impl TestShellWithBashCompletion {
             )
             .await?;
 
-        if source_result.exit_code != 0 {
+        if !source_result.is_success() {
             return Err(anyhow::anyhow!("failed to source bash completion script"));
         }
 

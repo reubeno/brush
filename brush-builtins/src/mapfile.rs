@@ -2,7 +2,7 @@ use std::io::Read;
 
 use clap::Parser;
 
-use brush_core::{ErrorKind, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, ExecutionResult, builtins, env, error, sys, variables};
 
 /// Inspect and modify key bindings and other input configuration.
 #[derive(Parser)]
@@ -48,7 +48,7 @@ impl builtins::Command for MapFileCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.origin != 0 {
             // This will require merging into a potentially already-existing array.
             return error::unimp("mapfile -O is not yet implemented");
@@ -75,7 +75,7 @@ impl builtins::Command for MapFileCommand {
             env::EnvironmentScope::Global,
         )?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

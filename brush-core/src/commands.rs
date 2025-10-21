@@ -14,85 +14,10 @@ use crate::{
     ExecutionParameters, ExecutionResult, Shell, builtins, env, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
-    pathsearch, processes, sys, trace_categories, traps, variables,
+    pathsearch, processes,
+    results::{ExecutionExitCode, ExecutionSpawnResult},
+    sys, trace_categories, traps, variables,
 };
-
-/// Represents the result of spawning a command.
-pub enum CommandSpawnResult {
-    /// The child process was spawned.
-    SpawnedProcess(processes::ChildProcess),
-    /// The command immediately exited with the given numeric exit code.
-    ImmediateExit(u8),
-    /// The shell should exit after this command, yielding the given numeric exit code.
-    ExitShell(u8),
-    /// The shell should return from the current function or script, yielding the given numeric
-    /// exit code.
-    ReturnFromFunctionOrScript(u8),
-    /// The shell should break out of the containing loop, identified by the given depth count.
-    BreakLoop(u8),
-    /// The shell should continue the containing loop, identified by the given depth count.
-    ContinueLoop(u8),
-}
-
-impl CommandSpawnResult {
-    /// Waits for the command to complete.
-    ///
-    /// # Arguments
-    ///
-    /// * `no_wait` - If true, do not wait for the command to complete; return immediately.
-    pub async fn wait(self, no_wait: bool) -> Result<CommandWaitResult, error::Error> {
-        match self {
-            Self::SpawnedProcess(mut child) => {
-                let process_wait_result = if !no_wait {
-                    // Wait for the process to exit or for a relevant signal, whichever happens
-                    // first.
-                    child.wait().await?
-                } else {
-                    processes::ProcessWaitResult::Stopped
-                };
-
-                let command_wait_result = match process_wait_result {
-                    processes::ProcessWaitResult::Completed(output) => {
-                        CommandWaitResult::CommandCompleted(ExecutionResult::from(output))
-                    }
-                    processes::ProcessWaitResult::Stopped => CommandWaitResult::CommandStopped(
-                        ExecutionResult::from(processes::ProcessWaitResult::Stopped),
-                        child,
-                    ),
-                };
-
-                Ok(command_wait_result)
-            }
-            Self::ImmediateExit(exit_code) => Ok(CommandWaitResult::CommandCompleted(
-                ExecutionResult::new(exit_code),
-            )),
-            Self::ExitShell(exit_code) => {
-                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
-                    exit_code,
-                    exit_shell: true,
-                    ..ExecutionResult::default()
-                }))
-            }
-            Self::ReturnFromFunctionOrScript(exit_code) => {
-                Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
-                    exit_code,
-                    return_from_function_or_script: true,
-                    ..ExecutionResult::default()
-                }))
-            }
-            Self::BreakLoop(count) => Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
-                exit_code: 0,
-                break_loop: Some(count),
-                ..ExecutionResult::default()
-            })),
-            Self::ContinueLoop(count) => Ok(CommandWaitResult::CommandCompleted(ExecutionResult {
-                exit_code: 0,
-                continue_loop: Some(count),
-                ..ExecutionResult::default()
-            })),
-        }
-    }
-}
 
 /// Encapsulates the result of waiting for a command to complete.
 pub enum CommandWaitResult {
@@ -371,7 +296,7 @@ pub async fn execute(
     args: Vec<CommandArg>,
     use_functions: bool,
     path_dirs: Option<Vec<String>>,
-) -> Result<CommandSpawnResult, error::Error> {
+) -> Result<ExecutionSpawnResult, error::Error> {
     // First see if it's the name of a builtin.
     let builtin = cmd_context
         .shell
@@ -438,7 +363,7 @@ pub async fn execute(
                 "{}: command not found",
                 cmd_context.command_name
             )?;
-            Ok(CommandSpawnResult::ImmediateExit(127))
+            Ok(ExecutionResult::from(ExecutionExitCode::NotFound).into())
         }
     } else {
         let resolved_path = cmd_context.command_name.clone();
@@ -458,7 +383,7 @@ pub(crate) fn execute_external_command(
     executable_path: &str,
     process_group_id: &mut Option<i32>,
     args: &[CommandArg],
-) -> Result<CommandSpawnResult, error::Error> {
+) -> Result<ExecutionSpawnResult, error::Error> {
     // Filter out the args; we only want strings.
     let mut cmd_args = vec![];
     for arg in args {
@@ -537,7 +462,7 @@ pub(crate) fn execute_external_command(
                 tracing::warn!("could not retrieve pid for child process");
             }
 
-            Ok(CommandSpawnResult::SpawnedProcess(
+            Ok(ExecutionSpawnResult::StartedProcess(
                 processes::ChildProcess::new(pid, child),
             ))
         }
@@ -565,7 +490,7 @@ pub(crate) fn execute_external_command(
             } else {
                 writeln!(stderr, "{}: not found", context.command_name)?;
             }
-            Ok(CommandSpawnResult::ImmediateExit(127))
+            Ok(ExecutionResult::from(ExecutionExitCode::NotFound).into())
         }
         Err(e) => {
             if context.shell.options.interactive {
@@ -573,7 +498,7 @@ pub(crate) fn execute_external_command(
             }
 
             tracing::error!("{e}");
-            Ok(CommandSpawnResult::ImmediateExit(126))
+            Ok(ExecutionResult::new(126).into())
         }
     }
 }
@@ -588,46 +513,16 @@ async fn execute_builtin_command(
     builtin: &builtins::Registration,
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<CommandSpawnResult, error::Error> {
-    let exit_code = match (builtin.execute_func)(context, args).await {
-        Ok(builtin_result) => match builtin_result.exit_code {
-            builtins::ExitCode::Success => 0,
-            builtins::ExitCode::InvalidUsage => 2,
-            builtins::ExitCode::Unimplemented => 99,
-            builtins::ExitCode::Custom(code) => code,
-            builtins::ExitCode::ExitShell(code) => return Ok(CommandSpawnResult::ExitShell(code)),
-            builtins::ExitCode::ReturnFromFunctionOrScript(code) => {
-                return Ok(CommandSpawnResult::ReturnFromFunctionOrScript(code));
-            }
-            builtins::ExitCode::BreakLoop(count) => {
-                return Ok(CommandSpawnResult::BreakLoop(count));
-            }
-            builtins::ExitCode::ContinueLoop(count) => {
-                return Ok(CommandSpawnResult::ContinueLoop(count));
-            }
-        },
-        Err(e @ error::Error::Unimplemented(..)) => {
-            tracing::warn!(target: trace_categories::UNIMPLEMENTED, "{e}");
-            1
-        }
-        Err(e @ error::Error::UnimplementedAndTracked(..)) => {
-            tracing::warn!(target: trace_categories::UNIMPLEMENTED, "{e}");
-            1
-        }
-        Err(e) => {
-            tracing::error!("{e}");
-            1
-        }
-    };
-
-    Ok(CommandSpawnResult::ImmediateExit(exit_code))
+) -> Result<ExecutionSpawnResult, error::Error> {
+    let result = (builtin.execute_func)(context, args).await?;
+    Ok(result.into())
 }
 
 pub(crate) async fn invoke_shell_function(
     function_definition: Arc<ast::FunctionDefinition>,
     mut context: ExecutionContext<'_>,
     args: &[CommandArg],
-) -> Result<CommandSpawnResult, error::Error> {
+) -> Result<ExecutionSpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function_definition.body;
 
     // Apply any redirects specified at function definition-time.
@@ -666,11 +561,7 @@ pub(crate) async fn invoke_shell_function(
     let result = result?;
 
     // Report back the exit code, and honor any requests to exit the whole shell.
-    Ok(if result.exit_shell {
-        CommandSpawnResult::ExitShell(result.exit_code)
-    } else {
-        CommandSpawnResult::ImmediateExit(result.exit_code)
-    })
+    Ok(result.into())
 }
 
 pub(crate) async fn invoke_command_in_subshell_and_get_output(
@@ -696,7 +587,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     let result = run_substitution_command(subshell, params, s).await?;
 
     // Store the status.
-    *shell.last_exit_status_mut() = result.exit_code;
+    *shell.last_exit_status_mut() = result.exit_code.into();
 
     // Extract output.
     let output_str = std::io::read_to_string(reader)?;

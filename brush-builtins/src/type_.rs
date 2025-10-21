@@ -5,7 +5,7 @@ use brush_parser::ast;
 use clap::Parser;
 
 use brush_core::sys::fs::PathExt;
-use brush_core::{Shell, builtins};
+use brush_core::{ExecutionResult, Shell, builtins};
 
 /// Inspect the type of a named shell item.
 #[derive(Parser)]
@@ -47,8 +47,8 @@ impl builtins::Command for TypeCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut result = builtins::ExitCode::Success;
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        let mut result = ExecutionResult::success();
 
         for name in &self.names {
             let resolved_types = self.resolve_types(context.shell, name);
@@ -58,7 +58,7 @@ impl builtins::Command for TypeCommand {
                     writeln!(context.stderr(), "type: {name} not found")?;
                 }
 
-                result = builtins::ExitCode::Custom(1);
+                result = ExecutionResult::new(1);
                 continue;
             }
 

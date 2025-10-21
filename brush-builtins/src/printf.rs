@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{io::Write, ops::ControlFlow};
 use uucore::format;
 
-use brush_core::{Error, ErrorKind, builtins, escape, expansion};
+use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
 #[derive(Parser)]
@@ -21,7 +21,7 @@ impl builtins::Command for PrintfCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if let Some(variable_name) = &self.output_variable {
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];
@@ -45,7 +45,7 @@ impl builtins::Command for PrintfCommand {
             context.stdout().flush()?;
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

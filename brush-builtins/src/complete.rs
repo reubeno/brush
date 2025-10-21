@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use std::io::Write;
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
-use brush_core::{builtins, error, escape};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
 
 #[derive(Parser)]
 struct CommonCompleteCommandArgs {
@@ -222,8 +222,8 @@ impl builtins::Command for CompleteCommand {
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut result = builtins::ExitCode::Success;
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        let mut result = ExecutionResult::success();
 
         // If -D, -E, or -I are specified, then any names provided are ignored.
         if self.use_as_default
@@ -235,7 +235,7 @@ impl builtins::Command for CompleteCommand {
         } else {
             for name in &self.names {
                 if !self.try_process_for_command(&mut context, name.as_str())? {
-                    result = builtins::ExitCode::Custom(1);
+                    result = ExecutionResult::new(1);
                 }
             }
         }
@@ -489,7 +489,7 @@ impl builtins::Command for CompGenCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut spec = self
             .common_args
             .create_spec(context.shell.options.extended_globbing);
@@ -522,7 +522,7 @@ impl builtins::Command for CompGenCommand {
                 // We are expected to return 1 if there are no candidates, even if no errors
                 // occurred along the way.
                 if candidates.is_empty() {
-                    return Ok(builtins::ExitCode::Custom(1));
+                    return Ok(ExecutionResult::new(1));
                 }
 
                 for candidate in candidates {
@@ -534,7 +534,7 @@ impl builtins::Command for CompGenCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 
@@ -567,7 +567,7 @@ impl builtins::Command for CompOptCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut options = HashMap::new();
         for option in &self.disabled_options {
             options.insert(option.clone(), false);
@@ -582,7 +582,7 @@ impl builtins::Command for CompOptCommand {
                     context.stderr(),
                     "compopt: cannot specify names with -D, -E, or -I"
                 )?;
-                return Ok(builtins::ExitCode::InvalidUsage);
+                return Ok(ExecutionExitCode::InvalidUsage.into());
             }
 
             for name in &self.names {
@@ -625,7 +625,7 @@ impl builtins::Command for CompOptCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

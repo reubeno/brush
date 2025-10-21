@@ -81,18 +81,19 @@ pub trait InteractiveShell: Send {
                 let result = self.run_interactively_once().await?;
                 match result {
                     InteractiveExecutionResult::Executed(brush_core::ExecutionResult {
-                        exit_shell,
-                        return_from_function_or_script,
+                        next_control_flow: brush_core::results::ExecutionControlFlow::ExitShell,
                         ..
                     }) => {
-                        if exit_shell {
-                            break;
-                        }
-
-                        if return_from_function_or_script {
-                            tracing::error!("return from non-function/script");
-                        }
+                        break;
                     }
+                    InteractiveExecutionResult::Executed(brush_core::ExecutionResult {
+                        next_control_flow:
+                            brush_core::results::ExecutionControlFlow::ReturnFromFunctionOrScript,
+                        ..
+                    }) => {
+                        tracing::error!("return from non-function/script");
+                    }
+                    InteractiveExecutionResult::Executed(_) => {}
                     InteractiveExecutionResult::Failed(e) => {
                         // Report the error, but continue to execute.
                         tracing::error!("error: {:#}", e);

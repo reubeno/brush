@@ -1,3 +1,4 @@
+use brush_core::ExecutionResult;
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
@@ -40,8 +41,8 @@ impl builtins::Command for EnableCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
-        let mut result = builtins::ExitCode::Success;
+    ) -> Result<ExecutionResult, brush_core::Error> {
+        let mut result = ExecutionResult::success();
 
         if self.shared_object_path.is_some() {
             return error::unimp("enable -f");
@@ -56,7 +57,7 @@ impl builtins::Command for EnableCommand {
                     builtin.disabled = self.disable;
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
-                    result = builtins::ExitCode::Custom(1);
+                    result = ExecutionResult::new(1);
                 }
             }
         } else {

@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::builtins;
+use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Exit the shell.
 #[derive(Parser)]
@@ -13,7 +13,7 @@ impl builtins::Command for ExitCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         #[expect(clippy::cast_sign_loss)]
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8
@@ -21,6 +21,9 @@ impl builtins::Command for ExitCommand {
             context.shell.last_result()
         };
 
-        Ok(builtins::ExitCode::ExitShell(code_8bit))
+        let mut result = ExecutionResult::new(code_8bit);
+        result.next_control_flow = ExecutionControlFlow::ExitShell;
+
+        Ok(result)
     }
 }

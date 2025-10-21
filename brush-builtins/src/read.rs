@@ -64,7 +64,7 @@ impl builtins::Command for ReadCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.use_readline {
             return error::unimp("read -e");
         }
@@ -173,9 +173,9 @@ impl builtins::Command for ReadCommand {
                 )?;
             }
 
-            Ok(brush_core::builtins::ExitCode::Success)
+            Ok(brush_core::ExecutionResult::success())
         } else {
-            Ok(brush_core::builtins::ExitCode::Custom(1))
+            Ok(brush_core::ExecutionResult::new(1))
         }
     }
 }

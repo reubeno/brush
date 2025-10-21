@@ -1,4 +1,4 @@
-use brush_core::{ErrorKind, builtins};
+use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
 use clap::Parser;
 #[cfg(not(target_os = "linux"))]
@@ -24,7 +24,7 @@ impl builtins::Command for UmaskCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
                 let parsed = nix::sys::stat::mode_t::from_str_radix(mode.as_str(), 8)?;
@@ -51,7 +51,7 @@ impl builtins::Command for UmaskCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

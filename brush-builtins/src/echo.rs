@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{builtins, escape};
+use brush_core::{ExecutionResult, builtins, escape};
 
 /// Echo text to standard output.
 #[derive(Parser)]
@@ -42,7 +42,7 @@ impl builtins::Command for EchoCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut trailing_newline = !self.no_trailing_newline;
         let mut s;
         if self.interpret_backslash_escapes {
@@ -74,6 +74,6 @@ impl builtins::Command for EchoCommand {
         write!(context.stdout(), "{s}")?;
         context.stdout().flush()?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{builtins, error};
+use brush_core::{ExecutionResult, builtins, error};
 
 /// Wait for jobs to terminate.
 #[derive(Parser)]
@@ -27,7 +27,7 @@ impl builtins::Command for WaitCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if self.wait_for_terminate {
             return error::unimp("wait -f");
         }
@@ -49,6 +49,6 @@ impl builtins::Command for WaitCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

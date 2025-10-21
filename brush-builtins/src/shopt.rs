@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Manage shopt-style options.
 #[derive(Parser)]
@@ -36,18 +36,18 @@ impl builtins::Command for ShoptCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.set && self.unset {
             writeln!(
                 context.stderr(),
                 "cannot set and unset shell options simultaneously"
             )?;
-            return Ok(builtins::ExitCode::InvalidUsage);
+            return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
         if self.options.is_empty() {
             if self.quiet {
-                return Ok(builtins::ExitCode::Success);
+                return Ok(ExecutionResult::success());
             }
 
             // Enumerate all options of the selected type.
@@ -84,9 +84,9 @@ impl builtins::Command for ShoptCommand {
                 }
             }
 
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         } else {
-            let mut return_value = builtins::ExitCode::Success;
+            let mut return_value = ExecutionResult::success();
 
             // Enumerate only the specified options.
             for option_name in &self.options {
@@ -110,7 +110,7 @@ impl builtins::Command for ShoptCommand {
                     } else {
                         let option_value = option_definition.get(&context.shell.options);
                         if !option_value {
-                            return_value = builtins::ExitCode::Custom(1);
+                            return_value = ExecutionResult::new(1);
                         }
 
                         if !self.quiet {
@@ -141,7 +141,7 @@ impl builtins::Command for ShoptCommand {
                         context.command_name,
                         option_name
                     )?;
-                    return_value = builtins::ExitCode::Custom(1);
+                    return_value = ExecutionResult::new(1);
                 }
             }
 

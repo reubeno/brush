@@ -2,7 +2,7 @@ use std::io::Write;
 
 use clap::{Parser, Subcommand};
 
-use brush_core::{builtins, sys};
+use brush_core::{ExecutionResult, builtins, sys};
 
 /// Change the current working directory.
 #[derive(Parser)]
@@ -56,7 +56,7 @@ impl builtins::Command for BrushInfoCommand {
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         self.command_group.execute(&mut context).await
     }
 }
@@ -65,7 +65,7 @@ impl CommandGroup {
     async fn execute(
         &self,
         context: &mut brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::Process(process) => process.execute(context),
             Self::Complete(complete) => complete.execute(context).await,
@@ -77,37 +77,37 @@ impl ProcessCommand {
     fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::ShowProcessId => {
                 writeln!(context.stdout(), "{}", std::process::id())?;
-                Ok(builtins::ExitCode::Success)
+                Ok(ExecutionResult::success())
             }
             Self::ShowProcessGroupId => {
                 if let Some(pgid) = sys::terminal::get_process_group_id() {
                     writeln!(context.stdout(), "{pgid}")?;
-                    Ok(builtins::ExitCode::Success)
+                    Ok(ExecutionResult::success())
                 } else {
                     writeln!(context.stderr(), "failed to get process group ID")?;
-                    Ok(builtins::ExitCode::Custom(1))
+                    Ok(ExecutionResult::new(1))
                 }
             }
             Self::ShowForegroundProcessId => {
                 if let Some(pid) = sys::terminal::get_foreground_pid() {
                     writeln!(context.stdout(), "{pid}")?;
-                    Ok(builtins::ExitCode::Success)
+                    Ok(ExecutionResult::success())
                 } else {
                     writeln!(context.stderr(), "failed to get foreground process ID")?;
-                    Ok(builtins::ExitCode::Custom(1))
+                    Ok(ExecutionResult::new(1))
                 }
             }
             Self::ShowParentProcessId => {
                 if let Some(pid) = sys::terminal::get_parent_process_id() {
                     writeln!(context.stdout(), "{pid}")?;
-                    Ok(builtins::ExitCode::Success)
+                    Ok(ExecutionResult::success())
                 } else {
                     writeln!(context.stderr(), "failed to get parent process ID")?;
-                    Ok(builtins::ExitCode::Custom(1))
+                    Ok(ExecutionResult::new(1))
                 }
             }
         }
@@ -118,7 +118,7 @@ impl CompleteCommand {
     async fn execute(
         &self,
         context: &mut brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::Line { cursor_index, line } => {
                 let completions = context
@@ -128,7 +128,7 @@ impl CompleteCommand {
                 for candidate in completions.candidates {
                     writeln!(context.stdout(), "{candidate}")?;
                 }
-                Ok(builtins::ExitCode::Success)
+                Ok(ExecutionResult::success())
             }
         }
     }

@@ -19,7 +19,7 @@ impl builtins::Command for DotCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         // TODO: Handle trap inheritance.
         let params = context.params.clone();
         let result = context
@@ -31,10 +31,6 @@ impl builtins::Command for DotCommand {
             )
             .await?;
 
-        if result.exit_code != 0 {
-            return Ok(builtins::ExitCode::Custom(result.exit_code));
-        }
-
-        Ok(builtins::ExitCode::Success)
+        Ok(result.exit_code.into())
     }
 }

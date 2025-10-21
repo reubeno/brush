@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{arithmetic::Evaluatable, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
 #[derive(Parser)]
@@ -15,12 +15,12 @@ impl builtins::Command for LetCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut exit_code = builtins::ExitCode::InvalidUsage;
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        let mut result = ExecutionExitCode::InvalidUsage.into();
 
         if self.exprs.is_empty() {
             writeln!(context.stderr(), "missing expression")?;
-            return Ok(exit_code);
+            return Ok(result);
         }
 
         for expr in &self.exprs {
@@ -28,12 +28,12 @@ impl builtins::Command for LetCommand {
             let evaluated = parsed.eval(context.shell)?;
 
             if evaluated == 0 {
-                exit_code = builtins::ExitCode::Custom(1);
+                result = ExecutionResult::new(1);
             } else {
-                exit_code = builtins::ExitCode::Custom(0);
+                result = ExecutionResult::success();
             }
         }
 
-        Ok(exit_code)
+        Ok(result)
     }
 }

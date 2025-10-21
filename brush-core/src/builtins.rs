@@ -4,52 +4,7 @@ use clap::builder::styling;
 use futures::future::BoxFuture;
 use std::io::Write;
 
-use crate::{CommandArg, ExecutionResult, commands, error};
-
-/// Result of executing a built-in command.
-pub struct BuiltinResult {
-    /// The exit code from the command.
-    pub exit_code: ExitCode,
-}
-
-/// Exit codes for built-in commands.
-pub enum ExitCode {
-    /// The command was successful.
-    Success,
-    /// The inputs to the command were invalid.
-    InvalidUsage,
-    /// The command is not implemented.
-    Unimplemented,
-    /// The command returned a specific custom numerical exit code.
-    Custom(u8),
-    /// The command is requesting to exit the shell, yielding the given exit code.
-    ExitShell(u8),
-    /// The command is requesting to return from a function or script, yielding the given exit
-    /// code.
-    ReturnFromFunctionOrScript(u8),
-    /// The command is requesting to continue a loop, identified by the given nesting count.
-    ContinueLoop(u8),
-    /// The command is requesting to break a loop, identified by the given nesting count.
-    BreakLoop(u8),
-}
-
-impl From<ExecutionResult> for ExitCode {
-    fn from(result: ExecutionResult) -> Self {
-        if let Some(count) = result.continue_loop {
-            Self::ContinueLoop(count)
-        } else if let Some(count) = result.break_loop {
-            Self::BreakLoop(count)
-        } else if result.return_from_function_or_script {
-            Self::ReturnFromFunctionOrScript(result.exit_code)
-        } else if result.exit_shell {
-            Self::ExitShell(result.exit_code)
-        } else if result.exit_code == 0 {
-            Self::Success
-        } else {
-            Self::Custom(result.exit_code)
-        }
-    }
-}
+use crate::{CommandArg, commands, error, results};
 
 /// Type of a function implementing a built-in command.
 ///
@@ -60,7 +15,7 @@ impl From<ExecutionResult> for ExitCode {
 pub type CommandExecuteFunc = fn(
     commands::ExecutionContext<'_>,
     Vec<commands::CommandArg>,
-) -> BoxFuture<'_, Result<BuiltinResult, error::Error>>;
+) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>;
 
 /// Type of a function to retrieve help content for a built-in command.
 ///
@@ -115,7 +70,8 @@ pub trait Command: clap::Parser {
     fn execute(
         &self,
         context: commands::ExecutionContext<'_>,
-    ) -> impl std::future::Future<Output = Result<ExitCode, error::Error>> + std::marker::Send;
+    ) -> impl std::future::Future<Output = Result<results::ExecutionResult, error::Error>>
+    + std::marker::Send;
 
     /// Returns the textual help content associated with the command.
     ///
@@ -381,7 +337,7 @@ pub trait SimpleCommand {
     fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
         context: commands::ExecutionContext<'_>,
         args: I,
-    ) -> Result<BuiltinResult, error::Error>;
+    ) -> Result<results::ExecutionResult, error::Error>;
 }
 
 /// Returns a built-in command registration, given an implementation of the
@@ -448,7 +404,7 @@ fn get_builtin_content<T: Command + Send + Sync>(
 fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
     Box::pin(async move { exec_simple_builtin_impl::<T>(context, args).await })
 }
 
@@ -456,7 +412,7 @@ fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(
 async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<BuiltinResult, error::Error> {
+) -> Result<results::ExecutionResult, error::Error> {
     let plain_args = args.into_iter().map(|arg| match arg {
         CommandArg::String(s) => s,
         CommandArg::Assignment(a) => a.to_string(),
@@ -468,14 +424,14 @@ async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
 fn exec_builtin<T: Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
     Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
 }
 
 async fn exec_builtin_impl<T: Command + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<BuiltinResult, error::Error> {
+) -> Result<results::ExecutionResult, error::Error> {
     let plain_args = args.into_iter().map(|arg| match arg {
         CommandArg::String(s) => s,
         CommandArg::Assignment(a) => a.to_string(),
@@ -486,28 +442,24 @@ async fn exec_builtin_impl<T: Command + Send + Sync>(
         Ok(command) => command,
         Err(e) => {
             writeln!(context.stderr(), "{e}")?;
-            return Ok(BuiltinResult {
-                exit_code: ExitCode::InvalidUsage,
-            });
+            return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };
 
-    Ok(BuiltinResult {
-        exit_code: command.execute(context).await?,
-    })
+    command.execute(context).await
 }
 
 fn exec_declaration_builtin<T: DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
     Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
 }
 
 async fn exec_declaration_builtin_impl<T: DeclarationCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<BuiltinResult, error::Error> {
+) -> Result<results::ExecutionResult, error::Error> {
     let mut options = vec![];
     let mut declarations = vec![];
 
@@ -527,34 +479,28 @@ async fn exec_declaration_builtin_impl<T: DeclarationCommand + Send + Sync>(
         Ok(command) => command,
         Err(e) => {
             writeln!(context.stderr(), "{e}")?;
-            return Ok(BuiltinResult {
-                exit_code: ExitCode::InvalidUsage,
-            });
+            return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };
 
     command.set_declarations(declarations);
 
-    Ok(BuiltinResult {
-        exit_code: command.execute(context).await?,
-    })
+    command.execute(context).await
 }
 
 fn exec_raw_arg_builtin<T: DeclarationCommand + Default + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<BuiltinResult, error::Error>> {
+) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
     Box::pin(async move { exec_raw_arg_builtin_impl::<T>(context, args).await })
 }
 
 async fn exec_raw_arg_builtin_impl<T: DeclarationCommand + Default + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<BuiltinResult, error::Error> {
+) -> Result<results::ExecutionResult, error::Error> {
     let mut command = T::default();
     command.set_declarations(args);
 
-    Ok(BuiltinResult {
-        exit_code: command.execute(context).await?,
-    })
+    command.execute(context).await
 }

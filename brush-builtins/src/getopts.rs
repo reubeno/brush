@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashMap, io::Write};
 
 use clap::Parser;
 
-use brush_core::{builtins, variables};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 
 /// Parse command options.
 #[derive(Parser)]
@@ -39,7 +39,7 @@ impl builtins::Command for GetOptsCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut args = HashMap::<char, bool>::new();
         let mut treat_unknown_options_as_failure = true;
 
@@ -56,7 +56,7 @@ impl builtins::Command for GetOptsCommand {
                     // options *not* to be treated as failures.
                     treat_unknown_options_as_failure = false;
                 } else {
-                    return Ok(builtins::ExitCode::InvalidUsage);
+                    return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             }
 
@@ -72,7 +72,7 @@ impl builtins::Command for GetOptsCommand {
             .parse()?;
 
         if next_index < 1 {
-            return Ok(builtins::ExitCode::InvalidUsage);
+            return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
         let mut new_optarg = None;
@@ -113,7 +113,7 @@ impl builtins::Command for GetOptsCommand {
                             next_index_zero_based += 1;
 
                             if next_index_zero_based >= self.args.len() {
-                                return Ok(builtins::ExitCode::Custom(1));
+                                return Ok(ExecutionResult::new(1));
                             }
 
                             new_optarg = Some(self.args[next_index_zero_based].clone());
@@ -164,7 +164,7 @@ impl builtins::Command for GetOptsCommand {
                     )?;
                 }
 
-                exit_code = builtins::ExitCode::Success;
+                exit_code = ExecutionResult::success();
             } else {
                 variable_value = String::from("?");
                 new_optarg = None;
@@ -177,13 +177,13 @@ impl builtins::Command for GetOptsCommand {
                 }
 
                 // Note that we're done parsing options.
-                exit_code = builtins::ExitCode::Custom(1);
+                exit_code = ExecutionResult::new(1);
             }
         } else {
             variable_value = String::from("?");
             new_optarg = None;
             new_optind = next_index;
-            exit_code = builtins::ExitCode::Custom(1);
+            exit_code = ExecutionResult::new(1);
         }
 
         // Update variable value.

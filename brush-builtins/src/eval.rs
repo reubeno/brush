@@ -1,4 +1,4 @@
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 use clap::Parser;
 
 /// Evaluate the given string as script.
@@ -13,7 +13,7 @@ impl builtins::Command for EvalCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if !self.args.is_empty() {
             let args_concatenated = self.args.join(" ");
 
@@ -22,9 +22,9 @@ impl builtins::Command for EvalCommand {
             let params = context.params.clone();
             let exec_result = context.shell.run_string(args_concatenated, &params).await?;
 
-            Ok(builtins::ExitCode::Custom(exec_result.exit_code))
+            Ok(exec_result.exit_code.into())
         } else {
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         }
     }
 }

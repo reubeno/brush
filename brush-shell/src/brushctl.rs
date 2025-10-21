@@ -46,7 +46,7 @@ impl brush_core::builtins::Command for BrushCtlCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self.command_group {
             CommandGroup::Events(ref events) => events.execute(&context),
         }
@@ -57,7 +57,7 @@ impl EventsCommand {
     fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let event_config = crate::get_event_config();
 
         let mut event_config = event_config.try_lock().map_err(|_| {
@@ -80,7 +80,7 @@ impl EventsCommand {
                 Self::Disable { event } => event_config.disable(*event)?,
             }
 
-            Ok(brush_core::builtins::ExitCode::Success)
+            Ok(brush_core::ExecutionResult::success())
         } else {
             Err(brush_core::ErrorKind::Unimplemented("event configuration not initialized").into())
         }

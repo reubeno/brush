@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
-use brush_core::{ErrorKind, builtins, commands};
+use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
 
 /// Exec the provided command.
 #[derive(Parser)]
@@ -27,13 +27,13 @@ impl builtins::Command for ExecCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if self.args.is_empty() {
             // When no arguments are present, then there's nothing for us to execute -- but we need
             // to ensure that any redirections setup for this builtin get applied to the calling
             // shell instance.
             context.shell.open_files = context.params.open_files;
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
         let mut argv0 = Cow::Borrowed(self.name_for_argv0.as_ref().unwrap_or(&self.args[0]));
@@ -54,7 +54,7 @@ impl builtins::Command for ExecCommand {
         let exec_error = cmd.exec();
 
         if exec_error.kind() == std::io::ErrorKind::NotFound {
-            Ok(builtins::ExitCode::Custom(127))
+            Ok(ExecutionExitCode::NotFound.into())
         } else {
             Err(ErrorKind::from(exec_error).into())
         }

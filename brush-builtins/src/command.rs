@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
-    ExecutionResult, builtins, commands, pathsearch,
+    ExecutionResult, ExecutionSpawnResult, builtins, commands, pathsearch,
     sys::{self, fs::PathExt},
 };
 
@@ -36,7 +36,7 @@ impl builtins::Command for CommandCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
             if self.print_description || self.print_verbose_description {
@@ -57,19 +57,19 @@ impl builtins::Command for CommandCommand {
                             }
                         }
                     }
-                    Ok(builtins::ExitCode::Success)
+                    Ok(ExecutionResult::success())
                 } else {
                     if self.print_verbose_description {
                         writeln!(context.stderr(), "command: {command_name}: not found")?;
                     }
-                    Ok(builtins::ExitCode::Custom(1))
+                    Ok(ExecutionResult::new(1))
                 }
             } else {
                 self.execute_command(context, command_name, self.use_default_path)
                     .await
             }
         } else {
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         }
     }
 }
@@ -130,7 +130,7 @@ impl CommandCommand {
         mut context: brush_core::ExecutionContext<'_>,
         command_name: &str,
         use_default_path: bool,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         command_name.clone_into(&mut context.command_name);
         let command_and_args = self.command_and_args.iter().map(|arg| arg.into()).collect();
 
@@ -152,21 +152,12 @@ impl CommandCommand {
         )
         .await?
         {
-            commands::CommandSpawnResult::SpawnedProcess(mut child) => {
+            ExecutionSpawnResult::StartedProcess(mut child) => {
                 // TODO: jobs: review this logic
                 let wait_result = child.wait().await?;
-                let exec_result = ExecutionResult::from(wait_result);
-                Ok(builtins::ExitCode::Custom(exec_result.exit_code))
+                Ok(ExecutionResult::from(wait_result))
             }
-            commands::CommandSpawnResult::ImmediateExit(code) => {
-                Ok(builtins::ExitCode::Custom(code))
-            }
-            commands::CommandSpawnResult::ExitShell(_)
-            | commands::CommandSpawnResult::ReturnFromFunctionOrScript(_)
-            | commands::CommandSpawnResult::BreakLoop(_)
-            | commands::CommandSpawnResult::ContinueLoop(_) => {
-                unreachable!("external command cannot return this spawn result")
-            }
+            ExecutionSpawnResult::Completed(result) => Ok(result),
         }
     }
 }

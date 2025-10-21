@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{
-    builtins,
+    ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
     variables,
 };
@@ -41,21 +41,21 @@ impl builtins::Command for ExportCommand {
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.declarations.is_empty() {
             display_all_exported_vars(&context)?;
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
-        let mut exit_code = builtins::ExitCode::Success;
+        let mut result = ExecutionResult::success();
         for decl in &self.declarations {
-            let current_exit_code = self.process_decl(&mut context, decl)?;
-            if !matches!(current_exit_code, builtins::ExitCode::Success) {
-                exit_code = current_exit_code;
+            let current_result = self.process_decl(&mut context, decl)?;
+            if !current_result.is_success() {
+                result = current_result;
             }
         }
 
-        Ok(exit_code)
+        Ok(result)
     }
 }
 
@@ -64,7 +64,7 @@ impl ExportCommand {
         &self,
         context: &mut brush_core::ExecutionContext<'_>,
         decl: &brush_core::CommandArg,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         match decl {
             brush_core::CommandArg::String(s) => {
                 // See if this is supposed to be a function name.
@@ -79,7 +79,7 @@ impl ExportCommand {
                         }
                     } else {
                         writeln!(context.stderr(), "{s}: not a function")?;
-                        return Ok(builtins::ExitCode::InvalidUsage);
+                        return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
                 }
                 // Try to find the variable already present; if we find it, then mark it
@@ -97,7 +97,7 @@ impl ExportCommand {
                     brush_parser::ast::AssignmentName::VariableName(name) => name,
                     brush_parser::ast::AssignmentName::ArrayElementName(_, _) => {
                         writeln!(context.stderr(), "not a valid variable name")?;
-                        return Ok(builtins::ExitCode::InvalidUsage);
+                        return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
                 };
 
@@ -132,7 +132,7 @@ impl ExportCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

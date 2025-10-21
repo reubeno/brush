@@ -1,7 +1,9 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ErrorKind, ExecutionParameters, Shell, builtins, tests};
+use brush_core::{
+    ErrorKind, ExecutionExitCode, ExecutionParameters, ExecutionResult, Shell, builtins, tests,
+};
 
 /// Evaluate test expression.
 #[derive(Parser)]
@@ -15,7 +17,7 @@ impl builtins::Command for TestCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut args = self.args.as_slice();
 
         if context.command_name == "[" {
@@ -23,7 +25,7 @@ impl builtins::Command for TestCommand {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {
                     writeln!(context.stderr(), "[: missing ']'")?;
-                    return Ok(builtins::ExitCode::InvalidUsage);
+                    return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             }
 
@@ -31,9 +33,9 @@ impl builtins::Command for TestCommand {
         }
 
         if execute_test(context.shell, &context.params, args)? {
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         } else {
-            Ok(builtins::ExitCode::Custom(1))
+            Ok(ExecutionResult::new(1))
         }
     }
 }

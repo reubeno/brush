@@ -1,4 +1,4 @@
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
@@ -26,7 +26,7 @@ impl builtins::Command for HelpCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
         } else {
@@ -35,7 +35,7 @@ impl builtins::Command for HelpCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

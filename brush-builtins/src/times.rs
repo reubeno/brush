@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{builtins, timing};
+use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
 #[derive(Parser)]
@@ -11,7 +11,7 @@ impl builtins::Command for TimesCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;
         writeln!(
             context.stdout(),
@@ -29,6 +29,6 @@ impl builtins::Command for TimesCommand {
             timing::format_duration_non_posixly(&children_system),
         )?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use brush_core::{builtins, error};
+use brush_core::{ExecutionResult, builtins, error};
 
 /// Change the current shell working directory.
 #[derive(Parser)]
@@ -34,7 +34,7 @@ impl builtins::Command for CdCommand {
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         // TODO: implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");
@@ -49,7 +49,7 @@ impl builtins::Command for CdCommand {
                     PathBuf::from(oldpwd.to_string())
                 } else {
                     writeln!(context.stderr(), "OLDPWD not set")?;
-                    return Ok(builtins::ExitCode::Custom(1));
+                    return Ok(ExecutionResult::new(1));
                 }
             } else {
                 // TODO: remove clone, and use temporary lifetime extension after rust 1.75
@@ -61,7 +61,7 @@ impl builtins::Command for CdCommand {
                 PathBuf::from(home_var.to_string())
             } else {
                 writeln!(context.stderr(), "HOME not set")?;
-                return Ok(builtins::ExitCode::Custom(1));
+                return Ok(ExecutionResult::new(1));
             }
         };
 
@@ -81,7 +81,7 @@ impl builtins::Command for CdCommand {
 
         if let Err(e) = context.shell.set_working_dir(&target_dir) {
             writeln!(context.stderr(), "cd: {e}")?;
-            return Ok(builtins::ExitCode::Custom(1));
+            return Ok(ExecutionResult::new(1));
         }
 
         // Bash compatibility
@@ -93,6 +93,6 @@ impl builtins::Command for CdCommand {
             writeln!(context.stdout(), "{}", target_dir.display())?;
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

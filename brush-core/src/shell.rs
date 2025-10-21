@@ -10,15 +10,19 @@ use tokio::sync::Mutex;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
-use crate::interp::{self, Execute, ExecutionParameters, ExecutionResult};
+use crate::interp::{self, Execute, ExecutionParameters};
 use crate::options::RuntimeOptions;
+use crate::results::{ExecutionControlFlow, ExecutionSpawnResult};
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
+use crate::{
+    ExecutionResult, history, interfaces, pathcache, pathsearch, scripts, trace_categories,
+    wellknownvars,
+};
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
     prompt, sys::users, traps,
 };
-use crate::{history, interfaces, pathcache, pathsearch, scripts, trace_categories, wellknownvars};
 
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
@@ -794,15 +798,22 @@ impl Shell {
             .collect::<Vec<_>>();
 
         match commands::invoke_shell_function(func, context, &command_args).await? {
-            commands::CommandSpawnResult::SpawnedProcess(_) => {
+            ExecutionSpawnResult::StartedProcess(_) => {
                 error::unimp("child spawned from function invocation")
             }
-            commands::CommandSpawnResult::ImmediateExit(code) => Ok(code),
-            commands::CommandSpawnResult::ExitShell(code) => Ok(code),
-            commands::CommandSpawnResult::ReturnFromFunctionOrScript(code) => Ok(code),
-            commands::CommandSpawnResult::BreakLoop(_)
-            | commands::CommandSpawnResult::ContinueLoop(_) => {
-                error::unimp("break or continue returned from function invocation")
+            ExecutionSpawnResult::Completed(ExecutionResult {
+                exit_code,
+                next_control_flow,
+            }) => {
+                if matches!(
+                    next_control_flow,
+                    ExecutionControlFlow::BreakLoop { .. }
+                        | ExecutionControlFlow::ContinueLoop { .. }
+                ) {
+                    return error::unimp("break or continue returned from function invocation");
+                }
+
+                Ok(exit_code.into())
             }
         }
     }
