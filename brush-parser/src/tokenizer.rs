@@ -384,7 +384,7 @@ impl TokenParseState {
                 cross_token_state.here_state = HereState::NextLineIsHereDoc;
 
                 // Include the trailing \n in the here tag so it's easier to check against.
-                let tag = std::format!("{}\n", self.current_token());
+                let tag = std::format!("{}\n", self.current_token().trim_ascii_start());
                 let tag_was_escaped_or_quoted = tag.contains(is_quoting_char);
 
                 let tag_token_result = TokenizeResult {
@@ -1492,6 +1492,28 @@ SOMETHING
 TEXT
 HERE
 )"
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_here_doc_in_double_quoted_command_substitution() -> Result<()> {
+        assert_ron_snapshot!(test_tokenizer(
+            r#"echo "$(cat <<HERE
+TEXT
+HERE
+)""#
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_here_doc_in_double_quoted_command_substitution_with_space() -> Result<()> {
+        assert_ron_snapshot!(test_tokenizer(
+            r#"echo "$(cat << HERE
+TEXT
+HERE
+)""#
         )?);
         Ok(())
     }

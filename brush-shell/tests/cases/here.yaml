@@ -95,6 +95,24 @@ cases:
 
       echo "${test1}"
 
+  - name: "Here doc in a double-quoted command substitution"
+    stdin: |
+      test1="$(cat <<EOF
+      something
+      EOF
+      )"
+
+      echo "${test1}"
+
+  - name: "Here doc in a double-quoted command substitution with spaces"
+    stdin: |
+      test1="$(cat << EOF
+      something
+      EOF
+      )"
+
+      echo "${test1}"
+
   - name: "Here doc in a command substitution with quotes"
     known_failure: true # Issue #421
     stdin: |
