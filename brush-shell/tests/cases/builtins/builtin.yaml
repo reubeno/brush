@@ -26,3 +26,17 @@ cases:
     stdin: |
       builtin declare variable=value
       declare -p variable
+
+  - name: "builtin with disabled builtin"
+    ignore_stderr: true
+    stdin: |
+      cd .
+      echo $?
+
+      enable -n cd
+      builtin cd .
+      echo $?
+
+      enable cd
+      builtin cd .
+      echo $?

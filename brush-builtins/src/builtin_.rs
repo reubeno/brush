@@ -32,14 +32,16 @@ impl builtins::Command for BuiltinCommand {
 
         let builtin_name = args[0].to_string();
 
-        if let Some(builtin) = context.shell.builtins().get(&builtin_name) {
+        if let Some(builtin) = context.shell.builtins().get(&builtin_name)
+            && !builtin.disabled
+        {
             context.command_name = builtin_name;
 
             (builtin.execute_func)(context, args)
                 .await
                 .map(|res: builtins::BuiltinResult| res.exit_code)
         } else {
-            writeln!(context.stderr(), "{builtin_name}: command not found")?;
+            writeln!(context.stderr(), "{builtin_name}: builtin not found")?;
             Ok(builtins::ExitCode::Custom(1))
         }
     }
