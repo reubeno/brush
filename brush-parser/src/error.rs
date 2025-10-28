@@ -1,3 +1,7 @@
+use std::ops::Range;
+
+use winnow::error::ContextError;
+
 use crate::Token;
 use crate::tokenizer;
 
@@ -19,6 +23,17 @@ pub enum ParseError {
         inner: tokenizer::TokenizerError,
         /// Optionally provides the position of the error.
         position: Option<tokenizer::SourcePosition>,
+    },
+}
+#[derive(Debug, thiserror::Error)]
+enum ErrorLocation {
+    #[error("{0}")]
+    Peg(peg::error::ParseError<peg::str::LineCol>),
+    #[error("{message}")]
+    Winnow {
+        message: String,
+        span: Range<usize>,
+        input: String,
     },
 }
 
@@ -72,7 +87,26 @@ pub mod miette {
 #[error(transparent)]
 pub struct ParseErrorLocation {
     #[from]
-    inner: peg::error::ParseError<peg::str::LineCol>,
+    inner: ErrorLocation,
+}
+
+impl From<peg::error::ParseError<peg::str::LineCol>> for ParseErrorLocation {
+    fn from(err: peg::error::ParseError<peg::str::LineCol>) -> Self {
+        Self {
+            inner: ErrorLocation::Peg(err),
+        }
+    }
+}
+
+impl From<winnow::error::ParseError<&str, ContextError>> for ParseErrorLocation {
+    fn from(err: winnow::error::ParseError<&str, ContextError>) -> Self {
+        let inner = ErrorLocation::Winnow {
+            message: err.inner().to_string(),
+            span: err.char_span(),
+            input: (*err.input()).to_owned(),
+        };
+        Self { inner }
+    }
 }
 
 /// Represents an error that occurred while parsing a word.
