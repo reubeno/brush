@@ -12,7 +12,7 @@ use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters};
 use crate::options::RuntimeOptions;
-use crate::results::{ExecutionControlFlow, ExecutionSpawnResult};
+use crate::results::ExecutionSpawnResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
@@ -801,20 +801,7 @@ impl Shell {
             ExecutionSpawnResult::StartedProcess(_) => {
                 error::unimp("child spawned from function invocation")
             }
-            ExecutionSpawnResult::Completed(ExecutionResult {
-                exit_code,
-                next_control_flow,
-            }) => {
-                if matches!(
-                    next_control_flow,
-                    ExecutionControlFlow::BreakLoop { .. }
-                        | ExecutionControlFlow::ContinueLoop { .. }
-                ) {
-                    return error::unimp("break or continue returned from function invocation");
-                }
-
-                Ok(exit_code.into())
-            }
+            ExecutionSpawnResult::Completed(result) => Ok(result.exit_code.into()),
         }
     }
 

@@ -48,6 +48,7 @@ impl Display for SourcePosition {
     }
 }
 
+#[cfg(feature = "diagnostics")]
 impl From<&SourcePosition> for miette::SourceOffset {
     #[allow(clippy::cast_sign_loss)]
     fn from(position: &SourcePosition) -> Self {
@@ -106,6 +107,7 @@ impl Token {
     }
 }
 
+#[cfg(feature = "diagnostics")]
 impl From<&Token> for miette::SourceSpan {
     fn from(token: &Token) -> Self {
         let start = &(token.location().start);

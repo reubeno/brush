@@ -11,7 +11,8 @@ use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
 
 use crate::{
-    ExecutionParameters, ExecutionResult, Shell, builtins, env, error, escape,
+    ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, builtins, env, error,
+    escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -558,9 +559,20 @@ pub(crate) async fn invoke_shell_function(
     context.shell.positional_parameters = prior_positional_params;
 
     // Get the actual execution result from the body of the function.
-    let result = result?;
+    let mut result = result?;
 
-    // Report back the exit code, and honor any requests to exit the whole shell.
+    // Handle control-flow.
+    match result.next_control_flow {
+        ExecutionControlFlow::BreakLoop { .. } | ExecutionControlFlow::ContinueLoop { .. } => {
+            return error::unimp("break or continue returned from function invocation");
+        }
+        ExecutionControlFlow::ReturnFromFunctionOrScript => {
+            // It's now been handled.
+            result.next_control_flow = ExecutionControlFlow::Normal;
+        }
+        _ => {}
+    }
+
     Ok(result.into())
 }
 
