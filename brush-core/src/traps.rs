@@ -102,7 +102,7 @@ impl TryFrom<i32> for TrapSignal {
                     .map_err(|_| error::ErrorKind::InvalidSignal(value.to_string()))?,
             ),
             #[cfg(not(unix))]
-            _ => return Err(error::ErrorKind::InvalidSignal(value.to_string())),
+            _ => return Err(error::ErrorKind::InvalidSignal(value.to_string()).into()),
         })
     }
 }
@@ -132,7 +132,7 @@ impl TryFrom<&str> for TrapSignal {
                     .map_err(|_| error::ErrorKind::InvalidSignal(value.into()))?
             }
             #[cfg(not(unix))]
-            _ => return Err(error::ErrorKind::InvalidSignal(value.into())),
+            _ => return Err(error::ErrorKind::InvalidSignal(value.into()).into()),
         })
     }
 }
