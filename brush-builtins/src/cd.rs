@@ -51,7 +51,7 @@ impl builtins::Command for CdCommand {
                     PathBuf::from(oldpwd.to_string())
                 } else {
                     writeln!(context.stderr(), "OLDPWD not set")?;
-                    return Ok(ExecutionResult::new(1));
+                    return Ok(ExecutionResult::general_error());
                 }
             } else {
                 // TODO: remove clone, and use temporary lifetime extension after rust 1.75
@@ -63,7 +63,7 @@ impl builtins::Command for CdCommand {
                 PathBuf::from(home_var.to_string())
             } else {
                 writeln!(context.stderr(), "HOME not set")?;
-                return Ok(ExecutionResult::new(1));
+                return Ok(ExecutionResult::general_error());
             }
         };
 
@@ -81,10 +81,7 @@ impl builtins::Command for CdCommand {
             target_dir = context.shell.absolute_path(target_dir).canonicalize()?;
         }
 
-        if let Err(e) = context.shell.set_working_dir(&target_dir) {
-            writeln!(context.stderr(), "cd: {e}")?;
-            return Ok(ExecutionResult::new(1));
-        }
+        context.shell.set_working_dir(&target_dir)?;
 
         // Bash compatibility
         // https://www.gnu.org/software/bash/manual/bash.html#index-cd

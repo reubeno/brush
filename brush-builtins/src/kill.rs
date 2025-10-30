@@ -116,7 +116,7 @@ impl builtins::Command for KillCommand {
                         context.command_name,
                         pid_or_job_spec
                     )?;
-                    return Ok(ExecutionResult::new(1));
+                    return Ok(ExecutionResult::general_error());
                 }
             } else {
                 let pid = pid_or_job_spec.parse::<i32>()?;
@@ -163,7 +163,7 @@ fn print_signals(
                 }
                 Err(e) => {
                     writeln!(context.stderr(), "{e}")?;
-                    exit_code = ExecutionResult::new(1);
+                    exit_code = ExecutionResult::general_error();
                 }
             }
         }

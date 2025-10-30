@@ -40,7 +40,7 @@ pub mod variables;
 mod wellknownvars;
 
 pub use commands::{CommandArg, ExecutionContext};
-pub use error::{Error, ErrorKind};
+pub use error::{BuiltinError, Error, ErrorKind};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState};

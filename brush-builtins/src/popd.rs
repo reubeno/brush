@@ -30,7 +30,7 @@ impl builtins::Command for PopdCommand {
             dirs_cmd.execute(context).await?;
         } else {
             writeln!(context.stderr(), "popd: directory stack empty")?;
-            return Ok(ExecutionResult::new(1));
+            return Ok(ExecutionResult::general_error());
         }
 
         Ok(ExecutionResult::success())

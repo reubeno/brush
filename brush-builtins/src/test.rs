@@ -37,7 +37,7 @@ impl builtins::Command for TestCommand {
         if execute_test(context.shell, &context.params, args)? {
             Ok(ExecutionResult::success())
         } else {
-            Ok(ExecutionResult::new(1))
+            Ok(ExecutionResult::general_error())
         }
     }
 }

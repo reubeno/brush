@@ -40,7 +40,7 @@ impl builtins::Command for BuiltinCommand {
             (builtin.execute_func)(context, args).await
         } else {
             writeln!(context.stderr(), "{builtin_name}: command not found")?;
-            Ok(ExecutionResult::new(1))
+            Ok(ExecutionResult::general_error())
         }
     }
 }

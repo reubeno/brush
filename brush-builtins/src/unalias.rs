@@ -34,7 +34,7 @@ impl builtins::Command for UnaliasCommand {
                         context.command_name,
                         alias
                     )?;
-                    exit_code = ExecutionResult::new(1);
+                    exit_code = ExecutionResult::general_error();
                 }
             }
         }

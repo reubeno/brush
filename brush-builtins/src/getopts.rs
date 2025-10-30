@@ -115,7 +115,7 @@ impl builtins::Command for GetOptsCommand {
                             next_index_zero_based += 1;
 
                             if next_index_zero_based >= self.args.len() {
-                                return Ok(ExecutionResult::new(1));
+                                return Ok(ExecutionResult::general_error());
                             }
 
                             new_optarg = Some(self.args[next_index_zero_based].clone());
@@ -179,13 +179,13 @@ impl builtins::Command for GetOptsCommand {
                 }
 
                 // Note that we're done parsing options.
-                exit_code = ExecutionResult::new(1);
+                exit_code = ExecutionResult::general_error();
             }
         } else {
             variable_value = String::from("?");
             new_optarg = None;
             new_optind = next_index;
-            exit_code = ExecutionResult::new(1);
+            exit_code = ExecutionResult::general_error();
         }
 
         // Update variable value.

@@ -44,7 +44,7 @@ impl builtins::Command for HashCommand {
             for name in &self.names {
                 if !context.shell.program_location_cache.unset(name) {
                     writeln!(context.stderr(), "{name}: not found")?;
-                    result = ExecutionResult::new(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         } else if self.display_paths {
@@ -72,7 +72,7 @@ impl builtins::Command for HashCommand {
                     }
                 } else {
                     writeln!(context.stderr(), "{name}: not found")?;
-                    result = ExecutionResult::new(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         } else if let Some(path) = &self.path_to_use {
@@ -91,7 +91,7 @@ impl builtins::Command for HashCommand {
                     .is_none()
                 {
                     writeln!(context.stderr(), "{name}: not found")?;
-                    result = ExecutionResult::new(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         }

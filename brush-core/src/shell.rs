@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,8 +15,8 @@ use crate::results::ExecutionSpawnResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ExecutionControlFlow, ExecutionResult, history, interfaces, pathcache, pathsearch, scripts,
-    trace_categories, wellknownvars,
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, history, interfaces, pathcache,
+    pathsearch, scripts, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -26,6 +25,9 @@ use crate::{
 
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
+
+/// Type for storing an error formatter.
+pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 
 /// Represents an instance of a shell.
 pub struct Shell {
@@ -106,6 +108,9 @@ pub struct Shell {
 
     /// History of commands executed in the shell.
     history: Option<history::History>,
+
+    /// Error formatter for customizing error display.
+    error_formatter: ErrorFormatterHelper,
 }
 
 impl Clone for Shell {
@@ -136,6 +141,7 @@ impl Clone for Shell {
             last_stopwatch_offset: self.last_stopwatch_offset,
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
+            error_formatter: self.error_formatter.clone(),
             depth: self.depth + 1,
         }
     }
@@ -317,6 +323,8 @@ pub struct CreateOptions {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
+    /// Error formatter helper for the shell to use.
+    pub error_formatter: Option<ErrorFormatterHelper>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
 }
@@ -360,6 +368,9 @@ impl Shell {
             last_stopwatch_offset: 0,
             key_bindings: options.key_bindings,
             history: None,
+            error_formatter: options
+                .error_formatter
+                .unwrap_or_else(|| Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))),
             depth: 0,
         };
 
@@ -511,7 +522,9 @@ impl Shell {
         let name = name.into();
 
         let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
-        let func_body = parser.parse_function_parens_and_body()?;
+        let func_body = parser.parse_function_parens_and_body().map_err(|e| {
+            error::Error::from(error::ErrorKind::FunctionParseError(name.clone(), e))
+        })?;
 
         let def = brush_parser::ast::FunctionDefinition {
             fname: name.clone(),
@@ -931,60 +944,25 @@ impl Shell {
         source_info: &brush_parser::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let error_prefix = if !source_info.source.is_empty() {
-            format!("{}: ", source_info.source)
-        } else {
-            String::new()
-        };
-
+        // If parsing succeeded, run the program.
         let result = match parse_result {
-            Ok(prog) => match self.run_program(prog, params).await {
-                Ok(result) => result,
-                Err(e) => {
-                    tracing::error!("error: {:#}", e);
-                    *self.last_exit_status_mut() = 1;
-                    ExecutionResult::new(1)
-                }
-            },
-            Err(brush_parser::ParseError::ParsingNearToken(token_near_error)) => {
-                let error_loc = &token_near_error.location().start;
-
-                tracing::error!(
-                    "{}syntax error near token `{}' (line {} col {})",
-                    error_prefix,
-                    token_near_error.to_str(),
-                    error_loc.line,
-                    error_loc.column,
-                );
-                *self.last_exit_status_mut() = 2;
-                ExecutionResult::new(2)
-            }
-            Err(brush_parser::ParseError::ParsingAtEndOfInput) => {
-                tracing::error!("{}syntax error at end of input", error_prefix);
-
-                *self.last_exit_status_mut() = 2;
-                ExecutionResult::new(2)
-            }
-            Err(brush_parser::ParseError::Tokenizing { inner, position }) => {
-                let mut error_message = error_prefix.clone();
-                error_message.push_str(inner.to_string().as_str());
-
-                if let Some(position) = position {
-                    write!(
-                        error_message,
-                        " (detected near line {} column {})",
-                        position.line, position.column
-                    )?;
-                }
-
-                tracing::error!("{}", error_message);
-
-                *self.last_exit_status_mut() = 2;
-                ExecutionResult::new(2)
-            }
+            Ok(prog) => self.run_program(prog, params).await,
+            Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
+                parse_err,
+                source_info.clone(),
+            ))),
         };
 
-        Ok(result)
+        // Report any errors.
+        match result {
+            Ok(result) => Ok(result),
+            Err(err) => {
+                let _ = self.display_error(&mut params.stderr(), &err).await;
+                let exit_code = ExecutionExitCode::from(&err);
+                *self.last_exit_status_mut() = exit_code.into();
+                Ok(exit_code.into())
+            }
+        }
     }
 
     /// Executes the given parsed shell program, returning the resulting exit status.
@@ -1591,6 +1569,23 @@ impl Shell {
     /// Returns the current subshell depth; 0 is returned if this shell is not a subshell.
     pub const fn depth(&self) -> usize {
         self.depth
+    }
+
+    /// Displays the given error to the user, using the shell's error display mechanisms.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_table` - The open file table to use for any file descriptor references.
+    /// * `err` - The error to display.
+    pub async fn display_error(
+        &self,
+        file: &mut impl std::io::Write,
+        err: &error::Error,
+    ) -> Result<(), error::Error> {
+        let str = self.error_formatter.lock().await.format_error(err, self);
+        write!(file, "{str}")?;
+
+        Ok(())
     }
 }
 

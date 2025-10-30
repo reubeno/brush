@@ -13,6 +13,6 @@ impl builtins::Command for FalseCommand {
         &self,
         _context: brush_core::ExecutionContext<'_>,
     ) -> Result<ExecutionResult, Self::Error> {
-        Ok(ExecutionResult::new(1))
+        Ok(ExecutionResult::general_error())
     }
 }

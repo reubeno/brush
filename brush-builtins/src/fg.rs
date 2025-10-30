@@ -42,7 +42,7 @@ impl builtins::Command for FgCommand {
                     "{}: {}: no such job",
                     job_spec, context.command_name
                 )?;
-                Ok(ExecutionResult::new(1))
+                Ok(ExecutionResult::general_error())
             }
         } else {
             if let Some(job) = context.shell.jobs.current_job_mut() {
@@ -63,7 +63,7 @@ impl builtins::Command for FgCommand {
                 Ok(result)
             } else {
                 writeln!(stderr, "{}: no current job", context.command_name)?;
-                Ok(ExecutionResult::new(1))
+                Ok(ExecutionResult::general_error())
             }
         }
     }

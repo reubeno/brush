@@ -230,10 +230,16 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
 }
 
 /// Information about the source of tokens.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SourceInfo {
     /// The source of the tokens.
     pub source: String,
+}
+
+impl std::fmt::Display for SourceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.source)
+    }
 }
 
 peg::parser! {

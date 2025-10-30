@@ -2,6 +2,7 @@
 
 mod args;
 mod brushctl;
+mod error_formatter;
 mod events;
 mod productinfo;
 mod shell_factory;
@@ -10,6 +11,7 @@ use crate::args::{CommandLineArgs, InputBackend};
 use brush_interactive::InteractiveShell;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
+use tokio::sync::Mutex;
 
 #[cfg(any(unix, windows))]
 use std::io::IsTerminal;
@@ -88,8 +90,8 @@ fn main() {
 
     let exit_code = match result {
         Ok(code) => code,
-        Err(e) => {
-            tracing::error!("error: {:#}", e);
+        Err(err) => {
+            tracing::error!("error: {err:#}");
             1
         }
     };
@@ -186,6 +188,31 @@ async fn run_impl(
     // Instantiate an appropriately configured shell.
     let mut shell = instantiate_shell(&args, cli_args, factory).await?;
 
+    // Run in that shell.
+    let result = run_in_shell(&mut shell, args).await;
+
+    // Display any error that percolated up.
+    let exit_code = match result {
+        Ok(code) => code,
+        Err(brush_interactive::ShellError::ShellError(e)) => {
+            let core_shell = shell.shell();
+            let mut stderr = core_shell.as_ref().stderr();
+            let _ = core_shell.as_ref().display_error(&mut stderr, &e).await;
+            1
+        }
+        Err(err) => {
+            tracing::error!("error: {err:#}");
+            1
+        }
+    };
+
+    Ok(exit_code)
+}
+
+async fn run_in_shell(
+    shell: &mut impl brush_interactive::InteractiveShell,
+    args: CommandLineArgs,
+) -> Result<u8, brush_interactive::ShellError> {
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
         // Pass through args.
@@ -295,6 +322,7 @@ async fn instantiate_shell(
             verbose: args.verbose,
             max_function_call_depth: None,
             key_bindings: None,
+            error_formatter: Some(new_error_formatter(args)),
             shell_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             builtins,
         },
@@ -310,6 +338,16 @@ async fn instantiate_shell(
     brushctl::register(shell.shell_mut().as_mut());
 
     Ok(shell)
+}
+
+fn new_error_formatter(
+    args: &CommandLineArgs,
+) -> Arc<Mutex<dyn brush_core::error::ErrorFormatter>> {
+    let formatter = error_formatter::Formatter {
+        use_color: !args.disable_color,
+    };
+
+    Arc::new(Mutex::new(formatter))
 }
 
 fn get_default_input_backend() -> InputBackend {

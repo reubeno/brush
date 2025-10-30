@@ -18,6 +18,19 @@ cases:
       echo "Executing non-existent command by path"
       command /usr/bin/non-existent
 
+  - name: "Non-executable command"
+    ignore_stderr: true
+    stdin: |
+      mkdir subdir
+
+      echo "Before executing"
+      ./subdir
+      echo "After executing: result=$?"
+
+      echo "Before and-or list execution"
+      ./subdir || true
+      echo "After and-or list execution: result=$?"
+
   - name: "command -v"
     stdin: |
       echo "PATH: $PATH"

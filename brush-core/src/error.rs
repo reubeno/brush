@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::{Shell, results};
+
 /// Unified error type for this crate. Contains just a kind for now,
 /// but will be extended later with additional context.
 #[derive(thiserror::Error, Debug)]
@@ -53,6 +55,14 @@ pub enum ErrorKind {
     /// Command was not found.
     #[error("command not found: {0}")]
     CommandNotFound(String),
+
+    /// The working directory does not exist.
+    #[error("working directory does not exist: {0}")]
+    WorkingDirMissing(PathBuf),
+
+    /// Failed to execute command.
+    #[error("failed to execute command '{0}': {1}")]
+    FailedToExecuteCommand(String, #[source] std::io::Error),
 
     /// History item was not found.
     #[error("history item not found")]
@@ -148,8 +158,12 @@ pub enum ErrorKind {
     FormattingError(#[from] std::fmt::Error),
 
     /// An error occurred while parsing.
-    #[error(transparent)]
-    ParseError(#[from] brush_parser::ParseError),
+    #[error("{1}: {0}")]
+    ParseError(brush_parser::ParseError, brush_parser::SourceInfo),
+
+    /// An error occurred while parsing a function body.
+    #[error("{0}: {1}")]
+    FunctionParseError(String, brush_parser::ParseError),
 
     /// An error occurred while parsing a word.
     #[error(transparent)]
@@ -226,8 +240,50 @@ pub enum ErrorKind {
     UnhandledKeyCode(Vec<u8>),
 
     /// An error occurred in a built-in command.
-    #[error(transparent)]
-    BuiltinError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("{1}: {0}")]
+    BuiltinError(Box<dyn BuiltinError>, String),
+}
+
+impl BuiltinError for Error {}
+
+/// Trait implementable by built-in commands to represent errors.
+pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {}
+
+/// Helper trait for converting values to exit codes.
+pub trait ConvertibleToExitCode {
+    /// Converts to an exit code.
+    fn as_exit_code(&self) -> results::ExecutionExitCode;
+}
+
+impl<T> ConvertibleToExitCode for T
+where
+    results::ExecutionExitCode: for<'a> From<&'a T>,
+{
+    fn as_exit_code(&self) -> results::ExecutionExitCode {
+        self.into()
+    }
+}
+
+impl From<&ErrorKind> for results::ExecutionExitCode {
+    fn from(value: &ErrorKind) -> Self {
+        match value {
+            ErrorKind::CommandNotFound(..) => Self::NotFound,
+            ErrorKind::Unimplemented(..) | ErrorKind::UnimplementedAndTracked(..) => {
+                Self::Unimplemented
+            }
+            ErrorKind::ParseError(..) => Self::InvalidUsage,
+            ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
+            ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
+            ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
+            _ => Self::GeneralError,
+        }
+    }
+}
+
+impl From<&Error> for results::ExecutionExitCode {
+    fn from(error: &Error) -> Self {
+        Self::from(&error.kind)
+    }
 }
 
 impl<T> From<T> for Error
@@ -238,6 +294,33 @@ where
         Self {
             kind: convertible_to_kind.into(),
         }
+    }
+}
+
+/// Trait implementable by consumers of this crate to customize formatting errors into
+/// displayable text.
+pub trait ErrorFormatter: Send {
+    /// Format the given error for display within the context of the provided shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The error to format.
+    /// * `shell` - The shell in which the error occurred.
+    fn format_error(&self, error: &Error, shell: &Shell) -> String;
+}
+
+/// Default implementation of the [`ErrorFormatter`] trait.
+pub(crate) struct DefaultErrorFormatter {}
+
+impl DefaultErrorFormatter {
+    pub const fn new() -> Self {
+        Self {}
+    }
+}
+
+impl ErrorFormatter for DefaultErrorFormatter {
+    fn format_error(&self, err: &Error, _shell: &Shell) -> String {
+        std::format!("error: {err:#}\n")
     }
 }
 

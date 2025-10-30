@@ -967,7 +967,7 @@ impl Config {
         let mut restart_count = 0;
         while matches!(result, Answer::RestartCompletionProcess) {
             if restart_count > MAX_RESTARTS {
-                tracing::error!("possible infinite loop detected in completion process");
+                tracing::warn!("possible infinite loop detected in completion process");
                 break;
             }
 

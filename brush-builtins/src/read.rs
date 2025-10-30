@@ -177,7 +177,7 @@ impl builtins::Command for ReadCommand {
 
             Ok(brush_core::ExecutionResult::success())
         } else {
-            Ok(brush_core::ExecutionResult::new(1))
+            Ok(brush_core::ExecutionResult::general_error())
         }
     }
 }
