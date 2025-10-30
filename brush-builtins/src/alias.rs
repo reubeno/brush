@@ -43,7 +43,7 @@ impl builtins::Command for AliasCommand {
                         "{}: {alias}: not found",
                         context.command_name
                     )?;
-                    exit_code = ExecutionResult::new(1);
+                    exit_code = ExecutionResult::general_error();
                 }
             }
         }

@@ -60,7 +60,7 @@ impl builtins::Command for TypeCommand {
                     writeln!(context.stderr(), "type: {name} not found")?;
                 }
 
-                result = ExecutionResult::new(1);
+                result = ExecutionResult::general_error();
                 continue;
             }
 

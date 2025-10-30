@@ -41,6 +41,14 @@ impl ExecutionResult {
         }
     }
 
+    /// Returns a new `ExecutionResult` with a general error exit code.
+    pub const fn general_error() -> Self {
+        Self {
+            next_control_flow: ExecutionControlFlow::Normal,
+            exit_code: ExecutionExitCode::GeneralError,
+        }
+    }
+
     /// Returns whether the command was successful.
     pub const fn is_success(&self) -> bool {
         self.exit_code.is_success()
@@ -94,10 +102,16 @@ pub enum ExecutionExitCode {
     /// Indicates successful execution.
     #[default]
     Success,
+    /// Indicates a general error.
+    GeneralError,
     /// Indicates invalid usage.
     InvalidUsage,
+    /// Cannot execute the command.
+    CannotExecute,
     /// Indicates a command or similar item was not found.
     NotFound,
+    /// Indicates execution was interrupted.
+    Interrupted,
     /// Indicates unimplemented functionality was encountered.
     Unimplemented,
     /// A custom exit code.
@@ -115,9 +129,12 @@ impl From<u8> for ExecutionExitCode {
     fn from(code: u8) -> Self {
         match code {
             0 => Self::Success,
+            1 => Self::GeneralError,
             2 => Self::InvalidUsage,
             99 => Self::Unimplemented,
+            126 => Self::CannotExecute,
             127 => Self::NotFound,
+            130 => Self::Interrupted,
             code => Self::Custom(code),
         }
     }
@@ -133,9 +150,12 @@ impl From<&ExecutionExitCode> for u8 {
     fn from(code: &ExecutionExitCode) -> Self {
         match code {
             ExecutionExitCode::Success => 0,
+            ExecutionExitCode::GeneralError => 1,
             ExecutionExitCode::InvalidUsage => 2,
             ExecutionExitCode::Unimplemented => 99,
+            ExecutionExitCode::CannotExecute => 126,
             ExecutionExitCode::NotFound => 127,
+            ExecutionExitCode::Interrupted => 130,
             ExecutionExitCode::Custom(code) => *code,
         }
     }

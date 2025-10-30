@@ -1,7 +1,6 @@
 use clap::Parser;
 use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
-use tracing::warn;
 
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
@@ -136,7 +135,7 @@ impl builtins::Command for DeclareCommand {
 
         if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
             writeln!(context.stderr(), "can only be used in a function")?;
-            return Ok(ExecutionResult::new(1));
+            return Ok(ExecutionResult::general_error());
         }
 
         if self.locals_inherit_from_prev_scope {
@@ -148,11 +147,11 @@ impl builtins::Command for DeclareCommand {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
                     if !self.try_display_declaration(&context, declaration, verb)? {
-                        result = ExecutionResult::new(1);
+                        result = ExecutionResult::general_error();
                     }
                 } else {
                     if !self.process_declaration(&mut context, declaration, verb)? {
-                        result = ExecutionResult::new(1);
+                        result = ExecutionResult::general_error();
                     }
                 }
             }
@@ -258,7 +257,7 @@ impl DeclareCommand {
         if name == "-" && matches!(verb, DeclareVerb::Local) {
             // TODO: `local -` allows shadowing the current `set` options (i.e., $-), with
             // subsequent updates getting discarded when the current local scope is popped.
-            warn!("not yet implemented: local -");
+            tracing::warn!("not yet implemented: local -");
             return Ok(true);
         }
 

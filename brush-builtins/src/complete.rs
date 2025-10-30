@@ -237,7 +237,7 @@ impl builtins::Command for CompleteCommand {
         } else {
             for name in &self.names {
                 if !self.try_process_for_command(&mut context, name.as_str())? {
-                    result = ExecutionResult::new(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         }
@@ -526,7 +526,7 @@ impl builtins::Command for CompGenCommand {
                 // We are expected to return 1 if there are no candidates, even if no errors
                 // occurred along the way.
                 if candidates.is_empty() {
-                    return Ok(ExecutionResult::new(1));
+                    return Ok(ExecutionResult::general_error());
                 }
 
                 for candidate in candidates {

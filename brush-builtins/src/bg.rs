@@ -30,7 +30,7 @@ impl builtins::Command for BgCommand {
                         context.command_name,
                         job_spec
                     )?;
-                    exit_code = ExecutionResult::new(1);
+                    exit_code = ExecutionResult::general_error();
                 }
             }
         } else {
@@ -38,7 +38,7 @@ impl builtins::Command for BgCommand {
                 job.move_to_background()?;
             } else {
                 writeln!(context.stderr(), "{}: no current job", context.command_name)?;
-                exit_code = ExecutionResult::new(1);
+                exit_code = ExecutionResult::general_error();
             }
         }
 

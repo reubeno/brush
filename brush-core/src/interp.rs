@@ -750,7 +750,7 @@ impl Execute for ast::ArithmeticCommand {
         let result = if value != 0 {
             ExecutionResult::success()
         } else {
-            ExecutionResult::new(1)
+            ExecutionResult::general_error()
         };
 
         *shell.last_exit_status_mut() = result.exit_code.into();
@@ -818,6 +818,7 @@ impl Execute for ast::FunctionDefinition {
 }
 
 #[async_trait::async_trait]
+#[allow(clippy::too_many_lines)]
 impl ExecuteInPipeline for ast::SimpleCommand {
     async fn execute_in_pipeline(
         &self,
@@ -843,7 +844,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
                     if let Err(e) = setup_redirect(context.shell, &mut params, redirect).await {
                         writeln!(params.stderr(), "error: {e}")?;
-                        return Ok(ExecutionResult::new(1).into());
+                        return Ok(ExecutionResult::general_error().into());
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
@@ -929,7 +930,16 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
-            execute_command(context, params, cmd_name, assignments, args).await
+            let mut stderr = params.stderr();
+
+            match execute_command(context, params, cmd_name, assignments, args).await {
+                Ok(result) => Ok(result),
+                Err(err) => {
+                    let _ = context.shell.display_error(&mut stderr, &err).await;
+                    let exit_code = ExecutionExitCode::from(&err);
+                    Ok(ExecutionResult::from(exit_code).into())
+                }
+            }
         } else {
             // Reset last status.
             *context.shell.last_exit_status_mut() = 0;

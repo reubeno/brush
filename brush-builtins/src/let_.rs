@@ -30,7 +30,7 @@ impl builtins::Command for LetCommand {
             let evaluated = parsed.eval(context.shell)?;
 
             if evaluated == 0 {
-                result = ExecutionResult::new(1);
+                result = ExecutionResult::general_error();
             } else {
                 result = ExecutionResult::success();
             }

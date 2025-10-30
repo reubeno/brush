@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
@@ -14,7 +13,7 @@ pub(crate) struct PopdCommand {
 }
 
 impl builtins::Command for PopdCommand {
-    type Error = brush_core::Error;
+    type Error = crate::dirs::DirError;
 
     async fn execute(
         &self,
@@ -28,11 +27,10 @@ impl builtins::Command for PopdCommand {
             // Display dirs.
             let dirs_cmd = crate::dirs::DirsCommand::default();
             dirs_cmd.execute(context).await?;
-        } else {
-            writeln!(context.stderr(), "popd: directory stack empty")?;
-            return Ok(ExecutionResult::new(1));
-        }
 
-        Ok(ExecutionResult::success())
+            Ok(ExecutionResult::success())
+        } else {
+            Err(crate::dirs::DirError::DirStackEmpty)
+        }
     }
 }

@@ -59,7 +59,7 @@ impl builtins::Command for EnableCommand {
                     builtin.disabled = self.disable;
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
-                    result = ExecutionResult::new(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         } else {

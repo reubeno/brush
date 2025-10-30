@@ -5,15 +5,15 @@ use crate::tokenizer;
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
     /// A parsing error occurred near the given token.
-    #[error("parse error near token: {}", .0.location().start)]
+    #[error("syntax error near token `{}' (line {} col {})", .0.to_str(), .0.location().start.line, .0.location().start.column)]
     ParsingNearToken(Token),
 
     /// A parsing error occurred at the end of the input.
-    #[error("parse error at end of input")]
+    #[error("syntax error at end of input")]
     ParsingAtEndOfInput,
 
     /// An error occurred while tokenizing the input stream.
-    #[error("failed to tokenize input")]
+    #[error("{} (detected near {})", .inner, .position.as_ref().map_or_else(|| String::from("<unknown position>"), |p| std::format!("line {} col {}", p.line, p.column)))]
     Tokenizing {
         /// The inner error.
         inner: tokenizer::TokenizerError,

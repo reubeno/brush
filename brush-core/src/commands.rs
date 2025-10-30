@@ -1,6 +1,5 @@
 //! Command execution
 
-use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
@@ -11,12 +10,12 @@ use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
 
 use crate::{
-    ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, builtins, env, error,
-    escape,
+    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, builtins, env,
+    error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
-    results::{ExecutionExitCode, ExecutionSpawnResult},
+    results::ExecutionSpawnResult,
     sys, trace_categories, traps, variables,
 };
 
@@ -359,12 +358,7 @@ pub async fn execute(
                 &args[1..],
             )
         } else {
-            writeln!(
-                cmd_context.stderr(),
-                "{}: command not found",
-                cmd_context.command_name
-            )?;
-            Ok(ExecutionResult::from(ExecutionExitCode::NotFound).into())
+            Err(ErrorKind::CommandNotFound(cmd_context.command_name).into())
         }
     } else {
         let resolved_path = cmd_context.command_name.clone();
@@ -403,9 +397,6 @@ pub(crate) fn execute_external_command(
 
     // Figure out if we should be setting up a new process group.
     let new_pg = context.should_cmd_lead_own_process_group();
-
-    // Save copy of stderr for errors.
-    let mut stderr = context.stderr();
 
     // Compose the std::process::Command that encapsulates what we want to launch.
     #[allow(unused_mut, reason = "only mutated on unix platforms")]
@@ -467,39 +458,26 @@ pub(crate) fn execute_external_command(
                 processes::ChildProcess::new(pid, child),
             ))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        Err(spawn_err) => {
             if context.shell.options.interactive {
                 sys::terminal::move_self_to_foreground()?;
             }
 
-            if !context.shell.working_dir().exists() {
-                // We may have failed because the working directory doesn't exist.
-                writeln!(
-                    stderr,
-                    "{}: working directory does not exist: {}",
-                    context.shell.shell_name.as_ref().unwrap_or(&String::new()),
-                    context.shell.working_dir().display()
-                )?;
-            } else if context.shell.options.sh_mode {
-                writeln!(
-                    stderr,
-                    "{}: {}: {}: not found",
-                    context.shell.shell_name.as_ref().unwrap_or(&String::new()),
-                    context.shell.current_line_number(),
-                    context.command_name
-                )?;
+            if spawn_err.kind() == std::io::ErrorKind::NotFound {
+                if !context.shell.working_dir().exists() {
+                    Err(
+                        error::ErrorKind::WorkingDirMissing(context.shell.working_dir().to_owned())
+                            .into(),
+                    )
+                } else {
+                    Err(error::ErrorKind::CommandNotFound(context.command_name).into())
+                }
             } else {
-                writeln!(stderr, "{}: not found", context.command_name)?;
+                Err(
+                    error::ErrorKind::FailedToExecuteCommand(context.command_name, spawn_err)
+                        .into(),
+                )
             }
-            Ok(ExecutionResult::from(ExecutionExitCode::NotFound).into())
-        }
-        Err(e) => {
-            if context.shell.options.interactive {
-                sys::terminal::move_self_to_foreground()?;
-            }
-
-            tracing::error!("{e}");
-            Ok(ExecutionResult::new(126).into())
         }
     }
 }

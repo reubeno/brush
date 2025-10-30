@@ -94,9 +94,11 @@ pub trait InteractiveShell: Send {
                         tracing::error!("return from non-function/script");
                     }
                     InteractiveExecutionResult::Executed(_) => {}
-                    InteractiveExecutionResult::Failed(e) => {
+                    InteractiveExecutionResult::Failed(err) => {
                         // Report the error, but continue to execute.
-                        tracing::error!("error: {:#}", e);
+                        let shell = self.shell();
+                        let mut stderr = shell.as_ref().stderr();
+                        let _ = shell.as_ref().display_error(&mut stderr, &err).await;
                     }
                     InteractiveExecutionResult::Eof => {
                         break;
@@ -157,10 +159,10 @@ pub trait InteractiveShell: Send {
                 ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
                 ReadResult::Interrupted => {
                     let mut shell_mut = self.shell_mut();
-                    *shell_mut.as_mut().last_exit_status_mut() = 130;
-                    Ok(InteractiveExecutionResult::Executed(
-                        brush_core::ExecutionResult::new(130),
-                    ))
+                    let result: brush_core::ExecutionResult =
+                        brush_core::ExecutionExitCode::Interrupted.into();
+                    *shell_mut.as_mut().last_exit_status_mut() = result.exit_code.into();
+                    Ok(InteractiveExecutionResult::Executed(result))
                 }
             }
         }

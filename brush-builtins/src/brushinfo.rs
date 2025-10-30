@@ -91,7 +91,7 @@ impl ProcessCommand {
                     Ok(ExecutionResult::success())
                 } else {
                     writeln!(context.stderr(), "failed to get process group ID")?;
-                    Ok(ExecutionResult::new(1))
+                    Ok(ExecutionResult::general_error())
                 }
             }
             Self::ShowForegroundProcessId => {
@@ -100,7 +100,7 @@ impl ProcessCommand {
                     Ok(ExecutionResult::success())
                 } else {
                     writeln!(context.stderr(), "failed to get foreground process ID")?;
-                    Ok(ExecutionResult::new(1))
+                    Ok(ExecutionResult::general_error())
                 }
             }
             Self::ShowParentProcessId => {
@@ -109,7 +109,7 @@ impl ProcessCommand {
                     Ok(ExecutionResult::success())
                 } else {
                     writeln!(context.stderr(), "failed to get parent process ID")?;
-                    Ok(ExecutionResult::new(1))
+                    Ok(ExecutionResult::general_error())
                 }
             }
         }

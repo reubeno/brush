@@ -112,7 +112,7 @@ impl builtins::Command for ShoptCommand {
                     } else {
                         let option_value = option_definition.get(&context.shell.options);
                         if !option_value {
-                            return_value = ExecutionResult::new(1);
+                            return_value = ExecutionResult::general_error();
                         }
 
                         if !self.quiet {
@@ -143,7 +143,7 @@ impl builtins::Command for ShoptCommand {
                         context.command_name,
                         option_name
                     )?;
-                    return_value = ExecutionResult::new(1);
+                    return_value = ExecutionResult::general_error();
                 }
             }
 

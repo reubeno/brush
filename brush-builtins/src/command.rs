@@ -64,7 +64,7 @@ impl builtins::Command for CommandCommand {
                     if self.print_verbose_description {
                         writeln!(context.stderr(), "command: {command_name}: not found")?;
                     }
-                    Ok(ExecutionResult::new(1))
+                    Ok(ExecutionResult::general_error())
                 }
             } else {
                 self.execute_command(context, command_name, self.use_default_path)
