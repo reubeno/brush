@@ -3,6 +3,28 @@ use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum DirError {
+    /// Directory stack is empty.
+    #[error("directory stack is empty")]
+    DirStackEmpty,
+
+    /// A shell error occurred.
+    #[error(transparent)]
+    ShellError(#[from] brush_core::Error),
+}
+
+impl From<&DirError> for brush_core::ExecutionExitCode {
+    fn from(value: &DirError) -> Self {
+        match value {
+            DirError::DirStackEmpty => Self::GeneralError,
+            DirError::ShellError(e) => e.into(),
+        }
+    }
+}
+
+impl brush_core::BuiltinError for DirError {}
+
 /// Manage the current directory stack.
 #[derive(Default, Parser)]
 pub(crate) struct DirsCommand {
