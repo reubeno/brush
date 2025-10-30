@@ -56,6 +56,10 @@ pub enum ErrorKind {
     #[error("command not found: {0}")]
     CommandNotFound(String),
 
+    /// Not a builtin.
+    #[error("not a shell builtin: {0}")]
+    BuiltinNotFound(String),
+
     /// The working directory does not exist.
     #[error("working directory does not exist: {0}")]
     WorkingDirMissing(PathBuf),

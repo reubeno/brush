@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
@@ -36,11 +35,9 @@ impl builtins::Command for BuiltinCommand {
 
         if let Some(builtin) = context.shell.builtins().get(&builtin_name) {
             context.command_name = builtin_name;
-
             (builtin.execute_func)(context, args).await
         } else {
-            writeln!(context.stderr(), "{builtin_name}: command not found")?;
-            Ok(ExecutionResult::general_error())
+            Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
         }
     }
 }
