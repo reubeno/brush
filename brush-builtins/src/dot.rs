@@ -1,8 +1,7 @@
 use std::path::Path;
 
-use clap::Parser;
-
 use brush_core::builtins;
+use clap::Parser;
 
 /// Evaluate the provided script in the current shell environment.
 #[derive(Parser)]
@@ -23,16 +22,13 @@ impl builtins::Command for DotCommand {
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // TODO: Handle trap inheritance.
-        let params = context.params.clone();
-        let result = context
+        context
             .shell
             .source_script(
                 Path::new(&self.script_path),
                 self.script_args.iter(),
-                &params,
+                &context.params,
             )
-            .await?;
-
-        Ok(result.exit_code.into())
+            .await
     }
 }

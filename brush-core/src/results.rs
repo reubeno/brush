@@ -46,10 +46,32 @@ impl ExecutionResult {
         self.exit_code.is_success()
     }
 
+    /// Returns whether the execution result indicates normal control flow.
+    /// Returns `false` if there is any control flow transition requested.
+    pub const fn is_normal_flow(&self) -> bool {
+        matches!(self.next_control_flow, ExecutionControlFlow::Normal)
+    }
+
+    /// Returns whether the execution result indicates a loop break.
+    pub const fn is_break(&self) -> bool {
+        matches!(
+            self.next_control_flow,
+            ExecutionControlFlow::BreakLoop { .. }
+        )
+    }
+
+    /// Returns whether the execution result indicates a loop continue.
+    pub const fn is_continue(&self) -> bool {
+        matches!(
+            self.next_control_flow,
+            ExecutionControlFlow::ContinueLoop { .. }
+        )
+    }
+
     /// Returns whether the execution result indicates an early return
     /// from a function or script, or an exit from the shell. Returns `false`
     /// otherwise, including loop breaks or continues.
-    pub const fn is_early_return(&self) -> bool {
+    pub const fn is_return_or_exit(&self) -> bool {
         matches!(
             self.next_control_flow,
             ExecutionControlFlow::ReturnFromFunctionOrScript | ExecutionControlFlow::ExitShell
@@ -120,7 +142,7 @@ impl From<&ExecutionExitCode> for u8 {
 }
 
 /// Represents a control flow transition to apply.
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub enum ExecutionControlFlow {
     /// Continue normal execution.
     #[default]
@@ -141,6 +163,25 @@ pub enum ExecutionControlFlow {
     ReturnFromFunctionOrScript,
     /// Exit the shell.
     ExitShell,
+}
+
+impl ExecutionControlFlow {
+    /// Attempts to decrement the loop levels for `BreakLoop` or `ContinueLoop`.
+    /// If the levels reach zero, transitions to `Normal`. If the control flow is not
+    /// a loop break or continue, no changes are made.
+    #[must_use]
+    pub const fn try_decrement_loop_levels(&self) -> Self {
+        match self {
+            Self::BreakLoop { levels: 0 } | Self::ContinueLoop { levels: 0 } => Self::Normal,
+            Self::BreakLoop { levels } => Self::BreakLoop {
+                levels: *levels - 1,
+            },
+            Self::ContinueLoop { levels } => Self::ContinueLoop {
+                levels: *levels - 1,
+            },
+            control_flow => *control_flow,
+        }
+    }
 }
 
 /// Represents the result of spawning an execution; captures both execution

@@ -80,3 +80,56 @@ cases:
       source script.sh arg1 arg2 > out.txt
       echo "Sourced script; dumping..."
       cat out.txt
+
+  - name: "Source with return"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "Before return"
+          return 42
+          echo "After return"
+    stdin: |
+      echo "Before source"
+      source script.sh
+      echo "After source, exit code: $?"
+
+  - name: "Source with exit"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "Before exit"
+          exit 42
+          echo "After exit"
+    stdin: |
+      echo "Before source"
+      source script.sh
+      echo "After source"
+
+  - name: "Source with break in caller's loop"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In script, breaking"
+          break
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i"
+        source script.sh
+        echo "After source"
+      done
+      echo "After loop"
+
+  - name: "Source with continue in caller's loop"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In script, continuing"
+          continue
+          echo "After continue"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i"
+        source script.sh
+        echo "After source"
+      done
+      echo "After loop"

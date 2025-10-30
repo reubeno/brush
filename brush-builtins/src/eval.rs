@@ -21,10 +21,14 @@ impl builtins::Command for EvalCommand {
 
             tracing::debug!("Applying eval to: {:?}", args_concatenated);
 
-            let params = context.params.clone();
-            let exec_result = context.shell.run_string(args_concatenated, &params).await?;
-
-            Ok(exec_result.exit_code.into())
+            // Return the direct result of running the string; we intentionally
+            // pass through the result and honor its requested control flow. eval
+            // executes in the current environment, so all control flow (return,
+            // exit, break, continue) should propagate.
+            context
+                .shell
+                .run_string(args_concatenated, &context.params)
+                .await
         } else {
             Ok(ExecutionResult::success())
         }

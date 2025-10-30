@@ -20,3 +20,49 @@ cases:
         echo "Should not print"
       done
       echo "Result: $?"
+
+  - name: "Arithmetic for with break in condition inside outer loop"
+    stdin: |
+      for j in 1 2 3; do
+        echo "Outer iteration $j"
+        for ((i = 0; break; i++)); do
+          echo "Inner body"
+        done
+        echo "After inner for"
+      done
+      echo "After outer loop"
+
+  - name: "Arithmetic for with continue in condition inside outer loop"
+    stdin: |
+      for j in 1 2 3; do
+        echo "Outer iteration $j"
+        for ((i = 0; continue; i++)); do
+          echo "Inner body"
+        done
+        echo "After inner for"
+      done
+      echo "After outer loop"
+
+  - name: "Arithmetic for with return in body"
+    stdin: |
+      f() {
+        for ((i = 0; i < 5; i++)); do
+          echo "Iteration $i"
+          if [ $i -eq 2 ]; then
+            return 42
+          fi
+        done
+        echo "After for"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "Arithmetic for with exit in body"
+    stdin: |
+      for ((i = 0; i < 5; i++)); do
+        echo "Iteration $i"
+        if [ $i -eq 2 ]; then
+          exit 42
+        fi
+      done
+      echo "After for"

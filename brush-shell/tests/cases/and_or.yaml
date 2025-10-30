@@ -20,3 +20,64 @@ cases:
       false && true  || echo "1. Got to the end"
       false && false || echo "2. Got to the end"
       true  && false || echo "3. Got to the end"
+
+  - name: "And with return in function"
+    stdin: |
+      f() {
+        echo "Before" && return 42 && echo "After return"
+        echo "After and-or"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "And with exit"
+    stdin: |
+      echo "Before" && exit 42 && echo "After exit"
+      echo "After and-or"
+
+  - name: "And with break in loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i" && break && echo "After break"
+        echo "After and-or"
+      done
+      echo "After loop"
+
+  - name: "And with continue in loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i" && continue && echo "After continue"
+        echo "After and-or"
+      done
+      echo "After loop"
+
+  - name: "Or with return in function"
+    stdin: |
+      f() {
+        false || return 42 || echo "After return"
+        echo "After or-list"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "Or with exit"
+    stdin: |
+      false || exit 42 || echo "After exit"
+      echo "After or-list"
+
+  - name: "Or with break in loop"
+    stdin: |
+      for i in 1 2 3; do
+        false || break || echo "After break"
+        echo "After or-list"
+      done
+      echo "After loop"
+
+  - name: "Or with continue in loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i"
+        false || continue || echo "After continue"
+        echo "After or-list"
+      done
+      echo "After loop"

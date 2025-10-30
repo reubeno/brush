@@ -13,8 +13,7 @@ use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
-    self, ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult,
-    ExecutionWaitResult,
+    self, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
 use crate::shell::Shell;
 use crate::variables::{
@@ -137,7 +136,7 @@ impl Execute for ast::Program {
 
         for command in &self.complete_commands {
             result = command.execute(shell, params).await?;
-            if result.is_early_return() {
+            if !result.is_normal_flow() {
                 break;
             }
         }
@@ -175,14 +174,7 @@ impl Execute for ast::CompoundList {
                 result = ao_list.execute(shell, params).await?;
             }
 
-            if result.is_early_return() {
-                break;
-            }
-
-            if matches!(
-                result.next_control_flow,
-                ExecutionControlFlow::ContinueLoop { .. } | ExecutionControlFlow::BreakLoop { .. }
-            ) {
+            if !result.is_normal_flow() {
                 break;
             }
         }
@@ -228,18 +220,8 @@ impl Execute for ast::AndOrList {
         let mut result = self.first.execute(shell, params).await?;
 
         for next_ao in &self.additional {
-            // Check for exit/return
-            if result.is_early_return() {
-                break;
-            }
-
-            // Check for continue/break
-            // TODO: Validate that we're in a loop?
-            if matches!(
-                result.next_control_flow,
-                results::ExecutionControlFlow::ContinueLoop { .. }
-                    | results::ExecutionControlFlow::BreakLoop { .. }
-            ) {
+            // Check for non-normal control flow.
+            if !result.is_normal_flow() {
                 break;
             }
 
@@ -576,34 +558,15 @@ impl Execute for ast::ForClauseCommand {
             )?;
 
             result = self.body.0.execute(shell, params).await?;
-            if result.is_early_return() {
+            if result.is_return_or_exit() {
                 break;
             }
 
-            if let ExecutionControlFlow::ContinueLoop {
-                levels: continue_count,
-            } = &result.next_control_flow
-            {
-                if *continue_count == 0 {
-                    result.next_control_flow = ExecutionControlFlow::Normal;
-                } else {
-                    result.next_control_flow = ExecutionControlFlow::ContinueLoop {
-                        levels: *continue_count - 1,
-                    };
-                    break;
-                }
-            }
-            if let ExecutionControlFlow::BreakLoop {
-                levels: break_count,
-            } = &result.next_control_flow
-            {
-                if *break_count == 0 {
-                    result.next_control_flow = ExecutionControlFlow::Normal;
-                } else {
-                    result.next_control_flow = ExecutionControlFlow::BreakLoop {
-                        levels: *break_count - 1,
-                    };
-                }
+            let is_break = result.is_break();
+
+            result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
+
+            if is_break || result.is_continue() {
                 break;
             }
         }
@@ -660,6 +623,11 @@ impl Execute for ast::CaseClauseCommand {
                 ExecutionResult::success()
             };
 
+            // Check for early return (return/exit) or loop control flow (break/continue)
+            if !result.is_normal_flow() {
+                break;
+            }
+
             match case.post_action {
                 ast::CaseItemPostAction::ExitCase => break,
                 ast::CaseItemPostAction::UnconditionallyExecuteNextCaseItem => {
@@ -684,6 +652,11 @@ impl Execute for ast::IfClauseCommand {
     ) -> Result<ExecutionResult, error::Error> {
         let condition = self.condition.execute(shell, params).await?;
 
+        // Check if the condition itself resulted in non-normal control flow.
+        if !condition.is_normal_flow() {
+            return Ok(condition);
+        }
+
         if condition.is_success() {
             return self.then.execute(shell, params).await;
         }
@@ -693,6 +666,12 @@ impl Execute for ast::IfClauseCommand {
                 match &else_clause.condition {
                     Some(else_condition) => {
                         let else_condition_result = else_condition.execute(shell, params).await?;
+
+                        // Check if the elif condition caused non-normal control flow.
+                        if !else_condition_result.is_normal_flow() {
+                            return Ok(else_condition_result);
+                        }
+
                         if else_condition_result.is_success() {
                             return else_clause.body.execute(shell, params).await;
                         }
@@ -729,9 +708,12 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
 
         loop {
             let condition_result = test_condition.execute(shell, params).await?;
-
-            if condition_result.is_early_return() {
+            if !condition_result.is_normal_flow() {
                 result = condition_result;
+
+                // If the condition has break/continue, the while/until loop itself
+                // consumes one level. We need to decrement the level before returning.
+                result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
                 break;
             }
 
@@ -740,34 +722,15 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             }
 
             result = body.0.execute(shell, params).await?;
-            if result.is_early_return() {
+            if result.is_return_or_exit() {
                 break;
             }
 
-            if let ExecutionControlFlow::ContinueLoop {
-                levels: continue_count,
-            } = &result.next_control_flow
-            {
-                if *continue_count == 0 {
-                    result.next_control_flow = ExecutionControlFlow::Normal;
-                } else {
-                    result.next_control_flow = ExecutionControlFlow::ContinueLoop {
-                        levels: *continue_count - 1,
-                    };
-                    break;
-                }
-            }
-            if let ExecutionControlFlow::BreakLoop {
-                levels: break_count,
-            } = &result.next_control_flow
-            {
-                if *break_count == 0 {
-                    result.next_control_flow = ExecutionControlFlow::Normal;
-                } else {
-                    result.next_control_flow = ExecutionControlFlow::BreakLoop {
-                        levels: *break_count - 1,
-                    };
-                }
+            let is_break = result.is_break();
+
+            result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
+
+            if is_break || result.is_continue() {
                 break;
             }
         }
@@ -816,34 +779,15 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             result = self.body.0.execute(shell, params).await?;
-            if result.is_early_return() {
+            if result.is_return_or_exit() {
                 break;
             }
 
-            if let ExecutionControlFlow::ContinueLoop {
-                levels: continue_count,
-            } = &result.next_control_flow
-            {
-                if *continue_count == 0 {
-                    result.next_control_flow = ExecutionControlFlow::Normal;
-                } else {
-                    result.next_control_flow = ExecutionControlFlow::ContinueLoop {
-                        levels: *continue_count - 1,
-                    };
-                    break;
-                }
-            }
-            if let ExecutionControlFlow::BreakLoop {
-                levels: break_count,
-            } = &result.next_control_flow
-            {
-                if *break_count == 0 {
-                    result.next_control_flow = ExecutionControlFlow::Normal;
-                } else {
-                    result.next_control_flow = ExecutionControlFlow::BreakLoop {
-                        levels: *break_count - 1,
-                    };
-                }
+            let is_break = result.is_break();
+
+            result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
+
+            if is_break || result.is_continue() {
                 break;
             }
 

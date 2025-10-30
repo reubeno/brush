@@ -16,8 +16,8 @@ use crate::results::ExecutionSpawnResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ExecutionResult, history, interfaces, pathcache, pathsearch, scripts, trace_categories,
-    wellknownvars,
+    ExecutionControlFlow, ExecutionResult, history, interfaces, pathcache, pathsearch, scripts,
+    trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -696,8 +696,21 @@ impl Shell {
             source: path.to_string_lossy().to_string(),
         };
 
-        self.source_file(opened_file, &source_info, args, params, call_type)
-            .await
+        let mut result = self
+            .source_file(opened_file, &source_info, args, params, call_type)
+            .await?;
+
+        // Handle control flow at script execution boundary. If execution completed
+        // with a `return`, we need to clear it since it's alread been "used". All
+        // other control flow types are preserved.
+        if matches!(
+            result.next_control_flow,
+            ExecutionControlFlow::ReturnFromFunctionOrScript
+        ) {
+            result.next_control_flow = ExecutionControlFlow::Normal;
+        }
+
+        Ok(result)
     }
 
     /// Source the given file as a shell script, returning the execution result.

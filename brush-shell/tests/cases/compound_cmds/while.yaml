@@ -46,3 +46,82 @@ cases:
         ((c++))
       done
       echo "Done"
+
+  - name: "While with return in condition"
+    stdin: |
+      f() {
+        while return 42; do
+          echo "Body"
+        done
+        echo "After while"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "While with exit in condition"
+    stdin: |
+      while exit 42; do
+        echo "Body"
+      done
+      echo "After while"
+
+  - name: "While with break in condition inside outer loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Outer iteration $i"
+        while break; do
+          echo "While body"
+        done
+        echo "After while"
+      done
+      echo "After outer loop"
+
+  - name: "While with break 2 in condition inside outer loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Outer iteration $i"
+        while break 2; do
+          echo "While body"
+        done
+        echo "After while"
+      done
+      echo "After outer loop"
+
+  - name: "While with continue 2 in condition inside outer loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Outer iteration $i"
+        while continue 2; do
+          echo "While body"
+        done
+        echo "After while"
+      done
+      echo "After outer loop"
+
+  - name: "While with return in body"
+    stdin: |
+      f() {
+        i=0
+        while [ $i -lt 3 ]; do
+          echo "Iteration $i"
+          if [ $i -eq 1 ]; then
+            return 42
+          fi
+          i=$((i + 1))
+        done
+        echo "After while"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "While with exit in body"
+    stdin: |
+      i=0
+      while [ $i -lt 3 ]; do
+        echo "Iteration $i"
+        if [ $i -eq 1 ]; then
+          exit 42
+        fi
+        i=$((i + 1))
+      done
+      echo "After while"

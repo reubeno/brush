@@ -9,3 +9,93 @@ cases:
     stdin: |
       i=5
       until ((i == 0)); do echo $i; i=$((i - 1)); done
+
+  - name: "Until with return in condition"
+    stdin: |
+      f() {
+        until return 42; do
+          echo "Body"
+        done
+        echo "After until"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "Until with exit in condition"
+    stdin: |
+      until exit 42; do
+        echo "Body"
+      done
+      echo "After until"
+
+  - name: "Until with break in condition inside outer loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Outer iteration $i"
+        until break; do
+          echo "Until body"
+        done
+        echo "After until"
+      done
+      echo "After outer loop"
+
+  - name: "Until with break 2 in condition inside outer loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Outer iteration $i"
+        until break 2; do
+          echo "Until body"
+        done
+        echo "After until"
+      done
+      echo "After outer loop"
+
+  - name: "Until with continue 2 in condition inside outer loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Outer iteration $i"
+        until continue 2; do
+          echo "Until body"
+        done
+        echo "After until"
+      done
+      echo "After outer loop"
+
+  - name: "Until with continue in condition inside outer loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Outer iteration $i"
+        until continue; do
+          echo "Until body"
+        done
+        echo "After until"
+      done
+      echo "After outer loop"
+
+  - name: "Until with return in body"
+    stdin: |
+      f() {
+        i=0
+        until [ $i -ge 3 ]; do
+          echo "Iteration $i"
+          if [ $i -eq 1 ]; then
+            return 42
+          fi
+          i=$((i + 1))
+        done
+        echo "After until"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "Until with exit in body"
+    stdin: |
+      i=0
+      until [ $i -ge 3 ]; do
+        echo "Iteration $i"
+        if [ $i -eq 1 ]; then
+          exit 42
+        fi
+        i=$((i + 1))
+      done
+      echo "After until"

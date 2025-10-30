@@ -3,3 +3,45 @@ cases:
   - name: "Basic eval usage"
     stdin: |
       eval 'echo 1 + 1 == $((1 + 1))'
+
+  - name: "eval with return in function"
+    stdin: |
+      f() {
+        eval 'return 42'
+        echo "Should not reach here"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "eval with exit"
+    stdin: |
+      eval 'exit 42'
+      echo "After eval'd exit"
+
+  - name: "eval with break in loop"
+    stdin: |
+      for i in 1 2 3; do
+        eval 'break'
+        echo "After eval'd break"
+      done
+      echo "After loop"
+
+  - name: "eval with continue in loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i"
+        eval 'continue'
+        echo "After eval'd continue"
+      done
+      echo "After loop"
+
+  - name: "eval with nested break levels"
+    stdin: |
+      for i in 1 2; do
+        for j in a b c; do
+          eval 'break 2'
+          echo "After eval'd break (inner loop)"
+        done
+        echo "After eval'd break (outer loop)"
+      done
+      echo "After outer loop"
