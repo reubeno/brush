@@ -701,7 +701,7 @@ impl Shell {
             .await?;
 
         // Handle control flow at script execution boundary. If execution completed
-        // with a `return`, we need to clear it since it's alread been "used". All
+        // with a `return`, we need to clear it since it's already been "used". All
         // other control flow types are preserved.
         if matches!(
             result.next_control_flow,
