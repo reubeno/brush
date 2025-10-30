@@ -103,9 +103,9 @@ impl ShellVariable {
     }
 
     /// Marks the variable as not read-only.
-    pub const fn unset_readonly(&mut self) -> Result<&mut Self, error::Error> {
+    pub fn unset_readonly(&mut self) -> Result<&mut Self, error::Error> {
         if self.readonly {
-            return Err(error::Error::ReadonlyVariable);
+            return Err(error::ErrorKind::ReadonlyVariable.into());
         }
 
         self.readonly = false;
@@ -189,7 +189,7 @@ impl ShellVariable {
         match self.value() {
             ShellValue::IndexedArray(_) => Ok(()),
             ShellValue::AssociativeArray(_) => {
-                Err(error::Error::ConvertingAssociativeArrayToIndexedArray)
+                Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
             }
             _ => {
                 let mut new_values = BTreeMap::new();
@@ -208,7 +208,7 @@ impl ShellVariable {
         match self.value() {
             ShellValue::AssociativeArray(_) => Ok(()),
             ShellValue::IndexedArray(_) => {
-                Err(error::Error::ConvertingIndexedArrayToAssociativeArray)
+                Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
             }
             _ => {
                 let mut new_values: BTreeMap<String, String> = BTreeMap::new();
@@ -231,7 +231,7 @@ impl ShellVariable {
     #[expect(clippy::too_many_lines)]
     pub fn assign(&mut self, value: ShellValueLiteral, append: bool) -> Result<(), error::Error> {
         if self.is_readonly() {
-            return Err(error::Error::ReadonlyVariable);
+            return Err(error::ErrorKind::ReadonlyVariable.into());
         }
 
         let value = self.convert_value_literal_for_assignment(value);
@@ -500,12 +500,12 @@ impl ShellVariable {
     pub fn unset_index(&mut self, index: &str) -> Result<bool, error::Error> {
         match &mut self.value {
             ShellValue::Unset(ty) => match ty {
-                ShellValueUnsetType::Untyped => Err(error::Error::NotArray),
+                ShellValueUnsetType::Untyped => Err(error::ErrorKind::NotArray.into()),
                 ShellValueUnsetType::AssociativeArray | ShellValueUnsetType::IndexedArray => {
                     Ok(false)
                 }
             },
-            ShellValue::String(_) => Err(error::Error::NotArray),
+            ShellValue::String(_) => Err(error::ErrorKind::NotArray.into()),
             ShellValue::AssociativeArray(values) => Ok(values.remove(index).is_some()),
             ShellValue::IndexedArray(values) => {
                 let key = index.parse::<u64>().unwrap_or(0);
@@ -900,7 +900,7 @@ impl ShellValue {
                 if index_value < 0 {
                     index_value += values.len() as i64;
                     if index_value < 0 {
-                        return Err(error::Error::ArrayIndexOutOfRange);
+                        return Err(error::ErrorKind::ArrayIndexOutOfRange(index_value).into());
                     }
                 }
 

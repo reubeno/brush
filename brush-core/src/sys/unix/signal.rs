@@ -4,7 +4,7 @@ use crate::{error, sys, traps};
 
 pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGCONT)
-        .map_err(|_errno| error::Error::FailedToSendSignal)?;
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
     Ok(())
 }
 
@@ -23,12 +23,12 @@ pub fn kill_process(
         | traps::TrapSignal::Err
         | traps::TrapSignal::Exit
         | traps::TrapSignal::Return => {
-            return Err(error::Error::InvalidSignal(signal.to_string()));
+            return Err(error::ErrorKind::InvalidSignal(signal.to_string()).into());
         }
     };
 
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), translated_signal)
-        .map_err(|_errno| error::Error::FailedToSendSignal)?;
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
 
     Ok(())
 }

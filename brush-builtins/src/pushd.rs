@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 /// Push a path onto the current directory stack.
 #[derive(Parser)]
@@ -16,10 +16,12 @@ pub(crate) struct PushdCommand {
 }
 
 impl builtins::Command for PushdCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.no_directory_change {
             context
                 .shell
@@ -38,6 +40,6 @@ impl builtins::Command for PushdCommand {
         let dirs_cmd = crate::dirs::DirsCommand::default();
         dirs_cmd.execute(context).await?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

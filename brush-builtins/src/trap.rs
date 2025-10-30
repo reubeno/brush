@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
 use brush_core::traps::TrapSignal;
+use brush_core::{ExecutionResult, builtins};
 
 /// Manage signal traps.
 #[derive(Parser)]
@@ -19,13 +19,15 @@ pub(crate) struct TrapCommand {
 }
 
 impl builtins::Command for TrapCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         if self.list_signals {
             brush_core::traps::format_signals(context.stdout(), TrapSignal::iterator())
-                .map(|()| builtins::ExitCode::Success)
+                .map(|()| ExecutionResult::success())
         } else if self.print_trap_commands || self.args.is_empty() {
             if !self.args.is_empty() {
                 for signal_type in &self.args {
@@ -34,19 +36,19 @@ impl builtins::Command for TrapCommand {
             } else {
                 Self::display_all_handlers(&context)?;
             }
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         } else if self.args.len() == 1 {
             // When only a single argument is given, it is assumed to be a signal name
             // and an indication to remove the handlers for that signal.
             let signal = self.args[0].as_str();
             Self::remove_all_handlers(&mut context, signal.parse()?);
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         } else if self.args[0] == "-" {
             // Alternatively, "-" as the first argument indicates that the next
             // argument is a signal name and we need to remove the handlers for that signal.
             let signal = self.args[1].as_str();
             Self::remove_all_handlers(&mut context, signal.parse()?);
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         } else {
             let handler = &self.args[0];
 
@@ -56,7 +58,7 @@ impl builtins::Command for TrapCommand {
             }
 
             Self::register_handler(&mut context, signal_types, handler.as_str());
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         }
     }
 }

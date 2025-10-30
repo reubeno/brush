@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 
-use brush_core::{Error, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, builtins, env, error, sys, variables};
 
 use std::io::{Read, Write};
 
@@ -61,10 +61,12 @@ pub(crate) struct ReadCommand {
 }
 
 impl builtins::Command for ReadCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.use_readline {
             return error::unimp("read -e");
         }
@@ -85,7 +87,7 @@ impl builtins::Command for ReadCommand {
             context
                 .params
                 .fd(fd_num)
-                .ok_or_else(|| Error::BadFileDescriptor(fd_num))?
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?
         } else {
             context
                 .params
@@ -173,9 +175,9 @@ impl builtins::Command for ReadCommand {
                 )?;
             }
 
-            Ok(brush_core::builtins::ExitCode::Success)
+            Ok(brush_core::ExecutionResult::success())
         } else {
-            Ok(brush_core::builtins::ExitCode::Custom(1))
+            Ok(brush_core::ExecutionResult::new(1))
         }
     }
 }

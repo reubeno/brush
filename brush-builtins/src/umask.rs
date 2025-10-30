@@ -1,4 +1,4 @@
-use brush_core::{Error, builtins};
+use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
 use clap::Parser;
 #[cfg(not(target_os = "linux"))]
@@ -21,10 +21,12 @@ pub(crate) struct UmaskCommand {
 }
 
 impl builtins::Command for UmaskCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
                 let parsed = nix::sys::stat::mode_t::from_str_radix(mode.as_str(), 8)?;
@@ -51,7 +53,7 @@ impl builtins::Command for UmaskCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 
@@ -59,7 +61,7 @@ cfg_if! {
     if #[cfg(target_os = "linux")] {
         fn get_umask() -> Result<u32, brush_core::Error> {
             let umask = procfs::process::Process::myself().ok().and_then(|me| me.status().ok()).and_then(|status| status.umask);
-            umask.ok_or_else(|| brush_core::Error::InvalidUmask)
+            umask.ok_or_else(|| brush_core::ErrorKind::InvalidUmask.into())
         }
     } else {
         #[expect(clippy::unnecessary_wraps)]
@@ -73,7 +75,7 @@ cfg_if! {
 
 fn set_umask(value: nix::sys::stat::mode_t) -> Result<(), brush_core::Error> {
     // value of mode_t can be platform dependent
-    let mode = nix::sys::stat::Mode::from_bits(value).ok_or_else(|| Error::InvalidUmask)?;
+    let mode = nix::sys::stat::Mode::from_bits(value).ok_or_else(|| ErrorKind::InvalidUmask)?;
     nix::sys::stat::umask(mode);
     Ok(())
 }

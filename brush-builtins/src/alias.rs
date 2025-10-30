@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 /// Manage aliases within the shell.
 #[derive(Parser)]
@@ -16,11 +16,13 @@ pub(crate) struct AliasCommand {
 }
 
 impl builtins::Command for AliasCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut exit_code = builtins::ExitCode::Success;
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        let mut exit_code = ExecutionResult::success();
 
         if self.print || self.aliases.is_empty() {
             for (name, value) in &context.shell.aliases {
@@ -41,7 +43,7 @@ impl builtins::Command for AliasCommand {
                         "{}: {alias}: not found",
                         context.command_name
                     )?;
-                    exit_code = builtins::ExitCode::Custom(1);
+                    exit_code = ExecutionResult::new(1);
                 }
             }
         }

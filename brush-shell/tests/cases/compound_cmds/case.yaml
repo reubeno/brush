@@ -127,3 +127,59 @@ cases:
       case case in
       case) echo "saw case";;
       esac
+
+  - name: "Case with return in function"
+    stdin: |
+      f() {
+        case "a" in
+        a) echo "matched a"; return 42;;
+        b) echo "matched b";;
+        esac
+        echo "After case"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "Case with exit"
+    stdin: |
+      case "a" in
+      a) echo "matched a"; exit 42;;
+      b) echo "matched b";;
+      esac
+      echo "After case"
+
+  - name: "Case with break in loop"
+    stdin: |
+      for i in 1 2 3; do
+        case "$i" in
+        1) echo "one";;
+        2) echo "two"; break;;
+        3) echo "three";;
+        esac
+        echo "After case iteration $i"
+      done
+      echo "After loop"
+
+  - name: "Case with continue in loop"
+    stdin: |
+      for i in 1 2 3; do
+        case "$i" in
+        1) echo "one";;
+        2) echo "two"; continue;;
+        3) echo "three";;
+        esac
+        echo "After case iteration $i"
+      done
+      echo "After loop"
+
+  - name: "Case with return and fall-through"
+    stdin: |
+      f() {
+        case "a" in
+        a) echo "matched a"; return 42;&
+        b) echo "matched b";;
+        esac
+        echo "After case"
+      }
+      f
+      echo "Exit code: $?"

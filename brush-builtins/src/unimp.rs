@@ -1,4 +1,4 @@
-use brush_core::{builtins, trace_categories};
+use brush_core::{ExecutionExitCode, builtins, trace_categories};
 
 use clap::Parser;
 
@@ -13,16 +13,18 @@ pub(crate) struct UnimplementedCommand {
 }
 
 impl builtins::Command for UnimplementedCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         tracing::warn!(target: trace_categories::UNIMPLEMENTED,
             "unimplemented built-in: {} {}",
             context.command_name,
             self.args.join(" ")
         );
-        Ok(builtins::ExitCode::Unimplemented)
+        Ok(ExecutionExitCode::Unimplemented.into())
     }
 }
 

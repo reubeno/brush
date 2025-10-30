@@ -1,4 +1,4 @@
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 use clap::Parser;
 use std::{borrow::Cow, io::Write, path::Path};
 
@@ -15,10 +15,12 @@ pub(crate) struct PwdCommand {
 }
 
 impl builtins::Command for PwdCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();
 
         let should_canonicalize = self.physical
@@ -33,6 +35,6 @@ impl builtins::Command for PwdCommand {
 
         writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

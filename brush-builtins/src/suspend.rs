@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Suspend the shell.
 #[derive(Parser)]
@@ -12,13 +12,15 @@ pub(crate) struct SuspendCommand {
 }
 
 impl builtins::Command for SuspendCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         if context.shell.options.login_shell && !self.force {
             writeln!(context.stderr(), "login shell cannot be suspended")?;
-            return Ok(builtins::ExitCode::InvalidUsage);
+            return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
         #[expect(clippy::cast_possible_wrap)]
@@ -27,6 +29,6 @@ impl builtins::Command for SuspendCommand {
             brush_core::traps::TrapSignal::Signal(nix::sys::signal::SIGSTOP),
         )?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

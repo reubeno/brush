@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 /// Manage the current directory stack.
 #[derive(Default, Parser)]
@@ -26,10 +26,12 @@ pub(crate) struct DirsCommand {
 }
 
 impl builtins::Command for DirsCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.clear {
             context.shell.directory_stack.clear();
         } else {
@@ -69,9 +71,9 @@ impl builtins::Command for DirsCommand {
                 }
             }
 
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

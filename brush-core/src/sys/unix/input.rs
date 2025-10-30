@@ -79,6 +79,6 @@ pub fn get_key_from_key_code(key_code: &[u8]) -> Result<interfaces::Key, error::
     } else if key_code.len() == 1 && !key_code[0].is_ascii_control() {
         Ok(interfaces::Key::Character(key_code[0] as char))
     } else {
-        Err(error::Error::UnhandledKeyCode(key_code.to_vec()))
+        Err(error::ErrorKind::UnhandledKeyCode(key_code.to_vec()).into())
     }
 }

@@ -1,4 +1,6 @@
-use brush_core::{ExecutionParameters, builtins, error, history};
+use brush_core::{
+    ExecutionExitCode, ExecutionParameters, ExecutionResult, builtins, error, history,
+};
 use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
@@ -51,10 +53,12 @@ struct HistoryConfig {
 }
 
 impl builtins::Command for HistoryCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
             default_history_file_path: context.shell.history_file_path(),
@@ -68,7 +72,7 @@ impl builtins::Command for HistoryCommand {
                 context.stderr(),
                 "history: history not available in this shell"
             )?;
-            Ok(builtins::ExitCode::Unimplemented)
+            Ok(ExecutionExitCode::Unimplemented.into())
         }
     }
 }
@@ -82,7 +86,7 @@ impl HistoryCommand {
         params: &ExecutionParameters,
         history: &mut history::History,
         config: HistoryConfig,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if self.clear_history {
             history.clear()?;
         }
@@ -90,7 +94,7 @@ impl HistoryCommand {
         if let Some(offset) = self.delete_offset {
             if offset == 0 {
                 writeln!(params.stderr(), "cannot delete history item at offset 0")?;
-                return Ok(builtins::ExitCode::InvalidUsage);
+                return Ok(ExecutionExitCode::InvalidUsage.into());
             }
 
             if offset > 0 {
@@ -98,20 +102,20 @@ impl HistoryCommand {
                 let index = (offset - 1) as usize;
                 if !history.remove_nth_item(index) {
                     writeln!(params.stderr(), "index past end of history")?;
-                    return Ok(builtins::ExitCode::InvalidUsage);
+                    return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             } else {
                 let count = history.count() as i64;
                 let index = count + offset;
                 if index < 0 {
                     writeln!(params.stderr(), "index before beginning of history")?;
-                    return Ok(builtins::ExitCode::InvalidUsage);
+                    return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
 
                 let _ = history.remove_nth_item(index as usize);
             }
 
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
         if let Some(append_option) = &self.append_session_to_file {
@@ -127,7 +131,7 @@ impl HistoryCommand {
                 )?;
             }
 
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
         if self.append_rest_of_file_to_session.is_some() {
@@ -151,7 +155,7 @@ impl HistoryCommand {
                 )?;
             }
 
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
         if self.expand_args.is_some() {
@@ -160,7 +164,7 @@ impl HistoryCommand {
 
         if let Some(args) = &self.append_args_to_session {
             history.add(history::Item::new(args.join(" ")))?;
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
         let max_entries: Option<usize> = if let Some(arg) = self.args.first() {
@@ -171,7 +175,7 @@ impl HistoryCommand {
 
         display_history(params, history, &config, max_entries)?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use clap::Parser;
 
-use brush_core::{Shell, ShellValue, builtins, variables::ShellValueUnsetType};
+use brush_core::{ExecutionResult, Shell, ShellValue, builtins, variables::ShellValueUnsetType};
 
 /// Unset a variable.
 #[derive(Parser)]
@@ -37,10 +37,12 @@ impl UnsetNameInterpretation {
 }
 
 impl builtins::Command for UnsetCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         //
         // TODO: implement nameref
         //
@@ -84,7 +86,7 @@ impl builtins::Command for UnsetCommand {
             }
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 
