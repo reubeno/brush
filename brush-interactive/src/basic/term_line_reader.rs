@@ -201,7 +201,7 @@ impl<'a> ReadLineState<'a> {
         }
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     #[expect(
         clippy::string_slice,
         reason = "all offsets are expected to be at char boundaries"

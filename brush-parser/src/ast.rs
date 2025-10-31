@@ -1078,13 +1078,13 @@ pub enum TestExpr {
     /// A literal string.
     Literal(String),
     /// Logical AND operation on two nested expressions.
-    And(Box<TestExpr>, Box<TestExpr>),
+    And(Box<Self>, Box<Self>),
     /// Logical OR operation on two nested expressions.
-    Or(Box<TestExpr>, Box<TestExpr>),
+    Or(Box<Self>, Box<Self>),
     /// Logical NOT operation on a nested expression.
-    Not(Box<TestExpr>),
+    Not(Box<Self>),
     /// A parenthesized expression.
-    Parenthesized(Box<TestExpr>),
+    Parenthesized(Box<Self>),
     /// A unary test operation.
     UnaryTest(UnaryPredicate, String),
     /// A binary test operation.
@@ -1112,13 +1112,13 @@ impl Display for TestExpr {
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum ExtendedTestExpr {
     /// Logical AND operation on two nested expressions.
-    And(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
+    And(Box<Self>, Box<Self>),
     /// Logical OR operation on two nested expressions.
-    Or(Box<ExtendedTestExpr>, Box<ExtendedTestExpr>),
+    Or(Box<Self>, Box<Self>),
     /// Logical NOT operation on a nested expression.
-    Not(Box<ExtendedTestExpr>),
+    Not(Box<Self>),
     /// A parenthesized expression.
-    Parenthesized(Box<ExtendedTestExpr>),
+    Parenthesized(Box<Self>),
     /// A unary test operation.
     UnaryTest(UnaryPredicate, Word),
     /// A binary test operation.
@@ -1378,19 +1378,15 @@ pub enum ArithmeticExpr {
     /// A dereference of a variable or array element.
     Reference(ArithmeticTarget),
     /// A unary operation on an the result of a given nested expression.
-    UnaryOp(UnaryOperator, Box<ArithmeticExpr>),
+    UnaryOp(UnaryOperator, Box<Self>),
     /// A binary operation on two nested expressions.
-    BinaryOp(BinaryOperator, Box<ArithmeticExpr>, Box<ArithmeticExpr>),
+    BinaryOp(BinaryOperator, Box<Self>, Box<Self>),
     /// A ternary conditional expression.
-    Conditional(
-        Box<ArithmeticExpr>,
-        Box<ArithmeticExpr>,
-        Box<ArithmeticExpr>,
-    ),
+    Conditional(Box<Self>, Box<Self>, Box<Self>),
     /// An assignment operation.
-    Assignment(ArithmeticTarget, Box<ArithmeticExpr>),
+    Assignment(ArithmeticTarget, Box<Self>),
     /// A binary assignment operation.
-    BinaryAssignment(BinaryOperator, ArithmeticTarget, Box<ArithmeticExpr>),
+    BinaryAssignment(BinaryOperator, ArithmeticTarget, Box<Self>),
     /// A unary assignment operation.
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }

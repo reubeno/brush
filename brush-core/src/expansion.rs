@@ -1467,7 +1467,7 @@ impl<'a> WordExpander<'a> {
         Ok(value.to_string())
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     #[expect(clippy::ref_option)]
     fn uppercase_first_char(
         s: String,
@@ -1493,7 +1493,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     #[expect(clippy::ref_option)]
     fn lowercase_first_char(
         s: String,

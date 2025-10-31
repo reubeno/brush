@@ -55,7 +55,7 @@ impl JobTask {
         }
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
             Self::External(process) => {

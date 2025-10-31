@@ -640,7 +640,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     #[expect(clippy::if_same_then_else)]
     #[expect(clippy::panic_in_result_fn)]
     #[expect(clippy::too_many_lines)]
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,

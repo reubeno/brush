@@ -238,7 +238,7 @@ impl<'a> StyledInputLine<'a> {
     fn append_style(&mut self, style: Style, start: usize, end: usize) {
         // See if we need to cover a gap between this substring and the one that preceded it.
         if start > self.current_char_index {
-            let missing_style = self.next_missing_style.map_or_else(styles::comment, |s| s);
+            let missing_style = self.next_missing_style.unwrap_or_else(styles::comment);
             let missing_text: String = (&mut self.remaining_chars)
                 .take(start - self.current_char_index)
                 .collect();

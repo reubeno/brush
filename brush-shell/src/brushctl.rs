@@ -73,9 +73,7 @@ impl EventsCommand {
                 Self::Status => {
                     let enabled_events = event_config.get_enabled_events();
                     for event in enabled_events {
-                        writeln!(context.stdout(), "{event}").unwrap(); // Add .unwrap() to handle
-                        // any potential write
-                        // errors
+                        writeln!(context.stdout(), "{event}")?;
                     }
                 }
                 Self::Enable { event } => event_config.enable(*event)?,

@@ -539,16 +539,11 @@ impl TestCaseSet {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 enum ShellInvocation {
+    #[default]
     ExecShellBinary,
     ExecScript(String),
-}
-
-impl Default for ShellInvocation {
-    fn default() -> Self {
-        Self::ExecShellBinary
-    }
 }
 
 #[derive(Clone)]

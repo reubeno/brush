@@ -91,7 +91,7 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `fd` - The file descriptor number to retrieve.
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
         self.open_files.get(fd).map(|f| f.try_dup().unwrap())
     }
