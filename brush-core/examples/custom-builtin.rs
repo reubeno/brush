@@ -138,8 +138,7 @@ fn main() -> Result<()> {
     // Construct a `tokio` runtime for async execution
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()
-        .unwrap();
+        .build()?;
 
     rt.block_on(run_example())?;
 

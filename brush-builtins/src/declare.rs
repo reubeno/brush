@@ -336,7 +336,7 @@ impl DeclareCommand {
         Ok(true)
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), brush_core::Error> {

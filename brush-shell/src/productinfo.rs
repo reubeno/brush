@@ -7,7 +7,7 @@ const PRODUCT_HOMEPAGE: &str = env!("CARGO_PKG_HOMEPAGE");
 const PRODUCT_REPO: &str = env!("CARGO_PKG_REPOSITORY");
 
 /// The URI to display as the product's homepage.
-#[expect(clippy::const_is_empty)]
+#[allow(clippy::const_is_empty)]
 pub const PRODUCT_DISPLAY_URI: &str = if !PRODUCT_HOMEPAGE.is_empty() {
     PRODUCT_HOMEPAGE
 } else {
