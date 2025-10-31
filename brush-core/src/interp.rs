@@ -1147,28 +1147,32 @@ async fn execute_command(
             .await?;
     }
 
-    let mut cmd_context = commands::ExecutionContext {
+    let cmd_context = commands::ExecutionContext {
         shell: &mut context.shell,
         command_name: cmd_name,
         params,
     };
 
-    // Run through any pre-execution hooks.
-    commands::on_preexecute(&mut cmd_context, args.as_slice()).await?;
+    // Construct the command struct.
+    let mut cmd = commands::SimpleCommand::new(cmd_context, args);
+    cmd.process_group_id = context.process_group_id;
 
-    // Execute.
-    let execution_result = commands::execute(
-        cmd_context,
-        &mut context.process_group_id,
-        args,
-        true, /* use functions? */
-        None,
-    )
-    .await;
+    // Run through any pre-execution hooks.
+    commands::on_preexecute(&mut cmd).await?;
+
+    // Execute
+    let execution_result = cmd.execute().await;
 
     // Pop off that ephemeral environment scope.
     // TODO: jobs: do we need to move self back to foreground on error here?
     context.shell.env.pop_scope(EnvironmentScope::Command)?;
+
+    // Update the process group ID if something was spawned.
+    if let Ok(ExecutionSpawnResult::StartedProcess(child)) = &execution_result {
+        if context.process_group_id.is_none() {
+            context.process_group_id = child.pgid();
+        }
+    }
 
     execution_result
 }

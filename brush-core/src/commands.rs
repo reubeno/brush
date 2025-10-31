@@ -8,7 +8,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, env, error, escape,
+    builtins, commands, env, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -219,11 +219,10 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
 }
 
 pub(crate) async fn on_preexecute(
-    context: &mut ExecutionContext<'_>,
-    args: &[CommandArg],
+    cmd: &mut commands::SimpleCommand<'_>,
 ) -> Result<(), error::Error> {
     // See if we have a DEBUG trap handler registered; call it if we do.
-    invoke_debug_trap_handler_if_registered(context, args).await?;
+    invoke_debug_trap_handler_if_registered(&mut cmd.context, cmd.args.as_slice()).await?;
 
     Ok(())
 }
@@ -270,6 +269,61 @@ async fn invoke_debug_trap_handler_if_registered(
     Ok(())
 }
 
+/// Represents a simple command to be executed.
+pub struct SimpleCommand<'a> {
+    /// The execution context for the command.
+    pub context: ExecutionContext<'a>,
+
+    /// The arguments to the command, including the command itself.
+    pub args: Vec<CommandArg>,
+
+    /// Whether to consider shell functions when looking up the command name.
+    /// If true, shell functions will be checked; if false, they will be ignored.
+    pub use_functions: bool,
+
+    /// Optional list of directories to search for external commands. If left
+    /// `None`, the default search logic will be used.
+    pub path_dirs: Option<Vec<String>>,
+
+    /// The process group ID to use for externally executed commands. This may be
+    /// `None`, in which case the default behavior will be used.
+    pub process_group_id: Option<i32>,
+}
+
+impl<'a> SimpleCommand<'a> {
+    /// Creates a new `SimpleCommand` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The execution context for the command.
+    /// * `args` - The arguments to the command, including the command itself.
+    pub const fn new(context: ExecutionContext<'a>, args: Vec<CommandArg>) -> Self {
+        Self {
+            context,
+            args,
+            use_functions: true,
+            path_dirs: None,
+            process_group_id: None,
+        }
+    }
+
+    /// Executes the simple command.
+    ///
+    /// The command may be a builtin, a shell function, or an externally
+    /// executed command. This function's implementation is responsible for
+    /// dispatching it appropriately according to the context provided.
+    pub async fn execute(self) -> Result<ExecutionSpawnResult, error::Error> {
+        execute_simple_command(
+            self.context,
+            self.process_group_id,
+            self.args,
+            self.use_functions,
+            self.path_dirs,
+        )
+        .await
+    }
+}
+
 /// Executes a simple command.
 ///
 /// The command may be a builtin, a shell function, or an externally
@@ -280,17 +334,16 @@ async fn invoke_debug_trap_handler_if_registered(
 ///
 /// * `cmd_context` - The context in which the command is being executed.
 /// * `process_group_id` - The process group ID to use for externally
-///   executed commands. This may be modified if a new process group is
-///   created.
+///   executed commands.
 /// * `args` - The arguments to the command.
 /// * `use_functions` - If true, the command name will be checked against
 ///   shell functions; if not, shell functions will not be consulted.
 /// * `path_dirs` - If provided, these directories will be searched for
 ///   external commands; if not provided, the default search logic will
 ///   be used.
-pub async fn execute(
+async fn execute_simple_command(
     cmd_context: ExecutionContext<'_>,
-    process_group_id: &mut Option<i32>,
+    process_group_id: Option<i32>,
     args: Vec<CommandArg>,
     use_functions: bool,
     path_dirs: Option<Vec<String>>,
@@ -374,7 +427,7 @@ pub async fn execute(
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
-    process_group_id: &mut Option<i32>,
+    process_group_id: Option<i32>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Filter out the args; we only want strings.
@@ -410,7 +463,7 @@ pub(crate) fn execute_external_command(
     } else {
         // We need to join an established process group.
         if let Some(pgid) = process_group_id {
-            cmd.process_group(*pgid);
+            cmd.process_group(pgid);
         }
     }
 
@@ -436,16 +489,17 @@ pub(crate) fn execute_external_command(
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
             let pid = child.id().map(|id| id as i32);
+            let mut actual_pgid = process_group_id;
             if let Some(pid) = &pid {
                 if new_pg {
-                    *process_group_id = Some(*pid);
+                    actual_pgid = Some(*pid);
                 }
             } else {
                 tracing::warn!("could not retrieve pid for child process");
             }
 
             Ok(ExecutionSpawnResult::StartedProcess(
-                processes::ChildProcess::new(pid, child),
+                processes::ChildProcess::new(child, pid, actual_pgid),
             ))
         }
         Err(spawn_err) => {
