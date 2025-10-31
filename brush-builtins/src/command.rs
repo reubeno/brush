@@ -142,18 +142,11 @@ impl CommandCommand {
             None
         };
 
-        // We do not have an existing process group to place this into.
-        let mut pgid = None;
+        let mut cmd = commands::SimpleCommand::new(context, command_and_args);
+        cmd.use_functions = false;
+        cmd.path_dirs = path_dirs;
 
-        match commands::execute(
-            context,
-            &mut pgid,
-            command_and_args,
-            false, /* use functions? */
-            path_dirs,
-        )
-        .await?
-        {
+        match cmd.execute().await? {
             ExecutionSpawnResult::StartedProcess(mut child) => {
                 // TODO: jobs: review this logic
                 let wait_result = child.wait().await?;
