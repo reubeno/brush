@@ -1382,11 +1382,7 @@ pub enum ArithmeticExpr {
     /// A binary operation on two nested expressions.
     BinaryOp(BinaryOperator, Box<Self>, Box<Self>),
     /// A ternary conditional expression.
-    Conditional(
-        Box<Self>,
-        Box<Self>,
-        Box<Self>,
-    ),
+    Conditional(Box<Self>, Box<Self>, Box<Self>),
     /// An assignment operation.
     Assignment(ArithmeticTarget, Box<Self>),
     /// A binary assignment operation.
