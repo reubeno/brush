@@ -19,6 +19,7 @@ grep -r "<current-version>" .
 Typically, MSRV is specified in:
 - `Cargo.toml` (workspace `rust-version` field)
 - `.github/workflows/ci.yaml` (CI test matrix)
+- `.github/copilot-instructions.md` (GitHub Copilot instructions)
 
 ### 2. Update MSRV references
 
