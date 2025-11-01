@@ -36,12 +36,12 @@ pub mod miette {
             let location = match self {
                 Self::ParsingNearToken(ref token) => Some(SourceOffset::from_location(
                     &input,
-                    token.location().start.line as usize,
-                    token.location().start.column as usize,
+                    token.location().start.line,
+                    token.location().start.column,
                 )),
-                Self::Tokenizing { ref position, .. } => position.as_ref().map(|p| {
-                    SourceOffset::from_location(&input, p.line as usize, p.column as usize)
-                }),
+                Self::Tokenizing { ref position, .. } => position
+                    .as_ref()
+                    .map(|p| SourceOffset::from_location(&input, p.line, p.column)),
                 Self::ParsingAtEndOfInput => {
                     Some(SourceOffset::from_location(&input, usize::MAX, usize::MAX))
                 }

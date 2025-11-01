@@ -894,7 +894,6 @@ impl Config {
     /// * `shell` - The shell instance to use for completion generation.
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
-    #[expect(clippy::cast_sign_loss)]
     #[expect(clippy::string_slice)]
     pub async fn get_completions(
         &self,
@@ -907,7 +906,7 @@ impl Config {
         // Make a best-effort attempt to tokenize.
         let tokens = Self::tokenize_input_for_completion(shell, input);
 
-        let cursor = i32::try_from(position)?;
+        let cursor = position;
         let mut preceding_token = None;
         let mut completion_prefix = "";
         let mut insertion_index = cursor;
@@ -939,7 +938,7 @@ impl Config {
                 insertion_index = token.location().start.index;
 
                 // Update prefix.
-                let offset_into_token = (cursor - insertion_index) as usize;
+                let offset_into_token = cursor - insertion_index;
                 let token_str = token.to_str();
                 completion_prefix = &token_str[..offset_into_token];
 
@@ -990,13 +989,13 @@ impl Config {
 
         match result {
             Answer::Candidates(candidates, options) => Ok(Completions {
-                insertion_index: insertion_index as usize,
+                insertion_index,
                 delete_count: completion_prefix.len(),
                 candidates,
                 options,
             }),
             Answer::RestartCompletionProcess => Ok(Completions {
-                insertion_index: insertion_index as usize,
+                insertion_index,
                 delete_count: 0,
                 candidates: IndexSet::new(),
                 options: ProcessingOptions::default(),
@@ -1173,21 +1172,19 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
     Answer::Candidates(candidates, ProcessingOptions::default())
 }
 
-#[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::cast_possible_wrap)]
 fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_parser::Token> {
     //
     // This is an overly naive tokenization.
     //
 
     let mut tokens = vec![];
-    let mut start: i32 = 0;
+    let mut start = 0;
 
     for piece in input.split_inclusive(delimiters) {
-        let next_start = start + piece.len() as i32;
+        let next_start = start + piece.len();
 
         let piece = piece.strip_suffix(delimiters).unwrap_or(piece);
-        let end: i32 = start + piece.len() as i32;
+        let end = start + piece.len();
         tokens.push(brush_parser::Token::Word(
             piece.to_string(),
             brush_parser::TokenLocation {
@@ -1195,12 +1192,14 @@ fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_
                     index: start,
                     line: 1,
                     column: start + 1,
-                },
+                }
+                .into(),
                 end: brush_parser::SourcePosition {
                     index: end,
                     line: 1,
                     column: end + 1,
-                },
+                }
+                .into(),
             },
         ));
 
