@@ -47,13 +47,37 @@ impl From<std::process::Output> for results::ExecutionResult {
 /// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
     /// The shell in which the command is being executed.
-    shell: &'a mut Shell,
-
-    current_pipeline_index: usize,
-    pipeline_len: usize,
-    output_pipes: &'a mut Vec<std::io::PipeReader>,
-
+    shell: PipelineCommandShell<'a>,
+    /// Process group ID for spawned processes.
     process_group_id: Option<i32>,
+}
+
+enum PipelineCommandShell<'a> {
+    /// The pipeline command is run in the same shell as its parent; the provided
+    /// mutable reference allows modifying the parent shell.
+    ParentShell(&'a mut Shell),
+    /// The pipeline command is run in its own owned shell (which is also provided).
+    OwnedShell(Box<Shell>),
+}
+
+impl std::ops::Deref for PipelineCommandShell<'_> {
+    type Target = Shell;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            PipelineCommandShell::ParentShell(shell) => shell,
+            PipelineCommandShell::OwnedShell(shell) => shell,
+        }
+    }
+}
+
+impl std::ops::DerefMut for PipelineCommandShell<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            PipelineCommandShell::ParentShell(shell) => shell,
+            PipelineCommandShell::OwnedShell(shell) => shell,
+        }
+    }
 }
 
 /// Parameters for execution.
@@ -402,9 +426,21 @@ async fn spawn_pipeline_processes(
     params: &ExecutionParameters,
 ) -> Result<VecDeque<ExecutionSpawnResult>, error::Error> {
     let pipeline_len = pipeline.seq.len();
-    let mut output_pipes = vec![];
+    let mut pipe_readers = vec![];
+    let mut pipe_writers: Vec<OpenFile> = vec![];
     let mut spawn_results = VecDeque::new();
     let mut process_group_id: Option<i32> = None;
+
+    // Create pipes to use between commands, but only bother doing so if there's more than one command.
+    if pipeline_len > 1 {
+        for _ in 0..(pipeline_len - 1) {
+            let (reader, writer) = std::io::pipe()?;
+            pipe_readers.push(reader.into());
+            pipe_writers.push(writer.into());
+        }
+        // Push a null reader; it will be popped off by the *first* command.
+        pipe_readers.push(openfiles::null()?);
+    }
 
     for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
         //
@@ -420,45 +456,40 @@ async fn spawn_pipeline_processes(
                 && shell.options.run_last_pipeline_cmd_in_current_shell
                 && !shell.options.enable_job_control);
 
-        if !run_in_current_shell {
-            let mut subshell = shell.clone();
-            let mut pipeline_context = PipelineExecutionContext {
-                shell: &mut subshell,
-                current_pipeline_index,
-                pipeline_len,
-                output_pipes: &mut output_pipes,
-                process_group_id,
-            };
+        // Set up parameters appropriate for this command.
+        let mut cmd_params = params.clone();
 
-            let mut cmd_params = params.clone();
+        // Install pipes.
+        if let Some(reader) = pipe_readers.pop() {
+            cmd_params.open_files.set(OpenFiles::STDIN_FD, reader);
+        }
+        if let Some(writer) = pipe_writers.pop() {
+            cmd_params.open_files.set(OpenFiles::STDOUT_FD, writer);
+        }
 
+        let mut pipeline_context = if !run_in_current_shell {
             // Make sure that all commands in the pipeline are in the same process group.
             if current_pipeline_index > 0 {
                 cmd_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
             }
 
-            spawn_results.push_back(
-                command
-                    .execute_in_pipeline(&mut pipeline_context, cmd_params)
-                    .await?,
-            );
-            process_group_id = pipeline_context.process_group_id;
-        } else {
-            let mut pipeline_context = PipelineExecutionContext {
-                shell,
-                current_pipeline_index,
-                pipeline_len,
-                output_pipes: &mut output_pipes,
+            PipelineExecutionContext {
+                shell: PipelineCommandShell::OwnedShell(Box::new(shell.clone())),
                 process_group_id,
-            };
+            }
+        } else {
+            PipelineExecutionContext {
+                shell: PipelineCommandShell::ParentShell(shell),
+                process_group_id,
+            }
+        };
 
-            spawn_results.push_back(
-                command
-                    .execute_in_pipeline(&mut pipeline_context, params.clone())
-                    .await?,
-            );
-            process_group_id = pipeline_context.process_group_id;
-        }
+        spawn_results.push_back(
+            command
+                .execute_in_pipeline(&mut pipeline_context, cmd_params)
+                .await?,
+        );
+        process_group_id = pipeline_context.process_group_id;
     }
 
     Ok(spawn_results)
@@ -529,26 +560,26 @@ impl ExecuteInPipeline for ast::Command {
         match self {
             Self::Simple(simple) => simple.execute_in_pipeline(pipeline_context, params).await,
             Self::Compound(compound, redirects) => {
-                // Set up pipelining.
-                setup_pipeline_redirection(&mut params.open_files, pipeline_context)?;
-
                 // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
-                        setup_redirect(pipeline_context.shell, &mut params, redirect).await?;
+                        setup_redirect(&mut pipeline_context.shell, &mut params, redirect).await?;
                     }
                 }
 
                 Ok(compound
-                    .execute(pipeline_context.shell, &params)
+                    .execute(&mut pipeline_context.shell, &params)
                     .await?
                     .into())
             }
-            Self::Function(func) => Ok(func.execute(pipeline_context.shell, &params).await?.into()),
+            Self::Function(func) => Ok(func
+                .execute(&mut pipeline_context.shell, &params)
+                .await?
+                .into()),
             Self::ExtendedTest(e) => {
                 let result = if extendedtests::eval_extended_test_expr(
                     &e.expr,
-                    pipeline_context.shell,
+                    &mut pipeline_context.shell,
                     &params,
                 )
                 .await?
@@ -939,9 +970,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             .as_ref()
             .map(|won| CommandPrefixOrSuffixItem::Word(won.clone()));
 
-        // Set up pipelining.
-        setup_pipeline_redirection(&mut params.open_files, context)?;
-
         let mut assignments = vec![];
         let mut args: Vec<CommandArg> = vec![];
         let mut command_takes_assignments = false;
@@ -949,14 +977,19 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if let Err(e) = setup_redirect(context.shell, &mut params, redirect).await {
-                        writeln!(params.stderr(context.shell), "error: {e}")?;
+                    if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
+                    {
+                        writeln!(params.stderr(&context.shell), "error: {e}")?;
                         return Ok(ExecutionResult::general_error().into());
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
-                    let (installed_fd_num, substitution_file) =
-                        setup_process_substitution(context.shell, &params, kind, subshell_command)?;
+                    let (installed_fd_num, substitution_file) = setup_process_substitution(
+                        &context.shell,
+                        &params,
+                        kind,
+                        subshell_command,
+                    )?;
 
                     params
                         .open_files
@@ -977,25 +1010,29 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             // well-known builtin that takes arguments that need to function like
                             // assignments (but which are processed by the builtin).
                             let expanded =
-                                expand_assignment(context.shell, &params, assignment).await?;
+                                expand_assignment(&mut context.shell, &params, assignment).await?;
                             args.push(CommandArg::Assignment(expanded));
                         } else {
                             // This *looks* like an assignment, but it's really a string we should
                             // fully treat as a regular looking
                             // argument.
-                            let mut next_args =
-                                expansion::full_expand_and_split_word(context.shell, &params, word)
-                                    .await?
-                                    .into_iter()
-                                    .map(CommandArg::String)
-                                    .collect();
+                            let mut next_args = expansion::full_expand_and_split_word(
+                                &mut context.shell,
+                                &params,
+                                word,
+                            )
+                            .await?
+                            .into_iter()
+                            .map(CommandArg::String)
+                            .collect();
                             args.append(&mut next_args);
                         }
                     }
                 }
                 CommandPrefixOrSuffixItem::Word(arg) => {
                     let mut next_args =
-                        expansion::full_expand_and_split_word(context.shell, &params, arg).await?;
+                        expansion::full_expand_and_split_word(&mut context.shell, &params, arg)
+                            .await?;
 
                     if args.is_empty() {
                         if let Some(cmd_name) = next_args.first() {
@@ -1060,7 +1097,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 // at the program level so multiple complete_commands can execute independently.
                 apply_assignment(
                     assignment,
-                    context.shell,
+                    &mut context.shell,
                     &params,
                     false,
                     None,
@@ -1091,7 +1128,7 @@ async fn execute_command(
         // Ensure it's tagged as exported and created in the command scope.
         apply_assignment(
             assignment,
-            context.shell,
+            &mut context.shell,
             &params,
             true,
             Some(EnvironmentScope::Command),
@@ -1111,7 +1148,7 @@ async fn execute_command(
     }
 
     let mut cmd_context = commands::ExecutionContext {
-        shell: context.shell,
+        shell: &mut context.shell,
         command_name: cmd_name,
         params,
     };
@@ -1351,32 +1388,6 @@ async fn apply_assignment(
     }
 
     shell.env.add(variable_name, new_var, creation_scope)
-}
-
-fn setup_pipeline_redirection(
-    open_files: &mut OpenFiles,
-    context: &mut PipelineExecutionContext<'_>,
-) -> Result<(), error::Error> {
-    if context.current_pipeline_index > 0 {
-        // Find the stdout from the preceding process.
-        if let Some(preceding_output_reader) = context.output_pipes.pop() {
-            // Set up stdin of this process to take stdout of the preceding process.
-            open_files.set_fd(OpenFiles::STDIN_FD, preceding_output_reader.into());
-        } else {
-            open_files.set_fd(OpenFiles::STDIN_FD, openfiles::null()?);
-        }
-    }
-
-    // If this is a non-last command in a multi-command, then we need to arrange to redirect output
-    // to a pipe that we can read later.
-    if context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1 {
-        // Set up stdout of this process to go to stdin of the succeeding process.
-        let (reader, writer) = std::io::pipe()?;
-        context.output_pipes.push(reader);
-        open_files.set_fd(OpenFiles::STDOUT_FD, writer.into());
-    }
-
-    Ok(())
 }
 
 #[expect(clippy::too_many_lines)]
