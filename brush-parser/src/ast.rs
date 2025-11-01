@@ -1134,12 +1134,13 @@ pub struct Assignment {
     /// Whether or not to append to the preexisting value associated with the named variable.
     #[cfg_attr(test, serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
     pub append: bool,
+    /// Location of the assignment
+    pub loc: TokenLocation,
 }
 
-// TODO: complete
 impl SourceLocation for Assignment {
     fn location(&self) -> Option<TokenLocation> {
-        None
+        Some(self.loc.clone())
     }
 }
 

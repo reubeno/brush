@@ -850,7 +850,7 @@ peg::parser! {
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
             non_posix_extensions_enabled() [Token::Word(w, l)] specific_operator("(") elements:array_elements() end:specific_operator(")") {?
-                let parsed = parse_array_assignment(w.as_str(), elements.as_slice())?;
+                let mut parsed = parse_array_assignment(w.as_str(), elements.as_slice())?;
 
                 let mut all_as_word = w.to_owned();
                 all_as_word.push('(');
@@ -863,11 +863,12 @@ peg::parser! {
                 all_as_word.push(')');
 
                 let loc = TokenLocation::within(l, end.location());
-
+                parsed.loc = loc.clone();
                 Ok((parsed, ast::Word::with_location(&all_as_word, &loc)))
             } /
             [Token::Word(w, l)] {?
-                let parsed = parse_assignment_word(w.as_str())?;
+                let mut parsed = parse_assignment_word(w.as_str())?;
+                parsed.loc = l.clone();
                 Ok((parsed, ast::Word::with_location(w, l)))
             }
 
@@ -910,7 +911,7 @@ peg::parser! {
         pub(crate) rule name_and_scalar_value() -> ast::Assignment =
             nae:name_and_equals() value:scalar_value() {
                 let (name, append) = nae;
-                ast::Assignment { name, value, append }
+                ast::Assignment { name, value, append, loc: TokenLocation::default() }
             }
 
         pub(crate) rule name_and_equals() -> (ast::AssignmentName, bool) =
@@ -1029,6 +1030,7 @@ fn parse_array_assignment(
         name: assignment_name,
         value: ast::AssignmentValue::Array(elements_as_words),
         append,
+        loc: Default::default(),
     })
 }
 
