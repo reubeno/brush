@@ -1030,7 +1030,7 @@ fn parse_array_assignment(
         name: assignment_name,
         value: ast::AssignmentValue::Array(elements_as_words),
         append,
-        loc: Default::default(),
+        loc: TokenLocation::default(),
     })
 }
 

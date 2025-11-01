@@ -53,7 +53,7 @@ impl Display for SourcePosition {
 impl From<&SourcePosition> for miette::SourceOffset {
     #[allow(clippy::cast_sign_loss)]
     fn from(position: &SourcePosition) -> Self {
-        (position.index as usize).into()
+        position.index.into()
     }
 }
 
