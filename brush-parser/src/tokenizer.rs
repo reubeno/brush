@@ -117,7 +117,7 @@ impl Token {
 #[cfg(feature = "diagnostics")]
 impl From<&Token> for miette::SourceSpan {
     fn from(token: &Token) -> Self {
-        let start = &(token.location().start);
+        let start = token.location().start.as_ref();
         Self::new(start.into(), token.location().length())
     }
 }
