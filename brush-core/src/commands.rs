@@ -2,7 +2,14 @@
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
-use std::{borrow::Cow, ffi::OsStr, fmt::Display, path::PathBuf, process::Stdio, sync::Arc};
+use std::{
+    borrow::Cow,
+    ffi::OsStr,
+    fmt::Display,
+    path::{Path, PathBuf},
+    process::Stdio,
+    sync::Arc,
+};
 
 use brush_parser::ast;
 #[cfg(unix)]
@@ -111,13 +118,16 @@ impl CommandArg {
     }
 }
 
-pub(crate) enum ShellForCommand<'a> {
+/// Encapsulates a possibly-owned reference to a `Shell` for command execution.
+pub enum ShellForCommand<'a> {
     /// The command is run in the same shell as its parent; the provided
     /// mutable reference allows modifying the parent shell.
     ParentShell(&'a mut Shell),
-    /// The pipeline command is run in its own owned shell (which is also provided).
+    /// The command is run in its own owned shell (which is also provided).
     OwnedShell {
+        /// The owned shell.
         target: Box<Shell>,
+        /// The parent shell.
         parent: &'a mut Shell,
     },
 }
@@ -301,7 +311,7 @@ async fn invoke_debug_trap_handler_if_registered(
 /// Represents a simple command to be executed.
 pub struct SimpleCommand<'a> {
     /// The shell to run the command in.
-    pub shell: ShellForCommand<'a>,
+    shell: ShellForCommand<'a>,
 
     /// The execution parameters for the command.
     pub params: ExecutionParameters,
@@ -327,6 +337,7 @@ pub struct SimpleCommand<'a> {
     /// Optionally provides a function that can run after execution occurs. Note
     /// that it is *not* invoked if the shell is discarded during the execution
     /// process.
+    #[allow(clippy::type_complexity)]
     pub post_execute: Option<fn(&mut Shell) -> Result<(), error::Error>>,
 }
 
@@ -411,13 +422,13 @@ impl<'a> SimpleCommand<'a> {
             };
 
             if let Some(path) = path {
-                self.execute_via_external(path)
+                self.execute_via_external(&path)
             } else {
                 Err(ErrorKind::CommandNotFound(self.command_name).into())
             }
         } else {
-            let path = self.command_name.clone();
-            self.execute_via_external(PathBuf::from(path))
+            let command_name = PathBuf::from(self.command_name.clone());
+            self.execute_via_external(command_name.as_path())
         }
     }
 
@@ -427,14 +438,13 @@ impl<'a> SimpleCommand<'a> {
     ) -> Result<ExecutionSpawnResult, error::Error> {
         match self.shell {
             ShellForCommand::OwnedShell { target, .. } => {
-                Self::execute_via_builtin_in_owned_shell(
+                Ok(Self::execute_via_builtin_in_owned_shell(
                     *target,
                     self.params,
                     builtin,
                     self.command_name,
                     self.args,
-                )
-                .await
+                ))
             }
             ShellForCommand::ParentShell(..) => {
                 self.execute_via_builtin_in_parent_shell(builtin).await
@@ -442,13 +452,13 @@ impl<'a> SimpleCommand<'a> {
         }
     }
 
-    async fn execute_via_builtin_in_owned_shell(
+    fn execute_via_builtin_in_owned_shell(
         mut shell: Shell,
         params: ExecutionParameters,
         builtin: builtins::Registration,
         command_name: String,
         args: Vec<CommandArg>,
-    ) -> Result<ExecutionSpawnResult, error::Error> {
+    ) -> ExecutionSpawnResult {
         let join_handle = tokio::task::spawn_blocking(move || {
             let cmd_context = ExecutionContext {
                 shell: &mut shell,
@@ -460,7 +470,7 @@ impl<'a> SimpleCommand<'a> {
             rt.block_on(execute_builtin_command(&builtin, cmd_context, args))
         });
 
-        Ok(ExecutionSpawnResult::StartedTask(join_handle))
+        ExecutionSpawnResult::StartedTask(join_handle)
     }
 
     async fn execute_via_builtin_in_parent_shell(
@@ -506,7 +516,7 @@ impl<'a> SimpleCommand<'a> {
         Ok(result)
     }
 
-    fn execute_via_external(self, path: PathBuf) -> Result<ExecutionSpawnResult, error::Error> {
+    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
 
         let cmd_context = ExecutionContext {
