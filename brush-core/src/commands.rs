@@ -1,6 +1,12 @@
 //! Command execution
 
-use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio};
+use std::{
+    borrow::Cow,
+    ffi::OsStr,
+    fmt::Display,
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use brush_parser::ast;
 use itertools::Itertools;
@@ -8,7 +14,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, env, error, escape, functions,
+    builtins, commands, env, error, escape, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -123,6 +129,40 @@ impl CommandArg {
     }
 }
 
+/// Encapsulates a possibly-owned reference to a `Shell` for command execution.
+pub enum ShellForCommand<'a> {
+    /// The command is run in the same shell as its parent; the provided
+    /// mutable reference allows modifying the parent shell.
+    ParentShell(&'a mut Shell),
+    /// The command is run in its own owned shell (which is also provided).
+    OwnedShell {
+        /// The owned shell.
+        target: Box<Shell>,
+        /// The parent shell.
+        parent: &'a mut Shell,
+    },
+}
+
+impl std::ops::Deref for ShellForCommand<'_> {
+    type Target = Shell;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ShellForCommand::ParentShell(shell) => shell,
+            ShellForCommand::OwnedShell { target, .. } => target,
+        }
+    }
+}
+
+impl std::ops::DerefMut for ShellForCommand<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            ShellForCommand::ParentShell(shell) => shell,
+            ShellForCommand::OwnedShell { target, .. } => target,
+        }
+    }
+}
+
 /// Composes a `std::process::Command` to execute the given command. Appropriately
 /// configures the command name and arguments, redirections, injected file
 /// descriptors, environment variables, etc.
@@ -218,41 +258,38 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
 }
 
 pub(crate) async fn on_preexecute(
-    context: &mut ExecutionContext<'_>,
-    args: &[CommandArg],
+    cmd: &mut commands::SimpleCommand<'_>,
 ) -> Result<(), error::Error> {
     // See if we have a DEBUG trap handler registered; call it if we do.
-    invoke_debug_trap_handler_if_registered(context, args).await?;
+    invoke_debug_trap_handler_if_registered(&mut cmd.shell, &cmd.params, cmd.args.as_slice())
+        .await?;
 
     Ok(())
 }
 
 async fn invoke_debug_trap_handler_if_registered(
-    context: &mut ExecutionContext<'_>,
+    shell: &mut Shell,
+    params: &ExecutionParameters,
     args: &[CommandArg],
 ) -> Result<(), error::Error> {
-    if context.shell.call_stack().trap_handler_depth() > 0 {
+    if shell.call_stack().trap_handler_depth() > 0 {
         return Ok(());
     }
 
-    let Some(debug_trap_handler) = context
-        .shell
-        .traps
-        .get_handler(traps::TrapSignal::Debug)
-        .cloned()
+    let Some(debug_trap_handler) = shell.traps.get_handler(traps::TrapSignal::Debug).cloned()
     else {
         return Ok(());
     };
 
     // TODO(traps): Confirm whether trap handlers should be executed in the same process
     // group.
-    let mut handler_params = context.params.clone();
+    let mut handler_params = params.clone();
     handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
 
     // TODO(well-known-vars): This shouldn't *just* be set in a trap situation.
-    context.shell.env.update_or_add(
+    shell.env.update_or_add(
         "BASH_COMMAND",
         variables::ShellValueLiteral::Scalar(full_cmd),
         |_| Ok(()),
@@ -260,11 +297,10 @@ async fn invoke_debug_trap_handler_if_registered(
         env::EnvironmentScope::Global,
     )?;
 
-    context.shell.enter_trap_handler(Some(&debug_trap_handler));
+    shell.enter_trap_handler(Some(&debug_trap_handler));
 
     // TODO(traps): Discard result?
-    let _ = context
-        .shell
+    let _ = shell
         .run_string(
             &debug_trap_handler.command,
             &debug_trap_handler.source_info,
@@ -272,113 +308,245 @@ async fn invoke_debug_trap_handler_if_registered(
         )
         .await;
 
-    context.shell.leave_trap_handler();
+    shell.leave_trap_handler();
 
     Ok(())
 }
 
-/// Executes a simple command.
-///
-/// The command may be a builtin, a shell function, or an externally
-/// executed command. This function's implementation is responsible for
-/// dispatching it appropriately according to the context provided.
-///
-/// # Arguments
-///
-/// * `cmd_context` - The context in which the command is being executed.
-/// * `process_group_id` - The process group ID to use for externally executed commands. This may be
-///   modified if a new process group is created.
-/// * `args` - The arguments to the command.
-/// * `use_functions` - If true, the command name will be checked against shell functions; if not,
-///   shell functions will not be consulted.
-/// * `path_dirs` - If provided, these directories will be searched for external commands; if not
-///   provided, the default search logic will be used.
-pub async fn execute(
-    cmd_context: ExecutionContext<'_>,
-    process_group_id: &mut Option<i32>,
-    args: Vec<CommandArg>,
-    use_functions: bool,
-    path_dirs: Option<Vec<String>>,
-) -> Result<ExecutionSpawnResult, error::Error> {
-    // First see if it's the name of a builtin.
-    let builtin = cmd_context
-        .shell
-        .builtins()
-        .get(&cmd_context.command_name)
-        .cloned();
+/// Represents a simple command to be executed.
+pub struct SimpleCommand<'a> {
+    /// The shell to run the command in.
+    shell: ShellForCommand<'a>,
 
-    // If we found a special builtin (that's not disabled), then invoke it.
-    if builtin
-        .as_ref()
-        .is_some_and(|r| !r.disabled && r.special_builtin)
-    {
-        return execute_builtin_command(&builtin.unwrap(), cmd_context, args).await;
+    /// The execution parameters for the command.
+    pub params: ExecutionParameters,
+
+    /// The name of the command to execute.
+    pub command_name: String,
+
+    /// The arguments to the command, including the command itself.
+    pub args: Vec<CommandArg>,
+
+    /// Whether to consider shell functions when looking up the command name.
+    /// If true, shell functions will be checked; if false, they will be ignored.
+    pub use_functions: bool,
+
+    /// Optional list of directories to search for external commands. If left
+    /// `None`, the default search logic will be used.
+    pub path_dirs: Option<Vec<String>>,
+
+    /// The process group ID to use for externally executed commands. This may be
+    /// `None`, in which case the default behavior will be used.
+    pub process_group_id: Option<i32>,
+
+    /// Optionally provides a function that can run after execution occurs. Note
+    /// that it is *not* invoked if the shell is discarded during the execution
+    /// process.
+    #[allow(clippy::type_complexity)]
+    pub post_execute: Option<fn(&mut Shell) -> Result<(), error::Error>>,
+}
+
+impl<'a> SimpleCommand<'a> {
+    /// Creates a new `SimpleCommand` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell in which to execute the command.
+    /// * `params` - The execution parameters for the command.
+    /// * `command_name` - The name of the command to execute.
+    /// * `args` - The arguments to the command, including the command itself.
+    pub const fn new(
+        shell: ShellForCommand<'a>,
+        params: ExecutionParameters,
+        command_name: String,
+        args: Vec<CommandArg>,
+    ) -> Self {
+        Self {
+            shell,
+            params,
+            command_name,
+            args,
+            use_functions: true,
+            path_dirs: None,
+            process_group_id: None,
+            post_execute: None,
+        }
     }
 
-    // Assuming we weren't requested not to do so, check if it's the name of
-    // a shell function.
-    if use_functions {
-        if let Some(func_reg) = cmd_context
-            .shell
-            .funcs()
-            .get(cmd_context.command_name.as_str())
+    /// Executes the simple command.
+    ///
+    /// The command may be a builtin, a shell function, or an externally
+    /// executed command. This function's implementation is responsible for
+    /// dispatching it appropriately according to the context provided.
+    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+        // First see if it's the name of a builtin.
+        let builtin = self.shell.builtins().get(&self.command_name).cloned();
+
+        // If we found a special builtin (that's not disabled), then invoke it.
+        if builtin
+            .as_ref()
+            .is_some_and(|r| !r.disabled && r.special_builtin)
         {
-            // Strip the function name off args.
-            return invoke_shell_function(func_reg.to_owned(), cmd_context, &args[1..]).await;
+            let builtin = builtin.unwrap();
+            return self.execute_via_builtin(builtin).await;
         }
-    }
 
-    // If we found a (non-special) builtin and it's not disabled, then invoke it.
-    if let Some(builtin) = builtin {
-        if !builtin.disabled {
-            return execute_builtin_command(&builtin, cmd_context, args).await;
+        // Assuming we weren't requested not to do so, check if it's the name of
+        // a shell function.
+        if self.use_functions {
+            if let Some(func_registration) =
+                self.shell.funcs().get(self.command_name.as_str()).cloned()
+            {
+                return self.execute_via_function(func_registration).await;
+            }
         }
-    }
 
-    // We still haven't found a command to invoke. We'll need to look for an external command.
-    if !cmd_context.command_name.contains(std::path::MAIN_SEPARATOR) {
-        // All else failed; if we were given path directories to search, try to look through them
-        // for a matching executable. Otherwise, use our default search logic.
-        let path = if let Some(path_dirs) = path_dirs {
-            pathsearch::search_for_executable(
-                path_dirs.iter().map(String::as_str),
-                cmd_context.command_name.as_str(),
-            )
-            .next()
+        // If we found a (non-special) builtin and it's not disabled, then invoke it.
+        if let Some(builtin) = builtin {
+            if !builtin.disabled {
+                return self.execute_via_builtin(builtin).await;
+            }
+        }
+
+        // We still haven't found a command to invoke. We'll need to look for an external command.
+        if !self.command_name.contains(std::path::MAIN_SEPARATOR) {
+            // All else failed; if we were given path directories to search, try to look through them
+            // for a matching executable. Otherwise, use our default search logic.
+            let path = if let Some(path_dirs) = &self.path_dirs {
+                pathsearch::search_for_executable(
+                    path_dirs.iter().map(String::as_str),
+                    self.command_name.as_str(),
+                )
+                .next()
+            } else {
+                self.shell
+                    .find_first_executable_in_path_using_cache(&self.command_name)
+            };
+
+            if let Some(path) = path {
+                self.execute_via_external(&path)
+            } else {
+                Err(ErrorKind::CommandNotFound(self.command_name).into())
+            }
         } else {
-            cmd_context
-                .shell
-                .find_first_executable_in_path_using_cache(&cmd_context.command_name)
+            let command_name = PathBuf::from(self.command_name.clone());
+            self.execute_via_external(command_name.as_path())
+        }
+    }
+
+    async fn execute_via_builtin(
+        self,
+        builtin: builtins::Registration,
+    ) -> Result<ExecutionSpawnResult, error::Error> {
+        match self.shell {
+            ShellForCommand::OwnedShell { target, .. } => {
+                Ok(Self::execute_via_builtin_in_owned_shell(
+                    *target,
+                    self.params,
+                    builtin,
+                    self.command_name,
+                    self.args,
+                ))
+            }
+            ShellForCommand::ParentShell(..) => {
+                self.execute_via_builtin_in_parent_shell(builtin).await
+            }
+        }
+    }
+
+    fn execute_via_builtin_in_owned_shell(
+        mut shell: Shell,
+        params: ExecutionParameters,
+        builtin: builtins::Registration,
+        command_name: String,
+        args: Vec<CommandArg>,
+    ) -> ExecutionSpawnResult {
+        let join_handle = tokio::task::spawn_blocking(move || {
+            let cmd_context = ExecutionContext {
+                shell: &mut shell,
+                command_name,
+                params,
+            };
+
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(execute_builtin_command(&builtin, cmd_context, args))
+        });
+
+        ExecutionSpawnResult::StartedTask(join_handle)
+    }
+
+    async fn execute_via_builtin_in_parent_shell(
+        self,
+        builtin: builtins::Registration,
+    ) -> Result<ExecutionSpawnResult, error::Error> {
+        let mut shell = self.shell;
+
+        let cmd_context = ExecutionContext {
+            shell: &mut shell,
+            command_name: self.command_name,
+            params: self.params,
         };
 
-        if let Some(path) = path {
-            let resolved_path = path.to_string_lossy();
-            execute_external_command(
-                cmd_context,
-                resolved_path.as_ref(),
-                process_group_id,
-                &args[1..],
-            )
-        } else {
-            Err(ErrorKind::CommandNotFound(cmd_context.command_name).into())
-        }
-    } else {
-        let resolved_path = cmd_context.command_name.clone();
+        let result = execute_builtin_command(&builtin, cmd_context, self.args).await?;
 
-        // Strip the command name off args.
-        execute_external_command(
+        if let Some(post_execute) = self.post_execute {
+            post_execute(&mut shell)?;
+        }
+
+        Ok(result.into())
+    }
+
+    async fn execute_via_function(
+        self,
+        func_registration: functions::Registration,
+    ) -> Result<ExecutionSpawnResult, error::Error> {
+        let mut shell = self.shell;
+
+        let cmd_context = ExecutionContext {
+            shell: &mut shell,
+            command_name: self.command_name,
+            params: self.params,
+        };
+
+        // Strip the function name off args.
+        let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await?;
+
+        if let Some(post_execute) = self.post_execute {
+            post_execute(&mut shell)?;
+        }
+
+        Ok(result)
+    }
+
+    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
+        let mut shell = self.shell;
+
+        let cmd_context = ExecutionContext {
+            shell: &mut shell,
+            command_name: self.command_name,
+            params: self.params,
+        };
+
+        let resolved_path = path.to_string_lossy();
+        let result = execute_external_command(
             cmd_context,
-            resolved_path.as_str(),
-            process_group_id,
-            &args[1..],
-        )
+            resolved_path.as_ref(),
+            self.process_group_id,
+            &self.args[1..],
+        )?;
+
+        if let Some(post_execute) = self.post_execute {
+            post_execute(&mut shell)?;
+        }
+
+        Ok(result)
     }
 }
 
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
-    process_group_id: &mut Option<i32>,
+    process_group_id: Option<i32>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Filter out the args; we only want strings.
@@ -414,7 +582,7 @@ pub(crate) fn execute_external_command(
     } else {
         // We need to join an established process group.
         if let Some(pgid) = process_group_id {
-            cmd.process_group(*pgid);
+            cmd.process_group(pgid);
         }
     }
 
@@ -440,16 +608,17 @@ pub(crate) fn execute_external_command(
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
             let pid = child.id().map(|id| id as i32);
+            let mut actual_pgid = process_group_id;
             if let Some(pid) = &pid {
                 if new_pg {
-                    *process_group_id = Some(*pid);
+                    actual_pgid = Some(*pid);
                 }
             } else {
                 tracing::warn!("could not retrieve pid for child process");
             }
 
             Ok(ExecutionSpawnResult::StartedProcess(
-                processes::ChildProcess::new(pid, child),
+                processes::ChildProcess::new(child, pid, actual_pgid),
             ))
         }
         Err(spawn_err) => {
@@ -480,9 +649,8 @@ async fn execute_builtin_command(
     builtin: &builtins::Registration,
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
-) -> Result<ExecutionSpawnResult, error::Error> {
-    let result = (builtin.execute_func)(context, args).await?;
-    Ok(result.into())
+) -> Result<ExecutionResult, error::Error> {
+    (builtin.execute_func)(context, args).await
 }
 
 pub(crate) async fn invoke_shell_function(

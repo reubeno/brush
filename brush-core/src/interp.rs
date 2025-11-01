@@ -3,56 +3,25 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use sys::commands::ExitStatusExt;
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
-    self, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
+    ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
 use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{ShellFd, error, expansion, extendedtests, jobs, openfiles, processes, sys, timing};
-
-impl From<processes::ProcessWaitResult> for results::ExecutionResult {
-    fn from(wait_result: processes::ProcessWaitResult) -> Self {
-        match wait_result {
-            processes::ProcessWaitResult::Completed(output) => output.into(),
-            processes::ProcessWaitResult::Stopped => Self::stopped(),
-        }
-    }
-}
-
-impl From<std::process::Output> for results::ExecutionResult {
-    fn from(output: std::process::Output) -> Self {
-        if let Some(code) = output.status.code() {
-            #[expect(clippy::cast_sign_loss)]
-            return Self::new((code & 0xFF) as u8);
-        }
-
-        if let Some(signal) = output.status.signal() {
-            #[expect(clippy::cast_sign_loss)]
-            return Self::new((signal & 0xFF) as u8 + 128);
-        }
-
-        tracing::error!("unhandled process exit");
-        Self::new(127)
-    }
-}
+use crate::{ShellFd, error, expansion, extendedtests, jobs, openfiles, sys, timing};
 
 /// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
-    /// The shell in which the command is being executed.
-    shell: &'a mut Shell,
-
-    current_pipeline_index: usize,
-    pipeline_len: usize,
-    output_pipes: &'a mut Vec<std::io::PipeReader>,
-
+    /// The shell in which the command should be executed.
+    shell: commands::ShellForCommand<'a>,
+    /// Process group ID for spawned processes.
     process_group_id: Option<i32>,
 }
 
@@ -194,7 +163,7 @@ pub trait Execute {
 trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext<'_>,
+        context: PipelineExecutionContext<'_>,
         params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error>;
 }
@@ -403,9 +372,21 @@ async fn spawn_pipeline_processes(
     params: &ExecutionParameters,
 ) -> Result<VecDeque<ExecutionSpawnResult>, error::Error> {
     let pipeline_len = pipeline.seq.len();
-    let mut output_pipes = vec![];
+    let mut pipe_readers = vec![];
+    let mut pipe_writers: Vec<OpenFile> = vec![];
     let mut spawn_results = VecDeque::new();
     let mut process_group_id: Option<i32> = None;
+
+    // Create pipes to use between commands, but only bother doing so if there's more than one command.
+    if pipeline_len > 1 {
+        for _ in 0..(pipeline_len - 1) {
+            let (reader, writer) = std::io::pipe()?;
+            pipe_readers.push(reader.into());
+            pipe_writers.push(writer.into());
+        }
+        // Push a null reader; it will be popped off by the *first* command.
+        pipe_readers.push(openfiles::null()?);
+    }
 
     for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
         //
@@ -421,45 +402,49 @@ async fn spawn_pipeline_processes(
                 && shell.options.run_last_pipeline_cmd_in_current_shell
                 && !shell.options.enable_job_control);
 
-        if !run_in_current_shell {
-            let mut subshell = shell.clone();
-            let mut pipeline_context = PipelineExecutionContext {
-                shell: &mut subshell,
-                current_pipeline_index,
-                pipeline_len,
-                output_pipes: &mut output_pipes,
-                process_group_id,
-            };
+        // Set up parameters appropriate for this command.
+        let mut cmd_params = params.clone();
 
-            let mut cmd_params = params.clone();
+        // Install pipes.
+        if let Some(reader) = pipe_readers.pop() {
+            cmd_params.open_files.set_fd(OpenFiles::STDIN_FD, reader);
+        }
+        if let Some(writer) = pipe_writers.pop() {
+            cmd_params.open_files.set_fd(OpenFiles::STDOUT_FD, writer);
+        }
 
+        let pipeline_context = if !run_in_current_shell {
             // Make sure that all commands in the pipeline are in the same process group.
             if current_pipeline_index > 0 {
                 cmd_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
             }
 
-            spawn_results.push_back(
-                command
-                    .execute_in_pipeline(&mut pipeline_context, cmd_params)
-                    .await?,
-            );
-            process_group_id = pipeline_context.process_group_id;
-        } else {
-            let mut pipeline_context = PipelineExecutionContext {
-                shell,
-                current_pipeline_index,
-                pipeline_len,
-                output_pipes: &mut output_pipes,
+            PipelineExecutionContext {
+                shell: commands::ShellForCommand::OwnedShell {
+                    target: Box::new(shell.clone()),
+                    parent: shell,
+                },
                 process_group_id,
-            };
+            }
+        } else {
+            PipelineExecutionContext {
+                shell: commands::ShellForCommand::ParentShell(shell),
+                process_group_id,
+            }
+        };
 
-            spawn_results.push_back(
-                command
-                    .execute_in_pipeline(&mut pipeline_context, params.clone())
-                    .await?,
-            );
-            process_group_id = pipeline_context.process_group_id;
+        let spawn_result = command
+            .execute_in_pipeline(pipeline_context, cmd_params)
+            .await?;
+
+        // Update the process group ID if something was spawned.
+        if let ExecutionSpawnResult::StartedProcess(child) = &spawn_result {
+            if process_group_id.is_none() {
+                process_group_id = child.pgid();
+            }
         }
+
+        spawn_results.push_back(spawn_result);
     }
 
     Ok(spawn_results)
@@ -478,7 +463,13 @@ async fn wait_for_pipeline_processes_and_update_status(
     shell.last_pipeline_statuses.clear();
 
     while let Some(child) = process_spawn_results.pop_front() {
-        match child.wait(!stopped_children.is_empty()).await? {
+        let wait_result = if !stopped_children.is_empty() {
+            child.poll().await?
+        } else {
+            child.wait().await?
+        };
+
+        match wait_result {
             ExecutionWaitResult::Completed(current_result) => {
                 result = current_result;
                 shell.set_last_exit_status(result.exit_code.into());
@@ -520,7 +511,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
-        pipeline_context: &mut PipelineExecutionContext<'_>,
+        mut pipeline_context: PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
@@ -533,26 +524,26 @@ impl ExecuteInPipeline for ast::Command {
         match self {
             Self::Simple(simple) => simple.execute_in_pipeline(pipeline_context, params).await,
             Self::Compound(compound, redirects) => {
-                // Set up pipelining.
-                setup_pipeline_redirection(&mut params.open_files, pipeline_context)?;
-
                 // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
-                        setup_redirect(pipeline_context.shell, &mut params, redirect).await?;
+                        setup_redirect(&mut pipeline_context.shell, &mut params, redirect).await?;
                     }
                 }
 
                 Ok(compound
-                    .execute(pipeline_context.shell, &params)
+                    .execute(&mut pipeline_context.shell, &params)
                     .await?
                     .into())
             }
-            Self::Function(func) => Ok(func.execute(pipeline_context.shell, &params).await?.into()),
+            Self::Function(func) => Ok(func
+                .execute(&mut pipeline_context.shell, &params)
+                .await?
+                .into()),
             Self::ExtendedTest(e) => {
                 let result = if extendedtests::eval_extended_test_expr(
                     &e.expr,
-                    pipeline_context.shell,
+                    &mut pipeline_context.shell,
                     &params,
                 )
                 .await?
@@ -942,7 +933,7 @@ impl Execute for ast::FunctionDefinition {
 impl ExecuteInPipeline for ast::SimpleCommand {
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext<'_>,
+        mut context: PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let prefix_iter = self.prefix.as_ref().map(|s| s.0.iter()).unwrap_or_default();
@@ -952,9 +943,6 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             .as_ref()
             .map(|won| CommandPrefixOrSuffixItem::Word(won.clone()));
 
-        // Set up pipelining.
-        setup_pipeline_redirection(&mut params.open_files, context)?;
-
         let mut assignments = vec![];
         let mut args: Vec<CommandArg> = vec![];
         let mut command_takes_assignments = false;
@@ -962,14 +950,19 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if let Err(e) = setup_redirect(context.shell, &mut params, redirect).await {
-                        writeln!(params.stderr(context.shell), "error: {e}")?;
+                    if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
+                    {
+                        writeln!(params.stderr(&context.shell), "error: {e}")?;
                         return Ok(ExecutionResult::general_error().into());
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
-                    let (installed_fd_num, substitution_file) =
-                        setup_process_substitution(context.shell, &params, kind, subshell_command)?;
+                    let (installed_fd_num, substitution_file) = setup_process_substitution(
+                        &context.shell,
+                        &params,
+                        kind,
+                        subshell_command,
+                    )?;
 
                     params
                         .open_files
@@ -990,25 +983,29 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                             // well-known builtin that takes arguments that need to function like
                             // assignments (but which are processed by the builtin).
                             let expanded =
-                                expand_assignment(context.shell, &params, assignment).await?;
+                                expand_assignment(&mut context.shell, &params, assignment).await?;
                             args.push(CommandArg::Assignment(expanded));
                         } else {
                             // This *looks* like an assignment, but it's really a string we should
                             // fully treat as a regular looking
                             // argument.
-                            let mut next_args =
-                                expansion::full_expand_and_split_word(context.shell, &params, word)
-                                    .await?
-                                    .into_iter()
-                                    .map(CommandArg::String)
-                                    .collect();
+                            let mut next_args = expansion::full_expand_and_split_word(
+                                &mut context.shell,
+                                &params,
+                                word,
+                            )
+                            .await?
+                            .into_iter()
+                            .map(CommandArg::String)
+                            .collect();
                             args.append(&mut next_args);
                         }
                     }
                 }
                 CommandPrefixOrSuffixItem::Word(arg) => {
                     let mut next_args =
-                        expansion::full_expand_and_split_word(context.shell, &params, arg).await?;
+                        expansion::full_expand_and_split_word(&mut context.shell, &params, arg)
+                            .await?;
 
                     if args.is_empty() {
                         if let Some(cmd_name) = next_args.first() {
@@ -1052,15 +1049,41 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
-            let mut stderr = params.stderr(context.shell);
+            let mut stderr = params.stderr(&context.shell);
+
+            let (owned_shell, parent_shell) = match context.shell {
+                commands::ShellForCommand::ParentShell(shell) => (None, shell),
+                commands::ShellForCommand::OwnedShell { target, parent } => (Some(target), parent),
+            };
+
+            let shell = if let Some(owned_shell) = owned_shell {
+                commands::ShellForCommand::OwnedShell {
+                    target: owned_shell,
+                    parent: parent_shell,
+                }
+            } else {
+                commands::ShellForCommand::ParentShell(parent_shell)
+            };
+
+            let context = PipelineExecutionContext {
+                shell,
+                process_group_id: context.process_group_id,
+            };
 
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
-                    let _ = context.shell.display_error(&mut stderr, &err).await;
+                    // DBG:RRO
+                    let _ = parent_shell.display_error(&mut stderr, &err).await;
 
-                    let result = err.into_result(context.shell);
-                    Ok(result.into())
+                    // FIXME: This doesn't use shell context for error conversion, which may
+                    // lose information about control flow (e.g., fatal errors). The proper
+                    // approach would be:
+                    //   let result = err.into_result(&context.shell);
+                    //   Ok(result.into())
+                    // However, context is moved into execute_command, so we can't access it here.
+                    let exit_code: ExecutionExitCode = ExecutionExitCode::from(&err);
+                    Ok(ExecutionResult::from(exit_code).into())
                 }
             }
         } else {
@@ -1072,7 +1095,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 // at the program level so multiple complete_commands can execute independently.
                 apply_assignment(
                     assignment,
-                    context.shell,
+                    &mut context.shell,
                     &params,
                     false,
                     None,
@@ -1097,7 +1120,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 }
 
 async fn execute_command(
-    context: &mut PipelineExecutionContext<'_>,
+    mut context: PipelineExecutionContext<'_>,
     params: ExecutionParameters,
     cmd_name: String,
     assignments: Vec<&ast::Assignment>,
@@ -1107,11 +1130,12 @@ async fn execute_command(
     // set command-scoped variable assignments after doing so, and revert them before
     // returning.
     context.shell.env.push_scope(EnvironmentScope::Command);
+
     for assignment in &assignments {
         // Ensure it's tagged as exported and created in the command scope.
         apply_assignment(
             assignment,
-            context.shell,
+            &mut context.shell,
             &params,
             true,
             Some(EnvironmentScope::Command),
@@ -1130,30 +1154,19 @@ async fn execute_command(
             .await?;
     }
 
-    let mut cmd_context = commands::ExecutionContext {
-        shell: context.shell,
-        command_name: cmd_name,
-        params,
-    };
+    // Construct the command struct.
+    let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name, args);
+    cmd.process_group_id = context.process_group_id;
+
+    // Arrange to pop off that ephemeral environment scope.
+    cmd.post_execute = Some(|shell| shell.env.pop_scope(EnvironmentScope::Command));
 
     // Run through any pre-execution hooks.
-    commands::on_preexecute(&mut cmd_context, args.as_slice()).await?;
+    commands::on_preexecute(&mut cmd).await?;
 
-    // Execute.
-    let execution_result = commands::execute(
-        cmd_context,
-        &mut context.process_group_id,
-        args,
-        true, /* use functions? */
-        None,
-    )
-    .await;
-
-    // Pop off that ephemeral environment scope.
+    // Execute
     // TODO(jobs): do we need to move self back to foreground on error here?
-    context.shell.env.pop_scope(EnvironmentScope::Command)?;
-
-    execution_result
+    cmd.execute().await
 }
 
 async fn expand_assignment(
@@ -1371,32 +1384,6 @@ async fn apply_assignment(
     }
 
     shell.env.add(variable_name, new_var, creation_scope)
-}
-
-fn setup_pipeline_redirection(
-    open_files: &mut OpenFiles,
-    context: &mut PipelineExecutionContext<'_>,
-) -> Result<(), error::Error> {
-    if context.current_pipeline_index > 0 {
-        // Find the stdout from the preceding process.
-        if let Some(preceding_output_reader) = context.output_pipes.pop() {
-            // Set up stdin of this process to take stdout of the preceding process.
-            open_files.set_fd(OpenFiles::STDIN_FD, preceding_output_reader.into());
-        } else {
-            open_files.set_fd(OpenFiles::STDIN_FD, openfiles::null()?);
-        }
-    }
-
-    // If this is a non-last command in a multi-command, then we need to arrange to redirect output
-    // to a pipe that we can read later.
-    if context.pipeline_len > 1 && context.current_pipeline_index < context.pipeline_len - 1 {
-        // Set up stdout of this process to go to stdin of the succeeding process.
-        let (reader, writer) = std::io::pipe()?;
-        context.output_pipes.push(reader);
-        open_files.set_fd(OpenFiles::STDOUT_FD, writer.into());
-    }
-
-    Ok(())
 }
 
 #[expect(clippy::too_many_lines)]

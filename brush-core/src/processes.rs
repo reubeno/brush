@@ -11,24 +11,36 @@ pub(crate) type WaitableChildProcess = std::pin::Pin<
 
 /// Tracks a child process being awaited.
 pub struct ChildProcess {
-    /// If available, the process ID of the child.
-    pid: Option<sys::process::ProcessId>,
     /// A waitable future that will yield the results of a child process's execution.
     exec_future: WaitableChildProcess,
+    /// If available, the process ID of the child.
+    pid: Option<sys::process::ProcessId>,
+    /// If available, the process group ID of the child.
+    pgid: Option<sys::process::ProcessId>,
 }
 
 impl ChildProcess {
     /// Wraps a child process and its future.
-    pub fn new(pid: Option<sys::process::ProcessId>, child: sys::process::Child) -> Self {
+    pub fn new(
+        child: sys::process::Child,
+        pid: Option<sys::process::ProcessId>,
+        pgid: Option<sys::process::ProcessId>,
+    ) -> Self {
         Self {
-            pid,
             exec_future: Box::pin(child.wait_with_output()),
+            pid,
+            pgid,
         }
     }
 
     /// Returns the process's ID.
     pub const fn pid(&self) -> Option<sys::process::ProcessId> {
         self.pid
+    }
+
+    /// Returns the process's group ID.
+    pub const fn pgid(&self) -> Option<sys::process::ProcessId> {
+        self.pgid
     }
 
     /// Waits for the process to exit.

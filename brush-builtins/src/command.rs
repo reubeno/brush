@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
-    ExecutionResult, ExecutionSpawnResult, builtins, commands, pathsearch,
+    ExecutionResult, builtins, commands, pathsearch,
     sys::{self, fs::PathExt},
 };
 
@@ -142,24 +142,18 @@ impl CommandCommand {
             None
         };
 
-        // We do not have an existing process group to place this into.
-        let mut pgid = None;
-
-        match commands::execute(
-            context,
-            &mut pgid,
+        let mut cmd = commands::SimpleCommand::new(
+            commands::ShellForCommand::ParentShell(context.shell),
+            context.params,
+            context.command_name,
             command_and_args,
-            false, /* use functions? */
-            path_dirs,
-        )
-        .await?
-        {
-            ExecutionSpawnResult::StartedProcess(mut child) => {
-                // TODO(jobs): review this logic
-                let wait_result = child.wait().await?;
-                Ok(ExecutionResult::from(wait_result))
-            }
-            ExecutionSpawnResult::Completed(result) => Ok(result),
-        }
+        );
+        cmd.use_functions = false;
+        cmd.path_dirs = path_dirs;
+
+        let spawn_result = cmd.execute().await?;
+        let wait_result = spawn_result.wait().await?;
+
+        Ok(wait_result.into())
     }
 }

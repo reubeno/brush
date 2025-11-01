@@ -11,7 +11,7 @@ use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::interp::{self, Execute, ExecutionParameters};
 use crate::options::RuntimeOptions;
-use crate::results::ExecutionSpawnResult;
+use crate::results::ExecutionWaitResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
@@ -884,11 +884,14 @@ impl Shell {
             .map(|s| commands::CommandArg::String(String::from(s.as_ref())))
             .collect::<Vec<_>>();
 
-        match commands::invoke_shell_function(func_registration, context, &command_args).await? {
-            ExecutionSpawnResult::StartedProcess(_) => {
-                error::unimp("child spawned from function invocation")
+        let result =
+            commands::invoke_shell_function(func_registration, context, &command_args).await?;
+
+        match result.wait().await? {
+            ExecutionWaitResult::Completed(result) => Ok(result.exit_code.into()),
+            ExecutionWaitResult::Stopped(..) => {
+                error::unimp("stopped child from function invocation")
             }
-            ExecutionSpawnResult::Completed(result) => Ok(result.exit_code.into()),
         }
     }
 
