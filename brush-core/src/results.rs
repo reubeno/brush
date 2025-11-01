@@ -212,6 +212,8 @@ pub enum ExecutionSpawnResult {
     Completed(ExecutionResult),
     /// Indicates that a process was started and had not yet completed.
     StartedProcess(processes::ChildProcess),
+    /// Indicates that a task was started to handle the execution asynchronously.
+    StartedTask(tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>),
 }
 
 impl From<ExecutionResult> for ExecutionSpawnResult {
@@ -247,6 +249,11 @@ impl ExecutionSpawnResult {
                 Ok(wait_result)
             }
             Self::Completed(result) => Ok(ExecutionWaitResult::Completed(result)),
+            Self::StartedTask(join_handle) => {
+                // DBG:RRO: no_wait
+                let result = join_handle.await?;
+                Ok(ExecutionWaitResult::Completed(result?))
+            }
         }
     }
 }

@@ -142,17 +142,18 @@ impl CommandCommand {
             None
         };
 
-        let mut cmd = commands::SimpleCommand::new(context, command_and_args);
+        let mut cmd = commands::SimpleCommand::new(
+            context,
+            context.params,
+            context.command_name,
+            command_and_args,
+        );
         cmd.use_functions = false;
         cmd.path_dirs = path_dirs;
 
-        match cmd.execute().await? {
-            ExecutionSpawnResult::StartedProcess(mut child) => {
-                // TODO: jobs: review this logic
-                let wait_result = child.wait().await?;
-                Ok(ExecutionResult::from(wait_result))
-            }
-            ExecutionSpawnResult::Completed(result) => Ok(result),
-        }
+        let spawn_result = cmd.execute().await?;
+        let wait_result = spawn_result.wait(false).await?;
+
+        Ok(wait_result.into())
     }
 }
