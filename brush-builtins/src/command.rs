@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
-    ExecutionResult, ExecutionSpawnResult, builtins, commands, pathsearch,
+    ExecutionResult, builtins, commands, pathsearch,
     sys::{self, fs::PathExt},
 };
 
@@ -143,7 +143,7 @@ impl CommandCommand {
         };
 
         let mut cmd = commands::SimpleCommand::new(
-            context,
+            commands::ShellForCommand::ParentShell(context.shell),
             context.params,
             context.command_name,
             command_and_args,
@@ -152,7 +152,7 @@ impl CommandCommand {
         cmd.path_dirs = path_dirs;
 
         let spawn_result = cmd.execute().await?;
-        let wait_result = spawn_result.wait(false).await?;
+        let wait_result = spawn_result.wait().await?;
 
         Ok(wait_result.into())
     }
