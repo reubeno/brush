@@ -1033,6 +1033,7 @@ async fn expand_assignment(
         name: basic_expand_assignment_name(shell, params, &assignment.name).await?,
         value,
         append: assignment.append,
+        loc: assignment.loc.clone(),
     })
 }
 
