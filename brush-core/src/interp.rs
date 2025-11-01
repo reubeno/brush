@@ -46,37 +46,16 @@ impl From<std::process::Output> for results::ExecutionResult {
 
 /// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
-    /// The shell in which the command is being executed.
-    shell: PipelineCommandShell<'a>,
+    /// The shell in which the command should be executed.
+    shell: commands::ShellForCommand<'a>,
     /// Process group ID for spawned processes.
     process_group_id: Option<i32>,
 }
 
-enum PipelineCommandShell<'a> {
-    /// The pipeline command is run in the same shell as its parent; the provided
-    /// mutable reference allows modifying the parent shell.
-    ParentShell(&'a mut Shell),
-    /// The pipeline command is run in its own owned shell (which is also provided).
-    OwnedShell(Box<Shell>),
-}
-
-impl std::ops::Deref for PipelineCommandShell<'_> {
-    type Target = Shell;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            PipelineCommandShell::ParentShell(shell) => shell,
-            PipelineCommandShell::OwnedShell(shell) => shell,
-        }
-    }
-}
-
-impl std::ops::DerefMut for PipelineCommandShell<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            PipelineCommandShell::ParentShell(shell) => shell,
-            PipelineCommandShell::OwnedShell(shell) => shell,
-        }
+impl PipelineExecutionContext<'_> {
+    /// Returns whether the command is being executed in its own shell.
+    fn using_own_shell(&self) -> bool {
+        matches!(self.shell, commands::ShellForCommand::OwnedShell { .. })
     }
 }
 
@@ -218,7 +197,7 @@ pub trait Execute {
 trait ExecuteInPipeline {
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext<'_>,
+        context: PipelineExecutionContext<'_>,
         params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error>;
 }
@@ -467,29 +446,40 @@ async fn spawn_pipeline_processes(
             cmd_params.open_files.set(OpenFiles::STDOUT_FD, writer);
         }
 
-        let mut pipeline_context = if !run_in_current_shell {
+        let pipeline_context = if !run_in_current_shell {
             // Make sure that all commands in the pipeline are in the same process group.
             if current_pipeline_index > 0 {
                 cmd_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
             }
 
             PipelineExecutionContext {
-                shell: PipelineCommandShell::OwnedShell(Box::new(shell.clone())),
+                shell: commands::ShellForCommand::OwnedShell {
+                    target: Box::new(shell.clone()),
+                    parent: shell,
+                },
                 process_group_id,
             }
         } else {
             PipelineExecutionContext {
-                shell: PipelineCommandShell::ParentShell(shell),
+                shell: commands::ShellForCommand::ParentShell(shell),
                 process_group_id,
             }
         };
 
-        spawn_results.push_back(
-            command
-                .execute_in_pipeline(&mut pipeline_context, cmd_params)
-                .await?,
-        );
-        process_group_id = pipeline_context.process_group_id;
+        let spawn_result = command
+            .execute_in_pipeline(pipeline_context, cmd_params)
+            .await?;
+
+        // DBG:RRO
+
+        // Update the process group ID if something was spawned.
+        if let ExecutionSpawnResult::StartedProcess(child) = &spawn_result {
+            if process_group_id.is_none() {
+                process_group_id = child.pgid();
+            }
+        }
+
+        spawn_results.push_back(spawn_result);
     }
 
     Ok(spawn_results)
@@ -550,7 +540,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 impl ExecuteInPipeline for ast::Command {
     async fn execute_in_pipeline(
         &self,
-        pipeline_context: &mut PipelineExecutionContext<'_>,
+        mut pipeline_context: PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         if pipeline_context.shell.options.do_not_execute_commands {
@@ -960,7 +950,7 @@ impl Execute for ast::FunctionDefinition {
 impl ExecuteInPipeline for ast::SimpleCommand {
     async fn execute_in_pipeline(
         &self,
-        context: &mut PipelineExecutionContext<'_>,
+        mut context: PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let prefix_iter = self.prefix.as_ref().map(|s| s.0.iter()).unwrap_or_default();
@@ -1114,7 +1104,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 }
 
 async fn execute_command(
-    context: &mut PipelineExecutionContext<'_>,
+    mut context: PipelineExecutionContext<'_>,
     params: ExecutionParameters,
     cmd_name: String,
     assignments: Vec<&ast::Assignment>,
@@ -1124,6 +1114,7 @@ async fn execute_command(
     // set command-scoped variable assignments after doing so, and revert them before
     // returning.
     context.shell.env.push_scope(EnvironmentScope::Command);
+
     for assignment in &assignments {
         // Ensure it's tagged as exported and created in the command scope.
         apply_assignment(
@@ -1147,34 +1138,19 @@ async fn execute_command(
             .await?;
     }
 
-    let cmd_context = commands::ExecutionContext {
-        shell: &mut context.shell,
-        command_name: cmd_name,
-        params,
-    };
-
     // Construct the command struct.
-    let mut cmd = commands::SimpleCommand::new(cmd_context, args);
+    let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name, args);
     cmd.process_group_id = context.process_group_id;
+
+    // Arrange to pop off that ephemeral environment scope.
+    cmd.post_execute = Some(|shell| shell.env.pop_scope(EnvironmentScope::Command));
 
     // Run through any pre-execution hooks.
     commands::on_preexecute(&mut cmd).await?;
 
     // Execute
-    let execution_result = cmd.execute().await;
-
-    // Pop off that ephemeral environment scope.
     // TODO: jobs: do we need to move self back to foreground on error here?
-    context.shell.env.pop_scope(EnvironmentScope::Command)?;
-
-    // Update the process group ID if something was spawned.
-    if let Ok(ExecutionSpawnResult::StartedProcess(child)) = &execution_result {
-        if context.process_group_id.is_none() {
-            context.process_group_id = child.pgid();
-        }
-    }
-
-    execution_result
+    cmd.execute().await
 }
 
 async fn expand_assignment(
