@@ -1,0 +1,275 @@
+name: "Builtins: fc"
+cases:
+  - name: "fc -l lists recent commands"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      fc -l
+
+  - name: "fc -l with range (positive indices)"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      : cmd4
+      : cmd5
+      fc -l 2 4
+
+  - name: "fc -l with single argument"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      fc -l 2
+
+  - name: "fc -l with negative indices"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      : cmd4
+      : cmd5
+      fc -l -3 -1
+
+  - name: "fc -l with string search"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    ignore_stderr: true
+    stdin: |
+      : cmd1
+      : other
+      : cmd2
+      : something
+      fc -l cmd
+
+  - name: "fc -l with -n (no line numbers)"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      fc -ln
+
+  - name: "fc -l with -r (reverse order)"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      fc -lr
+
+  - name: "fc -l with -n and -r combined"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      fc -lnr
+
+  - name: "fc -l with range and -r"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      : cmd4
+      : cmd5
+      fc -lr 2 4
+
+  - name: "fc -l 0 means -1"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      fc -l 0
+
+  - name: "fc -l defaults to last 16 commands"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      : cmd4
+      : cmd5
+      : cmd6
+      : cmd7
+      : cmd8
+      : cmd9
+      : cmd10
+      : cmd11
+      : cmd12
+      : cmd13
+      : cmd14
+      : cmd15
+      : cmd16
+      : cmd17
+      : cmd18
+      fc -l
+
+  - name: "fc -s re-executes last command"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo hello
+      fc -s
+
+  - name: "fc -s with command argument"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo hello
+      echo world
+      fc -s echo
+
+  - name: "fc -s with pattern replacement"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo hello
+      fc -s hello=goodbye
+
+  - name: "fc -s with command number"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo first
+      echo second
+      echo third
+      fc -s 1
+
+  - name: "fc -s with negative offset"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo first
+      echo second
+      echo third
+      fc -s -2
+
+  - name: "fc -s with string prefix match"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    ignore_stderr: true
+    stdin: |
+      echo aaa
+      echo bbb
+      echo aac
+      fc -s aa
+
+  - name: "fc -s with pattern replacement and command number"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo first
+      echo second
+      echo hello
+      fc -s hello=goodbye 3
+
+  - name: "fc -s with pattern replacement and string prefix"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo aaa
+      : somecommand
+      echo hello world
+      fc -s hello=goodbye echo
+
+  - name: "fc -s with pattern replacement and negative index"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      echo two
+      echo hello world
+      fc -s hello=goodbye -1
+
+  - name: "fc -s pattern replacement when pattern doesn't match"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo hello
+      fc -s xyz=abc
+
+  - name: "fc -s pattern replacement replaces all occurrences"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo test test test
+      fc -s test=foo
+
+  - name: "fc -s with empty replacement"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo hello world
+      fc -s hello=
+
+  - name: "fc with invalid range"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      fc -l 100 200
+    expect_status: 1
+
+  - name: "fc -s with nonexistent command"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    ignore_stderr: true
+    stdin: |
+      echo hello
+      fc -s xyz
+    expect_status: 1
+
+  - name: "fc -l with both string and number"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    ignore_stderr: true
+    stdin: |
+      : cmd1
+      : cmd2
+      : cmd3
+      : other
+      fc -l cmd 3
