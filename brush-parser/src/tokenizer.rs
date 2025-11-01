@@ -72,9 +72,9 @@ pub struct TokenLocation {
 impl TokenLocation {
     /// Returns the length of the token in characters.
     #[allow(clippy::cast_sign_loss)]
-    pub const fn length(&self) -> usize {
-        (self.end.index - self.start.index) as usize
-
+    pub fn length(&self) -> usize {
+        self.end.index - self.start.index
+    }
     pub(crate) fn within(start: &Self, end: &Self) -> Self {
         Self {
             start: start.start.clone(),
