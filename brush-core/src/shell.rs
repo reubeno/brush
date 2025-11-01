@@ -527,7 +527,7 @@ impl Shell {
         })?;
 
         let def = brush_parser::ast::FunctionDefinition {
-            fname: name.clone(),
+            fname: name.clone().into(),
             body: func_body,
             source: String::new(),
         };

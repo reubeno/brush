@@ -74,6 +74,12 @@ impl TokenLocation {
     pub fn length(&self) -> usize {
         self.end.index - self.start.index
     }
+    pub(crate) fn within(start: &Self, end: &Self) -> Self {
+        Self {
+            start: start.start.clone(),
+            end: end.end.clone(),
+        }
+    }
 }
 
 /// Represents a token extracted from a shell script.
