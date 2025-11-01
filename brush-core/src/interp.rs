@@ -284,25 +284,22 @@ impl Execute for ast::Pipeline {
             if let Some(stderr) = params.open_files.stderr() {
                 let timing = stopwatch.unwrap().stop()?;
 
-                match timed {
-                    ast::PipelineTimed::Timed => {
-                        std::write!(
-                            stderr.to_owned(),
-                            "\nreal\t{}\nuser\t{}\nsys\t{}\n",
-                            timing::format_duration_non_posixly(&timing.wall),
-                            timing::format_duration_non_posixly(&timing.user),
-                            timing::format_duration_non_posixly(&timing.system),
-                        )?;
-                    }
-                    ast::PipelineTimed::TimedWithPosixOutput => {
-                        std::write!(
-                            stderr.to_owned(),
-                            "real {}\nuser {}\nsys {}\n",
-                            timing::format_duration_posixly(&timing.wall),
-                            timing::format_duration_posixly(&timing.user),
-                            timing::format_duration_posixly(&timing.system),
-                        )?;
-                    }
+                if timed.is_posix_output() {
+                    std::write!(
+                        stderr.to_owned(),
+                        "real {}\nuser {}\nsys {}\n",
+                        timing::format_duration_posixly(&timing.wall),
+                        timing::format_duration_posixly(&timing.user),
+                        timing::format_duration_posixly(&timing.system),
+                    )?;
+                } else {
+                    std::write!(
+                        stderr.to_owned(),
+                        "\nreal\t{}\nuser\t{}\nsys\t{}\n",
+                        timing::format_duration_non_posixly(&timing.wall),
+                        timing::format_duration_non_posixly(&timing.user),
+                        timing::format_duration_non_posixly(&timing.system),
+                    )?;
                 }
             }
         }
@@ -460,14 +457,17 @@ impl ExecuteInPipeline for ast::Command {
             }
             Self::Function(func) => Ok(func.execute(pipeline_context.shell, &params).await?.into()),
             Self::ExtendedTest(e) => {
-                let result =
-                    if extendedtests::eval_extended_test_expr(e, pipeline_context.shell, &params)
-                        .await?
-                    {
-                        0
-                    } else {
-                        1
-                    };
+                let result = if extendedtests::eval_extended_test_expr(
+                    &e.expr,
+                    pipeline_context.shell,
+                    &params,
+                )
+                .await?
+                {
+                    0
+                } else {
+                    1
+                };
                 Ok(ExecutionResult::new(result).into())
             }
         }
@@ -487,11 +487,13 @@ impl Execute for ast::CompoundCommand {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         match self {
-            Self::BraceGroup(ast::BraceGroupCommand(g)) => g.execute(shell, params).await,
-            Self::Subshell(ast::SubshellCommand(s)) => {
+            Self::BraceGroup(ast::BraceGroupCommand { list, .. }) => {
+                list.execute(shell, params).await
+            }
+            Self::Subshell(ast::SubshellCommand { list, .. }) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 let mut subshell = shell.clone();
-                let subshell_result = s.execute(&mut subshell, params).await?;
+                let subshell_result = list.execute(&mut subshell, params).await?;
 
                 // Preserve the subshell's exit code, but don't honor any of its requests to exit
                 // the shell, break out of loops, etc.
@@ -557,7 +559,7 @@ impl Execute for ast::ForClauseCommand {
                 EnvironmentScope::Global,
             )?;
 
-            result = self.body.0.execute(shell, params).await?;
+            result = self.body.list.execute(shell, params).await?;
             if result.is_return_or_exit() {
                 break;
             }
@@ -721,7 +723,7 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
                 break;
             }
 
-            result = body.0.execute(shell, params).await?;
+            result = body.list.execute(shell, params).await?;
             if result.is_return_or_exit() {
                 break;
             }
@@ -778,7 +780,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
                 }
             }
 
-            result = self.body.0.execute(shell, params).await?;
+            result = self.body.list.execute(shell, params).await?;
             if result.is_return_or_exit() {
                 break;
             }
@@ -808,7 +810,7 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell.define_func(self.fname.clone(), self.clone());
+        shell.define_func(self.fname.value.clone(), self.clone());
 
         let result = ExecutionResult::success();
         *shell.last_exit_status_mut() = result.exit_code.into();
@@ -1031,6 +1033,7 @@ async fn expand_assignment(
         name: basic_expand_assignment_name(shell, params, &assignment.name).await?,
         value,
         append: assignment.append,
+        loc: assignment.loc.clone(),
     })
 }
 
@@ -1063,9 +1066,7 @@ async fn expand_assignment_value(
     let expanded = match value {
         ast::AssignmentValue::Scalar(s) => {
             let expanded_word = expansion::basic_expand_word(shell, params, s).await?;
-            ast::AssignmentValue::Scalar(ast::Word {
-                value: expanded_word,
-            })
+            ast::AssignmentValue::Scalar(ast::Word::from(expanded_word))
         }
         ast::AssignmentValue::Array(arr) => {
             let mut expanded_values = vec![];
@@ -1558,7 +1559,10 @@ fn setup_process_substitution(
     let subshell_cmd = subshell_cmd.to_owned();
     tokio::spawn(async move {
         // Intentionally ignore the result of the subshell command.
-        let _ = subshell_cmd.0.execute(&mut subshell, &child_params).await;
+        let _ = subshell_cmd
+            .list
+            .execute(&mut subshell, &child_params)
+            .await;
     });
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
