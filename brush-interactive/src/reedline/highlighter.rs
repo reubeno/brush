@@ -122,7 +122,6 @@ impl<'a> StyledInputLine<'a> {
     }
 
     fn style_and_append_program(&mut self, line: &str, global_offset: usize) {
-        #[expect(clippy::cast_sign_loss)]
         if let Ok(tokens) = brush_parser::tokenize_str_with_options(
             line,
             &(self.shell.parser_options().tokenizer_options()),
@@ -133,8 +132,8 @@ impl<'a> StyledInputLine<'a> {
                     brush_parser::Token::Operator(_op, token_location) => {
                         self.append_style(
                             styles::operator(),
-                            global_offset + token_location.start.index as usize,
-                            global_offset + token_location.end.index as usize,
+                            global_offset + token_location.start.index,
+                            global_offset + token_location.end.index,
                         );
                     }
                     brush_parser::Token::Word(w, token_location) => {
@@ -151,7 +150,7 @@ impl<'a> StyledInputLine<'a> {
                                 self.style_and_append_word_piece(
                                     word_piece,
                                     default_text_style,
-                                    global_offset + token_location.start.index as usize,
+                                    global_offset + token_location.start.index,
                                 );
                             }
                         }
@@ -312,9 +311,7 @@ impl<'a> StyledInputLine<'a> {
         }
 
         // Short-circuit if the cursor is still in this token.
-        #[expect(clippy::cast_sign_loss)]
-        if (self.cursor >= token_location.start.index as usize)
-            && (self.cursor <= token_location.end.index as usize)
+        if (self.cursor >= token_location.start.index) && (self.cursor <= token_location.end.index)
         {
             return CommandType::Unknown;
         }
