@@ -457,14 +457,17 @@ impl ExecuteInPipeline for ast::Command {
             }
             Self::Function(func) => Ok(func.execute(pipeline_context.shell, &params).await?.into()),
             Self::ExtendedTest(e) => {
-                let result =
-                    if extendedtests::eval_extended_test_expr(e, pipeline_context.shell, &params)
-                        .await?
-                    {
-                        0
-                    } else {
-                        1
-                    };
+                let result = if extendedtests::eval_extended_test_expr(
+                    &e.expr,
+                    pipeline_context.shell,
+                    &params,
+                )
+                .await?
+                {
+                    0
+                } else {
+                    1
+                };
                 Ok(ExecutionResult::new(result).into())
             }
         }

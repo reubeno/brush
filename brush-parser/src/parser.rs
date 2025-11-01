@@ -421,8 +421,14 @@ peg::parser! {
                 ast::ArithmeticForClauseCommand { initializer, condition, updater, body, loc }
             }
 
-        rule extended_test_command() -> ast::ExtendedTestExpr =
-            specific_word("[[") linebreak() e:extended_test_expression() linebreak() specific_word("]]") { e }
+        rule extended_test_command() -> ast::ExtendedTestExprCommand =
+            s:specific_word("[[") linebreak() expr:extended_test_expression() linebreak() e:specific_word("]]") {
+                let start = s.location();
+                let end = e.location();
+                let loc = TokenLocation::within(start, end);
+
+                ast::ExtendedTestExprCommand { expr, loc }
+            }
 
         rule extended_test_expression() -> ast::ExtendedTestExpr = precedence! {
             left:(@) linebreak() specific_operator("||") linebreak() right:@ { ast::ExtendedTestExpr::Or(Box::from(left), Box::from(right)) }
