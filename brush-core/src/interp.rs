@@ -10,39 +10,13 @@ use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
-    self, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
+    ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
 use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{ShellFd, error, expansion, extendedtests, jobs, openfiles, processes, sys, timing};
-
-impl From<processes::ProcessWaitResult> for results::ExecutionResult {
-    fn from(wait_result: processes::ProcessWaitResult) -> Self {
-        match wait_result {
-            processes::ProcessWaitResult::Completed(output) => output.into(),
-            processes::ProcessWaitResult::Stopped => Self::stopped(),
-        }
-    }
-}
-
-impl From<std::process::Output> for results::ExecutionResult {
-    fn from(output: std::process::Output) -> Self {
-        if let Some(code) = output.status.code() {
-            #[expect(clippy::cast_sign_loss)]
-            return Self::new((code & 0xFF) as u8);
-        }
-
-        if let Some(signal) = output.status.signal() {
-            #[expect(clippy::cast_sign_loss)]
-            return Self::new((signal & 0xFF) as u8 + 128);
-        }
-
-        tracing::error!("unhandled process exit");
-        Self::new(127)
-    }
-}
+use crate::{ShellFd, error, expansion, extendedtests, jobs, openfiles, sys, timing};
 
 /// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
@@ -463,8 +437,6 @@ async fn spawn_pipeline_processes(
             .execute_in_pipeline(pipeline_context, cmd_params)
             .await?;
 
-        // DBG:RRO
-
         // Update the process group ID if something was spawned.
         if let ExecutionSpawnResult::StartedProcess(child) = &spawn_result {
             if process_group_id.is_none() {
@@ -491,7 +463,13 @@ async fn wait_for_pipeline_processes_and_update_status(
     shell.last_pipeline_statuses.clear();
 
     while let Some(child) = process_spawn_results.pop_front() {
-        match child.wait(!stopped_children.is_empty()).await? {
+        let wait_result = if !stopped_children.is_empty() {
+            child.poll().await?
+        } else {
+            child.wait().await?
+        };
+
+        match wait_result {
             ExecutionWaitResult::Completed(current_result) => {
                 result = current_result;
                 *shell.last_exit_status_mut() = result.exit_code.into();
@@ -1066,6 +1044,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 Err(err) => {
                     // DBG:RRO
                     // let _ = context.shell.display_error(&mut stderr, &err).await;
+                    // TODO: Use the error formatter.
                     let _ = writeln!(stderr, "error: {err:#}");
 
                     let result = err.into_result(context.shell);

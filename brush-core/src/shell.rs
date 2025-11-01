@@ -842,7 +842,7 @@ impl Shell {
 
         let result = commands::invoke_shell_function(func, context, &command_args).await?;
 
-        match result.wait(false).await? {
+        match result.wait().await? {
             ExecutionWaitResult::Completed(result) => Ok(result.exit_code.into()),
             ExecutionWaitResult::Stopped(..) => {
                 error::unimp("stopped child from function invocation")
