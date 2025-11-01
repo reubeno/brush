@@ -52,13 +52,6 @@ struct PipelineExecutionContext<'a> {
     process_group_id: Option<i32>,
 }
 
-impl PipelineExecutionContext<'_> {
-    /// Returns whether the command is being executed in its own shell.
-    fn using_own_shell(&self) -> bool {
-        matches!(self.shell, commands::ShellForCommand::OwnedShell { .. })
-    }
-}
-
 /// Parameters for execution.
 #[derive(Clone, Default)]
 pub struct ExecutionParameters {
@@ -1071,7 +1064,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
-                    let _ = context.shell.display_error(&mut stderr, &err).await;
+                    // DBG:RRO
+                    // let _ = context.shell.display_error(&mut stderr, &err).await;
+                    let _ = writeln!(stderr, "error: {err:#}");
 
                     let result = err.into_result(context.shell);
                     Ok(result.into())
