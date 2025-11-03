@@ -1,7 +1,6 @@
 //! Terminal utilities.
 
 use crate::{error, sys, terminal};
-use std::os::fd::AsFd;
 
 /// Terminal configuration.
 #[derive(Clone, Debug)]
@@ -15,7 +14,7 @@ impl Config {
     /// # Arguments
     ///
     /// * `_fd` - The file descriptor of the terminal.
-    pub fn from_term(_fd: impl AsFd) -> Result<Self, error::Error> {
+    pub fn from_term<Fd>(_fd: Fd) -> Result<Self, error::Error> {
         Ok(Self)
     }
 
@@ -24,7 +23,7 @@ impl Config {
     /// # Arguments
     ///
     /// * `_fd` - The file descriptor of the terminal.
-    pub fn apply_to_term(&self, _fd: impl AsFd) -> Result<(), error::Error> {
+    pub fn apply_to_term<Fd>(&self, _fd: Fd) -> Result<(), error::Error> {
         Ok(())
     }
 
