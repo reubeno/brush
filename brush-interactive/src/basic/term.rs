@@ -4,13 +4,16 @@ pub(crate) struct TerminalMode {
     initial_attr: brush_core::sys::terminal::TerminalSettings,
 }
 
+#[allow(dead_code)]
+#[allow(clippy::missing_const_for_fn)]
+#[allow(clippy::unused_self)]
+#[allow(clippy::unnecessary_wraps)]
 impl TerminalMode {
     pub fn new() -> Result<Self, ShellError> {
         let initial_attr = brush_core::sys::terminal::get_term_attr(std::io::stdin())?;
         Ok(Self { initial_attr })
     }
 
-    #[allow(dead_code)]
     pub fn enable_canonical_mode(&self) -> Result<(), ShellError> {
         #[cfg(unix)]
         self.update_termios(|termios| {
@@ -27,7 +30,6 @@ impl TerminalMode {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn enable_int_signal(&self) -> Result<(), ShellError> {
         #[cfg(unix)]
         self.update_termios(|termios| {
@@ -52,7 +54,6 @@ impl TerminalMode {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn disable_output_processing(&self) -> Result<(), ShellError> {
         #[cfg(unix)]
         self.update_termios(|termios| {
@@ -61,7 +62,6 @@ impl TerminalMode {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn enable_echo(&self) -> Result<(), ShellError> {
         #[cfg(unix)]
         self.update_termios(|termios| {
@@ -86,7 +86,6 @@ impl TerminalMode {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn disable_nlcr(&self) -> Result<(), ShellError> {
         #[cfg(unix)]
         self.update_termios(|termios| {
