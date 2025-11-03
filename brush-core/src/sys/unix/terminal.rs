@@ -4,7 +4,7 @@ use crate::{error, sys};
 use std::{io::IsTerminal, os::fd::AsFd};
 
 /// Terminal settings.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TerminalSettings {
     termios: nix::sys::termios::Termios,
 }
