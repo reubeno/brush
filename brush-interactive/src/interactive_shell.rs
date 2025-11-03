@@ -72,7 +72,7 @@ pub trait InteractiveShell: Send {
         async {
             // Acquire terminal control if stdin is a terminal.
             if std::io::stdin().is_terminal() {
-                brush_core::TerminalControl::acquire()?;
+                brush_core::terminal::TerminalControl::acquire()?;
             }
 
             let mut announce_exit = self.shell().as_ref().options.interactive;

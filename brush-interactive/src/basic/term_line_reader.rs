@@ -7,26 +7,30 @@
 use crossterm::ExecutableCommand;
 use std::io::Write;
 
-use super::term;
 use crate::{ReadResult, ShellError};
 
 const BACKSPACE: char = 8u8 as char;
 
 pub(crate) struct TermLineReader {
-    term_mode: term::TerminalMode,
+    term_mode: brush_core::terminal::AutoModeGuard,
 }
 
 impl TermLineReader {
     pub fn new() -> Result<Self, ShellError> {
         let reader = Self {
-            term_mode: term::TerminalMode::new()?,
+            term_mode: brush_core::terminal::AutoModeGuard::new(
+                brush_core::openfiles::OpenFile::Stdin(std::io::stdin()),
+            )?,
         };
 
-        reader.term_mode.disable_int_signal()?;
-        reader.term_mode.disable_canonical_mode()?;
-        reader.term_mode.enable_output_processing()?;
-        reader.term_mode.disable_echo()?;
-        reader.term_mode.enable_nlcr()?;
+        let settings = brush_core::terminal::Settings::builder()
+            .echo_input(false)
+            .line_input(false)
+            .interrupt_signals(false)
+            .output_nl_as_nlcr(true)
+            .build();
+
+        reader.term_mode.apply_settings(&settings)?;
 
         Ok(reader)
     }
@@ -140,9 +144,6 @@ impl<'a> ReadLineState<'a> {
         self.cursor += c.len_utf8();
         eprint!("{c}");
         std::io::stderr().flush()?;
-
-        // std::time::SystemTime::now().
-        // eprintln!("JUST WROTE!");
 
         Ok(())
     }

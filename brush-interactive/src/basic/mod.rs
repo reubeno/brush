@@ -1,6 +1,5 @@
 mod basic_shell;
 mod non_term_line_reader;
-mod term;
 mod term_line_reader;
 
 pub use basic_shell::BasicShell;

@@ -1,74 +1,99 @@
 //! Terminal utilities.
 
-use crate::{error, sys};
+use crate::{error, sys, terminal};
 use std::{io::IsTerminal, os::fd::AsFd};
 
-/// Terminal settings.
+/// Terminal configuration.
 #[derive(Clone, Debug)]
-pub struct TerminalSettings {
+pub struct Config {
     termios: nix::sys::termios::Termios,
 }
 
-impl TerminalSettings {
-    /// Sets canonical mode.
+impl Config {
+    /// Creates a new `Config` from the actual terminal attributes of the terminal associated
+    /// with the given file descriptor.
     ///
     /// # Arguments
     ///
-    /// * `value` - If true, enable canonical mode; if false, disable it.
-    pub fn set_canonical(&mut self, value: bool) {
-        self.set_local_flag(nix::sys::termios::LocalFlags::ICANON, value);
+    /// * `fd` - The file descriptor of the terminal.
+    pub fn from_term(fd: impl AsFd) -> Result<Self, error::Error> {
+        let termios = nix::sys::termios::tcgetattr(fd)?;
+        Ok(Self { termios })
     }
 
-    /// Sets echo mode.
+    /// Applies the terminal settings to the terminal associated with the given file descriptor.
     ///
     /// # Arguments
     ///
-    /// * `value` - If true, enable echo; if false, disable it.
-    pub fn set_echo(&mut self, value: bool) {
-        self.set_local_flag(nix::sys::termios::LocalFlags::ICANON, value);
+    /// * `fd` - The file descriptor of the terminal.
+    pub fn apply_to_term(&self, fd: impl AsFd) -> Result<(), error::Error> {
+        nix::sys::termios::tcsetattr(fd, nix::sys::termios::SetArg::TCSANOW, &self.termios)?;
+        Ok(())
     }
 
-    /// Set interrupt signal mode.
+    /// Applies the given high-level terminal settings to this configuration. Does not modify any
+    /// terminal itself.
     ///
     /// # Arguments
     ///
-    /// * `value` - If true, enable interrupt signal; if false, disable it.
-    pub fn set_int_signal(&mut self, value: bool) {
-        self.set_local_flag(nix::sys::termios::LocalFlags::ISIG, value);
-    }
+    /// * `settings` - The high-level terminal settings to apply to this configuration.
+    pub fn update(&mut self, settings: &terminal::Settings) {
+        if let Some(echo_input) = &settings.echo_input {
+            if *echo_input {
+                self.termios.local_flags |= nix::sys::termios::LocalFlags::ECHO;
+            } else {
+                self.termios.local_flags -= nix::sys::termios::LocalFlags::ECHO;
+            }
+        }
 
-    fn set_local_flag(&mut self, flag: nix::sys::termios::LocalFlags, value: bool) {
-        if value {
-            self.termios.local_flags.insert(flag);
-        } else {
-            self.termios.local_flags.remove(flag);
+        if let Some(line_input) = &settings.line_input {
+            if *line_input {
+                self.termios.local_flags |= nix::sys::termios::LocalFlags::ICANON;
+            } else {
+                self.termios.local_flags -= nix::sys::termios::LocalFlags::ICANON;
+            }
+        }
+
+        if let Some(interrupt_signals) = &settings.interrupt_signals {
+            if *interrupt_signals {
+                self.termios.local_flags |= nix::sys::termios::LocalFlags::ISIG;
+            } else {
+                self.termios.local_flags -= nix::sys::termios::LocalFlags::ISIG;
+            }
+        }
+
+        if let Some(output_nl_as_nlcr) = &settings.output_nl_as_nlcr {
+            if *output_nl_as_nlcr {
+                self.termios.output_flags |=
+                    nix::sys::termios::OutputFlags::OPOST | nix::sys::termios::OutputFlags::ONLCR;
+            } else {
+                self.termios.output_flags -= nix::sys::termios::OutputFlags::ONLCR;
+            }
         }
     }
 }
 
-/// Gets the terminal attributes for the given file descriptor.
+/// Applies the given terminal settings to the terminal associated with the given file descriptor,
+/// returning the original terminal configuration.
 ///
 /// # Arguments
 ///
-/// * `fd` - The file descriptor to get the terminal attributes for.
-pub fn get_term_attr<Fd: AsFd>(fd: Fd) -> Result<TerminalSettings, error::Error> {
-    Ok(TerminalSettings {
-        termios: nix::sys::termios::tcgetattr(fd)?,
-    })
-}
-
-/// Sets the terminal attributes for the given file descriptor immediately.
-///
-/// # Arguments
-///
-/// * `fd` - The file descriptor to set the terminal attributes for.
+/// * `fd` - The file descriptor of the terminal.
 /// * `settings` - The terminal settings to apply.
-pub fn set_term_attr_now<Fd: AsFd>(
+pub fn apply_settings<Fd: AsFd>(
     fd: Fd,
-    settings: &TerminalSettings,
-) -> Result<(), error::Error> {
-    nix::sys::termios::tcsetattr(fd, nix::sys::termios::SetArg::TCSANOW, &settings.termios)?;
-    Ok(())
+    settings: &terminal::Settings,
+) -> Result<Config, error::Error> {
+    let fd = fd.as_fd();
+
+    let orig_config = Config::from_term(fd)?;
+
+    let mut new_config = orig_config.clone();
+    new_config.update(settings);
+
+    new_config.apply_to_term(fd)?;
+
+    Ok(orig_config)
 }
 
 /// Get the process ID of this process's parent.
