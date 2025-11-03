@@ -63,6 +63,7 @@ pub(crate) struct ReadCommand {
 impl builtins::Command for ReadCommand {
     type Error = brush_core::Error;
 
+    #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
@@ -102,83 +103,96 @@ impl builtins::Command for ReadCommand {
             .params
             .fd(brush_core::openfiles::OpenFiles::STDOUT_FD)
             .unwrap();
-        let input_line = self.read_line(input_stream, stdout_file)?;
 
-        if let Some(input_line) = input_line {
-            // If -a was specified, then place the fields as elements into the array.
-            if let Some(array_variable) = &self.array_variable {
+        let input_line = self.read_line(input_stream, stdout_file)?;
+        let result = if input_line.is_some() {
+            brush_core::ExecutionResult::success()
+        } else {
+            brush_core::ExecutionResult::general_error()
+        };
+
+        // If -a was specified, then place the fields as elements into the array.
+        if let Some(array_variable) = &self.array_variable {
+            let literal_fields = if let Some(input_line) = input_line {
                 let fields: VecDeque<_> = split_line_by_ifs(
                     ifs.as_ref(),
                     input_line.as_str(),
                     None, /* max_fields */
                 );
-                let literal_fields = fields.into_iter().map(|f| (None, f)).collect();
 
-                context.shell.env.update_or_add(
-                    array_variable,
-                    variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )?;
-            } else if !self.variable_names.is_empty() {
-                let mut fields: VecDeque<_> = split_line_by_ifs(
+                fields.into_iter().map(|f| (None, f)).collect()
+            } else {
+                vec![]
+            };
+
+            context.shell.env.update_or_add(
+                array_variable,
+                variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+        } else if !self.variable_names.is_empty() {
+            let mut fields: VecDeque<_> = if let Some(input_line) = input_line {
+                split_line_by_ifs(
                     ifs.as_ref(),
                     input_line.as_str(),
                     /* max_fields */ Some(self.variable_names.len()),
-                );
-
-                for (i, name) in self.variable_names.iter().enumerate() {
-                    if fields.is_empty() {
-                        // Ensure the var is empty.
-                        context.shell.env.update_or_add(
-                            name,
-                            variables::ShellValueLiteral::Scalar(String::new()),
-                            |_| Ok(()),
-                            env::EnvironmentLookup::Anywhere,
-                            env::EnvironmentScope::Global,
-                        )?;
-                        continue;
-                    }
-
-                    let last = i == self.variable_names.len() - 1;
-                    if !last {
-                        let next_field = fields.pop_front().unwrap();
-                        context.shell.env.update_or_add(
-                            name,
-                            variables::ShellValueLiteral::Scalar(next_field),
-                            |_| Ok(()),
-                            env::EnvironmentLookup::Anywhere,
-                            env::EnvironmentScope::Global,
-                        )?;
-                    } else {
-                        let remaining_fields = fields.into_iter().join(" ");
-                        context.shell.env.update_or_add(
-                            name,
-                            variables::ShellValueLiteral::Scalar(remaining_fields),
-                            |_| Ok(()),
-                            env::EnvironmentLookup::Anywhere,
-                            env::EnvironmentScope::Global,
-                        )?;
-                        break;
-                    }
-                }
+                )
             } else {
-                // If no variable names were specified, then place everything into the
-                // REPLY variable.
-                context.shell.env.update_or_add(
-                    "REPLY",
-                    variables::ShellValueLiteral::Scalar(input_line),
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )?;
-            }
+                VecDeque::new()
+            };
 
-            Ok(brush_core::ExecutionResult::success())
+            for (i, name) in self.variable_names.iter().enumerate() {
+                if fields.is_empty() {
+                    // Ensure the var is empty.
+                    context.shell.env.update_or_add(
+                        name,
+                        variables::ShellValueLiteral::Scalar(String::new()),
+                        |_| Ok(()),
+                        env::EnvironmentLookup::Anywhere,
+                        env::EnvironmentScope::Global,
+                    )?;
+                    continue;
+                }
+
+                let last = i == self.variable_names.len() - 1;
+                if !last {
+                    let next_field = fields.pop_front().unwrap();
+                    context.shell.env.update_or_add(
+                        name,
+                        variables::ShellValueLiteral::Scalar(next_field),
+                        |_| Ok(()),
+                        env::EnvironmentLookup::Anywhere,
+                        env::EnvironmentScope::Global,
+                    )?;
+                } else {
+                    let remaining_fields = fields.into_iter().join(" ");
+                    context.shell.env.update_or_add(
+                        name,
+                        variables::ShellValueLiteral::Scalar(remaining_fields),
+                        |_| Ok(()),
+                        env::EnvironmentLookup::Anywhere,
+                        env::EnvironmentScope::Global,
+                    )?;
+                    break;
+                }
+            }
         } else {
-            Ok(brush_core::ExecutionResult::general_error())
+            let input_line = input_line.unwrap_or_default();
+
+            // If no variable names were specified, then place everything into the
+            // REPLY variable.
+            context.shell.env.update_or_add(
+                "REPLY",
+                variables::ShellValueLiteral::Scalar(input_line),
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
         }
+
+        Ok(result)
     }
 }
 
