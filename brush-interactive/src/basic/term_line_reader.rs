@@ -7,25 +7,53 @@
 use crossterm::ExecutableCommand;
 use std::io::Write;
 
-use super::raw_mode;
 use crate::{ReadResult, ShellError};
 
 const BACKSPACE: char = 8u8 as char;
 
-pub(crate) fn read_line(
-    prompt: &str,
-    mut completion_handler: impl FnMut(
-        &str,
-        usize,
-    ) -> Result<brush_core::completion::Completions, ShellError>,
-) -> Result<ReadResult, ShellError> {
-    let mut state = ReadLineState::new(prompt)?;
+pub(crate) struct TermLineReader {
+    term_mode: brush_core::terminal::AutoModeGuard,
+}
 
-    loop {
-        state.raw_mode.enable()?;
-        if let crossterm::event::Event::Key(event) = crossterm::event::read()? {
-            if let Some(result) = state.on_key(event, &mut completion_handler)? {
-                return Ok(result);
+impl TermLineReader {
+    pub fn new() -> Result<Self, ShellError> {
+        let reader = Self {
+            term_mode: brush_core::terminal::AutoModeGuard::new(
+                brush_core::openfiles::OpenFile::Stdin(std::io::stdin()),
+            )?,
+        };
+
+        let settings = brush_core::terminal::Settings::builder()
+            .echo_input(false)
+            .line_input(false)
+            .interrupt_signals(false)
+            .output_nl_as_nlcr(true)
+            .build();
+
+        reader.term_mode.apply_settings(&settings)?;
+
+        Ok(reader)
+    }
+}
+
+impl super::LineReader for TermLineReader {
+    fn read_line(
+        &self,
+        prompt: Option<&str>,
+        mut completion_handler: impl FnMut(
+            &str,
+            usize,
+        )
+            -> Result<brush_core::completion::Completions, ShellError>,
+    ) -> Result<ReadResult, ShellError> {
+        let mut state = ReadLineState::new(prompt);
+        state.display_prompt()?;
+
+        loop {
+            if let crossterm::event::Event::Key(event) = crossterm::event::read()? {
+                if let Some(result) = state.on_key(event, &mut completion_handler)? {
+                    return Ok(result);
+                }
             }
         }
     }
@@ -39,26 +67,23 @@ struct ReadLineState<'a> {
     // be at a clean character boundary.
     cursor: usize,
     // Current prompt to use.
-    prompt: &'a str,
-    // State of input mode.
-    raw_mode: raw_mode::RawModeToggle,
+    prompt: Option<&'a str>,
 }
 
 impl<'a> ReadLineState<'a> {
-    fn new(prompt: &'a str) -> Result<Self, ShellError> {
-        Ok(Self {
+    const fn new(prompt: Option<&'a str>) -> Self {
+        Self {
             line: String::new(),
             cursor: 0,
             prompt,
-            raw_mode: raw_mode::RawModeToggle::new()?,
-        })
+        }
     }
 
-    fn display_prompt(&self) -> Result<(), ShellError> {
-        self.raw_mode.disable()?;
-        eprint!("{}", self.prompt);
-        self.raw_mode.enable()?;
-        std::io::stderr().flush()?;
+    pub fn display_prompt(&self) -> Result<(), ShellError> {
+        if let Some(prompt) = self.prompt {
+            eprint!("{prompt}");
+            std::io::stderr().flush()?;
+        }
         Ok(())
     }
 
@@ -74,7 +99,7 @@ impl<'a> ReadLineState<'a> {
         match (event.modifiers, event.code) {
             (_, crossterm::event::KeyCode::Enter)
             | (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('j')) => {
-                self.display_newline()?;
+                Self::display_newline()?;
                 self.line.push('\n');
                 let line = std::mem::take(&mut self.line);
                 return Ok(Some(ReadResult::Input(line)));
@@ -86,14 +111,12 @@ impl<'a> ReadLineState<'a> {
                 self.on_char(c)?;
             }
             (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('c')) => {
-                self.raw_mode.disable()?;
                 eprintln!("^C");
                 return Ok(Some(ReadResult::Interrupted));
             }
             (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('d')) => {
                 if self.line.is_empty() {
-                    self.raw_mode.disable()?;
-                    eprintln!();
+                    Self::display_newline()?;
                     return Ok(Some(ReadResult::Eof));
                 }
             }
@@ -125,10 +148,8 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
-    fn display_newline(&self) -> Result<(), ShellError> {
-        self.raw_mode.disable()?;
+    fn display_newline() -> Result<(), ShellError> {
         eprintln!();
-        self.raw_mode.enable()?;
         std::io::stderr().flush()?;
 
         Ok(())
@@ -158,7 +179,6 @@ impl<'a> ReadLineState<'a> {
         self.cursor = last_char_index;
         self.line.truncate(last_char_index);
 
-        self.raw_mode.disable()?;
         eprint!("{BACKSPACE}");
         eprint!("{} ", &self.line[self.cursor..]);
         eprint!(
@@ -166,16 +186,12 @@ impl<'a> ReadLineState<'a> {
             repeated_char_str(BACKSPACE, self.line.len() + 1 - self.cursor)
         );
 
-        self.raw_mode.enable()?;
-
         std::io::stderr().flush()?;
         Ok(())
     }
 
     fn move_cursor_left(&mut self) -> Result<(), ShellError> {
-        self.raw_mode.disable()?;
         eprint!("{BACKSPACE}");
-        self.raw_mode.enable()?;
         std::io::stderr().flush()?;
 
         self.cursor = self.cursor.saturating_sub(1);
@@ -238,7 +254,6 @@ impl<'a> ReadLineState<'a> {
         self.cursor = completions.insertion_index + candidate.len();
 
         let move_left = repeated_char_str(BACKSPACE, delete_count);
-        self.raw_mode.disable()?;
         eprint!("{move_left}{}", &self.line[redisplay_offset..]);
 
         // TODO: Remove trailing chars if completion is shorter?
@@ -247,7 +262,6 @@ impl<'a> ReadLineState<'a> {
             repeated_char_str(BACKSPACE, self.line.len() - self.cursor)
         );
 
-        self.raw_mode.enable()?;
         std::io::stderr().flush()?;
 
         Ok(())
@@ -258,27 +272,23 @@ impl<'a> ReadLineState<'a> {
         completions: &brush_core::completion::Completions,
     ) -> Result<(), ShellError> {
         // Display replacements.
-        self.raw_mode.disable()?;
-        eprintln!();
+        Self::display_newline()?;
         for candidate in &completions.candidates {
             let formatted = format_completion_candidate(candidate.as_str(), &completions.options);
             eprintln!("{formatted}");
         }
-        self.raw_mode.enable()?;
         std::io::stderr().flush()?;
 
         // Re-display prompt.
         self.display_prompt()?;
 
         // Re-display line so far.
-        self.raw_mode.disable()?;
         eprint!(
             "{}{}",
             self.line,
             repeated_char_str(BACKSPACE, self.line.len() - self.cursor)
         );
 
-        self.raw_mode.enable()?;
         std::io::stderr().flush()?;
 
         Ok(())

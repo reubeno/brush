@@ -1,41 +1,39 @@
 //! Terminal utilities.
 
-use crate::{error, sys};
+use crate::{error, sys, terminal};
 
-/// Terminal settings.
-#[derive(Clone)]
-pub struct TerminalSettings {}
+/// Terminal configuration.
+#[derive(Clone, Debug)]
+pub struct Config;
 
-impl TerminalSettings {
-    /// Sets canonical mode.
-    /// Sets canonical mode.
+#[allow(clippy::unused_self)]
+impl Config {
+    /// Creates a new `Config` from the actual terminal attributes of the terminal associated
+    /// with the given file descriptor.
     ///
-    /// This is a stub implementation that does nothing.
-    pub fn set_canonical(&mut self, _value: bool) {}
-
-    /// Sets echo mode.
+    /// # Arguments
     ///
-    /// This is a stub implementation that does nothing.
-    pub fn set_echo(&mut self, _value: bool) {}
+    /// * `_fd` - The file descriptor of the terminal.
+    pub fn from_term<Fd>(_fd: Fd) -> Result<Self, error::Error> {
+        Ok(Self)
+    }
 
-    /// Sets interrupt signal mode.
+    /// Applies the terminal settings to the terminal associated with the given file descriptor.
     ///
-    /// This is a stub implementation that does nothing.
-    pub fn set_int_signal(&mut self, _value: bool) {}
-}
+    /// # Arguments
+    ///
+    /// * `_fd` - The file descriptor of the terminal.
+    pub fn apply_to_term<Fd>(&self, _fd: Fd) -> Result<(), error::Error> {
+        Ok(())
+    }
 
-/// Gets the terminal attributes for the given file descriptor.
-///
-/// This is a stub implementation that returns default settings.
-pub fn get_term_attr<Fd>(_fd: Fd) -> Result<TerminalSettings, error::Error> {
-    Ok(TerminalSettings {})
-}
-
-/// Sets the terminal attributes for the given file descriptor immediately.
-///
-/// This is a stub implementation that does nothing.
-pub fn set_term_attr_now<Fd>(_fd: Fd, _settings: &TerminalSettings) -> Result<(), error::Error> {
-    Ok(())
+    /// Applies the given high-level terminal settings to this configuration. Does not modify any
+    /// terminal itself.
+    ///
+    /// # Arguments
+    ///
+    /// * `_settings` - The high-level terminal settings to apply to this configuration.
+    pub fn update(&mut self, _settings: &terminal::Settings) {}
 }
 
 /// Get the process ID of this process's parent.

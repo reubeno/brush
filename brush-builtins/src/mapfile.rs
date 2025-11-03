@@ -2,7 +2,7 @@ use std::io::Read;
 
 use clap::Parser;
 
-use brush_core::{ErrorKind, ExecutionResult, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, ExecutionResult, builtins, env, error, variables};
 
 /// Inspect and modify key bindings and other input configuration.
 #[derive(Parser)]
@@ -86,7 +86,7 @@ impl MapFileCommand {
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
     ) -> Result<variables::ArrayLiteral, brush_core::Error> {
-        let orig_term_attr = setup_terminal_settings(&input_file)?;
+        let _term_mode = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
         let mut read_count = 0;
@@ -135,26 +135,22 @@ impl MapFileCommand {
             entries.push((None, line_str));
         }
 
-        if let Some(orig_term_attr) = &orig_term_attr {
-            brush_core::sys::terminal::set_term_attr_now(input_file, orig_term_attr)?;
-        }
-
         Ok(variables::ArrayLiteral(entries))
     }
 }
 
 fn setup_terminal_settings(
     file: &brush_core::openfiles::OpenFile,
-) -> Result<Option<sys::terminal::TerminalSettings>, brush_core::Error> {
-    let orig_term_attr = brush_core::sys::terminal::get_term_attr(file).ok();
-    if let Some(orig_term_attr) = &orig_term_attr {
-        let mut updated_term_attr = orig_term_attr.to_owned();
+) -> Result<Option<brush_core::terminal::AutoModeGuard>, brush_core::Error> {
+    let mode = brush_core::terminal::AutoModeGuard::new(file.to_owned()).ok();
+    if let Some(mode) = &mode {
+        let config = brush_core::terminal::Settings::builder()
+            .line_input(false)
+            .interrupt_signals(false)
+            .build();
 
-        updated_term_attr.set_canonical(false);
-        updated_term_attr.set_int_signal(false);
-
-        brush_core::sys::terminal::set_term_attr_now(file, &updated_term_attr)?;
+        mode.apply_settings(&config)?;
     }
 
-    Ok(orig_term_attr)
+    Ok(mode)
 }

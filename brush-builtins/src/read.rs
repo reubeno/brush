@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 
-use brush_core::{ErrorKind, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, builtins, env, error, variables};
 
 use std::io::{Read, Write};
 
@@ -209,7 +209,7 @@ impl ReadCommand {
         mut input_file: brush_core::openfiles::OpenFile,
         mut output_file: brush_core::openfiles::OpenFile,
     ) -> Result<Option<String>, brush_core::Error> {
-        let orig_term_attr = self.setup_terminal_settings(&input_file)?;
+        let _term_mode = self.setup_terminal_settings(&input_file)?;
 
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
             None
@@ -277,10 +277,6 @@ impl ReadCommand {
             }
         };
 
-        if let Some(orig_term_attr) = &orig_term_attr {
-            brush_core::sys::terminal::set_term_attr_now(&input_file, orig_term_attr)?;
-        }
-
         match reason {
             ReadTermination::EndOfInput => {
                 if line.is_empty() {
@@ -300,21 +296,19 @@ impl ReadCommand {
     fn setup_terminal_settings(
         &self,
         file: &brush_core::openfiles::OpenFile,
-    ) -> Result<Option<sys::terminal::TerminalSettings>, brush_core::Error> {
-        let orig_term_attr = brush_core::sys::terminal::get_term_attr(file).ok();
-        if let Some(orig_term_attr) = &orig_term_attr {
-            let mut updated_term_attr = orig_term_attr.to_owned();
+    ) -> Result<Option<brush_core::terminal::AutoModeGuard>, brush_core::Error> {
+        let mode = brush_core::terminal::AutoModeGuard::new(file.to_owned()).ok();
+        if let Some(mode) = &mode {
+            let config = brush_core::terminal::Settings::builder()
+                .line_input(false)
+                .interrupt_signals(false)
+                .echo_input(!self.silent)
+                .build();
 
-            updated_term_attr.set_canonical(false);
-            updated_term_attr.set_int_signal(false);
-            if self.silent {
-                updated_term_attr.set_echo(false);
-            }
-
-            brush_core::sys::terminal::set_term_attr_now(file, &updated_term_attr)?;
+            mode.apply_settings(&config)?;
         }
 
-        Ok(orig_term_attr)
+        Ok(mode)
     }
 }
 
