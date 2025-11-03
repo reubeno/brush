@@ -8,6 +8,28 @@ cases:
           b 2
     stdin: |
       while read name num; do echo "Hello, $name => $num"; done < data.txt
+      echo "Exited loop; name='$name', num='$num'"
+
+  - name: "Basic read usage from file and no var name"
+    test_files:
+      - path: "data.txt"
+        contents: |
+          a 1
+          b 2
+    stdin: |
+      while read; do echo "reply: '$REPLY'"; done < data.txt
+      echo "Exited loop; reply='$REPLY'"
+
+  - name: "Basic read usage with empty file"
+    stdin: |
+      while read name num; do echo "Hello, $name => $num"; done < /dev/null
+      declare -p name num
+
+      while read; do echo "reply: '$REPLY'"; done < /dev/null
+      declare -p REPLY
+
+      while read -a arr; do declare -p arr; done < /dev/null
+      declare -p arr
 
   - name: "Basic read usage from pipe"
     stdin: |
