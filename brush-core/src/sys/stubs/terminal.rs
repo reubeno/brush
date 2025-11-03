@@ -1,6 +1,7 @@
 //! Terminal utilities.
 
-use crate::{error, sys};
+use crate::{error, sys, terminal};
+use std::os::fd::AsFd;
 
 /// Terminal configuration.
 #[derive(Clone, Debug)]
