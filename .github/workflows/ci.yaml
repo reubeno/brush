@@ -234,7 +234,7 @@ jobs:
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
-          ref: "2.16.0"
+          ref: "2.17.0"
           path: "bash-completion"
 
       - name: "Setup bash-completion"
