@@ -86,7 +86,7 @@ impl MapFileCommand {
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
     ) -> Result<variables::ArrayLiteral, brush_core::Error> {
-        let term_mode = setup_terminal_settings(&input_file)?;
+        let _term_mode = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
         let mut read_count = 0;
@@ -133,10 +133,6 @@ impl MapFileCommand {
             let line_str = String::from_utf8_lossy(&line).to_string();
 
             entries.push((None, line_str));
-        }
-
-        if let Some(term_mode) = term_mode {
-            drop(term_mode);
         }
 
         Ok(variables::ArrayLiteral(entries))

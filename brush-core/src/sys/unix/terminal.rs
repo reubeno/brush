@@ -73,29 +73,6 @@ impl Config {
     }
 }
 
-/// Applies the given terminal settings to the terminal associated with the given file descriptor,
-/// returning the original terminal configuration.
-///
-/// # Arguments
-///
-/// * `fd` - The file descriptor of the terminal.
-/// * `settings` - The terminal settings to apply.
-pub fn apply_settings<Fd: AsFd>(
-    fd: Fd,
-    settings: &terminal::Settings,
-) -> Result<Config, error::Error> {
-    let fd = fd.as_fd();
-
-    let orig_config = Config::from_term(fd)?;
-
-    let mut new_config = orig_config.clone();
-    new_config.update(settings);
-
-    new_config.apply_to_term(fd)?;
-
-    Ok(orig_config)
-}
-
 /// Get the process ID of this process's parent.
 pub fn get_parent_process_id() -> Option<sys::process::ProcessId> {
     Some(nix::unistd::getppid().as_raw())

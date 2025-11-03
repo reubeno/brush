@@ -99,7 +99,7 @@ impl<'a> ReadLineState<'a> {
         match (event.modifiers, event.code) {
             (_, crossterm::event::KeyCode::Enter)
             | (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('j')) => {
-                self.display_newline()?;
+                Self::display_newline()?;
                 self.line.push('\n');
                 let line = std::mem::take(&mut self.line);
                 return Ok(Some(ReadResult::Input(line)));
@@ -116,7 +116,7 @@ impl<'a> ReadLineState<'a> {
             }
             (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('d')) => {
                 if self.line.is_empty() {
-                    self.display_newline()?;
+                    Self::display_newline()?;
                     return Ok(Some(ReadResult::Eof));
                 }
             }
@@ -148,8 +148,7 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
-    #[allow(clippy::unused_self)]
-    fn display_newline(&self) -> Result<(), ShellError> {
+    fn display_newline() -> Result<(), ShellError> {
         eprintln!();
         std::io::stderr().flush()?;
 
@@ -273,7 +272,7 @@ impl<'a> ReadLineState<'a> {
         completions: &brush_core::completion::Completions,
     ) -> Result<(), ShellError> {
         // Display replacements.
-        self.display_newline()?;
+        Self::display_newline()?;
         for candidate in &completions.candidates {
             let formatted = format_completion_candidate(candidate.as_str(), &completions.options);
             eprintln!("{formatted}");

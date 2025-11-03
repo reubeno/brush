@@ -209,7 +209,7 @@ impl ReadCommand {
         mut input_file: brush_core::openfiles::OpenFile,
         mut output_file: brush_core::openfiles::OpenFile,
     ) -> Result<Option<String>, brush_core::Error> {
-        let term_mode = self.setup_terminal_settings(&input_file)?;
+        let _term_mode = self.setup_terminal_settings(&input_file)?;
 
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
             None
@@ -276,10 +276,6 @@ impl ReadCommand {
                 }
             }
         };
-
-        if let Some(term_mode) = term_mode {
-            drop(term_mode);
-        }
 
         match reason {
             ReadTermination::EndOfInput => {
