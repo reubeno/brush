@@ -152,7 +152,12 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     // Add in exported variables.
     if !empty_env {
         for (k, v) in shell.env.iter_exported() {
-            cmd.env(k.as_str(), v.value().to_cow_str(shell).as_ref());
+            // NOTE: To match bash behavior, we only include exported variables
+            // that are set (i.e., have a value). This means a variable that
+            // shows up in `declare -p` but has no *set* value will be omitted.
+            if v.value().is_set() {
+                cmd.env(k.as_str(), v.value().to_cow_str(shell).as_ref());
+            }
         }
     }
 
