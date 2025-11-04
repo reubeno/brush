@@ -58,7 +58,15 @@ pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
         nix::sys::signal::SaFlags::empty(),
         nix::sys::signal::SigSet::empty(),
     );
+
+    // SAFETY:
+    // Setting the signal action should be safe here. The unsafe concerns
+    // for calling `sigaction` are primarily around ensuring that any provided
+    // signal handler functions are only performing operations that are
+    // safe to do in a signal handler context. Here we are not providing
+    // a custom handler, just asking the OS to ignore the signal.
     unsafe { nix::sys::signal::sigaction(nix::sys::signal::Signal::SIGTTOU, &ignore) }?;
+
     Ok(())
 }
 
@@ -99,6 +107,8 @@ fn waitid_all(
 fn waitid_all(
     flags: nix::sys::wait::WaitPidFlag,
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    // SAFETY:
+    // Code copied from nix::sys::wait implementation of waitid for other platforms.
     let siginfo = unsafe {
         // Memory is zeroed rather than uninitialized, as not all platforms
         // initialize the memory in the StillAlive case
@@ -119,12 +129,17 @@ fn waitid_all(
 fn siginfo_to_wait_status(
     siginfo: nix::libc::siginfo_t,
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    // SAFETY:
+    // Code copied from nix::sys::wait implementation of waitid for other platforms.
     let si_pid = unsafe { siginfo.si_pid() };
     if si_pid == 0 {
         return Ok(nix::sys::wait::WaitStatus::StillAlive);
     }
 
     let pid = nix::unistd::Pid::from_raw(si_pid);
+
+    // SAFETY:
+    // Code copied from nix::sys::wait implementation of waitid for other platforms.
     let si_status = unsafe { siginfo.si_status() };
 
     let status = match siginfo.si_code {
