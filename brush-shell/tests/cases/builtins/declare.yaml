@@ -128,6 +128,11 @@ cases:
       declare -x myexportedvar="exported variable"
       env | grep myexportedvar
 
+  - name: "Declare and export unset variable"
+    stdin: |
+      declare -x myunsetexportedvar
+      env | grep myunsetexportedvar
+
   - name: "Re-declaring variable"
     stdin: |
       var="value"
