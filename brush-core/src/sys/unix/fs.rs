@@ -125,6 +125,10 @@ fn confstr_cs_path() -> Result<Option<String>, std::io::Error> {
 /// N.B. We would strongly prefer to use a safe API exposed (in an idiomatic way) by nix
 /// or similar. Until that exists, we accept the need to make the unsafe call directly.
 fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io::Error> {
+    // SAFETY:
+    // Calling `confstr` with a null pointer and size 0 is a documented way to query
+    // the required size of the buffer to hold the value associated with `name`. It
+    // should not end up causing any undefined behavior.
     let required_size = unsafe { nix::libc::confstr(name, std::ptr::null_mut(), 0) };
 
     // When confstr returns 0, it either means there's no value associated with _CS_PATH, or
@@ -136,9 +140,11 @@ fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io
 
     let mut buffer = Vec::<u8>::with_capacity(required_size);
 
-    // NOTE: Writing `c_char` (i8 or u8 depending on the platform) into `Vec<u8>` is fine,
-    // as i8 and u8 have compatible representations,
-    // and Rust does not support platforms where `c_char` is not 8-bit wide.
+    // SAFETY:
+    // We are calling `confstr` with a valid pointer and size that we obtained from the
+    // allocated buffer. Writing `c_char` (i8 or u8 depending on the platform) into
+    // `Vec<u8>` is fine, as i8 and u8 have compatible representations, and Rust does
+    // not support platforms where `c_char` is not 8-bit wide.
     let final_size =
         unsafe { nix::libc::confstr(name, buffer.as_mut_ptr().cast(), buffer.capacity()) };
 
@@ -146,10 +152,28 @@ fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io
         return Err(std::io::Error::last_os_error());
     }
 
+    // Per the docs on `confstr`, it *may* return a size larger than the provided buffer.
+    // In our usage we wouldn't expect to see this, as we've first queried the required size.
+    // However, we defensively check for this case and return an error if it happens.
+    if final_size > buffer.capacity() {
+        return Err(std::io::Error::other(
+            "confstr needed more space than advertised",
+        ));
+    }
+
+    // SAFETY:
+    // We are trusting `confstr` to have written exactly `final_size` bytes into the buffer.
+    // We have checked above that it didn't return a value *larger* than the capacity of
+    // the buffer, and also checked for known error cases. Note that the returned length
+    // should include the null terminator.
     unsafe { buffer.set_len(final_size) };
 
-    // The last byte is a null terminator.
-    buffer.pop();
+    // The last byte is a null terminator. We assert that it is.
+    if !matches!(buffer.pop(), Some(0)) {
+        return Err(std::io::Error::other(
+            "confstr did not null-terminate the returned string",
+        ));
+    }
 
     Ok(Some(std::ffi::OsString::from_vec(buffer)))
 }

@@ -54,6 +54,7 @@ panic_in_result_fn = "deny"
 string_slice = "deny"
 todo = "deny"
 unwrap_in_result = "deny"
+undocumented_unsafe_blocks = "deny"
 
 # Allowed rules
 bool_to_int_with_if = "allow"

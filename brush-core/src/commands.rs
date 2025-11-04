@@ -431,6 +431,10 @@ pub(crate) fn execute_external_command(
     // the target command.
     #[cfg(unix)]
     if new_pg && child_stdin_is_terminal {
+        // SAFETY:
+        // This arranges for a provided function to run in the context of
+        // the forked process before it exec's the target command. In general,
+        // rust can't guarantee safety of code running in such a context.
         unsafe {
             cmd.pre_exec(setup_process_before_exec);
         }
