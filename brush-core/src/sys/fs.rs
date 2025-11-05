@@ -2,11 +2,6 @@
 
 pub use super::platform::fs::*;
 
-#[cfg(not(unix))]
-pub(crate) use StubMetadataExt as MetadataExt;
-#[cfg(unix)]
-pub(crate) use std::os::unix::fs::MetadataExt;
-
 /// Extension trait for path-related filesystem operations.
 pub trait PathExt {
     /// Returns true if the path exists and is readable by the current user.

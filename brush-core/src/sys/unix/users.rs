@@ -26,6 +26,16 @@ pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
 }
 
 #[expect(clippy::unnecessary_wraps)]
+pub(crate) fn get_current_uid() -> Result<u32, error::Error> {
+    Ok(uzers::get_current_uid())
+}
+
+#[expect(clippy::unnecessary_wraps)]
+pub(crate) fn get_current_gid() -> Result<u32, error::Error> {
+    Ok(uzers::get_current_gid())
+}
+
+#[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_effective_uid() -> Result<u32, error::Error> {
     Ok(uzers::get_effective_uid())
 }

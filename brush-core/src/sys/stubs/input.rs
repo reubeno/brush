@@ -7,5 +7,5 @@ use crate::{error, interfaces};
 ///
 /// This is a stub implementation that returns an unimplemented error.
 pub fn get_key_from_key_code(_key_code: &[u8]) -> Result<interfaces::Key, error::Error> {
-    error::unimp("get_key_from_key_code")
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("translating key code").into())
 }

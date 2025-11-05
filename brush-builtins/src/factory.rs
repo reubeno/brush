@@ -3,6 +3,7 @@ use std::collections::HashMap;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+#[allow(unused_imports, reason = "not all builtins are used in all configs")]
 use brush_core::builtins::{self, builtin, decl_builtin, raw_arg_builtin, simple_builtin};
 
 /// Identifies well-known sets of builtins.

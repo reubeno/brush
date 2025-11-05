@@ -2,7 +2,6 @@
 
 use crate::error;
 
-#[cfg(not(unix))]
 impl crate::sys::fs::PathExt for std::path::Path {
     fn readable(&self) -> bool {
         true
@@ -49,7 +48,7 @@ impl crate::sys::fs::PathExt for std::path::Path {
     }
 }
 
-pub(crate) trait StubMetadataExt {
+pub(crate) trait MetadataExt {
     fn gid(&self) -> u32 {
         0
     }
@@ -59,7 +58,7 @@ pub(crate) trait StubMetadataExt {
     }
 }
 
-impl StubMetadataExt for std::fs::Metadata {}
+impl MetadataExt for std::fs::Metadata {}
 
 pub(crate) fn get_default_executable_search_paths() -> Vec<String> {
     vec![]
@@ -75,5 +74,5 @@ pub fn get_default_standard_utils_paths() -> Vec<String> {
 ///
 /// This is a stub implementation that returns an error.
 pub fn open_null_file() -> Result<std::fs::File, error::Error> {
-    error::unimp("null file")
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("opening null file").into())
 }

@@ -1,13 +1,10 @@
 //! Command execution
 
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
 
 use brush_parser::ast;
-#[cfg(unix)]
-use command_fds::{CommandFdExt, FdMapping};
 use itertools::Itertools;
+use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, builtins, env,
@@ -137,7 +134,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     let mut cmd = std::process::Command::new(command_name);
 
     // Override argv[0].
-    #[cfg(unix)]
+    // NOTE: Not support on all platforms.
     cmd.arg0(argv0);
 
     // Pass through args.
@@ -200,24 +197,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Inject any other fds.
-    #[cfg(unix)]
-    {
-        let fd_mappings = open_files
-            .into_iter()
-            .map(|(child_fd, open_file)| FdMapping {
-                child_fd: i32::try_from(child_fd).unwrap(),
-                parent_fd: open_file.into_owned_fd().unwrap(),
-            })
-            .collect();
-        cmd.fd_mappings(fd_mappings)
-            .map_err(|_e| error::ErrorKind::ChildCreationFailure)?;
-    }
-    #[cfg(not(unix))]
-    {
-        if !open_files.is_empty() {
-            return error::unimp("fd redirections on non-Unix platform");
-        }
-    }
+    cmd.inject_fds(open_files)?;
 
     Ok(cmd)
 }
@@ -393,7 +373,6 @@ pub(crate) fn execute_external_command(
     }
 
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
-    #[cfg(unix)]
     let child_stdin_is_terminal = context
         .params
         .open_files
@@ -417,27 +396,19 @@ pub(crate) fn execute_external_command(
     // Set up process group state.
     if new_pg {
         // We need to set up a new process group.
-        #[cfg(unix)]
         cmd.process_group(0);
     } else {
         // We need to join an established process group.
-        #[cfg(unix)]
         if let Some(pgid) = process_group_id {
             cmd.process_group(*pgid);
         }
     }
 
-    // Register some code to run in the forked child process before it execs
-    // the target command.
-    #[cfg(unix)]
+    // If we're to lead our own process group and stdin is a terminal,
+    // then we need to arrange for the new process to move itself
+    // to the foreground.
     if new_pg && child_stdin_is_terminal {
-        // SAFETY:
-        // This arranges for a provided function to run in the context of
-        // the forked process before it exec's the target command. In general,
-        // rust can't guarantee safety of code running in such a context.
-        unsafe {
-            cmd.pre_exec(setup_process_before_exec);
-        }
+        cmd.take_foreground();
     }
 
     // When tracing is enabled, report.
@@ -489,12 +460,6 @@ pub(crate) fn execute_external_command(
             }
         }
     }
-}
-
-#[cfg(unix)]
-fn setup_process_before_exec() -> Result<(), std::io::Error> {
-    sys::terminal::move_self_to_foreground().map_err(std::io::Error::other)?;
-    Ok(())
 }
 
 async fn execute_builtin_command(

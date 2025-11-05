@@ -2,12 +2,8 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
-#[cfg(unix)]
-use std::os::fd::AsFd;
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
-#[cfg(unix)]
-use std::os::fd::OwnedFd;
+#[allow(unused_imports, reason = "not used on all platforms")]
+use std::os::fd::{AsFd, OwnedFd};
 use std::process::Stdio;
 
 use crate::error;
@@ -57,7 +53,7 @@ impl OpenFile {
     }
 
     /// Converts the open file into an `OwnedFd`.
-    #[cfg(unix)]
+    #[allow(unused, reason = "not used on all platforms")]
     pub(crate) fn into_owned_fd(self) -> Result<std::os::fd::OwnedFd, error::Error> {
         match self {
             Self::Stdin(f) => Ok(f.as_fd().try_clone_to_owned()?),
@@ -66,20 +62,6 @@ impl OpenFile {
             Self::File(f) => Ok(f.into()),
             Self::PipeReader(r) => Ok(OwnedFd::from(r)),
             Self::PipeWriter(w) => Ok(OwnedFd::from(w)),
-        }
-    }
-
-    /// Retrieves the raw file descriptor for the open file.
-    #[cfg(unix)]
-    #[expect(dead_code)]
-    pub(crate) fn as_raw_fd(&self) -> i32 {
-        match self {
-            Self::Stdin(f) => f.as_raw_fd(),
-            Self::Stdout(f) => f.as_raw_fd(),
-            Self::Stderr(f) => f.as_raw_fd(),
-            Self::File(f) => f.as_raw_fd(),
-            Self::PipeReader(r) => r.as_raw_fd(),
-            Self::PipeWriter(w) => w.as_raw_fd(),
         }
     }
 
@@ -103,7 +85,6 @@ impl OpenFile {
     }
 }
 
-#[cfg(unix)]
 impl std::os::fd::AsFd for OpenFile {
     fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
         match self {

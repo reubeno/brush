@@ -5,14 +5,13 @@ use std::{collections::HashMap, fmt::Display};
 
 use itertools::Itertools as _;
 
-use crate::error;
+use crate::{error, sys};
 
 /// Type of signal that can be trapped in the shell.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum TrapSignal {
     /// A system signal.
-    #[cfg(unix)]
-    Signal(nix::sys::signal::Signal),
+    Signal(sys::signal::Signal),
     /// The `DEBUG` trap.
     Debug,
     /// The `ERR` trap.
@@ -33,12 +32,10 @@ impl TrapSignal {
     /// Returns all possible values of [`TrapSignal`].
     pub fn iterator() -> impl Iterator<Item = Self> {
         const SIGNALS: &[TrapSignal] = &[TrapSignal::Debug, TrapSignal::Err, TrapSignal::Exit];
-        let iter = SIGNALS.iter().copied();
 
-        #[cfg(unix)]
         let iter = itertools::chain!(
-            iter,
-            nix::sys::signal::Signal::iterator().map(TrapSignal::Signal)
+            SIGNALS.iter().copied(),
+            sys::signal::Signal::iterator().map(TrapSignal::Signal)
         );
 
         iter
@@ -47,7 +44,6 @@ impl TrapSignal {
     /// Converts [`TrapSignal`] into its corresponding signal name as a [`&'static str`](str)
     pub const fn as_str(self) -> &'static str {
         match self {
-            #[cfg(unix)]
             Self::Signal(s) => s.as_str(),
             Self::Debug => "DEBUG",
             Self::Err => "ERR",
@@ -96,13 +92,10 @@ impl TryFrom<i32> for TrapSignal {
         // and don't have persistent numbers across platforms, so we skip them here.
         Ok(match value {
             0 => Self::Exit,
-            #[cfg(unix)]
             value => Self::Signal(
-                nix::sys::signal::Signal::try_from(value)
+                sys::signal::Signal::try_from(value)
                     .map_err(|_| error::ErrorKind::InvalidSignal(value.to_string()))?,
             ),
-            #[cfg(not(unix))]
-            _ => return Err(error::ErrorKind::InvalidSignal(value.to_string()).into()),
         })
     }
 }
@@ -119,20 +112,16 @@ impl TryFrom<&str> for TrapSignal {
             "ERR" => Self::Err,
             "EXIT" => Self::Exit,
             "RETURN" => Self::Return,
-
-            #[cfg(unix)]
             _ => {
                 // Bash compatibility:
                 // support for signal names without the `SIG` prefix, for example `HUP` -> `SIGHUP`
                 if !s.starts_with("SIG") {
                     s.insert_str(0, "SIG");
                 }
-                nix::sys::signal::Signal::from_str(s.as_str())
+                sys::signal::Signal::from_str(s.as_str())
                     .map(TrapSignal::Signal)
                     .map_err(|_| error::ErrorKind::InvalidSignal(value.into()))?
             }
-            #[cfg(not(unix))]
-            _ => return Err(error::ErrorKind::InvalidSignal(value.into()).into()),
         })
     }
 }
@@ -145,7 +134,6 @@ impl TryFrom<TrapSignal> for i32 {
     type Error = TrapSignalNumberError;
     fn try_from(value: TrapSignal) -> Result<Self, Self::Error> {
         Ok(match value {
-            #[cfg(unix)]
             TrapSignal::Signal(s) => s as Self,
             TrapSignal::Exit => 0,
             _ => return Err(TrapSignalNumberError),
