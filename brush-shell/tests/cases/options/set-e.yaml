@@ -1,0 +1,591 @@
+name: "Options: set -e"
+cases:
+  # Basic behavior
+  - name: "Basic non-error case"
+    stdin: |
+      set -e
+      true
+      echo "Text after call"
+
+  - name: "Basic error case"
+    known_failure: true
+    stdin: |
+      set -e
+      false
+      echo "Text after call"
+
+  - name: "Multiple commands before error"
+    known_failure: true
+    stdin: |
+      set -e
+      echo "first"
+      echo "second"
+      false
+      echo "should not print"
+
+  - name: "Error in middle of script"
+    known_failure: true
+    stdin: |
+      set -e
+      echo "before"
+      false
+      echo "after"
+
+  # Conditional contexts - set -e should NOT exit in test conditions
+  - name: "Error in if condition does not exit"
+    stdin: |
+      set -e
+      if false; then
+        echo "then branch"
+      else
+        echo "else branch"
+      fi
+      echo "after if"
+
+  - name: "Error in if condition with compound test"
+    stdin: |
+      set -e
+      if false && false; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Error in while condition does not exit"
+    stdin: |
+      set -e
+      count=0
+      while false; do
+        echo "loop body"
+      done
+      echo "after while"
+
+  - name: "Error in until condition does not exit"
+    stdin: |
+      set -e
+      count=0
+      until true; do
+        echo "loop body"
+      done
+      echo "after until"
+
+  - name: "Error in if body DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      if true; then
+        false
+        echo "should not print"
+      fi
+      echo "after if"
+
+  - name: "Error in else body DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      if false; then
+        echo "then"
+      else
+        false
+        echo "should not print"
+      fi
+      echo "after if"
+
+  - name: "Error in while body DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      count=0
+      while [ $count -lt 2 ]; do
+        count=$((count + 1))
+        false
+        echo "should not print"
+      done
+      echo "after while"
+
+  # Boolean operators - set -e should NOT exit with && and ||
+  - name: "Error on right side of && does not exit"
+    known_failure: true
+    stdin: |
+      set -e
+      true && false
+      echo "after &&"
+
+  - name: "Error on left side of && does not exit"
+    stdin: |
+      set -e
+      false && true
+      echo "after &&"
+
+  - name: "Error on right side of || does not exit"
+    known_failure: true
+    stdin: |
+      set -e
+      false || false
+      echo "after ||"
+
+  - name: "Error on left side of || does not exit (success short-circuits)"
+    stdin: |
+      set -e
+      true || false
+      echo "after ||"
+
+  - name: "Error after && chain DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      true && true
+      false
+      echo "should not print"
+
+  - name: "Complex boolean expression"
+    stdin: |
+      set -e
+      false || true && false || true
+      echo "after complex expression"
+
+  # Negated commands - set -e should NOT exit
+  - name: "Negated command with failure does not exit"
+    stdin: |
+      set -e
+      ! false
+      echo "after negation"
+
+  - name: "Negated command with success does not exit"
+    stdin: |
+      set -e
+      ! true
+      echo "after negation"
+
+  - name: "Error after negated command DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      ! false
+      false
+      echo "should not print"
+
+  # Pipelines
+  - name: "Error in first command of pipeline exits (without pipefail)"
+    stdin: |
+      set -e
+      false | true
+      echo "after pipeline"
+
+  - name: "Error in middle of pipeline does not exit (without pipefail)"
+    stdin: |
+      set -e
+      true | false | true
+      echo "after pipeline"
+
+  - name: "Error in last command of pipeline exits"
+    known_failure: true
+    stdin: |
+      set -e
+      true | false
+      echo "after pipeline"
+
+  - name: "Pipeline in conditional does not exit"
+    stdin: |
+      set -e
+      if true | false; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Negated pipeline does not exit"
+    stdin: |
+      set -e
+      ! false | false
+      echo "after"
+
+  # Functions
+  - name: "Error in function body exits function and script"
+    known_failure: true
+    stdin: |
+      set -e
+      myfunc() {
+        echo "in function"
+        false
+        echo "should not print in function"
+      }
+      myfunc
+      echo "should not print after function"
+
+  - name: "Function returning error in conditional does not exit"
+    stdin: |
+      set -e
+      myfunc() {
+        false
+      }
+      if myfunc; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Function called with && does not exit"
+    known_failure: true
+    stdin: |
+      set -e
+      myfunc() {
+        false
+      }
+      true && myfunc
+      echo "after"
+
+  - name: "Function called with || does not exit"
+    known_failure: true
+    stdin: |
+      set -e
+      myfunc() {
+        false
+      }
+      false || myfunc
+      echo "after"
+
+  - name: "Function called with negation does not exit"
+    stdin: |
+      set -e
+      myfunc() {
+        false
+      }
+      ! myfunc
+      echo "after"
+
+  - name: "Error in function body with set -e inside function"
+    known_failure: true
+    stdin: |
+      myfunc() {
+        set -e
+        echo "before error"
+        false
+        echo "should not print"
+      }
+      myfunc
+      echo "after function call"
+
+  - name: "Function with explicit return still respects set -e"
+    known_failure: true
+    stdin: |
+      set -e
+      myfunc() {
+        false
+        return 0
+      }
+      myfunc
+      echo "after function"
+
+  # Subshells
+  - name: "Error in subshell exits subshell but not parent"
+    known_failure: true
+    stdin: |
+      set -e
+      (
+        echo "in subshell"
+        false
+        echo "should not print in subshell"
+      )
+      echo "after subshell"
+
+  - name: "Subshell with set -e exits on error"
+    known_failure: true
+    stdin: |
+      (
+        set -e
+        echo "before"
+        false
+        echo "should not print"
+      )
+      echo "after subshell"
+
+  - name: "Subshell failure in conditional does not exit parent"
+    stdin: |
+      set -e
+      if (false); then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Subshell with && does not exit"
+    known_failure: true
+    stdin: |
+      set -e
+      true && (false)
+      echo "after"
+
+  # Command substitution
+  - name: "Error in command substitution does not exit"
+    known_failure: true
+    stdin: |
+      set -e
+      result=$(false)
+      echo "after command substitution"
+
+  - name: "Error in command substitution with assignment does not exit"
+    stdin: |
+      set -e
+      var=$(false; echo "value")
+      echo "var is: $var"
+      echo "after"
+
+  - name: "Command substitution in conditional does not exit"
+    stdin: |
+      set -e
+      if [ "$(false; echo no)" = "no" ]; then
+        echo "matched"
+      fi
+      echo "after"
+
+  - name: "set +e disables error exit"
+    stdin: |
+      set -e
+      echo "with -e"
+      set +e
+      false
+      echo "after false with +e"
+
+  - name: "set -e can be re-enabled"
+    known_failure: true
+    stdin: |
+      set -e
+      set +e
+      false
+      echo "after false with +e"
+      set -e
+      false
+      echo "should not print"
+
+  - name: "set +e in function does not affect parent scope"
+    stdin: |
+      set -e
+      myfunc() {
+        set +e
+        false
+        echo "in function after false"
+      }
+      myfunc
+      false
+      echo "should not print"
+
+  # Exit status handling
+  - name: "Non-zero exit status triggers exit"
+    known_failure: true
+    stdin: |
+      set -e
+      (exit 1)
+      echo "should not print"
+
+  - name: "Specific non-zero exit status"
+    known_failure: true
+    stdin: |
+      set -e
+      (exit 42)
+      echo "should not print"
+
+  - name: "Zero exit status does not trigger exit"
+    stdin: |
+      set -e
+      (exit 0)
+      echo "after exit 0"
+
+  # Assignment with command substitution
+  - name: "Assignment from failing command does not exit"
+    stdin: |
+      set -e
+      var=$(false) || true
+      echo "after assignment"
+
+  - name: "Local variable assignment with failing command"
+    stdin: |
+      set -e
+      myfunc() {
+        local var=$(false)
+        echo "after local"
+      }
+      myfunc
+      echo "after function"
+
+  # Complex scenarios
+  - name: "Error after successful conditional"
+    known_failure: true
+    stdin: |
+      set -e
+      if true; then
+        echo "in if"
+      fi
+      false
+      echo "should not print"
+
+  - name: "Nested conditionals with error"
+    stdin: |
+      set -e
+      if true; then
+        if false; then
+          echo "inner then"
+        else
+          echo "inner else"
+        fi
+        echo "after inner if"
+      fi
+      echo "after outer if"
+
+  - name: "Error in case statement body"
+    known_failure: true
+    stdin: |
+      set -e
+      case "x" in
+        x)
+          echo "matched"
+          false
+          echo "should not print"
+          ;;
+      esac
+      echo "after case"
+
+  - name: "case pattern matching does not exit on non-match"
+    stdin: |
+      set -e
+      case "x" in
+        y) echo "y" ;;
+        z) echo "z" ;;
+      esac
+      echo "after case"
+
+  # List constructs
+  - name: "Error in ; list DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      true ; false ; echo "should not print"
+
+  - name: "Semicolon separated commands respect set -e"
+    known_failure: true
+    stdin: |
+      set -e
+      echo "first" ; echo "second" ; false ; echo "should not print"
+
+  # Background jobs
+  - name: "Error in background job does not exit parent"
+    stdin: |
+      set -e
+      false &
+      wait
+      echo "after wait"
+
+  # Interaction with other options
+  - name: "set -e with set -o pipefail"
+    known_failure: true
+    stdin: |
+      set -e
+      set -o pipefail
+      true | false
+      echo "should not print"
+
+  - name: "set -e without pipefail allows pipeline errors"
+    stdin: |
+      set -e
+      true | false | true
+      echo "after pipeline"
+
+  # Edge cases with test builtin
+  - name: "test builtin false result in conditional"
+    stdin: |
+      set -e
+      if test 1 -eq 2; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "test builtin false result standalone DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      test 1 -eq 2
+      echo "should not print"
+
+  - name: "[ builtin false result in conditional"
+    stdin: |
+      set -e
+      if [ 1 -eq 2 ]; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "[ builtin false result standalone DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      [ 1 -eq 2 ]
+      echo "should not print"
+
+  # errexit with trap
+  - name: "trap ERR does not prevent set -e exit"
+    known_failure: true
+    stdin: |
+      set -e
+      trap 'echo "error trapped"' ERR
+      false
+      echo "should not print"
+
+  - name: "trap EXIT runs even with set -e"
+    known_failure: true
+    stdin: |
+      set -e
+      trap 'echo "exit trapped"' EXIT
+      false
+      echo "should not print"
+
+  # Combination of contexts
+  - name: "Error in function in conditional does not exit"
+    stdin: |
+      set -e
+      myfunc() {
+        false
+      }
+      if myfunc; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Negated function call does not exit"
+    stdin: |
+      set -e
+      myfunc() {
+        echo "in function"
+        false
+      }
+      ! myfunc
+      echo "after"
+
+  - name: "Function in pipeline does not exit on internal error"
+    stdin: |
+      set -e
+      myfunc() {
+        false
+      }
+      myfunc | true
+      echo "after"
+
+  - name: "Error after function in boolean context DOES exit"
+    known_failure: true
+    stdin: |
+      set -e
+      myfunc() {
+        false
+      }
+      myfunc || true
+      false
+      echo "should not print"

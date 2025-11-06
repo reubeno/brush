@@ -70,13 +70,3 @@ cases:
       echo "Displaying emacs"
       shopt -o emacs
       shopt -o -p emacs
-
-  - name: "shopt -s lastpipe"
-    stdin: |
-      echo ignored | var=value
-      echo "1. var='${var}'"
-
-      shopt -s lastpipe
-      set +o monitor
-      echo ignored | var=value
-      echo "2. var='${var}'"

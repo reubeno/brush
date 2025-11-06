@@ -1,0 +1,9 @@
+name: "set -B"
+cases:
+  - name: "set -B"
+    stdin: |
+      set +B
+      echo "+B: " ${a,b}
+
+      set -B
+      echo "-B: " ${a,b}
