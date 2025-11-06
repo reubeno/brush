@@ -134,7 +134,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     let mut cmd = std::process::Command::new(command_name);
 
     // Override argv[0].
-    // NOTE: Not support on all platforms.
+    // NOTE: Not supported on all platforms.
     cmd.arg0(argv0);
 
     // Pass through args.
