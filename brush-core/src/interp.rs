@@ -2,8 +2,6 @@ use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
-#[allow(unused_imports, reason = "not used on all platforms")]
-use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use sys::commands::ExitStatusExt;
 
@@ -1583,6 +1581,8 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
 
     #[cfg(target_os = "linux")]
     {
+        use std::os::fd::AsFd as _;
+
         let len = i32::try_from(bytes.len())?;
         nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
     }

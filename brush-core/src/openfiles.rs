@@ -2,8 +2,6 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
-#[allow(unused_imports, reason = "not used on all platforms")]
-use std::os::fd::{AsFd, OwnedFd};
 use std::process::Stdio;
 
 use crate::error;
@@ -53,15 +51,17 @@ impl OpenFile {
     }
 
     /// Converts the open file into an `OwnedFd`.
-    #[allow(unused, reason = "not used on all platforms")]
+    #[cfg(unix)]
     pub(crate) fn into_owned_fd(self) -> Result<std::os::fd::OwnedFd, error::Error> {
+        use std::os::fd::AsFd as _;
+
         match self {
             Self::Stdin(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stdout(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stderr(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::File(f) => Ok(f.into()),
-            Self::PipeReader(r) => Ok(OwnedFd::from(r)),
-            Self::PipeWriter(w) => Ok(OwnedFd::from(w)),
+            Self::PipeReader(r) => Ok(std::os::fd::OwnedFd::from(r)),
+            Self::PipeWriter(w) => Ok(std::os::fd::OwnedFd::from(w)),
         }
     }
 
@@ -85,6 +85,7 @@ impl OpenFile {
     }
 }
 
+#[cfg(unix)]
 impl std::os::fd::AsFd for OpenFile {
     fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
         match self {
