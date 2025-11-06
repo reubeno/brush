@@ -1,12 +1,11 @@
 //! Core implementation of the brush shell. Implements the shell's abstraction, its interpreter, and
 //! various facilities used internally by the shell.
 
-pub mod completion;
-
 pub mod arithmetic;
 mod braceexpansion;
 pub mod builtins;
 pub mod commands;
+pub mod completion;
 pub mod env;
 pub mod error;
 pub mod escape;

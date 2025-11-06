@@ -16,9 +16,10 @@ bench = false
 
 [features]
 default = []
-basic = ["dep:crossterm"]
+basic = ["dep:crossterm", "completion"]
+completion = []
 minimal = []
-reedline = ["dep:reedline", "dep:nu-ansi-term"]
+reedline = ["dep:reedline", "dep:nu-ansi-term", "completion"]
 
 [lints]
 workspace = true
@@ -36,7 +37,7 @@ tracing = "0.1.41"
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30.1", features = ["term"] }
 
-[target.'cfg(any(windows, unix))'.dependencies]
+[target.'cfg(any(unix, windows))'.dependencies]
 tokio = { version = "1.48.0", features = ["macros", "signal"] }
 
 [target.wasm32-unknown-unknown.dependencies]

@@ -13,7 +13,7 @@ use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
 
-#[cfg(any(unix, windows))]
+#[allow(unused_imports, reason = "only used in some configs")]
 use std::io::IsTerminal;
 
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
@@ -96,8 +96,7 @@ fn main() {
         }
     };
 
-    #[expect(clippy::cast_lossless)]
-    std::process::exit(exit_code as i32);
+    std::process::exit(i32::from(exit_code));
 }
 
 /// Installs panic handlers to report our panic and cleanly exit on panic.
@@ -118,23 +117,11 @@ fn install_panic_handlers() {
     // dev/debug builds, the previously registered handler will be the default
     // handler; in release builds, it will be the one registered by `human_panic`.
     //
-    #[cfg(any(unix, windows))]
     if std::io::stdout().is_terminal() {
         let original_panic_handler = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |panic_info| {
-            // Reset the console.
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::terminal::LeaveAlternateScreen,
-                crossterm::terminal::EnableLineWrap,
-                crossterm::style::ResetColor,
-                crossterm::event::DisableMouseCapture,
-                crossterm::event::DisableBracketedPaste,
-                crossterm::cursor::Show,
-                crossterm::cursor::MoveToNextLine(1),
-            );
-
-            let _ = crossterm::terminal::disable_raw_mode();
+            // Best-effort attempt to reset the terminal to defaults.
+            let _ = try_reset_terminal_to_defaults();
 
             // Invoke the original handler
             original_panic_handler(panic_info);
@@ -351,7 +338,7 @@ fn new_error_formatter(
 }
 
 fn get_default_input_backend() -> InputBackend {
-    #[cfg(any(windows, unix))]
+    #[cfg(any(unix, windows))]
     {
         // If stdin isn't a terminal, then `reedline` doesn't do the right thing
         // (reference: https://github.com/nushell/reedline/issues/509). Switch to
@@ -362,7 +349,7 @@ fn get_default_input_backend() -> InputBackend {
             InputBackend::Minimal
         }
     }
-    #[cfg(not(any(windows, unix)))]
+    #[cfg(not(any(unix, windows)))]
     {
         InputBackend::Minimal
     }
@@ -370,6 +357,30 @@ fn get_default_input_backend() -> InputBackend {
 
 pub(crate) fn get_event_config() -> Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> {
     TRACE_EVENT_CONFIG.clone()
+}
+
+fn try_reset_terminal_to_defaults() -> Result<(), std::io::Error> {
+    #[cfg(any(unix, windows))]
+    {
+        // Reset the console.
+        let exec_result = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::terminal::EnableLineWrap,
+            crossterm::style::ResetColor,
+            crossterm::event::DisableMouseCapture,
+            crossterm::event::DisableBracketedPaste,
+            crossterm::cursor::Show,
+            crossterm::cursor::MoveToNextLine(1),
+        );
+
+        let raw_result = crossterm::terminal::disable_raw_mode();
+
+        exec_result?;
+        raw_result?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

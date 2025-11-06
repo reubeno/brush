@@ -2,6 +2,8 @@
 
 use crate::{error, sys, traps};
 
+pub(crate) use nix::sys::signal::Signal;
+
 pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGCONT)
         .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;

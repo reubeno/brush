@@ -211,12 +211,8 @@ pub(crate) fn initialize_vars(
     )?;
 
     // EUID
-    #[cfg(unix)]
-    {
-        let mut euid_var = ShellVariable::new(ShellValue::String(format!(
-            "{}",
-            uzers::get_effective_uid()
-        )));
+    if let Ok(euid) = sys::users::get_effective_uid() {
+        let mut euid_var = ShellVariable::new(ShellValue::String(format!("{euid}")));
         euid_var.treat_as_integer().set_readonly();
         shell.env.set_global("EUID", euid_var)?;
     }
@@ -281,15 +277,10 @@ pub(crate) fn initialize_vars(
     )?;
 
     // HOSTTYPE
-    #[cfg(unix)]
-    {
-        if let Ok(info) = nix::sys::utsname::uname() {
-            shell.env.set_global(
-                "HOSTTYPE",
-                ShellVariable::new(info.machine().to_string_lossy().to_string()),
-            )?;
-        }
-    }
+    shell.env.set_global(
+        "HOSTTYPE",
+        ShellVariable::new(std::env::consts::ARCH.to_string()),
+    )?;
 
     // IFS
     shell.env.set_global("IFS", ShellVariable::new(" \t\n"))?;
@@ -335,10 +326,7 @@ pub(crate) fn initialize_vars(
         .set_global("OSTYPE", ShellVariable::new(os_type))?;
 
     // PATH (if not already set)
-    #[cfg(unix)]
     if !shell.env.is_set("PATH") {
-        use crate::sys;
-
         let default_path_str = sys::fs::get_default_executable_search_paths().join(":");
         shell
             .env
@@ -454,10 +442,8 @@ pub(crate) fn initialize_vars(
     shell.env.set_global("PWD", pwd_var)?;
 
     // UID
-    #[cfg(unix)]
-    {
-        let mut uid_var =
-            ShellVariable::new(ShellValue::String(format!("{}", uzers::get_current_uid())));
+    if let Ok(uid) = sys::users::get_current_uid() {
+        let mut uid_var = ShellVariable::new(ShellValue::String(format!("{uid}")));
         uid_var.treat_as_integer().set_readonly();
         shell.env.set_global("UID", uid_var)?;
     }

@@ -2,11 +2,8 @@ use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
-#[cfg(target_os = "linux")]
-use std::os::fd::AsFd;
-#[cfg(unix)]
-use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
+use sys::commands::ExitStatusExt;
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
@@ -37,7 +34,6 @@ impl From<std::process::Output> for results::ExecutionResult {
             return Self::new((code & 0xFF) as u8);
         }
 
-        #[cfg(unix)]
         if let Some(signal) = output.status.signal() {
             #[expect(clippy::cast_sign_loss)]
             return Self::new((signal & 0xFF) as u8 + 128);
@@ -1585,6 +1581,8 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
 
     #[cfg(target_os = "linux")]
     {
+        use std::os::fd::AsFd as _;
+
         let len = i32::try_from(bytes.len())?;
         nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
     }

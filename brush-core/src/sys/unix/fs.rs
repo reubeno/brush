@@ -1,10 +1,12 @@
 //! Filesystem utilities.
 
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
 use crate::error;
+
+pub use std::os::unix::fs::MetadataExt;
 
 const DEFAULT_EXECUTABLE_SEARCH_PATHS: &[&str] = &[
     "/usr/local/sbin",

@@ -6,6 +6,7 @@
 #![allow(clippy::unused_async)]
 #![allow(clippy::unused_self)]
 
+pub mod commands;
 pub mod fs;
 pub mod input;
 pub(crate) mod network;

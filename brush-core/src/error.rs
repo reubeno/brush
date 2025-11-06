@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Shell, results};
+use crate::{Shell, results, sys};
 
 /// Unified error type for this crate. Contains just a kind for now,
 /// but will be extended later with additional context.
@@ -189,19 +189,13 @@ pub enum ErrorKind {
     #[error("{0}: invalid signal specification")]
     InvalidSignal(String),
 
-    /// A system error occurred.
-    #[cfg(unix)]
-    #[error("system error: {0}")]
-    ErrnoError(#[from] nix::errno::Errno),
+    /// A platform error occurred.
+    #[error("platform error: {0}")]
+    PlatformError(#[from] sys::PlatformError),
 
     /// An invalid umask was provided.
     #[error("invalid umask value")]
     InvalidUmask,
-
-    /// An error occurred reading from procfs.
-    #[cfg(target_os = "linux")]
-    #[error("procfs error: {0}")]
-    ProcfsError(#[from] procfs::ProcError),
 
     /// The given open file cannot be read from.
     #[error("cannot read from {0}")]
@@ -246,6 +240,10 @@ pub enum ErrorKind {
     /// An error occurred in a built-in command.
     #[error("{1}: {0}")]
     BuiltinError(Box<dyn BuiltinError>, String),
+
+    /// Operation not supported on this platform.
+    #[error("operation not supported on this platform: {0}")]
+    NotSupportedOnThisPlatform(&'static str),
 }
 
 impl BuiltinError for Error {}
