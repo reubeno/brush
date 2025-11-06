@@ -24,7 +24,7 @@ pub trait CommandExt {
 }
 
 impl CommandExt for std::process::Command {
-    fn arg0<S>(&mut self, arg: S) -> &mut Self
+    fn arg0<S>(&mut self, _arg: S) -> &mut Self
     where
         S: AsRef<OsStr>,
     {
