@@ -1,0 +1,542 @@
+name: "Options: set -u"
+cases:
+  # Basic behavior
+  - name: "Basic set variable access"
+    stdin: |
+      set -u
+      var="value"
+      echo "$var"
+
+  - name: "Unset variable triggers error"
+    known_failure: true
+    stdin: |
+      set -u
+      echo "$unset_var"
+      echo "should not print"
+
+  # Special parameters - should NOT error even when unset
+  - name: "Special parameter $@ does not error"
+    stdin: |
+      set -u
+      echo "args: $@"
+
+  - name: "Special parameter $* does not error"
+    stdin: |
+      set -u
+      echo "args: $*"
+
+  - name: "Special parameter $# does not error"
+    stdin: |
+      set -u
+      echo "count: $#"
+
+  - name: "Special parameter $? does not error"
+    stdin: |
+      set -u
+      true
+      echo "status: $?"
+
+  - name: "Special parameter $$ does not error"
+    stdin: |
+      set -u
+      echo "pid: $$" > /dev/null
+      echo "ok"
+
+  - name: "Special parameter $! does not error when no background jobs"
+    known_failure: true
+    stdin: |
+      set -u
+      echo "last bg: ${!}" || echo "ok"
+
+  - name: "Special parameter $0 does not error"
+    stdin: |
+      set -u
+      echo "shell: $0" > /dev/null
+      echo "ok"
+
+  - name: "Special parameter $- does not error"
+    stdin: |
+      set -u
+      echo "flags: $-" > /dev/null
+      echo "ok"
+
+  # Positional parameters
+  - name: "Unset positional parameter triggers error"
+    known_failure: true
+    stdin: |
+      set -u
+      myfunc() {
+        echo "$1"
+      }
+      myfunc
+      echo "should not print"
+
+  - name: "Set positional parameter does not error"
+    stdin: |
+      set -u
+      myfunc() {
+        echo "$1"
+      }
+      myfunc "arg"
+
+  - name: "Positional parameters beyond provided args error"
+    known_failure: true
+    stdin: |
+      set -u
+      myfunc() {
+        echo "$2"
+      }
+      myfunc "only_one_arg"
+      echo "should not print"
+
+  # Parameter expansion forms
+  - name: "Unset variable with default does not error"
+    stdin: |
+      set -u
+      echo "${unset_var:-default}"
+
+  - name: "Empty vs unset with :- operator"
+    stdin: |
+      set -u
+      empty=""
+      echo "${empty:-default}"
+      echo "${unset:-default}"
+
+  - name: "Empty vs unset with - operator"
+    stdin: |
+      set -u
+      empty=""
+      echo "${empty-default}"
+      echo "${unset-default}"
+
+  # Arrays (if supported)
+  - name: "Unset array element with default"
+    stdin: |
+      set -u
+      arr=(a b c)
+      echo "${arr[10]:-default}"
+
+  - name: "Unset array treated as unset variable"
+    stdin: |
+      set -u
+      echo "${unset_array[@]}"
+      echo "should not print"
+
+  - name: "Unset array with default does not error"
+    stdin: |
+      set -u
+      echo "${unset_array[@]:-default}"
+
+  # Conditionals
+  - name: "Unset variable in conditional test errors"
+    known_failure: true
+    stdin: |
+      set -u
+      if [ "$unset_var" = "value" ]; then
+        echo "then"
+      fi
+      echo "should not print"
+
+  - name: "Unset variable in [[ test errors"
+    known_failure: true
+    stdin: |
+      set -u
+      if [[ $unset_var = "value" ]]; then
+        echo "then"
+      fi
+      echo "should not print"
+
+  - name: "Unset variable with default in conditional works"
+    stdin: |
+      set -u
+      if [ "${unset_var:-}" = "" ]; then
+        echo "empty"
+      fi
+
+  - name: "test -v for unset variable"
+    stdin: |
+      set -u
+      if test -v unset_var; then
+        echo "set"
+      else
+        echo "unset"
+      fi
+
+  - name: "test -z with unset variable errors"
+    known_failure: true
+    stdin: |
+      set -u
+      if test -z "$unset_var"; then
+        echo "empty"
+      fi
+      echo "should not print"
+
+  # Command substitution
+  - name: "Unset variable in command substitution errors"
+    known_failure: true
+    stdin: |
+      set -u
+      result=$(echo "$unset_var")
+      echo "should not print"
+
+  - name: "Unset variable with default in command substitution"
+    stdin: |
+      set -u
+      result=$(echo "${unset_var:-default}")
+      echo "$result"
+
+  # Arithmetic expansion
+  - name: "Unset variable in arithmetic defaults to zero"
+    known_failure: true
+    stdin: |
+      set -u
+      result=$((unset_var + 5))
+      echo "$result"
+
+  # set +u to disable
+  - name: "set +u disables unset variable check"
+    stdin: |
+      set -u
+      set +u
+      echo "$unset_var"
+      echo "ok"
+
+  - name: "set -u can be re-enabled"
+    known_failure: true
+    stdin: |
+      set -u
+      set +u
+      echo "$unset_var"
+      set -u
+      echo "$another_unset"
+      echo "should not print"
+
+  - name: "set +u in function does not affect parent"
+    stdin: |
+      set -u
+      myfunc() {
+        set +u
+        echo "$unset_in_func"
+      }
+      myfunc
+      echo "$unset_in_parent"
+      echo "should not print"
+
+  # Functions
+  - name: "Unset variable in function body errors"
+    known_failure: true
+    stdin: |
+      set -u
+      myfunc() {
+        echo "$unset_var"
+      }
+      myfunc
+      echo "should not print"
+
+  - name: "Local unset variable errors"
+    known_failure: true
+    stdin: |
+      set -u
+      myfunc() {
+        local unset_local
+        echo "$unset_local"
+      }
+      myfunc
+      echo "should not print"
+
+  - name: "Local variable declaration with value works"
+    stdin: |
+      set -u
+      myfunc() {
+        local my_var="value"
+        echo "$my_var"
+      }
+      myfunc
+
+  - name: "Function parameter shadows unset global"
+    stdin: |
+      set -u
+      myfunc() {
+        local var="$1"
+        echo "$var"
+      }
+      myfunc "arg"
+
+  # Subshells
+  - name: "Unset variable in subshell errors"
+    known_failure: true
+    stdin: |
+      set -u
+      (echo "$unset_var")
+      echo "should not print"
+
+  - name: "set +u in subshell does not affect parent"
+    known_failure: true
+    stdin: |
+      set -u
+      (
+        set +u
+        echo "$unset_in_subshell"
+      )
+      echo "$unset_in_parent"
+      echo "should not print"
+
+  # Variable assignment and unset
+  - name: "Variable set then unset errors on access"
+    known_failure: true
+    stdin: |
+      set -u
+      var="value"
+      echo "$var"
+      unset var
+      echo "$var"
+      echo "should not print"
+
+  - name: "Variable set then unset with default works"
+    stdin: |
+      set -u
+      var="value"
+      unset var
+      echo "${var:-default}"
+
+  - name: "Unsetting non-existent variable does not error"
+    stdin: |
+      set -u
+      unset non_existent
+      echo "ok"
+
+  # Export and environment
+  - name: "Exported unset variable errors"
+    known_failure: true
+    stdin: |
+      set -u
+      export unset_exported
+      echo "$unset_exported"
+      echo "should not print"
+
+  - name: "Exported variable with value works"
+    stdin: |
+      set -u
+      export exported_var="value"
+      echo "$exported_var"
+
+  # Name references (if supported)
+  - name: "Nameref to unset variable"
+    known_failure: true
+    stdin: |
+      set -u
+      declare -n ref=unset_target
+      echo "$ref"
+      echo "should not print"
+
+  - name: "Nameref to set variable works"
+    known_failure: true
+    stdin: |
+      set -u
+      target="value"
+      declare -n ref=target
+      echo "$ref"
+
+  # Pattern expansion
+  - name: "Unset variable in pattern errors"
+    known_failure: true
+    stdin: |
+      set -u
+      echo ${unset_var#prefix}
+      echo "should not print"
+
+  # Length operator
+  - name: "Length of unset variable errors"
+    known_failure: true
+    stdin: |
+      set -u
+      echo ${#unset_var}
+      echo "should not print"
+
+  - name: "Length of empty variable works"
+    stdin: |
+      set -u
+      empty=""
+      echo ${#empty}
+
+  # Indirect expansion
+  - name: "Indirect expansion of unset variable errors"
+    known_failure: true
+    stdin: |
+      set -u
+      ref="unset_target"
+      echo ${!ref}
+      echo "should not print"
+
+  - name: "Indirect expansion to set variable works"
+    stdin: |
+      set -u
+      target="value"
+      ref="target"
+      echo ${!ref}
+
+  # Case statements
+  - name: "Unset variable in case pattern errors"
+    known_failure: true
+    stdin: |
+      set -u
+      case "$unset_var" in
+        *) echo "matched" ;;
+      esac
+      echo "should not print"
+
+  - name: "Unset variable with default in case works"
+    stdin: |
+      set -u
+      case "${unset_var:-default}" in
+        default) echo "matched" ;;
+      esac
+
+  # For loops
+  - name: "Unset variable in for loop errors"
+    known_failure: true
+    stdin: |
+      set -u
+      for item in $unset_var; do
+        echo "$item"
+      done
+      echo "should not print"
+
+  - name: "Unset variable with default in for loop works"
+    stdin: |
+      set -u
+      for item in ${unset_var:-a b c}; do
+        echo "$item"
+      done
+
+  # While loops with unset variables
+  - name: "Unset variable in while condition errors"
+    known_failure: true
+    stdin: |
+      set -u
+      while [ "$unset_var" != "stop" ]; do
+        echo "loop"
+        break
+      done
+      echo "should not print"
+
+  # Read command
+  - name: "read into variable then access works"
+    stdin: |
+      set -u
+      echo "value" | read my_var || true
+      echo "${my_var:-default}"
+
+  - name: "Variable unset before read then set works"
+    stdin: |
+      set -u
+      echo "test" | {
+        read input
+        echo "$input"
+      }
+
+  # Compound assignments
+  - name: "Associative array unset key with default"
+    stdin: |
+      set -u
+      declare -A assoc
+      echo "${assoc[key]:-default}"
+
+  # Background processes
+  - name: "Unset variable in background process errors in subprocess"
+    known_failure: true
+    stdin: |
+      set -u
+      { echo "$unset_var" 2>/dev/null; } &
+      wait
+      echo "parent continues"
+
+  # Pipelines
+  - name: "Unset variable with default in pipeline works"
+    stdin: |
+      set -u
+      echo "${unset_var:-default}" | cat
+
+  # Here documents and here strings
+  - name: "Unset variable in here doc errors"
+    known_failure: true
+    stdin: |
+      set -u
+      cat <<EOF
+      $unset_var
+      EOF
+      echo "should not print"
+
+  - name: "Unset variable with default in here doc works"
+    stdin: |
+      set -u
+      cat <<EOF
+      ${unset_var:-default}
+      EOF
+
+  # Edge cases
+  - name: "Empty string is not unset"
+    stdin: |
+      set -u
+      var=""
+      echo "var is: '$var'"
+
+  - name: "Null value vs unset"
+    stdin: |
+      set -u
+      null=""
+      echo "${null-default}"
+      echo "${unset-default}"
+
+  - name: "IFS unset behavior"
+    stdin: |
+      set -u
+      unset IFS
+      echo "ok"
+
+  - name: "PATH unset would error"
+    known_failure: true
+    stdin: |
+      set -u
+      saved_path="$PATH"
+      unset PATH
+      echo "$PATH"
+      echo "should not print"
+
+  # Combination with other options
+  - name: "set -u with set -e"
+    known_failure: true
+    stdin: |
+      set -eu
+      echo "$unset_var"
+      echo "should not print"
+
+  - name: "set -u does not affect set -e behavior"
+    known_failure: true
+    stdin: |
+      set -eu
+      false
+      echo "should not print"
+
+  # Declare without assignment
+  - name: "declare without value then access errors"
+    known_failure: true
+    stdin: |
+      set -u
+      declare my_var
+      echo "$my_var"
+      echo "should not print"
+
+  - name: "declare with value then access works"
+    stdin: |
+      set -u
+      declare my_var="value"
+      echo "$my_var"
+
+  - name: "readonly without value then access errors"
+    known_failure: true
+    stdin: |
+      set -u
+      readonly my_var
+      echo "$my_var"
+      echo "should not print"
