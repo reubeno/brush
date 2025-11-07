@@ -5,3 +5,4 @@
 * [How to run benchmarks](run-benchmarks.md)
 * [How to release](release.md)
 * [How to upgrade the MSRV](upgrade-msrv.md)
+* [How to record "tapes"](record-tapes.md)
