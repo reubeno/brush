@@ -244,6 +244,10 @@ pub enum ErrorKind {
     /// Operation not supported on this platform.
     #[error("operation not supported on this platform: {0}")]
     NotSupportedOnThisPlatform(&'static str),
+
+    /// Command history is not enabled in this shell.
+    #[error("command history is not enabled in this shell")]
+    HistoryNotEnabled,
 }
 
 impl BuiltinError for Error {}

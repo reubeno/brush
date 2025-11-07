@@ -123,8 +123,8 @@ pub fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registrati
     #[cfg(feature = "builtin.wait")]
     m.insert("wait".into(), builtin::<wait::WaitCommand>());
 
-    // TODO: implement fc builtin; should be done after history.
-    m.insert("fc".into(), builtin::<unimp::UnimplementedCommand>());
+    #[cfg(feature = "builtin.fc")]
+    m.insert("fc".into(), builtin::<fc::FcCommand>());
 
     if matches!(set, BuiltinSet::BashMode) {
         #[cfg(feature = "builtin.builtin")]

@@ -68,11 +68,7 @@ impl builtins::Command for HistoryCommand {
         if let Some(history) = context.shell.history_mut() {
             self.execute_with_history(&context.params, history, config)
         } else {
-            writeln!(
-                context.stderr(),
-                "history: history not available in this shell"
-            )?;
-            Ok(ExecutionExitCode::Unimplemented.into())
+            Err(brush_core::ErrorKind::HistoryNotEnabled.into())
         }
     }
 }

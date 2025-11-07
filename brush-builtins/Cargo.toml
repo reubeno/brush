@@ -38,6 +38,7 @@ default = [
     'builtin.exit',
     'builtin.export',
     'builtin.false',
+    'builtin.fc',
     'builtin.fg',
     'builtin.getopts',
     'builtin.hash',
@@ -92,6 +93,7 @@ default = [
 'builtin.exit' = []
 'builtin.export' = []
 'builtin.false' = []
+'builtin.fc' = []
 'builtin.fg' = []
 'builtin.getopts' = []
 'builtin.hash' = []

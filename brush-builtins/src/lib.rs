@@ -46,6 +46,8 @@ mod exit;
 mod export;
 #[cfg(feature = "builtin.false")]
 mod false_;
+#[cfg(feature = "builtin.fc")]
+mod fc;
 #[cfg(feature = "builtin.fg")]
 mod fg;
 #[cfg(feature = "builtin.getopts")]
