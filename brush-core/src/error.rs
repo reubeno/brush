@@ -248,6 +248,10 @@ pub enum ErrorKind {
     /// Command history is not enabled in this shell.
     #[error("command history is not enabled in this shell")]
     HistoryNotEnabled,
+
+    /// Unknown key binding function.
+    #[error("unknown key binding function: {0}")]
+    UnknownKeyBindingFunction(String),
 }
 
 impl BuiltinError for Error {}
