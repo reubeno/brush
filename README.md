@@ -10,8 +10,8 @@
   <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/v/brush-shell?style=flat-square"/></a>
   <!-- msrv badge -->
   <img src="https://img.shields.io/crates/msrv/brush-shell"/>
-  <!-- LoC badge -->
-  <img src="https://tokei.rs/b1/github/reubeno/brush?category=code"/>
+  <!-- LoC badge: badge generation seems broken; temporarily disabled -->
+  <!-- <img src="https://tokei.rs/b1/github/reubeno/brush?category=code"/> -->
   <!-- license badge -->
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
   <!-- CI status badge -->
@@ -39,7 +39,9 @@
 <hr/>
 
 `brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash-](https://www.gnu.org/software/bash/)compatible shell,
-implemented in Rust. It's built and tested on Linux, macOS, and WSL. Native Windows support is experimental.
+implemented in Rust. At its core is an embeddable shell interpreter published for reuse
+in other Rust projects. It's built and tested on Linux, macOS, and WSL. Native Windows
+support is experimental.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52" width="80%"/>
@@ -152,7 +154,7 @@ If you're interested, we'd love contributions to improve compatibility, broaden 
 
 ## 🧪 Testing strategy
 
-This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [750+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
+This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [850+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
 
