@@ -413,13 +413,16 @@ peg::parser! {
                 condition:arithmetic_expression()? specific_operator(";")
                 updater:arithmetic_expression()?
             specific_operator(")") specific_operator(")")
-            sequential_sep()
-            body:do_group() {
+            body:arithmetic_for_body() {
                 let start = s.location();
                 let end = &body.loc;
                 let loc = TokenLocation::within(start, end);
                 ast::ArithmeticForClauseCommand { initializer, condition, updater, body, loc }
             }
+
+        rule arithmetic_for_body() -> ast::DoGroupCommand =
+            sequential_sep() body:do_group() { body } /
+            body:brace_group() { ast::DoGroupCommand { list: body.list, loc: body.loc } }
 
         rule extended_test_command() -> ast::ExtendedTestExprCommand =
             s:specific_word("[[") linebreak() expr:extended_test_expression() linebreak() e:specific_word("]]") {
