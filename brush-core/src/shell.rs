@@ -15,8 +15,8 @@ use crate::results::ExecutionSpawnResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, history, interfaces, pathcache,
-    pathsearch, scripts, trace_categories, wellknownvars,
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ProcessGroupPolicy, history,
+    interfaces, pathcache, pathsearch, scripts, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -926,13 +926,47 @@ impl Shell {
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
-        self.parse_and_execute_script_file(
-            script_path.as_ref(),
-            args,
-            &params,
-            scripts::CallType::Executed,
-        )
-        .await
+        let result = self
+            .parse_and_execute_script_file(
+                script_path.as_ref(),
+                args,
+                &params,
+                scripts::CallType::Executed,
+            )
+            .await?;
+
+        let _ = self.on_exit().await;
+
+        Ok(result)
+    }
+
+    /// Runs any exit steps for the shell.
+    pub async fn on_exit(&mut self) -> Result<(), error::Error> {
+        self.invoke_exit_trap_handler_if_registered().await?;
+
+        Ok(())
+    }
+
+    async fn invoke_exit_trap_handler_if_registered(
+        &mut self,
+    ) -> Result<ExecutionResult, error::Error> {
+        let Some(handler) = self.traps.handlers.get(&traps::TrapSignal::Exit).cloned() else {
+            return Ok(ExecutionResult::success());
+        };
+
+        // TODO: Confirm whether trap handlers should be executed in the same process group.
+        let mut params = self.default_exec_params();
+        params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
+        let orig_last_exit_status = self.last_exit_status;
+        self.traps.handler_depth += 1;
+
+        let result = self.run_string(handler, &params).await;
+
+        self.traps.handler_depth -= 1;
+        self.last_exit_status = orig_last_exit_status;
+
+        result
     }
 
     pub(crate) async fn run_parsed_result(
