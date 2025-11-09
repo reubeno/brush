@@ -247,7 +247,7 @@ impl OpenFiles {
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to lookup.
-    pub fn get_fd(&self, fd: u32) -> Option<&OpenFile> {
+    pub fn fd(&self, fd: u32) -> Option<&OpenFile> {
         self.files.get(&fd)
     }
 

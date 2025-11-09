@@ -68,17 +68,17 @@ pub struct ExecutionParameters {
 impl ExecutionParameters {
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
-        self.fd(0).unwrap()
+        self.open_files.stdin().cloned().unwrap()
     }
 
     /// Returns the standard output file; usable with `write!` et al.
     pub fn stdout(&self) -> impl std::io::Write + 'static {
-        self.fd(1).unwrap()
+        self.open_files.stdout().cloned().unwrap()
     }
 
     /// Returns the standard error file; usable with `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write + 'static {
-        self.fd(2).unwrap()
+        self.open_files.stderr().cloned().unwrap()
     }
 
     /// Returns the file descriptor with the given number. Returns `None`
@@ -89,7 +89,7 @@ impl ExecutionParameters {
     /// * `fd` - The file descriptor number to retrieve.
     #[allow(clippy::unwrap_in_result)]
     pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
-        self.open_files.get_fd(fd).map(|f| f.try_clone().unwrap())
+        self.open_files.fd(fd).cloned()
     }
 }
 
@@ -1392,7 +1392,7 @@ pub(crate) async fn setup_redirect(
 
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
-                    if let Some(f) = params.open_files.get_fd(*fd) {
+                    if let Some(f) = params.open_files.fd(*fd) {
                         let target_file = f.try_clone()?;
 
                         params.open_files.set_fd(fd_num, target_file);
@@ -1436,7 +1436,7 @@ pub(crate) async fn setup_redirect(
                             .map_err(|_| error::ErrorKind::InvalidRedirection)?;
 
                         // Duplicate the fd.
-                        let target_file = if let Some(f) = params.open_files.get_fd(source_fd_num) {
+                        let target_file = if let Some(f) = params.open_files.fd(source_fd_num) {
                             f.try_clone()?
                         } else {
                             return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
