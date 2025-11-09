@@ -339,6 +339,15 @@ cases:
       echo "\${declared:+}          : ${declared:+}"
       echo "\${undeclared:+}        : ${undeclared:+}"
 
+  - name: "Parameter expression: advanced alternative value"
+    stdin: |
+      value="value"
+
+      echo ${value:+\x}
+      echo ${value:+'x'}
+      echo "${value:+\x}"
+      echo "${value:+'x'}"
+
   - name: "Parameter expression: error on condition (interactive)"
     skip: true # TODO: fails with cargo nextest
     ignore_stderr: true
@@ -443,7 +452,6 @@ cases:
       done
 
   - name: "Parameter expression: expanded array as default value"
-    known_failure: true # TODO: needs triage and debugging
     stdin: |
       declare -a var=("abc" "def" "ghi" "")
 

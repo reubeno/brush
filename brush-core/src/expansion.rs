@@ -389,6 +389,7 @@ struct WordExpander<'a> {
     params: &'a ExecutionParameters,
     parser_options: brush_parser::ParserOptions,
     force_disable_brace_expansion: bool,
+    in_double_quotes: bool,
 }
 
 impl<'a> WordExpander<'a> {
@@ -399,6 +400,7 @@ impl<'a> WordExpander<'a> {
             params,
             parser_options,
             force_disable_brace_expansion: false,
+            in_double_quotes: false,
         }
     }
 
@@ -508,6 +510,29 @@ impl<'a> WordExpander<'a> {
         let coalesced = coalesce_expansions(expansions);
 
         Ok(coalesced)
+    }
+
+    /// Expand a word used inside a parameter expansion (like the word in ${param:+word}).
+    /// When we're already inside double-quotes, we preserve literal backslashes and quotes
+    /// (except those escaped in ways valid in double-quotes) but still expand parameters,
+    /// command substitutions, and arithmetic.
+    async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
+        // When inside double-quotes, we need to parse the word with double-quote semantics.
+        if self.in_double_quotes {
+            // If the word already starts with a double-quote, it will be parsed with its own semantics.
+            // Single quotes don't create quoted regions inside double-quotes, so we still need to wrap.
+            if word.starts_with('"') {
+                // Already double-quoted - just expand normally
+                self.basic_expand(word).await
+            } else {
+                // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
+                let wrapped = format!("\"{word}\"");
+                self.basic_expand(&wrapped).await
+            }
+        } else {
+            // When not inside double-quotes, perform normal expansion with quote removal
+            self.basic_expand(word).await
+        }
     }
 
     fn brace_expand_if_needed(&self, word: &'a str) -> Result<Vec<Cow<'a, str>>, error::Error> {
@@ -661,6 +686,10 @@ impl<'a> WordExpander<'a> {
                 let pieces_is_empty = pieces.is_empty();
                 let concatenation_joiner = self.shell.get_ifs_first_char();
 
+                // Save the previous state and set the flag
+                let previously_in_double_quotes = self.in_double_quotes;
+                self.in_double_quotes = true;
+
                 for piece in pieces {
                     let Expansion {
                         fields: this_fields,
@@ -712,6 +741,9 @@ impl<'a> WordExpander<'a> {
                         fields.push(WordField(next_pieces));
                     }
                 }
+
+                // Restore the previous state
+                self.in_double_quotes = previously_in_double_quotes;
 
                 // If there were no pieces, then make sure we yield a single field containing an
                 // empty, unsplittable string.
@@ -794,9 +826,7 @@ impl<'a> WordExpander<'a> {
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Ok(Expansion::from(
-                        self.basic_expand_to_str(default_value).await?,
-                    )),
+                    _ => Ok(self.expand_parameter_word(default_value).await?),
                 }
             }
             brush_parser::word::ParameterExpr::AssignDefaultValues {
@@ -816,7 +846,7 @@ impl<'a> WordExpander<'a> {
                     ) => Ok(expanded_parameter),
                     _ => {
                         let expanded_default_value =
-                            self.basic_expand_to_str(default_value).await?;
+                            String::from(self.expand_parameter_word(default_value).await?);
                         self.assign_to_parameter(&parameter, expanded_default_value.clone())
                             .await?;
                         Ok(Expansion::from(expanded_default_value))
@@ -860,7 +890,7 @@ impl<'a> WordExpander<'a> {
                     | (
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
-                    ) => Ok(self.basic_expand(alternative_value).await?),
+                    ) => Ok(self.expand_parameter_word(alternative_value).await?),
                     _ => Ok(Expansion::from(String::new())),
                 }
             }
