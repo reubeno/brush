@@ -1456,10 +1456,11 @@ impl Shell {
         &mut self,
         command: S,
     ) -> Result<(), error::Error> {
+        // Expand the PS4 prompt variable to get our prefix.
         let ps4 = self.as_mut().expand_prompt_var("PS4", "").await?;
-
         let mut prefix = ps4;
 
+        // Add additional depth-based prefixes using the first character of PS4.
         let additional_depth = self.script_call_stack.depth() + self.depth;
         if let Some(c) = prefix.chars().next() {
             for _ in 0..additional_depth {
@@ -1467,7 +1468,25 @@ impl Shell {
             }
         }
 
-        writeln!(self.stderr(), "{prefix}{}", command.as_ref())?;
+        // Resolve which file descriptor to use for tracing. We default to stderr.
+        let mut trace_file = self.open_files.stderr();
+
+        // If BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
+        if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD") {
+            let xtracefd_value = xtracefd_var.value().to_cow_str(self);
+            if let Ok(fd) = xtracefd_value.parse::<u32>() {
+                if let Some(file) = self.open_files.get(fd) {
+                    trace_file = Some(file);
+                }
+            }
+        }
+
+        // If we have a valid trace file, write to it.
+        if let Some(trace_file) = trace_file {
+            let mut trace_file = trace_file.try_dup()?;
+            writeln!(trace_file, "{prefix}{}", command.as_ref())?;
+        }
+
         Ok(())
     }
 
