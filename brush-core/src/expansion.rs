@@ -389,6 +389,7 @@ struct WordExpander<'a> {
     params: &'a ExecutionParameters,
     parser_options: brush_parser::ParserOptions,
     force_disable_brace_expansion: bool,
+    in_double_quotes: bool,
 }
 
 impl<'a> WordExpander<'a> {
@@ -399,6 +400,7 @@ impl<'a> WordExpander<'a> {
             params,
             parser_options,
             force_disable_brace_expansion: false,
+            in_double_quotes: false,
         }
     }
 
@@ -508,6 +510,40 @@ impl<'a> WordExpander<'a> {
         let coalesced = coalesce_expansions(expansions);
 
         Ok(coalesced)
+    }
+
+    /// Expand a word used inside a parameter expansion (like the word in ${param:+word}).
+    /// When we're already inside double-quotes, we preserve literal backslashes and quotes
+    /// (except those escaped in ways valid in double-quotes) but still expand parameters,
+    /// command substitutions, and arithmetic.
+    async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
+        // When inside double-quotes, we need to parse the word with double-quote semantics.
+        if self.in_double_quotes {
+            // If the word already starts with a double-quote, we need to remove those quotes
+            // and expand what's inside with normal (non-double-quote) semantics.
+            if let Some(stripped) = word.strip_prefix('"') {
+                if let Some(inner) = stripped.strip_suffix('"') {
+                    // Remove the surrounding double-quotes and expand the content normally
+                    // This requires us to temporarily clear in_double_quotes so the inner
+                    // content gets normal processing.
+                    let previously_in_double_quotes = self.in_double_quotes;
+                    self.in_double_quotes = false;
+
+                    // Now perform the expansion and make sure to restore the previous state,
+                    // even if the expansion fails.
+                    let result = self.basic_expand(inner).await;
+                    self.in_double_quotes = previously_in_double_quotes;
+
+                    return result;
+                }
+            }
+            // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
+            let wrapped = format!("\"{word}\"");
+            self.basic_expand(&wrapped).await
+        } else {
+            // When not inside double-quotes, perform normal expansion with quote removal
+            self.basic_expand(word).await
+        }
     }
 
     fn brace_expand_if_needed(&self, word: &'a str) -> Result<Vec<Cow<'a, str>>, error::Error> {
@@ -656,62 +692,21 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::WordPiece::DoubleQuotedSequence(pieces)
             | brush_parser::word::WordPiece::GettextDoubleQuotedSequence(pieces) => {
-                let mut fields: Vec<WordField> = vec![];
-
                 let pieces_is_empty = pieces.is_empty();
-                let concatenation_joiner = self.shell.get_ifs_first_char();
 
-                for piece in pieces {
-                    let Expansion {
-                        fields: this_fields,
-                        concatenate,
-                        ..
-                    } = self.expand_word_piece(piece.piece).await?;
+                // Save the previous state and set the flag
+                let previously_in_double_quotes = self.in_double_quotes;
+                self.in_double_quotes = true;
 
-                    let fields_to_append = if concatenate {
-                        #[expect(unstable_name_collisions)]
-                        let mut concatenated: Vec<ExpansionPiece> = this_fields
-                            .into_iter()
-                            .map(|WordField(pieces)| {
-                                pieces
-                                    .into_iter()
-                                    .map(|piece| piece.make_unsplittable())
-                                    .collect()
-                            })
-                            .intersperse(vec![ExpansionPiece::Unsplittable(
-                                concatenation_joiner.to_string(),
-                            )])
-                            .flatten()
-                            .collect();
+                // Process pieces; don't inspect the result yet, so we can make
+                // sure we restore the previous value of the 'in_double_quotes' flag.
+                let result = self.process_double_quoted_pieces(pieces).await;
 
-                        // If there were no pieces, make sure there's an empty string after
-                        // concatenation.
-                        if concatenated.is_empty() {
-                            concatenated.push(ExpansionPiece::Splittable(String::new()));
-                        }
+                // Restore the previous state
+                self.in_double_quotes = previously_in_double_quotes;
 
-                        vec![WordField(concatenated)]
-                    } else {
-                        this_fields
-                    };
-
-                    for (i, WordField(next_pieces)) in fields_to_append.into_iter().enumerate() {
-                        // Flip to unsplittable.
-                        let mut next_pieces: Vec<_> = next_pieces
-                            .into_iter()
-                            .map(|piece| piece.make_unsplittable())
-                            .collect();
-
-                        if i == 0 {
-                            if let Some(WordField(last_pieces)) = fields.last_mut() {
-                                last_pieces.append(&mut next_pieces);
-                                continue;
-                            }
-                        }
-
-                        fields.push(WordField(next_pieces));
-                    }
-                }
+                // Now we can inspect the result.
+                let mut fields = result?;
 
                 // If there were no pieces, then make sure we yield a single field containing an
                 // empty, unsplittable string.
@@ -768,6 +763,70 @@ impl<'a> WordExpander<'a> {
         }
     }
 
+    /// Helper function to process pieces within a double-quoted sequence.
+    /// This ensures proper handling of concatenation and field building.
+    async fn process_double_quoted_pieces(
+        &mut self,
+        pieces: Vec<brush_parser::word::WordPieceWithSource>,
+    ) -> Result<Vec<WordField>, error::Error> {
+        let mut fields: Vec<WordField> = vec![];
+        let concatenation_joiner = self.shell.get_ifs_first_char();
+
+        for piece in pieces {
+            let Expansion {
+                fields: this_fields,
+                concatenate,
+                ..
+            } = self.expand_word_piece(piece.piece).await?;
+
+            let fields_to_append = if concatenate {
+                #[expect(unstable_name_collisions)]
+                let mut concatenated: Vec<ExpansionPiece> = this_fields
+                    .into_iter()
+                    .map(|WordField(pieces)| {
+                        pieces
+                            .into_iter()
+                            .map(|piece| piece.make_unsplittable())
+                            .collect()
+                    })
+                    .intersperse(vec![ExpansionPiece::Unsplittable(
+                        concatenation_joiner.to_string(),
+                    )])
+                    .flatten()
+                    .collect();
+
+                // If there were no pieces, make sure there's an empty string after
+                // concatenation.
+                if concatenated.is_empty() {
+                    concatenated.push(ExpansionPiece::Splittable(String::new()));
+                }
+
+                vec![WordField(concatenated)]
+            } else {
+                this_fields
+            };
+
+            for (i, WordField(next_pieces)) in fields_to_append.into_iter().enumerate() {
+                // Flip to unsplittable.
+                let mut next_pieces: Vec<_> = next_pieces
+                    .into_iter()
+                    .map(|piece| piece.make_unsplittable())
+                    .collect();
+
+                if i == 0 {
+                    if let Some(WordField(last_pieces)) = fields.last_mut() {
+                        last_pieces.append(&mut next_pieces);
+                        continue;
+                    }
+                }
+
+                fields.push(WordField(next_pieces));
+            }
+        }
+
+        Ok(fields)
+    }
+
     #[expect(clippy::too_many_lines)]
     async fn expand_parameter_expr(
         &mut self,
@@ -794,9 +853,7 @@ impl<'a> WordExpander<'a> {
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Ok(Expansion::from(
-                        self.basic_expand_to_str(default_value).await?,
-                    )),
+                    _ => Ok(self.expand_parameter_word(default_value).await?),
                 }
             }
             brush_parser::word::ParameterExpr::AssignDefaultValues {
@@ -816,7 +873,7 @@ impl<'a> WordExpander<'a> {
                     ) => Ok(expanded_parameter),
                     _ => {
                         let expanded_default_value =
-                            self.basic_expand_to_str(default_value).await?;
+                            String::from(self.expand_parameter_word(default_value).await?);
                         self.assign_to_parameter(&parameter, expanded_default_value.clone())
                             .await?;
                         Ok(Expansion::from(expanded_default_value))
@@ -860,7 +917,7 @@ impl<'a> WordExpander<'a> {
                     | (
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
-                    ) => Ok(self.basic_expand(alternative_value).await?),
+                    ) => Ok(self.expand_parameter_word(alternative_value).await?),
                     _ => Ok(Expansion::from(String::new())),
                 }
             }
