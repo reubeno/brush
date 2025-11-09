@@ -78,6 +78,18 @@ cases:
       x=$(<file.txt)
       echo "x: $x"
 
+  - name: "Command substitution with only input redir in pipeline"
+    known_failure: true
+    ignore_stderr: true
+    test_files:
+      - path: file.txt
+        contents: |
+          File Contents
+    stdin: |
+      x=$(<non-existent-file.txt) || x=$(<file.txt)
+      echo "\$?: $?"
+      echo "x: $x"
+
   - name: "Backquote with only input redir"
     stdin: |
       echo "Some text" >file.txt
