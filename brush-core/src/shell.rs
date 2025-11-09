@@ -344,7 +344,7 @@ impl Shell {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
-            open_files: openfiles::OpenFiles::default(),
+            open_files: openfiles::OpenFiles::new_from_host_env(),
             working_dir: std::env::current_dir()?,
             env: env::ShellEnvironment::new(),
             funcs: functions::FunctionEnv::default(),
@@ -909,14 +909,9 @@ impl Shell {
         Ok(result)
     }
 
-    /// Returns the default execution parameters for this shell. It will start with
-    /// a snapshot of the open files in the shell, but changes to the returned
-    /// parameters will not affect the shell's ambiently open files.
+    /// Returns the default execution parameters for this shell.
     pub fn default_exec_params(&self) -> ExecutionParameters {
-        ExecutionParameters {
-            open_files: self.open_files.clone(),
-            ..Default::default()
-        }
+        ExecutionParameters::default()
     }
 
     /// Executes the given script file, returning the resulting exit status.
@@ -959,7 +954,7 @@ impl Shell {
         match result {
             Ok(result) => Ok(result),
             Err(err) => {
-                let _ = self.display_error(&mut params.stderr(), &err).await;
+                let _ = self.display_error(&mut params.stderr(self), &err).await;
                 let exit_code = ExecutionExitCode::from(&err);
                 *self.last_exit_status_mut() = exit_code.into();
                 Ok(exit_code.into())
@@ -1352,7 +1347,7 @@ impl Shell {
             if parent == Path::new("/dev/fd") {
                 if let Some(filename) = path_to_open.file_name() {
                     if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
-                        if let Some(open_file) = params.open_files.fd(fd_num) {
+                        if let Some(open_file) = params.try_fd(self, fd_num) {
                             return open_file.try_clone();
                         }
                     }
@@ -1443,28 +1438,27 @@ impl Shell {
     /// # Arguments
     ///
     /// * `open_files` - The new set of open files to use.
-    pub fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
-        self.open_files = open_files;
+    pub fn replace_open_files(
+        &mut self,
+        open_fds: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+    ) {
+        self.open_files = openfiles::OpenFiles::from(open_fds);
+    }
+
+    pub(crate) const fn persistent_open_files(&self) -> &openfiles::OpenFiles {
+        &self.open_files
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> impl std::io::Write {
-        self.open_files
-            .fd(openfiles::OpenFiles::STDOUT_FD)
-            .unwrap()
-            .try_clone()
-            .unwrap()
+        self.open_files.try_stdout().cloned().unwrap()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write {
-        self.open_files
-            .fd(openfiles::OpenFiles::STDERR_FD)
-            .unwrap()
-            .try_clone()
-            .unwrap()
+        self.open_files.try_stderr().cloned().unwrap()
     }
 
     /// Outputs `set -x` style trace output for a command.
@@ -1474,6 +1468,7 @@ impl Shell {
     /// * `command` - The command to trace.
     pub(crate) async fn trace_command<S: AsRef<str>>(
         &mut self,
+        params: &ExecutionParameters,
         command: S,
     ) -> Result<(), error::Error> {
         // Expand the PS4 prompt variable to get our prefix.
@@ -1489,14 +1484,14 @@ impl Shell {
         }
 
         // Resolve which file descriptor to use for tracing. We default to stderr.
-        let mut trace_file = self.open_files.stderr();
+        let mut trace_file = params.try_stderr(self);
 
         // If BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
         if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD") {
             let xtracefd_value = xtracefd_var.value().to_cow_str(self);
             if let Ok(fd) = xtracefd_value.parse::<u32>() {
-                if let Some(file) = self.open_files.fd(fd) {
-                    trace_file = Some(file);
+                if let Some(file) = self.open_files.try_fd(fd) {
+                    trace_file = Some(file.clone());
                 }
             }
         }

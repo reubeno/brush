@@ -37,17 +37,32 @@ pub struct ExecutionContext<'a> {
 impl ExecutionContext<'_> {
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
-        self.params.stdin()
+        self.params.stdin(self.shell)
     }
 
     /// Returns the standard output file; usable with `write!` et al.
     pub fn stdout(&self) -> impl std::io::Write + 'static {
-        self.params.stdout()
+        self.params.stdout(self.shell)
     }
 
     /// Returns the standard error file; usable with `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write + 'static {
-        self.params.stderr()
+        self.params.stderr(self.shell)
+    }
+
+    /// Returns the file descriptor with the given number. Returns `None`
+    /// if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
+        self.params.try_fd(self.shell, fd)
+    }
+
+    /// Iterates over all open file descriptors.
+    pub fn iter_fds(&self) -> impl Iterator<Item = (u32, openfiles::OpenFile)> {
+        self.params.iter_fds(self.shell)
     }
 
     pub(crate) const fn should_cmd_lead_own_process_group(&self) -> bool {
@@ -114,21 +129,19 @@ impl CommandArg {
 ///
 /// # Arguments
 ///
-/// * `shell` - The shell in which the command is being executed.
+/// * `context` - The execution context in which the command is being composed.
 /// * `command_name` - The name of the command to execute.
 /// * `argv0` - The value to use for `argv[0]` (may be different from the command).
 /// * `args` - The arguments to pass to the command.
-/// * `open_files` - The set of open files to use for the command.
 /// * `empty_env` - If true, the command will be executed with an empty
 ///   environment; if false, the command will inherit environment variables
 ///   marked as exported in the provided `Shell`.
 #[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
 pub fn compose_std_command<S: AsRef<OsStr>>(
-    shell: &Shell,
+    context: &ExecutionContext<'_>,
     command_name: &str,
     argv0: &str,
     args: &[S],
-    mut open_files: OpenFiles,
     empty_env: bool,
 ) -> Result<std::process::Command, error::Error> {
     let mut cmd = std::process::Command::new(command_name);
@@ -141,26 +154,26 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     cmd.args(args);
 
     // Use the shell's current working dir.
-    cmd.current_dir(shell.working_dir());
+    cmd.current_dir(context.shell.working_dir());
 
     // Start with a clear environment.
     cmd.env_clear();
 
     // Add in exported variables.
     if !empty_env {
-        for (k, v) in shell.env.iter_exported() {
+        for (k, v) in context.shell.env.iter_exported() {
             // NOTE: To match bash behavior, we only include exported variables
             // that are set (i.e., have a value). This means a variable that
             // shows up in `declare -p` but has no *set* value will be omitted.
             if v.value().is_set() {
-                cmd.env(k.as_str(), v.value().to_cow_str(shell).as_ref());
+                cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
             }
         }
     }
 
     // Add in exported functions.
     if !empty_env {
-        for (func_name, registration) in shell.funcs().iter() {
+        for (func_name, registration) in context.shell.funcs().iter() {
             if registration.is_exported() {
                 let var_name = std::format!("BASH_FUNC_{func_name}%%");
                 let value = std::format!("() {}", registration.definition.body);
@@ -170,7 +183,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stdin, if applicable.
-    match open_files.remove_fd(OpenFiles::STDIN_FD) {
+    match context.try_fd(OpenFiles::STDIN_FD) {
         Some(OpenFile::Stdin(_)) | None => (),
         Some(stdin_file) => {
             let as_stdio: Stdio = stdin_file.into();
@@ -179,7 +192,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stdout, if applicable.
-    match open_files.remove_fd(OpenFiles::STDOUT_FD) {
+    match context.try_fd(OpenFiles::STDOUT_FD) {
         Some(OpenFile::Stdout(_)) | None => (),
         Some(stdout_file) => {
             let as_stdio: Stdio = stdout_file.into();
@@ -188,7 +201,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stderr, if applicable.
-    match open_files.remove_fd(OpenFiles::STDERR_FD) {
+    match context.try_fd(OpenFiles::STDERR_FD) {
         Some(OpenFile::Stderr(_)) | None => {}
         Some(stderr_file) => {
             let as_stdio: Stdio = stderr_file.into();
@@ -197,7 +210,10 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Inject any other fds.
-    cmd.inject_fds(open_files)?;
+    let other_files = context.iter_fds().filter(|(fd, _)| {
+        *fd != OpenFiles::STDIN_FD && *fd != OpenFiles::STDOUT_FD && *fd != OpenFiles::STDERR_FD
+    });
+    cmd.inject_fds(other_files)?;
 
     Ok(cmd)
 }
@@ -371,9 +387,7 @@ pub(crate) fn execute_external_command(
 
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
     let child_stdin_is_terminal = context
-        .params
-        .open_files
-        .stdin()
+        .try_fd(openfiles::OpenFiles::STDIN_FD)
         .is_some_and(|f| f.is_term());
 
     // Figure out if we should be setting up a new process group.
@@ -382,11 +396,10 @@ pub(crate) fn execute_external_command(
     // Compose the std::process::Command that encapsulates what we want to launch.
     #[allow(unused_mut, reason = "only mutated on unix platforms")]
     let mut cmd = compose_std_command(
-        context.shell,
+        &context,
         executable_path,
         context.command_name.as_str(),
         cmd_args.as_slice(),
-        context.params.open_files,
         false, /* empty environment? */
     )?;
 
@@ -539,7 +552,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     // Set up pipe so we can read the output.
     let (reader, writer) = std::io::pipe()?;
-    params.open_files.set_fd(OpenFiles::STDOUT_FD, writer.into());
+    params.set_fd(OpenFiles::STDOUT_FD, writer.into());
 
     // Start the execution of the command, but don't wait for it to
     // complete. In case the command generates lots of output, we
@@ -580,7 +593,7 @@ async fn run_substitution_command(
     if let Ok(program) = &parse_result {
         if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
             interp::setup_redirect(&mut shell, &mut params, redir).await?;
-            std::io::copy(&mut params.stdin(), &mut params.stdout())?;
+            std::io::copy(&mut params.stdin(&shell), &mut params.stdout(&shell))?;
             return Ok(ExecutionResult::new(0));
         }
     }

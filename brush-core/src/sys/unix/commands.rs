@@ -6,6 +6,7 @@ pub use std::os::unix::process::ExitStatusExt;
 use command_fds::{CommandFdExt, FdMapping};
 
 use crate::error;
+use crate::openfiles;
 
 /// Extension trait for injecting file descriptors into commands.
 pub trait CommandFdInjectionExt {
@@ -14,13 +15,18 @@ pub trait CommandFdInjectionExt {
     /// # Arguments
     ///
     /// * `open_files` - A mapping of child file descriptors to open files.
-    fn inject_fds(&mut self, open_files: crate::openfiles::OpenFiles) -> Result<(), error::Error>;
+    fn inject_fds(
+        &mut self,
+        open_files: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+    ) -> Result<(), error::Error>;
 }
 
 impl CommandFdInjectionExt for std::process::Command {
-    fn inject_fds(&mut self, open_files: crate::openfiles::OpenFiles) -> Result<(), error::Error> {
+    fn inject_fds(
+        &mut self,
+        open_files: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+    ) -> Result<(), error::Error> {
         let fd_mappings = open_files
-            .into_iter()
             .map(|(child_fd, open_file)| FdMapping {
                 child_fd: i32::try_from(child_fd).unwrap(),
                 parent_fd: open_file.into_owned_fd().unwrap(),

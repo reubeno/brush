@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use brush_core::{ErrorKind, builtins, env, error, variables};
 
-use std::io::{Read, Write};
+use std::io::Read;
 
 /// Parse standard input.
 #[derive(Parser)]
@@ -85,25 +85,18 @@ impl builtins::Command for ReadCommand {
         let input_stream = if let Some(fd_num) = self.fd_num_to_read {
             let fd_num = u32::from(fd_num);
             context
-                .params
-                .fd(fd_num)
+                .try_fd(fd_num)
                 .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?
         } else {
             context
-                .params
-                .fd(brush_core::openfiles::OpenFiles::STDIN_FD)
+                .try_fd(brush_core::openfiles::OpenFiles::STDIN_FD)
                 .unwrap()
         };
 
         // Retrieve effective value of IFS for splitting.
         let ifs = context.shell.ifs();
 
-        let stdout_file = context
-            .params
-            .fd(brush_core::openfiles::OpenFiles::STDOUT_FD)
-            .unwrap();
-
-        let input_line = self.read_line(input_stream, stdout_file)?;
+        let input_line = self.read_line(input_stream, context.stdout())?;
         let result = if input_line.is_some() {
             brush_core::ExecutionResult::success()
         } else {
@@ -206,7 +199,7 @@ impl ReadCommand {
     fn read_line(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
-        mut output_file: brush_core::openfiles::OpenFile,
+        mut output_file: impl std::io::Write,
     ) -> Result<Option<String>, brush_core::Error> {
         let _term_mode = self.setup_terminal_settings(&input_file)?;
 

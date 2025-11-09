@@ -57,11 +57,17 @@ pub trait CommandFdInjectionExt {
     /// # Arguments
     ///
     /// * `open_files` - A mapping of child file descriptors to open files.
-    fn inject_fds(&mut self, open_files: crate::openfiles::OpenFiles) -> Result<(), error::Error>;
+    fn inject_fds(
+        &mut self,
+        open_files: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+    ) -> Result<(), error::Error>;
 }
 
 impl CommandFdInjectionExt for std::process::Command {
-    fn inject_fds(&mut self, open_files: crate::openfiles::OpenFiles) -> Result<(), error::Error> {
+    fn inject_fds(
+        &mut self,
+        open_files: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+    ) -> Result<(), error::Error> {
         if !open_files.is_empty() {
             return Err(error::ErrorKind::NotSupportedOnThisPlatform("fd redirections").into());
         }

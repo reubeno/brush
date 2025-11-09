@@ -61,8 +61,7 @@ impl builtins::Command for MapFileCommand {
         }
 
         let input_file = context
-            .params
-            .fd(self.fd)
+            .try_fd(self.fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
         // Read!
