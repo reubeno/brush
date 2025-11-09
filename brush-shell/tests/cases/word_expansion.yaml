@@ -347,6 +347,10 @@ cases:
       echo ${value:+'x'}
       echo "${value:+\x}"
       echo "${value:+'x'}"
+      echo "${value:+x'y'x}"
+      echo "${value:+"x y"}"
+      echo "${value:+"x\xy"}"
+      echo "${value:+z"x\xy"z}"
 
   - name: "Parameter expression: error on condition (interactive)"
     skip: true # TODO: fails with cargo nextest

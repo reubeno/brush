@@ -519,16 +519,22 @@ impl<'a> WordExpander<'a> {
     async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
         // When inside double-quotes, we need to parse the word with double-quote semantics.
         if self.in_double_quotes {
-            // If the word already starts with a double-quote, it will be parsed with its own semantics.
-            // Single quotes don't create quoted regions inside double-quotes, so we still need to wrap.
-            if word.starts_with('"') {
-                // Already double-quoted - just expand normally
-                self.basic_expand(word).await
-            } else {
-                // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
-                let wrapped = format!("\"{word}\"");
-                self.basic_expand(&wrapped).await
+            // If the word already starts with a double-quote, we need to remove those quotes
+            // and expand what's inside with normal (non-double-quote) semantics.
+            if let Some(stripped) = word.strip_prefix('"') {
+                if let Some(inner) = stripped.strip_suffix('"') {
+                    // Remove the surrounding double-quotes and expand the content normally
+                    // Temporarily clear in_double_quotes so the inner content gets normal processing
+                    let previously_in_double_quotes = self.in_double_quotes;
+                    self.in_double_quotes = false;
+                    let result = self.basic_expand(inner).await;
+                    self.in_double_quotes = previously_in_double_quotes;
+                    return result;
+                }
             }
+            // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
+            let wrapped = format!("\"{word}\"");
+            self.basic_expand(&wrapped).await
         } else {
             // When not inside double-quotes, perform normal expansion with quote removal
             self.basic_expand(word).await
