@@ -24,7 +24,7 @@ async fn run_func(shell: &mut brush_core::Shell, suppress_stdout: bool) -> Resul
     let mut params = shell.default_exec_params();
 
     if suppress_stdout {
-        params.open_files.set(
+        params.open_files.set_fd(
             brush_core::openfiles::OpenFiles::STDOUT_FD,
             brush_core::openfiles::null()?,
         );

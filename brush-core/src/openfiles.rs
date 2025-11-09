@@ -236,7 +236,7 @@ impl OpenFiles {
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to remove.
-    pub fn remove(&mut self, fd: u32) -> Option<OpenFile> {
+    pub fn remove_fd(&mut self, fd: u32) -> Option<OpenFile> {
         self.files.remove(&fd)
     }
 
@@ -247,18 +247,13 @@ impl OpenFiles {
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to lookup.
-    pub fn get(&self, fd: u32) -> Option<&OpenFile> {
+    pub fn get_fd(&self, fd: u32) -> Option<&OpenFile> {
         self.files.get(&fd)
     }
 
     /// Checks if the given file descriptor is in use.
-    pub fn contains(&self, fd: u32) -> bool {
+    pub fn contains_fd(&self, fd: u32) -> bool {
         self.files.contains_key(&fd)
-    }
-
-    /// Checks if there are no open files in this context.
-    pub fn is_empty(&self) -> bool {
-        self.files.is_empty()
     }
 
     /// Associates the given file descriptor with the provided file. If the file descriptor
@@ -269,7 +264,7 @@ impl OpenFiles {
     ///
     /// * `fd`: The file descriptor to associate with the file.
     /// * `file`: The file to associate with the file descriptor.
-    pub fn set(&mut self, fd: u32, file: OpenFile) -> Option<OpenFile> {
+    pub fn set_fd(&mut self, fd: u32, file: OpenFile) -> Option<OpenFile> {
         self.files.insert(fd, file)
     }
 }

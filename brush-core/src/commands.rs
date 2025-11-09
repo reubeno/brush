@@ -170,7 +170,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stdin, if applicable.
-    match open_files.remove(OpenFiles::STDIN_FD) {
+    match open_files.remove_fd(OpenFiles::STDIN_FD) {
         Some(OpenFile::Stdin(_)) | None => (),
         Some(stdin_file) => {
             let as_stdio: Stdio = stdin_file.into();
@@ -179,7 +179,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stdout, if applicable.
-    match open_files.remove(OpenFiles::STDOUT_FD) {
+    match open_files.remove_fd(OpenFiles::STDOUT_FD) {
         Some(OpenFile::Stdout(_)) | None => (),
         Some(stdout_file) => {
             let as_stdio: Stdio = stdout_file.into();
@@ -188,7 +188,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
     }
 
     // Redirect stderr, if applicable.
-    match open_files.remove(OpenFiles::STDERR_FD) {
+    match open_files.remove_fd(OpenFiles::STDERR_FD) {
         Some(OpenFile::Stderr(_)) | None => {}
         Some(stderr_file) => {
             let as_stdio: Stdio = stderr_file.into();
@@ -539,7 +539,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     // Set up pipe so we can read the output.
     let (reader, writer) = std::io::pipe()?;
-    params.open_files.set(OpenFiles::STDOUT_FD, writer.into());
+    params.open_files.set_fd(OpenFiles::STDOUT_FD, writer.into());
 
     // Start the execution of the command, but don't wait for it to
     // complete. In case the command generates lots of output, we

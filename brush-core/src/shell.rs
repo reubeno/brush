@@ -1352,7 +1352,7 @@ impl Shell {
             if parent == Path::new("/dev/fd") {
                 if let Some(filename) = path_to_open.file_name() {
                     if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
-                        if let Some(open_file) = params.open_files.get(fd_num) {
+                        if let Some(open_file) = params.open_files.get_fd(fd_num) {
                             return open_file.try_clone();
                         }
                     }
@@ -1451,7 +1451,7 @@ impl Shell {
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> impl std::io::Write {
         self.open_files
-            .get(openfiles::OpenFiles::STDOUT_FD)
+            .get_fd(openfiles::OpenFiles::STDOUT_FD)
             .unwrap()
             .try_clone()
             .unwrap()
@@ -1461,7 +1461,7 @@ impl Shell {
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write {
         self.open_files
-            .get(openfiles::OpenFiles::STDERR_FD)
+            .get_fd(openfiles::OpenFiles::STDERR_FD)
             .unwrap()
             .try_clone()
             .unwrap()
@@ -1495,7 +1495,7 @@ impl Shell {
         if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD") {
             let xtracefd_value = xtracefd_var.value().to_cow_str(self);
             if let Ok(fd) = xtracefd_value.parse::<u32>() {
-                if let Some(file) = self.open_files.get(fd) {
+                if let Some(file) = self.open_files.get_fd(fd) {
                     trace_file = Some(file);
                 }
             }
