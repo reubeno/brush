@@ -31,13 +31,13 @@ pub fn null() -> Result<OpenFile, error::Error> {
 
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
-        self.try_dup().unwrap()
+        self.try_clone().unwrap()
     }
 }
 
 impl OpenFile {
     /// Tries to duplicate the open file.
-    pub fn try_dup(&self) -> Result<Self, std::io::Error> {
+    pub fn try_clone(&self) -> Result<Self, std::io::Error> {
         let result = match self {
             Self::Stdin(_) => Self::Stdin(std::io::stdin()),
             Self::Stdout(_) => Self::Stdout(std::io::stdout()),
@@ -208,7 +208,7 @@ impl OpenFiles {
     pub fn try_clone(&self) -> Result<Self, error::Error> {
         let mut files = HashMap::new();
         for (fd, file) in &self.files {
-            files.insert(*fd, file.try_dup()?);
+            files.insert(*fd, file.try_clone()?);
         }
 
         Ok(Self { files })

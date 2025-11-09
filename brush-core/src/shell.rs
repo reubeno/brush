@@ -1353,7 +1353,7 @@ impl Shell {
                 if let Some(filename) = path_to_open.file_name() {
                     if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
                         if let Some(open_file) = params.open_files.get(fd_num) {
-                            return open_file.try_dup();
+                            return open_file.try_clone();
                         }
                     }
                 }
@@ -1453,7 +1453,7 @@ impl Shell {
         self.open_files
             .get(openfiles::OpenFiles::STDOUT_FD)
             .unwrap()
-            .try_dup()
+            .try_clone()
             .unwrap()
     }
 
@@ -1463,7 +1463,7 @@ impl Shell {
         self.open_files
             .get(openfiles::OpenFiles::STDERR_FD)
             .unwrap()
-            .try_dup()
+            .try_clone()
             .unwrap()
     }
 
@@ -1503,7 +1503,7 @@ impl Shell {
 
         // If we have a valid trace file, write to it.
         if let Some(trace_file) = trace_file {
-            let mut trace_file = trace_file.try_dup()?;
+            let mut trace_file = trace_file.try_clone()?;
             writeln!(trace_file, "{prefix}{}", command.as_ref())?;
         }
 

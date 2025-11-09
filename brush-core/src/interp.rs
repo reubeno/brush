@@ -89,7 +89,7 @@ impl ExecutionParameters {
     /// * `fd` - The file descriptor number to retrieve.
     #[allow(clippy::unwrap_in_result)]
     pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
-        self.open_files.get(fd).map(|f| f.try_dup().unwrap())
+        self.open_files.get(fd).map(|f| f.try_clone().unwrap())
     }
 }
 
@@ -1297,7 +1297,7 @@ pub(crate) async fn setup_redirect(
                     )
                 })?;
 
-            let stderr_file = stdout_file.try_dup()?;
+            let stderr_file = stdout_file.try_clone()?;
 
             params.open_files.set(OpenFiles::STDOUT_FD, stdout_file);
             params.open_files.set(OpenFiles::STDERR_FD, stderr_file);
@@ -1391,7 +1391,7 @@ pub(crate) async fn setup_redirect(
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
                     if let Some(f) = params.open_files.get(*fd) {
-                        let target_file = f.try_dup()?;
+                        let target_file = f.try_clone()?;
 
                         params.open_files.set(fd_num, target_file);
                     } else {
@@ -1435,7 +1435,7 @@ pub(crate) async fn setup_redirect(
 
                         // Duplicate the fd.
                         let target_file = if let Some(f) = params.open_files.get(source_fd_num) {
-                            f.try_dup()?
+                            f.try_clone()?
                         } else {
                             return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
                         };
@@ -1465,7 +1465,7 @@ pub(crate) async fn setup_redirect(
                                 subshell_cmd,
                             )?;
 
-                            let target_file = substitution_file.try_dup()?;
+                            let target_file = substitution_file.try_clone()?;
                             params.open_files.set(substitution_fd, substitution_file);
 
                             let fd_num = specified_fd_num
