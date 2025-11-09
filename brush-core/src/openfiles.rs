@@ -216,17 +216,17 @@ impl OpenFiles {
 
     /// Retrieves the file backing standard input in this context.
     pub fn stdin(&self) -> Option<&OpenFile> {
-        self.files.get(&0)
+        self.files.get(&Self::STDIN_FD)
     }
 
     /// Retrieves the file backing standard output in this context.
     pub fn stdout(&self) -> Option<&OpenFile> {
-        self.files.get(&1)
+        self.files.get(&Self::STDOUT_FD)
     }
 
     /// Retrieves the file backing standard error in this context.
     pub fn stderr(&self) -> Option<&OpenFile> {
-        self.files.get(&2)
+        self.files.get(&Self::STDERR_FD)
     }
 
     /// Tries to remove an open file by its file descriptor. If the file descriptor
