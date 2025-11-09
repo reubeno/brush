@@ -1,4 +1,5 @@
 pub use crate::sys::stubs::commands;
+pub use crate::sys::stubs::fd;
 pub use crate::sys::stubs::fs;
 pub use crate::sys::stubs::input;
 pub(crate) use crate::sys::stubs::network;

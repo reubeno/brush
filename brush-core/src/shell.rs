@@ -16,7 +16,7 @@ use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
     ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ProcessGroupPolicy, history,
-    interfaces, pathcache, pathsearch, scripts, trace_categories, wellknownvars,
+    interfaces, pathcache, pathsearch, scripts, sys, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -300,6 +300,9 @@ pub struct CreateOptions {
     /// Whether to skip inheriting environment variables from the calling process.
     #[builder(default)]
     pub do_not_inherit_env: bool,
+    #[builder(default)]
+    /// Whether to project the running process's open file descriptors into the shell.
+    pub inherit_open_fds: bool,
     /// Whether the shell is in POSIX compliance mode.
     #[builder(default)]
     pub posix: bool,
@@ -344,7 +347,8 @@ impl Shell {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
-            open_files: openfiles::OpenFiles::new_from_host_env(),
+            open_files: openfiles::OpenFiles::new(),
+            // Populate working directory from the host environment.
             working_dir: std::env::current_dir()?,
             env: env::ShellEnvironment::new(),
             funcs: functions::FunctionEnv::default(),
@@ -377,6 +381,12 @@ impl Shell {
         // TODO: Without this a script that sets extglob will fail because we
         // parse the entire script with the same settings.
         shell.options.extended_globbing = true;
+
+        // If we've been asked to inherit open fds from the host environment,
+        // then update the open files accordingly.
+        if options.inherit_open_fds {
+            shell.open_files.update_from(sys::fd::try_iter_fds());
+        }
 
         // Initialize environment.
         wellknownvars::initialize_vars(&mut shell, options.do_not_inherit_env)?;

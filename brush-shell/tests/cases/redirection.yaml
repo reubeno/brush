@@ -196,3 +196,11 @@ cases:
       # Dump the file
       echo "[10]"
       cat fd10.txt
+
+  - name: "Inheritance of fds from parent"
+    test_files:
+      - path: "test.sh"
+        contents: |
+          echo hi >&3
+    stdin: |
+      $0 test.sh 3>output.txt

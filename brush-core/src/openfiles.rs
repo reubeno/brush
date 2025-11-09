@@ -216,14 +216,28 @@ impl OpenFiles {
     /// File descriptor used for standard error.
     pub const STDERR_FD: u32 = 2;
 
-    /// Creates a new `OpenFiles` instance populated from the host environment.
-    pub(crate) fn new_from_host_env() -> Self {
+    /// Creates a new `OpenFiles` instance populated with stdin, stdout, and stderr
+    /// from the host environment.
+    #[allow(unused)]
+    pub(crate) fn new() -> Self {
         Self {
             files: HashMap::from([
                 (Self::STDIN_FD, Some(OpenFile::Stdin(std::io::stdin()))),
                 (Self::STDOUT_FD, Some(OpenFile::Stdout(std::io::stdout()))),
                 (Self::STDERR_FD, Some(OpenFile::Stderr(std::io::stderr()))),
             ]),
+        }
+    }
+
+    /// Updates the open files from the provided iterator of (fd number, `OpenFile`) pairs.
+    /// Any existing entries for the provided file descriptors will be overwritten.
+    ///
+    /// # Arguments
+    ///
+    /// * `files`: An iterator of (fd number, `OpenFile`) pairs to update the open files with.
+    pub fn update_from(&mut self, files: impl Iterator<Item = (u32, OpenFile)>) {
+        for (fd, file) in files {
+            let _ = self.files.insert(fd, Some(file));
         }
     }
 
