@@ -162,7 +162,7 @@ impl Execute for ast::CompoundList {
                 let job_formatted = job.to_pid_style_string();
 
                 if shell.options.interactive && !shell.is_subshell() {
-                    writeln!(shell.stderr(), "{job_formatted}")?;
+                    writeln!(params.stderr(), "{job_formatted}")?;
                 }
 
                 result = ExecutionResult::success();
@@ -265,7 +265,8 @@ impl Execute for ast::Pipeline {
 
         // Wait for the processes. This also has a side effect of updating pipeline status.
         let mut result =
-            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell).await?;
+            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell, params)
+                .await?;
 
         // Invert the exit code if requested.
         if self.bang {
@@ -376,6 +377,7 @@ async fn wait_for_pipeline_processes_and_update_status(
     pipeline: &ast::Pipeline,
     mut process_spawn_results: VecDeque<ExecutionSpawnResult>,
     shell: &mut Shell,
+    params: &ExecutionParameters,
 ) -> Result<ExecutionResult, error::Error> {
     let mut result = ExecutionResult::success();
     let mut stopped_children = vec![];
@@ -416,7 +418,7 @@ async fn wait_for_pipeline_processes_and_update_status(
         let formatted = job.to_string();
 
         // N.B. We use the '\r' to overwrite any ^Z output.
-        writeln!(shell.stderr(), "\r{formatted}")?;
+        writeln!(params.stderr(), "\r{formatted}")?;
     }
 
     Ok(result)

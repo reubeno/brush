@@ -34,7 +34,7 @@ impl builtins::Command for ExecCommand {
             // When no arguments are present, then there's nothing for us to execute -- but we need
             // to ensure that any redirections setup for this builtin get applied to the calling
             // shell instance.
-            context.shell.open_files = context.params.open_files;
+            context.shell.replace_open_files(context.params.open_files);
             return Ok(ExecutionResult::success());
         }
 

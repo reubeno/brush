@@ -224,12 +224,9 @@ async fn invoke_debug_trap_handler_if_registered(
             .get(&traps::TrapSignal::Debug)
             .cloned();
         if let Some(debug_trap_handler) = debug_trap_handler {
-            // TODO: Confirm whether trap handlers should be executed in the same process
-            // group.
-            let handler_params = ExecutionParameters {
-                open_files: context.params.open_files.clone(),
-                process_group_policy: ProcessGroupPolicy::SameProcessGroup,
-            };
+            // TODO: Confirm whether trap handlers should be executed in the same process group.
+            let mut handler_params = context.params.clone();
+            handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
             let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
 

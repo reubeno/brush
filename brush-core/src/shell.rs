@@ -35,7 +35,7 @@ pub struct Shell {
     pub traps: traps::TrapHandlerConfig,
 
     /// Manages files opened and accessible via redirection operators.
-    pub open_files: openfiles::OpenFiles,
+    open_files: openfiles::OpenFiles,
 
     /// The current working directory.
     working_dir: PathBuf,
@@ -909,7 +909,9 @@ impl Shell {
         Ok(result)
     }
 
-    /// Returns the default execution parameters for this shell.
+    /// Returns the default execution parameters for this shell. It will start with
+    /// a snapshot of the open files in the shell, but changes to the returned
+    /// parameters will not affect the shell's ambiently open files.
     pub fn default_exec_params(&self) -> ExecutionParameters {
         ExecutionParameters {
             open_files: self.open_files.clone(),
@@ -1433,6 +1435,16 @@ impl Shell {
             // HOME isn't set, so let's sort it out ourselves.
             users::get_current_user_home_dir()
         }
+    }
+
+    /// Replaces the shell's currently configured open files with the given set.
+    /// Typically only used by exec-like builtins.
+    ///
+    /// # Arguments
+    ///
+    /// * `open_files` - The new set of open files to use.
+    pub fn replace_open_files(&mut self, open_files: openfiles::OpenFiles) {
+        self.open_files = open_files;
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
