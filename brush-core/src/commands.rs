@@ -544,17 +544,27 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     let (reader, writer) = std::io::pipe()?;
     params.open_files.set(OpenFiles::STDOUT_FD, writer.into());
 
-    // Run the command. Pass ownership of the subshell and params to
-    // run_substitution_command; we must ensure that they're both dropped
-    // by the time the call returns (so they're not holding onto the write
-    // end of the pipe).
-    let result = run_substitution_command(subshell, params, s).await?;
-
-    // Store the status.
-    *shell.last_exit_status_mut() = result.exit_code.into();
+    // Start the execution of the command, but don't wait for it to
+    // complete. In case the command generates lots of output, we
+    // need to start reading in parallel so the command doesn't block
+    // when the pipe's buffer fills up. We pass ownership of the
+    // subshell and params to run_substitution_command; we must
+    // ensure that they're both dropped by the time this call
+    // returns (so they're not holding onto the write end of the pipe).
+    let cmd_join_handle = tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(run_substitution_command(subshell, params, s))
+    });
 
     // Extract output.
     let output_str = std::io::read_to_string(reader)?;
+
+    // Now observe the command's completion.
+    let run_result = cmd_join_handle.await?;
+    let cmd_result = run_result?;
+
+    // Store the status.
+    *shell.last_exit_status_mut() = cmd_result.exit_code.into();
 
     Ok(output_str)
 }
