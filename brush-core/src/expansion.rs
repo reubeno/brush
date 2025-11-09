@@ -524,11 +524,16 @@ impl<'a> WordExpander<'a> {
             if let Some(stripped) = word.strip_prefix('"') {
                 if let Some(inner) = stripped.strip_suffix('"') {
                     // Remove the surrounding double-quotes and expand the content normally
-                    // Temporarily clear in_double_quotes so the inner content gets normal processing
+                    // This requires us to temporarily clear in_double_quotes so the inner
+                    // content gets normal processing.
                     let previously_in_double_quotes = self.in_double_quotes;
                     self.in_double_quotes = false;
+
+                    // Now perform the expansion and make sure to restore the previous state,
+                    // even if the expansion fails.
                     let result = self.basic_expand(inner).await;
                     self.in_double_quotes = previously_in_double_quotes;
+
                     return result;
                 }
             }
@@ -687,69 +692,21 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::WordPiece::DoubleQuotedSequence(pieces)
             | brush_parser::word::WordPiece::GettextDoubleQuotedSequence(pieces) => {
-                let mut fields: Vec<WordField> = vec![];
-
                 let pieces_is_empty = pieces.is_empty();
-                let concatenation_joiner = self.shell.get_ifs_first_char();
 
                 // Save the previous state and set the flag
                 let previously_in_double_quotes = self.in_double_quotes;
                 self.in_double_quotes = true;
 
-                for piece in pieces {
-                    let Expansion {
-                        fields: this_fields,
-                        concatenate,
-                        ..
-                    } = self.expand_word_piece(piece.piece).await?;
-
-                    let fields_to_append = if concatenate {
-                        #[expect(unstable_name_collisions)]
-                        let mut concatenated: Vec<ExpansionPiece> = this_fields
-                            .into_iter()
-                            .map(|WordField(pieces)| {
-                                pieces
-                                    .into_iter()
-                                    .map(|piece| piece.make_unsplittable())
-                                    .collect()
-                            })
-                            .intersperse(vec![ExpansionPiece::Unsplittable(
-                                concatenation_joiner.to_string(),
-                            )])
-                            .flatten()
-                            .collect();
-
-                        // If there were no pieces, make sure there's an empty string after
-                        // concatenation.
-                        if concatenated.is_empty() {
-                            concatenated.push(ExpansionPiece::Splittable(String::new()));
-                        }
-
-                        vec![WordField(concatenated)]
-                    } else {
-                        this_fields
-                    };
-
-                    for (i, WordField(next_pieces)) in fields_to_append.into_iter().enumerate() {
-                        // Flip to unsplittable.
-                        let mut next_pieces: Vec<_> = next_pieces
-                            .into_iter()
-                            .map(|piece| piece.make_unsplittable())
-                            .collect();
-
-                        if i == 0 {
-                            if let Some(WordField(last_pieces)) = fields.last_mut() {
-                                last_pieces.append(&mut next_pieces);
-                                continue;
-                            }
-                        }
-
-                        fields.push(WordField(next_pieces));
-                    }
-                }
+                // Process pieces; don't inspect the result yet, so we can make
+                // sure we restore the previous value of the 'in_double_quotes' flag.
+                let result = self.process_double_quoted_pieces(pieces).await;
 
                 // Restore the previous state
                 self.in_double_quotes = previously_in_double_quotes;
+
+                // Now we can inspect the result.
+                let mut fields = result?;
 
                 // If there were no pieces, then make sure we yield a single field containing an
                 // empty, unsplittable string.
@@ -804,6 +761,70 @@ impl<'a> WordExpander<'a> {
         } else {
             Err(error::ErrorKind::TildeWithoutValidHome.into())
         }
+    }
+
+    /// Helper function to process pieces within a double-quoted sequence.
+    /// This ensures proper handling of concatenation and field building.
+    async fn process_double_quoted_pieces(
+        &mut self,
+        pieces: Vec<brush_parser::word::WordPieceWithSource>,
+    ) -> Result<Vec<WordField>, error::Error> {
+        let mut fields: Vec<WordField> = vec![];
+        let concatenation_joiner = self.shell.get_ifs_first_char();
+
+        for piece in pieces {
+            let Expansion {
+                fields: this_fields,
+                concatenate,
+                ..
+            } = self.expand_word_piece(piece.piece).await?;
+
+            let fields_to_append = if concatenate {
+                #[expect(unstable_name_collisions)]
+                let mut concatenated: Vec<ExpansionPiece> = this_fields
+                    .into_iter()
+                    .map(|WordField(pieces)| {
+                        pieces
+                            .into_iter()
+                            .map(|piece| piece.make_unsplittable())
+                            .collect()
+                    })
+                    .intersperse(vec![ExpansionPiece::Unsplittable(
+                        concatenation_joiner.to_string(),
+                    )])
+                    .flatten()
+                    .collect();
+
+                // If there were no pieces, make sure there's an empty string after
+                // concatenation.
+                if concatenated.is_empty() {
+                    concatenated.push(ExpansionPiece::Splittable(String::new()));
+                }
+
+                vec![WordField(concatenated)]
+            } else {
+                this_fields
+            };
+
+            for (i, WordField(next_pieces)) in fields_to_append.into_iter().enumerate() {
+                // Flip to unsplittable.
+                let mut next_pieces: Vec<_> = next_pieces
+                    .into_iter()
+                    .map(|piece| piece.make_unsplittable())
+                    .collect();
+
+                if i == 0 {
+                    if let Some(WordField(last_pieces)) = fields.last_mut() {
+                        last_pieces.append(&mut next_pieces);
+                        continue;
+                    }
+                }
+
+                fields.push(WordField(next_pieces));
+            }
+        }
+
+        Ok(fields)
     }
 
     #[expect(clippy::too_many_lines)]

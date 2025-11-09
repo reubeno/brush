@@ -347,6 +347,8 @@ cases:
       echo ${value:+'x'}
       echo "${value:+\x}"
       echo "${value:+'x'}"
+      echo "${value:+x y}"
+      echo "${value:+z 'x' 'y' w}"
       echo "${value:+x'y'x}"
       echo "${value:+"x y"}"
       echo "${value:+"x\xy"}"
