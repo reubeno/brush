@@ -121,6 +121,9 @@ pub trait InteractiveShell: Send {
                 tracing::debug!("couldn't save history: {e}");
             }
 
+            // Give the shell an opportunity to perform any on-exit operations.
+            self.shell_mut().as_mut().on_exit().await?;
+
             Ok(())
         }
     }

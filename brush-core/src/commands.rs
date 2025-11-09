@@ -261,7 +261,7 @@ async fn invoke_debug_trap_handler_if_registered(
             let _ = context
                 .shell
                 .run_string(debug_trap_handler, &handler_params)
-                .await?;
+                .await;
 
             context.shell.traps.handler_depth -= 1;
         }
