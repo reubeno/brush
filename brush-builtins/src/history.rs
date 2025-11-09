@@ -1,6 +1,4 @@
-use brush_core::{
-    ExecutionExitCode, ExecutionParameters, ExecutionResult, builtins, error, history,
-};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, history};
 use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
@@ -65,8 +63,11 @@ impl builtins::Command for HistoryCommand {
             time_format: context.shell.history_time_format(),
         };
 
+        let stdout = context.stdout();
+        let stderr = context.stderr();
+
         if let Some(history) = context.shell.history_mut() {
-            self.execute_with_history(&context.params, history, config)
+            self.execute_with_history(history, config, stdout, stderr)
         } else {
             Err(brush_core::ErrorKind::HistoryNotEnabled.into())
         }
@@ -79,9 +80,10 @@ impl HistoryCommand {
     #[expect(clippy::cast_sign_loss)]
     fn execute_with_history(
         &self,
-        params: &ExecutionParameters,
         history: &mut history::History,
         config: HistoryConfig,
+        stdout: impl Write,
+        mut stderr: impl Write,
     ) -> Result<ExecutionResult, brush_core::Error> {
         if self.clear_history {
             history.clear()?;
@@ -89,7 +91,7 @@ impl HistoryCommand {
 
         if let Some(offset) = self.delete_offset {
             if offset == 0 {
-                writeln!(params.stderr(), "cannot delete history item at offset 0")?;
+                writeln!(stderr, "cannot delete history item at offset 0")?;
                 return Ok(ExecutionExitCode::InvalidUsage.into());
             }
 
@@ -97,14 +99,14 @@ impl HistoryCommand {
                 // Convert to 0-based index.
                 let index = (offset - 1) as usize;
                 if !history.remove_nth_item(index) {
-                    writeln!(params.stderr(), "index past end of history")?;
+                    writeln!(stderr, "index past end of history")?;
                     return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             } else {
                 let count = history.count() as i64;
                 let index = count + offset;
                 if index < 0 {
-                    writeln!(params.stderr(), "index before beginning of history")?;
+                    writeln!(stderr, "index before beginning of history")?;
                     return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
 
@@ -169,17 +171,18 @@ impl HistoryCommand {
             None
         };
 
-        display_history(params, history, &config, max_entries)?;
+        display_history(history, &config, max_entries, stdout, stderr)?;
 
         Ok(ExecutionResult::success())
     }
 }
 
 fn display_history(
-    params: &ExecutionParameters,
     history: &history::History,
     config: &HistoryConfig,
     max_entries: Option<usize>,
+    mut stdout: impl Write,
+    _stderr: impl Write,
 ) -> Result<(), brush_core::Error> {
     let item_count = history.count();
     let skip_count = item_count - max_entries.unwrap_or(item_count);
@@ -198,7 +201,7 @@ fn display_history(
         // Output format is something like:
         //     1  echo hello world
         std::writeln!(
-            params.stdout(),
+            stdout,
             "{:>5}  {formatted_timestamp}{}",
             skip_count + i + 1,
             item.command_line

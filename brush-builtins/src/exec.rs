@@ -34,7 +34,10 @@ impl builtins::Command for ExecCommand {
             // When no arguments are present, then there's nothing for us to execute -- but we need
             // to ensure that any redirections setup for this builtin get applied to the calling
             // shell instance.
-            context.shell.open_files = context.params.open_files;
+            #[allow(clippy::needless_collect)]
+            let fds: Vec<_> = context.iter_fds().collect();
+
+            context.shell.replace_open_files(fds.into_iter());
             return Ok(ExecutionResult::success());
         }
 
@@ -45,11 +48,10 @@ impl builtins::Command for ExecCommand {
         }
 
         let mut cmd = commands::compose_std_command(
-            context.shell,
+            &context,
             &self.args[0],
             argv0.as_str(),
             &self.args[1..],
-            context.params.open_files.clone(),
             self.empty_environment,
         )?;
 

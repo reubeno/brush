@@ -60,25 +60,64 @@ struct PipelineExecutionContext<'a> {
 #[derive(Clone, Default)]
 pub struct ExecutionParameters {
     /// The open files tracked by the current context.
-    pub open_files: openfiles::OpenFiles,
+    open_files: openfiles::OpenFiles,
     /// Policy for how to manage spawned external processes.
     pub process_group_policy: ProcessGroupPolicy,
 }
 
 impl ExecutionParameters {
     /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> impl std::io::Read + 'static {
-        self.fd(0).unwrap()
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn stdin(&self, shell: &Shell) -> impl std::io::Read + 'static {
+        self.try_stdin(shell).unwrap()
+    }
+
+    /// Tries to retrieve the standard input file. Returns `None` if not set.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdin(&self, shell: &Shell) -> Option<OpenFile> {
+        self.try_fd(shell, openfiles::OpenFiles::STDIN_FD)
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> impl std::io::Write + 'static {
-        self.fd(1).unwrap()
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn stdout(&self, shell: &Shell) -> impl std::io::Write + 'static {
+        self.try_stdout(shell).unwrap()
+    }
+
+    /// Tries to retrieve the standard output file. Returns `None` if not set.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdout(&self, shell: &Shell) -> Option<OpenFile> {
+        self.try_fd(shell, openfiles::OpenFiles::STDOUT_FD)
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write + 'static {
-        self.fd(2).unwrap()
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn stderr(&self, shell: &Shell) -> impl std::io::Write + 'static {
+        self.try_stderr(shell).unwrap()
+    }
+
+    /// Tries to retrieve the standard error file. Returns `None` if not set.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stderr(&self, shell: &Shell) -> Option<OpenFile> {
+        self.try_fd(shell, openfiles::OpenFiles::STDERR_FD)
     }
 
     /// Returns the file descriptor with the given number. Returns `None`
@@ -86,10 +125,49 @@ impl ExecutionParameters {
     ///
     /// # Arguments
     ///
+    /// * `shell` - The shell context.
     /// * `fd` - The file descriptor number to retrieve.
-    #[allow(clippy::unwrap_in_result)]
-    pub fn fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
-        self.open_files.get(fd).map(|f| f.try_dup().unwrap())
+    pub fn try_fd(&self, shell: &Shell, fd: u32) -> Option<openfiles::OpenFile> {
+        match self.open_files.fd_entry(fd) {
+            openfiles::OpenFileEntry::Open(f) => Some(f.clone()),
+            openfiles::OpenFileEntry::NotPresent => None,
+            openfiles::OpenFileEntry::NotSpecified => {
+                // We didn't have this fd specified one way or the other; we fallback
+                // to what's represented in the shell's open files.
+                shell.persistent_open_files().try_fd(fd).cloned()
+            }
+        }
+    }
+
+    /// Sets the given file descriptor to the provided open file.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - The file descriptor number to set.
+    /// * `file` - The open file to set.
+    pub fn set_fd(&mut self, fd: u32, file: openfiles::OpenFile) {
+        self.open_files.set_fd(fd, file);
+    }
+
+    /// Iterates over all open file descriptors in this context.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn iter_fds(&self, shell: &Shell) -> impl Iterator<Item = (u32, openfiles::OpenFile)> {
+        let our_fds = self.open_files.iter_fds();
+        let shell_fds = shell
+            .persistent_open_files()
+            .iter_fds()
+            .filter(|(fd, _)| !self.open_files.contains_fd(*fd));
+
+        #[allow(clippy::needless_collect)]
+        let all_fds: Vec<_> = our_fds
+            .chain(shell_fds)
+            .map(|(fd, file)| (fd, file.clone()))
+            .collect();
+
+        all_fds.into_iter()
     }
 }
 
@@ -162,7 +240,7 @@ impl Execute for ast::CompoundList {
                 let job_formatted = job.to_pid_style_string();
 
                 if shell.options.interactive && !shell.is_subshell() {
-                    writeln!(shell.stderr(), "{job_formatted}")?;
+                    writeln!(params.stderr(shell), "{job_formatted}")?;
                 }
 
                 result = ExecutionResult::success();
@@ -265,7 +343,8 @@ impl Execute for ast::Pipeline {
 
         // Wait for the processes. This also has a side effect of updating pipeline status.
         let mut result =
-            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell).await?;
+            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell, params)
+                .await?;
 
         // Invert the exit code if requested.
         if self.bang {
@@ -277,12 +356,12 @@ impl Execute for ast::Pipeline {
 
         // If requested, report timing.
         if let Some(timed) = &self.timed {
-            if let Some(stderr) = params.open_files.stderr() {
+            if let Some(mut stderr) = params.try_fd(shell, openfiles::OpenFiles::STDERR_FD) {
                 let timing = stopwatch.unwrap().stop()?;
 
                 if timed.is_posix_output() {
                     std::write!(
-                        stderr.to_owned(),
+                        stderr,
                         "real {}\nuser {}\nsys {}\n",
                         timing::format_duration_posixly(&timing.wall),
                         timing::format_duration_posixly(&timing.user),
@@ -290,7 +369,7 @@ impl Execute for ast::Pipeline {
                     )?;
                 } else {
                     std::write!(
-                        stderr.to_owned(),
+                        stderr,
                         "\nreal\t{}\nuser\t{}\nsys\t{}\n",
                         timing::format_duration_non_posixly(&timing.wall),
                         timing::format_duration_non_posixly(&timing.user),
@@ -376,6 +455,7 @@ async fn wait_for_pipeline_processes_and_update_status(
     pipeline: &ast::Pipeline,
     mut process_spawn_results: VecDeque<ExecutionSpawnResult>,
     shell: &mut Shell,
+    params: &ExecutionParameters,
 ) -> Result<ExecutionResult, error::Error> {
     let mut result = ExecutionResult::success();
     let mut stopped_children = vec![];
@@ -416,7 +496,7 @@ async fn wait_for_pipeline_processes_and_update_status(
         let formatted = job.to_string();
 
         // N.B. We use the '\r' to overwrite any ^Z output.
-        writeln!(shell.stderr(), "\r{formatted}")?;
+        writeln!(params.stderr(shell), "\r{formatted}")?;
     }
 
     Ok(result)
@@ -533,15 +613,18 @@ impl Execute for ast::ForClauseCommand {
             if shell.options.print_commands_and_arguments {
                 if let Some(unexpanded_values) = &self.values {
                     shell
-                        .trace_command(std::format!(
-                            "for {} in {}",
-                            self.variable_name,
-                            unexpanded_values.iter().join(" ")
-                        ))
+                        .trace_command(
+                            params,
+                            std::format!(
+                                "for {} in {}",
+                                self.variable_name,
+                                unexpanded_values.iter().join(" ")
+                            ),
+                        )
                         .await?;
                 } else {
                     shell
-                        .trace_command(std::format!("for {}", self.variable_name,))
+                        .trace_command(params, std::format!("for {}", self.variable_name,))
                         .await?;
                 }
             }
@@ -585,7 +668,7 @@ impl Execute for ast::CaseClauseCommand {
         // on, but that's not it.
         if shell.options.print_commands_and_arguments {
             shell
-                .trace_command(std::format!("case {} in", &self.value))
+                .trace_command(params, std::format!("case {} in", &self.value))
                 .await?;
         }
 
@@ -841,7 +924,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
                     if let Err(e) = setup_redirect(context.shell, &mut params, redirect).await {
-                        writeln!(params.stderr(), "error: {e}")?;
+                        writeln!(params.stderr(context.shell), "error: {e}")?;
                         return Ok(ExecutionResult::general_error().into());
                     }
                 }
@@ -849,7 +932,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     let (installed_fd_num, substitution_file) =
                         setup_process_substitution(context.shell, &params, kind, subshell_command)?;
 
-                    params.open_files.set(installed_fd_num, substitution_file);
+                    params
+                        .open_files
+                        .set_fd(installed_fd_num, substitution_file);
 
                     args.push(CommandArg::String(std::format!(
                         "/dev/fd/{installed_fd_num}"
@@ -928,7 +1013,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
-            let mut stderr = params.stderr();
+            let mut stderr = params.stderr(context.shell);
 
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
@@ -989,7 +1074,10 @@ async fn execute_command(
     if context.shell.options.print_commands_and_arguments {
         context
             .shell
-            .trace_command(args.iter().map(|arg| arg.quote_for_tracing()).join(" "))
+            .trace_command(
+                &params,
+                args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
+            )
             .await?;
     }
 
@@ -1149,7 +1237,7 @@ async fn apply_assignment(
     if shell.options.print_commands_and_arguments {
         let op = if assignment.append { "+=" } else { "=" };
         shell
-            .trace_command(std::format!("{}{op}{new_value}", assignment.name))
+            .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
             .await?;
     }
 
@@ -1244,9 +1332,9 @@ fn setup_pipeline_redirection(
         // Find the stdout from the preceding process.
         if let Some(preceding_output_reader) = context.output_pipes.pop() {
             // Set up stdin of this process to take stdout of the preceding process.
-            open_files.set(OpenFiles::STDIN_FD, preceding_output_reader.into());
+            open_files.set_fd(OpenFiles::STDIN_FD, preceding_output_reader.into());
         } else {
-            open_files.set(OpenFiles::STDIN_FD, openfiles::null()?);
+            open_files.set_fd(OpenFiles::STDIN_FD, openfiles::null()?);
         }
     }
 
@@ -1256,7 +1344,7 @@ fn setup_pipeline_redirection(
         // Set up stdout of this process to go to stdin of the succeeding process.
         let (reader, writer) = std::io::pipe()?;
         context.output_pipes.push(reader);
-        open_files.set(OpenFiles::STDOUT_FD, writer.into());
+        open_files.set_fd(OpenFiles::STDOUT_FD, writer.into());
     }
 
     Ok(())
@@ -1295,10 +1383,10 @@ pub(crate) async fn setup_redirect(
                     )
                 })?;
 
-            let stderr_file = stdout_file.try_dup()?;
+            let stderr_file = stdout_file.try_clone()?;
 
-            params.open_files.set(OpenFiles::STDOUT_FD, stdout_file);
-            params.open_files.set(OpenFiles::STDERR_FD, stderr_file);
+            params.open_files.set_fd(OpenFiles::STDOUT_FD, stdout_file);
+            params.open_files.set_fd(OpenFiles::STDERR_FD, stderr_file);
         }
 
         ast::IoRedirect::File(specified_fd_num, kind, target) => {
@@ -1374,7 +1462,7 @@ pub(crate) async fn setup_redirect(
                             )
                         })?;
 
-                    params.open_files.set(fd_num, opened_file);
+                    params.open_files.set_fd(fd_num, opened_file);
                 }
 
                 ast::IoFileRedirectTarget::Fd(fd) => {
@@ -1388,10 +1476,10 @@ pub(crate) async fn setup_redirect(
 
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
-                    if let Some(f) = params.open_files.get(*fd) {
-                        let target_file = f.try_dup()?;
+                    if let Some(f) = params.try_fd(shell, *fd) {
+                        let target_file = f.try_clone()?;
 
-                        params.open_files.set(fd_num, target_file);
+                        params.open_files.set_fd(fd_num, target_file);
                     } else {
                         return Err(error::ErrorKind::BadFileDescriptor(*fd).into());
                     }
@@ -1432,20 +1520,20 @@ pub(crate) async fn setup_redirect(
                             .map_err(|_| error::ErrorKind::InvalidRedirection)?;
 
                         // Duplicate the fd.
-                        let target_file = if let Some(f) = params.open_files.get(source_fd_num) {
-                            f.try_dup()?
+                        let target_file = if let Some(f) = params.try_fd(shell, source_fd_num) {
+                            f.try_clone()?
                         } else {
                             return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
                         };
 
-                        params.open_files.set(fd_num, target_file);
+                        params.open_files.set_fd(fd_num, target_file);
                     } else {
                         return Err(error::ErrorKind::InvalidRedirection.into());
                     }
 
                     if dash {
                         // Close the specified fd. Ignore it if it's not valid.
-                        params.open_files.remove(fd_num);
+                        params.open_files.remove_fd(fd_num);
                     }
                 }
 
@@ -1463,13 +1551,13 @@ pub(crate) async fn setup_redirect(
                                 subshell_cmd,
                             )?;
 
-                            let target_file = substitution_file.try_dup()?;
-                            params.open_files.set(substitution_fd, substitution_file);
+                            let target_file = substitution_file.try_clone()?;
+                            params.open_files.set_fd(substitution_fd, substitution_file);
 
                             let fd_num = specified_fd_num
                                 .unwrap_or_else(|| get_default_fd_for_redirect_kind(kind));
 
-                            params.open_files.set(fd_num, target_file);
+                            params.open_files.set_fd(fd_num, target_file);
                         }
                         _ => return error::unimp("invalid process substitution"),
                     }
@@ -1490,7 +1578,7 @@ pub(crate) async fn setup_redirect(
 
             let f = setup_open_file_with_contents(io_here_doc.as_str())?;
 
-            params.open_files.set(fd_num, f);
+            params.open_files.set_fd(fd_num, f);
         }
 
         ast::IoRedirect::HereString(fd_num, word) => {
@@ -1502,7 +1590,7 @@ pub(crate) async fn setup_redirect(
 
             let f = setup_open_file_with_contents(expanded_word.as_str())?;
 
-            params.open_files.set(fd_num, f);
+            params.open_files.set_fd(fd_num, f);
         }
     }
 
@@ -1541,11 +1629,11 @@ fn setup_process_substitution(
 
     let target_file = match kind {
         ast::ProcessSubstitutionKind::Read => {
-            child_params.open_files.set(OpenFiles::STDOUT_FD, writer);
+            child_params.open_files.set_fd(OpenFiles::STDOUT_FD, writer);
             reader
         }
         ast::ProcessSubstitutionKind::Write => {
-            child_params.open_files.set(OpenFiles::STDIN_FD, reader);
+            child_params.open_files.set_fd(OpenFiles::STDIN_FD, reader);
             writer
         }
     };
@@ -1564,7 +1652,7 @@ fn setup_process_substitution(
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
     // available fd.
     let mut candidate_fd_num = 63;
-    while params.open_files.contains(candidate_fd_num) {
+    while params.open_files.contains_fd(candidate_fd_num) {
         candidate_fd_num -= 1;
         if candidate_fd_num == 0 {
             return error::unimp("no available file descriptors");

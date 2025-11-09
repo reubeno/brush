@@ -11,10 +11,25 @@ cases:
       exec
       [[ "${pid}" == "$$" ]] || echo "PID changed"
 
-  - name: "Exec with no arguments and redirection"
+  - name: "Exec with no arguments and redirection for new fd"
     stdin: |
-      exec 3>&1
+      exec 3>some-file.txt
       echo "Hello, fd 3!" >&3
+
+  - name: "Exec with no arguments and redirection of stderr"
+    stdin: |
+      exec 2>/dev/null
+
+      # Do something that should display an error to stderr
+      source /non-existent
+
+  - name: "Exec with no arguments and redirection in a script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 2>output-file.txt
+          echo hi >&2
+    args: ["./script.sh"]
 
   - name: "Exec a command"
     stdin: |
