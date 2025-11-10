@@ -2,7 +2,8 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    ExecutionParameters, Shell, arithmetic, env, error, escape, expansion, namedoptions, patterns,
+    ExecutionParameters, Shell, ShellFd, arithmetic, env, error, escape, expansion, namedoptions,
+    patterns,
     sys::{
         fs::{MetadataExt, PathExt},
         users,
@@ -125,7 +126,7 @@ pub(crate) fn apply_unary_predicate_to_str(
             }
         }
         ast::UnaryPredicate::FdIsOpenTerminal => {
-            if let Ok(fd) = operand.parse::<u32>() {
+            if let Ok(fd) = operand.parse::<ShellFd>() {
                 if let Some(open_file) = params.try_fd(shell, fd) {
                     Ok(open_file.is_term())
                 } else {

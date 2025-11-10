@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::process::Stdio;
 
+use crate::ShellFd;
 use crate::error;
 use crate::sys;
 
@@ -205,16 +206,16 @@ pub enum OpenFileEntry<'a> {
 #[derive(Clone, Default)]
 pub struct OpenFiles {
     /// Maps shell file descriptors to open files.
-    files: HashMap<u32, Option<OpenFile>>,
+    files: HashMap<ShellFd, Option<OpenFile>>,
 }
 
 impl OpenFiles {
     /// File descriptor used for standard input.
-    pub const STDIN_FD: u32 = 0;
+    pub const STDIN_FD: ShellFd = 0;
     /// File descriptor used for standard output.
-    pub const STDOUT_FD: u32 = 1;
+    pub const STDOUT_FD: ShellFd = 1;
     /// File descriptor used for standard error.
-    pub const STDERR_FD: u32 = 2;
+    pub const STDERR_FD: ShellFd = 2;
 
     /// Creates a new `OpenFiles` instance populated with stdin, stdout, and stderr
     /// from the host environment.
@@ -235,7 +236,7 @@ impl OpenFiles {
     /// # Arguments
     ///
     /// * `files`: An iterator of (fd number, `OpenFile`) pairs to update the open files with.
-    pub fn update_from(&mut self, files: impl Iterator<Item = (u32, OpenFile)>) {
+    pub fn update_from(&mut self, files: impl Iterator<Item = (ShellFd, OpenFile)>) {
         for (fd, file) in files {
             let _ = self.files.insert(fd, Some(file));
         }
@@ -263,7 +264,7 @@ impl OpenFiles {
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to remove.
-    pub fn remove_fd(&mut self, fd: u32) -> Option<OpenFile> {
+    pub fn remove_fd(&mut self, fd: ShellFd) -> Option<OpenFile> {
         self.files.insert(fd, None).and_then(|f| f)
     }
 
@@ -273,7 +274,7 @@ impl OpenFiles {
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to lookup.
-    pub fn try_fd(&self, fd: u32) -> Option<&OpenFile> {
+    pub fn try_fd(&self, fd: ShellFd) -> Option<&OpenFile> {
         self.files.get(&fd).and_then(|f| f.as_ref())
     }
 
@@ -283,7 +284,7 @@ impl OpenFiles {
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to lookup.
-    pub fn fd_entry(&self, fd: u32) -> OpenFileEntry<'_> {
+    pub fn fd_entry(&self, fd: ShellFd) -> OpenFileEntry<'_> {
         self.files
             .get(&fd)
             .map_or(OpenFileEntry::NotSpecified, |opt_file| match opt_file {
@@ -293,7 +294,7 @@ impl OpenFiles {
     }
 
     /// Checks if the given file descriptor is in use.
-    pub fn contains_fd(&self, fd: u32) -> bool {
+    pub fn contains_fd(&self, fd: ShellFd) -> bool {
         self.files.contains_key(&fd)
     }
 
@@ -305,12 +306,12 @@ impl OpenFiles {
     ///
     /// * `fd`: The file descriptor to associate with the file.
     /// * `file`: The file to associate with the file descriptor.
-    pub fn set_fd(&mut self, fd: u32, file: OpenFile) -> Option<OpenFile> {
+    pub fn set_fd(&mut self, fd: ShellFd, file: OpenFile) -> Option<OpenFile> {
         self.files.insert(fd, Some(file)).and_then(|f| f)
     }
 
     /// Iterates over all file descriptors.
-    pub fn iter_fds(&self) -> impl Iterator<Item = (u32, &OpenFile)> {
+    pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, &OpenFile)> {
         self.files
             .iter()
             .filter_map(|(fd, file)| file.as_ref().map(|f| (*fd, f)))
@@ -319,7 +320,7 @@ impl OpenFiles {
 
 impl<I> From<I> for OpenFiles
 where
-    I: Iterator<Item = (u32, OpenFile)>,
+    I: Iterator<Item = (ShellFd, OpenFile)>,
 {
     fn from(iter: I) -> Self {
         let files = iter.map(|(fd, file)| (fd, Some(file))).collect();

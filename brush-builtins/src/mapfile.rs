@@ -29,7 +29,7 @@ pub(crate) struct MapFileCommand {
 
     /// File descriptor to read from (defaults to stdin).
     #[arg(short = 'u', default_value_t = 0)]
-    fd: u32,
+    fd: brush_core::ShellFd,
 
     /// Name of function to call for each group of lines.
     #[arg(short = 'C')]

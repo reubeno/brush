@@ -1238,17 +1238,20 @@ impl Display for RedirectList {
     }
 }
 
+/// A file descriptor number.
+pub type IoFd = i32;
+
 /// An I/O redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
 pub enum IoRedirect {
     /// Redirection to a file.
-    File(Option<u32>, IoFileRedirectKind, IoFileRedirectTarget),
+    File(Option<IoFd>, IoFileRedirectKind, IoFileRedirectTarget),
     /// Redirection from a here-document.
-    HereDocument(Option<u32>, IoHereDocument),
+    HereDocument(Option<IoFd>, IoHereDocument),
     /// Redirection from a here-string.
-    HereString(Option<u32>, Word),
+    HereString(Option<IoFd>, Word),
     /// Redirection of both standard output and standard error (with optional append).
     OutputAndError(Word, bool),
 }
@@ -1356,7 +1359,7 @@ pub enum IoFileRedirectTarget {
     /// Path to a file.
     Filename(Word),
     /// File descriptor number.
-    Fd(u32),
+    Fd(IoFd),
     /// Process substitution: substitution with the results of executing the given
     /// command in a subshell.
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),

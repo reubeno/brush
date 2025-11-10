@@ -282,6 +282,12 @@ async fn instantiate_shell(
         brush_builtins::BuiltinSet::BashMode
     });
 
+    let fds = args
+        .inherited_fds
+        .iter()
+        .filter_map(|&fd| brush_core::sys::fd::try_get_file_for_open_fd(fd).map(|file| (fd, file)))
+        .collect();
+
     // Compose the options we'll use to create the shell.
     let options = brush_interactive::Options {
         shell: brush_core::CreateOptions {
@@ -300,7 +306,7 @@ async fn instantiate_shell(
             no_rc: args.no_rc,
             rc_file: args.rc_file.clone(),
             do_not_inherit_env: args.do_not_inherit_env,
-            inherit_open_fds: true,
+            fds: Some(fds),
             posix: args.posix || args.sh_mode,
             print_commands_and_arguments: args.print_commands_and_arguments,
             read_commands_from_stdin,

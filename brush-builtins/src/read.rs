@@ -83,7 +83,7 @@ impl builtins::Command for ReadCommand {
 
         // Find the input stream to use.
         let input_stream = if let Some(fd_num) = self.fd_num_to_read {
-            let fd_num = u32::from(fd_num);
+            let fd_num = brush_core::ShellFd::from(fd_num);
             context
                 .try_fd(fd_num)
                 .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?
