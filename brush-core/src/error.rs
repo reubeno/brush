@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Shell, results, sys};
+use crate::{Shell, ShellFd, results, sys};
 
 /// Unified error type for this crate. Contains just a kind for now,
 /// but will be extended later with additional context.
@@ -207,7 +207,7 @@ pub enum ErrorKind {
 
     /// Bad file descriptor.
     #[error("bad file descriptor: {0}")]
-    BadFileDescriptor(u32),
+    BadFileDescriptor(ShellFd),
 
     /// Printf failure
     #[error("printf failure: {0}")]

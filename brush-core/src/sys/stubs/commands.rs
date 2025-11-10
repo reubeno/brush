@@ -2,7 +2,7 @@
 
 use std::ffi::OsStr;
 
-use crate::{error, openfiles};
+use crate::{ShellFd, error, openfiles};
 
 /// Extension trait for Unix-like command extensions.
 pub trait CommandExt {
@@ -59,14 +59,14 @@ pub trait CommandFdInjectionExt {
     /// * `open_files` - A mapping of child file descriptors to open files.
     fn inject_fds(
         &mut self,
-        open_files: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+        open_files: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
     ) -> Result<(), error::Error>;
 }
 
 impl CommandFdInjectionExt for std::process::Command {
     fn inject_fds(
         &mut self,
-        mut open_files: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+        mut open_files: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
     ) -> Result<(), error::Error> {
         if open_files.next().is_some() {
             return Err(error::ErrorKind::NotSupportedOnThisPlatform("fd redirections").into());

@@ -7,6 +7,7 @@
 #![allow(clippy::unused_self)]
 
 pub mod commands;
+pub mod fd;
 pub mod fs;
 pub mod input;
 pub(crate) mod network;

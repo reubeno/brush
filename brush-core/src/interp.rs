@@ -16,7 +16,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{error, expansion, extendedtests, jobs, openfiles, processes, sys, timing};
+use crate::{ShellFd, error, expansion, extendedtests, jobs, openfiles, processes, sys, timing};
 
 impl From<processes::ProcessWaitResult> for results::ExecutionResult {
     fn from(wait_result: processes::ProcessWaitResult) -> Self {
@@ -127,7 +127,7 @@ impl ExecutionParameters {
     ///
     /// * `shell` - The shell context.
     /// * `fd` - The file descriptor number to retrieve.
-    pub fn try_fd(&self, shell: &Shell, fd: u32) -> Option<openfiles::OpenFile> {
+    pub fn try_fd(&self, shell: &Shell, fd: ShellFd) -> Option<openfiles::OpenFile> {
         match self.open_files.fd_entry(fd) {
             openfiles::OpenFileEntry::Open(f) => Some(f.clone()),
             openfiles::OpenFileEntry::NotPresent => None,
@@ -145,7 +145,7 @@ impl ExecutionParameters {
     ///
     /// * `fd` - The file descriptor number to set.
     /// * `file` - The open file to set.
-    pub fn set_fd(&mut self, fd: u32, file: openfiles::OpenFile) {
+    pub fn set_fd(&mut self, fd: ShellFd, file: openfiles::OpenFile) {
         self.open_files.set_fd(fd, file);
     }
 
@@ -154,7 +154,7 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn iter_fds(&self, shell: &Shell) -> impl Iterator<Item = (u32, openfiles::OpenFile)> {
+    pub fn iter_fds(&self, shell: &Shell) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         let our_fds = self.open_files.iter_fds();
         let shell_fds = shell
             .persistent_open_files()
@@ -1516,7 +1516,7 @@ pub(crate) async fn setup_redirect(
                         // Nothing to do
                     } else if expanded.chars().all(|c: char| c.is_ascii_digit()) {
                         let source_fd_num = expanded
-                            .parse::<u32>()
+                            .parse::<ShellFd>()
                             .map_err(|_| error::ErrorKind::InvalidRedirection)?;
 
                         // Duplicate the fd.
@@ -1597,7 +1597,7 @@ pub(crate) async fn setup_redirect(
     Ok(())
 }
 
-const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> u32 {
+const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> ShellFd {
     match kind {
         ast::IoFileRedirectKind::Read => 0,
         ast::IoFileRedirectKind::Write => 1,
@@ -1614,7 +1614,7 @@ fn setup_process_substitution(
     params: &ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
     subshell_cmd: &ast::SubshellCommand,
-) -> Result<(u32, OpenFile), error::Error> {
+) -> Result<(ShellFd, OpenFile), error::Error> {
     // TODO: Don't execute synchronously!
     // Execute in a subshell.
     let mut subshell = shell.clone();

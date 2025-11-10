@@ -71,6 +71,10 @@ pub struct CommandLineArgs {
     #[clap(short = 'i', help_heading = HEADING_STANDARD_OPTIONS)]
     pub interactive: bool,
 
+    /// Inherit the specified file descriptors injected by the parent process.
+    #[clap(long = "inherit-fd", value_name = "FD", help_heading = HEADING_STANDARD_OPTIONS)]
+    pub inherited_fds: Vec<i32>,
+
     /// Make shell act as if it had been invoked as a login shell.
     #[clap(short = 'l', long = "login", help_heading = HEADING_STANDARD_OPTIONS)]
     pub login: bool,

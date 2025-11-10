@@ -7,8 +7,8 @@ use itertools::Itertools;
 use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
-    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, builtins, env,
-    error, escape,
+    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
+    builtins, env, error, escape,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -56,12 +56,12 @@ impl ExecutionContext<'_> {
     /// # Arguments
     ///
     /// * `fd` - The file descriptor number to retrieve.
-    pub fn try_fd(&self, fd: u32) -> Option<openfiles::OpenFile> {
+    pub fn try_fd(&self, fd: ShellFd) -> Option<openfiles::OpenFile> {
         self.params.try_fd(self.shell, fd)
     }
 
     /// Iterates over all open file descriptors.
-    pub fn iter_fds(&self) -> impl Iterator<Item = (u32, openfiles::OpenFile)> {
+    pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
 

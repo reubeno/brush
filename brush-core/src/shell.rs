@@ -29,6 +29,9 @@ pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 /// Type for storing an error formatter.
 pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 
+/// Type alias for shell file descriptors.
+pub type ShellFd = i32;
+
 /// Represents an instance of a shell.
 pub struct Shell {
     /// Trap handler configuration for the shell.
@@ -300,6 +303,8 @@ pub struct CreateOptions {
     /// Whether to skip inheriting environment variables from the calling process.
     #[builder(default)]
     pub do_not_inherit_env: bool,
+    /// Provides a set of initial open files to be tracked by the shell.
+    pub fds: Option<HashMap<ShellFd, openfiles::OpenFile>>,
     /// Whether the shell is in POSIX compliance mode.
     #[builder(default)]
     pub posix: bool,
@@ -344,7 +349,8 @@ impl Shell {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
-            open_files: openfiles::OpenFiles::new_from_host_env(),
+            open_files: openfiles::OpenFiles::new(),
+            // Populate working directory from the host environment.
             working_dir: std::env::current_dir()?,
             env: env::ShellEnvironment::new(),
             funcs: functions::FunctionEnv::default(),
@@ -373,6 +379,11 @@ impl Shell {
                 .unwrap_or_else(|| Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))),
             depth: 0,
         };
+
+        // Add in any open files provided.
+        if let Some(fds) = options.fds {
+            shell.open_files.update_from(fds.into_iter());
+        }
 
         // TODO: Without this a script that sets extglob will fail because we
         // parse the entire script with the same settings.
@@ -1380,7 +1391,7 @@ impl Shell {
         if let Some(parent) = path_to_open.parent() {
             if parent == Path::new("/dev/fd") {
                 if let Some(filename) = path_to_open.file_name() {
-                    if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<u32>() {
+                    if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<ShellFd>() {
                         if let Some(open_file) = params.try_fd(self, fd_num) {
                             return open_file.try_clone();
                         }
@@ -1474,7 +1485,7 @@ impl Shell {
     /// * `open_files` - The new set of open files to use.
     pub fn replace_open_files(
         &mut self,
-        open_fds: impl Iterator<Item = (u32, openfiles::OpenFile)>,
+        open_fds: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
     ) {
         self.open_files = openfiles::OpenFiles::from(open_fds);
     }
@@ -1523,7 +1534,7 @@ impl Shell {
         // If BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
         if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD") {
             let xtracefd_value = xtracefd_var.value().to_cow_str(self);
-            if let Ok(fd) = xtracefd_value.parse::<u32>() {
+            if let Ok(fd) = xtracefd_value.parse::<ShellFd>() {
                 if let Some(file) = self.open_files.try_fd(fd) {
                     trace_file = Some(file.clone());
                 }

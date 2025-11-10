@@ -886,7 +886,7 @@ peg::parser! {
         // need to make sure that there was no space between the number and the
         // redirection operator; unfortunately we don't have the space anymore
         // but we can infer it by looking at the tokens' locations.
-        rule io_number() -> u32 =
+        rule io_number() -> ast::IoFd =
             [Token::Word(w, num_loc) if w.chars().all(|c: char| c.is_ascii_digit())]
             &([Token::Operator(o, redir_loc) if
                     o.starts_with(['<', '>']) &&

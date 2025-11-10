@@ -28,6 +28,7 @@ pub mod tokio_process;
 pub mod fs;
 
 pub use platform::commands;
+pub use platform::fd;
 pub use platform::input;
 pub(crate) use platform::network;
 pub use platform::process;
