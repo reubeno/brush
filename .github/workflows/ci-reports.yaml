@@ -121,7 +121,7 @@ jobs:
           ls -lR reports/
 
       - name: "Publish test results"
-        uses: EnricoMi/publish-unit-test-result-action@3a74b2957438d0b6e2e61d67b05318aa25c9e6c6 # v2.20.0
+        uses: EnricoMi/publish-unit-test-result-action@34d7c956a59aed1bfebf31df77b8de55db9bbaaf # v2.21.0
         if: steps.get-pr.outputs.pr_number != ''
         continue-on-error: true
         with:
