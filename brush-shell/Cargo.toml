@@ -58,7 +58,7 @@ const_format = "0.2.35"
 git-version = "0.3.9"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.20"
-human-panic = "2.0.3"
+human-panic = "2.0.4"
 
 [target.'cfg(not(any(unix, windows)))'.dependencies]
 brush-interactive = { version = "^0.2.22", path = "../brush-interactive", features = [
@@ -100,7 +100,7 @@ strip-ansi-escapes = "0.2.1"
 test-with = { version = "0.15.3", default-features = false, features = [
     "executable",
 ] }
-version-compare = "0.2.0"
+version-compare = "0.2.1"
 walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dev-dependencies]
