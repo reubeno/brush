@@ -2,7 +2,7 @@
 
 use std::ffi::OsStr;
 
-use crate::{error, openfiles};
+use crate::{ShellFd, error, openfiles};
 
 /// Extension trait for Unix-like command extensions.
 pub trait CommandExt {

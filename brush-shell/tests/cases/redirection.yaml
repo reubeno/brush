@@ -203,4 +203,12 @@ cases:
         contents: |
           echo hi >&3
     stdin: |
-      $0 test.sh 3>output.txt
+      args=""
+
+      # NOTE: For now, brush doesn't inherit arbitrary all open fds by default like bash does.
+      # We need to explicitly specify which fds to inherit.
+      if [[ $BRUSH_VERSION ]]; then
+        args+=" --inherit-fd=3"
+      fi
+
+      $0 $args test.sh 3>output.txt
