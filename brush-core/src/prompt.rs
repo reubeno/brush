@@ -1,5 +1,5 @@
 use crate::{
-    error,
+    ExecutionParameters, error, expansion,
     shell::Shell,
     sys::{self, users},
 };
@@ -9,15 +9,36 @@ const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 const VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
 const VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
-pub(crate) fn expand_prompt(shell: &Shell, spec: String) -> Result<String, error::Error> {
-    // Now parse.
+pub(crate) async fn expand_prompt(
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+    spec: String,
+) -> Result<String, error::Error> {
+    // Parse the prompt spec into its pieces.
     let prompt_pieces = parse_prompt(spec)?;
 
-    // Now render.
-    let formatted_prompt = prompt_pieces
-        .into_iter()
-        .map(|p| format_prompt_piece(shell, p))
-        .collect::<Result<String, error::Error>>()?;
+    // Now, render each piece.
+    let mut formatted_prompt = String::new();
+    for piece in prompt_pieces {
+        let needs_escaping = matches!(
+            piece,
+            brush_parser::prompt::PromptPiece::EscapedSequence(_)
+                | brush_parser::prompt::PromptPiece::DollarOrPound
+        );
+
+        let formatted_piece = format_prompt_piece(shell, piece)?;
+
+        if shell.options.expand_prompt_strings && needs_escaping {
+            formatted_prompt.push('\\');
+        }
+
+        formatted_prompt.push_str(&formatted_piece);
+    }
+
+    if shell.options.expand_prompt_strings {
+        // Now expand any remaining escape sequences.
+        formatted_prompt = expansion::basic_expand_str(shell, params, &formatted_prompt).await?;
+    }
 
     Ok(formatted_prompt)
 }
@@ -34,6 +55,7 @@ fn format_prompt_piece(
     piece: brush_parser::prompt::PromptPiece,
 ) -> Result<String, error::Error> {
     let formatted = match piece {
+        brush_parser::prompt::PromptPiece::EscapedSequence(s) => s,
         brush_parser::prompt::PromptPiece::Literal(l) => l,
         brush_parser::prompt::PromptPiece::AsciiCharacter(c) => {
             char::from_u32(c).map_or_else(String::new, |c| c.to_string())

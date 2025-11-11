@@ -538,7 +538,7 @@ impl<'a> WordExpander<'a> {
                 }
             }
             // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
-            let wrapped = format!("\"{word}\"");
+            let wrapped = std::format!("\"{word}\"");
             self.basic_expand(&wrapped).await
         } else {
             // When not inside double-quotes, perform normal expansion with quote removal
@@ -935,10 +935,11 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_suffix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::RemoveLargestSuffixPattern {
                 parameter,
@@ -947,10 +948,11 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_suffix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
                 parameter,
@@ -960,10 +962,11 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::RemoveLargestPrefixPattern {
                 parameter,
@@ -973,10 +976,11 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::Substring {
                 parameter,
@@ -1115,8 +1119,24 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let came_from_undefined = expanded_parameter.undefined;
-                transform_expansion(expanded_parameter, |s| {
-                    self.apply_transform_to(&op, s, came_from_undefined)
+
+                //
+                // For typing reasons (issues with FnMut and our mut use of self), we can't use
+                // transform_expansion. Instead, we inline its logic here.
+                //
+
+                let mut transformed_fields = vec![];
+                for field in expanded_parameter.fields {
+                    let s = String::from(field);
+                    let transformed = self.apply_transform_to(&op, s, came_from_undefined).await?;
+                    transformed_fields.push(WordField::from(transformed));
+                }
+
+                Ok(Expansion {
+                    fields: transformed_fields,
+                    concatenate: expanded_parameter.concatenate,
+                    from_array: expanded_parameter.from_array,
+                    undefined: expanded_parameter.undefined,
                 })
             }
             brush_parser::word::ParameterExpr::UppercaseFirstChar {
@@ -1127,9 +1147,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::uppercase_first_char(s, &expanded_pattern)
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::UppercasePattern {
                 parameter,
@@ -1139,9 +1160,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::uppercase_pattern(s.as_str(), &expanded_pattern)
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::LowercaseFirstChar {
                 parameter,
@@ -1151,9 +1173,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                Ok(transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::lowercase_first_char(s, &expanded_pattern)
-                })?)
+                })
+                .await
             }
             brush_parser::word::ParameterExpr::LowercasePattern {
                 parameter,
@@ -1163,9 +1186,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                Ok(transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::lowercase_pattern(s.as_str(), &expanded_pattern)
-                })?)
+                })
+                .await
             }
             brush_parser::word::ParameterExpr::ReplaceSubstring {
                 parameter,
@@ -1190,7 +1214,7 @@ impl<'a> WordExpander<'a> {
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Suffix),
                 )?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Ok(Self::replace_substring(
                         s.as_str(),
                         &regex,
@@ -1198,6 +1222,7 @@ impl<'a> WordExpander<'a> {
                         &match_kind,
                     ))
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::VariableNames {
                 prefix,
@@ -1635,15 +1660,15 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    fn apply_transform_to(
-        &self,
+    async fn apply_transform_to(
+        &mut self,
         op: &ParameterTransformOp,
         s: String,
         came_from_undefined: bool,
     ) -> Result<String, error::Error> {
         match op {
             brush_parser::word::ParameterTransformOp::PromptExpand => {
-                prompt::expand_prompt(self.shell, s)
+                prompt::expand_prompt(self.shell, self.params, s).await
             }
             brush_parser::word::ParameterTransformOp::CapitalizeInitial => {
                 Ok(to_initial_capitals(s.as_str()))
@@ -1729,13 +1754,18 @@ fn to_initial_capitals(s: &str) -> String {
     result
 }
 
-fn transform_expansion(
+async fn transform_expansion<F, FReturn>(
     expansion: Expansion,
-    mut f: impl FnMut(String) -> Result<String, error::Error>,
-) -> Result<Expansion, error::Error> {
+    mut f: F,
+) -> Result<Expansion, error::Error>
+where
+    F: FnMut(String) -> FReturn,
+    FReturn: Future<Output = Result<String, error::Error>>,
+{
     let mut transformed_fields = vec![];
     for field in expansion.fields {
-        transformed_fields.push(WordField::from(f(String::from(field))?));
+        let transformed_field = WordField::from(f(String::from(field)).await?);
+        transformed_fields.push(transformed_field);
     }
 
     Ok(Expansion {

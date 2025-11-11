@@ -1067,11 +1067,8 @@ impl Shell {
         }
 
         // Expand it.
-        let formatted_prompt = prompt::expand_prompt(self, prompt_spec.into_owned())?;
-
-        // Now expand.
         let params = self.default_exec_params();
-        expansion::basic_expand_str(self, &params, &formatted_prompt).await
+        prompt::expand_prompt(self, &params, prompt_spec.into_owned()).await
     }
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
