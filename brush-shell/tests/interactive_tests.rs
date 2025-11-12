@@ -155,7 +155,7 @@ impl SessionExt for ShellSession {
 
 fn start_shell_session() -> anyhow::Result<ShellSession> {
     const DEFAULT_PROMPT: &str = "brush> ";
-    let shell_path = assert_cmd::cargo::cargo_bin("brush");
+    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
 
     let mut cmd = std::process::Command::new(shell_path);
     cmd.args([

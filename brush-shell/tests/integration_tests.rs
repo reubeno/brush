@@ -9,7 +9,7 @@ use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn get_version_variables() -> anyhow::Result<()> {
-    let shell_path = assert_cmd::cargo::cargo_bin("brush");
+    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
     let brush_ver_str = get_variable(&shell_path, "BRUSH_VERSION")?;
     let bash_ver_str = get_variable(&shell_path, "BASH_VERSION")?;
 
@@ -24,7 +24,7 @@ fn get_version_variables() -> anyhow::Result<()> {
 
 #[test]
 fn version_exit_code() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("brush")?;
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
     let assert = cmd.arg("--version").assert();
     assert
         .success()
@@ -35,7 +35,7 @@ fn version_exit_code() -> anyhow::Result<()> {
 
 #[test]
 fn help_exit_code() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("brush")?;
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
     let assert = cmd.arg("--help").assert();
     assert.success().stdout(predicates::str::is_empty().not());
 
@@ -44,7 +44,7 @@ fn help_exit_code() -> anyhow::Result<()> {
 
 #[test]
 fn invalid_option_exit_code() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("brush")?;
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
     let assert = cmd.arg("--unknown-argument-here").assert();
     assert
         .failure()
