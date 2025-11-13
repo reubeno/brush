@@ -15,8 +15,14 @@ rust-version.workspace = true
 name = "brush"
 path = "src/main.rs"
 
+[features]
+default = ["brush-shell/default"]
+basic = ["brush-shell/basic"]
+minimal = ["brush-shell/minimal"]
+reedline = ["brush-shell/reedline"]
+
 [lints]
 workspace = true
 
 [dependencies]
-brush-shell = { version = "^0.2.23", path = "../brush-shell" }
+brush-shell = { version = "^0.2.23", path = "../brush-shell", default-features = false }
