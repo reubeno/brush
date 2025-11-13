@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "brush",
     "brush-shell",
     "brush-parser",
     "brush-core",
@@ -9,7 +10,7 @@ members = [
     "fuzz",
     "xtask",
 ]
-default-members = ["brush-shell"]
+default-members = ["brush"]
 
 [workspace.package]
 authors = ["reuben olinsky"]
