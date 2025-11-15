@@ -17,6 +17,7 @@ pkg-url = "{ repo }/releases/download/brush-shell-v{ version }/brush-{ target }{
 [[bin]]
 name = "brush"
 path = "src/main.rs"
+bench = false
 
 [features]
 default = ["brush-shell/default"]

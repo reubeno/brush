@@ -10,7 +10,7 @@ members = [
     "fuzz",
     "xtask",
 ]
-default-members = ["brush"]
+default-members = ["brush-shell"]
 
 [workspace.package]
 authors = ["reuben olinsky"]
