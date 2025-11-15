@@ -89,8 +89,9 @@ jobs:
         if: github.event_name == 'release'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_EVENT_RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} \
+          gh release upload ${GITHUB_EVENT_RELEASE_TAG_NAME} \
             brush-docs.tar.gz \
             brush-docs.tar.gz.sha256 \
             brush-docs.tar.gz.sha512
