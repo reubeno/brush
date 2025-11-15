@@ -17,6 +17,8 @@ env:
   CARGO_TERM_COLOR: always
   CLICOLOR: 1
   CLICOLOR_FORCE: 1
+  # Crates to exclude from workspace builds (build-time tools only)
+  CARGO_WORKSPACE_EXCLUDE: --exclude brush-fuzz --exclude xtask
 
 permissions:
   actions: read
@@ -125,14 +127,14 @@ jobs:
         if: ${{ matrix.target == '' }}
         env:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cargo build --release --workspace --exclude brush-fuzz --exclude xtask --all-targets ${EXTRA_BUILD_ARGS}
+        run: cargo build --release --workspace ${CARGO_WORKSPACE_EXCLUDE} --all-targets ${EXTRA_BUILD_ARGS}
 
       - name: "Build (cross)"
         if: ${{ matrix.target != '' }}
         env:
           TARGET: ${{ matrix.target }}
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cross build --release --workspace --exclude brush-fuzz --exclude xtask --target=${TARGET} ${EXTRA_BUILD_ARGS}
+        run: cross build --release --workspace ${CARGO_WORKSPACE_EXCLUDE} --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -249,11 +251,11 @@ jobs:
 
           # Set us up to use cargo-llvm-cov
           source <(cargo llvm-cov show-env --export-prefix)
-          cargo llvm-cov clean --workspace --exclude brush-fuzz --exclude xtask
+          cargo llvm-cov clean --workspace ${CARGO_WORKSPACE_EXCLUDE}
 
           # Run the tests
           result=0
-          cargo nextest run --workspace --exclude brush-fuzz --exclude xtask --no-fail-fast || result=$?
+          cargo nextest run --workspace ${CARGO_WORKSPACE_EXCLUDE} --no-fail-fast || result=$?
 
           # Generate code coverage report
           cargo llvm-cov report --cobertura --output-path ./codecov-${VARIANT}.xml || result=$?
@@ -326,7 +328,7 @@ jobs:
         run: cargo fmt --check --all
 
       - name: Check
-        run: cargo check --workspace --exclude brush-fuzz --exclude xtask --all-features --all-targets
+        run: cargo check --workspace ${CARGO_WORKSPACE_EXCLUDE} --all-features --all-targets
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
@@ -338,7 +340,7 @@ jobs:
 
       - name: Clippy check
         if: matrix.rust-version == 'stable'
-        run: cargo clippy --workspace --exclude brush-fuzz --exclude xtask --all-features --all-targets
+        run: cargo clippy --workspace ${CARGO_WORKSPACE_EXCLUDE} --all-features --all-targets
 
   # Check for unneeded dependencies.
   check-deps:
@@ -361,7 +363,7 @@ jobs:
           tool: cargo-udeps
 
       - name: Check for unused dependencies
-        run: cargo udeps --workspace --exclude brush-fuzz --exclude xtask --all-targets --all-features
+        run: cargo udeps --workspace --all-targets --all-features
 
   # Analyze public API surface
   analyze-public-api:
@@ -451,13 +453,13 @@ jobs:
       - name: Performance analysis on PR
         run: |
           set -euo pipefail
-          cargo bench --workspace --exclude brush-fuzz --exclude xtask --benches -- --output-format bencher | tee benchmarks.txt
+          cargo bench --workspace ${CARGO_WORKSPACE_EXCLUDE} --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: pr
 
       - name: Performance analysis on main
         run: |
           set -euo pipefail
-          cargo bench --workspace --exclude brush-fuzz --exclude xtask --benches -- --output-format bencher | tee benchmarks.txt
+          cargo bench --workspace ${CARGO_WORKSPACE_EXCLUDE} --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: main
 
       - name: Compare benchmark results
