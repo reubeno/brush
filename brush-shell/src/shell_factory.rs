@@ -59,11 +59,11 @@ impl ShellFactory for ReedlineShellFactory {
         &self,
         options: brush_interactive::Options,
     ) -> Result<Self::ShellType, brush_interactive::ShellError> {
-        #[cfg(any(unix, windows))]
+        #[cfg(all(feature = "reedline", any(unix, windows)))]
         {
             brush_interactive::ReedlineShell::new(options).await
         }
-        #[cfg(not(any(unix, windows)))]
+        #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
         {
             Err(brush_interactive::ShellError::InputBackendNotSupported)
         }

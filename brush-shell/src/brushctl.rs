@@ -60,7 +60,7 @@ impl EventsCommand {
         &self,
         context: &brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
-        let event_config = crate::get_event_config();
+        let event_config = crate::entry::get_event_config();
 
         let mut event_config = event_config.try_lock().map_err(|_| {
             brush_core::Error::from(brush_core::ErrorKind::Unimplemented(
