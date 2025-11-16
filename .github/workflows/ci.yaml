@@ -125,14 +125,14 @@ jobs:
         if: ${{ matrix.target == '' }}
         env:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cargo build --release --workspace --all-targets ${EXTRA_BUILD_ARGS}
+        run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
 
       - name: "Build (cross)"
         if: ${{ matrix.target != '' }}
         env:
           TARGET: ${{ matrix.target }}
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cross build --release --workspace --target=${TARGET} ${EXTRA_BUILD_ARGS}
+        run: cross build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -326,7 +326,7 @@ jobs:
         run: cargo fmt --check --all
 
       - name: Check
-        run: cargo check --workspace --all-features --all-targets
+        run: cargo check --all-features --all-targets
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
