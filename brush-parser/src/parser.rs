@@ -283,7 +283,14 @@ peg::parser! {
             specific_operator("||") { ast::AndOr::Or }
 
         rule pipeline() -> ast::Pipeline =
-            timed:pipeline_timed()? bang:bang()? seq:pipe_sequence() { ast::Pipeline { timed, bang: bang.is_some(), seq } }
+            timed:pipeline_timed()? bang:bang()* seq:pipe_sequence() {?
+                if timed.is_none() && bang.is_empty() && seq.is_empty() {
+                    Err("empty pipeline")
+                } else {
+                    let invert = bang.len() % 2 == 1;
+                    Ok(ast::Pipeline { timed, bang: invert, seq })
+                }
+            }
 
         rule pipeline_timed() -> ast::PipelineTimed =
             non_posix_extensions_enabled() s:specific_word("time") posix_output:specific_word("-p")? {
@@ -304,9 +311,10 @@ peg::parser! {
                     add_pipe_extension_redirection(&mut c)?;
                 }
                 Ok(c)
-            }) ++ (pipe_operator() linebreak()) {
-            c
-        }
+            }) ** (pipe_operator() linebreak()) {
+                c
+            }
+
         rule pipe_operator() =
             specific_operator("|") /
             pipe_extension_redirection()

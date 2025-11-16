@@ -15,6 +15,13 @@ cases:
       ! true
       echo "! true: $?"
 
+  - name: "Standalone negation (no command)"
+    stdin: |
+      !
+      echo "After !: $?"
+      ! !
+      echo "After ! !: $?"
+
   - name: "Exit codes for piped commands"
     test_files:
       - path: "script.sh"
