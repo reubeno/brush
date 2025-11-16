@@ -605,12 +605,15 @@ peg::parser! {
             s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
             s:gettext_double_quoted_sequence() { WordPiece::GettextDoubleQuotedSequence(s) } /
             // Rules that match pieces starting with a dollar sign ('$').
-            arithmetic_expansion() /
-            command_substitution() /
-            parameter_expansion() /
+            dollar_sign_word_piece() /
             // Rules that match unquoted text that doesn't start with an unescaped dollar sign.
             normal_escape_sequence() /
             unquoted_literal_text(<stop_condition()>, in_command)
+
+        rule dollar_sign_word_piece() -> WordPiece =
+            arithmetic_expansion() /
+            command_substitution() /
+            parameter_expansion()
 
         rule double_quoted_word_piece() -> WordPiece =
             arithmetic_expansion() /
@@ -647,7 +650,7 @@ peg::parser! {
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
-            !stop_condition() !normal_escape_sequence() [^'$' | '\'' | '\"' | '`'] {}
+            !stop_condition() !normal_escape_sequence() [^'\'' | '\"' | '$' | '`'] {}
 
         rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
 
@@ -664,13 +667,13 @@ peg::parser! {
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((!double_quoted_escape_sequence() [^'$' | '\"' | '`'])+)
+            $((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
 
         rule normal_escape_sequence() -> WordPiece =
             s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
 
         rule double_quoted_escape_sequence() -> WordPiece =
-            s:$("\\" ['$' | '`' | '\"' | '\'' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
+            s:$("\\" ['$' | '`' | '\"' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
 
         rule tilde_prefix_with_source() -> WordPieceWithSource =
             start_index:position!() piece:tilde_prefix() end_index:position!() {
