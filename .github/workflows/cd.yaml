@@ -1,4 +1,4 @@
-#
+a#
 # Based on https://github.com/release-plz/release-plz/blob/a5043c478d46d051c00e4fbc85036ac22510f07e/.github/workflows/cd.yml
 #
 
@@ -89,8 +89,9 @@ jobs:
         if: github.event_name == 'release'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} \
+          gh release upload ${GITHUB_RELEASE_TAG} \
             brush-docs.tar.gz \
             brush-docs.tar.gz.sha256 \
             brush-docs.tar.gz.sha512
