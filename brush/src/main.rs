@@ -1,4 +1,4 @@
-//! Main entry for the `brush` shell.
+//! Wrapper binary for brush-shell
 
 fn main() {
     brush_shell::entry::run();

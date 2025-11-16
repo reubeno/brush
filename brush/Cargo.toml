@@ -1,0 +1,32 @@
+[package]
+name = "brush"
+description = "Rust-implemented shell focused on POSIX and bash compatibility"
+version = "0.2.23"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/brush-shell-v{ version }/brush-{ target }{ archive-suffix }"
+
+[[bin]]
+name = "brush"
+path = "src/main.rs"
+bench = false
+
+[features]
+default = ["brush-shell/default"]
+basic = ["brush-shell/basic"]
+minimal = ["brush-shell/minimal"]
+reedline = ["brush-shell/reedline"]
+
+[lints]
+workspace = true
+
+[dependencies]
+brush-shell = { version = "^0.2.23", path = "../brush-shell", default-features = false }

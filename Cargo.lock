@@ -312,6 +312,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "brush"
+version = "0.2.23"
+dependencies = [
+ "brush-shell",
+]
+
+[[package]]
 name = "brush-builtins"
 version = "0.1.0"
 dependencies = [

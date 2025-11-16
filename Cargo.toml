@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "brush",
     "brush-shell",
     "brush-parser",
     "brush-core",
