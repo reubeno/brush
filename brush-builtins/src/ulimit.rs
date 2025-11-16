@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 #[derive(Clone, Copy)]
 enum Unit {
@@ -430,11 +430,13 @@ pub(crate) struct ULimitCommand {
 }
 
 impl builtins::Command for ULimitCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let exit_code = builtins::ExitCode::Success;
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        let exit_code = ExecutionResult::success();
         let mut resources_to_set = Vec::new();
         let mut resources_to_get = Vec::new();
 

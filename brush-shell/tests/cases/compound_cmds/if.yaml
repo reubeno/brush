@@ -39,3 +39,61 @@ cases:
             echo 11
           fi
     args: ["./script.sh"]
+
+  - name: "If with return in condition"
+    stdin: |
+      f() {
+        if return 42; then
+          echo "Then branch"
+        else
+          echo "Else branch"
+        fi
+        echo "After if"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "If with exit in condition"
+    stdin: |
+      if exit 42; then
+        echo "Then branch"
+      else
+        echo "Else branch"
+      fi
+      echo "After if"
+
+  - name: "If with return in elif condition"
+    stdin: |
+      f() {
+        if false; then
+          echo "Then branch"
+        elif return 42; then
+          echo "Elif then branch"
+        else
+          echo "Else branch"
+        fi
+        echo "After if"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "If with break in condition inside loop"
+    stdin: |
+      for i in 1 2 3; do
+        if break; then
+          echo "Then branch"
+        fi
+        echo "After if"
+      done
+      echo "After loop"
+
+  - name: "If with continue in condition inside loop"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i"
+        if continue; then
+          echo "Then branch"
+        fi
+        echo "After if"
+      done
+      echo "After loop"

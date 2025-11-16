@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Return from the current function.
 #[derive(Parser)]
@@ -11,10 +11,12 @@ pub(crate) struct ReturnCommand {
 }
 
 impl builtins::Command for ReturnCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         #[expect(clippy::cast_sign_loss)]
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8
@@ -23,13 +25,16 @@ impl builtins::Command for ReturnCommand {
         };
 
         if context.shell.in_function() || context.shell.in_sourced_script() {
-            Ok(builtins::ExitCode::ReturnFromFunctionOrScript(code_8bit))
+            let mut result = ExecutionResult::new(code_8bit);
+            result.next_control_flow = ExecutionControlFlow::ReturnFromFunctionOrScript;
+
+            Ok(result)
         } else {
             writeln!(
-                context.shell.stderr(),
+                context.stderr(),
                 "return: can only be used in a function or sourced script"
             )?;
-            Ok(builtins::ExitCode::InvalidUsage)
+            Ok(ExecutionExitCode::InvalidUsage.into())
         }
     }
 }

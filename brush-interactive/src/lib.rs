@@ -11,7 +11,7 @@ pub use interactive_shell::{
 mod options;
 pub use options::Options;
 
-#[cfg(any(windows, unix))]
+#[cfg(feature = "completion")]
 mod completion;
 
 // Reedline-based shell

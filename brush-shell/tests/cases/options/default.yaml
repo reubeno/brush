@@ -1,0 +1,5 @@
+name: "Default options"
+cases:
+  - name: "Default options"
+    stdin: |
+      echo "Default options: $-"

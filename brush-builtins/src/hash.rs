@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 #[derive(Parser)]
 pub(crate) struct HashCommand {
@@ -30,11 +30,13 @@ pub(crate) struct HashCommand {
 }
 
 impl builtins::Command for HashCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut result = builtins::ExitCode::Success;
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        let mut result = ExecutionResult::success();
 
         if self.remove_all {
             context.shell.program_location_cache.reset();
@@ -42,7 +44,7 @@ impl builtins::Command for HashCommand {
             for name in &self.names {
                 if !context.shell.program_location_cache.unset(name) {
                     writeln!(context.stderr(), "{name}: not found")?;
-                    result = builtins::ExitCode::Custom(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         } else if self.display_paths {
@@ -70,7 +72,7 @@ impl builtins::Command for HashCommand {
                     }
                 } else {
                     writeln!(context.stderr(), "{name}: not found")?;
-                    result = builtins::ExitCode::Custom(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         } else if let Some(path) = &self.path_to_use {
@@ -89,7 +91,7 @@ impl builtins::Command for HashCommand {
                     .is_none()
                 {
                     writeln!(context.stderr(), "{name}: not found")?;
-                    result = builtins::ExitCode::Custom(1);
+                    result = ExecutionResult::general_error();
                 }
             }
         }

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{builtins, error, jobs};
+use brush_core::{ExecutionResult, builtins, error, jobs};
 
 /// Manage jobs.
 #[derive(Parser)]
@@ -32,10 +32,12 @@ pub(crate) struct JobsCommand {
 }
 
 impl builtins::Command for JobsCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.also_show_pids {
             return error::unimp("jobs -l");
         }
@@ -51,7 +53,7 @@ impl builtins::Command for JobsCommand {
             return error::unimp("jobs with job specs");
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 

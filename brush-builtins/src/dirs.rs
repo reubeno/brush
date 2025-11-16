@@ -1,7 +1,29 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum DirError {
+    /// Directory stack is empty.
+    #[error("directory stack is empty")]
+    DirStackEmpty,
+
+    /// A shell error occurred.
+    #[error(transparent)]
+    ShellError(#[from] brush_core::Error),
+}
+
+impl From<&DirError> for brush_core::ExecutionExitCode {
+    fn from(value: &DirError) -> Self {
+        match value {
+            DirError::DirStackEmpty => Self::GeneralError,
+            DirError::ShellError(e) => e.into(),
+        }
+    }
+}
+
+impl brush_core::BuiltinError for DirError {}
 
 /// Manage the current directory stack.
 #[derive(Default, Parser)]
@@ -26,10 +48,12 @@ pub(crate) struct DirsCommand {
 }
 
 impl builtins::Command for DirsCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.clear {
             context.shell.directory_stack.clear();
         } else {
@@ -69,9 +93,9 @@ impl builtins::Command for DirsCommand {
                 }
             }
 
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }

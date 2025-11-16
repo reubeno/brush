@@ -1,7 +1,9 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{Error, ExecutionParameters, Shell, builtins, tests};
+use brush_core::{
+    ErrorKind, ExecutionExitCode, ExecutionParameters, ExecutionResult, Shell, builtins, tests,
+};
 
 /// Evaluate test expression.
 #[derive(Parser)]
@@ -12,10 +14,12 @@ pub(crate) struct TestCommand {
 }
 
 impl builtins::Command for TestCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut args = self.args.as_slice();
 
         if context.command_name == "[" {
@@ -23,7 +27,7 @@ impl builtins::Command for TestCommand {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {
                     writeln!(context.stderr(), "[: missing ']'")?;
-                    return Ok(builtins::ExitCode::InvalidUsage);
+                    return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             }
 
@@ -31,9 +35,9 @@ impl builtins::Command for TestCommand {
         }
 
         if execute_test(context.shell, &context.params, args)? {
-            Ok(builtins::ExitCode::Success)
+            Ok(ExecutionResult::success())
         } else {
-            Ok(builtins::ExitCode::Custom(1))
+            Ok(ExecutionResult::general_error())
         }
     }
 }
@@ -44,6 +48,6 @@ fn execute_test(
     args: &[String],
 ) -> Result<bool, brush_core::Error> {
     let test_command =
-        brush_parser::test_command::parse(args).map_err(Error::TestCommandParseError)?;
+        brush_parser::test_command::parse(args).map_err(ErrorKind::TestCommandParseError)?;
     tests::eval_expr(&test_command, shell, params)
 }

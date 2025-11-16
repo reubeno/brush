@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{io::Write, ops::ControlFlow};
 use uucore::format;
 
-use brush_core::{Error, builtins, escape, expansion};
+use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
 #[derive(Parser)]
@@ -18,10 +18,12 @@ pub(crate) struct PrintfCommand {
 }
 
 impl builtins::Command for PrintfCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         if let Some(variable_name) = &self.output_variable {
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];
@@ -29,7 +31,7 @@ impl builtins::Command for PrintfCommand {
 
             // Convert to a string.
             let result_str = String::from_utf8(result).map_err(|_| {
-                brush_core::Error::PrintfInvalidUsage("invalid UTF-8 output".into())
+                brush_core::ErrorKind::PrintfInvalidUsage("invalid UTF-8 output".into())
             })?;
 
             // Assign to the selected variable.
@@ -45,7 +47,7 @@ impl builtins::Command for PrintfCommand {
             context.stdout().flush()?;
         }
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 
@@ -59,7 +61,7 @@ fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_co
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
         // Handle case with no format string (we shouldn't be able to get here since clap will
         // fail parsing when the format string is missing)
-        [] => Err(Error::PrintfInvalidUsage("missing operand".into())),
+        [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }
 
@@ -102,7 +104,11 @@ fn format_via_uucore(
         for item in &format_items {
             let control_flow = item
                 .write(&mut writer, &mut format_args_wrapper)
-                .map_err(|e| Error::PrintfInvalidUsage(format!("printf formatting error: {e}")))?;
+                .map_err(|e| {
+                    Error::from(ErrorKind::PrintfInvalidUsage(std::format!(
+                        "printf formatting error: {e}"
+                    )))
+                })?;
 
             if control_flow == ControlFlow::Break(()) {
                 break;
@@ -130,7 +136,7 @@ fn parse_format_string(
 
     // Observe any errors we encountered along the way.
     let format_items = format_items
-        .map_err(|e| Error::PrintfInvalidUsage(format!("printf parsing error: {e}")))?;
+        .map_err(|e| ErrorKind::PrintfInvalidUsage(format!("printf parsing error: {e}")))?;
 
     Ok(format_items)
 }

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 /// Unset a shell alias.
 #[derive(Parser)]
@@ -15,11 +15,13 @@ pub(crate) struct UnaliasCommand {
 }
 
 impl builtins::Command for UnaliasCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut exit_code = builtins::ExitCode::Success;
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        let mut exit_code = ExecutionResult::success();
 
         if self.remove_all {
             context.shell.aliases.clear();
@@ -32,7 +34,7 @@ impl builtins::Command for UnaliasCommand {
                         context.command_name,
                         alias
                     )?;
-                    exit_code = builtins::ExitCode::Custom(1);
+                    exit_code = ExecutionResult::general_error();
                 }
             }
         }

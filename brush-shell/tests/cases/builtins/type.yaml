@@ -16,9 +16,13 @@ cases:
   - name: "Test type with -t option and an external command"
     stdin: type -t ls
 
-  - name: "Test type with -t option and an undefined command"
+  - name: "Test type with -t option and non-existent command"
     ignore_stderr: true
-    stdin: type -t undefined_command
+    stdin: type -t non-existent
+
+  - name: "Test type with -a option and non-existent command"
+    ignore_stderr: true
+    stdin: type -a non-existent
 
   - name: "Test type with -a option and a command with multiple definitions"
     stdin: type -a true
@@ -29,11 +33,17 @@ cases:
   - name: Test type with -p option and an external command
     stdin: type -p ls
 
+  - name: Test type with -p option and non-existent command
+    stdin: type -p non-existent
+
   - name: Test type with -P option and a builtin command
     stdin: type -P cd
 
   - name: Test type with -P option and an external command
     stdin: type -P ls
+
+  - name: Test type with -P option and non-existent command
+    stdin: type -P non-existent
 
   - name: Test type with -f option and a function
     ignore_stderr: true

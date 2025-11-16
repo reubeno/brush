@@ -1,4 +1,4 @@
-use brush_core::{builtins, error};
+use brush_core::{ExecutionResult, builtins, error};
 
 /// No-op command.
 pub(crate) struct ColonCommand {}
@@ -21,9 +21,7 @@ impl builtins::SimpleCommand for ColonCommand {
     fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
         _context: brush_core::ExecutionContext<'_>,
         _args: I,
-    ) -> Result<builtins::BuiltinResult, brush_core::Error> {
-        Ok(builtins::BuiltinResult {
-            exit_code: builtins::ExitCode::Success,
-        })
+    ) -> Result<ExecutionResult, brush_core::Error> {
+        Ok(ExecutionResult::success())
     }
 }

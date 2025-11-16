@@ -92,7 +92,7 @@ impl History {
         let existing_item = self
             .id_map
             .get_mut(&id)
-            .ok_or(error::Error::HistoryItemNotFound)?;
+            .ok_or(error::ErrorKind::HistoryItemNotFound)?;
         *existing_item = item;
         Ok(())
     }
@@ -222,6 +222,20 @@ impl History {
     /// Returns an iterator over the history items.
     pub fn iter(&self) -> impl Iterator<Item = &self::Item> {
         Search::all(self)
+    }
+
+    /// Retrieves the nth history item, if it exists. Returns `None` if no such item exists.
+    /// Indexing is zero-based, with an index of 0 referencing the oldest item in the history.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index of the history item to retrieve.
+    pub fn get(&self, index: usize) -> Option<&Item> {
+        if let Some(id) = self.items.get(index) {
+            self.id_map.get(id)
+        } else {
+            None
+        }
     }
 
     /// Returns the number of items in the history.

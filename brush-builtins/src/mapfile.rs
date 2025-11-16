@@ -2,7 +2,7 @@ use std::io::Read;
 
 use clap::Parser;
 
-use brush_core::{Error, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, ExecutionResult, builtins, env, error, variables};
 
 /// Inspect and modify key bindings and other input configuration.
 #[derive(Parser)]
@@ -29,7 +29,7 @@ pub(crate) struct MapFileCommand {
 
     /// File descriptor to read from (defaults to stdin).
     #[arg(short = 'u', default_value_t = 0)]
-    fd: u32,
+    fd: brush_core::ShellFd,
 
     /// Name of function to call for each group of lines.
     #[arg(short = 'C')]
@@ -45,10 +45,12 @@ pub(crate) struct MapFileCommand {
 }
 
 impl builtins::Command for MapFileCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.origin != 0 {
             // This will require merging into a potentially already-existing array.
             return error::unimp("mapfile -O is not yet implemented");
@@ -59,9 +61,8 @@ impl builtins::Command for MapFileCommand {
         }
 
         let input_file = context
-            .params
-            .fd(self.fd)
-            .ok_or_else(|| Error::BadFileDescriptor(self.fd))?;
+            .try_fd(self.fd)
+            .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
         // Read!
         let results = self.read_entries(input_file)?;
@@ -75,7 +76,7 @@ impl builtins::Command for MapFileCommand {
             env::EnvironmentScope::Global,
         )?;
 
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 
@@ -84,7 +85,7 @@ impl MapFileCommand {
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
     ) -> Result<variables::ArrayLiteral, brush_core::Error> {
-        let orig_term_attr = setup_terminal_settings(&input_file)?;
+        let _term_mode = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
         let mut read_count = 0;
@@ -133,26 +134,22 @@ impl MapFileCommand {
             entries.push((None, line_str));
         }
 
-        if let Some(orig_term_attr) = &orig_term_attr {
-            brush_core::sys::terminal::set_term_attr_now(input_file, orig_term_attr)?;
-        }
-
         Ok(variables::ArrayLiteral(entries))
     }
 }
 
 fn setup_terminal_settings(
     file: &brush_core::openfiles::OpenFile,
-) -> Result<Option<sys::terminal::TerminalSettings>, brush_core::Error> {
-    let orig_term_attr = brush_core::sys::terminal::get_term_attr(file).ok();
-    if let Some(orig_term_attr) = &orig_term_attr {
-        let mut updated_term_attr = orig_term_attr.to_owned();
+) -> Result<Option<brush_core::terminal::AutoModeGuard>, brush_core::Error> {
+    let mode = brush_core::terminal::AutoModeGuard::new(file.to_owned()).ok();
+    if let Some(mode) = &mode {
+        let config = brush_core::terminal::Settings::builder()
+            .line_input(false)
+            .interrupt_signals(false)
+            .build();
 
-        updated_term_attr.set_canonical(false);
-        updated_term_attr.set_int_signal(false);
-
-        brush_core::sys::terminal::set_term_attr_now(file, &updated_term_attr)?;
+        mode.apply_settings(&config)?;
     }
 
-    Ok(orig_term_attr)
+    Ok(mode)
 }

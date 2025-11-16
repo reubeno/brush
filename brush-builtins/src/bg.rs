@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 /// Moves a job to run in the background.
 #[derive(Parser)]
@@ -11,11 +11,13 @@ pub(crate) struct BgCommand {
 }
 
 impl builtins::Command for BgCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let mut exit_code = builtins::ExitCode::Success;
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        let mut exit_code = ExecutionResult::success();
 
         if !self.job_specs.is_empty() {
             for job_spec in &self.job_specs {
@@ -28,7 +30,7 @@ impl builtins::Command for BgCommand {
                         context.command_name,
                         job_spec
                     )?;
-                    exit_code = builtins::ExitCode::Custom(1);
+                    exit_code = ExecutionResult::general_error();
                 }
             }
         } else {
@@ -36,7 +38,7 @@ impl builtins::Command for BgCommand {
                 job.move_to_background()?;
             } else {
                 writeln!(context.stderr(), "{}: no current job", context.command_name)?;
-                exit_code = builtins::ExitCode::Custom(1);
+                exit_code = ExecutionResult::general_error();
             }
         }
 

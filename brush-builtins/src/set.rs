@@ -4,7 +4,7 @@ use std::io::Write;
 use clap::Parser;
 use itertools::Itertools;
 
-use brush_core::{builtins, variables};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 
 crate::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
@@ -185,13 +185,15 @@ impl builtins::Command for SetCommand {
         Ok(this)
     }
 
+    type Error = brush_core::Error;
+
     #[expect(clippy::too_many_lines)]
     #[allow(clippy::useless_let_if_seq)]
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<builtins::ExitCode, brush_core::Error> {
-        let mut result = builtins::ExitCode::Success;
+    ) -> Result<ExecutionResult, Self::Error> {
+        let mut result = ExecutionResult::success();
 
         let mut saw_option = false;
 
@@ -360,7 +362,7 @@ impl builtins::Command for SetCommand {
             {
                 option_def.set(&mut context.shell.options, value);
             } else {
-                result = builtins::ExitCode::InvalidUsage;
+                result = ExecutionExitCode::InvalidUsage.into();
             }
         }
 

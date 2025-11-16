@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
-use brush_core::{builtins, sys};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
 
 /// Signal a job or process.
 #[derive(Parser)]
@@ -27,10 +27,12 @@ pub(crate) struct KillCommand {
 }
 
 impl builtins::Command for KillCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Default signal is SIGKILL.
         let mut trap_signal = TrapSignal::Signal(nix::sys::signal::Signal::SIGKILL);
 
@@ -45,7 +47,7 @@ impl builtins::Command for KillCommand {
                     context.command_name,
                     signal_name
                 )?;
-                return Ok(builtins::ExitCode::InvalidUsage);
+                return Ok(ExecutionExitCode::InvalidUsage.into());
             }
         }
 
@@ -62,7 +64,7 @@ impl builtins::Command for KillCommand {
                     context.command_name,
                     signal_number
                 )?;
-                return Ok(builtins::ExitCode::InvalidUsage);
+                return Ok(ExecutionExitCode::InvalidUsage.into());
             }
         }
 
@@ -80,7 +82,7 @@ impl builtins::Command for KillCommand {
                         "{}: invalid signal name",
                         context.command_name
                     )?;
-                    return Ok(builtins::ExitCode::InvalidUsage);
+                    return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             } else if pid_or_job_spec.is_none() {
                 pid_or_job_spec = Some(arg);
@@ -90,7 +92,7 @@ impl builtins::Command for KillCommand {
                     "{}: too many jobs or processes specified",
                     context.command_name
                 )?;
-                return Ok(builtins::ExitCode::InvalidUsage);
+                return Ok(ExecutionExitCode::InvalidUsage.into());
             }
         }
 
@@ -99,7 +101,7 @@ impl builtins::Command for KillCommand {
         } else {
             if pid_or_job_spec.is_none() {
                 writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
-                return Ok(builtins::ExitCode::InvalidUsage);
+                return Ok(ExecutionExitCode::InvalidUsage.into());
             }
 
             let pid_or_job_spec = pid_or_job_spec.unwrap();
@@ -114,7 +116,7 @@ impl builtins::Command for KillCommand {
                         context.command_name,
                         pid_or_job_spec
                     )?;
-                    return Ok(builtins::ExitCode::Custom(1));
+                    return Ok(ExecutionResult::general_error());
                 }
             } else {
                 let pid = pid_or_job_spec.parse::<i32>()?;
@@ -123,15 +125,15 @@ impl builtins::Command for KillCommand {
                 sys::signal::kill_process(pid, trap_signal)?;
             }
         }
-        Ok(builtins::ExitCode::Success)
+        Ok(ExecutionResult::success())
     }
 }
 
 fn print_signals(
     context: &brush_core::ExecutionContext<'_>,
     signals: &[String],
-) -> Result<builtins::ExitCode, brush_core::Error> {
-    let mut exit_code = builtins::ExitCode::Success;
+) -> Result<ExecutionResult, brush_core::Error> {
+    let mut exit_code = ExecutionResult::success();
     if !signals.is_empty() {
         for s in signals {
             // If the user gives us a code, we print the name; if they give a name, we print its
@@ -161,7 +163,7 @@ fn print_signals(
                 }
                 Err(e) => {
                     writeln!(context.stderr(), "{e}")?;
-                    exit_code = builtins::ExitCode::Custom(1);
+                    exit_code = ExecutionResult::general_error();
                 }
             }
         }
@@ -170,7 +172,7 @@ fn print_signals(
             context.stdout(),
             TrapSignal::iterator().filter(|s| !matches!(s, TrapSignal::Exit)),
         )
-        .map(|()| builtins::ExitCode::Success);
+        .map(|()| ExecutionResult::success());
     }
 
     Ok(exit_code)

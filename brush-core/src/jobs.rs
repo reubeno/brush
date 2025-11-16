@@ -55,7 +55,7 @@ impl JobTask {
         }
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
             Self::External(process) => {
@@ -383,7 +383,7 @@ impl Job {
                 self.state = JobState::Running;
                 Ok(())
             } else {
-                Err(error::Error::FailedToSendSignal)
+                Err(error::ErrorKind::FailedToSendSignal.into())
             }
         } else {
             error::unimp("move job to background")
@@ -397,7 +397,7 @@ impl Job {
                 sys::signal::continue_process(pgid)?;
                 self.state = JobState::Running;
             } else {
-                return Err(error::Error::FailedToSendSignal);
+                return Err(error::ErrorKind::FailedToSendSignal.into());
             }
         }
 
@@ -417,7 +417,7 @@ impl Job {
         if let Some(pid) = self.process_group_id() {
             sys::signal::kill_process(pid, signal)
         } else {
-            Err(error::Error::FailedToSendSignal)
+            Err(error::ErrorKind::FailedToSendSignal.into())
         }
     }
 

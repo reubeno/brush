@@ -22,7 +22,7 @@ pub(crate) async fn complete_async(
             result
         }
         _ = tokio::signal::ctrl_c() => {
-            Err(brush_core::Error::Interrupted)
+            Err(brush_core::ErrorKind::Interrupted.into())
         },
     };
 

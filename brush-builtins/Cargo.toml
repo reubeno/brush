@@ -38,6 +38,7 @@ default = [
     'builtin.exit',
     'builtin.export',
     'builtin.false',
+    'builtin.fc',
     'builtin.fg',
     'builtin.getopts',
     'builtin.hash',
@@ -92,6 +93,7 @@ default = [
 'builtin.exit' = []
 'builtin.export' = []
 'builtin.false' = []
+'builtin.fc' = []
 'builtin.fg' = []
 'builtin.getopts' = []
 'builtin.hash' = []
@@ -130,19 +132,20 @@ brush-core = { version = "^0.3.5", path = "../brush-core" }
 brush-parser = { version = "^0.2.20", path = "../brush-parser" }
 cfg-if = "1.0.4"
 chrono = "0.4.42"
-clap = { version = "4.5.48", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.51", features = ["derive", "wrap_help"] }
 fancy-regex = "0.16.2"
 futures = "0.3.31"
 itertools = "0.14.0"
 strum = "0.27.2"
 strum_macros = "0.27.2"
+thiserror = "2.0.17"
 tracing = "0.1.41"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 tokio = { version = "1.48.0", features = ["io-util", "macros", "rt"] }
 
-[target.'cfg(any(windows, unix))'.dependencies]
-tokio = { version = "1.47.1", features = [
+[target.'cfg(any(unix, windows))'.dependencies]
+tokio = { version = "1.48.0", features = [
     "io-util",
     "macros",
     "process",
@@ -151,7 +154,7 @@ tokio = { version = "1.47.1", features = [
     "signal",
     "sync",
 ] }
-uucore = { version = "0.3.0", default-features = false, features = ["format"] }
+uucore = { version = "0.4.0", default-features = false, features = ["format"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30.1", features = [

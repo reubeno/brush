@@ -5,6 +5,7 @@
 #[cfg(unix)]
 mod unix {
     use brush_builtins::ShellBuilderExt;
+    use brush_parser::TokenLocation;
     use criterion::{Criterion, black_box};
 
     async fn instantiate_shell() -> brush_core::Shell {
@@ -115,12 +116,13 @@ mod unix {
         shell.define_func(
             String::from("testfunc"),
             brush_parser::ast::FunctionDefinition {
-                fname: String::from("testfunc"),
+                fname: String::from("testfunc").into(),
                 body: brush_parser::ast::FunctionBody(
                     brush_parser::ast::CompoundCommand::BraceGroup(
-                        brush_parser::ast::BraceGroupCommand(brush_parser::ast::CompoundList(
-                            vec![],
-                        )),
+                        brush_parser::ast::BraceGroupCommand {
+                            list: brush_parser::ast::CompoundList(vec![]),
+                            loc: TokenLocation::default(),
+                        },
                     ),
                     None,
                 ),

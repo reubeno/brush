@@ -37,7 +37,7 @@ impl TestShellWithBashCompletion {
             )
             .await?;
 
-        if source_result.exit_code != 0 {
+        if !source_result.is_success() {
             return Err(anyhow::anyhow!("failed to source bash completion script"));
         }
 
@@ -81,7 +81,7 @@ impl TestShellWithBashCompletion {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_relative_file_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -98,7 +98,7 @@ async fn complete_relative_file_path() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_relative_file_path_ignoring_case() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
     test_shell.shell.options.case_insensitive_pathname_expansion = true;
@@ -116,7 +116,7 @@ async fn complete_relative_file_path_ignoring_case() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_relative_dir_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -133,7 +133,7 @@ async fn complete_relative_dir_path() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_under_empty_dir() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -149,7 +149,7 @@ async fn complete_under_empty_dir() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_nonexistent_relative_path() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -162,7 +162,7 @@ async fn complete_nonexistent_relative_path() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_absolute_paths() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -196,7 +196,7 @@ async fn complete_absolute_paths() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_path_with_var() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -229,7 +229,7 @@ async fn complete_path_with_var() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_path_with_tilde() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -273,7 +273,7 @@ async fn complete_path_with_tilde() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_variable_names() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -289,7 +289,7 @@ async fn complete_variable_names() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_variable_names_with_braces() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -305,7 +305,7 @@ async fn complete_variable_names_with_braces() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_help_topic() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -317,7 +317,7 @@ async fn complete_help_topic() -> Result<()> {
 }
 
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_command_option() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -331,7 +331,7 @@ async fn complete_command_option() -> Result<()> {
 /// Tests completion with some well-known programs that have been good manual test cases
 /// for us in the past.
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_path_args_to_well_known_programs() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 
@@ -349,7 +349,7 @@ async fn complete_path_args_to_well_known_programs() -> Result<()> {
 
 /// Tests some 'find' completion.
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn complete_find_command() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
 

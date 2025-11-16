@@ -11,6 +11,7 @@ struct StopwatchTime {
 }
 
 impl StopwatchTime {
+    #[allow(clippy::unchecked_time_subtraction)]
     fn minus(&self, other: &Self) -> Result<StopwatchTiming, error::Error> {
         let user = (self.self_user - other.self_user) + (self.children_user - other.children_user);
         let system =

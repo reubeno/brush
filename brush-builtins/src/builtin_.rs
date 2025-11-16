@@ -1,7 +1,6 @@
 use clap::Parser;
-use std::io::Write;
 
-use brush_core::builtins;
+use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
 #[derive(Default, Parser)]
@@ -17,17 +16,19 @@ impl builtins::DeclarationCommand for BuiltinCommand {
 }
 
 impl builtins::Command for BuiltinCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.args.is_empty() {
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
         let args: Vec<_> = self.args.iter().skip(1).cloned().collect();
         if args.is_empty() {
-            return Ok(builtins::ExitCode::Success);
+            return Ok(ExecutionResult::success());
         }
 
         let builtin_name = args[0].to_string();
@@ -35,14 +36,12 @@ impl builtins::Command for BuiltinCommand {
         if let Some(builtin) = context.shell.builtins().get(&builtin_name) {
             if !builtin.disabled {
                 context.command_name = builtin_name;
-
-                return (builtin.execute_func)(context, args)
-                    .await
-                    .map(|res: builtins::BuiltinResult| res.exit_code);
+                (builtin.execute_func)(context, args).await
+            } else {
+                Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
             }
+        } else {
+            Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
         }
-
-        writeln!(context.stderr(), "{builtin_name}: builtin not found")?;
-        Ok(builtins::ExitCode::Custom(1))
     }
 }

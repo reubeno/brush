@@ -160,3 +160,27 @@ cases:
   - name: "For reserved word handling"
     stdin: |
       for for in for; do echo $for; done
+
+  - name: "For with return in body"
+    stdin: |
+      f() {
+        for i in 1 2 3; do
+          echo "Iteration $i"
+          if [ "$i" = "2" ]; then
+            return 42
+          fi
+        done
+        echo "After for"
+      }
+      f
+      echo "Exit code: $?"
+
+  - name: "For with exit in body"
+    stdin: |
+      for i in 1 2 3; do
+        echo "Iteration $i"
+        if [ "$i" = "2" ]; then
+          exit 42
+        fi
+      done
+      echo "After for"

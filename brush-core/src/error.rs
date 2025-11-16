@@ -2,13 +2,20 @@
 
 use std::path::PathBuf;
 
+use crate::{Shell, ShellFd, results, sys};
+
+/// Unified error type for this crate. Contains just a kind for now,
+/// but will be extended later with additional context.
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct Error {
+    /// The kind of error.
+    kind: ErrorKind,
+}
+
 /// Monolithic error type for the shell
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
-    /// A local variable was set outside of a function
-    #[error("can't set local variable outside of function")]
-    SetLocalVarOutsideFunction,
-
+pub enum ErrorKind {
     /// A tilde expression was used without a valid HOME variable
     #[error("cannot expand tilde expression with HOME not set")]
     TildeWithoutValidHome,
@@ -26,8 +33,8 @@ pub enum Error {
     ConvertingIndexedArrayToAssociativeArray,
 
     /// An error occurred while sourcing the indicated script file.
-    #[error("failed to source file: {0}; {1}")]
-    FailedSourcingFile(PathBuf, Box<Error>),
+    #[error("failed to source file: {0}")]
+    FailedSourcingFile(PathBuf, #[source] std::io::Error),
 
     /// The shell failed to send a signal to a process.
     #[error("failed to send signal to process")]
@@ -48,6 +55,18 @@ pub enum Error {
     /// Command was not found.
     #[error("command not found: {0}")]
     CommandNotFound(String),
+
+    /// Not a builtin.
+    #[error("not a shell builtin: {0}")]
+    BuiltinNotFound(String),
+
+    /// The working directory does not exist.
+    #[error("working directory does not exist: {0}")]
+    WorkingDirMissing(PathBuf),
+
+    /// Failed to execute command.
+    #[error("failed to execute command '{0}': {1}")]
+    FailedToExecuteCommand(String, #[source] std::io::Error),
 
     /// History item was not found.
     #[error("history item not found")]
@@ -131,35 +150,35 @@ pub enum Error {
     IoError(#[from] std::io::Error),
 
     /// Invalid substitution syntax.
-    #[error("bad substitution")]
-    BadSubstitution,
-
-    /// Invalid arguments were provided to the command.
-    #[error("invalid arguments")]
-    InvalidArguments,
+    #[error("bad substitution: {0}")]
+    BadSubstitution(String),
 
     /// An error occurred while creating a child process.
     #[error("failed to create child process")]
     ChildCreationFailure,
 
     /// An error occurred while formatting a string.
-    #[error("{0}")]
+    #[error(transparent)]
     FormattingError(#[from] std::fmt::Error),
 
     /// An error occurred while parsing.
-    #[error("{0}")]
-    ParseError(#[from] brush_parser::ParseError),
+    #[error("{1}: {0}")]
+    ParseError(brush_parser::ParseError, brush_parser::SourceInfo),
+
+    /// An error occurred while parsing a function body.
+    #[error("{0}: {1}")]
+    FunctionParseError(String, brush_parser::ParseError),
 
     /// An error occurred while parsing a word.
-    #[error("{0}")]
+    #[error(transparent)]
     WordParseError(#[from] brush_parser::WordParseError),
 
     /// Unable to parse a test command.
-    #[error("{0}")]
+    #[error(transparent)]
     TestCommandParseError(#[from] brush_parser::TestCommandParseError),
 
     /// Unable to parse a key binding specification.
-    #[error("{0}")]
+    #[error(transparent)]
     BindingParseError(#[from] brush_parser::BindingParseError),
 
     /// A threading error occurred.
@@ -170,19 +189,13 @@ pub enum Error {
     #[error("{0}: invalid signal specification")]
     InvalidSignal(String),
 
-    /// A system error occurred.
-    #[cfg(unix)]
-    #[error("system error: {0}")]
-    ErrnoError(#[from] nix::errno::Errno),
+    /// A platform error occurred.
+    #[error("platform error: {0}")]
+    PlatformError(#[from] sys::PlatformError),
 
     /// An invalid umask was provided.
     #[error("invalid umask value")]
     InvalidUmask,
-
-    /// An error occurred reading from procfs.
-    #[cfg(target_os = "linux")]
-    #[error("procfs error: {0}")]
-    ProcfsError(#[from] procfs::ProcError),
 
     /// The given open file cannot be read from.
     #[error("cannot read from {0}")]
@@ -194,7 +207,7 @@ pub enum Error {
 
     /// Bad file descriptor.
     #[error("bad file descriptor: {0}")]
-    BadFileDescriptor(u32),
+    BadFileDescriptor(ShellFd),
 
     /// Printf failure
     #[error("printf failure: {0}")]
@@ -217,12 +230,108 @@ pub enum Error {
     TimeError(#[from] std::time::SystemTimeError),
 
     /// Array index out of range.
-    #[error("array index out of range")]
-    ArrayIndexOutOfRange,
+    #[error("array index out of range: {0}")]
+    ArrayIndexOutOfRange(i64),
 
     /// Unhandled key code.
     #[error("unhandled key code: {0:?}")]
     UnhandledKeyCode(Vec<u8>),
+
+    /// An error occurred in a built-in command.
+    #[error("{1}: {0}")]
+    BuiltinError(Box<dyn BuiltinError>, String),
+
+    /// Operation not supported on this platform.
+    #[error("operation not supported on this platform: {0}")]
+    NotSupportedOnThisPlatform(&'static str),
+
+    /// Command history is not enabled in this shell.
+    #[error("command history is not enabled in this shell")]
+    HistoryNotEnabled,
+
+    /// Unknown key binding function.
+    #[error("unknown key binding function: {0}")]
+    UnknownKeyBindingFunction(String),
+}
+
+impl BuiltinError for Error {}
+
+/// Trait implementable by built-in commands to represent errors.
+pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {}
+
+/// Helper trait for converting values to exit codes.
+pub trait ConvertibleToExitCode {
+    /// Converts to an exit code.
+    fn as_exit_code(&self) -> results::ExecutionExitCode;
+}
+
+impl<T> ConvertibleToExitCode for T
+where
+    results::ExecutionExitCode: for<'a> From<&'a T>,
+{
+    fn as_exit_code(&self) -> results::ExecutionExitCode {
+        self.into()
+    }
+}
+
+impl From<&ErrorKind> for results::ExecutionExitCode {
+    fn from(value: &ErrorKind) -> Self {
+        match value {
+            ErrorKind::CommandNotFound(..) => Self::NotFound,
+            ErrorKind::Unimplemented(..) | ErrorKind::UnimplementedAndTracked(..) => {
+                Self::Unimplemented
+            }
+            ErrorKind::ParseError(..) => Self::InvalidUsage,
+            ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
+            ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
+            ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
+            _ => Self::GeneralError,
+        }
+    }
+}
+
+impl From<&Error> for results::ExecutionExitCode {
+    fn from(error: &Error) -> Self {
+        Self::from(&error.kind)
+    }
+}
+
+impl<T> From<T> for Error
+where
+    ErrorKind: From<T>,
+{
+    fn from(convertible_to_kind: T) -> Self {
+        Self {
+            kind: convertible_to_kind.into(),
+        }
+    }
+}
+
+/// Trait implementable by consumers of this crate to customize formatting errors into
+/// displayable text.
+pub trait ErrorFormatter: Send {
+    /// Format the given error for display within the context of the provided shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The error to format.
+    /// * `shell` - The shell in which the error occurred.
+    fn format_error(&self, error: &Error, shell: &Shell) -> String;
+}
+
+/// Default implementation of the [`ErrorFormatter`] trait.
+pub(crate) struct DefaultErrorFormatter {}
+
+impl DefaultErrorFormatter {
+    pub const fn new() -> Self {
+        Self {}
+    }
+}
+
+impl ErrorFormatter for DefaultErrorFormatter {
+    fn format_error(&self, err: &Error, _shell: &Shell) -> String {
+        std::format!("error: {err:#}\n")
+    }
 }
 
 /// Convenience function for returning an error for unimplemented functionality.
@@ -230,8 +339,8 @@ pub enum Error {
 /// # Arguments
 ///
 /// * `msg` - The message to include in the error
-pub const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
-    Err(Error::Unimplemented(msg))
+pub fn unimp<T>(msg: &'static str) -> Result<T, Error> {
+    Err(ErrorKind::Unimplemented(msg).into())
 }
 
 /// Convenience function for returning an error for *tracked*, unimplemented functionality.
@@ -241,6 +350,6 @@ pub const fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 /// * `msg` - The message to include in the error
 /// * `project_issue_id` - The GitHub issue ID where the implementation is tracked.
 #[allow(unused)]
-pub const fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
-    Err(Error::UnimplementedAndTracked(msg, project_issue_id))
+pub fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
+    Err(ErrorKind::UnimplementedAndTracked(msg, project_issue_id).into())
 }

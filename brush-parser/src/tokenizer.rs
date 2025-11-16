@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Display;
+use std::sync::Arc;
 use utf8_chars::BufReadCharsExt;
 
 #[derive(Clone, Debug)]
@@ -34,17 +35,25 @@ pub(crate) enum TokenEndReason {
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
     #[cfg_attr(test, serde(rename = "idx"))]
-    pub index: i32,
+    pub index: usize,
     /// The 1-based line number.
-    pub line: i32,
+    pub line: usize,
     /// The 1-based column number.
     #[cfg_attr(test, serde(rename = "col"))]
-    pub column: i32,
+    pub column: usize,
 }
 
 impl Display for SourcePosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("line {} col {}", self.line, self.column))
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+impl From<&SourcePosition> for miette::SourceOffset {
+    #[allow(clippy::cast_sign_loss)]
+    fn from(position: &SourcePosition) -> Self {
+        position.index.into()
     }
 }
 
@@ -55,9 +64,22 @@ impl Display for SourcePosition {
 #[cfg_attr(test, serde(rename = "Loc"))]
 pub struct TokenLocation {
     /// The start position of the token.
-    pub start: SourcePosition,
+    pub start: Arc<SourcePosition>,
     /// The end position of the token (exclusive).
-    pub end: SourcePosition,
+    pub end: Arc<SourcePosition>,
+}
+
+impl TokenLocation {
+    /// Returns the length of the token in characters.
+    pub fn length(&self) -> usize {
+        self.end.index - self.start.index
+    }
+    pub(crate) fn within(start: &Self, end: &Self) -> Self {
+        Self {
+            start: start.start.clone(),
+            end: end.end.clone(),
+        }
+    }
 }
 
 /// Represents a token extracted from a shell script.
@@ -88,6 +110,14 @@ impl Token {
             Self::Operator(_, l) => l,
             Self::Word(_, l) => l,
         }
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+impl From<&Token> for miette::SourceSpan {
+    fn from(token: &Token) -> Self {
+        let start = token.location().start.as_ref();
+        Self::new(start.into(), token.location().length())
     }
 }
 
@@ -276,7 +306,7 @@ struct TokenParseState {
 impl TokenParseState {
     pub fn new(start_position: &SourcePosition) -> Self {
         Self {
-            start_position: start_position.clone(),
+            start_position: start_position.to_owned(),
             token_so_far: String::new(),
             token_is_operator: false,
             in_escape: false,
@@ -285,9 +315,10 @@ impl TokenParseState {
     }
 
     pub fn pop(&mut self, end_position: &SourcePosition) -> Token {
+        let end = Arc::new(end_position.to_owned());
         let token_location = TokenLocation {
-            start: std::mem::take(&mut self.start_position),
-            end: end_position.clone(),
+            start: Arc::new(std::mem::take(&mut self.start_position)),
+            end,
         };
 
         let token = if std::mem::take(&mut self.token_is_operator) {
@@ -296,7 +327,7 @@ impl TokenParseState {
             Token::Word(std::mem::take(&mut self.token_so_far), token_location)
         };
 
-        self.start_position = end_position.clone();
+        end_position.clone_into(&mut self.start_position);
         self.in_escape = false;
         self.quote_mode = QuoteMode::None;
 
@@ -616,7 +647,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     #[expect(clippy::if_same_then_else)]
     #[expect(clippy::panic_in_result_fn)]
     #[expect(clippy::too_many_lines)]
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     fn next_token_until(
         &mut self,
         terminating_char: Option<char>,

@@ -175,12 +175,10 @@ impl TraceEventConfig {
             if handle.reload(self.compose_filter()).is_ok() {
                 Ok(())
             } else {
-                Err(brush_core::Error::Unimplemented(
-                    "failed to enable tracing events",
-                ))
+                Err(brush_core::ErrorKind::Unimplemented("failed to enable tracing events").into())
             }
         } else {
-            Err(brush_core::Error::Unimplemented("tracing not initialized"))
+            Err(brush_core::ErrorKind::Unimplemented("tracing not initialized").into())
         }
     }
 }

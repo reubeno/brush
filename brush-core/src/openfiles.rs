@@ -2,14 +2,9 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
-#[cfg(unix)]
-use std::os::fd::AsFd;
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
-#[cfg(unix)]
-use std::os::fd::OwnedFd;
 use std::process::Stdio;
 
+use crate::ShellFd;
 use crate::error;
 use crate::sys;
 
@@ -37,13 +32,26 @@ pub fn null() -> Result<OpenFile, error::Error> {
 
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
-        self.try_dup().unwrap()
+        self.try_clone().unwrap()
+    }
+}
+
+impl std::fmt::Display for OpenFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stdin(_) => write!(f, "stdin"),
+            Self::Stdout(_) => write!(f, "stdout"),
+            Self::Stderr(_) => write!(f, "stderr"),
+            Self::File(_) => write!(f, "file"),
+            Self::PipeReader(_) => write!(f, "pipe reader"),
+            Self::PipeWriter(_) => write!(f, "pipe writer"),
+        }
     }
 }
 
 impl OpenFile {
     /// Tries to duplicate the open file.
-    pub fn try_dup(&self) -> Result<Self, error::Error> {
+    pub fn try_clone(&self) -> Result<Self, std::io::Error> {
         let result = match self {
             Self::Stdin(_) => Self::Stdin(std::io::stdin()),
             Self::Stdout(_) => Self::Stdout(std::io::stdout()),
@@ -59,27 +67,15 @@ impl OpenFile {
     /// Converts the open file into an `OwnedFd`.
     #[cfg(unix)]
     pub(crate) fn into_owned_fd(self) -> Result<std::os::fd::OwnedFd, error::Error> {
+        use std::os::fd::AsFd as _;
+
         match self {
             Self::Stdin(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stdout(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stderr(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::File(f) => Ok(f.into()),
-            Self::PipeReader(r) => Ok(OwnedFd::from(r)),
-            Self::PipeWriter(w) => Ok(OwnedFd::from(w)),
-        }
-    }
-
-    /// Retrieves the raw file descriptor for the open file.
-    #[cfg(unix)]
-    #[expect(dead_code)]
-    pub(crate) fn as_raw_fd(&self) -> i32 {
-        match self {
-            Self::Stdin(f) => f.as_raw_fd(),
-            Self::Stdout(f) => f.as_raw_fd(),
-            Self::Stderr(f) => f.as_raw_fd(),
-            Self::File(f) => f.as_raw_fd(),
-            Self::PipeReader(r) => r.as_raw_fd(),
-            Self::PipeWriter(w) => w.as_raw_fd(),
+            Self::PipeReader(r) => Ok(std::os::fd::OwnedFd::from(r)),
+            Self::PipeWriter(w) => Ok(std::os::fd::OwnedFd::from(w)),
         }
     }
 
@@ -152,17 +148,17 @@ impl std::io::Read for OpenFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Stdin(f) => f.read(buf),
-            Self::Stdout(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
-                "stdout",
-            ))),
-            Self::Stderr(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
-                "stderr",
-            ))),
+            Self::Stdout(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stdout"),
+            )),
+            Self::Stderr(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stderr"),
+            )),
             Self::File(f) => f.read(buf),
             Self::PipeReader(reader) => reader.read(buf),
-            Self::PipeWriter(_) => Err(std::io::Error::other(error::Error::OpenFileNotReadable(
-                "pipe writer",
-            ))),
+            Self::PipeWriter(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("pipe writer"),
+            )),
         }
     }
 }
@@ -170,15 +166,15 @@ impl std::io::Read for OpenFile {
 impl std::io::Write for OpenFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            Self::Stdin(_) => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
-                "stdin",
-            ))),
+            Self::Stdin(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("stdin"),
+            )),
             Self::Stdout(f) => f.write(buf),
             Self::Stderr(f) => f.write(buf),
             Self::File(f) => f.write(buf),
-            Self::PipeReader(_) => Err(std::io::Error::other(error::Error::OpenFileNotWritable(
-                "pipe reader",
-            ))),
+            Self::PipeReader(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("pipe reader"),
+            )),
             Self::PipeWriter(writer) => writer.write(buf),
         }
     }
@@ -195,56 +191,70 @@ impl std::io::Write for OpenFile {
     }
 }
 
-/// Represents the open files in a shell context.
-#[derive(Clone)]
-pub struct OpenFiles {
-    /// Maps shell file descriptors to open files.
-    files: HashMap<u32, OpenFile>,
+/// Tristate representing the an `OpenFile` entry in an `OpenFiles` structure.
+pub enum OpenFileEntry<'a> {
+    /// File descriptor is present and has a valid associated `OpenFile`.
+    Open(&'a OpenFile),
+    /// File descriptor is explicitly marked as not being mapped to any `OpenFile`.
+    NotPresent,
+    /// File descriptor is not specified in any way; it may be provided by a
+    /// parent context of some kind.
+    NotSpecified,
 }
 
-impl Default for OpenFiles {
-    fn default() -> Self {
-        Self {
-            files: HashMap::from([
-                (Self::STDIN_FD, OpenFile::Stdin(std::io::stdin())),
-                (Self::STDOUT_FD, OpenFile::Stdout(std::io::stdout())),
-                (Self::STDERR_FD, OpenFile::Stderr(std::io::stderr())),
-            ]),
-        }
-    }
+/// Represents the open files in a shell context.
+#[derive(Clone, Default)]
+pub struct OpenFiles {
+    /// Maps shell file descriptors to open files.
+    files: HashMap<ShellFd, Option<OpenFile>>,
 }
 
 impl OpenFiles {
     /// File descriptor used for standard input.
-    pub const STDIN_FD: u32 = 0;
+    pub const STDIN_FD: ShellFd = 0;
     /// File descriptor used for standard output.
-    pub const STDOUT_FD: u32 = 1;
+    pub const STDOUT_FD: ShellFd = 1;
     /// File descriptor used for standard error.
-    pub const STDERR_FD: u32 = 2;
+    pub const STDERR_FD: ShellFd = 2;
 
-    /// Tries to clone the open files.
-    pub fn try_clone(&self) -> Result<Self, error::Error> {
-        let mut files = HashMap::new();
-        for (fd, file) in &self.files {
-            files.insert(*fd, file.try_dup()?);
+    /// Creates a new `OpenFiles` instance populated with stdin, stdout, and stderr
+    /// from the host environment.
+    #[allow(unused)]
+    pub(crate) fn new() -> Self {
+        Self {
+            files: HashMap::from([
+                (Self::STDIN_FD, Some(OpenFile::Stdin(std::io::stdin()))),
+                (Self::STDOUT_FD, Some(OpenFile::Stdout(std::io::stdout()))),
+                (Self::STDERR_FD, Some(OpenFile::Stderr(std::io::stderr()))),
+            ]),
         }
+    }
 
-        Ok(Self { files })
+    /// Updates the open files from the provided iterator of (fd number, `OpenFile`) pairs.
+    /// Any existing entries for the provided file descriptors will be overwritten.
+    ///
+    /// # Arguments
+    ///
+    /// * `files`: An iterator of (fd number, `OpenFile`) pairs to update the open files with.
+    pub fn update_from(&mut self, files: impl Iterator<Item = (ShellFd, OpenFile)>) {
+        for (fd, file) in files {
+            let _ = self.files.insert(fd, Some(file));
+        }
     }
 
     /// Retrieves the file backing standard input in this context.
-    pub fn stdin(&self) -> Option<&OpenFile> {
-        self.files.get(&0)
+    pub fn try_stdin(&self) -> Option<&OpenFile> {
+        self.files.get(&Self::STDIN_FD).and_then(|f| f.as_ref())
     }
 
     /// Retrieves the file backing standard output in this context.
-    pub fn stdout(&self) -> Option<&OpenFile> {
-        self.files.get(&1)
+    pub fn try_stdout(&self) -> Option<&OpenFile> {
+        self.files.get(&Self::STDOUT_FD).and_then(|f| f.as_ref())
     }
 
     /// Retrieves the file backing standard error in this context.
-    pub fn stderr(&self) -> Option<&OpenFile> {
-        self.files.get(&2)
+    pub fn try_stderr(&self) -> Option<&OpenFile> {
+        self.files.get(&Self::STDERR_FD).and_then(|f| f.as_ref())
     }
 
     /// Tries to remove an open file by its file descriptor. If the file descriptor
@@ -254,29 +264,38 @@ impl OpenFiles {
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to remove.
-    pub fn remove(&mut self, fd: u32) -> Option<OpenFile> {
-        self.files.remove(&fd)
+    pub fn remove_fd(&mut self, fd: ShellFd) -> Option<OpenFile> {
+        self.files.insert(fd, None).and_then(|f| f)
     }
 
-    /// Tries to lookup the `OpenFile` associated with a file descriptor. If the
-    /// file descriptor is not used, `None` will be returned; otherwise, a reference
-    /// to the `OpenFile` will be returned.
+    /// Tries to lookup the `OpenFile` associated with a file descriptor.
+    /// Returns `None` if the file descriptor is not present.
     ///
     /// Arguments:
     ///
     /// * `fd`: The file descriptor to lookup.
-    pub fn get(&self, fd: u32) -> Option<&OpenFile> {
-        self.files.get(&fd)
+    pub fn try_fd(&self, fd: ShellFd) -> Option<&OpenFile> {
+        self.files.get(&fd).and_then(|f| f.as_ref())
+    }
+
+    /// Tries to lookup the `OpenFile` associated with a file descriptor. Returns
+    /// an `OpenFileEntry` representing the state of the file descriptor.
+    ///
+    /// Arguments:
+    ///
+    /// * `fd`: The file descriptor to lookup.
+    pub fn fd_entry(&self, fd: ShellFd) -> OpenFileEntry<'_> {
+        self.files
+            .get(&fd)
+            .map_or(OpenFileEntry::NotSpecified, |opt_file| match opt_file {
+                Some(f) => OpenFileEntry::Open(f),
+                None => OpenFileEntry::NotPresent,
+            })
     }
 
     /// Checks if the given file descriptor is in use.
-    pub fn contains(&self, fd: u32) -> bool {
+    pub fn contains_fd(&self, fd: ShellFd) -> bool {
         self.files.contains_key(&fd)
-    }
-
-    /// Checks if there are no open files in this context.
-    pub fn is_empty(&self) -> bool {
-        self.files.is_empty()
     }
 
     /// Associates the given file descriptor with the provided file. If the file descriptor
@@ -287,16 +306,24 @@ impl OpenFiles {
     ///
     /// * `fd`: The file descriptor to associate with the file.
     /// * `file`: The file to associate with the file descriptor.
-    pub fn set(&mut self, fd: u32, file: OpenFile) -> Option<OpenFile> {
-        self.files.insert(fd, file)
+    pub fn set_fd(&mut self, fd: ShellFd, file: OpenFile) -> Option<OpenFile> {
+        self.files.insert(fd, Some(file)).and_then(|f| f)
+    }
+
+    /// Iterates over all file descriptors.
+    pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, &OpenFile)> {
+        self.files
+            .iter()
+            .filter_map(|(fd, file)| file.as_ref().map(|f| (*fd, f)))
     }
 }
 
-impl IntoIterator for OpenFiles {
-    type Item = (u32, OpenFile);
-    type IntoIter = <std::collections::HashMap<u32, OpenFile> as std::iter::IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.files.into_iter()
+impl<I> From<I> for OpenFiles
+where
+    I: Iterator<Item = (ShellFd, OpenFile)>,
+{
+    fn from(iter: I) -> Self {
+        let files = iter.map(|(fd, file)| (fd, Some(file))).collect();
+        Self { files }
     }
 }

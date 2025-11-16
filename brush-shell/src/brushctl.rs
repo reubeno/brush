@@ -43,10 +43,12 @@ enum EventsCommand {
 }
 
 impl brush_core::builtins::Command for BrushCtlCommand {
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         match self.command_group {
             CommandGroup::Events(ref events) => events.execute(&context),
         }
@@ -57,11 +59,13 @@ impl EventsCommand {
     fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
-        let event_config = crate::get_event_config();
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        let event_config = crate::entry::get_event_config();
 
         let mut event_config = event_config.try_lock().map_err(|_| {
-            brush_core::Error::Unimplemented("Failed to acquire lock on event configuration")
+            brush_core::Error::from(brush_core::ErrorKind::Unimplemented(
+                "Failed to acquire lock on event configuration",
+            ))
         })?;
 
         if let Some(event_config) = event_config.as_mut() {
@@ -69,20 +73,16 @@ impl EventsCommand {
                 Self::Status => {
                     let enabled_events = event_config.get_enabled_events();
                     for event in enabled_events {
-                        writeln!(context.stdout(), "{event}").unwrap(); // Add .unwrap() to handle
-                        // any potential write
-                        // errors
+                        writeln!(context.stdout(), "{event}")?;
                     }
                 }
                 Self::Enable { event } => event_config.enable(*event)?,
                 Self::Disable { event } => event_config.disable(*event)?,
             }
 
-            Ok(brush_core::builtins::ExitCode::Success)
+            Ok(brush_core::ExecutionResult::success())
         } else {
-            Err(brush_core::Error::Unimplemented(
-                "event configuration not initialized",
-            ))
+            Err(brush_core::ErrorKind::Unimplemented("event configuration not initialized").into())
         }
     }
 }

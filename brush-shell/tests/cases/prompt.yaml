@@ -11,6 +11,9 @@ cases:
       prompt='\\'
       echo "Prompt: '${prompt@P}'"
 
+      prompt='\?'
+      echo "Prompt: '${prompt@P}'"
+
       prompt='\81'
       echo "Prompt: '${prompt@P}'"
 
@@ -113,8 +116,32 @@ cases:
       expanded=${prompt@P}
       echo "${expanded}"
 
+  - name: "Escaped dollar-sign"
+    stdin: |
+      prompt='\$'
+      echo "Prompt: '${prompt@P}'"
+
+  - name: "Var in prompt"
+    stdin: |
+      var=value
+
+      prompt="\$var"
+
+      shopt -s promptvars
+      echo "Prompt (dollar-sign not escaped, with promptvars): ${prompt@P}"
+
+      shopt -u promptvars
+      echo "Prompt (dollar-sign not escaped, without promptvars): ${prompt@P}"
+
+      prompt="\\\$var"
+
+      shopt -s promptvars
+      echo "Prompt (dollar-sign escaped, with promptvars): ${prompt@P}"
+
+      shopt -u promptvars
+      echo "Prompt (dollar-sign escaped, without promptvars): ${prompt@P}"
+
   - name: "Command substitution in prompt"
-    known_failure: true # @P expansion doesn't word-expand after prompt expanding
     stdin: |
       prompt='$(echo Hello)'
       echo "Without spaces: ${prompt@P}"
@@ -123,10 +150,19 @@ cases:
       echo "With spaces: ${prompt@P}"
 
   - name: "Backquoted command substitution in prompt"
-    known_failure: true # @P expansion doesn't word-expand after prompt expanding
     stdin: |
       prompt='`echo Hello`'
       echo "Without spaces: ${prompt@P}"
 
       prompt=' `echo Hello` '
       echo "With spaces: ${prompt@P}"
+
+  - name: "Parameter expansion with non-printing chars"
+    stdin: |
+      var=value
+      prompt="\${var:+\[text\]}"
+      echo "Conditional (set): '${prompt@P}'"
+
+      var=
+      prompt="\${var:+\[text\]}"
+      echo "Conditional (unset): '${prompt@P}'"

@@ -2,9 +2,9 @@ use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 
-use brush_core::{Error, builtins, env, error, sys, variables};
+use brush_core::{ErrorKind, builtins, env, error, variables};
 
-use std::io::{Read, Write};
+use std::io::Read;
 
 /// Parse standard input.
 #[derive(Parser)]
@@ -61,10 +61,13 @@ pub(crate) struct ReadCommand {
 }
 
 impl builtins::Command for ReadCommand {
+    type Error = brush_core::Error;
+
+    #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.use_readline {
             return error::unimp("read -e");
         }
@@ -79,104 +82,109 @@ impl builtins::Command for ReadCommand {
         }
 
         // Find the input stream to use.
-        #[expect(clippy::cast_lossless)]
         let input_stream = if let Some(fd_num) = self.fd_num_to_read {
-            let fd_num = fd_num as u32;
+            let fd_num = brush_core::ShellFd::from(fd_num);
             context
-                .params
-                .fd(fd_num)
-                .ok_or_else(|| Error::BadFileDescriptor(fd_num))?
+                .try_fd(fd_num)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?
         } else {
             context
-                .params
-                .fd(brush_core::openfiles::OpenFiles::STDIN_FD)
+                .try_fd(brush_core::openfiles::OpenFiles::STDIN_FD)
                 .unwrap()
         };
 
         // Retrieve effective value of IFS for splitting.
         let ifs = context.shell.ifs();
 
-        let stdout_file = context
-            .params
-            .fd(brush_core::openfiles::OpenFiles::STDOUT_FD)
-            .unwrap();
-        let input_line = self.read_line(input_stream, stdout_file)?;
+        let input_line = self.read_line(input_stream, context.stdout())?;
+        let result = if input_line.is_some() {
+            brush_core::ExecutionResult::success()
+        } else {
+            brush_core::ExecutionResult::general_error()
+        };
 
-        if let Some(input_line) = input_line {
-            // If -a was specified, then place the fields as elements into the array.
-            if let Some(array_variable) = &self.array_variable {
+        // If -a was specified, then place the fields as elements into the array.
+        if let Some(array_variable) = &self.array_variable {
+            let literal_fields = if let Some(input_line) = input_line {
                 let fields: VecDeque<_> = split_line_by_ifs(
                     ifs.as_ref(),
                     input_line.as_str(),
                     None, /* max_fields */
                 );
-                let literal_fields = fields.into_iter().map(|f| (None, f)).collect();
 
-                context.shell.env.update_or_add(
-                    array_variable,
-                    variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )?;
-            } else if !self.variable_names.is_empty() {
-                let mut fields: VecDeque<_> = split_line_by_ifs(
+                fields.into_iter().map(|f| (None, f)).collect()
+            } else {
+                vec![]
+            };
+
+            context.shell.env.update_or_add(
+                array_variable,
+                variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+        } else if !self.variable_names.is_empty() {
+            let mut fields: VecDeque<_> = if let Some(input_line) = input_line {
+                split_line_by_ifs(
                     ifs.as_ref(),
                     input_line.as_str(),
                     /* max_fields */ Some(self.variable_names.len()),
-                );
-
-                for (i, name) in self.variable_names.iter().enumerate() {
-                    if fields.is_empty() {
-                        // Ensure the var is empty.
-                        context.shell.env.update_or_add(
-                            name,
-                            variables::ShellValueLiteral::Scalar(String::new()),
-                            |_| Ok(()),
-                            env::EnvironmentLookup::Anywhere,
-                            env::EnvironmentScope::Global,
-                        )?;
-                        continue;
-                    }
-
-                    let last = i == self.variable_names.len() - 1;
-                    if !last {
-                        let next_field = fields.pop_front().unwrap();
-                        context.shell.env.update_or_add(
-                            name,
-                            variables::ShellValueLiteral::Scalar(next_field),
-                            |_| Ok(()),
-                            env::EnvironmentLookup::Anywhere,
-                            env::EnvironmentScope::Global,
-                        )?;
-                    } else {
-                        let remaining_fields = fields.into_iter().join(" ");
-                        context.shell.env.update_or_add(
-                            name,
-                            variables::ShellValueLiteral::Scalar(remaining_fields),
-                            |_| Ok(()),
-                            env::EnvironmentLookup::Anywhere,
-                            env::EnvironmentScope::Global,
-                        )?;
-                        break;
-                    }
-                }
+                )
             } else {
-                // If no variable names were specified, then place everything into the
-                // REPLY variable.
-                context.shell.env.update_or_add(
-                    "REPLY",
-                    variables::ShellValueLiteral::Scalar(input_line),
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )?;
-            }
+                VecDeque::new()
+            };
 
-            Ok(brush_core::builtins::ExitCode::Success)
+            for (i, name) in self.variable_names.iter().enumerate() {
+                if fields.is_empty() {
+                    // Ensure the var is empty.
+                    context.shell.env.update_or_add(
+                        name,
+                        variables::ShellValueLiteral::Scalar(String::new()),
+                        |_| Ok(()),
+                        env::EnvironmentLookup::Anywhere,
+                        env::EnvironmentScope::Global,
+                    )?;
+                    continue;
+                }
+
+                let last = i == self.variable_names.len() - 1;
+                if !last {
+                    let next_field = fields.pop_front().unwrap();
+                    context.shell.env.update_or_add(
+                        name,
+                        variables::ShellValueLiteral::Scalar(next_field),
+                        |_| Ok(()),
+                        env::EnvironmentLookup::Anywhere,
+                        env::EnvironmentScope::Global,
+                    )?;
+                } else {
+                    let remaining_fields = fields.into_iter().join(" ");
+                    context.shell.env.update_or_add(
+                        name,
+                        variables::ShellValueLiteral::Scalar(remaining_fields),
+                        |_| Ok(()),
+                        env::EnvironmentLookup::Anywhere,
+                        env::EnvironmentScope::Global,
+                    )?;
+                    break;
+                }
+            }
         } else {
-            Ok(brush_core::builtins::ExitCode::Custom(1))
+            let input_line = input_line.unwrap_or_default();
+
+            // If no variable names were specified, then place everything into the
+            // REPLY variable.
+            context.shell.env.update_or_add(
+                "REPLY",
+                variables::ShellValueLiteral::Scalar(input_line),
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
         }
+
+        Ok(result)
     }
 }
 
@@ -191,9 +199,9 @@ impl ReadCommand {
     fn read_line(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
-        mut output_file: brush_core::openfiles::OpenFile,
+        mut output_file: impl std::io::Write,
     ) -> Result<Option<String>, brush_core::Error> {
-        let orig_term_attr = self.setup_terminal_settings(&input_file)?;
+        let _term_mode = self.setup_terminal_settings(&input_file)?;
 
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
             None
@@ -261,10 +269,6 @@ impl ReadCommand {
             }
         };
 
-        if let Some(orig_term_attr) = &orig_term_attr {
-            brush_core::sys::terminal::set_term_attr_now(&input_file, orig_term_attr)?;
-        }
-
         match reason {
             ReadTermination::EndOfInput => {
                 if line.is_empty() {
@@ -284,21 +288,19 @@ impl ReadCommand {
     fn setup_terminal_settings(
         &self,
         file: &brush_core::openfiles::OpenFile,
-    ) -> Result<Option<sys::terminal::TerminalSettings>, brush_core::Error> {
-        let orig_term_attr = brush_core::sys::terminal::get_term_attr(file).ok();
-        if let Some(orig_term_attr) = &orig_term_attr {
-            let mut updated_term_attr = orig_term_attr.to_owned();
+    ) -> Result<Option<brush_core::terminal::AutoModeGuard>, brush_core::Error> {
+        let mode = brush_core::terminal::AutoModeGuard::new(file.to_owned()).ok();
+        if let Some(mode) = &mode {
+            let config = brush_core::terminal::Settings::builder()
+                .line_input(false)
+                .interrupt_signals(false)
+                .echo_input(!self.silent)
+                .build();
 
-            updated_term_attr.set_canonical(false);
-            updated_term_attr.set_int_signal(false);
-            if self.silent {
-                updated_term_attr.set_echo(false);
-            }
-
-            brush_core::sys::terminal::set_term_attr_now(file, &updated_term_attr)?;
+            mode.apply_settings(&config)?;
         }
 
-        Ok(orig_term_attr)
+        Ok(mode)
     }
 }
 

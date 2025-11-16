@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Example of instantiating a shell and calling a shell function in it.
 
 use anyhow::Result;
 
@@ -24,7 +24,7 @@ async fn run_func(shell: &mut brush_core::Shell, suppress_stdout: bool) -> Resul
     let mut params = shell.default_exec_params();
 
     if suppress_stdout {
-        params.open_files.set(
+        params.set_fd(
             brush_core::openfiles::OpenFiles::STDOUT_FD,
             brush_core::openfiles::null()?,
         );
@@ -59,8 +59,7 @@ fn main() -> Result<()> {
     // Construct a runtime for us to run async code on.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()
-        .unwrap();
+        .build()?;
 
     rt.block_on(run(SUPPRESS_STDOUT))?;
 

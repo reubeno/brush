@@ -1,10 +1,9 @@
 use clap::Parser;
 use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
-use tracing::warn;
 
 use brush_core::{
-    Error, builtins,
+    ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
     variables::{
@@ -122,10 +121,12 @@ impl builtins::Command for DeclareCommand {
         true
     }
 
+    type Error = brush_core::Error;
+
     async fn execute(
         &self,
         mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<brush_core::builtins::ExitCode, brush_core::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let verb = match context.command_name.as_str() {
             "local" => DeclareVerb::Local,
             "readonly" => DeclareVerb::Readonly,
@@ -134,23 +135,23 @@ impl builtins::Command for DeclareCommand {
 
         if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
             writeln!(context.stderr(), "can only be used in a function")?;
-            return Ok(builtins::ExitCode::Custom(1));
+            return Ok(ExecutionResult::general_error());
         }
 
         if self.locals_inherit_from_prev_scope {
             return error::unimp("declare -I");
         }
 
-        let mut result = builtins::ExitCode::Success;
+        let mut result = ExecutionResult::success();
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
                     if !self.try_display_declaration(&context, declaration, verb)? {
-                        result = builtins::ExitCode::Custom(1);
+                        result = ExecutionResult::general_error();
                     }
                 } else {
                     if !self.process_declaration(&mut context, declaration, verb)? {
-                        result = builtins::ExitCode::Custom(1);
+                        result = ExecutionResult::general_error();
                     }
                 }
             }
@@ -256,7 +257,7 @@ impl DeclareCommand {
         if name == "-" && matches!(verb, DeclareVerb::Local) {
             // TODO: `local -` allows shadowing the current `set` options (i.e., $-), with
             // subsequent updates getting discarded when the current local scope is popped.
-            warn!("not yet implemented: local -");
+            tracing::warn!("not yet implemented: local -");
             return Ok(true);
         }
 
@@ -335,7 +336,7 @@ impl DeclareCommand {
         Ok(true)
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), brush_core::Error> {
@@ -373,7 +374,7 @@ impl DeclareCommand {
                             assignment.value,
                             brush_parser::ast::AssignmentValue::Array(_)
                         ) {
-                            return Err(Error::AssigningListToArrayMember);
+                            return Err(ErrorKind::AssigningListToArrayMember.into());
                         }
 
                         name = var_name.to_owned();

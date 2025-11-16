@@ -158,7 +158,7 @@ async fn cli_integration_tests(mut options: TestOptions) -> Result<()> {
 
     // Resolve path to the shell-under-test.
     if options.brush_path.is_empty() {
-        options.brush_path = assert_cmd::cargo::cargo_bin("brush")
+        options.brush_path = assert_cmd::cargo::cargo_bin!("brush")
             .to_string_lossy()
             .to_string();
     }
@@ -539,16 +539,11 @@ impl TestCaseSet {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 enum ShellInvocation {
+    #[default]
     ExecShellBinary,
     ExecScript(String),
-}
-
-impl Default for ShellInvocation {
-    fn default() -> Self {
-        Self::ExecShellBinary
-    }
 }
 
 #[derive(Clone)]

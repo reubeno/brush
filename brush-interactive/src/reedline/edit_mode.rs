@@ -183,7 +183,7 @@ fn translate_action_to_reedline_event(action: &KeyAction) -> Option<reedline::Re
         KeyAction::ShellCommand(cmd) => Some(reedline::ReedlineEvent::ExecuteHostCommand(
             format_reedline_host_command(cmd.as_str()),
         )),
-        KeyAction::DoInputFunction(_input_function) => None, // TODO: implement
+        KeyAction::DoInputFunction(func) => translate_input_function_to_reedline_event(func),
     }
 }
 
@@ -194,6 +194,58 @@ fn format_reedline_host_command(cmd: &str) -> String {
     // doing this, we apply a workaround of appending a special marker comment at
     // the end of the command.
     std::format!("{cmd} # bind-command")
+}
+
+fn translate_input_function_to_reedline_event(
+    func: &InputFunction,
+) -> Option<reedline::ReedlineEvent> {
+    use reedline::{EditCommand, ReedlineEvent};
+
+    match func {
+        InputFunction::BackwardDeleteChar => {
+            Some(ReedlineEvent::Edit(vec![EditCommand::Backspace]))
+        }
+        InputFunction::BackwardKillWord => {
+            Some(ReedlineEvent::Edit(vec![EditCommand::CutWordLeft]))
+        }
+        InputFunction::KillLine => Some(ReedlineEvent::Edit(vec![EditCommand::CutToLineEnd])),
+        InputFunction::KillWholeLine => Some(ReedlineEvent::Edit(vec![EditCommand::CutFromStart])),
+        InputFunction::KillWord => Some(ReedlineEvent::Edit(vec![EditCommand::CutWordRight])),
+        InputFunction::DeleteChar => Some(ReedlineEvent::Edit(vec![EditCommand::Delete])),
+        InputFunction::DowncaseWord => Some(ReedlineEvent::Edit(vec![EditCommand::LowercaseWord])),
+        InputFunction::BackwardChar => Some(ReedlineEvent::Edit(vec![EditCommand::MoveLeft {
+            select: false,
+        }])),
+        InputFunction::ForwardChar => Some(ReedlineEvent::Edit(vec![EditCommand::MoveRight {
+            select: false,
+        }])),
+        InputFunction::EndOfLine => Some(ReedlineEvent::Edit(vec![EditCommand::MoveToLineEnd {
+            select: false,
+        }])),
+        InputFunction::BeginningOfLine => {
+            Some(ReedlineEvent::Edit(vec![EditCommand::MoveToLineStart {
+                select: false,
+            }]))
+        }
+        InputFunction::BackwardWord => Some(ReedlineEvent::Edit(vec![EditCommand::MoveWordLeft {
+            select: false,
+        }])),
+        InputFunction::ForwardWord => Some(ReedlineEvent::Edit(vec![EditCommand::MoveWordRight {
+            select: false,
+        }])),
+        InputFunction::Yank => Some(ReedlineEvent::Edit(vec![EditCommand::PasteCutBufferAfter])),
+        InputFunction::ViRedo => Some(ReedlineEvent::Edit(vec![EditCommand::Redo])),
+        InputFunction::TransposeChars => {
+            Some(ReedlineEvent::Edit(vec![EditCommand::SwapGraphemes]))
+        }
+        InputFunction::UpcaseWord => Some(ReedlineEvent::Edit(vec![EditCommand::UppercaseWord])),
+        InputFunction::Undo => Some(ReedlineEvent::Edit(vec![EditCommand::Undo])),
+        InputFunction::ClearScreen => Some(ReedlineEvent::ClearScreen),
+        InputFunction::AcceptLine => Some(ReedlineEvent::Enter),
+        InputFunction::HistorySearchBackward => Some(ReedlineEvent::SearchHistory),
+        InputFunction::RedrawCurrentLine => Some(ReedlineEvent::Repaint),
+        _ => None,
+    }
 }
 
 pub(crate) fn is_reedline_host_command(cmd: &str) -> bool {
@@ -344,6 +396,9 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
         reedline::ReedlineEvent::SearchHistory => Some(KeyAction::DoInputFunction(
             InputFunction::HistorySearchBackward,
         )),
+        reedline::ReedlineEvent::Repaint => {
+            Some(KeyAction::DoInputFunction(InputFunction::RedrawCurrentLine))
+        }
         reedline::ReedlineEvent::Multiple(_) => {
             // TODO: Try to extract something from these?
             None

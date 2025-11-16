@@ -389,6 +389,7 @@ struct WordExpander<'a> {
     params: &'a ExecutionParameters,
     parser_options: brush_parser::ParserOptions,
     force_disable_brace_expansion: bool,
+    in_double_quotes: bool,
 }
 
 impl<'a> WordExpander<'a> {
@@ -399,6 +400,7 @@ impl<'a> WordExpander<'a> {
             params,
             parser_options,
             force_disable_brace_expansion: false,
+            in_double_quotes: false,
         }
     }
 
@@ -508,6 +510,40 @@ impl<'a> WordExpander<'a> {
         let coalesced = coalesce_expansions(expansions);
 
         Ok(coalesced)
+    }
+
+    /// Expand a word used inside a parameter expansion (like the word in ${param:+word}).
+    /// When we're already inside double-quotes, we preserve literal backslashes and quotes
+    /// (except those escaped in ways valid in double-quotes) but still expand parameters,
+    /// command substitutions, and arithmetic.
+    async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
+        // When inside double-quotes, we need to parse the word with double-quote semantics.
+        if self.in_double_quotes {
+            // If the word already starts with a double-quote, we need to remove those quotes
+            // and expand what's inside with normal (non-double-quote) semantics.
+            if let Some(stripped) = word.strip_prefix('"') {
+                if let Some(inner) = stripped.strip_suffix('"') {
+                    // Remove the surrounding double-quotes and expand the content normally
+                    // This requires us to temporarily clear in_double_quotes so the inner
+                    // content gets normal processing.
+                    let previously_in_double_quotes = self.in_double_quotes;
+                    self.in_double_quotes = false;
+
+                    // Now perform the expansion and make sure to restore the previous state,
+                    // even if the expansion fails.
+                    let result = self.basic_expand(inner).await;
+                    self.in_double_quotes = previously_in_double_quotes;
+
+                    return result;
+                }
+            }
+            // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
+            let wrapped = std::format!("\"{word}\"");
+            self.basic_expand(&wrapped).await
+        } else {
+            // When not inside double-quotes, perform normal expansion with quote removal
+            self.basic_expand(word).await
+        }
     }
 
     fn brace_expand_if_needed(&self, word: &'a str) -> Result<Vec<Cow<'a, str>>, error::Error> {
@@ -656,62 +692,21 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::WordPiece::DoubleQuotedSequence(pieces)
             | brush_parser::word::WordPiece::GettextDoubleQuotedSequence(pieces) => {
-                let mut fields: Vec<WordField> = vec![];
-
                 let pieces_is_empty = pieces.is_empty();
-                let concatenation_joiner = self.shell.get_ifs_first_char();
 
-                for piece in pieces {
-                    let Expansion {
-                        fields: this_fields,
-                        concatenate,
-                        ..
-                    } = self.expand_word_piece(piece.piece).await?;
+                // Save the previous state and set the flag
+                let previously_in_double_quotes = self.in_double_quotes;
+                self.in_double_quotes = true;
 
-                    let fields_to_append = if concatenate {
-                        #[expect(unstable_name_collisions)]
-                        let mut concatenated: Vec<ExpansionPiece> = this_fields
-                            .into_iter()
-                            .map(|WordField(pieces)| {
-                                pieces
-                                    .into_iter()
-                                    .map(|piece| piece.make_unsplittable())
-                                    .collect()
-                            })
-                            .intersperse(vec![ExpansionPiece::Unsplittable(
-                                concatenation_joiner.to_string(),
-                            )])
-                            .flatten()
-                            .collect();
+                // Process pieces; don't inspect the result yet, so we can make
+                // sure we restore the previous value of the 'in_double_quotes' flag.
+                let result = self.process_double_quoted_pieces(pieces).await;
 
-                        // If there were no pieces, make sure there's an empty string after
-                        // concatenation.
-                        if concatenated.is_empty() {
-                            concatenated.push(ExpansionPiece::Splittable(String::new()));
-                        }
+                // Restore the previous state
+                self.in_double_quotes = previously_in_double_quotes;
 
-                        vec![WordField(concatenated)]
-                    } else {
-                        this_fields
-                    };
-
-                    for (i, WordField(next_pieces)) in fields_to_append.into_iter().enumerate() {
-                        // Flip to unsplittable.
-                        let mut next_pieces: Vec<_> = next_pieces
-                            .into_iter()
-                            .map(|piece| piece.make_unsplittable())
-                            .collect();
-
-                        if i == 0 {
-                            if let Some(WordField(last_pieces)) = fields.last_mut() {
-                                last_pieces.append(&mut next_pieces);
-                                continue;
-                            }
-                        }
-
-                        fields.push(WordField(next_pieces));
-                    }
-                }
+                // Now we can inspect the result.
+                let mut fields = result?;
 
                 // If there were no pieces, then make sure we yield a single field containing an
                 // empty, unsplittable string.
@@ -764,8 +759,72 @@ impl<'a> WordExpander<'a> {
         } else if let Some(home_dir) = self.shell.home_dir() {
             Ok(home_dir.to_string_lossy().to_string())
         } else {
-            Err(error::Error::TildeWithoutValidHome)
+            Err(error::ErrorKind::TildeWithoutValidHome.into())
         }
+    }
+
+    /// Helper function to process pieces within a double-quoted sequence.
+    /// This ensures proper handling of concatenation and field building.
+    async fn process_double_quoted_pieces(
+        &mut self,
+        pieces: Vec<brush_parser::word::WordPieceWithSource>,
+    ) -> Result<Vec<WordField>, error::Error> {
+        let mut fields: Vec<WordField> = vec![];
+        let concatenation_joiner = self.shell.get_ifs_first_char();
+
+        for piece in pieces {
+            let Expansion {
+                fields: this_fields,
+                concatenate,
+                ..
+            } = self.expand_word_piece(piece.piece).await?;
+
+            let fields_to_append = if concatenate {
+                #[expect(unstable_name_collisions)]
+                let mut concatenated: Vec<ExpansionPiece> = this_fields
+                    .into_iter()
+                    .map(|WordField(pieces)| {
+                        pieces
+                            .into_iter()
+                            .map(|piece| piece.make_unsplittable())
+                            .collect()
+                    })
+                    .intersperse(vec![ExpansionPiece::Unsplittable(
+                        concatenation_joiner.to_string(),
+                    )])
+                    .flatten()
+                    .collect();
+
+                // If there were no pieces, make sure there's an empty string after
+                // concatenation.
+                if concatenated.is_empty() {
+                    concatenated.push(ExpansionPiece::Splittable(String::new()));
+                }
+
+                vec![WordField(concatenated)]
+            } else {
+                this_fields
+            };
+
+            for (i, WordField(next_pieces)) in fields_to_append.into_iter().enumerate() {
+                // Flip to unsplittable.
+                let mut next_pieces: Vec<_> = next_pieces
+                    .into_iter()
+                    .map(|piece| piece.make_unsplittable())
+                    .collect();
+
+                if i == 0 {
+                    if let Some(WordField(last_pieces)) = fields.last_mut() {
+                        last_pieces.append(&mut next_pieces);
+                        continue;
+                    }
+                }
+
+                fields.push(WordField(next_pieces));
+            }
+        }
+
+        Ok(fields)
     }
 
     #[expect(clippy::too_many_lines)]
@@ -794,9 +853,7 @@ impl<'a> WordExpander<'a> {
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Ok(Expansion::from(
-                        self.basic_expand_to_str(default_value).await?,
-                    )),
+                    _ => Ok(self.expand_parameter_word(default_value).await?),
                 }
             }
             brush_parser::word::ParameterExpr::AssignDefaultValues {
@@ -816,7 +873,7 @@ impl<'a> WordExpander<'a> {
                     ) => Ok(expanded_parameter),
                     _ => {
                         let expanded_default_value =
-                            self.basic_expand_to_str(default_value).await?;
+                            String::from(self.expand_parameter_word(default_value).await?);
                         self.assign_to_parameter(&parameter, expanded_default_value.clone())
                             .await?;
                         Ok(Expansion::from(expanded_default_value))
@@ -838,9 +895,10 @@ impl<'a> WordExpander<'a> {
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Err(error::Error::CheckedExpansionError(
+                    _ => Err(error::ErrorKind::CheckedExpansionError(
                         self.basic_expand_to_str(error_message).await?,
-                    )),
+                    )
+                    .into()),
                 }
             }
             brush_parser::word::ParameterExpr::UseAlternativeValue {
@@ -859,7 +917,7 @@ impl<'a> WordExpander<'a> {
                     | (
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
-                    ) => Ok(self.basic_expand(alternative_value).await?),
+                    ) => Ok(self.expand_parameter_word(alternative_value).await?),
                     _ => Ok(Expansion::from(String::new())),
                 }
             }
@@ -877,10 +935,11 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_suffix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::RemoveLargestSuffixPattern {
                 parameter,
@@ -889,10 +948,11 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_suffix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::RemoveSmallestPrefixPattern {
                 parameter,
@@ -902,10 +962,11 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::RemoveLargestPrefixPattern {
                 parameter,
@@ -915,10 +976,11 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_prefix(s.as_str(), &expanded_pattern)
                         .map(|s| s.to_owned())
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::Substring {
                 parameter,
@@ -1057,8 +1119,24 @@ impl<'a> WordExpander<'a> {
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let came_from_undefined = expanded_parameter.undefined;
-                transform_expansion(expanded_parameter, |s| {
-                    self.apply_transform_to(&op, s, came_from_undefined)
+
+                //
+                // For typing reasons (issues with FnMut and our mut use of self), we can't use
+                // transform_expansion. Instead, we inline its logic here.
+                //
+
+                let mut transformed_fields = vec![];
+                for field in expanded_parameter.fields {
+                    let s = String::from(field);
+                    let transformed = self.apply_transform_to(&op, s, came_from_undefined).await?;
+                    transformed_fields.push(WordField::from(transformed));
+                }
+
+                Ok(Expansion {
+                    fields: transformed_fields,
+                    concatenate: expanded_parameter.concatenate,
+                    from_array: expanded_parameter.from_array,
+                    undefined: expanded_parameter.undefined,
                 })
             }
             brush_parser::word::ParameterExpr::UppercaseFirstChar {
@@ -1069,9 +1147,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::uppercase_first_char(s, &expanded_pattern)
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::UppercasePattern {
                 parameter,
@@ -1081,9 +1160,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::uppercase_pattern(s.as_str(), &expanded_pattern)
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::LowercaseFirstChar {
                 parameter,
@@ -1093,9 +1173,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                Ok(transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::lowercase_first_char(s, &expanded_pattern)
-                })?)
+                })
+                .await
             }
             brush_parser::word::ParameterExpr::LowercasePattern {
                 parameter,
@@ -1105,9 +1186,10 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
                 let expanded_pattern = self.basic_expand_opt_pattern(&pattern).await?;
 
-                Ok(transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Self::lowercase_pattern(s.as_str(), &expanded_pattern)
-                })?)
+                })
+                .await
             }
             brush_parser::word::ParameterExpr::ReplaceSubstring {
                 parameter,
@@ -1132,7 +1214,7 @@ impl<'a> WordExpander<'a> {
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Suffix),
                 )?;
 
-                transform_expansion(expanded_parameter, |s| {
+                transform_expansion(expanded_parameter, async |s| {
                     Ok(Self::replace_substring(
                         s.as_str(),
                         &regex,
@@ -1140,6 +1222,7 @@ impl<'a> WordExpander<'a> {
                         &match_kind,
                     ))
                 })
+                .await
             }
             brush_parser::word::ParameterExpr::VariableNames {
                 prefix,
@@ -1224,7 +1307,7 @@ impl<'a> WordExpander<'a> {
                 concatenate: _,
             }
             | brush_parser::word::Parameter::Special(_) => {
-                return Err(error::Error::CannotAssignToSpecialParameter);
+                return Err(error::ErrorKind::CannotAssignToSpecialParameter.into());
             }
         };
 
@@ -1326,7 +1409,7 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::Parameter::Special(s) => Ok(self.expand_special_parameter(s)),
             brush_parser::word::Parameter::Named(n) => {
                 if !env::valid_variable_name(n.as_str()) {
-                    Err(error::Error::BadSubstitution)
+                    Err(error::ErrorKind::BadSubstitution(n.clone()).into())
                 } else if let Some((_, var)) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         Ok(Expansion::undefined())
@@ -1466,7 +1549,7 @@ impl<'a> WordExpander<'a> {
         Ok(value.to_string())
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     #[expect(clippy::ref_option)]
     fn uppercase_first_char(
         s: String,
@@ -1492,7 +1575,7 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    #[expect(clippy::unwrap_in_result)]
+    #[allow(clippy::unwrap_in_result)]
     #[expect(clippy::ref_option)]
     fn lowercase_first_char(
         s: String,
@@ -1577,15 +1660,15 @@ impl<'a> WordExpander<'a> {
         }
     }
 
-    fn apply_transform_to(
-        &self,
+    async fn apply_transform_to(
+        &mut self,
         op: &ParameterTransformOp,
         s: String,
         came_from_undefined: bool,
     ) -> Result<String, error::Error> {
         match op {
             brush_parser::word::ParameterTransformOp::PromptExpand => {
-                prompt::expand_prompt(self.shell, s)
+                prompt::expand_prompt(self.shell, self.params, s).await
             }
             brush_parser::word::ParameterTransformOp::CapitalizeInitial => {
                 Ok(to_initial_capitals(s.as_str()))
@@ -1671,13 +1754,18 @@ fn to_initial_capitals(s: &str) -> String {
     result
 }
 
-fn transform_expansion(
+async fn transform_expansion<F, FReturn>(
     expansion: Expansion,
-    mut f: impl FnMut(String) -> Result<String, error::Error>,
-) -> Result<Expansion, error::Error> {
+    mut f: F,
+) -> Result<Expansion, error::Error>
+where
+    F: FnMut(String) -> FReturn,
+    FReturn: Future<Output = Result<String, error::Error>>,
+{
     let mut transformed_fields = vec![];
     for field in expansion.fields {
-        transformed_fields.push(WordField::from(f(String::from(field))?));
+        let transformed_field = WordField::from(f(String::from(field)).await?);
+        transformed_fields.push(transformed_field);
     }
 
     Ok(Expansion {

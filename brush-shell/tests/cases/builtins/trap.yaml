@@ -25,15 +25,24 @@ cases:
       trap -p INT
 
   - name: "trap EXIT"
-    known_failure: true # TODO: needs triage and debugging
     stdin: |
-      trap "echo [exit]" EXIT
+      trap 'echo "[exit]"' EXIT
       trap -p EXIT
+
+  - name: "trap EXIT: status code handling"
+    stdin: |
+      trap 'echo "[exit]: \$?: $?"' EXIT
+      trap -p EXIT
+      false
 
   - name: "trap DEBUG"
     stdin: |
       trap 'echo [command: ${BASH_COMMAND}]' DEBUG
       trap -p DEBUG
+
+      echo First
+      echo Second
+      false
 
   - name: "trap ERR"
     stdin: |
