@@ -5,6 +5,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2025-11-17
+
+### 🚀 Features
+
+- Launch processes in their own process groups ([#166](https://github.com/reubeno/brush/pull/166))
+- Implement brace expansion ([#290](https://github.com/reubeno/brush/pull/290))
+- *(env)* Introduce dynamic variables ([#360](https://github.com/reubeno/brush/pull/360))
+- Add ShellBuilder, ParserBuilder ([#651](https://github.com/reubeno/brush/pull/651))
+- [**breaking**] Refactor SourcePosition to use Arc ([#727](https://github.com/reubeno/brush/pull/727))
+- *(bind)* Extend key binding support ([#740](https://github.com/reubeno/brush/pull/740))
+- Enable custom error formatting ([#722](https://github.com/reubeno/brush/pull/722))
+- [**breaking**] Introduce SourceLocation ([#728](https://github.com/reubeno/brush/pull/728))
+- Implement fc builtin ([#739](https://github.com/reubeno/brush/pull/739))
+- Implement alternate arithmetic for syntax ([#744](https://github.com/reubeno/brush/pull/744))
+- Implement BASH_XTRACEFD ([#747](https://github.com/reubeno/brush/pull/747))
+- Revisit how ExecutionParameters layer open files atop the Shell ([#749](https://github.com/reubeno/brush/pull/749))
+- Basic support for trap EXIT ([#750](https://github.com/reubeno/brush/pull/750))
+- Implement opt-in fd inheritance from host env ([#753](https://github.com/reubeno/brush/pull/753))
+
+### 🐛 Bug Fixes
+
+- *(builtins)* Do not interpret --help in command builtin command args ([#355](https://github.com/reubeno/brush/pull/355))
+- *(builtins)* Correct more 'set' argument parsing ([#356](https://github.com/reubeno/brush/pull/356))
+- *(typeset)* Mark typeset as a declaration builtin ([#517](https://github.com/reubeno/brush/pull/517))
+- *(redirection)* Assorted fixes to redirection ([#567](https://github.com/reubeno/brush/pull/567))
+- Add missing license symlink ([#725](https://github.com/reubeno/brush/pull/725))
+- Add missing cfg conditions on builtin registrations ([#726](https://github.com/reubeno/brush/pull/726))
+- Workaround error on nightly ([#711](https://github.com/reubeno/brush/pull/711))
+- Comment unsafe blocks + better harden 1 block ([#733](https://github.com/reubeno/brush/pull/733))
+- Don't fail importing unreadable history lines ([#710](https://github.com/reubeno/brush/pull/710))
+- Tokenizer handling of here docs in quoted command substitutions ([#716](https://github.com/reubeno/brush/pull/716))
+- Address lint errors from stable + nightly ([#723](https://github.com/reubeno/brush/pull/723))
+- *(builtins)* Correct `read` var update on empty input ([#729](https://github.com/reubeno/brush/pull/729))
+- Address race conditions in basic input tests ([#730](https://github.com/reubeno/brush/pull/730))
+- Do not pass along exported-but-unset vars ([#732](https://github.com/reubeno/brush/pull/732))
+- *(builtins)* Suppress error when type -p sees no command ([#745](https://github.com/reubeno/brush/pull/745))
+- Command substitutions with large output ([#748](https://github.com/reubeno/brush/pull/748))
+- Expansion in select double-quoted parameter exprs ([#751](https://github.com/reubeno/brush/pull/751))
+- Correct expansion behavior in prompts ([#756](https://github.com/reubeno/brush/pull/756))
+- Escaping and pipeline parse issues ([#762](https://github.com/reubeno/brush/pull/762))
+
+### 🚜 Refactor
+
+- Use `Shell` builder pattern in more code ([#688](https://github.com/reubeno/brush/pull/688))
+- Os_pipe::pipe() -> std::io::pipe() ([#695](https://github.com/reubeno/brush/pull/695))
+- Extract script + function call stacks to their own modules ([#709](https://github.com/reubeno/brush/pull/709))
+- Update Shell::new() to take creation options as owned ([#689](https://github.com/reubeno/brush/pull/689))
+- Move builtins into their own crate ([#690](https://github.com/reubeno/brush/pull/690))
+- Shell struct API improvements ([#692](https://github.com/reubeno/brush/pull/692))
+- Error/result type overhaul ([#720](https://github.com/reubeno/brush/pull/720))
+- Move more platform-specific code under sys ([#735](https://github.com/reubeno/brush/pull/735))
+
+### 📚 Documentation
+
+- Correct broken link in readme ([#67](https://github.com/reubeno/brush/pull/67))
+- Add crate shields to readme ([#74](https://github.com/reubeno/brush/pull/74))
+- Update readme ([#127](https://github.com/reubeno/brush/pull/127))
+- Update readme ([#182](https://github.com/reubeno/brush/pull/182))
+- Update readme with new links ([#204](https://github.com/reubeno/brush/pull/204))
+- Update readme ([#218](https://github.com/reubeno/brush/pull/218))
+- Update README to reflect test expansion
+- Add how to use via nixpkgs ([#387](https://github.com/reubeno/brush/pull/387))
+- Add lines-of-code badge to readme ([#399](https://github.com/reubeno/brush/pull/399))
+- Add instructions for installing from the AUR ([#433](https://github.com/reubeno/brush/pull/433))
+- Update readme ([#481](https://github.com/reubeno/brush/pull/481))
+- Add discord invite to readme ([#494](https://github.com/reubeno/brush/pull/494))
+- *(readme)* A Fish as a shell implemented in Rust ([#505](https://github.com/reubeno/brush/pull/505))
+- README.md installation updates ([#580](https://github.com/reubeno/brush/pull/580))
+- Update README.md badges ([#588](https://github.com/reubeno/brush/pull/588))
+- *(readme)* Update Arch Linux install instructions ([#604](https://github.com/reubeno/brush/pull/604))
+- Adds homebrew section to README installation instructions ([#638](https://github.com/reubeno/brush/pull/638))
+- Update readme ([#657](https://github.com/reubeno/brush/pull/657))
+- Update readme ([#742](https://github.com/reubeno/brush/pull/742))
+
+### 🧪 Testing
+
+- Resolve false errors about side effects in bash-completion tests ([#379](https://github.com/reubeno/brush/pull/379))
+- Add not-yet-passing tests for set -u and set -e ([#736](https://github.com/reubeno/brush/pull/736))
+- Add new command substitution test case ([#752](https://github.com/reubeno/brush/pull/752))
+
+### ⚙️ Miscellaneous Tasks
+
+- Update readme ([#331](https://github.com/reubeno/brush/pull/331))
+- Better log + connect unimpl functionality with GH issues ([#476](https://github.com/reubeno/brush/pull/476))
+- Run static code checks on linux + macOS too ([#678](https://github.com/reubeno/brush/pull/678))
+- Fix build error with cargo nightly ([#687](https://github.com/reubeno/brush/pull/687))
+- *(msrv)* [**breaking**] Upgrade MSRV to 1.87.0 ([#693](https://github.com/reubeno/brush/pull/693))
+- Fix benchmark execution ([#691](https://github.com/reubeno/brush/pull/691))
+- Update dependencies ([#696](https://github.com/reubeno/brush/pull/696))
+- Update dependencies ([#757](https://github.com/reubeno/brush/pull/757))
+- Add brush crate + docs publishing ([#760](https://github.com/reubeno/brush/pull/760))
+
+### Build
+
+- Remove rustyline support ([#216](https://github.com/reubeno/brush/pull/216))
+- *(deps)* Bump the cargo group with 2 updates ([#717](https://github.com/reubeno/brush/pull/717))
+- *(deps)* Bump procfs from 0.17.0 to 0.18.0 in the cargo group across 1 directory ([#671](https://github.com/reubeno/brush/pull/671))
+- *(deps)* Bump bon from 3.7.2 to 3.8.0 in the cargo group ([#698](https://github.com/reubeno/brush/pull/698))
+- *(deps)* Bump the cargo group with 4 updates ([#676](https://github.com/reubeno/brush/pull/676))
+- *(deps)* Bump serde from 1.0.221 to 1.0.223 in the cargo group ([#680](https://github.com/reubeno/brush/pull/680))
+- *(deps)* Bump the cargo group with 5 updates ([#684](https://github.com/reubeno/brush/pull/684))
+- *(deps)* Bump the cargo group with 3 updates ([#686](https://github.com/reubeno/brush/pull/686))
+- *(deps)* Bump the cargo group with 5 updates ([#708](https://github.com/reubeno/brush/pull/708))
+- *(deps)* Bump the cargo group with 8 updates ([#713](https://github.com/reubeno/brush/pull/713))
+- *(deps)* Bump the cargo group with 3 updates ([#755](https://github.com/reubeno/brush/pull/755))
+
+<!-- generated by git-cliff -->
+
 ## [0.2.23] - 2025-08-30
 
 ### 🐛 Bug Fixes
