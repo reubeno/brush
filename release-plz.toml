@@ -7,14 +7,18 @@ git_release_enable = false
 publish = true
 
 [[package]]
+name = "brush"
+version_group = "brush-shell-group" # Version-locked to brush-shell
+
+[[package]]
 name = "brush-shell"
+version_group = "brush-shell-group"
 changelog_update = true
 changelog_path = "./CHANGELOG.md"
 changelog_include = [
     "brush-core",
     "brush-interactive-shell",
     "brush-parser",
-    "brush-builtins",
 ]
 git_release_latest = true
 git_release_draft = true
