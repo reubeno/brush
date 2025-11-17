@@ -9,9 +9,6 @@ All notable changes to this project will be documented in this file.
 
 ### 🚀 Features
 
-- Launch processes in their own process groups ([#166](https://github.com/reubeno/brush/pull/166))
-- Implement brace expansion ([#290](https://github.com/reubeno/brush/pull/290))
-- *(env)* Introduce dynamic variables ([#360](https://github.com/reubeno/brush/pull/360))
 - Add ShellBuilder, ParserBuilder ([#651](https://github.com/reubeno/brush/pull/651))
 - [**breaking**] Refactor SourcePosition to use Arc ([#727](https://github.com/reubeno/brush/pull/727))
 - *(bind)* Extend key binding support ([#740](https://github.com/reubeno/brush/pull/740))
@@ -26,12 +23,6 @@ All notable changes to this project will be documented in this file.
 
 ### 🐛 Bug Fixes
 
-- *(builtins)* Do not interpret --help in command builtin command args ([#355](https://github.com/reubeno/brush/pull/355))
-- *(builtins)* Correct more 'set' argument parsing ([#356](https://github.com/reubeno/brush/pull/356))
-- *(typeset)* Mark typeset as a declaration builtin ([#517](https://github.com/reubeno/brush/pull/517))
-- *(redirection)* Assorted fixes to redirection ([#567](https://github.com/reubeno/brush/pull/567))
-- Add missing license symlink ([#725](https://github.com/reubeno/brush/pull/725))
-- Add missing cfg conditions on builtin registrations ([#726](https://github.com/reubeno/brush/pull/726))
 - Workaround error on nightly ([#711](https://github.com/reubeno/brush/pull/711))
 - Comment unsafe blocks + better harden 1 block ([#733](https://github.com/reubeno/brush/pull/733))
 - Don't fail importing unreadable history lines ([#710](https://github.com/reubeno/brush/pull/710))
@@ -59,36 +50,15 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 
-- Correct broken link in readme ([#67](https://github.com/reubeno/brush/pull/67))
-- Add crate shields to readme ([#74](https://github.com/reubeno/brush/pull/74))
-- Update readme ([#127](https://github.com/reubeno/brush/pull/127))
-- Update readme ([#182](https://github.com/reubeno/brush/pull/182))
-- Update readme with new links ([#204](https://github.com/reubeno/brush/pull/204))
-- Update readme ([#218](https://github.com/reubeno/brush/pull/218))
-- Update README to reflect test expansion
-- Add how to use via nixpkgs ([#387](https://github.com/reubeno/brush/pull/387))
-- Add lines-of-code badge to readme ([#399](https://github.com/reubeno/brush/pull/399))
-- Add instructions for installing from the AUR ([#433](https://github.com/reubeno/brush/pull/433))
-- Update readme ([#481](https://github.com/reubeno/brush/pull/481))
-- Add discord invite to readme ([#494](https://github.com/reubeno/brush/pull/494))
-- *(readme)* A Fish as a shell implemented in Rust ([#505](https://github.com/reubeno/brush/pull/505))
-- README.md installation updates ([#580](https://github.com/reubeno/brush/pull/580))
-- Update README.md badges ([#588](https://github.com/reubeno/brush/pull/588))
-- *(readme)* Update Arch Linux install instructions ([#604](https://github.com/reubeno/brush/pull/604))
-- Adds homebrew section to README installation instructions ([#638](https://github.com/reubeno/brush/pull/638))
-- Update readme ([#657](https://github.com/reubeno/brush/pull/657))
 - Update readme ([#742](https://github.com/reubeno/brush/pull/742))
 
 ### 🧪 Testing
 
-- Resolve false errors about side effects in bash-completion tests ([#379](https://github.com/reubeno/brush/pull/379))
 - Add not-yet-passing tests for set -u and set -e ([#736](https://github.com/reubeno/brush/pull/736))
 - Add new command substitution test case ([#752](https://github.com/reubeno/brush/pull/752))
 
 ### ⚙️ Miscellaneous Tasks
 
-- Update readme ([#331](https://github.com/reubeno/brush/pull/331))
-- Better log + connect unimpl functionality with GH issues ([#476](https://github.com/reubeno/brush/pull/476))
 - Run static code checks on linux + macOS too ([#678](https://github.com/reubeno/brush/pull/678))
 - Fix build error with cargo nightly ([#687](https://github.com/reubeno/brush/pull/687))
 - *(msrv)* [**breaking**] Upgrade MSRV to 1.87.0 ([#693](https://github.com/reubeno/brush/pull/693))
@@ -99,8 +69,6 @@ All notable changes to this project will be documented in this file.
 
 ### Build
 
-- Remove rustyline support ([#216](https://github.com/reubeno/brush/pull/216))
-- *(deps)* Bump the cargo group with 2 updates ([#717](https://github.com/reubeno/brush/pull/717))
 - *(deps)* Bump procfs from 0.17.0 to 0.18.0 in the cargo group across 1 directory ([#671](https://github.com/reubeno/brush/pull/671))
 - *(deps)* Bump bon from 3.7.2 to 3.8.0 in the cargo group ([#698](https://github.com/reubeno/brush/pull/698))
 - *(deps)* Bump the cargo group with 4 updates ([#676](https://github.com/reubeno/brush/pull/676))

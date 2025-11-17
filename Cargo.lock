@@ -313,7 +313,7 @@ dependencies = [
 
 [[package]]
 name = "brush"
-version = "0.2.23"
+version = "0.3.0"
 dependencies = [
  "brush-shell",
 ]
