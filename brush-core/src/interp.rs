@@ -209,9 +209,38 @@ impl Execute for ast::Program {
         let mut result = ExecutionResult::success();
 
         for command in &self.complete_commands {
-            result = command.execute(shell, params).await?;
-            if !result.is_normal_flow() {
-                break;
+            // Execute the command and handle any errors without immediately propagating them.
+            // This allows interactive shells to continue executing subsequent commands even after errors.
+            match command.execute(shell, params).await {
+                Ok(exec_result) => {
+                    result = exec_result;
+                    if !result.is_normal_flow() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    // Display the error
+                    let _ = shell.display_error(&mut params.stderr(shell), &err).await;
+
+                    // Check if this is an expansion error in -c mode (needs special exit code)
+                    let is_expansion_error_in_c_mode = shell.options.command_string_mode
+                        && matches!(err.kind(), error::ErrorKind::CheckedExpansionError(..));
+
+                    // Convert the error to an execution result based on shell state
+                    result = err.into_result(shell);
+
+                    // Special case: in -c mode, bash uses exit code 127 for expansion errors
+                    if is_expansion_error_in_c_mode {
+                        result.exit_code = results::ExecutionExitCode::NotFound;
+                    }
+
+                    *shell.last_exit_status_mut() = result.exit_code.into();
+
+                    // Check if we should stop executing subsequent commands
+                    if !result.is_normal_flow() {
+                        break;
+                    }
+                }
             }
         }
 
@@ -1019,8 +1048,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     let _ = context.shell.display_error(&mut stderr, &err).await;
-                    let exit_code = ExecutionExitCode::from(&err);
-                    Ok(ExecutionResult::from(exit_code).into())
+
+                    let result = err.into_result(context.shell);
+                    Ok(result.into())
                 }
             }
         } else {
@@ -1029,6 +1059,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
+                // Apply the assignment. Don't mark as fatal - let errors be handled
+                // at the program level so multiple complete_commands can execute independently.
                 apply_assignment(
                     assignment,
                     context.shell,

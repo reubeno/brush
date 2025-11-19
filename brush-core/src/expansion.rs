@@ -895,10 +895,14 @@ impl<'a> WordExpander<'a> {
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
-                    _ => Err(error::ErrorKind::CheckedExpansionError(
-                        self.basic_expand_to_str(error_message).await?,
-                    )
-                    .into()),
+                    _ => {
+                        let result = self.basic_expand_to_str(error_message).await?;
+                        let err: error::Error =
+                            error::ErrorKind::CheckedExpansionError(result).into();
+
+                        // Expansion errors are fatal per POSIX spec
+                        Err(err.into_fatal())
+                    }
                 }
             }
             brush_parser::word::ParameterExpr::UseAlternativeValue {
