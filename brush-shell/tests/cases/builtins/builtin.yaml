@@ -29,6 +29,8 @@ cases:
 
   - name: "builtin with disabled builtin"
     ignore_stderr: true
+    incompatible_os:
+      - opensuse-tumbleweed
     stdin: |
       cd .
       echo $?
