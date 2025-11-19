@@ -33,6 +33,12 @@ cases:
     stdin: |
       echo "\""
 
+  - name: "Double quotes: escaping"
+    stdin: |
+      echo "\'"
+      echo "\x"
+      echo "\n"
+
   - name: "ANSI-C quotes"
     stdin: |
       single_quoted='\n'
@@ -48,6 +54,15 @@ cases:
       ansi_c_quoted=$'\''
       echo "ANSI-C quoted single quote len: ${#ansi_c_quoted}"
       echo -n $'\'' | hexdump -C
+
+  - name: "ANSI-C quote syntax inside double quotes (literal, not processed)"
+    stdin: |
+      # When $'...' appears inside double quotes, it should be treated as literal text
+      echo "$'\t'"
+      echo "$'\'abcd\''"
+      x="$'\n'"
+      echo "len: ${#x}"
+      echo "$x"
 
   - name: "gettext style quotes"
     stdin: |

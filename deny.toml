@@ -24,7 +24,9 @@ version = 2
 yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    "RUSTSEC-2025-0119", # number_prefix not maintained (replacement will come with next update of uucore)
+]
 #git-fetch-with-cli = true
 
 # This section is considered when running `cargo deny check licenses`

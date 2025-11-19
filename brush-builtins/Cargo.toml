@@ -128,8 +128,8 @@ default = [
 workspace = true
 
 [dependencies]
-brush-core = { version = "^0.3.5", path = "../brush-core" }
-brush-parser = { version = "^0.2.20", path = "../brush-parser" }
+brush-core = { version = "^0.4.0", path = "../brush-core" }
+brush-parser = { version = "^0.3.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
 chrono = "0.4.42"
 clap = { version = "4.5.51", features = ["derive", "wrap_help"] }

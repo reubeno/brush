@@ -324,6 +324,9 @@ pub struct CreateOptions {
     /// Whether to print verbose output.
     #[builder(default)]
     pub verbose: bool,
+    /// Whether the shell is in command string mode (-c).
+    #[builder(default)]
+    pub command_string_mode: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.

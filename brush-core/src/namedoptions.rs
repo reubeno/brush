@@ -125,6 +125,13 @@ static SET_OPTIONS: LazyLock<HashMap<&'static str, ShellOptionDef>> = LazyLock::
             ),
         ),
         (
+            "c",
+            ShellOptionDef::new(
+                |options| options.command_string_mode,
+                |options, value| options.command_string_mode = value,
+            ),
+        ),
+        (
             "e",
             ShellOptionDef::new(
                 |options| options.exit_on_nonzero_command_exit,
