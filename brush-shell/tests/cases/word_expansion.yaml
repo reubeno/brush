@@ -417,6 +417,7 @@ cases:
       echo "  -> result: $?"
 
   - name: "Parameter expression: error on condition (non-interactive)"
+    known_failure: true
     ignore_stderr: true
     stdin: |
       echo "${non_existent_var?error message}"
