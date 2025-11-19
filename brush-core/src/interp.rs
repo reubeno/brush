@@ -212,35 +212,19 @@ impl Execute for ast::Program {
             // Execute the command and handle any errors without immediately propagating them.
             // This allows interactive shells to continue executing subsequent commands even after errors.
             match command.execute(shell, params).await {
-                Ok(exec_result) => {
-                    result = exec_result;
-                    if !result.is_normal_flow() {
-                        break;
-                    }
-                }
+                Ok(exec_result) => result = exec_result,
                 Err(err) => {
-                    // Display the error
+                    // Display the error and convert to an execution result.
                     let _ = shell.display_error(&mut params.stderr(shell), &err).await;
-
-                    // Check if this is an expansion error in -c mode (needs special exit code)
-                    let is_expansion_error_in_c_mode = shell.options.command_string_mode
-                        && matches!(err.kind(), error::ErrorKind::CheckedExpansionError(..));
-
-                    // Convert the error to an execution result based on shell state
                     result = err.into_result(shell);
-
-                    // Special case: in -c mode, bash uses exit code 127 for expansion errors
-                    if is_expansion_error_in_c_mode {
-                        result.exit_code = results::ExecutionExitCode::NotFound;
-                    }
-
-                    *shell.last_exit_status_mut() = result.exit_code.into();
-
-                    // Check if we should stop executing subsequent commands
-                    if !result.is_normal_flow() {
-                        break;
-                    }
                 }
+            }
+
+            *shell.last_exit_status_mut() = result.exit_code.into();
+
+            // Check if we should stop executing subsequent commands
+            if !result.is_normal_flow() {
+                break;
             }
         }
 
