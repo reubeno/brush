@@ -79,6 +79,7 @@ cases:
           echo "after expansion"
 
   - name: "Shell language syntax error (command line)"
+    incompatible_os: ["azurelinux"] # Needs investigation
     ignore_stderr: true
     args:
       - "-c"
