@@ -1668,7 +1668,7 @@ fn get_host_os_id() -> Option<String> {
     }
 
     let contents = std::fs::read_to_string(os_release_path).ok()?;
-    
+
     for line in contents.lines() {
         if let Some(value) = line.strip_prefix("ID=") {
             // Remove quotes if present
@@ -1676,7 +1676,7 @@ fn get_host_os_id() -> Option<String> {
             return Some(value.to_string());
         }
     }
-    
+
     None
 }
 
