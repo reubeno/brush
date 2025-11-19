@@ -90,7 +90,7 @@ impl TestConfig {
 
         let host_os_id = get_host_os_id();
         if options.verbose {
-            if let Some(ref os_id) = host_os_id {
+            if let Some(os_id) = &host_os_id {
                 eprintln!("Detected host OS: {os_id}");
             }
         }
@@ -125,7 +125,7 @@ impl TestConfig {
     pub fn for_sh_testing(options: &TestOptions) -> Result<Self> {
         let host_os_id = get_host_os_id();
         if options.verbose {
-            if let Some(ref os_id) = host_os_id {
+            if let Some(os_id) = &host_os_id {
                 eprintln!("Detected host OS: {os_id}");
             }
         }
@@ -870,7 +870,7 @@ impl TestCase {
         }
 
         // Make sure the test is compatible with the host OS.
-        if let Some(ref host_os_id) = test_config.host_os_id {
+        if let Some(host_os_id) = &test_config.host_os_id {
             if self.incompatible_os.contains(host_os_id) {
                 return Ok(true);
             }
@@ -1662,22 +1662,13 @@ fn get_bash_version_str(bash_path: &Path) -> Result<String> {
 /// Returns the value of the ID field, which is the canonical OS identifier.
 /// For example: "ubuntu", "opensuse-tumbleweed", "fedora", etc.
 fn get_host_os_id() -> Option<String> {
-    let os_release_path = Path::new("/etc/os-release");
-    if !os_release_path.exists() {
-        return None;
-    }
-
-    let contents = std::fs::read_to_string(os_release_path).ok()?;
-
-    for line in contents.lines() {
-        if let Some(value) = line.strip_prefix("ID=") {
-            // Remove quotes if present
-            let value = value.trim_matches('"');
-            return Some(value.to_string());
+    os_release::OsRelease::new().ok().and_then(|info| {
+        if info.id.is_empty() {
+            None
+        } else {
+            Some(info.id)
         }
-    }
-
-    None
+    })
 }
 
 fn main() -> Result<()> {
