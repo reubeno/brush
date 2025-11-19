@@ -272,8 +272,6 @@ async fn instantiate_shell(
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
         || (args.script_args.is_empty() && args.command.is_none());
 
-    let interactive = args.is_interactive();
-
     let builtins = brush_builtins::default_builtins(if args.sh_mode {
         brush_builtins::BuiltinSet::ShMode
     } else {
@@ -298,7 +296,8 @@ async fn instantiate_shell(
             do_not_execute_commands: args.do_not_execute_commands,
             exit_after_one_command: args.exit_after_one_command,
             login: args.login || argv0.as_ref().is_some_and(|a0| a0.starts_with('-')),
-            interactive,
+            interactive: args.is_interactive(),
+            command_string_mode: args.command.is_some(),
             no_editing: args.no_editing,
             no_profile: args.no_profile,
             no_rc: args.no_rc,
