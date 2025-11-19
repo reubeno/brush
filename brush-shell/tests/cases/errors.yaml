@@ -9,7 +9,6 @@ cases:
       echo "after expansion"
 
   - name: "Fatal error (non-interactive/subshell)"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       echo "before expansion"

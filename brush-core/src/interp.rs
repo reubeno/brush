@@ -598,7 +598,20 @@ impl Execute for ast::CompoundCommand {
             Self::Subshell(ast::SubshellCommand { list, .. }) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 let mut subshell = shell.clone();
-                let subshell_result = list.execute(&mut subshell, params).await?;
+
+                // Handle errors within the subshell context to prevent fatal errors
+                // from propagating to the parent shell.
+                let subshell_result = match list.execute(&mut subshell, params).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        // Display the error to stderr, but prevent fatal error propagation
+                        let mut stderr = params.stderr(shell);
+                        let _ = shell.display_error(&mut stderr, &error).await;
+
+                        // Convert error to result in subshell context
+                        error.into_result(&subshell)
+                    }
+                };
 
                 // Preserve the subshell's exit code, but don't honor any of its requests to exit
                 // the shell, break out of loops, etc.
