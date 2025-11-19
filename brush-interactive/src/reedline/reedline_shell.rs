@@ -149,7 +149,7 @@ impl InteractiveShell for ReedlineShell {
                 }
                 Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
                 Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
-                Err(err) => Err(ShellError::IoError(err)),
+                Err(err) => Err(ShellError::InputError(err)),
             }
         } else {
             Ok(ReadResult::Eof)
