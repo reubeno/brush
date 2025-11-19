@@ -30,8 +30,8 @@ cases:
       echo "\$3: $3"
 
   - name: "Basic -i usage with commands via stdin"
-    skip: true # Needs investigation
     args: ["-i"]
+    ignore_stderr: true
     stdin: |
       echo hi
       echo there

@@ -370,7 +370,6 @@ cases:
       echo "${value:+z"x\xy"z}"
 
   - name: "Parameter expression: error on condition (interactive)"
-    skip: true # TODO: fails with cargo nextest
     ignore_stderr: true
     args: ["-i"]
     stdin: |
@@ -418,7 +417,6 @@ cases:
       echo "  -> result: $?"
 
   - name: "Parameter expression: error on condition (non-interactive)"
-    known_failure: true # TODO: needs triage and debugging
     ignore_stderr: true
     stdin: |
       echo "${non_existent_var?error message}"

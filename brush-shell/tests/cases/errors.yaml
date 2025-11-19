@@ -1,0 +1,345 @@
+name: "Error handling"
+cases:
+  - name: "Fatal error (interactive/subshell)"
+    ignore_stderr: true
+    args: ["-i"]
+    stdin: |
+      echo "before expansion"
+      echo "${non_existent_var:?missing parameter}"
+      echo "after expansion"
+
+  - name: "Fatal error (non-interactive/subshell)"
+    ignore_stderr: true
+    stdin: |
+      echo "before expansion"
+      echo "${non_existent_var:?missing parameter}"
+      echo "after expansion"
+
+  - name: "Fatal error (interactive/command substitution)"
+    ignore_stderr: true
+    args: ["-i"]
+    stdin: |
+      echo "before expansion"
+      echo "${non_existent_var:?missing parameter}"
+      echo "after expansion"
+
+  - name: "Fatal error (non-interactive/command substitution)"
+    ignore_stderr: true
+    stdin: |
+      echo "before expansion"
+      echo "${non_existent_var:?missing parameter}"
+      echo "after expansion"
+
+  - name: "Fatal error (interactive/sourced file)"
+    ignore_stderr: true
+    args: ["-i"]
+    test_files:
+      - path: error.sh
+        contents: |
+          echo "before expansion"
+          echo "${non_existent_var:?missing parameter}"
+          echo "after expansion"
+    stdin: |
+      source error.sh
+      echo "after sourcing script with error"
+
+  - name: "Fatal error (non-interactive/sourced file)"
+    ignore_stderr: true
+    test_files:
+      - path: error.sh
+        contents: |
+          echo "before expansion"
+          echo "${non_existent_var:?missing parameter}"
+          echo "after expansion"
+    stdin: |
+      source error.sh
+      echo "after sourcing script with error"
+
+  - name: "Fatal error (interactive/executed script)"
+    ignore_stderr: true
+    args: ["-i", "error.sh"]
+    test_files:
+      - path: error.sh
+        contents: |
+          echo "before expansion"
+          echo "${non_existent_var:?missing parameter}"
+          echo "after expansion"
+
+  - name: "Fatal error (non-interactive/executed script)"
+    ignore_stderr: true
+    args: ["error.sh"]
+    test_files:
+      - path: error.sh
+        contents: |
+          echo "before expansion"
+          echo "${non_existent_var:?missing parameter}"
+          echo "after expansion"
+
+  - name: "Shell language syntax error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        [[ -% 3 ]]
+        echo "after syntax error"
+
+  - name: "Shell language syntax error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      [[ -% 3 ]]
+      echo "after syntax error"
+
+  - name: "Shell language syntax error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      [[ -% 3 ]]
+      echo "after syntax error"
+
+  - name: "Special built-in error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        echo "before shift"
+        set -- foo
+        shift 2
+        echo "after shift"
+
+  - name: "Special built-in error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      echo "before shift"
+      set -- foo
+      shift 2
+      echo "after shift"
+
+  - name: "Special built-in error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      echo "before shift"
+      set -- foo
+      shift 2
+      echo "after shift"
+
+  - name: "Regular utility error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        echo "before cat"
+        cat /no/such/utility/path 2>/dev/null
+        echo "after cat (status $?)"
+
+  - name: "Regular utility error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      echo "before cat"
+      cat /no/such/utility/path 2>/dev/null
+      echo "after cat (status $?)"
+
+  - name: "Regular utility error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      echo "before cat"
+      cat /no/such/utility/path 2>/dev/null
+      echo "after cat (status $?)"
+
+  - name: "Special built-in redirection error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        echo "before special redirection"
+        : > missing_special_dir/out.txt
+        echo "after special redirection"
+
+  - name: "Special built-in redirection error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      echo "before special redirection"
+      : > missing_special_dir/out.txt
+      echo "after special redirection"
+
+  - name: "Special built-in redirection error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      echo "before special redirection"
+      : > missing_special_dir/out.txt
+      echo "after special redirection"
+
+  - name: "Compound command redirection error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        echo "before compound redirection"
+        if true; then echo inside; fi > missing_compound_dir/out.txt
+        echo "after compound redirection"
+
+  - name: "Compound command redirection error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      echo "before compound redirection"
+      if true; then echo inside; fi > missing_compound_dir/out.txt
+      echo "after compound redirection"
+
+  - name: "Compound command redirection error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      echo "before compound redirection"
+      if true; then echo inside; fi > missing_compound_dir/out.txt
+      echo "after compound redirection"
+
+  - name: "Function redirection error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        demo_func() { echo inside; }
+        echo "before function redirection"
+        demo_func > missing_function_dir/out.txt
+        echo "after function redirection"
+
+  - name: "Function redirection error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      demo_func() { echo inside; }
+      echo "before function redirection"
+      demo_func > missing_function_dir/out.txt
+      echo "after function redirection"
+
+  - name: "Function redirection error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      demo_func() { echo inside; }
+      echo "before function redirection"
+      demo_func > missing_function_dir/out.txt
+      echo "after function redirection"
+
+  - name: "Utility redirection error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        echo "before cat redirection"
+        cat < missing_utility_dir/input.txt
+        echo "after cat redirection"
+
+  - name: "Utility redirection error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      echo "before cat redirection"
+      cat < missing_utility_dir/input.txt
+      echo "after cat redirection"
+
+  - name: "Utility redirection error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      echo "before cat redirection"
+      cat < missing_utility_dir/input.txt
+      echo "after cat redirection"
+
+  - name: "Variable assignment error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        readonly value_guard=1
+        echo "before readonly assignment"
+        value_guard=2
+        echo "after readonly assignment"
+
+  - name: "Variable assignment error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      readonly value_guard=1
+      echo "before readonly assignment"
+      value_guard=2
+      echo "after readonly assignment"
+
+  - name: "Variable assignment error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      readonly value_guard=1
+      echo "before readonly assignment"
+      value_guard=2
+      echo "after readonly assignment"
+
+  - name: "Expansion error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        echo "before expansion"
+        echo "${non_existent_var:?missing parameter}"
+        echo "after expansion"
+
+  - name: "Expansion error (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      echo "before expansion"
+      echo "${UNSET_REQUIRED:?missing parameter}"
+      echo "after expansion"
+
+  - name: "Expansion error (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      echo "before expansion"
+      echo "${UNSET_REQUIRED:?missing parameter}"
+      echo "after expansion"
+
+  - name: "Command not found (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        missing_command
+        echo "after missing command (status $?)"
+
+  - name: "Command not found (non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      missing_command
+      echo "after missing command (status $?)"
+
+  - name: "Command not found (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      missing_command
+      echo "after missing command (status $?)"
+
+  - name: "Unrecoverable read error (command line)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        echo "before closing stdin"
+        exec 0<&-
+        echo "after closing stdin"
+
+  - name: "Unrecoverable read error (non-interactive)"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      echo "before closing stdin"
+      exec 0<&-
+      echo "after closing stdin"
+
+  - name: "Unrecoverable read error (interactive)"
+    args: ["-i"]
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      echo "before closing stdin"
+      exec 0<&-
+      echo "after closing stdin"

@@ -104,4 +104,5 @@ version-compare = "0.2.1"
 walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.30.1" }
 pprof = { version = "0.15.0", features = ["criterion", "flamegraph"] }

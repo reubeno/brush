@@ -6,7 +6,6 @@ cases:
       echo "[1] Status: $?; pipe status: ${PIPESTATUS[@]}"
 
   - name: "Parse error status"
-    known_failure: true # Needs investigation
     ignore_stderr: true
     stdin: |
       # Generate parse error

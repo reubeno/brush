@@ -15,6 +15,7 @@ use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::ExitStatus,
 };
@@ -1099,13 +1100,14 @@ impl TestCase {
     #[expect(clippy::unused_async)]
     #[cfg(unix)]
     async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
-        use expectrl::Expect;
+        use expectrl::{Expect, process::Termios as _};
 
         let mut log = Vec::new();
         let writer = std::io::Cursor::new(&mut log);
 
         let start_time = std::time::Instant::now();
         let mut p = expectrl::session::log(expectrl::Session::spawn(cmd)?, writer)?;
+        p.set_echo(true)?;
 
         if let Some(stdin) = &self.stdin {
             for line in stdin.lines() {
@@ -1179,8 +1181,24 @@ impl TestCase {
     }
 
     #[expect(clippy::unused_async)]
-    async fn run_command_with_stdin(&self, cmd: std::process::Command) -> Result<RunResult> {
+    async fn run_command_with_stdin(&self, mut cmd: std::process::Command) -> Result<RunResult> {
         const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
+
+        // SAFETY:
+        // To avoid bash trying to directly access /dev/tty and generate tty-related signals,
+        // we create a new session for the child process. The standard library has a setsid()
+        // API but it's unstable, so we use nix here. Calling pre_exec can be unsafe as
+        // it runs in the child process after fork() but before exec(), and there are constraints
+        // around what can be safely done in that context. However, calling setsid() is generally
+        // considered safe as it doesn't allocate memory or perform complex operations to forked
+        // state.
+        #[cfg(unix)]
+        unsafe {
+            cmd.pre_exec(|| {
+                let _ = nix::unistd::setsid();
+                Ok(())
+            })
+        };
 
         let mut test_cmd = assert_cmd::Command::from_std(cmd);
 
