@@ -10,8 +10,8 @@ pub enum ShellError {
     IoError(#[from] std::io::Error),
 
     /// An error occurred while reading input.
-    #[error("input error occurred")]
-    InputError,
+    #[error("input error occurred: {0}")]
+    InputError(std::io::Error),
 
     /// The requested input backend type is not supported.
     #[error("requested input backend type not supported")]

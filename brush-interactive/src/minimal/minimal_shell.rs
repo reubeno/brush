@@ -83,7 +83,7 @@ impl MinimalShell {
         let mut input = String::new();
         let bytes_read = std::io::stdin()
             .read_line(&mut input)
-            .map_err(|_err| ShellError::InputError)?;
+            .map_err(ShellError::InputError)?;
 
         if bytes_read == 0 {
             Ok(ReadResult::Eof)

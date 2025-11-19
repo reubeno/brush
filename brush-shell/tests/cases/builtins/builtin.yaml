@@ -26,3 +26,19 @@ cases:
     stdin: |
       builtin declare variable=value
       declare -p variable
+
+  - name: "builtin with disabled builtin"
+    ignore_stderr: true
+    incompatible_os:
+      - opensuse-tumbleweed
+    stdin: |
+      cd .
+      echo $?
+
+      enable -n cd
+      builtin cd .
+      echo $?
+
+      enable cd
+      builtin cd .
+      echo $?

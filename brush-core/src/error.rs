@@ -7,10 +7,15 @@ use crate::{Shell, ShellFd, results, sys};
 /// Unified error type for this crate. Contains just a kind for now,
 /// but will be extended later with additional context.
 #[derive(thiserror::Error, Debug)]
-#[error(transparent)]
+#[error("{kind}")]
 pub struct Error {
     /// The kind of error.
+    #[source]
     kind: ErrorKind,
+
+    /// Whether or not the error should be considered a "fatal" error that would
+    /// result in abnormal exit of a non-interactive shell.
+    fatal: bool,
 }
 
 /// Monolithic error type for the shell
@@ -303,6 +308,55 @@ where
     fn from(convertible_to_kind: T) -> Self {
         Self {
             kind: convertible_to_kind.into(),
+            fatal: false,
+        }
+    }
+}
+
+impl Error {
+    /// Marks this error as fatal.
+    #[must_use]
+    pub const fn into_fatal(mut self) -> Self {
+        self.fatal = true;
+        self
+    }
+
+    /// Returns whether or not this error is fatal.
+    pub const fn is_fatal(&self) -> bool {
+        self.fatal
+    }
+
+    /// Returns a reference to the error kind.
+    pub const fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
+
+    /// Converts this error into the appropriate control flow based on the shell's current state.
+    /// This centralizes the logic for determining how fatal errors should affect execution flow.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell instance, used to check interactive mode and script call stack.
+    pub const fn to_control_flow(&self, shell: &Shell) -> results::ExecutionControlFlow {
+        if self.is_fatal() && !shell.options.interactive {
+            results::ExecutionControlFlow::ExitShell
+        } else {
+            results::ExecutionControlFlow::Normal
+        }
+    }
+
+    /// Converts this error into an execution result for the shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell instance, used to determine control flow.
+    pub fn into_result(self, shell: &Shell) -> results::ExecutionResult {
+        let next_control_flow = self.to_control_flow(shell);
+        let exit_code = results::ExecutionExitCode::from(&self);
+
+        results::ExecutionResult {
+            next_control_flow,
+            exit_code,
         }
     }
 }

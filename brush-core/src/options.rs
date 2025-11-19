@@ -177,8 +177,10 @@ pub struct RuntimeOptions {
     // Options set by the shell.
     /// Whether or not the shell is interactive.
     pub interactive: bool,
-    /// Whether or not the shell is reading commands from standard input.
+    /// Whether commands are being read from stdin.
     pub read_commands_from_stdin: bool,
+    /// Whether the shell is in command string mode (-c).
+    pub command_string_mode: bool,
     /// Whether or not the shell is in maximal `sh` compatibility mode.    
     pub sh_mode: bool,
     /// Maximum function call depth.
@@ -202,6 +204,7 @@ impl RuntimeOptions {
             enable_job_control: create_options.interactive,
             exit_after_one_command: create_options.exit_after_one_command,
             read_commands_from_stdin: create_options.read_commands_from_stdin,
+            command_string_mode: create_options.command_string_mode,
             sh_mode: create_options.sh_mode,
             posix_mode: create_options.posix,
             print_commands_and_arguments: create_options.print_commands_and_arguments,
@@ -276,21 +279,7 @@ impl RuntimeOptions {
         }
 
         // Sort the flags in a way that matches what bash does.
-        cs.sort_by(|a, b| {
-            if a == b {
-                std::cmp::Ordering::Equal
-            } else if *a == 's' {
-                std::cmp::Ordering::Greater
-            } else if *b == 's' {
-                std::cmp::Ordering::Less
-            } else if a.is_ascii_lowercase() && b.is_ascii_uppercase() {
-                std::cmp::Ordering::Less
-            } else if a.is_ascii_uppercase() && b.is_ascii_lowercase() {
-                std::cmp::Ordering::Greater
-            } else {
-                a.cmp(b)
-            }
-        });
+        cs.sort_by_key(|flag| option_flag_sort_key(*flag));
 
         cs.into_iter().collect()
     }
@@ -321,5 +310,55 @@ impl RuntimeOptions {
 
         cs.sort_unstable();
         cs.into_iter().join(":")
+    }
+}
+
+/// Sort option flag character in a way that mirrors bash behavior.
+///
+/// # Arguments
+///
+/// * `ch` - The option flag character.
+const fn option_flag_sort_key(ch: char) -> (u8, char) {
+    // NOTE: bash appears to sort in 3 groups. We mimic them:
+    //    1) Lowercase letters excluding 'c' and 's' (sorted)
+    //    2) Uppercase letters (sorted)
+    //    3) All other characters (sorted)
+    let group = if ch.is_ascii_lowercase() && !matches!(ch, 'c' | 's') {
+        0
+    } else if ch.is_ascii_uppercase() {
+        1
+    } else {
+        2
+    };
+
+    (group, ch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::option_flag_sort_key;
+
+    #[test]
+    fn lowercase_excluding_c_and_s_sort_first() {
+        let mut flags = vec!['b', 'A', 'Z', 's', 'c', 'a'];
+        flags.sort_by_key(|flag| option_flag_sort_key(*flag));
+
+        assert_eq!(flags, vec!['a', 'b', 'A', 'Z', 'c', 's']);
+    }
+
+    #[test]
+    fn uppercase_sorted_before_miscellaneous() {
+        let mut flags = vec!['P', 'B', '1', 'T'];
+        flags.sort_by_key(|flag| option_flag_sort_key(*flag));
+
+        assert_eq!(flags, vec!['B', 'P', 'T', '1']);
+    }
+
+    #[test]
+    fn miscellaneous_characters_respect_ascii_order() {
+        let mut flags = vec!['s', 'c', '%', ':'];
+        flags.sort_by_key(|flag| option_flag_sort_key(*flag));
+
+        assert_eq!(flags, vec!['%', ':', 'c', 's']);
     }
 }
