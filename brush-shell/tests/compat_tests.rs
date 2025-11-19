@@ -11,11 +11,10 @@ use colored::Colorize;
 use descape::UnescapeExt;
 use serde::{Deserialize, Serialize};
 #[cfg(unix)]
-use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
+use std::os::unix::{fs::PermissionsExt, process::CommandExt, process::ExitStatusExt};
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
-    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::ExitStatus,
 };
@@ -364,6 +363,10 @@ fn report_integration_test_results_pretty(
     Ok(())
 }
 
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "the unsafe call is unrelated to deserialization"
+)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct TestCase {
     /// Name of the test case
@@ -1181,6 +1184,7 @@ impl TestCase {
     }
 
     #[expect(clippy::unused_async)]
+    #[allow(unused_mut, reason = "only mutated on some platforms")]
     async fn run_command_with_stdin(&self, mut cmd: std::process::Command) -> Result<RunResult> {
         const DEFAULT_TIMEOUT_IN_SECONDS: u64 = 15;
 

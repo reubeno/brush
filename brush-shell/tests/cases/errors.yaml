@@ -5,15 +5,14 @@ cases:
     args: ["-i"]
     stdin: |
       echo "before expansion"
-      echo "${non_existent_var:?missing parameter}"
+      (echo "${non_existent_var:?missing parameter}")
       echo "after expansion"
 
   - name: "Fatal error (non-interactive/subshell)"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       echo "before expansion"
-      echo "${non_existent_var:?missing parameter}"
+      (echo "${non_existent_var:?missing parameter}")
       echo "after expansion"
 
   - name: "Fatal error (interactive/command substitution)"
@@ -21,15 +20,14 @@ cases:
     args: ["-i"]
     stdin: |
       echo "before expansion"
-      echo "${non_existent_var:?missing parameter}"
+      x=$(echo "${non_existent_var:?missing parameter}")
       echo "after expansion"
 
   - name: "Fatal error (non-interactive/command substitution)"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       echo "before expansion"
-      echo "${non_existent_var:?missing parameter}"
+      x=$(echo "${non_existent_var:?missing parameter}")
       echo "after expansion"
 
   - name: "Fatal error (interactive/sourced file)"
