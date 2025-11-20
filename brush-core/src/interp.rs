@@ -209,7 +209,20 @@ impl Execute for ast::Program {
         let mut result = ExecutionResult::success();
 
         for command in &self.complete_commands {
-            result = command.execute(shell, params).await?;
+            // Execute the command and handle any errors without immediately propagating them.
+            // This allows interactive shells to continue executing subsequent commands even after errors.
+            match command.execute(shell, params).await {
+                Ok(exec_result) => result = exec_result,
+                Err(err) => {
+                    // Display the error and convert to an execution result.
+                    let _ = shell.display_error(&mut params.stderr(shell), &err).await;
+                    result = err.into_result(shell);
+                }
+            }
+
+            *shell.last_exit_status_mut() = result.exit_code.into();
+
+            // Check if we should stop executing subsequent commands
             if !result.is_normal_flow() {
                 break;
             }
@@ -569,7 +582,20 @@ impl Execute for ast::CompoundCommand {
             Self::Subshell(ast::SubshellCommand { list, .. }) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 let mut subshell = shell.clone();
-                let subshell_result = list.execute(&mut subshell, params).await?;
+
+                // Handle errors within the subshell context to prevent fatal errors
+                // from propagating to the parent shell.
+                let subshell_result = match list.execute(&mut subshell, params).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        // Display the error to stderr, but prevent fatal error propagation
+                        let mut stderr = params.stderr(shell);
+                        let _ = shell.display_error(&mut stderr, &error).await;
+
+                        // Convert error to result in subshell context
+                        error.into_result(&subshell)
+                    }
+                };
 
                 // Preserve the subshell's exit code, but don't honor any of its requests to exit
                 // the shell, break out of loops, etc.
@@ -1019,8 +1045,9 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     let _ = context.shell.display_error(&mut stderr, &err).await;
-                    let exit_code = ExecutionExitCode::from(&err);
-                    Ok(ExecutionResult::from(exit_code).into())
+
+                    let result = err.into_result(context.shell);
+                    Ok(result.into())
                 }
             }
         } else {
@@ -1029,6 +1056,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
+                // Apply the assignment. Don't mark as fatal - let errors be handled
+                // at the program level so multiple complete_commands can execute independently.
                 apply_assignment(
                     assignment,
                     context.shell,

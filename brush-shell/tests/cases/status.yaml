@@ -7,7 +7,6 @@ cases:
 
   - name: "Parse error status"
     ignore_stderr: true
-    known_failure: true
     stdin: |
       # Generate parse error
       for f done

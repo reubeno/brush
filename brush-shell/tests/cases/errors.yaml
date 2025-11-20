@@ -31,7 +31,6 @@ cases:
       echo "after expansion"
 
   - name: "Fatal error (interactive/sourced file)"
-    known_failure: true
     ignore_stderr: true
     args: ["-i"]
     test_files:
@@ -45,7 +44,6 @@ cases:
       echo "after sourcing script with error"
 
   - name: "Fatal error (non-interactive/sourced file)"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: error.sh
@@ -58,7 +56,6 @@ cases:
       echo "after sourcing script with error"
 
   - name: "Fatal error (interactive/executed script)"
-    known_failure: true
     ignore_stderr: true
     args: ["-i", "error.sh"]
     test_files:
@@ -88,7 +85,7 @@ cases:
         echo "after syntax error"
 
   - name: "Shell language syntax error (non-interactive)"
-    known_failure: true
+    incompatible_os: ["azurelinux"] # Needs investigation
     ignore_stderr: true
     stdin: |
       [[ -% 3 ]]
@@ -177,7 +174,6 @@ cases:
       echo "after special redirection"
 
   - name: "Compound command redirection error (command line)"
-    known_failure: true
     ignore_stderr: true
     args:
       - "-c"
@@ -253,7 +249,6 @@ cases:
       echo "after cat redirection"
 
   - name: "Variable assignment error (command line)"
-    known_failure: true
     ignore_stderr: true
     args:
       - "-c"
@@ -281,7 +276,7 @@ cases:
       echo "after readonly assignment"
 
   - name: "Expansion error (command line)"
-    known_failure: true
+    known_failure: true # Needs investigation
     ignore_stderr: true
     args:
       - "-c"
@@ -291,7 +286,6 @@ cases:
         echo "after expansion"
 
   - name: "Expansion error (non-interactive)"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       echo "before expansion"
@@ -345,8 +339,8 @@ cases:
       echo "after closing stdin"
 
   - name: "Unrecoverable read error (interactive)"
-    args: ["-i"]
     known_failure: true
+    args: ["-i"]
     ignore_stderr: true
     stdin: |
       echo "before closing stdin"

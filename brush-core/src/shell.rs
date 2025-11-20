@@ -15,8 +15,8 @@ use crate::results::ExecutionSpawnResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ProcessGroupPolicy, history,
-    interfaces, pathcache, pathsearch, scripts, trace_categories, wellknownvars,
+    ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, history, interfaces, pathcache,
+    pathsearch, scripts, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -989,13 +989,14 @@ impl Shell {
         source_info: &brush_parser::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        // If parsing succeeded, run the program.
+        // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
         let result = match parse_result {
             Ok(prog) => self.run_program(prog, params).await,
             Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
                 parse_err,
                 source_info.clone(),
-            ))),
+            ))
+            .into_fatal()),
         };
 
         // Report any errors.
@@ -1003,9 +1004,11 @@ impl Shell {
             Ok(result) => Ok(result),
             Err(err) => {
                 let _ = self.display_error(&mut params.stderr(self), &err).await;
-                let exit_code = ExecutionExitCode::from(&err);
-                *self.last_exit_status_mut() = exit_code.into();
-                Ok(exit_code.into())
+
+                let result = err.into_result(self);
+                *self.last_exit_status_mut() = result.exit_code.into();
+
+                Ok(result)
             }
         }
     }
