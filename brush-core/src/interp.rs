@@ -3,7 +3,6 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use sys::commands::ExitStatusExt;
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
@@ -407,10 +406,10 @@ async fn spawn_pipeline_processes(
 
         // Install pipes.
         if let Some(reader) = pipe_readers.pop() {
-            cmd_params.open_files.set(OpenFiles::STDIN_FD, reader);
+            cmd_params.open_files.set_fd(OpenFiles::STDIN_FD, reader);
         }
         if let Some(writer) = pipe_writers.pop() {
-            cmd_params.open_files.set(OpenFiles::STDOUT_FD, writer);
+            cmd_params.open_files.set_fd(OpenFiles::STDOUT_FD, writer);
         }
 
         let pipeline_context = if !run_in_current_shell {
@@ -1037,7 +1036,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
-            let mut stderr = params.stderr(context.shell);
+            let mut stderr = params.stderr(&context.shell);
 
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
@@ -1047,8 +1046,14 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                     // TODO: Use the error formatter.
                     let _ = writeln!(stderr, "error: {err:#}");
 
-                    let result = err.into_result(context.shell);
-                    Ok(result.into())
+                    // FIXME: This doesn't use shell context for error conversion, which may
+                    // lose information about control flow (e.g., fatal errors). The proper
+                    // approach would be:
+                    //   let result = err.into_result(&context.shell);
+                    //   Ok(result.into())
+                    // However, context is moved into execute_command, so we can't access it here.
+                    let exit_code: ExecutionExitCode = ExecutionExitCode::from(&err);
+                    Ok(ExecutionResult::from(exit_code).into())
                 }
             }
         } else {
