@@ -39,6 +39,10 @@ pub enum EvalError {
     /// Failed to trace an arithmetic expression.
     #[error("failed tracing expression")]
     TraceError,
+
+    /// Error expanding an unset variable.
+    #[error("expanding unset variable: '{0}'")]
+    ExpandingUnsetVariable(String),
 }
 
 /// Trait implemented by arithmetic expressions that can be evaluated.
@@ -144,9 +148,25 @@ impl Evaluatable for ast::ArithmeticExpr {
     }
 }
 
+fn get_var_value<'a>(shell: &'a Shell, name: &str) -> Result<Cow<'a, str>, EvalError> {
+    let value = shell.env_var(name).map(|var| var.resolve_value(shell));
+
+    if let Some(value) = value {
+        if value.is_set() {
+            return Ok(value.to_cow_str(shell).to_string().into());
+        }
+    }
+
+    if shell.options.treat_unset_variables_as_error {
+        return Err(EvalError::ExpandingUnsetVariable(name.into()));
+    }
+
+    Ok("".into())
+}
+
 fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
     let value_str: Cow<'_, str> = match lvalue {
-        ast::ArithmeticTarget::Variable(name) => shell.env_str(name).unwrap_or(Cow::Borrowed("")),
+        ast::ArithmeticTarget::Variable(name) => get_var_value(shell, name.as_str())?,
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = index_expr.eval(shell)?.to_string();
 

@@ -844,7 +844,9 @@ impl<'a> WordExpander<'a> {
                 test_type,
                 default_value,
             } => {
-                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_parameter = self
+                    .expand_parameter_allowing_unset(&parameter, indirect)
+                    .await?;
                 let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
@@ -862,7 +864,9 @@ impl<'a> WordExpander<'a> {
                 test_type,
                 default_value,
             } => {
-                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_parameter = self
+                    .expand_parameter_allowing_unset(&parameter, indirect)
+                    .await?;
                 let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
@@ -886,7 +890,9 @@ impl<'a> WordExpander<'a> {
                 test_type,
                 error_message,
             } => {
-                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_parameter = self
+                    .expand_parameter_allowing_unset(&parameter, indirect)
+                    .await?;
                 let error_message = error_message.as_ref().map_or_else(|| "", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
@@ -911,7 +917,9 @@ impl<'a> WordExpander<'a> {
                 test_type,
                 alternative_value,
             } => {
-                let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
+                let expanded_parameter = self
+                    .expand_parameter_allowing_unset(&parameter, indirect)
+                    .await?;
                 let alternative_value = alternative_value
                     .as_ref()
                     .map_or_else(|| "", |v| v.as_str());
@@ -1375,12 +1383,47 @@ impl<'a> WordExpander<'a> {
         (name, index, var)
     }
 
+    fn undefined_expansion(
+        &self,
+        parameter: &brush_parser::word::Parameter,
+        allow_unset_vars: bool,
+    ) -> Result<Expansion, error::Error> {
+        if allow_unset_vars || !self.shell.options.treat_unset_variables_as_error {
+            Ok(Expansion::undefined())
+        } else {
+            let err: error::Error =
+                error::ErrorKind::ExpandingUnsetVariable(parameter.to_string()).into();
+            Err(err.into_fatal())
+        }
+    }
+
     async fn expand_parameter(
         &mut self,
         parameter: &brush_parser::word::Parameter,
         indirect: bool,
     ) -> Result<Expansion, error::Error> {
-        let expansion = self.expand_parameter_without_indirect(parameter).await?;
+        self.expand_parameter_internal(parameter, indirect, false)
+            .await
+    }
+
+    async fn expand_parameter_allowing_unset(
+        &mut self,
+        parameter: &brush_parser::word::Parameter,
+        indirect: bool,
+    ) -> Result<Expansion, error::Error> {
+        self.expand_parameter_internal(parameter, indirect, true)
+            .await
+    }
+
+    async fn expand_parameter_internal(
+        &mut self,
+        parameter: &brush_parser::word::Parameter,
+        indirect: bool,
+        allow_unset_vars: bool,
+    ) -> Result<Expansion, error::Error> {
+        let expansion = self
+            .expand_parameter_without_indirect(parameter, allow_unset_vars)
+            .await?;
         if !indirect {
             Ok(expansion)
         } else {
@@ -1388,7 +1431,7 @@ impl<'a> WordExpander<'a> {
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
 
-            self.expand_parameter_without_indirect(&inner_parameter)
+            self.expand_parameter_without_indirect(&inner_parameter, allow_unset_vars)
                 .await
         }
     }
@@ -1396,6 +1439,7 @@ impl<'a> WordExpander<'a> {
     async fn expand_parameter_without_indirect(
         &mut self,
         parameter: &brush_parser::word::Parameter,
+        allow_unset_vars: bool,
     ) -> Result<Expansion, error::Error> {
         match parameter {
             brush_parser::word::Parameter::Positional(p) => {
@@ -1407,7 +1451,7 @@ impl<'a> WordExpander<'a> {
                 {
                     Ok(Expansion::from(parameter.to_owned()))
                 } else {
-                    Ok(Expansion::undefined())
+                    self.undefined_expansion(parameter, allow_unset_vars)
                 }
             }
             brush_parser::word::Parameter::Special(s) => Ok(self.expand_special_parameter(s)),
@@ -1416,17 +1460,17 @@ impl<'a> WordExpander<'a> {
                     Err(error::ErrorKind::BadSubstitution(n.clone()).into())
                 } else if let Some((_, var)) = self.shell.env.get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
-                        Ok(Expansion::undefined())
+                        self.undefined_expansion(parameter, allow_unset_vars)
                     } else {
                         let value = var.value().try_get_cow_str(self.shell);
                         if let Some(value) = value {
                             Ok(Expansion::from(value.to_string()))
                         } else {
-                            Ok(Expansion::undefined())
+                            self.undefined_expansion(parameter, allow_unset_vars)
                         }
                     }
                 } else {
-                    Ok(Expansion::undefined())
+                    self.undefined_expansion(parameter, allow_unset_vars)
                 }
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
@@ -1451,10 +1495,10 @@ impl<'a> WordExpander<'a> {
                     if let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell) {
                         Ok(Expansion::from(value.to_string()))
                     } else {
-                        Ok(Expansion::undefined())
+                        self.undefined_expansion(parameter, allow_unset_vars)
                     }
                 } else {
-                    Ok(Expansion::undefined())
+                    self.undefined_expansion(parameter, allow_unset_vars)
                 }
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
