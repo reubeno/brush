@@ -1382,9 +1382,20 @@ impl Shell {
         self.env_str("IFS").unwrap_or_else(|| " \t\n".into())
     }
 
-    /// Returns the first character of the IFS variable, or a space if it is not set.
-    pub(crate) fn get_ifs_first_char(&self) -> char {
-        self.ifs().chars().next().unwrap_or(' ')
+    /// Returns the first character of the IFS variable.
+    /// Returns None if IFS is empty, or Some(char) if it has content.
+    /// Returns Some(' ') if IFS is unset (default).
+    pub(crate) fn get_ifs_first_char(&self) -> Option<char> {
+        match self.env.get("IFS") {
+            Some((_, var)) => {
+                // IFS is set - use first char, or None if empty
+                var.value().try_get_cow_str(self).and_then(|s| s.chars().next())
+            }
+            None => {
+                // IFS is unset - use default space
+                Some(' ')
+            }
+        }
     }
 
     /// Generates command completions for the shell.

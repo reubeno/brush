@@ -167,6 +167,12 @@ impl Expansion {
                                 .take(len_from_this_piece)
                                 .collect(),
                         ),
+                        ExpansionPiece::GlobExpandable(s) => ExpansionPiece::GlobExpandable(
+                            s.chars()
+                                .skip(desired_offset_into_this_piece)
+                                .take(len_from_this_piece)
+                                .collect(),
+                        ),
                     };
 
                     pieces.push(new_piece);
@@ -186,6 +192,32 @@ impl Expansion {
                 undefined: self.undefined,
                 from_array: self.from_array,
             }
+        }
+    }
+
+    fn make_glob_expandable_splittable(self) -> Self {
+        Self {
+            fields: self
+                .fields
+                .into_iter()
+                .map(|WordField(pieces)| {
+                    WordField(
+                        pieces
+                            .into_iter()
+                            .map(|piece| {
+                                if matches!(piece, ExpansionPiece::GlobExpandable(_)) {
+                                    piece.make_splittable()
+                                } else {
+                                    piece
+                                }
+                            })
+                            .collect(),
+                    )
+                })
+                .collect(),
+            concatenate: self.concatenate,
+            undefined: self.undefined,
+            from_array: self.from_array,
         }
     }
 }
@@ -235,8 +267,12 @@ impl From<String> for WordField {
 
 #[derive(Clone, Debug, PartialEq)]
 enum ExpansionPiece {
+    /// Text that should not be split by IFS or expanded as a glob pattern (e.g., quoted text)
     Unsplittable(String),
+    /// Text that should be split by IFS and expanded as a glob pattern (e.g., from variable expansion)
     Splittable(String),
+    /// Text that should be expanded as a glob pattern but not split by IFS (e.g., literal unquoted text)
+    GlobExpandable(String),
 }
 
 impl From<ExpansionPiece> for String {
@@ -244,6 +280,7 @@ impl From<ExpansionPiece> for String {
         match piece {
             ExpansionPiece::Unsplittable(s) => s,
             ExpansionPiece::Splittable(s) => s,
+            ExpansionPiece::GlobExpandable(s) => s,
         }
     }
 }
@@ -252,7 +289,7 @@ impl From<ExpansionPiece> for patterns::PatternPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Splittable(s) | ExpansionPiece::GlobExpandable(s) => Self::Pattern(s),
         }
     }
 }
@@ -261,7 +298,7 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Splittable(s) | ExpansionPiece::GlobExpandable(s) => Self::Pattern(s),
         }
     }
 }
@@ -269,22 +306,27 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
 impl ExpansionPiece {
     const fn as_str(&self) -> &str {
         match self {
-            Self::Unsplittable(s) => s.as_str(),
-            Self::Splittable(s) => s.as_str(),
+            Self::Unsplittable(s) | Self::Splittable(s) | Self::GlobExpandable(s) => s.as_str(),
         }
     }
 
     const fn len(&self) -> usize {
         match self {
-            Self::Unsplittable(s) => s.len(),
-            Self::Splittable(s) => s.len(),
+            Self::Unsplittable(s) | Self::Splittable(s) | Self::GlobExpandable(s) => s.len(),
         }
     }
 
     fn make_unsplittable(self) -> Self {
         match self {
             Self::Unsplittable(_) => self,
-            Self::Splittable(s) => Self::Unsplittable(s),
+            Self::Splittable(s) | Self::GlobExpandable(s) => Self::Unsplittable(s),
+        }
+    }
+
+    fn make_splittable(self) -> Self {
+        match self {
+            Self::Splittable(_) => self,
+            Self::Unsplittable(s) | Self::GlobExpandable(s) => Self::Splittable(s),
         }
     }
 }
@@ -359,6 +401,34 @@ pub(crate) async fn full_expand_and_split_str(
 ) -> Result<Vec<String>, error::Error> {
     let mut expander = WordExpander::new(shell, params);
     expander.full_expand_with_splitting(s).await
+}
+
+/// Expand and split a string, treating literal text as if it were from an expansion.
+/// This is used by compgen and similar builtins that need to split word lists.
+pub(crate) async fn expand_and_split_word_list(
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+    s: &str,
+) -> Result<Vec<String>, error::Error> {
+    let mut expander = WordExpander::new(shell, params);
+    // First do basic expansion
+    let expansion = expander.basic_expand(s).await?;
+    // Convert GlobExpandable to Splittable so it will be field-split
+    let expansion = expansion.make_glob_expandable_splittable();
+    // Now split and do pathname expansion
+    let fields = expander.split_fields(expansion);
+    let disable_globbing = expander.shell.options.disable_filename_globbing;
+    let result = fields
+        .into_iter()
+        .flat_map(|field| {
+            if disable_globbing {
+                vec![String::from(field)]
+            } else {
+                expander.expand_pathnames_in_field(field)
+            }
+        })
+        .collect();
+    Ok(result)
 }
 
 /// Assigns a value to a named parameter.
@@ -482,14 +552,6 @@ impl<'a> WordExpander<'a> {
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
         tracing::debug!(target: trace_categories::EXPANSION, "Basic expanding: '{word}'");
 
-        // Quick short circuit to avoid more expensive parsing. The characters below are
-        // understood to be the *only* ones indicative of *possible* expansion. There's
-        // still a possibility no expansion needs to be done, but that's okay; we'll still
-        // yield a correct result.
-        if !word.contains(['$', '`', '\\', '\'', '\"', '~', '{']) {
-            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
-        }
-
         // Apply brace expansion first, before anything else.
         let brace_expanded: String = self.brace_expand_if_needed(word)?.into_iter().join(" ");
         if tracing::enabled!(target: trace_categories::EXPANSION, tracing::Level::DEBUG)
@@ -516,7 +578,7 @@ impl<'a> WordExpander<'a> {
     /// command substitutions, and arithmetic.
     async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
         // When inside double-quotes, we need to parse the word with double-quote semantics.
-        if self.in_double_quotes {
+        let expansion = if self.in_double_quotes {
             // If the word already starts with a double-quote, we need to remove those quotes
             // and expand what's inside with normal (non-double-quote) semantics.
             if let Some(stripped) = word.strip_prefix('"') {
@@ -532,16 +594,25 @@ impl<'a> WordExpander<'a> {
                     let result = self.basic_expand(inner).await;
                     self.in_double_quotes = previously_in_double_quotes;
 
-                    return result;
+                    result?
+                } else {
+                    // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
+                    let wrapped = std::format!("\"{word}\"");
+                    self.basic_expand(&wrapped).await?
                 }
+            } else {
+                // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
+                let wrapped = std::format!("\"{word}\"");
+                self.basic_expand(&wrapped).await?
             }
-            // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
-            let wrapped = std::format!("\"{word}\"");
-            self.basic_expand(&wrapped).await
         } else {
             // When not inside double-quotes, perform normal expansion with quote removal
-            self.basic_expand(word).await
-        }
+            self.basic_expand(word).await?
+        };
+
+        // Since this is the result of a parameter expansion, literal text should be
+        // subject to field splitting. Convert GlobExpandable to Splittable.
+        Ok(expansion.make_glob_expandable_splittable())
     }
 
     fn brace_expand_if_needed(&self, word: &'a str) -> Result<Vec<Cow<'a, str>>, error::Error> {
@@ -578,6 +649,7 @@ impl<'a> WordExpander<'a> {
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// then perform field splitting and pathname expansion.
+    #[allow(dead_code)]
     pub async fn full_expand_with_splitting(
         &mut self,
         word: &str,
@@ -609,26 +681,85 @@ impl<'a> WordExpander<'a> {
         let mut fields: Vec<WordField> = vec![];
         let mut current_field = WordField::new();
 
+        // IFS whitespace characters have special handling
+        let is_ifs_whitespace = |c: char| matches!(c, ' ' | '\t' | '\n') && ifs.contains(c);
+
         // Go through the fields we have so far.
         for existing_field in expansion.fields {
             for piece in existing_field.0 {
                 match piece {
-                    ExpansionPiece::Unsplittable(_) => current_field.0.push(piece),
+                    ExpansionPiece::Unsplittable(_) | ExpansionPiece::GlobExpandable(_) => {
+                        current_field.0.push(piece)
+                    }
                     ExpansionPiece::Splittable(s) => {
-                        for c in s.chars() {
+                        let chars: Vec<char> = s.chars().collect();
+                        let mut i = 0;
+                        let mut at_very_start = fields.is_empty() && current_field.0.is_empty();
+
+                        while i < chars.len() {
+                            let c = chars[i];
+                            
                             if ifs.contains(c) {
-                                if !current_field.0.is_empty() {
+                                // We've hit an IFS character
+                                if is_ifs_whitespace(c) {
+                                    // Skip IFS whitespace sequences
+                                    while i < chars.len() && is_ifs_whitespace(chars[i]) {
+                                        i += 1;
+                                    }
+                                    
+                                    // Check if there's a non-whitespace IFS char following
+                                    if i < chars.len() && ifs.contains(chars[i]) && !is_ifs_whitespace(chars[i]) {
+                                        // Non-whitespace IFS after whitespace
+                                        // If we're at the very start, the leading whitespace is ignored,
+                                        // but the non-whitespace IFS still creates an empty field
+                                        if !at_very_start || !current_field.0.is_empty() {
+                                            // Not at very start, or we have content - emit field
+                                            fields.push(std::mem::take(&mut current_field));
+                                        } else {
+                                            // At very start with empty field - the non-whitespace IFS
+                                            // creates an empty field (because we're past leading whitespace)
+                                            fields.push(WordField::new());
+                                        }
+                                        at_very_start = false;
+                                        // Skip the non-whitespace IFS char and any trailing whitespace
+                                        i += 1;
+                                        while i < chars.len() && is_ifs_whitespace(chars[i]) {
+                                            i += 1;
+                                        }
+                                    } else {
+                                        // Just whitespace - emit field if non-empty
+                                        if !current_field.0.is_empty() {
+                                            fields.push(std::mem::take(&mut current_field));
+                                            at_very_start = false;
+                                        }
+                                        // If at very start, whitespace is leading and ignored
+                                    }
+                                } else {
+                                    // Non-whitespace IFS character
+                                    // Emit current field (may be empty)
                                     fields.push(std::mem::take(&mut current_field));
+                                    at_very_start = false;
+                                    i += 1;
+                                    
+                                    // Skip any trailing IFS whitespace
+                                    while i < chars.len() && is_ifs_whitespace(chars[i]) {
+                                        i += 1;
+                                    }
                                 }
                             } else {
+                                // Regular character - add to current field
+                                at_very_start = false;
                                 match current_field.0.last_mut() {
                                     Some(ExpansionPiece::Splittable(last)) => last.push(c),
-                                    Some(ExpansionPiece::Unsplittable(_)) | None => {
+                                    Some(ExpansionPiece::Unsplittable(_))
+                                    | Some(ExpansionPiece::GlobExpandable(_))
+                                    | None => {
                                         current_field
                                             .0
                                             .push(ExpansionPiece::Splittable(c.to_string()));
                                     }
                                 }
+                                i += 1;
                             }
                         }
                     }
@@ -674,7 +805,7 @@ impl<'a> WordExpander<'a> {
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
             brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
+                Expansion::from(ExpansionPiece::GlobExpandable(s))
             }
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
                 Expansion::from(ExpansionPiece::Unsplittable(s))
@@ -779,25 +910,38 @@ impl<'a> WordExpander<'a> {
 
             let fields_to_append = if concatenate {
                 #[expect(unstable_name_collisions)]
-                let mut concatenated: Vec<ExpansionPiece> = this_fields
-                    .into_iter()
-                    .map(|WordField(pieces)| {
-                        pieces
+                let concatenated: Vec<ExpansionPiece> = match concatenation_joiner {
+                    Some(joiner) => {
+                        // Join with the IFS first char
+                        this_fields
                             .into_iter()
-                            .map(|piece| piece.make_unsplittable())
+                            .map(|WordField(pieces)| {
+                                pieces
+                                    .into_iter()
+                                    .map(|piece| piece.make_unsplittable())
+                                    .collect()
+                            })
+                            .intersperse(vec![ExpansionPiece::Unsplittable(joiner.to_string())])
+                            .flatten()
                             .collect()
-                    })
-                    .intersperse(vec![ExpansionPiece::Unsplittable(
-                        concatenation_joiner.to_string(),
-                    )])
-                    .flatten()
-                    .collect();
+                    }
+                    None => {
+                        // Empty IFS - just concatenate with no separator
+                        this_fields
+                            .into_iter()
+                            .flat_map(|WordField(pieces)| {
+                                pieces.into_iter().map(|piece| piece.make_unsplittable())
+                            })
+                            .collect()
+                    }
+                };
 
-                // If there were no pieces, make sure there's an empty string after
-                // concatenation.
-                if concatenated.is_empty() {
-                    concatenated.push(ExpansionPiece::Splittable(String::new()));
-                }
+                // Ensure we have at least an empty field after concatenation
+                let concatenated = if concatenated.is_empty() {
+                    vec![ExpansionPiece::Splittable(String::new())]
+                } else {
+                    concatenated
+                };
 
                 vec![WordField(concatenated)]
             } else {
@@ -1874,9 +2018,10 @@ mod tests {
             full_expand_and_split_str(&mut shell, &params, "\"\"").await?,
             vec![""]
         );
+        // Literal text doesn't split - "a b" is treated as GlobExpandable
         assert_eq!(
             full_expand_and_split_str(&mut shell, &params, "a b").await?,
-            vec!["a", "b"]
+            vec!["a b"]
         );
         assert_eq!(
             full_expand_and_split_str(&mut shell, &params, "ab").await?,
