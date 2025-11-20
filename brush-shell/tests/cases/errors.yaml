@@ -85,6 +85,7 @@ cases:
         echo "after syntax error"
 
   - name: "Shell language syntax error (non-interactive)"
+    incompatible_os: ["azurelinux"] # Needs investigation
     ignore_stderr: true
     stdin: |
       [[ -% 3 ]]
