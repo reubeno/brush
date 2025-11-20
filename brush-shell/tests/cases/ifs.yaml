@@ -1,0 +1,395 @@
+name: "IFS (Internal Field Separator) tests"
+cases:
+  - name: "Default IFS value"
+    stdin: |
+      # Default IFS is space, tab, newline
+      [[ "$IFS" == $' \t\n' ]] && echo "IFS has default value"
+
+  - name: "Field splitting with default IFS"
+    stdin: |
+      var="one two	three
+      four"
+      echo "Fields:" $var
+
+  - name: "Field splitting with custom single-char IFS"
+    stdin: |
+      IFS=':'
+      var="one:two:three"
+      echo $var
+
+  - name: "Field splitting with multi-char IFS"
+    stdin: |
+      IFS=':,'
+      var="one:two,three:four"
+      echo $var
+
+  - name: "Empty IFS disables field splitting"
+    stdin: |
+      IFS=''
+      var="one two	three"
+      echo "[$var]"
+      # Should print with all whitespace preserved
+
+  - name: "Empty IFS with expansion"
+    stdin: |
+      IFS=''
+      var="a b c"
+      set -- $var
+      echo "Count: $#"
+      echo "[$1]"
+
+  - name: "Unset IFS uses default splitting"
+    stdin: |
+      unset IFS
+      var="one two	three"
+      echo $var
+
+  - name: "IFS whitespace vs non-whitespace splitting"
+    stdin: |
+      # Non-whitespace IFS chars create empty fields
+      IFS=':'
+      var=":one::two:"
+      set -- $var
+      echo "Count: $#"
+      echo "Args: $@"
+
+  - name: "IFS whitespace splitting ignores leading/trailing"
+    stdin: |
+      # Whitespace IFS chars ignore leading/trailing
+      IFS=' '
+      var="  one  two  "
+      set -- $var
+      echo "Count: $#"
+      echo "Args: $@"
+
+  - name: "Mixed whitespace and non-whitespace IFS"
+    stdin: |
+      IFS=' :'
+      var="one:two  three : four"
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "Mixed IFS leading non-whitespace"
+    stdin: |
+      IFS=': '
+      var=":one: :two"
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "Mixed IFS trailing non-whitespace"
+    stdin: |
+      IFS=' :'
+      var="one :two: "
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "IFS only whitespace multiple chars"
+    stdin: |
+      IFS=$' \t'
+      var="  one		two  	three  "
+      set -- $var
+      echo "Count: $#"
+      echo "Args: $@"
+
+  - name: "IFS only non-whitespace multiple chars"
+    stdin: |
+      IFS=':,'
+      var=":,one,:,two,:"
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "IFS only tab character"
+    stdin: |
+      IFS=$'\t'
+      var="		a		b		"
+      set -- $var
+      echo "Count: $#"
+      echo "Args: $@"
+
+  - name: "IFS only newline character"
+    stdin: |
+      IFS=$'\n'
+      var="
+
+      a
+
+      b
+
+      "
+      set -- $var
+      echo "Count: $#"
+      echo "Args: $@"
+
+  - name: "IFS affects command substitution"
+    stdin: |
+      IFS=':'
+      result=$(echo "a:b:c")
+      # Command substitution itself doesn't split, but expansion does
+      set -- $result
+      echo "$#"
+      echo "$@"
+
+  - name: "IFS with command substitution multiline"
+    stdin: |
+      IFS=$'\n'
+      result=$(printf "a\nb\nc")
+      set -- $result
+      echo "Count: $#"
+      echo "$1|$2|$3"
+
+  - name: "IFS affects arithmetic expansion"
+    stdin: |
+      IFS=' '
+      # Arithmetic expansion result is splittable
+      set -- $((1 + 1)) $((2 + 2))
+      echo "Count: $#"
+      echo "$@"
+
+  - name: "IFS in array expansion"
+    stdin: |
+      arr=(one two three)
+      IFS=':'
+      echo "${arr[*]}"
+      # With $* should join with first char of IFS
+
+  - name: "IFS with $* vs $@"
+    stdin: |
+      set -- one two three
+      IFS=':'
+      echo "$*"
+      echo "$@"
+
+  - name: "IFS with $* unquoted"
+    stdin: |
+      set -- "a:b" "c:d"
+      IFS=':'
+      # Unquoted $* joins then splits
+      set -- $*
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "IFS null char handling"
+    stdin: |
+      IFS=':'
+      var=""
+      set -- $var
+      echo "Empty var count: $#"
+
+  - name: "IFS preservation across commands"
+    stdin: |
+      IFS=':'
+      echo "First: $IFS"
+      var="a:b"
+      echo $var
+      echo "After: $IFS"
+
+  - name: "IFS in subshell"
+    stdin: |
+      IFS=':'
+      (
+        echo "In subshell: [$IFS]"
+        var="a:b:c"
+        set -- $var
+        echo "Count: $#"
+      )
+      echo "Parent: [$IFS]"
+
+  - name: "IFS local to command"
+    stdin: |
+      var="a:b:c"
+      IFS=':' echo $var
+      # IFS assignment should only affect that command
+      echo "After: [$IFS]"
+
+  - name: "IFS does not affect for loop literal words"
+    stdin: |
+      IFS=':'
+      for word in a:b:c; do
+        echo "[$word]"
+      done
+
+  - name: "IFS affects for loop variable expansion"
+    stdin: |
+      IFS=':'
+      var="a:b:c"
+      for word in $var; do
+        echo "[$word]"
+      done
+
+  - name: "IFS affects for loop command substitution"
+    stdin: |
+      IFS=':'
+      for word in $(echo "x:y:z"); do
+        echo "[$word]"
+      done
+
+  - name: "IFS with quoted vs unquoted expansion"
+    stdin: |
+      IFS=':'
+      var="a:b:c"
+      echo "Unquoted:" $var
+      echo "Quoted: $var"
+
+  - name: "IFS with partially quoted expansion"
+    stdin: |
+      IFS=':'
+      var="a:b:c"
+      set -- "$var":more
+      echo "Count: $#"
+      echo "$@"
+
+  - name: "IFS whitespace sequence handling"
+    stdin: |
+      IFS=' '
+      var="a    b"
+      set -- $var
+      echo "Count: $#"
+      echo "Args: $@"
+
+  - name: "IFS non-whitespace sequence handling"
+    stdin: |
+      IFS=':'
+      var="a::::b"
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "IFS with parameter expansion"
+    stdin: |
+      IFS=':'
+      var="a:b:c"
+      result=${var}
+      set -- $result
+      echo "$#"
+      echo "$@"
+
+  - name: "IFS with parameter expansion default value"
+    stdin: |
+      IFS=':'
+      set -- ${unset:-a:b:c}
+      echo "Count: $#"
+      echo "$@"
+
+  - name: "IFS with parameter expansion empty default"
+    stdin: |
+      IFS=':'
+      set -- ${unset:-}
+      echo "Count: $#"
+
+  - name: "IFS with parameter length"
+    stdin: |
+      IFS=':'
+      var="a:b:c"
+      # Length expansion returns a number, not subject to further splitting
+      len=${#var}
+      set -- $len
+      echo "Count: $#"
+      echo "[$1]"
+
+  - name: "IFS with glob pattern literal"
+    stdin: |
+      IFS=':'
+      # Glob patterns as literals shouldn't split
+      for word in *.txt:*.sh; do
+        echo "[$word]"
+      done
+
+  - name: "IFS newline handling"
+    stdin: |
+      IFS=$'\n'
+      var="a
+      b
+      c"
+      set -- $var
+      echo "Count: $#"
+      echo "$1|$2|$3"
+
+  - name: "IFS tab handling"
+    stdin: |
+      IFS=$'\t'
+      var="a	b	c"
+      set -- $var
+      echo "Count: $#"
+      echo "$1|$2|$3"
+
+  - name: "IFS with backslash in value"
+    stdin: |
+      IFS=':'
+      var='a\:b:c\:d'
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "IFS first char for joining"
+    stdin: |
+      set -- a b c
+      IFS=':'
+      # First char of IFS used for $* joining
+      result="$*"
+      echo "[$result]"
+
+  - name: "IFS first char empty IFS"
+    stdin: |
+      set -- a b c
+      IFS=''
+      result="$*"
+      echo "[$result]"
+
+  - name: "IFS multiple whitespace at start"
+    stdin: |
+      IFS=' '
+      var="     a b"
+      set -- $var
+      echo "Count: $#"
+      echo "$@"
+
+  - name: "IFS multiple whitespace at end"
+    stdin: |
+      IFS=' '
+      var="a b     "
+      set -- $var
+      echo "Count: $#"
+      echo "$@"
+
+  - name: "IFS with read builtin integration"
+    stdin: |
+      IFS=':'
+      echo "a:b:c" | (read x y z; echo "x=[$x] y=[$y] z=[$z]")
+
+  - name: "IFS whitespace before non-whitespace"
+    stdin: |
+      IFS=' :'
+      var=" :a"
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "IFS non-whitespace before whitespace"
+    stdin: |
+      IFS=': '
+      var=": a"
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
