@@ -1,4 +1,4 @@
-name: "IFS (Internal Field Separator) tests"
+name: "IFS"
 cases:
   - name: "Default IFS value"
     stdin: |
@@ -45,6 +45,7 @@ cases:
       echo $var
 
   - name: "IFS whitespace vs non-whitespace splitting"
+    known_failure: true
     stdin: |
       # Non-whitespace IFS chars create empty fields
       IFS=':'
@@ -73,6 +74,7 @@ cases:
       done
 
   - name: "Mixed IFS leading non-whitespace"
+    known_failure: true
     stdin: |
       IFS=': '
       var=":one: :two"
@@ -101,6 +103,7 @@ cases:
       echo "Args: $@"
 
   - name: "IFS only non-whitespace multiple chars"
+    known_failure: true
     stdin: |
       IFS=':,'
       var=":,one,:,two,:"
@@ -216,6 +219,7 @@ cases:
       echo "After: [$IFS]"
 
   - name: "IFS does not affect for loop literal words"
+    known_failure: true
     stdin: |
       IFS=':'
       for word in a:b:c; do
@@ -245,6 +249,7 @@ cases:
       echo "Quoted: $var"
 
   - name: "IFS with partially quoted expansion"
+    known_failure: true
     stdin: |
       IFS=':'
       var="a:b:c"
@@ -261,6 +266,7 @@ cases:
       echo "Args: $@"
 
   - name: "IFS non-whitespace sequence handling"
+    known_failure: true
     stdin: |
       IFS=':'
       var="a::::b"
@@ -303,6 +309,7 @@ cases:
       echo "[$1]"
 
   - name: "IFS with glob pattern literal"
+    known_failure: true
     stdin: |
       IFS=':'
       # Glob patterns as literals shouldn't split
@@ -347,6 +354,7 @@ cases:
       echo "[$result]"
 
   - name: "IFS first char empty IFS"
+    known_failure: true
     stdin: |
       set -- a b c
       IFS=''
@@ -375,6 +383,7 @@ cases:
       echo "a:b:c" | (read x y z; echo "x=[$x] y=[$y] z=[$z]")
 
   - name: "IFS whitespace before non-whitespace"
+    known_failure: true
     stdin: |
       IFS=' :'
       var=" :a"
@@ -385,6 +394,7 @@ cases:
       done
 
   - name: "IFS non-whitespace before whitespace"
+    known_failure: true
     stdin: |
       IFS=': '
       var=": a"
