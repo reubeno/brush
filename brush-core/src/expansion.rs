@@ -1347,6 +1347,13 @@ impl<'a> WordExpander<'a> {
         } else {
             let expansion = self.expand_parameter(parameter, false).await?;
             let parameter_str: String = expansion.into();
+
+            // If the expansion is empty (e.g., ${!*} with no positional parameters),
+            // return None rather than trying to parse empty string as a parameter
+            if parameter_str.is_empty() {
+                return Ok((None, None, None));
+            }
+
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
             Ok(self.try_resolve_parameter_to_variable_without_indirect(&inner_parameter))
@@ -1422,6 +1429,13 @@ impl<'a> WordExpander<'a> {
             Ok(expansion)
         } else {
             let parameter_str: String = expansion.into();
+
+            // If the expansion is empty (e.g., ${!*} with no positional parameters),
+            // return empty expansion rather than trying to parse empty string as a parameter
+            if parameter_str.is_empty() {
+                return Ok(Expansion::default());
+            }
+
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
 

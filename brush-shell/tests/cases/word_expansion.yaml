@@ -69,6 +69,15 @@ cases:
       quoted=$"Hello, world"
       echo "Content: [${quoted}]"
 
+  - name: "Indirect expansion of special parameters (no positional args)"
+    stdin: |
+      # When there are no positional args, $* and $@ expand to empty
+      # Indirect expansion ${!*} and ${!@} should also expand to empty (not error)
+      foo=${!*}
+      echo "foo=[${foo}]"
+      bar=${!@}
+      echo "bar=[${bar}]"
+
   - name: "Command substitution"
     stdin: |
       var="value"
