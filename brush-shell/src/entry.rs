@@ -310,6 +310,7 @@ async fn instantiate_shell(
             shell_name: argv0,
             shell_product_display_str: Some(productinfo::get_product_display_str()),
             sh_mode: args.sh_mode,
+            treat_unset_variables_as_error: args.treat_unset_variables_as_error,
             verbose: args.verbose,
             max_function_call_depth: None,
             key_bindings: None,

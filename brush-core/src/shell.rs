@@ -321,6 +321,9 @@ pub struct CreateOptions {
     /// Whether to run in maximal POSIX sh compatibility mode.
     #[builder(default)]
     pub sh_mode: bool,
+    /// Whether to treat expansion of unset variables as an error.
+    #[builder(default)]
+    pub treat_unset_variables_as_error: bool,
     /// Whether to print verbose output.
     #[builder(default)]
     pub verbose: bool,
@@ -1211,32 +1214,6 @@ impl Shell {
     pub fn env_str(&self, name: &str) -> Option<Cow<'_, str>> {
         self.env.get_str(name, self)
     }
-
-    // /// Tries to retrieve a variable from the shell's environment for use in expansion.
-    // /// If the variable is unset and the shell is configured to treat unset variables
-    // /// as errors, an error is returned. Otherwise, if the variable is unset, an empty
-    // /// string is returned.
-    // ///
-    // ///
-    // /// # Arguments
-    // ///
-    // /// * `name` - The name of the variable to retrieve.
-    // pub(crate) fn env_str_for_expansion(&self, name: &str) -> Result<Cow<'_, str>, error::Error> {
-    //     let value = self.env_var(name).map(|var| var.resolve_value(self));
-
-    //     if let Some(value) = value {
-    //         if value.is_set() {
-    //             return Ok(value.to_cow_str(self).to_string().into());
-    //         }
-    //     }
-
-    //     if self.options.treat_unset_variables_as_error {
-    //         let err: error::Error = error::ErrorKind::ExpandingUnsetVariable(name.into()).into();
-    //         return Err(err.into_fatal());
-    //     }
-
-    //     Ok("".into())
-    // }
 
     /// Tries to retrieve a variable from the shell's environment.
     ///

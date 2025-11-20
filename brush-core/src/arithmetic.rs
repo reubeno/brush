@@ -21,7 +21,7 @@ pub enum EvalError {
     FailedToTokenizeExpression,
 
     /// Failed to expand an arithmetic expression.
-    #[error("failed to expand expression: '{0}'")]
+    #[error("failed to expand expression: {0}")]
     FailedToExpandExpression(String),
 
     /// Failed to access an element of an array.
@@ -33,7 +33,7 @@ pub enum EvalError {
     FailedToUpdateEnvironment,
 
     /// Failed to parse an arithmetic expression.
-    #[error("failed to parse expression: '{0}'")]
+    #[error("failed to parse expression: {0}")]
     ParseError(String),
 
     /// Failed to trace an arithmetic expression.
@@ -41,7 +41,7 @@ pub enum EvalError {
     TraceError,
 
     /// Error expanding an unset variable.
-    #[error("expanding unset variable: '{0}'")]
+    #[error("expanding unset variable: {0}")]
     ExpandingUnsetVariable(String),
 }
 

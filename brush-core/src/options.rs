@@ -209,6 +209,7 @@ impl RuntimeOptions {
             posix_mode: create_options.posix,
             print_commands_and_arguments: create_options.print_commands_and_arguments,
             print_shell_input_lines: create_options.verbose,
+            treat_unset_variables_as_error: create_options.treat_unset_variables_as_error,
             remember_command_locations: true,
             check_window_size_after_external_commands: true,
             save_multiline_cmds_in_history: true,

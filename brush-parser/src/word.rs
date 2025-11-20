@@ -99,13 +99,13 @@ impl Display for Parameter {
             Self::Special(s) => write!(f, "${s}"),
             Self::Named(name) => write!(f, "${{{name}}}"),
             Self::NamedWithIndex { name, index } => {
-                write!(f, "${{{name}}}[{index}]")
+                write!(f, "${{{name}[{index}]}}")
             }
             Self::NamedWithAllIndices { name, concatenate } => {
                 if *concatenate {
-                    write!(f, "${{{name}}}[*]")
+                    write!(f, "${{{name}[*]}}")
                 } else {
-                    write!(f, "${{{name}}}[@]")
+                    write!(f, "${{{name}[@]}}")
                 }
             }
         }

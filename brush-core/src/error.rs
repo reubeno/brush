@@ -259,7 +259,7 @@ pub enum ErrorKind {
     UnknownKeyBindingFunction(String),
 
     /// Expanding an unset variable.
-    #[error("unset variable: {0}")]
+    #[error("expanding unset variable: {0}")]
     ExpandingUnsetVariable(String),
 }
 
