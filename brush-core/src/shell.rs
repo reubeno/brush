@@ -321,6 +321,9 @@ pub struct CreateOptions {
     /// Whether to run in maximal POSIX sh compatibility mode.
     #[builder(default)]
     pub sh_mode: bool,
+    /// Whether to treat expansion of unset variables as an error.
+    #[builder(default)]
+    pub treat_unset_variables_as_error: bool,
     /// Whether to print verbose output.
     #[builder(default)]
     pub verbose: bool,

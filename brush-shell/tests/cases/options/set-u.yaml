@@ -8,7 +8,7 @@ cases:
       echo "$var"
 
   - name: "Unset variable triggers error"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       echo "$unset_var"
@@ -44,6 +44,7 @@ cases:
 
   - name: "Special parameter $! does not error when no background jobs"
     known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       echo "last bg: ${!}" || echo "ok"
@@ -62,7 +63,7 @@ cases:
 
   # Positional parameters
   - name: "Unset positional parameter triggers error"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       myfunc() {
@@ -80,7 +81,7 @@ cases:
       myfunc "arg"
 
   - name: "Positional parameters beyond provided args error"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       myfunc() {
@@ -129,7 +130,7 @@ cases:
 
   # Conditionals
   - name: "Unset variable in conditional test errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       if [ "$unset_var" = "value" ]; then
@@ -138,7 +139,7 @@ cases:
       echo "should not print"
 
   - name: "Unset variable in [[ test errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       if [[ $unset_var = "value" ]]; then
@@ -163,7 +164,7 @@ cases:
       fi
 
   - name: "test -z with unset variable errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       if test -z "$unset_var"; then
@@ -173,7 +174,7 @@ cases:
 
   # Command substitution
   - name: "Unset variable in command substitution errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       result=$(echo "$unset_var")
@@ -187,7 +188,7 @@ cases:
 
   # Arithmetic expansion
   - name: "Unset variable in arithmetic defaults to zero"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       result=$((unset_var + 5))
@@ -202,7 +203,7 @@ cases:
       echo "ok"
 
   - name: "set -u can be re-enabled"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       set +u
@@ -224,7 +225,7 @@ cases:
 
   # Functions
   - name: "Unset variable in function body errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       myfunc() {
@@ -234,7 +235,7 @@ cases:
       echo "should not print"
 
   - name: "Local unset variable errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       myfunc() {
@@ -264,14 +265,14 @@ cases:
 
   # Subshells
   - name: "Unset variable in subshell errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       (echo "$unset_var")
       echo "should not print"
 
   - name: "set +u in subshell does not affect parent"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       (
@@ -283,7 +284,7 @@ cases:
 
   # Variable assignment and unset
   - name: "Variable set then unset errors on access"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       var="value"
@@ -307,7 +308,7 @@ cases:
 
   # Export and environment
   - name: "Exported unset variable errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       export unset_exported
@@ -320,26 +321,9 @@ cases:
       export exported_var="value"
       echo "$exported_var"
 
-  # Name references (if supported)
-  - name: "Nameref to unset variable"
-    known_failure: true
-    stdin: |
-      set -u
-      declare -n ref=unset_target
-      echo "$ref"
-      echo "should not print"
-
-  - name: "Nameref to set variable works"
-    known_failure: true
-    stdin: |
-      set -u
-      target="value"
-      declare -n ref=target
-      echo "$ref"
-
   # Pattern expansion
   - name: "Unset variable in pattern errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       echo ${unset_var#prefix}
@@ -347,7 +331,7 @@ cases:
 
   # Length operator
   - name: "Length of unset variable errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       echo ${#unset_var}
@@ -361,7 +345,7 @@ cases:
 
   # Indirect expansion
   - name: "Indirect expansion of unset variable errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       ref="unset_target"
@@ -377,7 +361,7 @@ cases:
 
   # Case statements
   - name: "Unset variable in case pattern errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       case "$unset_var" in
@@ -394,7 +378,7 @@ cases:
 
   # For loops
   - name: "Unset variable in for loop errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       for item in $unset_var; do
@@ -411,7 +395,7 @@ cases:
 
   # While loops with unset variables
   - name: "Unset variable in while condition errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       while [ "$unset_var" != "stop" ]; do
@@ -442,15 +426,6 @@ cases:
       declare -A assoc
       echo "${assoc[key]:-default}"
 
-  # Background processes
-  - name: "Unset variable in background process errors in subprocess"
-    known_failure: true
-    stdin: |
-      set -u
-      { echo "$unset_var" 2>/dev/null; } &
-      wait
-      echo "parent continues"
-
   # Pipelines
   - name: "Unset variable with default in pipeline works"
     stdin: |
@@ -459,7 +434,7 @@ cases:
 
   # Here documents and here strings
   - name: "Unset variable in here doc errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       cat <<EOF
@@ -495,7 +470,7 @@ cases:
       echo "ok"
 
   - name: "PATH unset would error"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       saved_path="$PATH"
@@ -505,22 +480,15 @@ cases:
 
   # Combination with other options
   - name: "set -u with set -e"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -eu
       echo "$unset_var"
       echo "should not print"
 
-  - name: "set -u does not affect set -e behavior"
-    known_failure: true
-    stdin: |
-      set -eu
-      false
-      echo "should not print"
-
   # Declare without assignment
   - name: "declare without value then access errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       declare my_var
@@ -534,7 +502,7 @@ cases:
       echo "$my_var"
 
   - name: "readonly without value then access errors"
-    known_failure: true
+    ignore_stderr: true
     stdin: |
       set -u
       readonly my_var

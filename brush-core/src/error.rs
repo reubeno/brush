@@ -257,6 +257,10 @@ pub enum ErrorKind {
     /// Unknown key binding function.
     #[error("unknown key binding function: {0}")]
     UnknownKeyBindingFunction(String),
+
+    /// Expanding an unset variable.
+    #[error("expanding unset variable: {0}")]
+    ExpandingUnsetVariable(String),
 }
 
 impl BuiltinError for Error {}

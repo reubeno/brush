@@ -136,6 +136,10 @@ pub struct CommandLineArgs {
     #[clap(short = 't', help_heading = HEADING_STANDARD_OPTIONS)]
     pub exit_after_one_command: bool,
 
+    /// Treat expansion of an unset variable as an error.
+    #[clap(short = 'u', help_heading = HEADING_STANDARD_OPTIONS)]
+    pub treat_unset_variables_as_error: bool,
+
     /// Print input when it's processed.
     #[clap(short = 'v', long = "verbose", help_heading = HEADING_STANDARD_OPTIONS)]
     pub verbose: bool,

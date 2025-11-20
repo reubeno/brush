@@ -9,6 +9,9 @@
 //! - Command substitution expressions.
 //! - Arithmetic expansion expressions.
 
+use std::fmt::Debug;
+use std::fmt::Display;
+
 use crate::ParserOptions;
 use crate::ast;
 use crate::error;
@@ -89,6 +92,26 @@ pub enum Parameter {
     },
 }
 
+impl Display for Parameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Positional(n) => write!(f, "${n}"),
+            Self::Special(s) => write!(f, "${s}"),
+            Self::Named(name) => write!(f, "${{{name}}}"),
+            Self::NamedWithIndex { name, index } => {
+                write!(f, "${{{name}[{index}]}}")
+            }
+            Self::NamedWithAllIndices { name, concatenate } => {
+                if *concatenate {
+                    write!(f, "${{{name}[*]}}")
+                } else {
+                    write!(f, "${{{name}[@]}}")
+                }
+            }
+        }
+    }
+}
+
 /// A special parameter, used in a parameter expansion.
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
@@ -110,6 +133,26 @@ pub enum SpecialParameter {
     LastBackgroundProcessId,
     /// The name of the shell.
     ShellName,
+}
+
+impl Display for SpecialParameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AllPositionalParameters { concatenate } => {
+                if *concatenate {
+                    write!(f, "*")
+                } else {
+                    write!(f, "@")
+                }
+            }
+            Self::PositionalParameterCount => write!(f, "#"),
+            Self::LastExitStatus => write!(f, "?"),
+            Self::CurrentOptionFlags => write!(f, "-"),
+            Self::ProcessId => write!(f, "$"),
+            Self::LastBackgroundProcessId => write!(f, "!"),
+            Self::ShellName => write!(f, "0"),
+        }
+    }
 }
 
 /// A parameter expression, used in a parameter expansion.
