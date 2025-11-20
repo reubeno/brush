@@ -366,6 +366,16 @@ impl<'a> SimpleCommand<'a> {
         }
     }
 
+    /// Returns a reference to the shell for this command.
+    pub fn shell(&self) -> &Shell {
+        &self.shell
+    }
+
+    /// Returns a mutable reference to the shell for this command.
+    pub fn shell_mut(&mut self) -> &mut Shell {
+        &mut self.shell
+    }
+
     /// Executes the simple command.
     ///
     /// The command may be a builtin, a shell function, or an externally

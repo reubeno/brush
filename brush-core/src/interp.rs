@@ -1040,20 +1040,15 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
-                Err(err) => {
+                Err((err, returned_context)) => {
                     // DBG:RRO
-                    // let _ = context.shell.display_error(&mut stderr, &err).await;
+                    // let _ = returned_context.shell.display_error(&mut stderr, &err).await;
                     // TODO: Use the error formatter.
                     let _ = writeln!(stderr, "error: {err:#}");
 
-                    // FIXME: This doesn't use shell context for error conversion, which may
-                    // lose information about control flow (e.g., fatal errors). The proper
-                    // approach would be:
-                    //   let result = err.into_result(&context.shell);
-                    //   Ok(result.into())
-                    // However, context is moved into execute_command, so we can't access it here.
-                    let exit_code: ExecutionExitCode = ExecutionExitCode::from(&err);
-                    Ok(ExecutionResult::from(exit_code).into())
+                    // Convert error with shell context to preserve fatal error semantics
+                    let result = err.into_result(&returned_context.shell);
+                    Ok(result.into())
                 }
             }
         } else {
@@ -1082,13 +1077,13 @@ impl ExecuteInPipeline for ast::SimpleCommand {
     }
 }
 
-async fn execute_command(
-    mut context: PipelineExecutionContext<'_>,
+async fn execute_command<'a>(
+    mut context: PipelineExecutionContext<'a>,
     params: ExecutionParameters,
     cmd_name: String,
-    assignments: Vec<&ast::Assignment>,
+    assignments: Vec<&'a ast::Assignment>,
     args: Vec<CommandArg>,
-) -> Result<ExecutionSpawnResult, error::Error> {
+) -> Result<ExecutionSpawnResult, (error::Error, PipelineExecutionContext<'a>)> {
     // Push a new ephemeral environment scope for the duration of the command. We'll
     // set command-scoped variable assignments after doing so, and revert them before
     // returning.
@@ -1096,7 +1091,7 @@ async fn execute_command(
 
     for assignment in &assignments {
         // Ensure it's tagged as exported and created in the command scope.
-        apply_assignment(
+        match apply_assignment(
             assignment,
             &mut context.shell,
             &params,
@@ -1104,32 +1099,82 @@ async fn execute_command(
             Some(EnvironmentScope::Command),
             EnvironmentScope::Command,
         )
-        .await?;
+        .await
+        {
+            Ok(()) => {}
+            Err(e) => {
+                // Clean up: pop the scope before returning error
+                let _ = context.shell.env.pop_scope(EnvironmentScope::Command);
+                return Err((e, context));
+            }
+        }
     }
 
     if context.shell.options.print_commands_and_arguments {
-        context
+        match context
             .shell
             .trace_command(
                 &params,
                 args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
             )
-            .await?;
+            .await
+        {
+            Ok(()) => {}
+            Err(e) => {
+                // Clean up: pop the scope before returning error
+                let _ = context.shell.env.pop_scope(EnvironmentScope::Command);
+                return Err((e, context));
+            }
+        }
     }
 
-    // Construct the command struct.
+    let process_group_id = context.process_group_id;
+
+    // Construct the command struct. Note: this moves context.shell.
     let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name, args);
-    cmd.process_group_id = context.process_group_id;
+    cmd.process_group_id = process_group_id;
 
     // Arrange to pop off that ephemeral environment scope.
     cmd.post_execute = Some(|shell| shell.env.pop_scope(EnvironmentScope::Command));
 
     // Run through any pre-execution hooks.
-    commands::on_preexecute(&mut cmd).await?;
+    if let Err(e) = commands::on_preexecute(&mut cmd).await {
+        // On error from pre-execute hooks, we need to manually pop the scope since
+        // post_execute won't run. The shell has been moved into cmd, so we access
+        // it via the shell accessor methods.
+
+        // Clean up the environment scope
+        let _ = cmd.shell_mut().env.pop_scope(EnvironmentScope::Command);
+
+        // Convert error with shell context before shell is consumed
+        let result = e.into_result(cmd.shell());
+
+        // Return the execution result directly since we can't reconstruct
+        // PipelineExecutionContext (shell was moved into cmd).
+        return Ok(result.into());
+    }
 
     // Execute
-    // TODO: jobs: do we need to move self back to foreground on error here?
-    cmd.execute().await
+    // Note: On success, the scope is popped by the post_execute callback.
+    // On error, post_execute is also called (if the shell wasn't consumed),
+    // so the scope should be cleaned up.
+    match cmd.execute().await {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            // We don't have access to the shell here to properly convert the error
+            // because it was consumed by execute(). However, most critical errors
+            // (like set -u violations) happen during the expansion phase above,
+            // before SimpleCommand is created, so they're properly handled with
+            // shell context.
+            //
+            // For errors from execute(), we do a simple conversion without shell context.
+            // This means we lose the fatal error / ExitShell control flow information,
+            // but that's acceptable for command execution errors.
+            // TODO: Consider refactoring to preserve shell context through execute()
+            let exit_code = ExecutionExitCode::from(&e);
+            Ok(ExecutionResult::from(exit_code).into())
+        }
+    }
 }
 
 async fn expand_assignment(
