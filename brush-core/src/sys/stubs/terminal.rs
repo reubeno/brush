@@ -67,6 +67,6 @@ pub fn move_to_foreground(_pid: sys::process::ProcessId) -> Result<(), error::Er
 /// Moves the current process to the foreground of the attached terminal.
 ///
 /// This is a stub implementation that returns `None`.
-pub fn move_self_to_foreground() -> Result<(), error::Error> {
+pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
     Ok(())
 }
