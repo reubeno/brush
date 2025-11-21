@@ -97,7 +97,8 @@ pub fn move_to_foreground(pid: sys::process::ProcessId) -> Result<(), error::Err
 }
 
 /// Moves the current process to the foreground of the attached terminal.
-pub fn move_self_to_foreground() -> Result<(), error::Error> {
+// This function needs to return `std::io::Error` so that the OS error code can be recovered.
+pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
     if std::io::stdin().is_terminal() {
         let pgid = nix::unistd::getpgid(None)?;
 

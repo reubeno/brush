@@ -61,6 +61,6 @@ impl CommandFgControlExt for std::process::Command {
 fn setup_process_before_exec() -> Result<(), std::io::Error> {
     use crate::sys;
 
-    sys::terminal::move_self_to_foreground().map_err(std::io::Error::other)?;
+    sys::terminal::move_self_to_foreground()?;
     Ok(())
 }
