@@ -83,7 +83,7 @@ deny = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/zhiburt/expectrl"]
+allow-git = []
 
 [sources.allow-org]
 # 1 or more github.com organizations to allow git sources for
