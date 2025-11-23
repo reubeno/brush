@@ -8,14 +8,12 @@ cases:
       echo "Text after call"
 
   - name: "Basic error case"
-    known_failure: true
     stdin: |
       set -e
       false
       echo "Text after call"
 
   - name: "Multiple commands before error"
-    known_failure: true
     stdin: |
       set -e
       echo "first"
@@ -24,7 +22,6 @@ cases:
       echo "should not print"
 
   - name: "Error in middle of script"
-    known_failure: true
     stdin: |
       set -e
       echo "before"
@@ -71,7 +68,6 @@ cases:
       echo "after until"
 
   - name: "Error in if body DOES exit"
-    known_failure: true
     stdin: |
       set -e
       if true; then
@@ -81,7 +77,6 @@ cases:
       echo "after if"
 
   - name: "Error in else body DOES exit"
-    known_failure: true
     stdin: |
       set -e
       if false; then
@@ -93,7 +88,6 @@ cases:
       echo "after if"
 
   - name: "Error in while body DOES exit"
-    known_failure: true
     stdin: |
       set -e
       count=0
@@ -106,7 +100,6 @@ cases:
 
   # Boolean operators - set -e should NOT exit with && and ||
   - name: "Error on right side of && does not exit"
-    known_failure: true
     stdin: |
       set -e
       true && false
@@ -119,7 +112,6 @@ cases:
       echo "after &&"
 
   - name: "Error on right side of || does not exit"
-    known_failure: true
     stdin: |
       set -e
       false || false
@@ -132,7 +124,6 @@ cases:
       echo "after ||"
 
   - name: "Error after && chain DOES exit"
-    known_failure: true
     stdin: |
       set -e
       true && true
@@ -159,7 +150,6 @@ cases:
       echo "after negation"
 
   - name: "Error after negated command DOES exit"
-    known_failure: true
     stdin: |
       set -e
       ! false
@@ -180,7 +170,6 @@ cases:
       echo "after pipeline"
 
   - name: "Error in last command of pipeline exits"
-    known_failure: true
     stdin: |
       set -e
       true | false
@@ -204,7 +193,6 @@ cases:
 
   # Functions
   - name: "Error in function body exits function and script"
-    known_failure: true
     stdin: |
       set -e
       myfunc() {
@@ -229,7 +217,6 @@ cases:
       echo "after"
 
   - name: "Function called with && does not exit"
-    known_failure: true
     stdin: |
       set -e
       myfunc() {
@@ -239,7 +226,6 @@ cases:
       echo "after"
 
   - name: "Function called with || does not exit"
-    known_failure: true
     stdin: |
       set -e
       myfunc() {
@@ -258,7 +244,6 @@ cases:
       echo "after"
 
   - name: "Error in function body with set -e inside function"
-    known_failure: true
     stdin: |
       myfunc() {
         set -e
@@ -270,7 +255,6 @@ cases:
       echo "after function call"
 
   - name: "Function with explicit return still respects set -e"
-    known_failure: true
     stdin: |
       set -e
       myfunc() {
@@ -282,7 +266,6 @@ cases:
 
   # Subshells
   - name: "Error in subshell exits subshell but not parent"
-    known_failure: true
     stdin: |
       set -e
       (
@@ -293,7 +276,6 @@ cases:
       echo "after subshell"
 
   - name: "Subshell with set -e exits on error"
-    known_failure: true
     stdin: |
       (
         set -e
@@ -314,7 +296,6 @@ cases:
       echo "after"
 
   - name: "Subshell with && does not exit"
-    known_failure: true
     stdin: |
       set -e
       true && (false)
@@ -322,7 +303,6 @@ cases:
 
   # Command substitution
   - name: "Error in command substitution does not exit"
-    known_failure: true
     stdin: |
       set -e
       result=$(false)
@@ -352,7 +332,6 @@ cases:
       echo "after false with +e"
 
   - name: "set -e can be re-enabled"
-    known_failure: true
     stdin: |
       set -e
       set +e
@@ -376,14 +355,12 @@ cases:
 
   # Exit status handling
   - name: "Non-zero exit status triggers exit"
-    known_failure: true
     stdin: |
       set -e
       (exit 1)
       echo "should not print"
 
   - name: "Specific non-zero exit status"
-    known_failure: true
     stdin: |
       set -e
       (exit 42)
@@ -414,7 +391,6 @@ cases:
 
   # Complex scenarios
   - name: "Error after successful conditional"
-    known_failure: true
     stdin: |
       set -e
       if true; then
@@ -437,7 +413,6 @@ cases:
       echo "after outer if"
 
   - name: "Error in case statement body"
-    known_failure: true
     stdin: |
       set -e
       case "x" in
@@ -460,13 +435,11 @@ cases:
 
   # List constructs
   - name: "Error in ; list DOES exit"
-    known_failure: true
     stdin: |
       set -e
       true ; false ; echo "should not print"
 
   - name: "Semicolon separated commands respect set -e"
-    known_failure: true
     stdin: |
       set -e
       echo "first" ; echo "second" ; false ; echo "should not print"
@@ -481,7 +454,6 @@ cases:
 
   # Interaction with other options
   - name: "set -e with set -o pipefail"
-    known_failure: true
     stdin: |
       set -e
       set -o pipefail
@@ -506,7 +478,6 @@ cases:
       echo "after"
 
   - name: "test builtin false result standalone DOES exit"
-    known_failure: true
     stdin: |
       set -e
       test 1 -eq 2
@@ -523,7 +494,6 @@ cases:
       echo "after"
 
   - name: "[ builtin false result standalone DOES exit"
-    known_failure: true
     stdin: |
       set -e
       [ 1 -eq 2 ]
@@ -531,7 +501,6 @@ cases:
 
   # errexit with trap
   - name: "trap ERR does not prevent set -e exit"
-    known_failure: true
     stdin: |
       set -e
       trap 'echo "error trapped"' ERR
@@ -539,7 +508,6 @@ cases:
       echo "should not print"
 
   - name: "trap EXIT runs even with set -e"
-    known_failure: true
     stdin: |
       set -e
       trap 'echo "exit trapped"' EXIT
@@ -580,7 +548,6 @@ cases:
       echo "after"
 
   - name: "Error after function in boolean context DOES exit"
-    known_failure: true
     stdin: |
       set -e
       myfunc() {
