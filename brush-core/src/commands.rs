@@ -475,10 +475,13 @@ impl<'a> SimpleCommand<'a> {
             };
 
             let rt = tokio::runtime::Handle::current();
-            rt.block_on(execute_builtin_command(&builtin, cmd_context, args))
+            let result = rt.block_on(execute_builtin_command(&builtin, cmd_context, args));
+
+            // Return both the result and the shell so errors can be properly converted
+            (result, shell)
         });
 
-        ExecutionSpawnResult::StartedTask(join_handle)
+        ExecutionSpawnResult::StartedTaskWithShell(join_handle)
     }
 
     async fn execute_via_builtin_in_parent_shell(
@@ -493,7 +496,14 @@ impl<'a> SimpleCommand<'a> {
             params: self.params,
         };
 
-        let result = execute_builtin_command(&builtin, cmd_context, self.args).await?;
+        let result = match execute_builtin_command(&builtin, cmd_context, self.args).await {
+            Ok(exec_result) => exec_result,
+            Err(err) => {
+                // Convert error with shell context to preserve fatal error semantics
+                let exec_result = err.into_result(&shell);
+                return Ok(exec_result.into());
+            }
+        };
 
         if let Some(post_execute) = self.post_execute {
             post_execute(&mut shell)?;
@@ -515,7 +525,14 @@ impl<'a> SimpleCommand<'a> {
         };
 
         // Strip the function name off args.
-        let result = invoke_shell_function(func_def, cmd_context, &self.args[1..]).await?;
+        let result = match invoke_shell_function(func_def, cmd_context, &self.args[1..]).await {
+            Ok(spawn_result) => spawn_result,
+            Err(err) => {
+                // Convert error with shell context to preserve fatal error semantics
+                let exec_result = err.into_result(&shell);
+                return Ok(exec_result.into());
+            }
+        };
 
         if let Some(post_execute) = self.post_execute {
             post_execute(&mut shell)?;

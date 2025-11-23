@@ -245,6 +245,9 @@ pub enum ExecutionSpawnResult {
     StartedProcess(processes::ChildProcess),
     /// Indicates that a task was started to handle the execution asynchronously.
     StartedTask(tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>),
+    /// Indicates that a task was started that will return both the result and the shell.
+    /// This allows proper error conversion with shell context for async builtin execution.
+    StartedTaskWithShell(tokio::task::JoinHandle<(Result<ExecutionResult, error::Error>, crate::shell::Shell)>),
 }
 
 impl From<ExecutionResult> for ExecutionSpawnResult {
@@ -272,6 +275,18 @@ impl ExecutionSpawnResult {
                 let result = join_handle.await?;
                 ExecutionWaitResult::Completed(result?)
             }
+            Self::StartedTaskWithShell(join_handle) => {
+                let (result, shell) = join_handle.await?;
+                match result {
+                    Ok(exec_result) => ExecutionWaitResult::Completed(exec_result),
+                    Err(err) => {
+                        // We have both the error and the shell! Convert the error properly
+                        // with shell context to preserve fatal error semantics.
+                        let exec_result = err.into_result(&shell);
+                        ExecutionWaitResult::Completed(exec_result)
+                    }
+                }
+            }
         };
 
         Ok(result)
@@ -285,6 +300,17 @@ impl ExecutionSpawnResult {
                 // TODO(jobs): This isn't right.
                 let result = join_handle.await?;
                 ExecutionWaitResult::Completed(result?)
+            }
+            Self::StartedTaskWithShell(join_handle) => {
+                // TODO(jobs): This isn't right either, but match the behavior above.
+                let (result, shell) = join_handle.await?;
+                match result {
+                    Ok(exec_result) => ExecutionWaitResult::Completed(exec_result),
+                    Err(err) => {
+                        let exec_result = err.into_result(&shell);
+                        ExecutionWaitResult::Completed(exec_result)
+                    }
+                }
             }
         };
 
