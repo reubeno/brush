@@ -1141,8 +1141,9 @@ dependencies = [
 
 [[package]]
 name = "expectrl"
-version = "0.7.1"
-source = "git+https://github.com/zhiburt/expectrl?rev=a0f4f7816b9a47a191dd858080e8fd80ff71cd96#a0f4f7816b9a47a191dd858080e8fd80ff71cd96"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0e0706d01b4f43adaf7e0fb460e07477c36b74ae60fdeb1d045001bd77b4bd1"
 dependencies = [
  "conpty",
  "nix 0.26.4",
@@ -2446,9 +2447,9 @@ dependencies = [
 
 [[package]]
 name = "ptyprocess"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e05aef7befb11a210468a2d77d978dde2c6381a0381e33beb575e91f57fe8cf"
+checksum = "101be273c0b1680d7056afddbaa88f02b6e9f2dc161165c30bee9914b6025a79"
 dependencies = [
  "nix 0.26.4",
 ]
