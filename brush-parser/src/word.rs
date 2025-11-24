@@ -18,7 +18,7 @@ use crate::error;
 
 /// Encapsulates a `WordPiece` together with its position in the string it came from.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub struct WordPieceWithSource {
     /// The word piece.
     pub piece: WordPiece,
@@ -30,7 +30,7 @@ pub struct WordPieceWithSource {
 
 /// Represents a piece of a word.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum WordPiece {
     /// A simple unquoted, unescaped string.
     Text(String),
@@ -58,7 +58,7 @@ pub enum WordPiece {
 
 /// Type of a parameter test.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum ParameterTestType {
     /// Check for unset or null.
     UnsetOrNull,
@@ -68,7 +68,7 @@ pub enum ParameterTestType {
 
 /// A parameter, used in a parameter expansion.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum Parameter {
     /// A 0-indexed positional parameter.
     Positional(u32),
@@ -114,7 +114,7 @@ impl Display for Parameter {
 
 /// A special parameter, used in a parameter expansion.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum SpecialParameter {
     /// All positional parameters.
     AllPositionalParameters {
@@ -157,7 +157,7 @@ impl Display for SpecialParameter {
 
 /// A parameter expression, used in a parameter expansion.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum ParameterExpr {
     /// A parameter, with optional indirection.
     Parameter {
@@ -377,7 +377,7 @@ pub enum ParameterExpr {
 
 /// Kind of substring match.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum SubstringMatchKind {
     /// Match the prefix of the string.
     Prefix,
@@ -391,7 +391,7 @@ pub enum SubstringMatchKind {
 
 /// Kind of operation to apply to a parameter.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum ParameterTransformOp {
     /// Capitalizate initials.
     CapitalizeInitial,
@@ -418,7 +418,7 @@ pub enum ParameterTransformOp {
 
 /// Represents a sub-word that is either a brace expression or some other word text.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum BraceExpressionOrText {
     /// A brace expression.
     Expr(BraceExpression),
@@ -431,7 +431,7 @@ pub type BraceExpression = Vec<BraceExpressionMember>;
 
 /// Member of a brace expression.
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum BraceExpressionMember {
     /// An inclusive numerical sequence.
     NumberSequence {

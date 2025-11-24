@@ -30,16 +30,16 @@ pub(crate) enum TokenEndReason {
 /// Represents a position in a source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-#[cfg_attr(test, serde(rename = "Pos"))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), serde(rename = "Pos"))]
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
-    #[cfg_attr(test, serde(rename = "idx"))]
+    #[cfg_attr(any(test, feature = "serde"), serde(rename = "idx"))]
     pub index: usize,
     /// The 1-based line number.
     pub line: usize,
     /// The 1-based column number.
-    #[cfg_attr(test, serde(rename = "col"))]
+    #[cfg_attr(any(test, feature = "serde"), serde(rename = "col"))]
     pub column: usize,
 }
 
@@ -60,8 +60,8 @@ impl From<&SourcePosition> for miette::SourceOffset {
 /// Represents the location of a token in its source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-#[cfg_attr(test, serde(rename = "Loc"))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), serde(rename = "Loc"))]
 pub struct TokenLocation {
     /// The start position of the token.
     pub start: Arc<SourcePosition>,
@@ -85,13 +85,13 @@ impl TokenLocation {
 /// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub enum Token {
     /// An operator token.
-    #[cfg_attr(test, serde(rename = "Op"))]
+    #[cfg_attr(any(test, feature = "serde"), serde(rename = "Op"))]
     Operator(String, TokenLocation),
     /// A word token.
-    #[cfg_attr(test, serde(rename = "W"))]
+    #[cfg_attr(any(test, feature = "serde"), serde(rename = "W"))]
     Word(String, TokenLocation),
 }
 
