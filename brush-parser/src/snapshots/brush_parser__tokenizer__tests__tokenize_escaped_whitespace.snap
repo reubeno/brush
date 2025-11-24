@@ -5,28 +5,28 @@ expression: "test_tokenizer(r\"1\\ 2 3\")?"
 TokenizerResult(
   input: "1\\ 2 3",
   result: [
-    W("1\\ 2", Loc(
-      start: Pos(
-        idx: 0,
+    Word("1\\ 2", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 4,
+      end: SourcePosition(
+        index: 4,
         line: 1,
-        col: 5,
+        column: 5,
       ),
     )),
-    W("3", Loc(
-      start: Pos(
-        idx: 5,
+    Word("3", TokenLocation(
+      start: SourcePosition(
+        index: 5,
         line: 1,
-        col: 6,
+        column: 6,
       ),
-      end: Pos(
-        idx: 6,
+      end: SourcePosition(
+        index: 6,
         line: 1,
-        col: 7,
+        column: 7,
       ),
     )),
   ],

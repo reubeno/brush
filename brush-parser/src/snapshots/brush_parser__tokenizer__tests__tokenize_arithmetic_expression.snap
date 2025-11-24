@@ -5,28 +5,28 @@ expression: "test_tokenizer(\"a$((1+2))b c\")?"
 TokenizerResult(
   input: "a$((1+2))b c",
   result: [
-    W("a$((1+2))b", Loc(
-      start: Pos(
-        idx: 0,
+    Word("a$((1+2))b", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 10,
+      end: SourcePosition(
+        index: 10,
         line: 1,
-        col: 11,
+        column: 11,
       ),
     )),
-    W("c", Loc(
-      start: Pos(
-        idx: 11,
+    Word("c", TokenLocation(
+      start: SourcePosition(
+        index: 11,
         line: 1,
-        col: 12,
+        column: 12,
       ),
-      end: Pos(
-        idx: 12,
+      end: SourcePosition(
+        index: 12,
         line: 1,
-        col: 13,
+        column: 13,
       ),
     )),
   ],

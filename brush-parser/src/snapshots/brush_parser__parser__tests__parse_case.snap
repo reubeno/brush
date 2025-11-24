@@ -5,73 +5,73 @@ expression: "ParseResult { input, result: &command }"
 ParseResult(
   input: "\\\ncase x in\nx)\n    echo y;;\nesac\\\n",
   result: CaseClauseCommand(
-    value: W(
-      v: "x",
-      loc: Some(Loc(
-        start: Pos(
-          idx: 7,
+    value: Word(
+      value: "x",
+      loc: Some(TokenLocation(
+        start: SourcePosition(
+          index: 7,
           line: 2,
-          col: 6,
+          column: 6,
         ),
-        end: Pos(
-          idx: 8,
+        end: SourcePosition(
+          index: 8,
           line: 2,
-          col: 7,
+          column: 7,
         ),
       )),
     ),
     cases: [
       CaseItem(
         patterns: [
-          W(
-            v: "x",
-            loc: Some(Loc(
-              start: Pos(
-                idx: 12,
+          Word(
+            value: "x",
+            loc: Some(TokenLocation(
+              start: SourcePosition(
+                index: 12,
                 line: 3,
-                col: 1,
+                column: 1,
               ),
-              end: Pos(
-                idx: 13,
+              end: SourcePosition(
+                index: 13,
                 line: 3,
-                col: 2,
+                column: 2,
               ),
             )),
           ),
         ],
-        cmd: Some(List([
-          Item(AndOr(
+        cmd: Some(CompoundList([
+          CompoundListItem(AndOrList(
             first: Pipeline(
               seq: [
-                Simple(Simple(
-                  w: Some(W(
-                    v: "echo",
-                    loc: Some(Loc(
-                      start: Pos(
-                        idx: 19,
+                Simple(SimpleCommand(
+                  word_or_name: Some(Word(
+                    value: "echo",
+                    loc: Some(TokenLocation(
+                      start: SourcePosition(
+                        index: 19,
                         line: 4,
-                        col: 5,
+                        column: 5,
                       ),
-                      end: Pos(
-                        idx: 23,
+                      end: SourcePosition(
+                        index: 23,
                         line: 4,
-                        col: 9,
+                        column: 9,
                       ),
                     )),
                   )),
-                  suffix: Some(Suffix([
-                    Word(W(
-                      v: "y",
-                      loc: Some(Loc(
-                        start: Pos(
-                          idx: 24,
+                  suffix: Some(CommandSuffix([
+                    Word(Word(
+                      value: "y",
+                      loc: Some(TokenLocation(
+                        start: SourcePosition(
+                          index: 24,
                           line: 4,
-                          col: 10,
+                          column: 10,
                         ),
-                        end: Pos(
-                          idx: 25,
+                        end: SourcePosition(
+                          index: 25,
                           line: 4,
-                          col: 11,
+                          column: 11,
                         ),
                       )),
                     )),
@@ -82,16 +82,16 @@ ParseResult(
           ), Sequence),
         ])),
         post_action: ExitCase,
-        loc: Some(Loc(
-          start: Pos(
-            idx: 12,
+        loc: Some(TokenLocation(
+          start: SourcePosition(
+            index: 12,
             line: 3,
-            col: 1,
+            column: 1,
           ),
-          end: Pos(
-            idx: 27,
+          end: SourcePosition(
+            index: 27,
             line: 4,
-            col: 13,
+            column: 13,
           ),
         )),
       ),

@@ -5,28 +5,28 @@ expression: "test_tokenizer(r\"echo $(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\n
 TokenizerResult(
   input: "echo $(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)",
   result: [
-    W("echo", Loc(
-      start: Pos(
-        idx: 0,
+    Word("echo", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 4,
+      end: SourcePosition(
+        index: 4,
         line: 1,
-        col: 5,
+        column: 5,
       ),
     )),
-    W("$(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)", Loc(
-      start: Pos(
-        idx: 5,
+    Word("$(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)", TokenLocation(
+      start: SourcePosition(
+        index: 5,
         line: 1,
-        col: 6,
+        column: 6,
       ),
-      end: Pos(
-        idx: 59,
+      end: SourcePosition(
+        index: 59,
         line: 6,
-        col: 2,
+        column: 2,
       ),
     )),
   ],

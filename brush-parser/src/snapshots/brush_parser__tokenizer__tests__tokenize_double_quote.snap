@@ -5,16 +5,16 @@ expression: "test_tokenizer(r#\"x\"a b\"y\"#)?"
 TokenizerResult(
   input: "x\"a b\"y",
   result: [
-    W("x\"a b\"y", Loc(
-      start: Pos(
-        idx: 0,
+    Word("x\"a b\"y", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 7,
+      end: SourcePosition(
+        index: 7,
         line: 1,
-        col: 8,
+        column: 8,
       ),
     )),
   ],

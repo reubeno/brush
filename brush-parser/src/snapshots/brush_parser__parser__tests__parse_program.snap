@@ -5,109 +5,109 @@ expression: "ParseResult { input, result: &result }"
 ParseResult(
   input: "\n\n#!/usr/bin/env bash\n\nfor f in A B C; do\n\n    # sdfsdf\n    echo \"${f@L}\" >&2\n\n   done\n\n",
   result: Program(
-    cmds: [
-      List([
-        Item(AndOr(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
               Compound(ForClause(ForClauseCommand(
                 variable_name: "f",
                 values: Some([
-                  W(
-                    v: "A",
-                    loc: Some(Loc(
-                      start: Pos(
-                        idx: 32,
+                  Word(
+                    value: "A",
+                    loc: Some(TokenLocation(
+                      start: SourcePosition(
+                        index: 32,
                         line: 5,
-                        col: 10,
+                        column: 10,
                       ),
-                      end: Pos(
-                        idx: 33,
+                      end: SourcePosition(
+                        index: 33,
                         line: 5,
-                        col: 11,
-                      ),
-                    )),
-                  ),
-                  W(
-                    v: "B",
-                    loc: Some(Loc(
-                      start: Pos(
-                        idx: 34,
-                        line: 5,
-                        col: 12,
-                      ),
-                      end: Pos(
-                        idx: 35,
-                        line: 5,
-                        col: 13,
+                        column: 11,
                       ),
                     )),
                   ),
-                  W(
-                    v: "C",
-                    loc: Some(Loc(
-                      start: Pos(
-                        idx: 36,
+                  Word(
+                    value: "B",
+                    loc: Some(TokenLocation(
+                      start: SourcePosition(
+                        index: 34,
                         line: 5,
-                        col: 14,
+                        column: 12,
                       ),
-                      end: Pos(
-                        idx: 37,
+                      end: SourcePosition(
+                        index: 35,
                         line: 5,
-                        col: 15,
+                        column: 13,
+                      ),
+                    )),
+                  ),
+                  Word(
+                    value: "C",
+                    loc: Some(TokenLocation(
+                      start: SourcePosition(
+                        index: 36,
+                        line: 5,
+                        column: 14,
+                      ),
+                      end: SourcePosition(
+                        index: 37,
+                        line: 5,
+                        column: 15,
                       ),
                     )),
                   ),
                 ]),
                 body: DoGroupCommand(
-                  list: List([
-                    Item(AndOr(
+                  list: CompoundList([
+                    CompoundListItem(AndOrList(
                       first: Pipeline(
                         seq: [
-                          Simple(Simple(
-                            w: Some(W(
-                              v: "echo",
-                              loc: Some(Loc(
-                                start: Pos(
-                                  idx: 60,
+                          Simple(SimpleCommand(
+                            word_or_name: Some(Word(
+                              value: "echo",
+                              loc: Some(TokenLocation(
+                                start: SourcePosition(
+                                  index: 60,
                                   line: 8,
-                                  col: 5,
+                                  column: 5,
                                 ),
-                                end: Pos(
-                                  idx: 64,
+                                end: SourcePosition(
+                                  index: 64,
                                   line: 8,
-                                  col: 9,
+                                  column: 9,
                                 ),
                               )),
                             )),
-                            suffix: Some(Suffix([
-                              Word(W(
-                                v: "\"${f@L}\"",
-                                loc: Some(Loc(
-                                  start: Pos(
-                                    idx: 65,
+                            suffix: Some(CommandSuffix([
+                              Word(Word(
+                                value: "\"${f@L}\"",
+                                loc: Some(TokenLocation(
+                                  start: SourcePosition(
+                                    index: 65,
                                     line: 8,
-                                    col: 10,
+                                    column: 10,
                                   ),
-                                  end: Pos(
-                                    idx: 73,
+                                  end: SourcePosition(
+                                    index: 73,
                                     line: 8,
-                                    col: 18,
+                                    column: 18,
                                   ),
                                 )),
                               )),
-                              IoRedirect(File(None, DuplicateOutput, Duplicate(W(
-                                v: "2",
-                                loc: Some(Loc(
-                                  start: Pos(
-                                    idx: 76,
+                              IoRedirect(File(None, DuplicateOutput, Duplicate(Word(
+                                value: "2",
+                                loc: Some(TokenLocation(
+                                  start: SourcePosition(
+                                    index: 76,
                                     line: 8,
-                                    col: 21,
+                                    column: 21,
                                   ),
-                                  end: Pos(
-                                    idx: 77,
+                                  end: SourcePosition(
+                                    index: 77,
                                     line: 8,
-                                    col: 22,
+                                    column: 22,
                                   ),
                                 )),
                               )))),
@@ -117,29 +117,29 @@ ParseResult(
                       ),
                     ), Sequence),
                   ]),
-                  loc: Loc(
-                    start: Pos(
-                      idx: 39,
+                  loc: TokenLocation(
+                    start: SourcePosition(
+                      index: 39,
                       line: 5,
-                      col: 17,
+                      column: 17,
                     ),
-                    end: Pos(
-                      idx: 86,
+                    end: SourcePosition(
+                      index: 86,
                       line: 10,
-                      col: 8,
+                      column: 8,
                     ),
                   ),
                 ),
-                loc: Loc(
-                  start: Pos(
-                    idx: 23,
+                loc: TokenLocation(
+                  start: SourcePosition(
+                    index: 23,
                     line: 5,
-                    col: 1,
+                    column: 1,
                   ),
-                  end: Pos(
-                    idx: 86,
+                  end: SourcePosition(
+                    index: 86,
                     line: 10,
-                    col: 8,
+                    column: 8,
                   ),
                 ),
               )), None),

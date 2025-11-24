@@ -6,55 +6,55 @@ ParseResult(
   input: "foo() { echo 1; } 2>&1 | cat",
   result: [
     Function(FunctionDefinition(
-      fname: W(
-        v: "foo",
-        loc: Some(Loc(
-          start: Pos(
-            idx: 0,
+      fname: Word(
+        value: "foo",
+        loc: Some(TokenLocation(
+          start: SourcePosition(
+            index: 0,
             line: 1,
-            col: 1,
+            column: 1,
           ),
-          end: Pos(
-            idx: 3,
+          end: SourcePosition(
+            index: 3,
             line: 1,
-            col: 4,
+            column: 4,
           ),
         )),
       ),
       body: FunctionBody(BraceGroup(BraceGroupCommand(
-        list: List([
-          Item(AndOr(
+        list: CompoundList([
+          CompoundListItem(AndOrList(
             first: Pipeline(
               seq: [
-                Simple(Simple(
-                  w: Some(W(
-                    v: "echo",
-                    loc: Some(Loc(
-                      start: Pos(
-                        idx: 8,
+                Simple(SimpleCommand(
+                  word_or_name: Some(Word(
+                    value: "echo",
+                    loc: Some(TokenLocation(
+                      start: SourcePosition(
+                        index: 8,
                         line: 1,
-                        col: 9,
+                        column: 9,
                       ),
-                      end: Pos(
-                        idx: 12,
+                      end: SourcePosition(
+                        index: 12,
                         line: 1,
-                        col: 13,
+                        column: 13,
                       ),
                     )),
                   )),
-                  suffix: Some(Suffix([
-                    Word(W(
-                      v: "1",
-                      loc: Some(Loc(
-                        start: Pos(
-                          idx: 13,
+                  suffix: Some(CommandSuffix([
+                    Word(Word(
+                      value: "1",
+                      loc: Some(TokenLocation(
+                        start: SourcePosition(
+                          index: 13,
                           line: 1,
-                          col: 14,
+                          column: 14,
                         ),
-                        end: Pos(
-                          idx: 14,
+                        end: SourcePosition(
+                          index: 14,
                           line: 1,
-                          col: 15,
+                          column: 15,
                         ),
                       )),
                     )),
@@ -64,50 +64,50 @@ ParseResult(
             ),
           ), Sequence),
         ]),
-        loc: Loc(
-          start: Pos(
-            idx: 6,
+        loc: TokenLocation(
+          start: SourcePosition(
+            index: 6,
             line: 1,
-            col: 7,
+            column: 7,
           ),
-          end: Pos(
-            idx: 17,
+          end: SourcePosition(
+            index: 17,
             line: 1,
-            col: 18,
+            column: 18,
           ),
         ),
       )), Some(RedirectList([
-        File(Some(2), DuplicateOutput, Duplicate(W(
-          v: "1",
-          loc: Some(Loc(
-            start: Pos(
-              idx: 21,
+        File(Some(2), DuplicateOutput, Duplicate(Word(
+          value: "1",
+          loc: Some(TokenLocation(
+            start: SourcePosition(
+              index: 21,
               line: 1,
-              col: 22,
+              column: 22,
             ),
-            end: Pos(
-              idx: 22,
+            end: SourcePosition(
+              index: 22,
               line: 1,
-              col: 23,
+              column: 23,
             ),
           )),
         ))),
       ]))),
       source: "",
     )),
-    Simple(Simple(
-      w: Some(W(
-        v: "cat",
-        loc: Some(Loc(
-          start: Pos(
-            idx: 25,
+    Simple(SimpleCommand(
+      word_or_name: Some(Word(
+        value: "cat",
+        loc: Some(TokenLocation(
+          start: SourcePosition(
+            index: 25,
             line: 1,
-            col: 26,
+            column: 26,
           ),
-          end: Pos(
-            idx: 28,
+          end: SourcePosition(
+            index: 28,
             line: 1,
-            col: 29,
+            column: 29,
           ),
         )),
       )),

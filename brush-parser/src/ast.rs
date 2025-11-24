@@ -33,7 +33,6 @@ pub(crate) fn maybe_location(
 )]
 pub struct Program {
     /// A sequence of complete shell commands.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "cmds"))]
     pub complete_commands: Vec<CompleteCommand>,
 }
 
@@ -97,7 +96,6 @@ impl Display for SeparatorOperator {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "AndOr"))]
 pub struct AndOrList {
     /// The first command pipeline.
     pub first: Pipeline,
@@ -651,7 +649,6 @@ impl Display for CaseClauseCommand {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "List"))]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
 // TODO: doublecheck
@@ -697,7 +694,6 @@ impl Display for CompoundList {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "Item"))]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
 impl SourceLocation for CompoundListItem {
@@ -1030,7 +1026,6 @@ impl Display for DoGroupCommand {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "Simple"))]
 pub struct SimpleCommand {
     /// Optionally, a prefix to the command.
     #[cfg_attr(
@@ -1043,7 +1038,6 @@ pub struct SimpleCommand {
         any(test, feature = "serde"),
         serde(skip_serializing_if = "Option::is_none", default)
     )]
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "w"))]
     pub word_or_name: Option<Word>,
     /// Optionally, a suffix to the command.
     #[cfg_attr(
@@ -1110,7 +1104,6 @@ impl Display for SimpleCommand {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "Prefix"))]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl SourceLocation for CommandPrefix {
@@ -1142,7 +1135,6 @@ impl Display for CommandPrefix {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "Suffix"))]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl SourceLocation for CommandSuffix {
@@ -1203,7 +1195,6 @@ pub enum CommandPrefixOrSuffixItem {
     /// A word.
     Word(Word),
     /// An assignment/declaration word.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "Assign"))]
     AssignmentWord(Assignment, Word),
     /// A process substitution.
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
@@ -1239,7 +1230,6 @@ impl Display for CommandPrefixOrSuffixItem {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "Assign"))]
 pub struct Assignment {
     /// Name being assigned to.
     pub name: AssignmentName,
@@ -1280,7 +1270,6 @@ impl Display for Assignment {
 )]
 pub enum AssignmentName {
     /// A named variable.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "Var"))]
     VariableName(String),
     /// An element in a named array.
     ArrayElementName(String, String),
@@ -1837,10 +1826,8 @@ impl Display for BinaryPredicate {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "W"))]
 pub struct Word {
     /// Raw text of the word.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "v"))]
     pub value: String,
     /// Location of the word
     pub loc: Option<TokenLocation>,

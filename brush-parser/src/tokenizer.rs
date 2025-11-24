@@ -34,15 +34,12 @@ pub(crate) enum TokenEndReason {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "Pos"))]
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "idx"))]
     pub index: usize,
     /// The 1-based line number.
     pub line: usize,
     /// The 1-based column number.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "col"))]
     pub column: usize,
 }
 
@@ -67,7 +64,6 @@ impl From<&SourcePosition> for miette::SourceOffset {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-#[cfg_attr(any(test, feature = "serde"), serde(rename = "Loc"))]
 pub struct TokenLocation {
     /// The start position of the token.
     pub start: Arc<SourcePosition>,
@@ -97,10 +93,8 @@ impl TokenLocation {
 )]
 pub enum Token {
     /// An operator token.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "Op"))]
     Operator(String, TokenLocation),
     /// A word token.
-    #[cfg_attr(any(test, feature = "serde"), serde(rename = "W"))]
     Word(String, TokenLocation),
 }
 

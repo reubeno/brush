@@ -5,28 +5,28 @@ expression: "test_tokenizer(r\"a #comment\n\")?"
 TokenizerResult(
   input: "a #comment\n",
   result: [
-    W("a", Loc(
-      start: Pos(
-        idx: 0,
+    Word("a", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 1,
+      end: SourcePosition(
+        index: 1,
         line: 1,
-        col: 2,
+        column: 2,
       ),
     )),
-    Op("\n", Loc(
-      start: Pos(
-        idx: 2,
+    Operator("\n", TokenLocation(
+      start: SourcePosition(
+        index: 2,
         line: 1,
-        col: 3,
+        column: 3,
       ),
-      end: Pos(
-        idx: 11,
+      end: SourcePosition(
+        index: 11,
         line: 2,
-        col: 1,
+        column: 1,
       ),
     )),
   ],
