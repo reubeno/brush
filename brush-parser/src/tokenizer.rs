@@ -30,7 +30,10 @@ pub(crate) enum TokenEndReason {
 /// Represents a position in a source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Pos"))]
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
@@ -60,7 +63,10 @@ impl From<&SourcePosition> for miette::SourceOffset {
 /// Represents the location of a token in its source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Loc"))]
 pub struct TokenLocation {
     /// The start position of the token.
@@ -85,7 +91,10 @@ impl TokenLocation {
 /// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum Token {
     /// An operator token.
     #[cfg_attr(any(test, feature = "serde"), serde(rename = "Op"))]
@@ -1369,7 +1378,7 @@ mod tests {
     use insta::assert_ron_snapshot;
     use pretty_assertions::{assert_eq, assert_matches};
 
-    #[derive(serde::Serialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     struct TokenizerResult<'a> {
         input: &'a str,
         result: Vec<Token>,

@@ -1,4 +1,4 @@
-//! Example demonstrating AST serialization with the `serde` feature.
+//! Example demonstrating AST serialization and deserialization with the `serde` feature.
 //!
 //! Run with: `cargo run --package brush-parser --example serde --features serde`
 
@@ -19,6 +19,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let json = serde_json::to_string_pretty(&program)?;
     println!("Parsed AST:");
     println!("{json}");
+
+    // Demonstrate round-trip: deserialize the JSON back to AST
+    println!("\nRound-trip deserialization:");
+    let deserialized: brush_parser::ast::Program = serde_json::from_str(&json)?;
+    println!(
+        "Successfully deserialized AST with {} command(s)",
+        deserialized.complete_commands.len()
+    );
 
     Ok(())
 }

@@ -27,7 +27,10 @@ pub(crate) fn maybe_location(
 /// Represents a complete shell program.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct Program {
     /// A sequence of complete shell commands.
     #[cfg_attr(any(test, feature = "serde"), serde(rename = "cmds"))]
@@ -67,7 +70,10 @@ pub type CompleteCommandItem = CompoundListItem;
 /// Indicates whether the preceding command is executed synchronously or asynchronously.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum SeparatorOperator {
     /// The preceding command is executed asynchronously.
     Async,
@@ -87,7 +93,10 @@ impl Display for SeparatorOperator {
 /// Represents a sequence of command pipelines connected by boolean operators.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "AndOr"))]
 pub struct AndOrList {
     /// The first command pipeline.
@@ -95,7 +104,7 @@ pub struct AndOrList {
     /// Any additional command pipelines, in sequence order.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "Vec::is_empty")
+        serde(skip_serializing_if = "Vec::is_empty", default)
     )]
     pub additional: Vec<AndOr>,
 }
@@ -206,7 +215,10 @@ impl AndOrList {
 /// succeeding pipeline.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum AndOr {
     /// Boolean AND operator; the embedded pipeline is only to be executed if the
     /// preceding command has succeeded.
@@ -238,7 +250,10 @@ impl Display for AndOr {
 /// The type of timing requested for a pipeline.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum PipelineTimed {
     /// The pipeline should be timed with bash-like output.
     Timed(TokenLocation),
@@ -266,20 +281,23 @@ impl PipelineTimed {
 /// to the command that follows it.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct Pipeline {
     /// Indicates whether the pipeline's execution should be timed with reported
     /// timings in output.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "Option::is_none")
+        serde(skip_serializing_if = "Option::is_none", default)
     )]
     pub timed: Option<PipelineTimed>,
     /// Indicates whether the result of the overall pipeline should be the logical
     /// negation of the result of the pipeline.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not", default)
     )]
     pub bang: bool,
     /// The sequence of commands in the pipeline.
@@ -318,7 +336,10 @@ impl Display for Pipeline {
 /// Represents a shell command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum Command {
     /// A simple command, directly invoking an external command, a built-in command,
     /// a shell function, or similar.
@@ -369,7 +390,10 @@ impl Display for Command {
 /// Represents a compound command, potentially made up of multiple nested commands.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum CompoundCommand {
     /// An arithmetic command, evaluating an arithmetic expression.
     Arithmetic(ArithmeticCommand),
@@ -438,7 +462,10 @@ impl Display for CompoundCommand {
 /// An arithmetic command, evaluating an arithmetic expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct ArithmeticCommand {
     /// The raw, unparsed and unexpanded arithmetic expression.
     pub expr: UnexpandedArithmeticExpr,
@@ -461,7 +488,10 @@ impl Display for ArithmeticCommand {
 /// A subshell, which executes commands in a subshell.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct SubshellCommand {
     /// Command list in the subshell
     pub list: CompoundList,
@@ -486,7 +516,10 @@ impl Display for SubshellCommand {
 /// A for clause, which loops over a set of values.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct ForClauseCommand {
     /// The name of the iterator variable.
     pub variable_name: String,
@@ -527,7 +560,10 @@ impl Display for ForClauseCommand {
 /// An arithmetic for clause, which loops until an arithmetic condition is reached.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct ArithmeticForClauseCommand {
     /// Optionally, the initializer expression evaluated before the first iteration of the loop.
     pub initializer: Option<UnexpandedArithmeticExpr>,
@@ -577,7 +613,10 @@ impl Display for ArithmeticForClauseCommand {
 /// pattern-based filters.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct CaseClauseCommand {
     /// The value being matched on.
     pub value: Word,
@@ -608,7 +647,10 @@ impl Display for CaseClauseCommand {
 /// A sequence of commands.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "List"))]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
@@ -651,7 +693,10 @@ impl Display for CompoundList {
 /// An element of a compound command list.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Item"))]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
@@ -672,7 +717,10 @@ impl Display for CompoundListItem {
 /// An if clause, which conditionally executes a command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct IfClauseCommand {
     /// The command whose execution result is inspected.
     pub condition: CompoundList,
@@ -681,7 +729,7 @@ pub struct IfClauseCommand {
     /// Optionally, `else` clauses that will be evaluated if the condition is false.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "Option::is_none")
+        serde(skip_serializing_if = "Option::is_none", default)
     )]
     pub elses: Option<Vec<ElseClause>>,
     /// Location of the if clause
@@ -718,12 +766,15 @@ impl Display for IfClauseCommand {
 /// Represents the `else` clause of a conditional command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct ElseClause {
     /// If present, the condition that must be met for this `else` clause to be executed.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "Option::is_none")
+        serde(skip_serializing_if = "Option::is_none", default)
     )]
     pub condition: Option<CompoundList>,
     /// The commands to execute if this `else` clause is selected.
@@ -750,7 +801,10 @@ impl Display for ElseClause {
 /// An individual matching case item in a case clause.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct CaseItem {
     /// The patterns that select this case branch.
     pub patterns: Vec<Word>,
@@ -790,7 +844,10 @@ impl Display for CaseItem {
 /// Describes the action to take after executing the body command of a case clause.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum CaseItemPostAction {
     /// The containing case should be exited.
     ExitCase,
@@ -815,7 +872,10 @@ impl Display for CaseItemPostAction {
 /// A while or until clause, whose looping is controlled by a condition.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand, pub TokenLocation);
 
 impl SourceLocation for WhileOrUntilClauseCommand {
@@ -833,7 +893,10 @@ impl Display for WhileOrUntilClauseCommand {
 /// Encapsulates the definition of a shell function.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct FunctionDefinition {
     /// The name of the function.
     pub fname: Word,
@@ -867,7 +930,10 @@ impl Display for FunctionDefinition {
 /// Encapsulates the body of a function definition.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
 
 impl SourceLocation for FunctionBody {
@@ -898,7 +964,10 @@ impl Display for FunctionBody {
 /// A brace group, which groups commands together.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct BraceGroupCommand {
     /// List of commands
     pub list: CompoundList,
@@ -930,7 +999,10 @@ impl Display for BraceGroupCommand {
 /// A do group, which groups commands together.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct DoGroupCommand {
     /// List of commands
     pub list: CompoundList,
@@ -954,26 +1026,29 @@ impl Display for DoGroupCommand {
 /// Represents the invocation of a simple command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Simple"))]
 pub struct SimpleCommand {
     /// Optionally, a prefix to the command.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "Option::is_none")
+        serde(skip_serializing_if = "Option::is_none", default)
     )]
     pub prefix: Option<CommandPrefix>,
     /// The name of the command to execute.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "Option::is_none")
+        serde(skip_serializing_if = "Option::is_none", default)
     )]
     #[cfg_attr(any(test, feature = "serde"), serde(rename = "w"))]
     pub word_or_name: Option<Word>,
     /// Optionally, a suffix to the command.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "Option::is_none")
+        serde(skip_serializing_if = "Option::is_none", default)
     )]
     pub suffix: Option<CommandSuffix>,
 }
@@ -1031,7 +1106,10 @@ impl Display for SimpleCommand {
 /// Represents a prefix to a simple command.
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Prefix"))]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
@@ -1060,7 +1138,10 @@ impl Display for CommandPrefix {
 /// Represents a suffix to a simple command; a word argument, declaration, or I/O redirection.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Suffix"))]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
@@ -1089,7 +1170,10 @@ impl Display for CommandSuffix {
 /// Represents the I/O direction of a process substitution.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum ProcessSubstitutionKind {
     /// The process is read from.
     Read,
@@ -1109,7 +1193,10 @@ impl Display for ProcessSubstitutionKind {
 /// A prefix or suffix for a simple command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum CommandPrefixOrSuffixItem {
     /// An I/O redirection.
     IoRedirect(IoRedirect),
@@ -1148,7 +1235,10 @@ impl Display for CommandPrefixOrSuffixItem {
 /// Encapsulates an assignment declaration.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Assign"))]
 pub struct Assignment {
     /// Name being assigned to.
@@ -1158,7 +1248,7 @@ pub struct Assignment {
     /// Whether or not to append to the preexisting value associated with the named variable.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not", default)
     )]
     pub append: bool,
     /// Location of the assignment
@@ -1184,7 +1274,10 @@ impl Display for Assignment {
 /// The target of an assignment.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum AssignmentName {
     /// A named variable.
     #[cfg_attr(any(test, feature = "serde"), serde(rename = "Var"))]
@@ -1207,7 +1300,10 @@ impl Display for AssignmentName {
 /// A value being assigned to a variable.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum AssignmentValue {
     /// A scalar (word) value.
     Scalar(Word),
@@ -1246,7 +1342,10 @@ impl Display for AssignmentValue {
 /// A list of I/O redirections to be applied to a command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct RedirectList(pub Vec<IoRedirect>);
 
 // TODO: complete
@@ -1271,7 +1370,10 @@ pub type IoFd = i32;
 /// An I/O redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum IoRedirect {
     /// Redirection to a file.
     File(Option<IoFd>, IoFileRedirectKind, IoFileRedirectTarget),
@@ -1346,7 +1448,10 @@ impl Display for IoRedirect {
 /// Kind of file I/O redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum IoFileRedirectKind {
     /// Read (`<`).
     Read,
@@ -1381,7 +1486,10 @@ impl Display for IoFileRedirectKind {
 /// Target for an I/O file redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum IoFileRedirectTarget {
     /// Path to a file.
     Filename(Word),
@@ -1412,18 +1520,21 @@ impl Display for IoFileRedirectTarget {
 /// Represents an I/O here document.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct IoHereDocument {
     /// Whether to remove leading tabs from the here document.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not", default)
     )]
     pub remove_tabs: bool,
     /// Whether to basic-expand the contents of the here document.
     #[cfg_attr(
         any(test, feature = "serde"),
-        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not", default)
     )]
     pub requires_expansion: bool,
     /// The delimiter marking the end of the here document.
@@ -1441,7 +1552,10 @@ impl SourceLocation for IoHereDocument {
 
 /// A (non-extended) test expression.
 #[derive(Clone, Debug)]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum TestExpr {
     /// Always evaluates to false.
     False,
@@ -1486,7 +1600,10 @@ impl Display for TestExpr {
 /// An extended test expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum ExtendedTestExpr {
     /// Logical AND operation on two nested expressions.
     And(Box<Self>, Box<Self>),
@@ -1530,7 +1647,10 @@ impl Display for ExtendedTestExpr {
 /// An extended test expression command.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct ExtendedTestExprCommand {
     /// The extended test expression
     pub expr: ExtendedTestExpr,
@@ -1553,7 +1673,10 @@ impl Display for ExtendedTestExprCommand {
 /// A unary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum UnaryPredicate {
     /// Computes if the operand is a path to an existing file.
     FileExists,
@@ -1642,7 +1765,10 @@ impl Display for UnaryPredicate {
 /// A binary predicate usable in an extended test expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum BinaryPredicate {
     /// Computes if two files refer to the same device and inode numbers.
     FilesReferToSameDeviceAndInodeNumbers,
@@ -1707,7 +1833,10 @@ impl Display for BinaryPredicate {
 /// Represents a shell word.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "W"))]
 pub struct Word {
     /// Raw text of the word.
@@ -1779,7 +1908,10 @@ impl Word {
 /// Encapsulates an unparsed arithmetic expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct UnexpandedArithmeticExpr {
     /// The raw text of the expression.
     pub value: String,
@@ -1793,7 +1925,10 @@ impl Display for UnexpandedArithmeticExpr {
 
 /// An arithmetic expression.
 #[derive(Clone, Debug)]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum ArithmeticExpr {
     /// A literal integer value.
     Literal(i64),
@@ -1902,7 +2037,10 @@ impl Display for ArithmeticExpr {
 /// A binary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum BinaryOperator {
     /// Exponentiation (e.g., `x ** y`).
     Power,
@@ -1976,7 +2114,10 @@ impl Display for BinaryOperator {
 /// A unary arithmetic operator.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum UnaryOperator {
     /// Unary plus (e.g., `+x`).
     UnaryPlus,
@@ -2002,7 +2143,10 @@ impl Display for UnaryOperator {
 /// A unary arithmetic assignment operator.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum UnaryAssignmentOperator {
     /// Prefix increment (e.g., `++x`).
     PrefixIncrement,
@@ -2028,7 +2172,10 @@ impl Display for UnaryAssignmentOperator {
 /// Identifies the target of an arithmetic assignment expression.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum ArithmeticTarget {
     /// A named variable.
     Variable(String),
