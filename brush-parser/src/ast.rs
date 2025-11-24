@@ -93,7 +93,10 @@ pub struct AndOrList {
     /// The first command pipeline.
     pub first: Pipeline,
     /// Any additional command pipelines, in sequence order.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "Vec::is_empty"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Vec::is_empty")
+    )]
     pub additional: Vec<AndOr>,
 }
 
@@ -267,11 +270,17 @@ impl PipelineTimed {
 pub struct Pipeline {
     /// Indicates whether the pipeline's execution should be timed with reported
     /// timings in output.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Option::is_none")
+    )]
     pub timed: Option<PipelineTimed>,
     /// Indicates whether the result of the overall pipeline should be the logical
     /// negation of the result of the pipeline.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+    )]
     pub bang: bool,
     /// The sequence of commands in the pipeline.
     pub seq: Vec<Command>,
@@ -670,7 +679,10 @@ pub struct IfClauseCommand {
     /// The command to execute if the condition is true.
     pub then: CompoundList,
     /// Optionally, `else` clauses that will be evaluated if the condition is false.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Option::is_none")
+    )]
     pub elses: Option<Vec<ElseClause>>,
     /// Location of the if clause
     pub loc: TokenLocation,
@@ -709,7 +721,10 @@ impl Display for IfClauseCommand {
 #[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub struct ElseClause {
     /// If present, the condition that must be met for this `else` clause to be executed.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Option::is_none")
+    )]
     pub condition: Option<CompoundList>,
     /// The commands to execute if this `else` clause is selected.
     pub body: CompoundList,
@@ -943,14 +958,23 @@ impl Display for DoGroupCommand {
 #[cfg_attr(any(test, feature = "serde"), serde(rename = "Simple"))]
 pub struct SimpleCommand {
     /// Optionally, a prefix to the command.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Option::is_none")
+    )]
     pub prefix: Option<CommandPrefix>,
     /// The name of the command to execute.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Option::is_none")
+    )]
     #[cfg_attr(any(test, feature = "serde"), serde(rename = "w"))]
     pub word_or_name: Option<Word>,
     /// Optionally, a suffix to the command.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Option::is_none")
+    )]
     pub suffix: Option<CommandSuffix>,
 }
 
@@ -1132,7 +1156,10 @@ pub struct Assignment {
     /// Value being assigned.
     pub value: AssignmentValue,
     /// Whether or not to append to the preexisting value associated with the named variable.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+    )]
     pub append: bool,
     /// Location of the assignment
     pub loc: TokenLocation,
@@ -1388,10 +1415,16 @@ impl Display for IoFileRedirectTarget {
 #[cfg_attr(any(test, feature = "serde"), derive(PartialEq, Eq, serde::Serialize))]
 pub struct IoHereDocument {
     /// Whether to remove leading tabs from the here document.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+    )]
     pub remove_tabs: bool,
     /// Whether to basic-expand the contents of the here document.
-    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing_if = "<&bool as std::ops::Not>::not"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "<&bool as std::ops::Not>::not")
+    )]
     pub requires_expansion: bool,
     /// The delimiter marking the end of the here document.
     pub here_end: Word,
