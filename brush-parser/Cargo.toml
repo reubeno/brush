@@ -21,6 +21,7 @@ bench = false
 fuzz-testing = ["dep:arbitrary"]
 debug-tracing = ["peg/trace"]
 diagnostics = ["dep:miette"]
+serde = ["dep:serde"]
 
 [dependencies]
 arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }
@@ -31,6 +32,7 @@ miette = { version = "7.6.0", optional = true, default-features = false, feature
     "derive",
 ] }
 peg = "0.8.5"
+serde = { version = "1.0.228", optional = true, features = ["derive", "rc"] }
 thiserror = "2.0.17"
 tracing = "0.1.41"
 utf8-chars = "3.0.6"
@@ -42,6 +44,7 @@ insta = { version = "1.43.2", features = ["glob", "ron", "yaml"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde_json = "1.0.138"
 serde_yaml = "0.9.34"
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -54,3 +57,7 @@ harness = false
 [[example]]
 name = "miette"
 required-features = ["diagnostics"]
+
+[[example]]
+name = "serde"
+required-features = ["serde"]

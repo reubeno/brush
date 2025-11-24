@@ -5,16 +5,16 @@ expression: "test_tokenizer(\"a$x\")?"
 TokenizerResult(
   input: "a$x",
   result: [
-    W("a$x", Loc(
-      start: Pos(
-        idx: 0,
+    Word("a$x", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 3,
+      end: SourcePosition(
+        index: 3,
         line: 1,
-        col: 4,
+        column: 4,
       ),
     )),
   ],

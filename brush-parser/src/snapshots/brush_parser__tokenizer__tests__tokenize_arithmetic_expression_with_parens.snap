@@ -5,16 +5,16 @@ expression: "test_tokenizer(\"$(( (0) ))\")?"
 TokenizerResult(
   input: "$(( (0) ))",
   result: [
-    W("$(( (0) ))", Loc(
-      start: Pos(
-        idx: 0,
+    Word("$(( (0) ))", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 10,
+      end: SourcePosition(
+        index: 10,
         line: 1,
-        col: 11,
+        column: 11,
       ),
     )),
   ],

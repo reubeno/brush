@@ -5,29 +5,29 @@ expression: "ParseResult { input, result: &result }"
 ParseResult(
   input: "( : && ( (( 0 )) || : ) )",
   result: Program(
-    cmds: [
-      List([
-        Item(AndOr(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
               Compound(Subshell(SubshellCommand(
-                list: List([
-                  Item(AndOr(
+                list: CompoundList([
+                  CompoundListItem(AndOrList(
                     first: Pipeline(
                       seq: [
-                        Simple(Simple(
-                          w: Some(W(
-                            v: ":",
-                            loc: Some(Loc(
-                              start: Pos(
-                                idx: 2,
+                        Simple(SimpleCommand(
+                          word_or_name: Some(Word(
+                            value: ":",
+                            loc: Some(TokenLocation(
+                              start: SourcePosition(
+                                index: 2,
                                 line: 1,
-                                col: 3,
+                                column: 3,
                               ),
-                              end: Pos(
-                                idx: 3,
+                              end: SourcePosition(
+                                index: 3,
                                 line: 1,
-                                col: 4,
+                                column: 4,
                               ),
                             )),
                           )),
@@ -38,24 +38,24 @@ ParseResult(
                       And(Pipeline(
                         seq: [
                           Compound(Subshell(SubshellCommand(
-                            list: List([
-                              Item(AndOr(
+                            list: CompoundList([
+                              CompoundListItem(AndOrList(
                                 first: Pipeline(
                                   seq: [
                                     Compound(Arithmetic(ArithmeticCommand(
                                       expr: UnexpandedArithmeticExpr(
                                         value: "0",
                                       ),
-                                      loc: Loc(
-                                        start: Pos(
-                                          idx: 9,
+                                      loc: TokenLocation(
+                                        start: SourcePosition(
+                                          index: 9,
                                           line: 1,
-                                          col: 10,
+                                          column: 10,
                                         ),
-                                        end: Pos(
-                                          idx: 16,
+                                        end: SourcePosition(
+                                          index: 16,
                                           line: 1,
-                                          col: 17,
+                                          column: 17,
                                         ),
                                       ),
                                     )), None),
@@ -64,19 +64,19 @@ ParseResult(
                                 additional: [
                                   Or(Pipeline(
                                     seq: [
-                                      Simple(Simple(
-                                        w: Some(W(
-                                          v: ":",
-                                          loc: Some(Loc(
-                                            start: Pos(
-                                              idx: 20,
+                                      Simple(SimpleCommand(
+                                        word_or_name: Some(Word(
+                                          value: ":",
+                                          loc: Some(TokenLocation(
+                                            start: SourcePosition(
+                                              index: 20,
                                               line: 1,
-                                              col: 21,
+                                              column: 21,
                                             ),
-                                            end: Pos(
-                                              idx: 21,
+                                            end: SourcePosition(
+                                              index: 21,
                                               line: 1,
-                                              col: 22,
+                                              column: 22,
                                             ),
                                           )),
                                         )),
@@ -86,16 +86,16 @@ ParseResult(
                                 ],
                               ), Sequence),
                             ]),
-                            loc: Loc(
-                              start: Pos(
-                                idx: 7,
+                            loc: TokenLocation(
+                              start: SourcePosition(
+                                index: 7,
                                 line: 1,
-                                col: 8,
+                                column: 8,
                               ),
-                              end: Pos(
-                                idx: 23,
+                              end: SourcePosition(
+                                index: 23,
                                 line: 1,
-                                col: 24,
+                                column: 24,
                               ),
                             ),
                           )), None),
@@ -104,16 +104,16 @@ ParseResult(
                     ],
                   ), Sequence),
                 ]),
-                loc: Loc(
-                  start: Pos(
-                    idx: 0,
+                loc: TokenLocation(
+                  start: SourcePosition(
+                    index: 0,
                     line: 1,
-                    col: 1,
+                    column: 1,
                   ),
-                  end: Pos(
-                    idx: 25,
+                  end: SourcePosition(
+                    index: 25,
                     line: 1,
-                    col: 26,
+                    column: 26,
                   ),
                 ),
               )), None),

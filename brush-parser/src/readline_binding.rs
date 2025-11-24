@@ -4,7 +4,7 @@ use crate::error;
 
 /// Represents a key-sequence-to-shell-command binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(serde::Serialize))]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct KeySequenceShellCommandBinding {
     /// Key sequence to bind
     pub seq: KeySequence,
@@ -14,7 +14,7 @@ pub struct KeySequenceShellCommandBinding {
 
 /// Represents a key-sequence-to-readline-command binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(serde::Serialize))]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct KeySequenceReadlineBinding {
     /// Key sequence to bind
     pub seq: KeySequence,
@@ -24,7 +24,7 @@ pub struct KeySequenceReadlineBinding {
 
 /// Represents a readline target.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(serde::Serialize))]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum ReadlineTarget {
     /// A named readline function.
     Function(String),
@@ -34,12 +34,12 @@ pub enum ReadlineTarget {
 
 /// Represents a key sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(serde::Serialize))]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct KeySequence(pub Vec<KeySequenceItem>);
 
 /// Represents an element of a key sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(serde::Serialize))]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum KeySequenceItem {
     /// Control
     Control,
@@ -51,7 +51,7 @@ pub enum KeySequenceItem {
 
 /// Represents a single key stroke.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(serde::Serialize))]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct KeyStroke {
     /// Meta key is held down
     pub meta: bool,

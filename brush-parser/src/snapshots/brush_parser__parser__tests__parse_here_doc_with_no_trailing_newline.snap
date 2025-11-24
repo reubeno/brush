@@ -5,57 +5,57 @@ expression: "ParseResult { input, result: &result }"
 ParseResult(
   input: "cat <<EOF\nSomething\nEOF",
   result: Program(
-    cmds: [
-      List([
-        Item(AndOr(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
-              Simple(Simple(
-                w: Some(W(
-                  v: "cat",
-                  loc: Some(Loc(
-                    start: Pos(
-                      idx: 0,
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "cat",
+                  loc: Some(TokenLocation(
+                    start: SourcePosition(
+                      index: 0,
                       line: 1,
-                      col: 1,
+                      column: 1,
                     ),
-                    end: Pos(
-                      idx: 3,
+                    end: SourcePosition(
+                      index: 3,
                       line: 1,
-                      col: 4,
+                      column: 4,
                     ),
                   )),
                 )),
-                suffix: Some(Suffix([
+                suffix: Some(CommandSuffix([
                   IoRedirect(HereDocument(None, IoHereDocument(
                     requires_expansion: true,
-                    here_end: W(
-                      v: "EOF",
-                      loc: Some(Loc(
-                        start: Pos(
-                          idx: 6,
+                    here_end: Word(
+                      value: "EOF",
+                      loc: Some(TokenLocation(
+                        start: SourcePosition(
+                          index: 6,
                           line: 1,
-                          col: 7,
+                          column: 7,
                         ),
-                        end: Pos(
-                          idx: 9,
+                        end: SourcePosition(
+                          index: 9,
                           line: 1,
-                          col: 10,
+                          column: 10,
                         ),
                       )),
                     ),
-                    doc: W(
-                      v: "Something\n",
-                      loc: Some(Loc(
-                        start: Pos(
-                          idx: 10,
+                    doc: Word(
+                      value: "Something\n",
+                      loc: Some(TokenLocation(
+                        start: SourcePosition(
+                          index: 10,
                           line: 2,
-                          col: 1,
+                          column: 1,
                         ),
-                        end: Pos(
-                          idx: 23,
+                        end: SourcePosition(
+                          index: 23,
                           line: 3,
-                          col: 4,
+                          column: 4,
                         ),
                       )),
                     ),

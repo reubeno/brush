@@ -5,112 +5,112 @@ expression: "test_tokenizer(r\"cat <<EOF | wc -l\nA B C\n1 2 3\nD E F\nEOF\n\")?
 TokenizerResult(
   input: "cat <<EOF | wc -l\nA B C\n1 2 3\nD E F\nEOF\n",
   result: [
-    W("cat", Loc(
-      start: Pos(
-        idx: 0,
+    Word("cat", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 3,
+      end: SourcePosition(
+        index: 3,
         line: 1,
-        col: 4,
-      ),
-    )),
-    Op("<<", Loc(
-      start: Pos(
-        idx: 4,
-        line: 1,
-        col: 5,
-      ),
-      end: Pos(
-        idx: 6,
-        line: 1,
-        col: 7,
+        column: 4,
       ),
     )),
-    W("EOF", Loc(
-      start: Pos(
-        idx: 6,
+    Operator("<<", TokenLocation(
+      start: SourcePosition(
+        index: 4,
         line: 1,
-        col: 7,
+        column: 5,
       ),
-      end: Pos(
-        idx: 9,
+      end: SourcePosition(
+        index: 6,
         line: 1,
-        col: 10,
+        column: 7,
       ),
     )),
-    W("A B C\n1 2 3\nD E F\n", Loc(
-      start: Pos(
-        idx: 18,
+    Word("EOF", TokenLocation(
+      start: SourcePosition(
+        index: 6,
+        line: 1,
+        column: 7,
+      ),
+      end: SourcePosition(
+        index: 9,
+        line: 1,
+        column: 10,
+      ),
+    )),
+    Word("A B C\n1 2 3\nD E F\n", TokenLocation(
+      start: SourcePosition(
+        index: 18,
         line: 2,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 40,
+      end: SourcePosition(
+        index: 40,
         line: 6,
-        col: 1,
+        column: 1,
       ),
     )),
-    W("EOF", Loc(
-      start: Pos(
-        idx: 40,
+    Word("EOF", TokenLocation(
+      start: SourcePosition(
+        index: 40,
         line: 6,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 40,
+      end: SourcePosition(
+        index: 40,
         line: 6,
-        col: 1,
+        column: 1,
       ),
     )),
-    Op("|", Loc(
-      start: Pos(
-        idx: 9,
+    Operator("|", TokenLocation(
+      start: SourcePosition(
+        index: 9,
         line: 1,
-        col: 10,
+        column: 10,
       ),
-      end: Pos(
-        idx: 11,
+      end: SourcePosition(
+        index: 11,
         line: 1,
-        col: 12,
-      ),
-    )),
-    W("wc", Loc(
-      start: Pos(
-        idx: 12,
-        line: 1,
-        col: 13,
-      ),
-      end: Pos(
-        idx: 14,
-        line: 1,
-        col: 15,
+        column: 12,
       ),
     )),
-    W("-l", Loc(
-      start: Pos(
-        idx: 14,
+    Word("wc", TokenLocation(
+      start: SourcePosition(
+        index: 12,
         line: 1,
-        col: 15,
+        column: 13,
       ),
-      end: Pos(
-        idx: 17,
+      end: SourcePosition(
+        index: 14,
         line: 1,
-        col: 18,
+        column: 15,
       ),
     )),
-    Op("\n", Loc(
-      start: Pos(
-        idx: 17,
+    Word("-l", TokenLocation(
+      start: SourcePosition(
+        index: 14,
         line: 1,
-        col: 18,
+        column: 15,
       ),
-      end: Pos(
-        idx: 18,
+      end: SourcePosition(
+        index: 17,
+        line: 1,
+        column: 18,
+      ),
+    )),
+    Operator("\n", TokenLocation(
+      start: SourcePosition(
+        index: 17,
+        line: 1,
+        column: 18,
+      ),
+      end: SourcePosition(
+        index: 18,
         line: 2,
-        col: 1,
+        column: 1,
       ),
     )),
   ],

@@ -46,7 +46,7 @@ fn test_parser_using_test_case_set(test_case_set: &TestCaseSet) {
 
 // NOTE: The name of this function affects the name of the snapshot generated.
 fn parse(test_case_set_name: &str, test_case: &TestCase) {
-    #[derive(serde::Serialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     struct TestCaseInfo {
         test_case_set: String,
         test_case: String,
@@ -88,7 +88,7 @@ struct ParseSummary<'a> {
     result: ParseResult,
 }
 
-#[cfg_attr(test, derive(serde::Serialize))]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 enum ParseResult {
     Success(crate::ast::Program),
     Failure(String),

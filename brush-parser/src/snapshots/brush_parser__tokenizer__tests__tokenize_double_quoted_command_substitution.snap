@@ -5,16 +5,16 @@ expression: "test_tokenizer(r#\"x\"$(echo hi)\"y\"#)?"
 TokenizerResult(
   input: "x\"$(echo hi)\"y",
   result: [
-    W("x\"$(echo hi)\"y", Loc(
-      start: Pos(
-        idx: 0,
+    Word("x\"$(echo hi)\"y", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 14,
+      end: SourcePosition(
+        index: 14,
         line: 1,
-        col: 15,
+        column: 15,
       ),
     )),
   ],

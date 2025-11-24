@@ -5,160 +5,160 @@ expression: "test_tokenizer(r\"cat <<HERE1 <<HERE2\nSOMETHING\nHERE1\nOTHER\nHER
 TokenizerResult(
   input: "cat <<HERE1 <<HERE2\nSOMETHING\nHERE1\nOTHER\nHERE2\necho after\n",
   result: [
-    W("cat", Loc(
-      start: Pos(
-        idx: 0,
+    Word("cat", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 3,
+      end: SourcePosition(
+        index: 3,
         line: 1,
-        col: 4,
-      ),
-    )),
-    Op("<<", Loc(
-      start: Pos(
-        idx: 4,
-        line: 1,
-        col: 5,
-      ),
-      end: Pos(
-        idx: 6,
-        line: 1,
-        col: 7,
+        column: 4,
       ),
     )),
-    W("HERE1", Loc(
-      start: Pos(
-        idx: 6,
+    Operator("<<", TokenLocation(
+      start: SourcePosition(
+        index: 4,
         line: 1,
-        col: 7,
+        column: 5,
       ),
-      end: Pos(
-        idx: 11,
+      end: SourcePosition(
+        index: 6,
         line: 1,
-        col: 12,
+        column: 7,
       ),
     )),
-    W("SOMETHING\n", Loc(
-      start: Pos(
-        idx: 20,
+    Word("HERE1", TokenLocation(
+      start: SourcePosition(
+        index: 6,
+        line: 1,
+        column: 7,
+      ),
+      end: SourcePosition(
+        index: 11,
+        line: 1,
+        column: 12,
+      ),
+    )),
+    Word("SOMETHING\n", TokenLocation(
+      start: SourcePosition(
+        index: 20,
         line: 2,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 36,
+      end: SourcePosition(
+        index: 36,
         line: 4,
-        col: 1,
+        column: 1,
       ),
     )),
-    W("HERE1", Loc(
-      start: Pos(
-        idx: 36,
+    Word("HERE1", TokenLocation(
+      start: SourcePosition(
+        index: 36,
         line: 4,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 36,
+      end: SourcePosition(
+        index: 36,
         line: 4,
-        col: 1,
+        column: 1,
       ),
     )),
-    Op("<<", Loc(
-      start: Pos(
-        idx: 11,
+    Operator("<<", TokenLocation(
+      start: SourcePosition(
+        index: 11,
         line: 1,
-        col: 12,
+        column: 12,
       ),
-      end: Pos(
-        idx: 14,
+      end: SourcePosition(
+        index: 14,
         line: 1,
-        col: 15,
-      ),
-    )),
-    W("HERE2", Loc(
-      start: Pos(
-        idx: 14,
-        line: 1,
-        col: 15,
-      ),
-      end: Pos(
-        idx: 19,
-        line: 1,
-        col: 20,
+        column: 15,
       ),
     )),
-    W("OTHER\n", Loc(
-      start: Pos(
-        idx: 36,
+    Word("HERE2", TokenLocation(
+      start: SourcePosition(
+        index: 14,
+        line: 1,
+        column: 15,
+      ),
+      end: SourcePosition(
+        index: 19,
+        line: 1,
+        column: 20,
+      ),
+    )),
+    Word("OTHER\n", TokenLocation(
+      start: SourcePosition(
+        index: 36,
         line: 4,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 48,
+      end: SourcePosition(
+        index: 48,
         line: 6,
-        col: 1,
+        column: 1,
       ),
     )),
-    W("HERE2", Loc(
-      start: Pos(
-        idx: 48,
+    Word("HERE2", TokenLocation(
+      start: SourcePosition(
+        index: 48,
         line: 6,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 48,
+      end: SourcePosition(
+        index: 48,
         line: 6,
-        col: 1,
+        column: 1,
       ),
     )),
-    Op("\n", Loc(
-      start: Pos(
-        idx: 19,
+    Operator("\n", TokenLocation(
+      start: SourcePosition(
+        index: 19,
         line: 1,
-        col: 20,
+        column: 20,
       ),
-      end: Pos(
-        idx: 20,
+      end: SourcePosition(
+        index: 20,
         line: 2,
-        col: 1,
+        column: 1,
       ),
     )),
-    W("echo", Loc(
-      start: Pos(
-        idx: 48,
+    Word("echo", TokenLocation(
+      start: SourcePosition(
+        index: 48,
         line: 6,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 52,
+      end: SourcePosition(
+        index: 52,
         line: 6,
-        col: 5,
-      ),
-    )),
-    W("after", Loc(
-      start: Pos(
-        idx: 53,
-        line: 6,
-        col: 6,
-      ),
-      end: Pos(
-        idx: 58,
-        line: 6,
-        col: 11,
+        column: 5,
       ),
     )),
-    Op("\n", Loc(
-      start: Pos(
-        idx: 58,
+    Word("after", TokenLocation(
+      start: SourcePosition(
+        index: 53,
         line: 6,
-        col: 11,
+        column: 6,
       ),
-      end: Pos(
-        idx: 59,
+      end: SourcePosition(
+        index: 58,
+        line: 6,
+        column: 11,
+      ),
+    )),
+    Operator("\n", TokenLocation(
+      start: SourcePosition(
+        index: 58,
+        line: 6,
+        column: 11,
+      ),
+      end: SourcePosition(
+        index: 59,
         line: 7,
-        col: 1,
+        column: 1,
       ),
     )),
   ],

@@ -30,16 +30,16 @@ pub(crate) enum TokenEndReason {
 /// Represents a position in a source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-#[cfg_attr(test, serde(rename = "Pos"))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
-    #[cfg_attr(test, serde(rename = "idx"))]
     pub index: usize,
     /// The 1-based line number.
     pub line: usize,
     /// The 1-based column number.
-    #[cfg_attr(test, serde(rename = "col"))]
     pub column: usize,
 }
 
@@ -60,8 +60,10 @@ impl From<&SourcePosition> for miette::SourceOffset {
 /// Represents the location of a token in its source shell script.
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
-#[cfg_attr(test, serde(rename = "Loc"))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct TokenLocation {
     /// The start position of the token.
     pub start: Arc<SourcePosition>,
@@ -85,13 +87,14 @@ impl TokenLocation {
 /// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq, Eq, serde::Serialize))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub enum Token {
     /// An operator token.
-    #[cfg_attr(test, serde(rename = "Op"))]
     Operator(String, TokenLocation),
     /// A word token.
-    #[cfg_attr(test, serde(rename = "W"))]
     Word(String, TokenLocation),
 }
 
@@ -1369,7 +1372,7 @@ mod tests {
     use insta::assert_ron_snapshot;
     use pretty_assertions::{assert_eq, assert_matches};
 
-    #[derive(serde::Serialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     struct TokenizerResult<'a> {
         input: &'a str,
         result: Vec<Token>,

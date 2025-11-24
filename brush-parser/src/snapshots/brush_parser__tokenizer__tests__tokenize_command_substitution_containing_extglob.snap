@@ -5,28 +5,28 @@ expression: "test_tokenizer(\"echo $(echo !(x))\")?"
 TokenizerResult(
   input: "echo $(echo !(x))",
   result: [
-    W("echo", Loc(
-      start: Pos(
-        idx: 0,
+    Word("echo", TokenLocation(
+      start: SourcePosition(
+        index: 0,
         line: 1,
-        col: 1,
+        column: 1,
       ),
-      end: Pos(
-        idx: 4,
+      end: SourcePosition(
+        index: 4,
         line: 1,
-        col: 5,
+        column: 5,
       ),
     )),
-    W("$(echo !(x))", Loc(
-      start: Pos(
-        idx: 5,
+    Word("$(echo !(x))", TokenLocation(
+      start: SourcePosition(
+        index: 5,
         line: 1,
-        col: 6,
+        column: 6,
       ),
-      end: Pos(
-        idx: 17,
+      end: SourcePosition(
+        index: 17,
         line: 1,
-        col: 18,
+        column: 18,
       ),
     )),
   ],
