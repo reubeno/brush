@@ -1138,6 +1138,7 @@ impl Shell {
         self.call_stack.in_function()
     }
 
+    #[allow(clippy::unused_self)]
     fn current_loc_as_call_site(&self, params: &ExecutionParameters) -> callstack::CallSite {
         callstack::CallSite {
             source_info: params.source_info.clone(),
@@ -1218,14 +1219,15 @@ impl Shell {
     pub fn save_history(&mut self) -> Result<(), error::Error> {
         if let Some(history_file_path) = self.history_file_path() {
             if let Some(history) = &mut self.history {
-                // See if there's *any* time format configured. That triggers writing out timestamps.
+                // See if there's *any* time format configured. That triggers writing out
+                // timestamps.
                 let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
 
                 // TODO: Observe options.append_to_history_file
                 history.flush(
                     history_file_path,
-                    true, /*append?*/
-                    true, /*unsaved items only?*/
+                    true, /* append? */
+                    true, /* unsaved items only? */
                     write_timestamps,
                 )?;
             }
