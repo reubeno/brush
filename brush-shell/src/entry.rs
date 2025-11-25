@@ -200,15 +200,10 @@ async fn run_in_shell(
 ) -> Result<u8, brush_interactive::ShellError> {
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
-        // Pass through args.
-        if !args.script_args.is_empty() {
-            shell.shell_mut().as_mut().shell_name = Some(args.script_args[0].clone());
-        }
-        shell.shell_mut().as_mut().positional_parameters =
-            args.script_args.iter().skip(1).cloned().collect();
-
         // Execute the command string.
-        let params = shell.shell().as_ref().default_exec_params();
+        let mut params = shell.shell().as_ref().default_exec_params();
+        params.source_info = brush_core::SourceOrigin::CommandString.into();
+
         shell
             .shell_mut()
             .as_mut()
@@ -219,14 +214,6 @@ async fn run_in_shell(
     // args) passed on the command line via positional arguments, then we copy over the
     // parameters but do *not* execute it.
     } else if args.read_commands_from_stdin {
-        if !args.script_args.is_empty() {
-            shell
-                .shell_mut()
-                .as_mut()
-                .positional_parameters
-                .clone_from(&args.script_args);
-        }
-
         shell.run_interactively().await?;
 
     // If a script path was provided, then run the script.
@@ -258,11 +245,26 @@ async fn instantiate_shell(
     cli_args: Vec<String>,
     factory: impl shell_factory::ShellFactory + Send + 'static,
 ) -> Result<impl brush_interactive::InteractiveShell + 'static, brush_interactive::ShellError> {
-    let argv0 = if args.sh_mode {
-        // Simulate having been run as "sh".
-        Some(String::from("sh"))
+    // Compute login flag.
+    let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
+
+    // Compute shell name.
+    let shell_name = if args.command.is_some() && !args.script_args.is_empty() {
+        Some(args.script_args[0].clone())
     } else if !cli_args.is_empty() {
         Some(cli_args[0].clone())
+    } else if args.sh_mode {
+        // Simulate having been run as "sh".
+        Some(String::from("sh"))
+    } else {
+        None
+    };
+
+    // Compute positional shell arguments.
+    let shell_args = if args.command.is_some() {
+        Some(args.script_args.iter().skip(1).cloned().collect())
+    } else if args.read_commands_from_stdin {
+        Some(args.script_args.clone())
     } else {
         None
     };
@@ -278,6 +280,7 @@ async fn instantiate_shell(
         brush_builtins::BuiltinSet::BashMode
     });
 
+    // Identify the file descriptors to inherit.
     let fds = args
         .inherited_fds
         .iter()
@@ -295,7 +298,7 @@ async fn instantiate_shell(
             enabled_shopt_options: args.enabled_shopt_options.clone(),
             do_not_execute_commands: args.do_not_execute_commands,
             exit_after_one_command: args.exit_after_one_command,
-            login: args.login || argv0.as_ref().is_some_and(|a0| a0.starts_with('-')),
+            login,
             interactive: args.is_interactive(),
             command_string_mode: args.command.is_some(),
             no_editing: args.no_editing,
@@ -304,10 +307,11 @@ async fn instantiate_shell(
             rc_file: args.rc_file.clone(),
             do_not_inherit_env: args.do_not_inherit_env,
             fds: Some(fds),
+            shell_args,
             posix: args.posix || args.sh_mode,
             print_commands_and_arguments: args.print_commands_and_arguments,
             read_commands_from_stdin,
-            shell_name: argv0,
+            shell_name,
             shell_product_display_str: Some(productinfo::get_product_display_str()),
             sh_mode: args.sh_mode,
             treat_unset_variables_as_error: args.treat_unset_variables_as_error,

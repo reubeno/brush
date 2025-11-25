@@ -10,7 +10,7 @@ impl reedline::Validator for ReedlineValidator {
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
-        match shell.parse_string(line.to_owned()) {
+        match shell.parse_string(line, &brush_core::SourceInfo::default()) {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>
             {

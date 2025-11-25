@@ -1,6 +1,6 @@
 //! Command execution
 
-use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
+use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio};
 
 use brush_parser::ast;
 use itertools::Itertools;
@@ -8,7 +8,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, env, error, escape,
+    builtins, env, error, escape, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -176,7 +176,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
         for (func_name, registration) in context.shell.funcs().iter() {
             if registration.is_exported() {
                 let var_name = std::format!("BASH_FUNC_{func_name}%%");
-                let value = std::format!("() {}", registration.definition.body);
+                let value = std::format!("() {}", registration.definition().body);
                 cmd.env(var_name, value);
             }
         }
@@ -232,40 +232,49 @@ async fn invoke_debug_trap_handler_if_registered(
     context: &mut ExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<(), error::Error> {
-    if context.shell.traps.handler_depth == 0 {
-        let debug_trap_handler = context
-            .shell
-            .traps
-            .handlers
-            .get(&traps::TrapSignal::Debug)
-            .cloned();
-        if let Some(debug_trap_handler) = debug_trap_handler {
-            // TODO: Confirm whether trap handlers should be executed in the same process group.
-            let mut handler_params = context.params.clone();
-            handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
-
-            let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
-
-            // TODO: This shouldn't *just* be set in a trap situation.
-            context.shell.env.update_or_add(
-                "BASH_COMMAND",
-                variables::ShellValueLiteral::Scalar(full_cmd),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-
-            context.shell.traps.handler_depth += 1;
-
-            // TODO: Discard result?
-            let _ = context
-                .shell
-                .run_string(debug_trap_handler, &handler_params)
-                .await;
-
-            context.shell.traps.handler_depth -= 1;
-        }
+    if context.shell.traps.in_handler() {
+        return Ok(());
     }
+
+    let Some(debug_trap_handler) = context
+        .shell
+        .traps
+        .get_handler(traps::TrapSignal::Debug)
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    // TODO: Confirm whether trap handlers should be executed in the same process group.
+    let mut handler_params = context.params.clone();
+    handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+    handler_params.source_info = crate::SourceInfo {
+        source: crate::SourceOrigin::TrapHandler {
+            signal: "debug".into(),
+        },
+        start_offset: debug_trap_handler.source_info.start_offset.clone(),
+    };
+
+    let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
+
+    // TODO: This shouldn't *just* be set in a trap situation.
+    context.shell.env.update_or_add(
+        "BASH_COMMAND",
+        variables::ShellValueLiteral::Scalar(full_cmd),
+        |_| Ok(()),
+        env::EnvironmentLookup::Anywhere,
+        env::EnvironmentScope::Global,
+    )?;
+
+    context.shell.traps.enter_handler();
+
+    // TODO: Discard result?
+    let _ = context
+        .shell
+        .run_string(&debug_trap_handler.command, &handler_params)
+        .await;
+
+    context.shell.traps.leave_handler();
 
     Ok(())
 }
@@ -319,8 +328,7 @@ pub async fn execute(
             .get(cmd_context.command_name.as_str())
         {
             // Strip the function name off args.
-            return invoke_shell_function(func_reg.definition.clone(), cmd_context, &args[1..])
-                .await;
+            return invoke_shell_function(func_reg.to_owned(), cmd_context, &args[1..]).await;
         }
     }
 
@@ -482,11 +490,11 @@ async fn execute_builtin_command(
 }
 
 pub(crate) async fn invoke_shell_function(
-    function_definition: Arc<ast::FunctionDefinition>,
+    function: functions::Registration,
     mut context: ExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
-    let ast::FunctionBody(body, redirects) = &function_definition.body;
+    let ast::FunctionBody(body, redirects) = &function.definition().body;
 
     // Apply any redirects specified at function definition-time.
     if let Some(redirects) = redirects {
@@ -495,18 +503,20 @@ pub(crate) async fn invoke_shell_function(
         }
     }
 
-    // Temporarily replace positional parameters.
-    let prior_positional_params = std::mem::take(&mut context.shell.positional_parameters);
-    context.shell.positional_parameters = args.iter().map(|a| a.to_string()).collect();
+    let positional_args = args.iter().map(|a| a.to_string());
 
-    // Pass through open files.
-    let params = context.params.clone();
+    // Pass through open files; shift source info to the function definition's original source.
+    let mut params = context.params.clone();
+    params.source_info.clone_from(function.source_info());
 
     // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
     // before "exiting" the function.
-    context
-        .shell
-        .enter_function(context.command_name.as_str(), &function_definition)?;
+    context.shell.enter_function(
+        context.command_name.as_str(),
+        &function,
+        positional_args,
+        &context.params,
+    )?;
 
     // Invoke the function.
     let result = body.execute(context.shell, &params).await;
@@ -516,9 +526,6 @@ pub(crate) async fn invoke_shell_function(
 
     // We've come back out, reflect it.
     context.shell.leave_function()?;
-
-    // Restore positional parameters.
-    context.shell.positional_parameters = prior_positional_params;
 
     // Get the actual execution result from the body of the function.
     let mut result = result?;
@@ -584,8 +591,10 @@ async fn run_substitution_command(
     mut params: ExecutionParameters,
     command: String,
 ) -> Result<ExecutionResult, error::Error> {
+    params.source_info = crate::SourceOrigin::CommandSubstitution.into();
+
     // Parse the string into a whole shell program.
-    let parse_result = shell.parse_string(command);
+    let parse_result = shell.parse_string(&command, &params.source_info);
 
     // Check for a command that is only an input redirection ("< file").
     // If detected, emulate `cat file` to stdout and return immediately.
@@ -598,13 +607,9 @@ async fn run_substitution_command(
         }
     }
 
-    let source_info = brush_parser::SourceInfo {
-        source: String::from("main"),
-    };
-
     // Handle the parse result using default shell behavior.
     shell
-        .run_parsed_result(parse_result, &source_info, &params)
+        .run_parsed_result(parse_result, Some(command.as_str()), &params)
         .await
 }
 

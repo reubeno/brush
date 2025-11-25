@@ -18,12 +18,7 @@ mod unix {
     }
 
     fn parse(tokens: &Vec<Token>) -> brush_parser::ast::Program {
-        parse_tokens(
-            tokens,
-            &brush_parser::ParserOptions::default(),
-            &brush_parser::SourceInfo::default(),
-        )
-        .unwrap()
+        parse_tokens(tokens, &brush_parser::ParserOptions::default()).unwrap()
     }
 
     const SAMPLE_SCRIPT: &str = r#"

@@ -78,7 +78,11 @@ impl TrapCommand {
         signal_type: TrapSignal,
     ) -> Result<(), brush_core::Error> {
         if let Some(handler) = context.shell.traps.get_handler(signal_type) {
-            writeln!(context.stdout(), "trap -- '{handler}' {signal_type}")?;
+            writeln!(
+                context.stdout(),
+                "trap -- '{}' {signal_type}",
+                &handler.command
+            )?;
         }
         Ok(())
     }
@@ -93,10 +97,12 @@ impl TrapCommand {
         handler: &str,
     ) {
         for signal in signals {
-            context
-                .shell
-                .traps
-                .register_handler(signal, handler.to_owned());
+            context.shell.traps.register_handler(
+                signal,
+                handler.to_owned(),
+                // TODO: We need to add in the offset from the surrounding command.
+                context.params.source_info.clone(),
+            );
         }
     }
 }

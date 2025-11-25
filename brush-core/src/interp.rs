@@ -63,6 +63,8 @@ pub struct ExecutionParameters {
     open_files: openfiles::OpenFiles,
     /// Policy for how to manage spawned external processes.
     pub process_group_policy: ProcessGroupPolicy,
+    /// If available, source information for the code being executed.
+    pub source_info: crate::SourceInfo,
 }
 
 impl ExecutionParameters {
@@ -422,6 +424,7 @@ async fn spawn_pipeline_processes(
 
         if !run_in_current_shell {
             let mut subshell = shell.clone();
+
             let mut pipeline_context = PipelineExecutionContext {
                 shell: &mut subshell,
                 current_pipeline_index,
@@ -632,7 +635,7 @@ impl Execute for ast::ForClauseCommand {
             }
         } else {
             // Otherwise, we use the current positional parameters.
-            expanded_values.extend_from_slice(&shell.positional_parameters);
+            expanded_values.extend_from_slice(shell.current_shell_args());
         }
 
         for value in expanded_values {
@@ -913,9 +916,9 @@ impl Execute for ast::FunctionDefinition {
     async fn execute(
         &self,
         shell: &mut Shell,
-        _params: &ExecutionParameters,
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell.define_func(self.fname.value.clone(), self.clone());
+        shell.define_func(self.fname.value.clone(), self.clone(), &params.source_info);
 
         let result = ExecutionResult::success();
         *shell.last_exit_status_mut() = result.exit_code.into();

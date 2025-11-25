@@ -1011,15 +1011,11 @@ impl<'a> WordExpander<'a> {
                         },
                     )
                 ) {
-                    let shell_name = self
-                        .shell
-                        .shell_name
-                        .as_ref()
-                        .map_or_else(|| "", |name| name.as_str());
+                    let shell_name = self.shell.current_shell_name().unwrap_or_else(|| "".into());
 
                     expanded_parameter.fields.insert(
                         0,
-                        WordField::from(ExpansionPiece::Splittable(shell_name.to_owned())),
+                        WordField::from(ExpansionPiece::Splittable(shell_name.to_string())),
                     );
                 }
 
@@ -1447,7 +1443,7 @@ impl<'a> WordExpander<'a> {
                     Ok(self
                         .expand_special_parameter(&brush_parser::word::SpecialParameter::ShellName))
                 } else if let Some(parameter) =
-                    self.shell.positional_parameters.get((p - 1) as usize)
+                    self.shell.current_shell_args().get((p - 1) as usize)
                 {
                     Ok(Expansion::from(parameter.to_owned()))
                 } else {
@@ -1548,10 +1544,10 @@ impl<'a> WordExpander<'a> {
     ) -> Expansion {
         match parameter {
             brush_parser::word::SpecialParameter::AllPositionalParameters { concatenate } => {
-                let positional_params = self.shell.positional_parameters.iter();
+                let args = self.shell.current_shell_args().iter();
 
                 Expansion {
-                    fields: positional_params
+                    fields: args
                         .into_iter()
                         .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
                         .collect(),
@@ -1561,7 +1557,7 @@ impl<'a> WordExpander<'a> {
                 }
             }
             brush_parser::word::SpecialParameter::PositionalParameterCount => {
-                Expansion::from(self.shell.positional_parameters.len().to_string())
+                Expansion::from(self.shell.current_shell_args().len().to_string())
             }
             brush_parser::word::SpecialParameter::LastExitStatus => {
                 Expansion::from(self.shell.last_result().to_string())
@@ -1582,9 +1578,8 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::SpecialParameter::ShellName => Expansion::from(
                 self.shell
-                    .shell_name
-                    .as_ref()
-                    .map_or_else(String::new, |name| name.clone()),
+                    .current_shell_name()
+                    .map_or_else(String::new, |name| name.to_string()),
             ),
         }
     }

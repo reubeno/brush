@@ -79,7 +79,6 @@ ParseResult(
       )), Some(RedirectList([
         File(Some(2), DuplicateOutput, Fd(1)),
       ]))),
-      source: "",
     )),
     Simple(SimpleCommand(
       word_or_name: Some(Word(

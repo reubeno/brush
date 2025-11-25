@@ -28,11 +28,11 @@ pub(crate) enum TokenEndReason {
 }
 
 /// Represents a position in a source shell script.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     any(test, feature = "serde"),
-    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+    derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct SourcePosition {
     /// The 0-based index of the character in the input stream.
@@ -46,6 +46,23 @@ pub struct SourcePosition {
 impl Display for SourcePosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("line {} col {}", self.line, self.column))
+    }
+}
+
+impl SourcePosition {
+    /// Returns a new `SourcePosition` that is the sum of this position and another.
+    /// The other position is treated as a 0-based offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The other `SourcePosition` to add as an offset.
+    #[must_use]
+    pub const fn offset(&self, other: &Self) -> Self {
+        Self {
+            index: self.index + other.index,
+            line: self.line + other.line,
+            column: self.column + other.column,
+        }
     }
 }
 
@@ -76,6 +93,21 @@ impl TokenLocation {
     pub fn length(&self) -> usize {
         self.end.index - self.start.index
     }
+
+    /// Returns a new `TokenLocation` that is offset by the given `SourcePosition`.
+    /// The provided position is intended as a 0-based relative offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - The `SourcePosition` to use as an offset.
+    #[must_use]
+    pub fn offset(&self, offset: &SourcePosition) -> Self {
+        Self {
+            start: Arc::new(self.start.offset(offset)),
+            end: Arc::new(self.end.offset(offset)),
+        }
+    }
+
     pub(crate) fn within(start: &Self, end: &Self) -> Self {
         Self {
             start: start.start.clone(),

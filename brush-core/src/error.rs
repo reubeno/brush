@@ -168,7 +168,7 @@ pub enum ErrorKind {
 
     /// An error occurred while parsing.
     #[error("{1}: {0}")]
-    ParseError(brush_parser::ParseError, brush_parser::SourceInfo),
+    ParseError(brush_parser::ParseError, crate::SourceInfo),
 
     /// An error occurred while parsing a function body.
     #[error("{0}: {1}")]
@@ -261,6 +261,10 @@ pub enum ErrorKind {
     /// Expanding an unset variable.
     #[error("expanding unset variable: {0}")]
     ExpandingUnsetVariable(String),
+
+    /// An internal error occurred.
+    #[error("internal shell error: {0}")]
+    InternalError(String),
 }
 
 impl BuiltinError for Error {}

@@ -26,7 +26,7 @@ async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
     //
     // Instantiate a brush shell with defaults, then try to parse the input.
     //
-    let our_parse_result = shell.parse_string(input.clone());
+    let our_parse_result = shell.parse_string(input.clone(), &brush_core::SourceInfo::default());
 
     //
     // Now run it under 'bash -n -t' as a crude way to see if it's at least valid syntax.

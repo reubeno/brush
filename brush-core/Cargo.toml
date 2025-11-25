@@ -75,3 +75,4 @@ uuid = { version = "1.18.1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.100"
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }

@@ -107,11 +107,7 @@ fn parse_script_content(s: &str) -> ParseSummary<'_> {
         }
     };
 
-    let parsed_program = match crate::parse_tokens(
-        &tokens,
-        &crate::ParserOptions::default(),
-        &crate::SourceInfo::default(),
-    ) {
+    let parsed_program = match crate::parse_tokens(&tokens, &crate::ParserOptions::default()) {
         Ok(parsed_program) => parsed_program,
         Err(err) => {
             return ParseSummary {

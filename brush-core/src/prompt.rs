@@ -103,8 +103,8 @@ fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::Newline => "\n".to_owned(),
         brush_parser::prompt::PromptPiece::NumberOfManagedJobs => shell.jobs.jobs.len().to_string(),
         brush_parser::prompt::PromptPiece::ShellBaseName => {
-            if let Some(shell_name) = &shell.shell_name {
-                Path::new(shell_name)
+            if let Some(shell_name) = shell.current_shell_name() {
+                Path::new(shell_name.as_ref())
                     .file_name()
                     .map(|name| name.to_string_lossy().to_string())
                     .unwrap_or_default()

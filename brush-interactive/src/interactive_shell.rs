@@ -214,7 +214,15 @@ pub trait InteractiveShell: Send {
             }
 
             // Execute the command.
-            let params = shell_mut.as_mut().default_exec_params();
+            let mut params = shell_mut.as_mut().default_exec_params();
+            params.source_info = brush_core::SourceInfo {
+                source: brush_core::SourceOrigin::Interactive,
+                start_offset: Some(brush_core::SourcePosition {
+                    line: shell_mut.as_mut().current_line_number(),
+                    ..Default::default()
+                }),
+            };
+
             let result = match shell_mut.as_mut().run_string(read_result, &params).await {
                 Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
                 Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
@@ -271,8 +279,10 @@ async fn run_pre_prompt_command(
     let prev_last_pipeline_statuses = shell.last_pipeline_statuses.clone();
 
     // Run the command.
-    let params = shell.default_exec_params();
-    shell.run_string(prompt_cmd, &params).await?;
+    let mut params = shell.default_exec_params();
+    params.source_info = brush_core::SourceOrigin::PromptCommand.into();
+
+    shell.run_string(prompt_cmd.into(), &params).await?;
 
     // Restore the last exit status.
     shell.last_pipeline_statuses = prev_last_pipeline_statuses;

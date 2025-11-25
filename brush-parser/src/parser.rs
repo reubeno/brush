@@ -47,9 +47,6 @@ pub struct Parser<R: std::io::BufRead> {
     /// Parsing options
     #[builder(default)]
     options: ParserOptions,
-    /// Information about the source of the tokens
-    #[builder(default)]
-    source_info: SourceInfo,
 }
 
 impl<R: std::io::BufRead> Parser<R> {
@@ -59,12 +56,10 @@ impl<R: std::io::BufRead> Parser<R> {
     ///
     /// * `reader` - The reader to use for input.
     /// * `options` - The options to use when parsing.
-    /// * `source_info` - Information about the source of the tokens.
-    pub fn new(reader: R, options: &ParserOptions, source_info: &SourceInfo) -> Self {
+    pub fn new(reader: R, options: &ParserOptions) -> Self {
         Self {
             reader,
             options: options.clone(),
-            source_info: source_info.clone(),
         }
     }
 
@@ -79,7 +74,7 @@ impl<R: std::io::BufRead> Parser<R> {
         //
 
         let tokens = self.tokenize()?;
-        parse_tokens(&tokens, &self.options, &self.source_info)
+        parse_tokens(&tokens, &self.options)
     }
 
     /// Parses a function definition body from the input. The body is expected to be
@@ -88,11 +83,8 @@ impl<R: std::io::BufRead> Parser<R> {
         &mut self,
     ) -> Result<ast::FunctionBody, error::ParseError> {
         let tokens = self.tokenize()?;
-        let parse_result = token_parser::function_parens_and_body(
-            &Tokens { tokens: &tokens },
-            &self.options,
-            &self.source_info,
-        );
+        let parse_result =
+            token_parser::function_parens_and_body(&Tokens { tokens: &tokens }, &self.options);
         parse_result_to_error(parse_result, &tokens)
     }
 
@@ -137,13 +129,11 @@ impl<R: std::io::BufRead> Parser<R> {
 ///
 /// * `tokens` - The tokens to parse.
 /// * `options` - The options to use when parsing.
-/// * `source_info` - Information about the source of the tokens.
 pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
-    source_info: &SourceInfo,
 ) -> Result<ast::Program, error::ParseError> {
-    let parse_result = token_parser::program(&Tokens { tokens }, options, source_info);
+    let parse_result = token_parser::program(&Tokens { tokens }, options);
     parse_result_to_error(parse_result, tokens)
 }
 
@@ -229,21 +219,8 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
     }
 }
 
-/// Information about the source of tokens.
-#[derive(Clone, Debug, Default)]
-pub struct SourceInfo {
-    /// The source of the tokens.
-    pub source: String,
-}
-
-impl std::fmt::Display for SourceInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.source)
-    }
-}
-
 peg::parser! {
-    grammar token_parser<'a>(parser_options: &ParserOptions, source_info: &SourceInfo) for Tokens<'a> {
+    grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
         pub(crate) rule program() -> ast::Program =
             linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
             linebreak() { ast::Program { complete_commands: vec![] } }
@@ -648,10 +625,10 @@ peg::parser! {
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function")? fname:fname() body:function_parens_and_body() {
-                ast::FunctionDefinition { fname, body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname, body }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
-                ast::FunctionDefinition { fname, body, source: source_info.source.clone() }
+                ast::FunctionDefinition { fname, body }
             } /
             expected!("function definition")
 
@@ -1074,7 +1051,6 @@ esac\
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
-            &SourceInfo::default(),
         )?;
 
         assert_ron_snapshot!(ParseResult {
@@ -1100,7 +1076,6 @@ esac\
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
-            &SourceInfo::default(),
         )?;
 
         assert_ron_snapshot!(ParseResult {
@@ -1121,7 +1096,6 @@ esac\
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
-            &SourceInfo::default(),
         )?;
 
         assert_ron_snapshot!(ParseResult {
@@ -1142,7 +1116,6 @@ esac\
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
-            &SourceInfo::default(),
         )?;
 
         assert_ron_snapshot!(ParseResult {
@@ -1165,7 +1138,6 @@ EOF";
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
-            &SourceInfo::default(),
         )?;
 
         assert_ron_snapshot!(ParseResult {
@@ -1187,7 +1159,6 @@ EOF";
                     tokens: tokens.as_slice(),
                 },
                 &ParserOptions::default(),
-                &SourceInfo::default(),
             )?;
 
             assert_ron_snapshot!(ParseResult {
@@ -1220,7 +1191,6 @@ for f in A B C; do
                 tokens: tokens.as_slice(),
             },
             &ParserOptions::default(),
-            &SourceInfo::default(),
         )?;
 
         assert_ron_snapshot!(ParseResult {

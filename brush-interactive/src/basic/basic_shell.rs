@@ -88,7 +88,10 @@ impl BasicShell {
     }
 
     fn is_valid_input(&self, input: &str) -> bool {
-        match self.shell.parse_string(input.to_owned()) {
+        match self
+            .shell
+            .parse_string(input, &brush_core::SourceInfo::default())
+        {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>
             {

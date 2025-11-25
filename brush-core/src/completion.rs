@@ -674,7 +674,7 @@ impl Spec {
 
         // TODO: Find a more appropriate interlock here. For now we use the existing
         // handler depth count to suppress any debug traps.
-        shell.traps.handler_depth += 1;
+        shell.traps.enter_handler();
 
         let params = shell.default_exec_params();
         let invoke_result = shell
@@ -682,7 +682,7 @@ impl Spec {
             .await;
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 
-        shell.traps.handler_depth -= 1;
+        shell.traps.leave_handler();
 
         // Make a best-effort attempt to unset the temporary variables.
         for var_name in vars_to_remove {
