@@ -12,6 +12,8 @@ mod break_;
 mod brushinfo;
 #[cfg(feature = "builtin.builtin")]
 mod builtin_;
+#[cfg(feature = "builtin.caller")]
+mod caller;
 #[cfg(feature = "builtin.cd")]
 mod cd;
 #[cfg(feature = "builtin.colon")]

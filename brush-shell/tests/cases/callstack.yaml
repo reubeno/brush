@@ -7,8 +7,7 @@ common_test_files:
       dump_source_info() {
           local prefix="${1:-}"
 
-          # TODO(caller): implement caller builtin
-          # echo "${prefix}  caller: $(caller 2>&1 || echo '<failed>')"
+          echo "${prefix}  caller: $(caller 2>&1 || echo '<failed>')"
 
           echo "${prefix}  LINENO: ${LINENO}"
           echo "${prefix}  FUNCNAME[@]: ${FUNCNAME[*]}"
@@ -36,15 +35,14 @@ common_test_files:
 
           dump_source_info "$prefix"
 
-          # TODO(caller): implement caller builtin          
-          # local max_frames="${2:-20}"
-          # local i
-          # for ((i=0; i<max_frames; i++)); do
-          #     if ! caller $i >/dev/null 2>&1; then
-          #         break
-          #     fi
-          #     dump_frame "$prefix" $i
-          # done
+          local max_frames="${2:-20}"
+          local i
+          for ((i=0; i<max_frames; i++)); do
+              if ! caller $i >/dev/null 2>&1; then
+                  break
+              fi
+              dump_frame "$prefix" $i
+          done
       }
 
 cases:
