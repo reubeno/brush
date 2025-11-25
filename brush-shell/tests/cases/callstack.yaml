@@ -1,0 +1,728 @@
+name: "Call stack"
+common_test_files:
+  - path: "callstack_helpers.sh"
+    contents: |
+      # Helper to dump all call stack state in a consistent format
+      dump_callstack() {
+          local prefix="${1:-}"
+          local frame="${2:-0}"
+          
+          echo "${prefix}[Frame $frame]"
+          echo "${prefix}  caller: $(caller 2>&1 || echo '<failed>')"
+          echo "${prefix}  caller N: $(caller $frame 2>&1 || echo '<failed>')"
+          echo "${prefix}  LINENO: ${LINENO}"
+          echo "${prefix}  FUNCNAME[@]: ${FUNCNAME[*]}"
+          echo "${prefix}  BASH_SOURCE[@]: ${BASH_SOURCE[*]}"
+          echo "${prefix}  BASH_LINENO[@]: ${BASH_LINENO[*]}"
+      }
+
+      # Helper to dump multiple frames
+      dump_all_frames() {
+          local prefix="${1:-}"
+          local max_frames="${2:-5}"
+          local i
+          
+          for ((i=0; i<max_frames; i++)); do
+              if ! caller $i >/dev/null 2>&1; then
+                  break
+              fi
+              dump_callstack "$prefix" $i
+          done
+      }
+
+      # Helper to check callstack in a function
+      check_in_function() {
+          echo "=== In check_in_function ==="
+          dump_callstack "  "
+      }
+
+      # Nested helper function
+      nested_check() {
+          echo "=== In nested_check ==="
+          dump_all_frames "  "
+      }
+
+cases:
+  - name: "No calls - top level"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+      echo "=== Top level ==="
+      dump_callstack
+
+  - name: "Simple function call"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_function() {
+          echo "=== In my_function ==="
+          dump_all_frames "  "
+      }
+
+      my_function
+
+  - name: "Nested function calls"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      level3() {
+          echo "=== In level3 ==="
+          dump_all_frames "  "
+      }
+
+      level2() {
+          echo "=== In level2 ==="
+          dump_callstack "  "
+          level3
+      }
+
+      level1() {
+          echo "=== In level1 ==="
+          dump_callstack "  "
+          level2
+      }
+
+      level1
+
+  - name: "Function call from sourced script"
+    known_failure: true # TODO: implement accurate source tracking
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          source callstack_helpers.sh
+
+          sourced_function() {
+              echo "=== In sourced_function ==="
+              dump_all_frames "  "
+          }
+    stdin: |
+      source sourced.sh
+      sourced_function
+
+  - name: "Nested sourcing"
+    known_failure: true # TODO: implement accurate source tracking
+    test_files:
+      - path: "outer.sh"
+        contents: |
+          echo "=== In outer.sh top level ==="
+          dump_callstack "  "
+          source inner.sh
+      - path: "inner.sh"
+        contents: |
+          echo "=== In inner.sh top level ==="
+          dump_callstack "  "
+
+          inner_func() {
+              echo "=== In inner_func ==="
+              dump_all_frames "  "
+          }
+
+          inner_func
+    stdin: |
+      source callstack_helpers.sh
+      command source outer.sh
+
+  - name: "Command substitution in top level"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      result=$(dump_callstack "  [CmdSub] ")
+      echo "$result"
+
+  - name: "Command substitution in function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_function() {
+          echo "=== In my_function ==="
+          result=$(dump_callstack "  [CmdSub] ")
+          echo "$result"
+      }
+
+      my_function
+
+  - name: "Command substitution invoking function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_function() {
+          echo "=== In my_function via cmdSub ==="
+          dump_all_frames "  "
+      }
+
+      result=$(my_function)
+      echo "$result"
+
+  - name: "Nested command substitutions"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      inner_func() {
+          echo "=== In inner_func ==="
+          dump_all_frames "  "
+      }
+
+      outer_func() {
+          echo "=== In outer_func ==="
+          result=$(inner_func)
+          echo "$result"
+      }
+
+      final=$(outer_func)
+      echo "$final"
+
+  - name: "eval at top level"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      eval 'echo "=== In eval ==="; dump_callstack "  "'
+
+  - name: "eval in function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_function() {
+          echo "=== In my_function ==="
+          eval 'echo "=== In eval ==="; dump_callstack "  "'
+      }
+
+      my_function
+
+  - name: "eval calling function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_function() {
+          echo "=== In my_function via eval ==="
+          dump_all_frames "  "
+      }
+
+      eval 'my_function'
+
+  - name: "Nested evals"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_function() {
+          echo "=== In my_function ==="
+          dump_all_frames "  "
+      }
+
+      eval 'eval "my_function"'
+
+  - name: "eval with command substitution"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_function() {
+          echo "=== In my_function ==="
+          dump_all_frames "  "
+      }
+
+      result=$(eval 'my_function')
+      echo "$result"
+
+  - name: "Trap handler - DEBUG"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      trap_handler() {
+          echo "=== In DEBUG trap handler ==="
+          dump_callstack "  "
+      }
+
+      trap 'trap_handler' DEBUG
+
+      echo "Command 1"
+      echo "Command 2"
+
+  - name: "Trap handler - DEBUG in function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      trap_handler() {
+          echo "=== In DEBUG trap handler ==="
+          dump_all_frames "  "
+      }
+
+      trap 'trap_handler' DEBUG
+
+      my_function() {
+          echo "In my_function"
+          echo "Still in my_function"
+      }
+
+      my_function
+
+  - name: "Trap handler - EXIT"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      trap 'echo "=== In EXIT trap ==="; dump_callstack "  "' EXIT
+
+      echo "Main script"
+
+  - name: "Trap handler calling function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      trap_function() {
+          echo "=== In trap_function ==="
+          dump_all_frames "  "
+      }
+
+      trap 'trap_function' EXIT
+
+      echo "Main script"
+
+  - name: "LINENO tracking across contexts"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      echo "Line 1: LINENO=${LINENO}"
+      echo "Line 2: LINENO=${LINENO}"
+
+      my_function() {
+          echo "In function line 1: LINENO=${LINENO}"
+          echo "In function line 2: LINENO=${LINENO}"
+      }
+
+      my_function
+
+      echo "Line 3: LINENO=${LINENO}"
+
+  - name: "LINENO in eval"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      echo "Before eval: LINENO=${LINENO}"
+      eval 'echo "In eval: LINENO=${LINENO}"'
+      echo "After eval: LINENO=${LINENO}"
+
+  - name: "LINENO in command substitution"
+    stdin: |
+      echo "Before cmdSub: LINENO=${LINENO}"
+      result=$(echo "In cmdSub: LINENO=${LINENO}")
+      echo "$result"
+      echo "After cmdSub: LINENO=${LINENO}"
+
+  - name: "LINENO in sourced script"
+    known_failure: true # TODO: implement accurate source tracking
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "Sourced line 1: LINENO=${LINENO}"
+          echo "Sourced line 2: LINENO=${LINENO}"
+
+          sourced_func() {
+              echo "In sourced_func: LINENO=${LINENO}"
+          }
+
+          sourced_func
+    stdin: |
+      echo "Main line 1: LINENO=${LINENO}"
+      source script.sh
+      echo "Main line 2: LINENO=${LINENO}"
+
+  - name: "caller at different depths"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      level3() {
+          echo "=== caller 0 from level3 ==="
+          caller 0
+          echo "=== caller 1 from level3 ==="
+          caller 1
+          echo "=== caller 2 from level3 ==="
+          caller 2
+          echo "=== caller 3 from level3 ==="
+          caller 3 || echo "  (out of range)"
+      }
+
+      level2() {
+          level3
+      }
+
+      level1() {
+          level2
+      }
+
+      level1
+
+  - name: "BASH_SOURCE and FUNCNAME arrays"
+    known_failure: true # TODO: implement accurate source tracking
+    test_files:
+      - path: "outer.sh"
+        contents: |
+          outer_func() {
+              echo "=== In outer_func ==="
+              echo "  FUNCNAME[@]: ${FUNCNAME[*]}"
+              echo "  BASH_SOURCE[@]: ${BASH_SOURCE[*]}"
+              source inner.sh
+          }
+      - path: "inner.sh"
+        contents: |
+          inner_func() {
+              echo "=== In inner_func ==="
+              echo "  FUNCNAME[@]: ${FUNCNAME[*]}"
+              echo "  BASH_SOURCE[@]: ${BASH_SOURCE[*]}"
+          }
+
+          inner_func
+    stdin: |
+      source outer.sh
+      outer_func
+
+  - name: "BASH_LINENO array"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      level3() {
+          echo "=== In level3 ==="
+          local i
+          for i in "${!BASH_LINENO[@]}"; do
+              echo "  BASH_LINENO[$i]: ${BASH_LINENO[$i]}"
+          done
+      }
+
+      level2() {
+          level3
+      }
+
+      level1() {
+          level2
+      }
+
+      level1
+
+  - name: "Mixed: eval in sourced function with command substitution"
+    known_failure: true # TODO: implement accurate source tracking
+    test_files:
+      - path: "script.sh"
+        contents: |
+          source callstack_helpers.sh
+
+          script_func() {
+              echo "=== In script_func ==="
+              result=$(eval 'dump_all_frames "  [Eval->CmdSub] "')
+              echo "$result"
+          }
+    stdin: |
+      source script.sh
+      script_func
+
+  - name: "Complex nesting: function -> eval -> cmdSub -> function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      inner_func() {
+          echo "=== In inner_func ==="
+          dump_all_frames "  "
+      }
+
+      outer_func() {
+          echo "=== In outer_func ==="
+          eval 'result=$(inner_func); echo "$result"'
+      }
+
+      outer_func
+
+  # Tests with -c flag
+  - name: "Call stack with -c flag"
+    known_failure: true # TODO: implement accurate source tracking
+    args:
+      [
+        "-c",
+        "source callstack_helpers.sh; echo '=== Via -c ==='; dump_callstack",
+      ]
+    test_files:
+      - path: "callstack_helpers.sh"
+        contents: |
+          dump_callstack() {
+              local prefix="${1:-}"
+              local frame="${2:-0}"
+              
+              echo "${prefix}[Frame $frame]"
+              echo "${prefix}  caller: $(caller $frame 2>&1 || echo '<failed>')"
+              echo "${prefix}  LINENO: ${LINENO}"
+              echo "${prefix}  FUNCNAME[@]: ${FUNCNAME[*]}"
+              echo "${prefix}  BASH_SOURCE[@]: ${BASH_SOURCE[*]}"
+              echo "${prefix}  BASH_LINENO[@]: ${BASH_LINENO[*]}"
+          }
+
+  - name: "Function call with -c flag"
+    known_failure: true # TODO: implement accurate source tracking
+    args:
+      [
+        "-c",
+        "my_func() { echo '=== In my_func via -c ==='; caller 0; echo LINENO=${LINENO}; }; my_func",
+      ]
+
+  - name: "Nested functions with -c flag"
+    known_failure: true # TODO: implement accurate source tracking
+    args:
+      [
+        "-c",
+        "f2() { echo 'In f2'; caller 0; caller 1 || echo 'no frame 1'; }; f1() { echo 'In f1'; f2; }; f1",
+      ]
+
+  - name: "eval with -c flag"
+    known_failure: true # TODO: implement accurate source tracking
+    args:
+      [
+        "-c",
+        "eval 'echo In eval via -c; caller 0 || echo no caller; echo LINENO=${LINENO}'",
+      ]
+
+  - name: "Command substitution with -c flag"
+    known_failure: true # TODO: implement accurate source tracking
+    args:
+      [
+        "-c",
+        "result=$(echo LINENO=${LINENO}; caller 0 2>&1 || echo no-caller); echo $result",
+      ]
+
+  # Interactive mode tests
+  - name: "Interactive mode - simple function"
+    known_failure: true # TODO: implement accurate source tracking
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      f() { caller 0; echo LINENO=${LINENO}; }
+      f
+
+  - name: "Interactive mode - FUNCNAME and BASH_SOURCE"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      f() { echo "FUNCNAME: ${FUNCNAME[@]}"; echo "BASH_SOURCE: ${BASH_SOURCE[@]}"; }
+      f
+
+  # PROMPT_COMMAND tests
+  - name: "PROMPT_COMMAND with call stack"
+    known_failure: true # TODO: implement accurate source tracking
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      PROMPT_COMMAND='echo "[PC] caller: $(caller 0 2>&1 || echo none)"; echo "[PC] LINENO: ${LINENO}"'
+      echo test
+
+  - name: "PROMPT_COMMAND calling function"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      pc_func() { echo "[PC_FUNC] In function"; caller 0 || echo "[PC_FUNC] no caller"; }
+      PROMPT_COMMAND='pc_func'
+      echo test
+
+  - name: "PROMPT_COMMAND with nested calls"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      inner() { echo "FUNCNAME: ${FUNCNAME[@]}"; }
+      outer() { inner; }
+      PROMPT_COMMAND='outer'
+      echo test
+
+  # Additional edge cases
+  - name: "Recursive function call stack"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      recursive_func() {
+          local depth=$1
+          echo "=== Depth $depth ==="
+          
+          if [ $depth -gt 0 ]; then
+              recursive_func $((depth - 1))
+          else
+              dump_all_frames "  "
+          fi
+      }
+
+      recursive_func 3
+
+  - name: "Call stack in arithmetic evaluation"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      my_func() {
+          echo "In my_func"
+          caller 0
+          echo "LINENO: ${LINENO}"
+      }
+
+      # Arithmetic expansion doesn't create a new call frame
+      result=$((1 + 1))
+      echo "Result: $result"
+
+      # But command substitution does
+      result=$(my_func)
+      echo "$result"
+
+  - name: "Call stack with process substitution"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_func() {
+          echo "=== In my_func ==="
+          dump_callstack "  "
+      }
+
+      # Process substitution context
+      cat <(my_func)
+
+  - name: "Call stack across pipe"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_func() {
+          echo "=== In my_func ==="
+          dump_callstack "  "
+      }
+
+      my_func | cat
+
+  - name: "Call stack in subshell"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_func() {
+          echo "=== In my_func (subshell) ==="
+          dump_callstack "  "
+      }
+
+      (my_func)
+
+  - name: "Call stack with background job"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_func() {
+          echo "=== In my_func (background) ==="
+          dump_callstack "  "
+      }
+
+      my_func &
+      wait
+
+  - name: "caller with no arguments vs caller 0"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      my_func() {
+          echo "=== caller (no args) ==="
+          caller
+          echo "=== caller 0 ==="
+          caller 0
+      }
+
+      my_func
+
+  - name: "BASH_SOURCE indexing"
+    known_failure: true # TODO: implement accurate source tracking
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "In script.sh"
+          echo "  BASH_SOURCE[0]: ${BASH_SOURCE[0]}"
+          echo "  BASH_SOURCE[1]: ${BASH_SOURCE[1]}"
+
+          script_func() {
+              echo "In script_func"
+              echo "  BASH_SOURCE[0]: ${BASH_SOURCE[0]}"
+              echo "  BASH_SOURCE[1]: ${BASH_SOURCE[1]}"
+              echo "  BASH_SOURCE[2]: ${BASH_SOURCE[2]}"
+          }
+
+          script_func
+    stdin: |
+      echo "Main script"
+      echo "  BASH_SOURCE[0]: ${BASH_SOURCE[0]}"
+      source script.sh
+
+  - name: "FUNCNAME at top level"
+    stdin: |
+      echo "Top level FUNCNAME: '${FUNCNAME}'"
+      echo "Top level FUNCNAME[@]: '${FUNCNAME[@]}'"
+      echo "Top level FUNCNAME[*]: '${FUNCNAME[*]}'"
+
+  - name: "Empty BASH_LINENO at top level"
+    stdin: |
+      echo "Top level BASH_LINENO[@]: '${BASH_LINENO[@]}'"
+      echo "Top level BASH_LINENO[*]: '${BASH_LINENO[*]}'"
+
+  - name: "Call stack in trap with function call"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      trap_func() {
+          echo "=== In trap_func ==="
+          dump_all_frames "  "
+      }
+
+      my_func() {
+          echo "=== In my_func ==="
+          echo "About to trigger trap"
+      }
+
+      trap 'trap_func' DEBUG
+      my_func
+
+  - name: "Call stack: source within eval within function"
+    known_failure: true # TODO: implement accurate source tracking
+    test_files:
+      - path: "script.sh"
+        contents: |
+          source callstack_helpers.sh
+          echo "=== In sourced script ==="
+          dump_all_frames "  "
+    stdin: |
+      my_func() {
+          echo "=== In my_func ==="
+          eval 'source script.sh'
+      }
+
+      my_func
+
+  - name: "Multiple eval levels"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      source callstack_helpers.sh
+
+      my_func() {
+          echo "=== In my_func ==="
+          dump_all_frames "  "
+      }
+
+      eval 'eval "eval \"my_func\""'
+
+  - name: "LINENO persistence in function"
+    known_failure: true # TODO: implement accurate source tracking
+    stdin: |
+      my_func() {
+          local line1=${LINENO}
+          local line2=${LINENO}
+          local line3=${LINENO}
+          echo "line1: $line1"
+          echo "line2: $line2"
+          echo "line3: $line3"
+      }
+
+      my_func
