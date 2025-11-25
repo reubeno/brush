@@ -576,9 +576,7 @@ impl Shell {
     ) -> Result<(), error::Error> {
         let name = name.into();
 
-        let source_info = crate::SourceInfo::default();
-
-        let mut parser = create_parser(body_text.as_bytes(), &self.parser_options(), &source_info);
+        let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
         let func_body = parser.parse_function_parens_and_body().map_err(|e| {
             error::Error::from(error::ErrorKind::FunctionParseError(name.clone(), e))
         })?;
@@ -588,7 +586,7 @@ impl Shell {
             body: func_body,
         };
 
-        self.define_func(name, def, &source_info);
+        self.define_func(name, def, &crate::SourceInfo::default());
 
         Ok(())
     }
@@ -898,12 +896,13 @@ impl Shell {
     /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
     /// for the program.
     #[allow(clippy::needless_pass_by_value)]
+    #[allow(unused)]
     pub fn parse<R: Read>(
         &self,
         reader: R,
         source_info: crate::SourceInfo,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        let mut parser = create_parser(reader, &self.parser_options(), &source_info);
+        let mut parser = create_parser(reader, &self.parser_options());
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
         parser.parse_program()
@@ -916,12 +915,13 @@ impl Shell {
     ///
     /// * `s` - The string to parse as a program.
     /// * `source_info` - Information about the source of the string.
+    #[allow(unused)]
     pub fn parse_string<S: AsRef<str>>(
         &self,
         s: S,
         source_info: &crate::SourceInfo,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        parse_string_impl(s.as_ref(), &self.parser_options(), source_info)
+        parse_string_impl(s.as_ref().to_owned(), self.parser_options())
     }
 
     /// Applies basic shell expansion to the provided string.
@@ -1728,12 +1728,12 @@ impl Shell {
     }
 }
 
+#[cached::proc_macro::cached(size = 64, result = true)]
 fn parse_string_impl(
-    s: &str,
-    parser_options: &brush_parser::ParserOptions,
-    source_info: &crate::SourceInfo,
+    s: String,
+    parser_options: brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut parser = create_parser(s.as_bytes(), parser_options, source_info);
+    let mut parser = create_parser(s.as_bytes(), &parser_options);
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse_program()
@@ -1742,7 +1742,6 @@ fn parse_string_impl(
 fn create_parser<R: Read>(
     r: R,
     parser_options: &brush_parser::ParserOptions,
-    _source_info: &crate::SourceInfo,
 ) -> brush_parser::Parser<std::io::BufReader<R>> {
     let reader = std::io::BufReader::new(r);
     brush_parser::Parser::new(reader, parser_options)

@@ -362,7 +362,6 @@ cases:
       level1
 
   - name: "BASH_SOURCE and FUNCNAME arrays"
-    known_failure: true # TODO: implement accurate source tracking
     test_files:
       - path: "outer.sh"
         contents: |
@@ -635,7 +634,6 @@ cases:
       my_func
 
   - name: "BASH_SOURCE indexing"
-    known_failure: true # TODO: implement accurate source tracking
     test_files:
       - path: "script.sh"
         contents: |
