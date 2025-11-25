@@ -114,7 +114,7 @@ pub(crate) fn initialize_vars(
     )?;
 
     // TODO(vars): implement BASH_COMMAND
-    // TODO(vars): implement BASH_EXECUTIION_STRING
+    // TODO(vars): implement BASH_EXECUTION_STRING
 
     // BASH_LINENO
     shell.env.set_global(
