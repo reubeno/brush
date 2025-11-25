@@ -17,6 +17,8 @@ enum CommandGroup {
     Process(ProcessCommand),
     #[clap(subcommand)]
     Complete(CompleteCommand),
+    #[clap(subcommand)]
+    Call(CallCommand),
 }
 
 /// Commands for configuring tracing events.
@@ -52,6 +54,14 @@ enum CompleteCommand {
     },
 }
 
+/// Commands for inspecting call state.
+#[derive(Subcommand)]
+enum CallCommand {
+    /// Display the current call stack.
+    #[clap(name = "stack")]
+    ShowCallStack,
+}
+
 impl builtins::Command for BrushInfoCommand {
     type Error = brush_core::Error;
 
@@ -71,6 +81,7 @@ impl CommandGroup {
         match self {
             Self::Process(process) => process.execute(context),
             Self::Complete(complete) => complete.execute(context).await,
+            Self::Call(call) => call.execute(context),
         }
     }
 }
@@ -130,6 +141,21 @@ impl CompleteCommand {
                 for candidate in completions.candidates {
                     writeln!(context.stdout(), "{candidate}")?;
                 }
+                Ok(ExecutionResult::success())
+            }
+        }
+    }
+}
+
+impl CallCommand {
+    fn execute(
+        &self,
+        context: &brush_core::ExecutionContext<'_>,
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        match self {
+            Self::ShowCallStack => {
+                let stack = context.shell.call_stack();
+                writeln!(context.stdout(), "{stack}")?;
                 Ok(ExecutionResult::success())
             }
         }
