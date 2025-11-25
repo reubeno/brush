@@ -5,6 +5,7 @@ use std::io::Write;
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
+    parser::ast,
     variables,
 };
 
@@ -96,18 +97,18 @@ impl ExportCommand {
             }
             brush_core::CommandArg::Assignment(assignment) => {
                 let name = match &assignment.name {
-                    brush_parser::ast::AssignmentName::VariableName(name) => name,
-                    brush_parser::ast::AssignmentName::ArrayElementName(_, _) => {
+                    ast::AssignmentName::VariableName(name) => name,
+                    ast::AssignmentName::ArrayElementName(_, _) => {
                         writeln!(context.stderr(), "not a valid variable name")?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
                 };
 
                 let value = match &assignment.value {
-                    brush_parser::ast::AssignmentValue::Scalar(s) => {
+                    ast::AssignmentValue::Scalar(s) => {
                         variables::ShellValueLiteral::Scalar(s.flatten())
                     }
-                    brush_parser::ast::AssignmentValue::Array(a) => {
+                    ast::AssignmentValue::Array(a) => {
                         variables::ShellValueLiteral::Array(variables::ArrayLiteral(
                             a.iter()
                                 .map(|(k, v)| (k.as_ref().map(|k| k.flatten()), v.flatten()))

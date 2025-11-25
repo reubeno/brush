@@ -1,11 +1,10 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use brush_parser::ast;
 use clap::Parser;
 
 use brush_core::sys::fs::PathExt;
-use brush_core::{ExecutionResult, Shell, builtins};
+use brush_core::{ExecutionResult, Shell, builtins, parser::ast};
 
 /// Inspect the type of a named shell item.
 #[derive(Parser)]
