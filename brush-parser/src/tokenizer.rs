@@ -1,7 +1,8 @@
 use std::borrow::Cow;
-use std::fmt::Display;
 use std::sync::Arc;
 use utf8_chars::BufReadCharsExt;
+
+use crate::{SourcePosition, SourceSpan};
 
 #[derive(Clone, Debug)]
 pub(crate) enum TokenEndReason {
@@ -27,62 +28,8 @@ pub(crate) enum TokenEndReason {
     Other,
 }
 
-/// Represents a position in a source shell script.
-#[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    any(test, feature = "serde"),
-    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
-)]
-pub struct SourcePosition {
-    /// The 0-based index of the character in the input stream.
-    pub index: usize,
-    /// The 1-based line number.
-    pub line: usize,
-    /// The 1-based column number.
-    pub column: usize,
-}
-
-impl Display for SourcePosition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("line {} col {}", self.line, self.column))
-    }
-}
-
-#[cfg(feature = "diagnostics")]
-impl From<&SourcePosition> for miette::SourceOffset {
-    #[allow(clippy::cast_sign_loss)]
-    fn from(position: &SourcePosition) -> Self {
-        position.index.into()
-    }
-}
-
-/// Represents the location of a token in its source shell script.
-#[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
-#[cfg_attr(
-    any(test, feature = "serde"),
-    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
-)]
-pub struct TokenLocation {
-    /// The start position of the token.
-    pub start: Arc<SourcePosition>,
-    /// The end position of the token (exclusive).
-    pub end: Arc<SourcePosition>,
-}
-
-impl TokenLocation {
-    /// Returns the length of the token in characters.
-    pub fn length(&self) -> usize {
-        self.end.index - self.start.index
-    }
-    pub(crate) fn within(start: &Self, end: &Self) -> Self {
-        Self {
-            start: start.start.clone(),
-            end: end.end.clone(),
-        }
-    }
-}
+/// Compatibility alias for `SourceSpan`.
+pub type TokenLocation = SourceSpan;
 
 /// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
@@ -93,9 +40,9 @@ impl TokenLocation {
 )]
 pub enum Token {
     /// An operator token.
-    Operator(String, TokenLocation),
+    Operator(String, SourceSpan),
     /// A word token.
-    Word(String, TokenLocation),
+    Word(String, SourceSpan),
 }
 
 impl Token {
@@ -108,7 +55,7 @@ impl Token {
     }
 
     /// Returns the location of the token in the source script.
-    pub const fn location(&self) -> &TokenLocation {
+    pub const fn location(&self) -> &SourceSpan {
         match self {
             Self::Operator(_, l) => l,
             Self::Word(_, l) => l,
@@ -319,7 +266,7 @@ impl TokenParseState {
 
     pub fn pop(&mut self, end_position: &SourcePosition) -> Token {
         let end = Arc::new(end_position.to_owned());
-        let token_location = TokenLocation {
+        let token_location = SourceSpan {
             start: Arc::new(std::mem::take(&mut self.start_position)),
             end,
         };

@@ -15,7 +15,7 @@ ParseResult(
                 values: Some([
                   Word(
                     value: "A",
-                    loc: Some(TokenLocation(
+                    loc: Some(SourceSpan(
                       start: SourcePosition(
                         index: 32,
                         line: 5,
@@ -30,7 +30,7 @@ ParseResult(
                   ),
                   Word(
                     value: "B",
-                    loc: Some(TokenLocation(
+                    loc: Some(SourceSpan(
                       start: SourcePosition(
                         index: 34,
                         line: 5,
@@ -45,7 +45,7 @@ ParseResult(
                   ),
                   Word(
                     value: "C",
-                    loc: Some(TokenLocation(
+                    loc: Some(SourceSpan(
                       start: SourcePosition(
                         index: 36,
                         line: 5,
@@ -67,7 +67,7 @@ ParseResult(
                           Simple(SimpleCommand(
                             word_or_name: Some(Word(
                               value: "echo",
-                              loc: Some(TokenLocation(
+                              loc: Some(SourceSpan(
                                 start: SourcePosition(
                                   index: 60,
                                   line: 8,
@@ -83,7 +83,7 @@ ParseResult(
                             suffix: Some(CommandSuffix([
                               Word(Word(
                                 value: "\"${f@L}\"",
-                                loc: Some(TokenLocation(
+                                loc: Some(SourceSpan(
                                   start: SourcePosition(
                                     index: 65,
                                     line: 8,
@@ -98,7 +98,7 @@ ParseResult(
                               )),
                               IoRedirect(File(None, DuplicateOutput, Duplicate(Word(
                                 value: "2",
-                                loc: Some(TokenLocation(
+                                loc: Some(SourceSpan(
                                   start: SourcePosition(
                                     index: 76,
                                     line: 8,
@@ -117,7 +117,7 @@ ParseResult(
                       ),
                     ), Sequence),
                   ]),
-                  loc: TokenLocation(
+                  loc: SourceSpan(
                     start: SourcePosition(
                       index: 39,
                       line: 5,
@@ -130,7 +130,7 @@ ParseResult(
                     ),
                   ),
                 ),
-                loc: TokenLocation(
+                loc: SourceSpan(
                   start: SourcePosition(
                     index: 23,
                     line: 5,

@@ -5,7 +5,7 @@ expression: "test_tokenizer(r\"a\\\nbc\")?"
 TokenizerResult(
   input: "a\\\nbc",
   result: [
-    Word("abc", TokenLocation(
+    Word("abc", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,

@@ -8,7 +8,7 @@ ParseResult(
     Function(FunctionDefinition(
       fname: Word(
         value: "foo",
-        loc: Some(TokenLocation(
+        loc: Some(SourceSpan(
           start: SourcePosition(
             index: 0,
             line: 1,
@@ -29,7 +29,7 @@ ParseResult(
                 Simple(SimpleCommand(
                   word_or_name: Some(Word(
                     value: "echo",
-                    loc: Some(TokenLocation(
+                    loc: Some(SourceSpan(
                       start: SourcePosition(
                         index: 8,
                         line: 1,
@@ -45,7 +45,7 @@ ParseResult(
                   suffix: Some(CommandSuffix([
                     Word(Word(
                       value: "1",
-                      loc: Some(TokenLocation(
+                      loc: Some(SourceSpan(
                         start: SourcePosition(
                           index: 13,
                           line: 1,
@@ -64,7 +64,7 @@ ParseResult(
             ),
           ), Sequence),
         ]),
-        loc: TokenLocation(
+        loc: SourceSpan(
           start: SourcePosition(
             index: 6,
             line: 1,
@@ -84,7 +84,7 @@ ParseResult(
     Simple(SimpleCommand(
       word_or_name: Some(Word(
         value: "cat",
-        loc: Some(TokenLocation(
+        loc: Some(SourceSpan(
           start: SourcePosition(
             index: 21,
             line: 1,

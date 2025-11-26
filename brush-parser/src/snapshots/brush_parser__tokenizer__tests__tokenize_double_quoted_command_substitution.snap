@@ -5,7 +5,7 @@ expression: "test_tokenizer(r#\"x\"$(echo hi)\"y\"#)?"
 TokenizerResult(
   input: "x\"$(echo hi)\"y",
   result: [
-    Word("x\"$(echo hi)\"y", TokenLocation(
+    Word("x\"$(echo hi)\"y", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,

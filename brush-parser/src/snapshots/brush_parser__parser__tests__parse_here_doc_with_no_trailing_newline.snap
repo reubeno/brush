@@ -13,7 +13,7 @@ ParseResult(
               Simple(SimpleCommand(
                 word_or_name: Some(Word(
                   value: "cat",
-                  loc: Some(TokenLocation(
+                  loc: Some(SourceSpan(
                     start: SourcePosition(
                       index: 0,
                       line: 1,
@@ -31,7 +31,7 @@ ParseResult(
                     requires_expansion: true,
                     here_end: Word(
                       value: "EOF",
-                      loc: Some(TokenLocation(
+                      loc: Some(SourceSpan(
                         start: SourcePosition(
                           index: 6,
                           line: 1,
@@ -46,7 +46,7 @@ ParseResult(
                     ),
                     doc: Word(
                       value: "Something\n",
-                      loc: Some(TokenLocation(
+                      loc: Some(SourceSpan(
                         start: SourcePosition(
                           index: 10,
                           line: 2,

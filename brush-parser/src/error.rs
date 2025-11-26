@@ -18,7 +18,7 @@ pub enum ParseError {
         /// The inner error.
         inner: tokenizer::TokenizerError,
         /// Optionally provides the position of the error.
-        position: Option<tokenizer::SourcePosition>,
+        position: Option<crate::SourcePosition>,
     },
 }
 

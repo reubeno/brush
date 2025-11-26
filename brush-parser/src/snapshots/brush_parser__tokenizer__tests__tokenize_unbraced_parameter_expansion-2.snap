@@ -5,7 +5,7 @@ expression: "test_tokenizer(\"a$x\")?"
 TokenizerResult(
   input: "a$x",
   result: [
-    Word("a$x", TokenLocation(
+    Word("a$x", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,

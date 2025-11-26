@@ -267,7 +267,7 @@ impl<'a> StyledInputLine<'a> {
     fn get_style_for_word(
         &self,
         w: &str,
-        token_location: &brush_parser::TokenLocation,
+        token_location: &brush_parser::SourceSpan,
         saw_command_token: &mut bool,
     ) -> Style {
         if !*saw_command_token {
@@ -299,7 +299,7 @@ impl<'a> StyledInputLine<'a> {
     fn classify_possible_command(
         &self,
         name: &str,
-        token_location: &brush_parser::TokenLocation,
+        token_location: &brush_parser::SourceSpan,
     ) -> CommandType {
         if self.shell.is_keyword(name) {
             return CommandType::Keyword;

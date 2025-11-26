@@ -511,7 +511,7 @@ impl builtins::Command for CompGenCommand {
             token_index: 0,
             tokens: &[&brush_parser::Token::Word(
                 token_to_complete.to_owned(),
-                brush_parser::TokenLocation::default(),
+                brush_parser::SourceSpan::default(),
             )],
             input_line: token_to_complete,
             cursor_index: token_to_complete.len(),

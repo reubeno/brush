@@ -5,7 +5,7 @@ expression: "test_tokenizer(r\"a #comment\")?"
 TokenizerResult(
   input: "a #comment",
   result: [
-    Word("a", TokenLocation(
+    Word("a", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,

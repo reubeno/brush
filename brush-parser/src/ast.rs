@@ -3,22 +3,22 @@
 
 use std::fmt::{Display, Write};
 
-use crate::{TokenLocation, tokenizer};
+use crate::{SourceSpan, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
 
 /// Provides the source location for the syntax item
 pub trait SourceLocation {
     /// The location of the syntax item, when known
-    fn location(&self) -> Option<TokenLocation>;
+    fn location(&self) -> Option<SourceSpan>;
 }
 
 pub(crate) fn maybe_location(
-    start: Option<&TokenLocation>,
-    end: Option<&TokenLocation>,
-) -> Option<TokenLocation> {
+    start: Option<&SourceSpan>,
+    end: Option<&SourceSpan>,
+) -> Option<SourceSpan> {
     if let (Some(s), Some(e)) = (start, end) {
-        Some(TokenLocation::within(s, e))
+        Some(SourceSpan::within(s, e))
     } else {
         None
     }
@@ -37,7 +37,7 @@ pub struct Program {
 }
 
 impl SourceLocation for Program {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self
             .complete_commands
             .first()
@@ -108,13 +108,13 @@ pub struct AndOrList {
 }
 
 impl SourceLocation for AndOrList {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self.first.location();
         let last = self.additional.last();
         let end = last.and_then(SourceLocation::location);
 
         match (start, end) {
-            (Some(s), Some(e)) => Some(TokenLocation::within(&s, &e)),
+            (Some(s), Some(e)) => Some(SourceSpan::within(&s, &e)),
             (start, _) => start,
         }
     }
@@ -228,7 +228,7 @@ pub enum AndOr {
 
 // TODO(source-location): add a loc
 impl SourceLocation for AndOr {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::And(p) => p.location(),
             Self::Or(p) => p.location(),
@@ -254,13 +254,13 @@ impl Display for AndOr {
 )]
 pub enum PipelineTimed {
     /// The pipeline should be timed with bash-like output.
-    Timed(TokenLocation),
+    Timed(SourceSpan),
     /// The pipeline should be timed with POSIX-like output.
-    TimedWithPosixOutput(TokenLocation),
+    TimedWithPosixOutput(SourceSpan),
 }
 
 impl SourceLocation for PipelineTimed {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::Timed(t) => Some(t.to_owned()),
             Self::TimedWithPosixOutput(t) => Some(t.to_owned()),
@@ -303,7 +303,7 @@ pub struct Pipeline {
 }
 
 impl SourceLocation for Pipeline {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self
             .timed
             .as_ref()
@@ -351,12 +351,12 @@ pub enum Command {
 }
 
 impl SourceLocation for Command {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::Simple(s) => s.location(),
             Self::Compound(c, r) => {
                 match (c.location(), r.as_ref().and_then(SourceLocation::location)) {
-                    (Some(s), Some(e)) => Some(TokenLocation::within(&s, &e)),
+                    (Some(s), Some(e)) => Some(SourceSpan::within(&s, &e)),
                     (s, _) => s,
                 }
             }
@@ -416,7 +416,7 @@ pub enum CompoundCommand {
 
 // TODO(source-location): complete the list
 impl SourceLocation for CompoundCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::Arithmetic(a) => a.location(),
             Self::ArithmeticForClause(a) => a.location(),
@@ -468,11 +468,11 @@ pub struct ArithmeticCommand {
     /// The raw, unparsed and unexpanded arithmetic expression.
     pub expr: UnexpandedArithmeticExpr,
     /// Location of the command
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for ArithmeticCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -494,11 +494,11 @@ pub struct SubshellCommand {
     /// Command list in the subshell
     pub list: CompoundList,
     /// Location of the subshell
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for SubshellCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -526,11 +526,11 @@ pub struct ForClauseCommand {
     /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
     /// Location of the for loop
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for ForClauseCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -572,11 +572,11 @@ pub struct ArithmeticForClauseCommand {
     /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
     /// Location of the clause
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for ArithmeticForClauseCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -623,7 +623,7 @@ pub struct CaseClauseCommand {
 }
 
 impl SourceLocation for CaseClauseCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self.value.location();
         let end = self.cases.last().and_then(SourceLocation::location);
 
@@ -653,12 +653,12 @@ pub struct CompoundList(pub Vec<CompoundListItem>);
 
 // TODO(source-location): doublecheck
 impl SourceLocation for CompoundList {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self.0.first().and_then(SourceLocation::location);
         let end = self.0.last().and_then(SourceLocation::location);
 
         if let (Some(s), Some(e)) = (start, end) {
-            Some(TokenLocation::within(&s, &e))
+            Some(SourceSpan::within(&s, &e))
         } else {
             None
         }
@@ -697,7 +697,7 @@ impl Display for CompoundList {
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
 impl SourceLocation for CompoundListItem {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         self.0.location()
     }
 }
@@ -729,11 +729,11 @@ pub struct IfClauseCommand {
     )]
     pub elses: Option<Vec<ElseClause>>,
     /// Location of the if clause
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for IfClauseCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -809,11 +809,11 @@ pub struct CaseItem {
     /// When the case branch is selected, the action to take after the command is executed.
     pub post_action: CaseItemPostAction,
     /// Location of the item
-    pub loc: Option<TokenLocation>,
+    pub loc: Option<SourceSpan>,
 }
 
 impl SourceLocation for CaseItem {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         self.loc.clone()
     }
 }
@@ -872,10 +872,10 @@ impl Display for CaseItemPostAction {
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
-pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand, pub TokenLocation);
+pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand, pub SourceSpan);
 
 impl SourceLocation for WhileOrUntilClauseCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.2.clone())
     }
 }
@@ -903,12 +903,12 @@ pub struct FunctionDefinition {
 }
 
 impl SourceLocation for FunctionDefinition {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self.fname.location();
         let end = self.body.location();
 
         if let (Some(s), Some(e)) = (start, end) {
-            Some(TokenLocation::within(&s, &e))
+            Some(SourceSpan::within(&s, &e))
         } else {
             None
         }
@@ -933,13 +933,13 @@ impl Display for FunctionDefinition {
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
 
 impl SourceLocation for FunctionBody {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self.0.location();
 
         let end = self.1.as_ref().and_then(SourceLocation::location);
 
         if let (Some(s), Some(e)) = (start, end) {
-            Some(TokenLocation::within(&s, &e))
+            Some(SourceSpan::within(&s, &e))
         } else {
             None
         }
@@ -968,11 +968,11 @@ pub struct BraceGroupCommand {
     /// List of commands
     pub list: CompoundList,
     /// Location of the group
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for BraceGroupCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -1003,7 +1003,7 @@ pub struct DoGroupCommand {
     /// List of commands
     pub list: CompoundList,
     /// Location of the group
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl Display for DoGroupCommand {
@@ -1048,7 +1048,7 @@ pub struct SimpleCommand {
 }
 
 impl SourceLocation for SimpleCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let mid = &self
             .word_or_name
             .as_ref()
@@ -1107,7 +1107,7 @@ impl Display for SimpleCommand {
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl SourceLocation for CommandPrefix {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self.0.first().and_then(SourceLocation::location);
         let end = self.0.last().and_then(SourceLocation::location);
 
@@ -1138,7 +1138,7 @@ impl Display for CommandPrefix {
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
 
 impl SourceLocation for CommandSuffix {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         let start = self.0.first().and_then(SourceLocation::location);
         let end = self.0.last().and_then(SourceLocation::location);
 
@@ -1202,7 +1202,7 @@ pub enum CommandPrefixOrSuffixItem {
 
 // TODO(source-location): complete
 impl SourceLocation for CommandPrefixOrSuffixItem {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::Word(w) => w.location(),
             _ => None,
@@ -1242,11 +1242,11 @@ pub struct Assignment {
     )]
     pub append: bool,
     /// Location of the assignment
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for Assignment {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -1302,7 +1302,7 @@ pub enum AssignmentValue {
 
 // TODO(source-location): complete
 impl SourceLocation for AssignmentValue {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         None
     }
 }
@@ -1339,7 +1339,7 @@ pub struct RedirectList(pub Vec<IoRedirect>);
 
 // TODO(source-location): complete
 impl SourceLocation for RedirectList {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         None
     }
 }
@@ -1376,7 +1376,7 @@ pub enum IoRedirect {
 
 // TODO(source-location): complete
 impl SourceLocation for IoRedirect {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         None
     }
 }
@@ -1534,7 +1534,7 @@ pub struct IoHereDocument {
 
 // TODO(source-location): complete
 impl SourceLocation for IoHereDocument {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         None
     }
 }
@@ -1566,7 +1566,7 @@ pub enum TestExpr {
 
 // TODO(source-location): complete
 impl SourceLocation for TestExpr {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         None
     }
 }
@@ -1644,11 +1644,11 @@ pub struct ExtendedTestExprCommand {
     /// The extended test expression
     pub expr: ExtendedTestExpr,
     /// Location of the expression
-    pub loc: TokenLocation,
+    pub loc: SourceSpan,
 }
 
 impl SourceLocation for ExtendedTestExprCommand {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
     }
 }
@@ -1830,11 +1830,11 @@ pub struct Word {
     /// Raw text of the word.
     pub value: String,
     /// Location of the word
-    pub loc: Option<TokenLocation>,
+    pub loc: Option<SourceSpan>,
 }
 
 impl SourceLocation for Word {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         self.loc.clone()
     }
 }
@@ -1879,7 +1879,7 @@ impl Word {
     }
 
     /// Constructs a new `Word` from a given string and location.
-    pub fn with_location(s: &str, loc: &TokenLocation) -> Self {
+    pub fn with_location(s: &str, loc: &SourceSpan) -> Self {
         Self {
             value: s.to_owned(),
             loc: Some(loc.to_owned()),
@@ -1937,7 +1937,7 @@ pub enum ArithmeticExpr {
 
 // TODO(source-location): complete and add loc for literal
 impl SourceLocation for ArithmeticExpr {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         None
     }
 }
@@ -2172,7 +2172,7 @@ pub enum ArithmeticTarget {
 
 // TODO(source-location): complete and add loc
 impl SourceLocation for ArithmeticTarget {
-    fn location(&self) -> Option<TokenLocation> {
+    fn location(&self) -> Option<SourceSpan> {
         None
     }
 }

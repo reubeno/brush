@@ -5,7 +5,7 @@ expression: "test_tokenizer(\"a$((1+2))b c\")?"
 TokenizerResult(
   input: "a$((1+2))b c",
   result: [
-    Word("a$((1+2))b", TokenLocation(
+    Word("a$((1+2))b", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,
@@ -17,7 +17,7 @@ TokenizerResult(
         column: 11,
       ),
     )),
-    Word("c", TokenLocation(
+    Word("c", SourceSpan(
       start: SourcePosition(
         index: 11,
         line: 1,
