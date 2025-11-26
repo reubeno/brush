@@ -74,7 +74,7 @@ impl ShellEnvironment {
     ///
     /// * `expected_scope_type` - The type of scope that is expected to be atop the stack.
     pub fn pop_scope(&mut self, expected_scope_type: EnvironmentScope) -> Result<(), error::Error> {
-        // TODO: Should we panic instead on failure? It's effectively a broken invariant.
+        // TODO(env): Should we panic instead on failure? It's effectively a broken invariant.
         match self.scopes.pop() {
             Some((actual_scope_type, _)) if actual_scope_type == expected_scope_type => Ok(()),
             _ => Err(error::ErrorKind::MissingScope.into()),

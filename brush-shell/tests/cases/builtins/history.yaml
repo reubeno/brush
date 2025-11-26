@@ -176,7 +176,7 @@ cases:
       echo $HISTCMD
 
   - name: "HISTTIMEFORMAT"
-    known_failure: true # TODO: needs triage
+    known_failure: true # TODO(history): needs triage
     args: ["-o", "history"]
     env:
       HISTFILE: "history-file.txt"

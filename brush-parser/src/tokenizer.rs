@@ -387,7 +387,7 @@ impl TokenParseState {
             }));
         }
 
-        // TODO: Make sure the here-tag meets criteria (and isn't a newline).
+        // TODO(tokenizer): Make sure the here-tag meets criteria (and isn't a newline).
         let current_here_state = std::mem::take(&mut cross_token_state.here_state);
         match current_here_state {
             HereState::NextTokenIsHereTag { remove_tabs } => {
@@ -672,7 +672,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             // When we hit the end of the input, then we're done with the current token (if there is
             // one).
             if next.is_none() {
-                // TODO: Verify we're not waiting on some terminating character?
+                // TODO(tokenizer): Verify we're not waiting on some terminating character?
                 // Verify we're out of all quotes.
                 if state.in_escape {
                     return Err(TokenizerError::UnterminatedEscapeSequence);
@@ -853,7 +853,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             }
             //
             // Handle end of escape sequence.
-            // TODO: Handle double-quote specific escape sequences.
+            // TODO(tokenizer): Handle double-quote specific escape sequences.
             else if state.in_escape {
                 state.in_escape = false;
                 self.consume_char()?;
@@ -862,7 +862,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 || (matches!(state.quote_mode, QuoteMode::Double(_)) && !state.in_escape))
                 && (c == '$' || c == '`')
             {
-                // TODO: handle quoted $ or ` in a double quote
+                // TODO(tokenizer): handle quoted $ or ` in a double quote
                 if c == '$' {
                     // Consume the '$' so we can peek beyond.
                     self.consume_char()?;
@@ -1119,7 +1119,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         state.append_char(extglob_char);
 
                         // Look for ')' to terminate.
-                        // TODO: handle escaping?
+                        // TODO(tokenizer): handle escaping?
                         if extglob_char == '(' {
                             paren_depth += 1;
                         } else if extglob_char == ')' {
@@ -1322,7 +1322,7 @@ const fn does_char_newly_affect_quoting(state: &TokenParseState, c: char) -> boo
         // sequences are recognized.
         QuoteMode::Double(_) | QuoteMode::AnsiC(_) => {
             if c == '\\' {
-                // TODO: handle backslash in double quote
+                // TODO(tokenizer): handle backslash in double quote
                 true
             } else {
                 false

@@ -166,8 +166,8 @@ impl JobManager {
                 let job = self.jobs.remove(i);
                 results.push((job, result));
             } else if matches!(self.jobs[i].state, JobState::Done) {
-                // TODO: This is a workaround to remove jobs that are done but for which we don't
-                // know what happened.
+                // TODO(jobs): This is a workaround to remove jobs that are done but for which we
+                // don't know what happened.
                 results.push((self.jobs.remove(i), Ok(ExecutionResult::success())));
             } else {
                 i += 1;
@@ -438,7 +438,7 @@ impl Job {
 
     /// Tries to retrieve the process group ID (PGID) of the job.
     pub fn process_group_id(&self) -> Option<sys::process::ProcessId> {
-        // TODO: Don't assume that the first PID is the PGID.
+        // TODO(jobs): Don't assume that the first PID is the PGID.
         self.pgid.or_else(|| self.representative_pid())
     }
 }

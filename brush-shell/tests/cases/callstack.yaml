@@ -44,14 +44,14 @@ common_test_files:
 
 cases:
   - name: "No calls - top level"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
       echo "=== Top level ==="
       dump_callstack
 
   - name: "Simple function call"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -63,7 +63,7 @@ cases:
       my_function
 
   - name: "Nested function calls"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -87,7 +87,7 @@ cases:
       level1
 
   - name: "Function call from sourced script"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "sourced.sh"
         contents: |
@@ -102,7 +102,7 @@ cases:
       sourced_function
 
   - name: "Nested sourcing"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "outer.sh"
         contents: |
@@ -125,7 +125,7 @@ cases:
       command source outer.sh
 
   - name: "Command substitution in top level"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -133,7 +133,7 @@ cases:
       echo "$result"
 
   - name: "Command substitution in function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -146,7 +146,7 @@ cases:
       my_function
 
   - name: "Command substitution invoking function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -159,7 +159,7 @@ cases:
       echo "$result"
 
   - name: "Nested command substitutions"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -178,14 +178,14 @@ cases:
       echo "$final"
 
   - name: "eval at top level"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
       eval 'echo "=== In eval ==="; dump_callstack "  "'
 
   - name: "eval in function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -197,7 +197,7 @@ cases:
       my_function
 
   - name: "eval calling function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -209,7 +209,7 @@ cases:
       eval 'my_function'
 
   - name: "Nested evals"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -221,7 +221,7 @@ cases:
       eval 'eval "my_function"'
 
   - name: "eval with command substitution"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -234,7 +234,7 @@ cases:
       echo "$result"
 
   - name: "Trap handler - DEBUG"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -249,7 +249,7 @@ cases:
       echo "Command 2"
 
   - name: "Trap handler - DEBUG in function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -268,7 +268,7 @@ cases:
       my_function
 
   - name: "Trap handler - EXIT"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -277,7 +277,7 @@ cases:
       echo "Main script"
 
   - name: "Trap handler calling function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -291,7 +291,7 @@ cases:
       echo "Main script"
 
   - name: "LINENO tracking across contexts"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       echo "Line 1: LINENO=${LINENO}"
       echo "Line 2: LINENO=${LINENO}"
@@ -306,7 +306,7 @@ cases:
       echo "Line 3: LINENO=${LINENO}"
 
   - name: "LINENO in eval"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       echo "Before eval: LINENO=${LINENO}"
       eval 'echo "In eval: LINENO=${LINENO}"'
@@ -320,7 +320,7 @@ cases:
       echo "After cmdSub: LINENO=${LINENO}"
 
   - name: "LINENO in sourced script"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "script.sh"
         contents: |
@@ -338,7 +338,7 @@ cases:
       echo "Main line 2: LINENO=${LINENO}"
 
   - name: "caller at different depths"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(caller): implement caller builtin
     stdin: |
       level3() {
           echo "=== caller 0 from level3 ==="
@@ -362,7 +362,7 @@ cases:
       level1
 
   - name: "BASH_SOURCE and FUNCNAME arrays"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "outer.sh"
         contents: |
@@ -386,7 +386,7 @@ cases:
       outer_func
 
   - name: "BASH_LINENO array"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       level3() {
           echo "=== In level3 ==="
@@ -407,7 +407,7 @@ cases:
       level1
 
   - name: "Mixed: eval in sourced function with command substitution"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "script.sh"
         contents: |
@@ -423,7 +423,7 @@ cases:
       script_func
 
   - name: "Complex nesting: function -> eval -> cmdSub -> function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -441,7 +441,7 @@ cases:
 
   # Tests with -c flag
   - name: "Call stack with -c flag"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     args:
       [
         "-c",
@@ -463,7 +463,7 @@ cases:
           }
 
   - name: "Function call with -c flag"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     args:
       [
         "-c",
@@ -471,7 +471,7 @@ cases:
       ]
 
   - name: "Nested functions with -c flag"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     args:
       [
         "-c",
@@ -479,7 +479,7 @@ cases:
       ]
 
   - name: "eval with -c flag"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     args:
       [
         "-c",
@@ -487,7 +487,7 @@ cases:
       ]
 
   - name: "Command substitution with -c flag"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     args:
       [
         "-c",
@@ -496,7 +496,7 @@ cases:
 
   # Interactive mode tests
   - name: "Interactive mode - simple function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     args: ["-i"]
     ignore_stderr: true
     stdin: |
@@ -512,7 +512,7 @@ cases:
 
   # PROMPT_COMMAND tests
   - name: "PROMPT_COMMAND with call stack"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     args: ["-i"]
     ignore_stderr: true
     stdin: |
@@ -538,7 +538,7 @@ cases:
 
   # Additional edge cases
   - name: "Recursive function call stack"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -556,7 +556,7 @@ cases:
       recursive_func 3
 
   - name: "Call stack in arithmetic evaluation"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       my_func() {
           echo "In my_func"
@@ -573,7 +573,7 @@ cases:
       echo "$result"
 
   - name: "Call stack with process substitution"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -586,7 +586,7 @@ cases:
       cat <(my_func)
 
   - name: "Call stack across pipe"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -598,7 +598,7 @@ cases:
       my_func | cat
 
   - name: "Call stack in subshell"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -610,7 +610,7 @@ cases:
       (my_func)
 
   - name: "Call stack with background job"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -623,7 +623,7 @@ cases:
       wait
 
   - name: "caller with no arguments vs caller 0"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       my_func() {
           echo "=== caller (no args) ==="
@@ -635,7 +635,7 @@ cases:
       my_func
 
   - name: "BASH_SOURCE indexing"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "script.sh"
         contents: |
@@ -668,7 +668,7 @@ cases:
       echo "Top level BASH_LINENO[*]: '${BASH_LINENO[*]}'"
 
   - name: "Call stack in trap with function call"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -686,7 +686,7 @@ cases:
       my_func
 
   - name: "Call stack: source within eval within function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "script.sh"
         contents: |
@@ -702,7 +702,7 @@ cases:
       my_func
 
   - name: "Multiple eval levels"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 
@@ -714,7 +714,7 @@ cases:
       eval 'eval "eval \"my_func\""'
 
   - name: "LINENO persistence in function"
-    known_failure: true # TODO: implement accurate source tracking
+    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       my_func() {
           local line1=${LINENO}

@@ -83,7 +83,7 @@ pub fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registrati
     //
 
     #[cfg(feature = "builtin.alias")]
-    m.insert("alias".into(), builtin::<alias::AliasCommand>()); // TODO: should be exec_declaration_builtin
+    m.insert("alias".into(), builtin::<alias::AliasCommand>()); // TODO(alias): should be exec_declaration_builtin
     #[cfg(feature = "builtin.bg")]
     m.insert("bg".into(), builtin::<bg::BgCommand>());
     #[cfg(feature = "builtin.cd")]
@@ -183,13 +183,13 @@ pub fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registrati
         #[cfg(feature = "builtin.history")]
         m.insert("history".into(), builtin::<history::HistoryCommand>());
 
-        // TODO: implement caller builtin
+        // TODO(caller): implement caller builtin
         m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
 
-        // TODO: implement disown builtin
+        // TODO(disown): implement disown builtin
         m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());
 
-        // TODO: implement logout builtin
+        // TODO(logout): implement logout builtin
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
     }
 

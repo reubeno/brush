@@ -25,7 +25,7 @@ impl builtins::Command for GetOptsCommand {
 
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
     /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO: we can safely remove this after the issue is resolved
+    /// TODO(command): we can safely remove this after the issue is resolved
     fn new<I>(args: I) -> Result<Self, clap::Error>
     where
         I: IntoIterator<Item = String>,
@@ -142,7 +142,7 @@ impl builtins::Command for GetOptsCommand {
                         new_optarg = None;
                     }
 
-                    // TODO: honor OPTERR=0 indicating suppression of error messages
+                    // TODO(getopts): honor OPTERR=0 indicating suppression of error messages
                     if treat_unknown_options_as_failure {
                         writeln!(context.stderr(), "getopts: illegal option -- {c}")?;
                     }

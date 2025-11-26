@@ -244,7 +244,7 @@ impl Display for KeyStroke {
             write!(f, "\\C-")?;
         }
         if self.shift {
-            // TODO: Figure out what to do here or if the key encodes the shift in it.
+            // TODO(input): Figure out what to do here or if the key encodes the shift in it.
         }
         self.key.fmt(f)
     }

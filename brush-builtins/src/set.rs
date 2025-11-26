@@ -140,14 +140,14 @@ impl builtins::Command for SetCommand {
 
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
     /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO: we can safely remove this after the issue is resolved
+    /// TODO(set): we can safely remove this after the issue is resolved
     fn new<I>(args: I) -> Result<Self, clap::Error>
     where
         I: IntoIterator<Item = String>,
     {
         //
-        // TODO: This is getting pretty messy; we need to see how to avoid this -- handling from
-        // leaking into too many commands' custom parsing.
+        // TODO(set): This is getting pretty messy; we need to see how to avoid this -- handling
+        // from leaking into too many commands' custom parsing.
         //
 
         // Apply the same workaround from the default implementation of Command::new to handle '+'
@@ -407,7 +407,7 @@ fn display_all(context: &brush_core::ExecutionContext<'_>) -> Result<(), brush_c
             continue;
         }
 
-        // TODO: For now, skip all dynamic variables. The current behavior
+        // TODO(set): For now, skip all dynamic variables. The current behavior
         // of bash is not quite clear. We've empirically found that some
         // special variables don't get displayed until they're observed
         // at least once.

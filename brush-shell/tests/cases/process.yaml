@@ -6,7 +6,7 @@ common_test_files:
 cases:
   - name: "Basic process"
     stdin: |
-      # TODO: Figure out how to make this work elsewhere
+      # TODO(jobs): Figure out how to make this work elsewhere
       if [[ "$(uname)" != "Linux" ]]; then
         echo "Skipping test on non-Linux platform"
         exit 0

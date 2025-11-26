@@ -65,7 +65,7 @@ pub type CompleteCommand = CompoundList;
 /// Represents a complete shell command item.
 pub type CompleteCommandItem = CompoundListItem;
 
-// TODO: decide if we want to trace this location or consider it a whitespace separator
+// TODO(tracing): decide if we want to trace this location or consider it a whitespace separator
 /// Indicates whether the preceding command is executed synchronously or asynchronously.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
@@ -226,7 +226,7 @@ pub enum AndOr {
     Or(Pipeline),
 }
 
-// TODO: add a loc
+// TODO(source-location): add a loc
 impl SourceLocation for AndOr {
     fn location(&self) -> Option<TokenLocation> {
         match self {
@@ -414,7 +414,7 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
 }
 
-// TODO: complete the list
+// TODO(source-location): complete the list
 impl SourceLocation for CompoundCommand {
     fn location(&self) -> Option<TokenLocation> {
         match self {
@@ -651,7 +651,7 @@ impl Display for CaseClauseCommand {
 )]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
-// TODO: doublecheck
+// TODO(source-location): doublecheck
 impl SourceLocation for CompoundList {
     fn location(&self) -> Option<TokenLocation> {
         let start = self.0.first().and_then(SourceLocation::location);
@@ -1200,7 +1200,7 @@ pub enum CommandPrefixOrSuffixItem {
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
 }
 
-// TODO: complete
+// TODO(source-location): complete
 impl SourceLocation for CommandPrefixOrSuffixItem {
     fn location(&self) -> Option<TokenLocation> {
         match self {
@@ -1300,7 +1300,7 @@ pub enum AssignmentValue {
     Array(Vec<(Option<Word>, Word)>),
 }
 
-// TODO: complete
+// TODO(source-location): complete
 impl SourceLocation for AssignmentValue {
     fn location(&self) -> Option<TokenLocation> {
         None
@@ -1337,7 +1337,7 @@ impl Display for AssignmentValue {
 )]
 pub struct RedirectList(pub Vec<IoRedirect>);
 
-// TODO: complete
+// TODO(source-location): complete
 impl SourceLocation for RedirectList {
     fn location(&self) -> Option<TokenLocation> {
         None
@@ -1374,7 +1374,7 @@ pub enum IoRedirect {
     OutputAndError(Word, bool),
 }
 
-// TODO: complete
+// TODO(source-location): complete
 impl SourceLocation for IoRedirect {
     fn location(&self) -> Option<TokenLocation> {
         None
@@ -1532,7 +1532,7 @@ pub struct IoHereDocument {
     pub doc: Word,
 }
 
-// TODO: complete
+// TODO(source-location): complete
 impl SourceLocation for IoHereDocument {
     fn location(&self) -> Option<TokenLocation> {
         None
@@ -1564,7 +1564,7 @@ pub enum TestExpr {
     BinaryTest(BinaryPredicate, String, String),
 }
 
-// TODO: complete
+// TODO(source-location): complete
 impl SourceLocation for TestExpr {
     fn location(&self) -> Option<TokenLocation> {
         None
@@ -1935,7 +1935,7 @@ pub enum ArithmeticExpr {
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
 
-// TODO: complete and add loc for literal
+// TODO(source-location): complete and add loc for literal
 impl SourceLocation for ArithmeticExpr {
     fn location(&self) -> Option<TokenLocation> {
         None
@@ -2170,7 +2170,7 @@ pub enum ArithmeticTarget {
     ArrayElement(String, Box<ArithmeticExpr>),
 }
 
-// TODO: complete and add loc
+// TODO(source-location): complete and add loc
 impl SourceLocation for ArithmeticTarget {
     fn location(&self) -> Option<TokenLocation> {
         None

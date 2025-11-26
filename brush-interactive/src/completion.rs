@@ -33,7 +33,7 @@ pub(crate) async fn complete_async(
         options: brush_core::completion::ProcessingOptions::default(),
     });
 
-    // TODO: Consider optimizing this out when not needed?
+    // TODO(completion): Consider optimizing this out when not needed?
     let completing_end_of_line = pos == line.len();
     completions.candidates = completions
         .candidates

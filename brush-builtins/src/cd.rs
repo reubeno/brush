@@ -37,7 +37,7 @@ impl builtins::Command for CdCommand {
         &self,
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // TODO: implement 'cd -@'
+        // TODO(cd): implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");
         }
@@ -54,7 +54,7 @@ impl builtins::Command for CdCommand {
                     return Ok(ExecutionResult::general_error());
                 }
             } else {
-                // TODO: remove clone, and use temporary lifetime extension after rust 1.75
+                // TODO(cd): remove clone, and use temporary lifetime extension after rust 1.75
                 target_dir.clone()
             }
         // `cd' without arguments is equivalent to `cd $HOME'

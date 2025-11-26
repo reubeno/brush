@@ -366,7 +366,7 @@ peg::parser! {
             // command instead.
             !arithmetic_end() !specific_operator(")") [_] {}
 
-        // TODO: evaluate arithmetic end; the semicolon is used in arithmetic for loops.
+        // TODO(arithmetic): evaluate arithmetic end; the semicolon is used in arithmetic for loops.
         rule arithmetic_end() -> () =
             specific_operator(")") specific_operator(")") {} /
             specific_operator(";") {}
@@ -465,7 +465,7 @@ peg::parser! {
             left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringDoesNotExactlyMatchPattern, ast::Word::from(left), ast::Word::from(right)) }
             left:word() specific_word("=~") right:regex_word()  {
                 if right.value.starts_with(['\'', '\"']) {
-                    // TODO: Confirm it ends with that too?
+                    // TODO(test): Confirm it ends with that too?
                     ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringContainsSubstring, ast::Word::from(left), right)
                 } else {
                     ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringMatchesRegex, ast::Word::from(left), right)
@@ -664,7 +664,7 @@ peg::parser! {
         rule fname() -> ast::Word =
             // Special-case: don't allow it to end with an equals sign, to avoid the challenge of
             // misinterpreting certain declaration assignments as function definitions.
-            // TODO: Find a way to make this still work without requiring this targeted exception.
+            // TODO(parser): Find a way to make this still work without requiring this targeted exception.
             w:[Token::Word(word, l) if !word.ends_with('=')] { ast::Word::with_location(word, l) }
 
         rule brace_group() -> ast::BraceGroupCommand =

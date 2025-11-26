@@ -256,7 +256,7 @@ impl<'a> ReadLineState<'a> {
         let move_left = repeated_char_str(BACKSPACE, delete_count);
         eprint!("{move_left}{}", &self.line[redisplay_offset..]);
 
-        // TODO: Remove trailing chars if completion is shorter?
+        // TODO(completion): Remove trailing chars if completion is shorter?
         eprint!(
             "{}",
             repeated_char_str(BACKSPACE, self.line.len() - self.cursor)

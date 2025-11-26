@@ -133,9 +133,8 @@ impl CommandArg {
 /// * `command_name` - The name of the command to execute.
 /// * `argv0` - The value to use for `argv[0]` (may be different from the command).
 /// * `args` - The arguments to pass to the command.
-/// * `empty_env` - If true, the command will be executed with an empty
-///   environment; if false, the command will inherit environment variables
-///   marked as exported in the provided `Shell`.
+/// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
+///   command will inherit environment variables marked as exported in the provided `Shell`.
 #[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
 pub fn compose_std_command<S: AsRef<OsStr>>(
     context: &ExecutionContext<'_>,
@@ -240,13 +239,14 @@ async fn invoke_debug_trap_handler_if_registered(
             .get(&traps::TrapSignal::Debug)
             .cloned();
         if let Some(debug_trap_handler) = debug_trap_handler {
-            // TODO: Confirm whether trap handlers should be executed in the same process group.
+            // TODO(traps): Confirm whether trap handlers should be executed in the same process
+            // group.
             let mut handler_params = context.params.clone();
             handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
             let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
 
-            // TODO: This shouldn't *just* be set in a trap situation.
+            // TODO(well-known-vars): This shouldn't *just* be set in a trap situation.
             context.shell.env.update_or_add(
                 "BASH_COMMAND",
                 variables::ShellValueLiteral::Scalar(full_cmd),
@@ -257,7 +257,7 @@ async fn invoke_debug_trap_handler_if_registered(
 
             context.shell.traps.handler_depth += 1;
 
-            // TODO: Discard result?
+            // TODO(traps): Discard result?
             let _ = context
                 .shell
                 .run_string(debug_trap_handler, &handler_params)
@@ -279,15 +279,13 @@ async fn invoke_debug_trap_handler_if_registered(
 /// # Arguments
 ///
 /// * `cmd_context` - The context in which the command is being executed.
-/// * `process_group_id` - The process group ID to use for externally
-///   executed commands. This may be modified if a new process group is
-///   created.
+/// * `process_group_id` - The process group ID to use for externally executed commands. This may be
+///   modified if a new process group is created.
 /// * `args` - The arguments to the command.
-/// * `use_functions` - If true, the command name will be checked against
-///   shell functions; if not, shell functions will not be consulted.
-/// * `path_dirs` - If provided, these directories will be searched for
-///   external commands; if not provided, the default search logic will
-///   be used.
+/// * `use_functions` - If true, the command name will be checked against shell functions; if not,
+///   shell functions will not be consulted.
+/// * `path_dirs` - If provided, these directories will be searched for external commands; if not
+///   provided, the default search logic will be used.
 pub async fn execute(
     cmd_context: ExecutionContext<'_>,
     process_group_id: &mut Option<i32>,

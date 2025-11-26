@@ -143,7 +143,7 @@ cases:
       (( es1 >= es2 )) && echo "Time is moving forward within the shell"
 
   - name: "GROUPS"
-    skip: true # TODO: macOS failure needs investigation (passes elsewhere)
+    skip: true # TODO(well-known-vars): macOS failure needs investigation (passes elsewhere)
     stdin: |
       (for group in ${GROUPS[@]}; do
         echo $group

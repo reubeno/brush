@@ -217,7 +217,7 @@ async fn apply_binary_predicate(
                 Ok(None) => (false, vec![]),
                 // If we can't compile the regex, don't abort the whole operation but make sure to
                 // report it.
-                // TODO: Docs indicate we should yield 2 on an invalid regex (not 1).
+                // TODO(test): Docs indicate we should yield 2 on an invalid regex (not 1).
                 Err(e) => {
                     tracing::warn!("error using regex: {}", e);
                     (false, vec![])
@@ -323,7 +323,7 @@ async fn apply_binary_predicate(
                     .await?;
             }
 
-            // TODO: According to docs, should be lexicographical order of the current locale.
+            // TODO(test): According to docs, should be lexicographical order of the current locale.
             Ok(left < right)
         }
         ast::BinaryPredicate::LeftSortsAfterRight => {
@@ -336,7 +336,7 @@ async fn apply_binary_predicate(
                     .await?;
             }
 
-            // TODO: According to docs, should be lexicographical order of the current locale.
+            // TODO(test): According to docs, should be lexicographical order of the current locale.
             Ok(left > right)
         }
         ast::BinaryPredicate::ArithmeticEqualTo => {
@@ -426,7 +426,8 @@ async fn apply_binary_predicate(
         // N.B. The "=", "==", and "!=" operators don't compare 2 strings; they check
         // for whether the lefthand operand (a string) is matched by the righthand
         // operand (treated as a shell pattern).
-        // TODO: implement case-insensitive matching if relevant via shopt options (nocasematch).
+        // TODO(test): implement case-insensitive matching if relevant via shopt options
+        // (nocasematch).
         ast::BinaryPredicate::StringExactlyMatchesPattern => {
             let s = expansion::basic_expand_word(shell, params, left).await?;
             let pattern = expansion::basic_expand_pattern(shell, params, right)
@@ -488,11 +489,11 @@ pub(crate) fn apply_binary_predicate_to_strs(
             left_file_is_older_or_does_not_exist_when_right_does(shell, left, right)
         }
         ast::BinaryPredicate::LeftSortsBeforeRight => {
-            // TODO: According to docs, should be lexicographical order of the current locale.
+            // TODO(test): According to docs, should be lexicographical order of the current locale.
             Ok(left < right)
         }
         ast::BinaryPredicate::LeftSortsAfterRight => {
-            // TODO: According to docs, should be lexicographical order of the current locale.
+            // TODO(test): According to docs, should be lexicographical order of the current locale.
             Ok(left > right)
         }
         ast::BinaryPredicate::ArithmeticEqualTo => Ok(apply_test_binary_arithmetic_predicate(

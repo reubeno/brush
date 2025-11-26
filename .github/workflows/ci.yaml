@@ -644,7 +644,7 @@ jobs:
 
           result=0
           for test_name in binaries/*tests*; do
-            # TODO: Re-enable interactive tests.
+            # TODO(interactive-tests): Re-enable interactive tests.
             if [[ ${test_name} == *interactive* ]]; then
               echo "WARNING: skipping interactive test: ${test_name}"
               continue

@@ -17,7 +17,6 @@ impl From<PipeReader> for std::process::Stdio {
 
 impl std::io::Read for PipeReader {
     fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-        // TODO: implement
         Ok(0)
     }
 }
@@ -41,7 +40,6 @@ impl From<PipeWriter> for std::process::Stdio {
 
 impl std::io::Write for PipeWriter {
     fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
-        // TODO: implement
         Ok(0)
     }
 

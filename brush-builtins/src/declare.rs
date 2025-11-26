@@ -255,7 +255,7 @@ impl DeclareCommand {
 
         // Special-case: `local -`
         if name == "-" && matches!(verb, DeclareVerb::Local) {
-            // TODO: `local -` allows shadowing the current `set` options (i.e., $-), with
+            // TODO(local): `local -` allows shadowing the current `set` options (i.e., $-), with
             // subsequent updates getting discarded when the current local scope is popped.
             tracing::warn!("not yet implemented: local -");
             return Ok(true);

@@ -16,7 +16,7 @@ pub(crate) struct KillCommand {
     signal_number: Option<usize>,
 
     //
-    // TODO: implement -sigspec syntax
+    // TODO(kill): implement -sigspec syntax
     /// List known signal names.
     #[arg(short = 'l', short_alias = 'L')]
     list_signals: bool,

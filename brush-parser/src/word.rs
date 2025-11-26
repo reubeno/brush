@@ -719,7 +719,7 @@ peg::parser! {
         rule unquoted_literal_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
             s:$(unquoted_literal_text_piece(<stop_condition()>, in_command)+) { WordPiece::Text(s.to_owned()) }
 
-        // TODO: Find a way to remove the special-case logic for extglob + subshell commands
+        // TODO(parser): Find a way to remove the special-case logic for extglob + subshell commands
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
@@ -757,12 +757,12 @@ peg::parser! {
                 }
             }
 
-        // TODO: Handle colon syntax
+        // TODO(tilde): Handle colon syntax
         rule tilde_prefix() -> WordPiece =
             tilde_parsing_enabled() "~" cs:$((!['/' | ':' | ';'] [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
 
-        // TODO: Deal with fact that there may be a quoted word or escaped closing brace chars.
-        // TODO: Improve on how we handle a '$' not followed by a valid variable name or parameter.
+        // TODO(parser): Deal with fact that there may be a quoted word or escaped closing brace chars.
+        // TODO(parser): Improve on how we handle a '$' not followed by a valid variable name or parameter.
         rule parameter_expansion() -> WordPiece =
             "${" e:parameter_expression() "}" {
                 WordPiece::ParameterExpansion(e)

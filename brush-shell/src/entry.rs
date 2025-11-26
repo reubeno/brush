@@ -21,7 +21,7 @@ static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceE
 // after the `use clap::Parser`
 impl CommandLineArgs {
     // Work around clap's limitation handling `--` like a regular value
-    // TODO: We can safely remove this `impl` after the issue is resolved
+    // TODO(cmdline): We can safely remove this `impl` after the issue is resolved
     // https://github.com/clap-rs/clap/issues/5055
     // This function takes precedence over [`clap::Parser::parse_from`]
     fn try_parse_from(itr: impl IntoIterator<Item = String>) -> Result<Self, clap::Error> {

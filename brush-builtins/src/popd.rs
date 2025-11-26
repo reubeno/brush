@@ -9,7 +9,7 @@ pub(crate) struct PopdCommand {
     #[clap(short = 'n')]
     no_directory_change: bool,
     //
-    // TODO: implement +N and -N
+    // TODO(popd): implement +N and -N
 }
 
 impl builtins::Command for PopdCommand {

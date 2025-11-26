@@ -44,7 +44,7 @@ pub(crate) struct DirsCommand {
     #[arg(short = 'v')]
     print_one_per_line_with_index: bool,
     //
-    // TODO: implement +N and -N
+    // TODO(dirs): implement +N and -N
 }
 
 impl builtins::Command for DirsCommand {
