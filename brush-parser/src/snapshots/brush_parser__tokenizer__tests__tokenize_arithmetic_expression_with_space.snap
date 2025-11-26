@@ -5,7 +5,7 @@ expression: "test_tokenizer(\"$(( 1 ))\")?"
 TokenizerResult(
   input: "$(( 1 ))",
   result: [
-    Word("$(( 1 ))", TokenLocation(
+    Word("$(( 1 ))", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,

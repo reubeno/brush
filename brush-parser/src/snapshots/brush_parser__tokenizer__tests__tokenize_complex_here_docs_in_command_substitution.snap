@@ -5,7 +5,7 @@ expression: "test_tokenizer(r\"echo $(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\n
 TokenizerResult(
   input: "echo $(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)",
   result: [
-    Word("echo", TokenLocation(
+    Word("echo", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,
@@ -17,7 +17,7 @@ TokenizerResult(
         column: 5,
       ),
     )),
-    Word("$(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)", TokenLocation(
+    Word("$(cat <<HERE1 <<HERE2 | wc -l\nTEXT\nHERE1\nOTHER\nHERE2\n)", SourceSpan(
       start: SourcePosition(
         index: 5,
         line: 1,

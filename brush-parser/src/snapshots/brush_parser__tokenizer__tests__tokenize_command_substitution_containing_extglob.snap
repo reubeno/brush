@@ -5,7 +5,7 @@ expression: "test_tokenizer(\"echo $(echo !(x))\")?"
 TokenizerResult(
   input: "echo $(echo !(x))",
   result: [
-    Word("echo", TokenLocation(
+    Word("echo", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,
@@ -17,7 +17,7 @@ TokenizerResult(
         column: 5,
       ),
     )),
-    Word("$(echo !(x))", TokenLocation(
+    Word("$(echo !(x))", SourceSpan(
       start: SourcePosition(
         index: 5,
         line: 1,

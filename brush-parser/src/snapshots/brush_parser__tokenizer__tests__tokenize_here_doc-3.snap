@@ -5,7 +5,7 @@ expression: "test_tokenizer(r\"cat <<HERE\nSOMETHING\nHERE\n\n\")?"
 TokenizerResult(
   input: "cat <<HERE\nSOMETHING\nHERE\n\n",
   result: [
-    Word("cat", TokenLocation(
+    Word("cat", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,
@@ -17,7 +17,7 @@ TokenizerResult(
         column: 4,
       ),
     )),
-    Operator("<<", TokenLocation(
+    Operator("<<", SourceSpan(
       start: SourcePosition(
         index: 4,
         line: 1,
@@ -29,7 +29,7 @@ TokenizerResult(
         column: 7,
       ),
     )),
-    Word("HERE", TokenLocation(
+    Word("HERE", SourceSpan(
       start: SourcePosition(
         index: 6,
         line: 1,
@@ -41,7 +41,7 @@ TokenizerResult(
         column: 11,
       ),
     )),
-    Word("SOMETHING\n", TokenLocation(
+    Word("SOMETHING\n", SourceSpan(
       start: SourcePosition(
         index: 11,
         line: 2,
@@ -53,7 +53,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Word("HERE", TokenLocation(
+    Word("HERE", SourceSpan(
       start: SourcePosition(
         index: 26,
         line: 4,
@@ -65,7 +65,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Operator("\n", TokenLocation(
+    Operator("\n", SourceSpan(
       start: SourcePosition(
         index: 10,
         line: 1,
@@ -77,7 +77,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Operator("\n", TokenLocation(
+    Operator("\n", SourceSpan(
       start: SourcePosition(
         index: 26,
         line: 4,

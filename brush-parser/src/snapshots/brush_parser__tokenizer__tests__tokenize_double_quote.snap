@@ -5,7 +5,7 @@ expression: "test_tokenizer(r#\"x\"a b\"y\"#)?"
 TokenizerResult(
   input: "x\"a b\"y",
   result: [
-    Word("x\"a b\"y", TokenLocation(
+    Word("x\"a b\"y", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,

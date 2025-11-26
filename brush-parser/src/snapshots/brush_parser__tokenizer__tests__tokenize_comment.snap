@@ -5,7 +5,7 @@ expression: "test_tokenizer(r\"a #comment\n\")?"
 TokenizerResult(
   input: "a #comment\n",
   result: [
-    Word("a", TokenLocation(
+    Word("a", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,
@@ -17,7 +17,7 @@ TokenizerResult(
         column: 2,
       ),
     )),
-    Operator("\n", TokenLocation(
+    Operator("\n", SourceSpan(
       start: SourcePosition(
         index: 2,
         line: 1,

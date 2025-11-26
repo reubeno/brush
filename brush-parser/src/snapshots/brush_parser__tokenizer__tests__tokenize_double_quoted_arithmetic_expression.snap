@@ -5,7 +5,7 @@ expression: "test_tokenizer(r#\"x\"$((1+2))\"y\"#)?"
 TokenizerResult(
   input: "x\"$((1+2))\"y",
   result: [
-    Word("x\"$((1+2))\"y", TokenLocation(
+    Word("x\"$((1+2))\"y", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,

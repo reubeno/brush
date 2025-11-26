@@ -18,7 +18,7 @@ ParseResult(
                         Simple(SimpleCommand(
                           word_or_name: Some(Word(
                             value: ":",
-                            loc: Some(TokenLocation(
+                            loc: Some(SourceSpan(
                               start: SourcePosition(
                                 index: 2,
                                 line: 1,
@@ -46,7 +46,7 @@ ParseResult(
                                       expr: UnexpandedArithmeticExpr(
                                         value: "0",
                                       ),
-                                      loc: TokenLocation(
+                                      loc: SourceSpan(
                                         start: SourcePosition(
                                           index: 9,
                                           line: 1,
@@ -67,7 +67,7 @@ ParseResult(
                                       Simple(SimpleCommand(
                                         word_or_name: Some(Word(
                                           value: ":",
-                                          loc: Some(TokenLocation(
+                                          loc: Some(SourceSpan(
                                             start: SourcePosition(
                                               index: 20,
                                               line: 1,
@@ -86,7 +86,7 @@ ParseResult(
                                 ],
                               ), Sequence),
                             ]),
-                            loc: TokenLocation(
+                            loc: SourceSpan(
                               start: SourcePosition(
                                 index: 7,
                                 line: 1,
@@ -104,7 +104,7 @@ ParseResult(
                     ],
                   ), Sequence),
                 ]),
-                loc: TokenLocation(
+                loc: SourceSpan(
                   start: SourcePosition(
                     index: 0,
                     line: 1,

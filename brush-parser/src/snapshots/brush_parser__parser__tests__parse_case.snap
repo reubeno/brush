@@ -7,7 +7,7 @@ ParseResult(
   result: CaseClauseCommand(
     value: Word(
       value: "x",
-      loc: Some(TokenLocation(
+      loc: Some(SourceSpan(
         start: SourcePosition(
           index: 7,
           line: 2,
@@ -25,7 +25,7 @@ ParseResult(
         patterns: [
           Word(
             value: "x",
-            loc: Some(TokenLocation(
+            loc: Some(SourceSpan(
               start: SourcePosition(
                 index: 12,
                 line: 3,
@@ -46,7 +46,7 @@ ParseResult(
                 Simple(SimpleCommand(
                   word_or_name: Some(Word(
                     value: "echo",
-                    loc: Some(TokenLocation(
+                    loc: Some(SourceSpan(
                       start: SourcePosition(
                         index: 19,
                         line: 4,
@@ -62,7 +62,7 @@ ParseResult(
                   suffix: Some(CommandSuffix([
                     Word(Word(
                       value: "y",
-                      loc: Some(TokenLocation(
+                      loc: Some(SourceSpan(
                         start: SourcePosition(
                           index: 24,
                           line: 4,
@@ -82,7 +82,7 @@ ParseResult(
           ), Sequence),
         ])),
         post_action: ExitCase,
-        loc: Some(TokenLocation(
+        loc: Some(SourceSpan(
           start: SourcePosition(
             index: 12,
             line: 3,

@@ -1,6 +1,6 @@
 use crate::ast::{self, SeparatorOperator, SourceLocation, maybe_location};
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
-use crate::{TokenLocation, error};
+use crate::{SourceSpan, error};
 
 use bon::Builder;
 
@@ -296,7 +296,7 @@ peg::parser! {
             non_posix_extensions_enabled() s:specific_word("time") posix_output:specific_word("-p")? {
                 let start = s.location();
                 if let Some(end) = posix_output {
-                    ast::PipelineTimed::TimedWithPosixOutput(TokenLocation::within(start, end.location()))
+                    ast::PipelineTimed::TimedWithPosixOutput(SourceSpan::within(start, end.location()))
                 } else {
                     ast::PipelineTimed::Timed(start.to_owned())
                 }
@@ -347,7 +347,7 @@ peg::parser! {
 
         pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
             start:specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") end:specific_operator(")") {
-                let loc = TokenLocation::within(
+                let loc = SourceSpan::within(
                     start.location(),
                     end.location()
                 );
@@ -373,7 +373,7 @@ peg::parser! {
 
         rule subshell() -> ast::SubshellCommand =
             start:specific_operator("(") list:compound_list() end:specific_operator(")") {
-                let loc = TokenLocation::within(start.location(), end.location());
+                let loc = SourceSpan::within(start.location(), end.location());
                 ast::SubshellCommand { list, loc }
             }
 
@@ -403,13 +403,13 @@ peg::parser! {
             s:specific_word("for") n:name() linebreak() _in() w:wordlist()? sequential_sep() d:do_group() {
                 let start = s.location();
                 let end = &d.loc;
-                let loc = TokenLocation::within(start, end);
+                let loc = SourceSpan::within(start, end);
                 ast::ForClauseCommand { variable_name: n.to_owned(), values: w, body: d, loc }
             } /
             s:specific_word("for") n:name() sequential_sep()? d:do_group() {
                 let start = s.location();
                 let end = &d.loc;
-                let loc = TokenLocation::within(start, end);
+                let loc = SourceSpan::within(start, end);
                 ast::ForClauseCommand { variable_name: n.to_owned(), values: None, body: d, loc }
             }
 
@@ -424,7 +424,7 @@ peg::parser! {
             body:arithmetic_for_body() {
                 let start = s.location();
                 let end = &body.loc;
-                let loc = TokenLocation::within(start, end);
+                let loc = SourceSpan::within(start, end);
                 ast::ArithmeticForClauseCommand { initializer, condition, updater, body, loc }
             }
 
@@ -436,7 +436,7 @@ peg::parser! {
             s:specific_word("[[") linebreak() expr:extended_test_expression() linebreak() e:specific_word("]]") {
                 let start = s.location();
                 let end = e.location();
-                let loc = TokenLocation::within(start, end);
+                let loc = SourceSpan::within(start, end);
 
                 ast::ExtendedTestExprCommand { expr, loc }
             }
@@ -574,7 +574,7 @@ peg::parser! {
                 ast::CaseItem { patterns: p, cmd: Some(c), post_action: post_action.0, loc }
             }
 
-        rule case_item_post_action() -> (ast::CaseItemPostAction, &'input TokenLocation)  =
+        rule case_item_post_action() -> (ast::CaseItemPostAction, &'input SourceSpan)  =
             s:specific_operator(";;") {
                 (ast::CaseItemPostAction::ExitCase, s.location())
             } /
@@ -592,7 +592,7 @@ peg::parser! {
             s:specific_word("if") condition:compound_list() specific_word("then") then:compound_list() elses:else_part()? e:specific_word("fi") {
                 let start = s.location();
                 let end = s.location();
-                let loc = TokenLocation::within(start, end);
+                let loc = SourceSpan::within(start, end);
 
                 ast::IfClauseCommand {
                     condition,
@@ -631,7 +631,7 @@ peg::parser! {
             s:specific_word("while") c:compound_list() d:do_group() {
                 let start = s.location();
                 let end = &d.loc;
-                let loc = TokenLocation::within(start, end);
+                let loc = SourceSpan::within(start, end);
 
                 ast::WhileOrUntilClauseCommand(c, d, loc)
             }
@@ -640,7 +640,7 @@ peg::parser! {
             s:specific_word("until") c:compound_list() d:do_group() {
                 let start = s.location();
                 let end = &d.loc;
-                let loc = TokenLocation::within(start, end);
+                let loc = SourceSpan::within(start, end);
 
                 ast::WhileOrUntilClauseCommand(c, d, loc)
             }
@@ -669,13 +669,13 @@ peg::parser! {
 
         rule brace_group() -> ast::BraceGroupCommand =
             start:specific_word("{") list:compound_list() end:specific_word("}") {
-                let loc = TokenLocation::within(start.location(), end.location());
+                let loc = SourceSpan::within(start.location(), end.location());
                 ast::BraceGroupCommand { list, loc }
             }
 
         rule do_group() -> ast::DoGroupCommand =
             start:specific_word("do") list:compound_list() end:specific_word("done") {
-                let loc = TokenLocation::within(start.location(), end.location());
+                let loc = SourceSpan::within(start.location(), end.location());
                 ast::DoGroupCommand { list, loc }
             }
 
@@ -873,7 +873,7 @@ peg::parser! {
                 }
                 all_as_word.push(')');
 
-                let loc = TokenLocation::within(l, end.location());
+                let loc = SourceSpan::within(l, end.location());
                 parsed.loc = loc.clone();
                 Ok((parsed, ast::Word::with_location(&all_as_word, &loc)))
             } /
@@ -922,7 +922,7 @@ peg::parser! {
         pub(crate) rule name_and_scalar_value() -> ast::Assignment =
             nae:name_and_equals() value:scalar_value() {
                 let (name, append) = nae;
-                ast::Assignment { name, value, append, loc: TokenLocation::default() }
+                ast::Assignment { name, value, append, loc: SourceSpan::default() }
             }
 
         pub(crate) rule name_and_equals() -> (ast::AssignmentName, bool) =
@@ -1007,10 +1007,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
 }
 
 #[inline]
-fn locations_are_contiguous(
-    loc_left: &crate::TokenLocation,
-    loc_right: &crate::TokenLocation,
-) -> bool {
+fn locations_are_contiguous(loc_left: &crate::SourceSpan, loc_right: &crate::SourceSpan) -> bool {
     loc_left.end.index == loc_right.start.index
 }
 
@@ -1041,7 +1038,7 @@ fn parse_array_assignment(
         name: assignment_name,
         value: ast::AssignmentValue::Array(elements_as_words),
         append,
-        loc: TokenLocation::default(),
+        loc: SourceSpan::default(),
     })
 }
 

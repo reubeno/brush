@@ -5,7 +5,7 @@ expression: "test_tokenizer(r\"cat <<HERE1 <<HERE2\nSOMETHING\nHERE1\nOTHER\nHER
 TokenizerResult(
   input: "cat <<HERE1 <<HERE2\nSOMETHING\nHERE1\nOTHER\nHERE2\necho after\n",
   result: [
-    Word("cat", TokenLocation(
+    Word("cat", SourceSpan(
       start: SourcePosition(
         index: 0,
         line: 1,
@@ -17,7 +17,7 @@ TokenizerResult(
         column: 4,
       ),
     )),
-    Operator("<<", TokenLocation(
+    Operator("<<", SourceSpan(
       start: SourcePosition(
         index: 4,
         line: 1,
@@ -29,7 +29,7 @@ TokenizerResult(
         column: 7,
       ),
     )),
-    Word("HERE1", TokenLocation(
+    Word("HERE1", SourceSpan(
       start: SourcePosition(
         index: 6,
         line: 1,
@@ -41,7 +41,7 @@ TokenizerResult(
         column: 12,
       ),
     )),
-    Word("SOMETHING\n", TokenLocation(
+    Word("SOMETHING\n", SourceSpan(
       start: SourcePosition(
         index: 20,
         line: 2,
@@ -53,7 +53,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Word("HERE1", TokenLocation(
+    Word("HERE1", SourceSpan(
       start: SourcePosition(
         index: 36,
         line: 4,
@@ -65,7 +65,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Operator("<<", TokenLocation(
+    Operator("<<", SourceSpan(
       start: SourcePosition(
         index: 11,
         line: 1,
@@ -77,7 +77,7 @@ TokenizerResult(
         column: 15,
       ),
     )),
-    Word("HERE2", TokenLocation(
+    Word("HERE2", SourceSpan(
       start: SourcePosition(
         index: 14,
         line: 1,
@@ -89,7 +89,7 @@ TokenizerResult(
         column: 20,
       ),
     )),
-    Word("OTHER\n", TokenLocation(
+    Word("OTHER\n", SourceSpan(
       start: SourcePosition(
         index: 36,
         line: 4,
@@ -101,7 +101,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Word("HERE2", TokenLocation(
+    Word("HERE2", SourceSpan(
       start: SourcePosition(
         index: 48,
         line: 6,
@@ -113,7 +113,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Operator("\n", TokenLocation(
+    Operator("\n", SourceSpan(
       start: SourcePosition(
         index: 19,
         line: 1,
@@ -125,7 +125,7 @@ TokenizerResult(
         column: 1,
       ),
     )),
-    Word("echo", TokenLocation(
+    Word("echo", SourceSpan(
       start: SourcePosition(
         index: 48,
         line: 6,
@@ -137,7 +137,7 @@ TokenizerResult(
         column: 5,
       ),
     )),
-    Word("after", TokenLocation(
+    Word("after", SourceSpan(
       start: SourcePosition(
         index: 53,
         line: 6,
@@ -149,7 +149,7 @@ TokenizerResult(
         column: 11,
       ),
     )),
-    Operator("\n", TokenLocation(
+    Operator("\n", SourceSpan(
       start: SourcePosition(
         index: 58,
         line: 6,

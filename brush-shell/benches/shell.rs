@@ -5,7 +5,7 @@
 #[cfg(unix)]
 mod unix {
     use brush_builtins::ShellBuilderExt;
-    use brush_parser::TokenLocation;
+    use brush_parser::SourceSpan;
     use criterion::{Criterion, black_box};
 
     async fn instantiate_shell() -> brush_core::Shell {
@@ -121,7 +121,7 @@ mod unix {
                     brush_parser::ast::CompoundCommand::BraceGroup(
                         brush_parser::ast::BraceGroupCommand {
                             list: brush_parser::ast::CompoundList(vec![]),
-                            loc: TokenLocation::default(),
+                            loc: SourceSpan::default(),
                         },
                     ),
                     None,

@@ -957,7 +957,7 @@ impl Config {
         // If the position is after the last token, then we need to insert an empty
         // token for the new token to be generated.
         let empty_token =
-            brush_parser::Token::Word(String::new(), brush_parser::TokenLocation::default());
+            brush_parser::Token::Word(String::new(), brush_parser::SourceSpan::default());
         if completion_token_index == tokens.len() {
             adjusted_tokens.push(&empty_token);
         }
@@ -1188,7 +1188,7 @@ fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_
         let end = start + piece.len();
         tokens.push(brush_parser::Token::Word(
             piece.to_string(),
-            brush_parser::TokenLocation {
+            brush_parser::SourceSpan {
                 start: brush_parser::SourcePosition {
                     index: start,
                     line: 1,

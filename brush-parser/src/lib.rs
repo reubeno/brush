@@ -10,6 +10,7 @@ pub mod word;
 
 mod error;
 mod parser;
+mod source;
 mod tokenizer;
 
 #[cfg(test)]
@@ -23,7 +24,8 @@ pub use error::{
 pub use error::miette::PrettyError;
 
 pub use parser::{Parser, ParserBuilder, ParserOptions, SourceInfo, parse_tokens};
+pub use source::{SourcePosition, SourceSpan};
 pub use tokenizer::{
-    SourcePosition, Token, TokenLocation, TokenizerError, TokenizerOptions, tokenize_str,
+    Token, TokenLocation, TokenizerError, TokenizerOptions, tokenize_str,
     tokenize_str_with_options, uncached_tokenize_str, unquote_str,
 };

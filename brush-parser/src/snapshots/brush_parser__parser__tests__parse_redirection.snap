@@ -8,7 +8,7 @@ ParseResult(
     Simple(SimpleCommand(
       word_or_name: Some(Word(
         value: "echo",
-        loc: Some(TokenLocation(
+        loc: Some(SourceSpan(
           start: SourcePosition(
             index: 0,
             line: 1,
@@ -28,7 +28,7 @@ ParseResult(
     Simple(SimpleCommand(
       word_or_name: Some(Word(
         value: "wc",
-        loc: Some(TokenLocation(
+        loc: Some(SourceSpan(
           start: SourcePosition(
             index: 8,
             line: 1,
