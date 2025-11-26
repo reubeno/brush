@@ -13,7 +13,7 @@ impl TerminalControl {
         let prev_fg_pid = sys::terminal::get_foreground_pid();
 
         // Break out into new process group.
-        // TODO: jobs: Investigate why this sometimes fails with EPERM.
+        // TODO(jobs): Investigate why this sometimes fails with EPERM.
         let _ = sys::signal::lead_new_process_group();
 
         // Take ownership.

@@ -3,7 +3,7 @@ use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
 /// Query or manipulate the shell's command history.
-// TODO: Evaluate which of the options conflict with each other.
+// TODO(history): Evaluate which of the options conflict with each other.
 #[derive(Parser)]
 #[expect(clippy::option_option)]
 pub(crate) struct HistoryCommand {
@@ -123,9 +123,9 @@ impl HistoryCommand {
             ) {
                 history.flush(
                     file_path,
-                    true,                         /*append?*/
-                    true,                         /*unsaved items only*/
-                    config.time_format.is_some(), /*write timestamps?*/
+                    true,                         /* append? */
+                    true,                         /* unsaved items only */
+                    config.time_format.is_some(), /* write timestamps? */
                 )?;
             }
 
@@ -147,9 +147,9 @@ impl HistoryCommand {
             ) {
                 history.flush(
                     file_path,
-                    false,                        /*append?*/
-                    false,                        /*unsaved items only?*/
-                    config.time_format.is_some(), /*write timestamps?*/
+                    false,                        /* append? */
+                    false,                        /* unsaved items only? */
+                    config.time_format.is_some(), /* write timestamps? */
                 )?;
             }
 

@@ -44,7 +44,7 @@ impl builtins::Command for UnsetCommand {
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         //
-        // TODO: implement nameref
+        // TODO(nameref): implement nameref
         //
         if self.name_interpretation.name_references {
             return brush_core::error::unimp("unset: name references are not yet implemented");
@@ -78,7 +78,7 @@ impl builtins::Command for UnsetCommand {
                 }
             }
 
-            // TODO: Deal with readonly functions
+            // TODO(unset): Deal with readonly functions
             if unspecified || self.name_interpretation.shell_functions {
                 if context.shell.undefine_func(name) {
                     continue;

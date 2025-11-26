@@ -12,7 +12,7 @@ use crate::error;
 type ItemId = i64;
 
 /// Interface for querying and manipulating the shell's recorded history of commands.
-// TODO: support maximum item count
+// TODO(history): support maximum item count
 #[derive(Clone, Default)]
 pub struct History {
     items: rpds::VectorSync<ItemId>,
@@ -165,7 +165,8 @@ impl History {
     ///
     /// * `history_file_path` - The path to the history file.
     /// * `append` - Whether to append to the file or overwrite it.
-    /// * `unsaved_items_only` - Whether to only write unsaved items; if true, any items will be marked as "saved" once saved.
+    /// * `unsaved_items_only` - Whether to only write unsaved items; if true, any items will be
+    ///   marked as "saved" once saved.
     /// * `write_timestamps` - Whether to write timestamps for each command line.
     pub fn flush(
         &mut self,

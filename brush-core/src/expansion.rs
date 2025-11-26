@@ -46,7 +46,7 @@ impl Default for Expansion {
 
 impl From<Expansion> for String {
     fn from(value: Expansion) -> Self {
-        // TODO: Use IFS instead for separator?
+        // TODO(IFS): Use IFS instead for separator?
         value.fields.into_iter().map(Self::from).join(" ")
     }
 }
@@ -368,9 +368,8 @@ pub(crate) async fn full_expand_and_split_str(
 ///
 /// * `shell` - The shell in which to perform the assignment.
 /// * `params` - The execution parameters to use during the assignment.
-/// * `name` - The name of the parameter to assign to. May be a variable name,
-///   or a more complex, assignable parameter expression (e.g., an array
-///   element).
+/// * `name` - The name of the parameter to assign to. May be a variable name, or a more complex,
+///   assignable parameter expression (e.g., an array element).
 /// * `value` - The value to assign to the parameter.
 pub async fn assign_to_named_parameter(
     shell: &mut Shell,
@@ -432,7 +431,7 @@ impl<'a> WordExpander<'a> {
     ) -> Result<patterns::Pattern, error::Error> {
         let expansion = self.basic_expand(word).await?;
 
-        // TODO: Use IFS instead for separator?
+        // TODO(IFS): Use IFS instead for separator?
         #[expect(unstable_name_collisions)]
         let pattern_pieces: Vec<_> = expansion
             .fields
@@ -459,7 +458,7 @@ impl<'a> WordExpander<'a> {
     ) -> Result<crate::regex::Regex, error::Error> {
         let expansion = self.basic_expand(word).await?;
 
-        // TODO: Use IFS instead for separator?
+        // TODO(IFS): Use IFS instead for separator?
         #[expect(unstable_name_collisions)]
         let regex_pieces: Vec<_> = expansion
             .fields
@@ -1734,8 +1733,8 @@ impl<'a> WordExpander<'a> {
                 if came_from_undefined {
                     Ok(String::new())
                 } else {
-                    // TODO: This isn't right for arrays.
-                    // TODO: This doesn't honor 'separate_words'
+                    // TODO(expansion): This isn't right for arrays.
+                    // TODO(expansion): This doesn't honor 'separate_words'
                     Ok(escape::force_quote(
                         s.as_str(),
                         escape::QuoteMode::SingleQuote,
@@ -1775,7 +1774,7 @@ fn coalesce_expansions(expansions: Vec<Expansion>) -> Expansion {
                 }
             }
 
-            // TODO: What if expansions have different concatenation values?
+            // TODO(expansion): What if expansions have different concatenation values?
             acc.concatenate = expansion.concatenate;
             acc.from_array = expansion.from_array;
 

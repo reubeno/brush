@@ -27,7 +27,7 @@ pub(crate) struct JobsCommand {
     stopped_jobs_only: bool,
 
     /// Job specs to list.
-    // TODO: Add -x option
+    // TODO(jobs): Add -x option
     job_specs: Vec<String>,
 }
 

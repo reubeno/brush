@@ -21,7 +21,7 @@ impl builtins::Command for DotCommand {
         &self,
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        // TODO: Handle trap inheritance.
+        // TODO(dot): Handle trap inheritance.
         context
             .shell
             .source_script(

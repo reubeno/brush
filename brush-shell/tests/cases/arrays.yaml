@@ -4,7 +4,7 @@ common_test_files:
   - path: "helpers.sh"
     contents: |
       stable_print_assoc_array() {
-          # TODO: enable use of nameref when implemented; for now
+          # TODO(nameref): enable use of nameref when implemented; for now
           # we assume the name of the array is assoc_array
           # local -n assoc_array=$1
           local key

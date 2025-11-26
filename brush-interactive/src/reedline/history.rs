@@ -20,7 +20,7 @@ impl reedline::History for ReedlineHistory {
     /// * `item` - The history item to save.
     fn save(&mut self, item: reedline::HistoryItem) -> reedline::Result<reedline::HistoryItem> {
         //
-        // TODO: Evaluate a way to rationalize between this and the shared
+        // TODO(history): Evaluate a way to rationalize between this and the shared
         // history saving. For now, we need to do nothing here to avoid
         // duplicate history items since we are auto-updating the history
         // in a non-reedline-specific way.
@@ -110,7 +110,7 @@ impl reedline::History for ReedlineHistory {
         id: reedline::HistoryItemId,
         updater: &dyn Fn(reedline::HistoryItem) -> reedline::HistoryItem,
     ) -> reedline::Result<()> {
-        // TODO: Understand atomicity expectations of reedline.
+        // TODO(history): Understand atomicity expectations of reedline.
         let item = self.load(id)?;
         let updated_item = updater(item);
         self.save(updated_item)?;
@@ -164,7 +164,7 @@ fn brush_history_item_to_reedline(item: &brush_core::history::Item) -> reedline:
 
 #[expect(unused)]
 fn reedline_history_item_to_brush(item: &reedline::HistoryItem) -> brush_core::history::Item {
-    // TODO: implement more fields when they are added to Item
+    // TODO(history): implement more fields when they are added to Item
     brush_core::history::Item {
         id: item.id.map_or(0, |id| id.0),
         command_line: item.command_line.clone(),

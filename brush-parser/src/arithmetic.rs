@@ -104,7 +104,7 @@ peg::parser! {
         rule literal_number() -> i64 =
             // Literal with explicit radix (format: <base>#<literal>)
             radix:decimal_literal() "#" s:$(['0'..='9' | 'a'..='z' | 'A'..='Z']+) {?
-                // TODO: Support bases larger than 36. from_str_radix can't handle that.
+                // TODO(arithmetic): Support bases larger than 36. from_str_radix can't handle that.
                 if !(2..=36).contains(&radix) {
                     return Err("invalid base");
                 }

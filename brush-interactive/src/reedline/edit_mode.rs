@@ -144,7 +144,7 @@ fn translate_key_sequence_to_reedline(
     seq: &KeySequence,
 ) -> Option<(reedline::KeyModifiers, reedline::KeyCode)> {
     if seq.strokes.len() != 1 {
-        // TODO: handle multiple strokes
+        // TODO(input): handle multiple strokes
         return None;
     }
 
@@ -333,7 +333,7 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
                 }
                 [reedline::EditCommand::MoveRight { select: true }] => None,
                 [reedline::EditCommand::MoveToEnd { select: false }] => {
-                    // TODO: Not quite accurate, because it doesn't just go to end of line.
+                    // TODO(input): Not quite accurate, because it doesn't just go to end of line.
                     Some(KeyAction::DoInputFunction(InputFunction::EndOfLine))
                 }
                 [reedline::EditCommand::MoveToEnd { select: true }] => None,
@@ -346,7 +346,8 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
                 }
                 [reedline::EditCommand::MoveToLineStart { select: true }] => None,
                 [reedline::EditCommand::MoveToStart { select: false }] => {
-                    // TODO: Not quite accurate, because it doesn't just go to beginning of line.
+                    // TODO(input): Not quite accurate, because it doesn't just go to beginning of
+                    // line.
                     Some(KeyAction::DoInputFunction(InputFunction::BeginningOfLine))
                 }
                 [reedline::EditCommand::MoveToStart { select: true }] => None,
@@ -376,7 +377,7 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
                     Some(KeyAction::DoInputFunction(InputFunction::Undo))
                 }
                 _ => {
-                    // TODO: Handle more?
+                    // TODO(input): Handle more?
                     tracing::warn!("unhandled edit commands: {cmds:?}");
                     None
                 }
@@ -400,7 +401,7 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
             Some(KeyAction::DoInputFunction(InputFunction::RedrawCurrentLine))
         }
         reedline::ReedlineEvent::Multiple(_) => {
-            // TODO: Try to extract something from these?
+            // TODO(input): Try to extract something from these?
             None
         }
         reedline::ReedlineEvent::UntilFound(uf_events) => {
@@ -412,12 +413,12 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
             {
                 translate_reedline_event_to_action(next_evt)
             } else {
-                // TODO: Try to extract something from these?
+                // TODO(input): Try to extract something from these?
                 None
             }
         }
         _ => {
-            // TODO: Handle more?
+            // TODO(input): Handle more?
             None
         }
     }

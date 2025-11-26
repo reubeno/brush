@@ -208,7 +208,7 @@ impl Pattern {
         let prefix_to_remove;
         let mut paths_so_far = if is_absolute {
             prefix_to_remove = None;
-            // TODO: Figure out appropriate thing to do on non-Unix platforms.
+            // TODO(patterns): Figure out appropriate thing to do on non-Unix platforms.
             vec![PathBuf::from(std::path::MAIN_SEPARATOR_STR)]
         } else {
             let mut working_dir_str = working_dir.to_string_lossy().to_string();
@@ -381,7 +381,7 @@ impl Pattern {
 }
 
 fn requires_expansion(s: &str) -> bool {
-    // TODO: Make this more accurate.
+    // TODO(patterns): Make this more accurate.
     s.contains(['*', '?', '[', ']', '(', ')'])
 }
 

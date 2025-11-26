@@ -12,7 +12,7 @@ pub(crate) struct PushdCommand {
     /// Directory to push on the directory stack.
     dir: String,
     //
-    // TODO: implement +N and -N
+    // TODO(pushd): implement +N and -N
 }
 
 impl builtins::Command for PushdCommand {

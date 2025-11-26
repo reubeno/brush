@@ -262,7 +262,7 @@ cases:
     stdin: |
       regex="^$"
 
-      # TODO: The commented out lines appear differ in behavior between versions of bash.
+      # TODO(test): The commented out lines appear differ in behavior between versions of bash.
       # [[ "" =~ ''         ]] && echo "1. Matched"
       [[ "" =~ '^$'       ]] && echo "2. Matched"
       # [[ "" =~ ""         ]] && echo "3. Matched"

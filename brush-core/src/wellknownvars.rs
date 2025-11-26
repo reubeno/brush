@@ -334,8 +334,8 @@ pub(crate) fn initialize_vars(
     }
 
     // PIPESTATUS
-    // TODO: Investigate what happens if this gets unset.
-    // TODO: Investigate if this needs to be saved/preserved across prompt display.
+    // TODO(well-known-vars): Investigate what happens if this gets unset.
+    // TODO(well-known-vars): Investigate if this needs to be saved/preserved across prompt display.
     shell.env.set_global(
         "PIPESTATUS",
         ShellVariable::new(ShellValue::Dynamic {

@@ -102,7 +102,7 @@ pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
     if std::io::stdin().is_terminal() {
         let pgid = nix::unistd::getpgid(None)?;
 
-        // TODO: jobs: This sometimes fails with ENOTTY even though we checked that stdin is a
+        // TODO(jobs): This sometimes fails with ENOTTY even though we checked that stdin is a
         // terminal. We should investigate why this is happening.
         let _ = nix::unistd::tcsetpgrp(std::io::stdin(), pgid);
     }

@@ -215,7 +215,8 @@ impl<'a> StyledInputLine<'a> {
                 self.set_next_missing_style(styles::command_substitution());
             }
             brush_parser::word::WordPiece::ArithmeticExpression(_) => {
-                // TODO: Consider individually highlighting pieces of the expression itself.
+                // TODO(highlighting): Consider individually highlighting pieces of the expression
+                // itself.
                 self.append_style(
                     styles::arithmetic(),
                     global_offset + word_piece.start_index,
@@ -317,7 +318,7 @@ impl<'a> StyledInputLine<'a> {
         }
 
         if name.contains(std::path::MAIN_SEPARATOR) {
-            // TODO: Should check for executable-ness.
+            // TODO(highlighting): Should check for executable-ness.
             let candidate_path = self.shell.absolute_path(std::path::Path::new(name));
             if candidate_path.exists() {
                 CommandType::External

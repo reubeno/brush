@@ -231,7 +231,7 @@ impl ReadCommand {
         let mut buffer = [0; 1]; // 1-byte buffer
 
         let reason = loop {
-            // TODO: Figure out how to restore terminal settings on error?
+            // TODO(read): Figure out how to restore terminal settings on error?
             let n = input_file.read(&mut buffer)?;
             if n == 0 {
                 break ReadTermination::EndOfInput; // EOF reached.

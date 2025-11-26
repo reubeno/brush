@@ -16,7 +16,7 @@ pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn is_root() -> bool {
-    // TODO: implement some version of this for Windows
+    // TODO(windows): implement some version of this for Windows
     false
 }
 
@@ -43,18 +43,18 @@ pub(crate) fn get_current_username() -> Result<String, error::Error> {
 
 #[allow(clippy::unnecessary_wraps)]
 pub(crate) fn get_user_group_ids() -> Result<Vec<u32>, error::Error> {
-    // TODO: implement some version of this for Windows
+    // TODO(windows): implement some version of this for Windows
     Ok(vec![])
 }
 
 #[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_users() -> Result<Vec<String>, error::Error> {
-    // TODO: implement some version of this for Windows
+    // TODO(windows): implement some version of this for Windows
     Ok(vec![])
 }
 
 #[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_all_groups() -> Result<Vec<String>, error::Error> {
-    // TODO: implement some version of this for Windows
+    // TODO(windows): implement some version of this for Windows
     Ok(vec![])
 }

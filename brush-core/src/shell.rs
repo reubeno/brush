@@ -391,7 +391,7 @@ impl Shell {
             shell.open_files.update_from(fds.into_iter());
         }
 
-        // TODO: Without this a script that sets extglob will fail because we
+        // TODO(patterns): Without this a script that sets extglob will fail because we
         // parse the entire script with the same settings.
         shell.options.extended_globbing = true;
 
@@ -644,7 +644,8 @@ impl Shell {
 
                 if self.env.is_set(env_var_name) {
                     //
-                    // TODO: look at $ENV/BASH_ENV; source its expansion if that file exists
+                    // TODO(well-known-vars): look at $ENV/BASH_ENV; source its expansion if that
+                    // file exists
                     //
                     return error::unimp(
                         "load config from $ENV/BASH_ENV for non-interactive, non-login shell",
@@ -771,7 +772,7 @@ impl Shell {
         let mut other_shell_name = Some(source_info.source.clone());
         let positional_params_given = !other_positional_parameters.is_empty();
 
-        // TODO: Find a cleaner way to change args.
+        // TODO(positional-args): Find a cleaner way to change args.
         std::mem::swap(&mut self.shell_name, &mut other_shell_name);
 
         // NOTE: We only shadow the original positional parameters if any were explicitly given
@@ -859,9 +860,9 @@ impl Shell {
         command: S,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        // TODO: Actually track line numbers; this is something of a hack, assuming each time
-        // this function is invoked we are on the next line of the input. For one thing,
-        // each string we run could be multiple lines.
+        // TODO(source-info): Actually track line numbers; this is something of a hack, assuming
+        // each time this function is invoked we are on the next line of the input. For one
+        // thing, each string we run could be multiple lines.
         self.current_line_number += 1;
 
         let parse_result = self.parse_string(command.into());
@@ -971,7 +972,7 @@ impl Shell {
             return Ok(ExecutionResult::success());
         };
 
-        // TODO: Confirm whether trap handlers should be executed in the same process group.
+        // TODO(traps): Confirm whether trap handlers should be executed in the same process group.
         let mut params = self.default_exec_params();
         params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
@@ -1166,14 +1167,15 @@ impl Shell {
     pub fn save_history(&mut self) -> Result<(), error::Error> {
         if let Some(history_file_path) = self.history_file_path() {
             if let Some(history) = &mut self.history {
-                // See if there's *any* time format configured. That triggers writing out timestamps.
+                // See if there's *any* time format configured. That triggers writing out
+                // timestamps.
                 let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
 
-                // TODO: Observe options.append_to_history_file
+                // TODO(history): Observe options.append_to_history_file
                 history.flush(
                     history_file_path,
-                    true, /*append?*/
-                    true, /*unsaved items only?*/
+                    true, /* append? */
+                    true, /* unsaved items only? */
                     write_timestamps,
                 )?;
             }

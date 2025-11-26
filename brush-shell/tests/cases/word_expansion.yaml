@@ -778,7 +778,7 @@ cases:
       echo "\${var:-3:1}: ${var:-3:1}"
 
   - name: "Substring on string with multi-byte chars"
-    skip: true # TODO: succeeds on macOS, fails on Linux
+    skip: true # TODO(expansion): succeeds on macOS, fails on Linux
     stdin: |
       var="7❌🖌️✅😂🔴⛔ABC"
       echo "${var:2}" | hexdump -C
@@ -865,7 +865,7 @@ cases:
       echo "\${arr2@Q}: ${arr2@Q}"
 
   - name: "Parameter quote transformations - K"
-    known_failure: true # TODO: needs triage and debugging
+    known_failure: true # TODO(expansion): needs triage and debugging
     stdin: |
       var='""'
       echo "\${var@K}: ${var@K}"

@@ -263,7 +263,7 @@ pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
 fn backslash_escape(s: &str) -> String {
     let mut output = String::new();
 
-    // TODO: Handle other interesting sequences.
+    // TODO(escape): Handle other interesting sequences.
     for c in s.chars() {
         match c {
             c if needs_escaping(c) => {

@@ -210,7 +210,8 @@ impl Execute for ast::Program {
 
         for command in &self.complete_commands {
             // Execute the command and handle any errors without immediately propagating them.
-            // This allows interactive shells to continue executing subsequent commands even after errors.
+            // This allows interactive shells to continue executing subsequent commands even after
+            // errors.
             match command.execute(shell, params).await {
                 Ok(exec_result) => result = exec_result,
                 Err(err) => {
@@ -246,7 +247,7 @@ impl Execute for ast::CompoundList {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                // TODO: Reenable launching in child process?
+                // TODO(execute): Reenable launching in child process?
                 // let job = spawn_ao_list_in_child(ao_list, shell, params).await?;
 
                 let job = spawn_ao_list_in_task(ao_list, shell, params);
@@ -1130,7 +1131,7 @@ async fn execute_command(
     .await;
 
     // Pop off that ephemeral environment scope.
-    // TODO: jobs: do we need to move self back to foreground on error here?
+    // TODO(jobs): do we need to move self back to foreground on error here?
     context.shell.env.pop_scope(EnvironmentScope::Command)?;
 
     execution_result
@@ -1644,7 +1645,7 @@ fn setup_process_substitution(
     kind: &ast::ProcessSubstitutionKind,
     subshell_cmd: &ast::SubshellCommand,
 ) -> Result<(ShellFd, OpenFile), error::Error> {
-    // TODO: Don't execute synchronously!
+    // TODO(execute): Don't execute synchronously!
     // Execute in a subshell.
     let mut subshell = shell.clone();
 

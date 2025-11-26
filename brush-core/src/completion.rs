@@ -355,9 +355,10 @@ impl Spec {
         if candidates.is_empty() {
             if options.bash_default {
                 //
-                // TODO: if we have no completions, then fall back to default "bash" completions.
-                // It's not clear what exactly this means, though. From basic testing, it doesn't
-                // seem to include basic file and directory name completion.
+                // TODO(completions): if we have no completions, then fall back to default "bash"
+                // completions. It's not clear what exactly this means, though. From
+                // basic testing, it doesn't seem to include basic file and
+                // directory name completion.
                 //
                 tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -o bashdefault");
             }
@@ -573,8 +574,8 @@ impl Spec {
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
-            // TODO: add COMP_KEY
-            // TODO: add COMP_TYPE
+            // TODO(completions): add COMP_KEY
+            // TODO(completions): add COMP_TYPE
         ];
 
         // Fill out variables.
@@ -630,12 +631,12 @@ impl Spec {
         function_name: &str,
         context: &Context<'_>,
     ) -> Result<Answer, error::Error> {
-        // TODO: Don't pollute the persistent environment with these?
+        // TODO(completions): Don't pollute the persistent environment with these?
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
-            // TODO: add COMP_KEY
-            // TODO: add COMP_TYPE
+            // TODO(completions): add COMP_KEY
+            // TODO(completions): add COMP_TYPE
             (
                 "COMP_WORDS",
                 context
@@ -672,7 +673,7 @@ impl Spec {
             args.push(preceding_token);
         }
 
-        // TODO: Find a more appropriate interlock here. For now we use the existing
+        // TODO(completions): Find a more appropriate interlock here. For now we use the existing
         // handler depth count to suppress any debug traps.
         shell.traps.handler_depth += 1;
 
@@ -922,7 +923,7 @@ impl Config {
             // this token and the one that preceded it (or it's before the first
             // token if this is the first token).
             if cursor < token.location().start.index {
-                // TODO: Should insert an empty token here; the position looks to have
+                // TODO(completions): Should insert an empty token here; the position looks to have
                 // been between this token and the preceding one.
                 completion_token_index = i;
                 break;
@@ -1118,7 +1119,7 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
     // If this appears to be the command token (and if there's *some* prefix without
     // a path separator) then also consider whether we should search the path for
     // completions too.
-    // TODO: Do a better job than just checking if index == 0.
+    // TODO(completions): Do a better job than just checking if index == 0.
     if context.token_index == 0
         && !context.token_to_complete.is_empty()
         && !context
@@ -1218,7 +1219,7 @@ fn completion_filter_pattern_matches(
     let pattern = replace_unescaped_ampersands(pattern, token_being_completed);
 
     //
-    // TODO: Replace unescaped '&' with the word being completed.
+    // TODO(completions): Replace unescaped '&' with the word being completed.
     //
 
     let pattern = patterns::Pattern::from(pattern.as_ref())
