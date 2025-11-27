@@ -141,21 +141,28 @@ impl TryFrom<TrapSignal> for i32 {
     }
 }
 
+/// A handler for a trap signal.
+#[derive(Clone, Default)]
+pub struct TrapHandler {
+    /// The source text of the command to invoke.
+    pub command: String,
+    /// Source information for where the trap handler was defined.
+    pub source_info: crate::SourceInfo,
+}
+
 /// Configuration for trap handlers in the shell.
 #[derive(Clone, Default)]
 pub struct TrapHandlerConfig {
     /// Registered handlers for traps; maps signal type to command.
-    pub(crate) handlers: HashMap<TrapSignal, String>,
-    /// Current depth of the handler stack.
-    pub(crate) handler_depth: i32,
+    handlers: HashMap<TrapSignal, TrapHandler>,
 }
 
 impl TrapHandlerConfig {
     /// Iterates over the registered handlers for trap signals.
-    pub fn iter_handlers(&self) -> impl Iterator<Item = (TrapSignal, &str)> {
+    pub fn iter_handlers(&self) -> impl Iterator<Item = (TrapSignal, &TrapHandler)> {
         self.handlers
             .iter()
-            .map(|(signal, cmd)| (*signal, cmd.as_str()))
+            .map(|(signal, handler)| (*signal, handler))
     }
 
     /// Tries to find the handler associated with the given signal.
@@ -163,8 +170,8 @@ impl TrapHandlerConfig {
     /// # Arguments
     ///
     /// * `signal_type` - The type of signal to get the handler for.
-    pub fn get_handler(&self, signal_type: TrapSignal) -> Option<&str> {
-        self.handlers.get(&signal_type).map(|s| s.as_str())
+    pub fn get_handler(&self, signal_type: TrapSignal) -> Option<&TrapHandler> {
+        self.handlers.get(&signal_type)
     }
 
     /// Registers a handler for a trap signal.
@@ -173,8 +180,20 @@ impl TrapHandlerConfig {
     ///
     /// * `signal_type` - The type of signal to register a handler for.
     /// * `command` - The command to execute when the signal is trapped.
-    pub fn register_handler(&mut self, signal_type: TrapSignal, command: String) {
-        let _ = self.handlers.insert(signal_type, command);
+    /// * `source_info` - The source info for where the trap handler was defined.
+    pub fn register_handler(
+        &mut self,
+        signal_type: TrapSignal,
+        command: String,
+        source_info: crate::SourceInfo,
+    ) {
+        let _ = self.handlers.insert(
+            signal_type,
+            TrapHandler {
+                command,
+                source_info,
+            },
+        );
     }
 
     /// Removes handlers for a trap signal.

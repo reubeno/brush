@@ -77,6 +77,8 @@ pub trait InteractiveShell: Send {
 
             let mut announce_exit = self.shell().as_ref().options.interactive;
 
+            self.shell_mut().as_mut().start_interactive_session()?;
+
             loop {
                 let result = self.run_interactively_once().await?;
                 match result {
@@ -110,6 +112,8 @@ pub trait InteractiveShell: Send {
                     break;
                 }
             }
+
+            self.shell_mut().as_mut().end_interactive_session()?;
 
             if announce_exit {
                 writeln!(self.shell().as_ref().stderr(), "exit")?;
@@ -215,12 +219,25 @@ pub trait InteractiveShell: Send {
                     .add_to_history(read_result.trim_end_matches('\n'))?;
             }
 
+            // Count the command's lines.
+            let line_count = read_result.lines().count().max(1);
+
             // Execute the command.
             let params = shell_mut.as_mut().default_exec_params();
-            let result = match shell_mut.as_mut().run_string(read_result, &params).await {
+            let source_info = brush_core::SourceInfo::from("main");
+            let result = match shell_mut
+                .as_mut()
+                .run_string(read_result, &source_info, &params)
+                .await
+            {
                 Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
                 Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
             };
+
+            // Update cumulative line counter based on actual lines in the command.
+            shell_mut
+                .as_mut()
+                .increment_interactive_line_offset(line_count);
 
             // See if the shell has input buffer state that we need to reflect back to
             // the user interface. It may be state that originally came from the user
@@ -274,7 +291,8 @@ async fn run_pre_prompt_command(
 
     // Run the command.
     let params = shell.default_exec_params();
-    shell.run_string(prompt_cmd, &params).await?;
+    let source_info = brush_core::SourceInfo::from("PROMPT_COMMAND");
+    shell.run_string(prompt_cmd, &source_info, &params).await?;
 
     // Restore the last exit status.
     shell.last_pipeline_statuses = prev_last_pipeline_statuses;

@@ -12,7 +12,11 @@ async fn define_func(shell: &mut brush_core::Shell) -> Result<()> {
 "#;
 
     let result = shell
-        .run_string(script, &shell.default_exec_params())
+        .run_string(
+            script,
+            &brush_core::SourceInfo::default(),
+            &shell.default_exec_params(),
+        )
         .await?;
 
     eprintln!("[Function definition result: {}]", result.is_success());

@@ -28,7 +28,11 @@ mod unix {
 
     async fn run_one_command(shell: &mut brush_core::Shell, command: &str) {
         let _ = shell
-            .run_string(command.to_owned(), &shell.default_exec_params())
+            .run_string(
+                command.to_owned(),
+                &brush_core::SourceInfo::default(),
+                &shell.default_exec_params(),
+            )
             .await
             .unwrap();
     }
@@ -126,7 +130,6 @@ mod unix {
                     ),
                     None,
                 ),
-                source: String::from("/some/path"),
             },
             &brush_core::SourceInfo::default(),
         );

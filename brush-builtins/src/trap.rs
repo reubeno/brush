@@ -78,7 +78,11 @@ impl TrapCommand {
         signal_type: TrapSignal,
     ) -> Result<(), brush_core::Error> {
         if let Some(handler) = context.shell.traps.get_handler(signal_type) {
-            writeln!(context.stdout(), "trap -- '{handler}' {signal_type}")?;
+            writeln!(
+                context.stdout(),
+                "trap -- '{}' {signal_type}",
+                &handler.command
+            )?;
         }
         Ok(())
     }
@@ -92,11 +96,16 @@ impl TrapCommand {
         signals: Vec<TrapSignal>,
         handler: &str,
     ) {
+        // Our new source context is relative to the current position.
+        // TODO(source-info): Provide the location of the specific token that makes up
+        // `self.args[0]`.
+        let source_info = context.shell.call_stack().current_pos_as_source_info();
+
         for signal in signals {
             context
                 .shell
                 .traps
-                .register_handler(signal, handler.to_owned());
+                .register_handler(signal, handler.to_owned(), source_info.clone());
         }
     }
 }

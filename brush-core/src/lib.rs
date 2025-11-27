@@ -29,6 +29,7 @@ mod prompt;
 mod regex;
 pub mod results;
 mod shell;
+pub mod sourceinfo;
 pub mod sys;
 pub mod terminal;
 pub mod tests;
@@ -41,19 +42,16 @@ mod wellknownvars;
 /// Re-export parser types used in core definitions.
 pub mod parser {
     pub use brush_parser::{
-        BindingParseError, ParseError, SourcePosition, SourceSpan, TestCommandParseError,
-        WordParseError, ast,
+        BindingParseError, ParseError, SourcePosition, SourcePositionOffset, SourceSpan,
+        TestCommandParseError, WordParseError, ast,
     };
 }
-
-// For now we re-export SourceInfo from brush-parser at the top level of brush-core;
-// we plan to move its definition to this crate entirely in the future.
-pub use brush_parser::SourceInfo;
 
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::{BuiltinError, Error, ErrorKind};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
-pub use parser::{SourcePosition, SourceSpan};
+pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
+pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};

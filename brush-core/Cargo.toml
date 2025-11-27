@@ -25,6 +25,7 @@ cached = "0.56.0"
 cfg-if = "1.0.4"
 chrono = "0.4.42"
 clap = { version = "4.5.51", features = ["derive", "wrap_help"] }
+color-print = "0.3.7"
 fancy-regex = "0.16.2"
 futures = "0.3.31"
 indexmap = "2.12.0"

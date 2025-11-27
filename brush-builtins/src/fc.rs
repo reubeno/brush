@@ -142,10 +142,12 @@ impl FcCommand {
             .ok_or_else(|| brush_core::Error::from(brush_core::ErrorKind::HistoryNotEnabled))?;
         history_mut.remove_nth_item(history_mut.count().saturating_sub(1));
 
+        let source_info = brush_core::SourceInfo::from("(history)");
+
         // Execute the command
         let result = context
             .shell
-            .run_string(final_cmd.clone(), &context.params)
+            .run_string(final_cmd.clone(), &source_info, &context.params)
             .await?;
 
         // Add the executed command to history.

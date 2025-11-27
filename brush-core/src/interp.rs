@@ -527,6 +527,9 @@ impl ExecuteInPipeline for ast::Command {
             return Ok(ExecutionSpawnResult::Completed(ExecutionResult::success()));
         }
 
+        // Updates the shell with information about the currently executing command.
+        pipeline_context.shell.set_current_cmd(self);
+
         match self {
             Self::Simple(simple) => simple.execute_in_pipeline(pipeline_context, params).await,
             Self::Compound(compound, redirects) => {
@@ -582,6 +585,7 @@ impl Execute for ast::CompoundCommand {
             }
             Self::Subshell(ast::SubshellCommand { list, .. }) => {
                 // Clone off a new subshell, and run the body of the subshell there.
+                // TODO(source-info): Do we need to reset the line number?
                 let mut subshell = shell.clone();
 
                 // Handle errors within the subshell context to prevent fatal errors
@@ -916,11 +920,15 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell.define_func(
-            self.fname.value.clone(),
-            self.clone(),
-            &crate::SourceInfo::default(), // TODO(source-info): Provide real source info
-        );
+        // The function definition's source context should be the same as the current frame
+        // so we directly pass that through.
+        let source_info = shell
+            .call_stack()
+            .current_frame()
+            .map_or_else(crate::SourceInfo::default, |frame| {
+                frame.adjusted_source_info()
+            });
+        shell.define_func(self.fname.value.clone(), self.clone(), &source_info);
 
         let result = ExecutionResult::success();
         shell.set_last_exit_status(result.exit_code.into());

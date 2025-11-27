@@ -156,7 +156,6 @@ cases:
       echo "LINENO: $LINENO"
 
   - name: "LINENO with multi-line input"
-    known_failure: true # Not implemented correctly yet
     stdin: |
       for f in 1 2 3; do
         echo "LINENO: $LINENO"

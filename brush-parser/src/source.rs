@@ -18,7 +18,27 @@ pub struct SourcePosition {
 
 impl Display for SourcePosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("line {} col {}", self.line, self.column))
+        f.write_fmt(format_args!("{},{}", self.line, self.column))
+    }
+}
+
+impl SourcePosition {
+    /// Returns a new `SourcePosition` offset by the given `SourcePositionOffset`.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - The offset to apply.
+    #[must_use]
+    pub const fn offset(&self, offset: &SourcePositionOffset) -> Self {
+        Self {
+            index: self.index + offset.index,
+            line: self.line + offset.line,
+            column: if offset.line == 0 {
+                self.column + offset.column
+            } else {
+                offset.column + 1
+            },
+        }
     }
 }
 
@@ -28,6 +48,22 @@ impl From<&SourcePosition> for miette::SourceOffset {
     fn from(position: &SourcePosition) -> Self {
         position.index.into()
     }
+}
+
+/// Represents an offset in source text.
+#[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
+pub struct SourcePositionOffset {
+    /// The 0-based character offset.
+    pub index: usize,
+    /// The 0-based line offset.
+    pub line: usize,
+    /// The 0-based column offset.
+    pub column: usize,
 }
 
 /// Represents a span within source text.

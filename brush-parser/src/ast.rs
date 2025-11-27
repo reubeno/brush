@@ -949,8 +949,6 @@ pub struct FunctionDefinition {
     pub fname: Word,
     /// The body of the function.
     pub body: FunctionBody,
-    /// The source of the function definition.
-    pub source: String,
 }
 
 impl Node for FunctionDefinition {}
@@ -2292,13 +2290,12 @@ impl Display for ArithmeticTarget {
 #[allow(clippy::panic)]
 mod tests {
     use super::*;
-    use crate::{ParserOptions, SourceInfo, SourcePosition};
+    use crate::{ParserOptions, SourcePosition};
     use std::io::BufReader;
 
     fn parse(input: &str) -> Program {
         let reader = BufReader::new(input.as_bytes());
-        let mut parser =
-            crate::Parser::new(reader, &ParserOptions::default(), &SourceInfo::default());
+        let mut parser = crate::Parser::new(reader, &ParserOptions::default());
         parser.parse_program().unwrap()
     }
 
