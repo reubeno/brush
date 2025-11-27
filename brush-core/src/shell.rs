@@ -458,12 +458,19 @@ impl Shell {
     /// Influenced by the current call stack.
     pub fn current_shell_args(&self) -> &[String] {
         for frame in self.call_stack.iter() {
-            // Sourced scripts only shadow positional parameters if they have arguments.
-            if frame.frame_type.is_sourced_script() && frame.args.is_empty() {
-                continue;
+            match frame.frame_type {
+                // Function calls always shadow positional parameters.
+                callstack::FrameType::Function(..) => return &frame.args,
+                // Executed scripts always shadow positional parameters.
+                _ if frame.frame_type.is_run_script() => return &frame.args,
+                // Sourced scripts shadow positional parameters if they have arguments.
+                _ if frame.frame_type.is_sourced_script() => {
+                    if !frame.args.is_empty() {
+                        return &frame.args;
+                    }
+                }
+                _ => (),
             }
-
-            return &frame.args;
         }
 
         self.args.as_slice()
@@ -473,12 +480,19 @@ impl Shell {
     /// ($1 and beyond).
     pub fn current_shell_args_mut(&mut self) -> &mut Vec<String> {
         for frame in self.call_stack.iter_mut() {
-            // Sourced scripts only shadow positional parameters if they have arguments.
-            if frame.frame_type.is_sourced_script() && frame.args.is_empty() {
-                continue;
+            match frame.frame_type {
+                // Function calls always shadow positional parameters.
+                callstack::FrameType::Function(..) => return &mut frame.args,
+                // Executed scripts always shadow positional parameters.
+                _ if frame.frame_type.is_run_script() => return &mut frame.args,
+                // Sourced scripts shadow positional parameters if they have arguments.
+                _ if frame.frame_type.is_sourced_script() => {
+                    if !frame.args.is_empty() {
+                        return &mut frame.args;
+                    }
+                }
+                _ => (),
             }
-
-            return &mut frame.args;
         }
 
         &mut self.args
@@ -876,12 +890,15 @@ impl Shell {
 
         let parse_result = self.parse_string(command_str);
 
+        let run_result = self
+            .run_parsed_result(parse_result, source_info, params)
+            .await;
+
         // Update cumulative line counter based on actual lines in the command
         self.call_stack
             .increment_current_source_info_start_line(line_count);
 
-        self.run_parsed_result(parse_result, source_info, params)
-            .await
+        run_result
     }
 
     /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree

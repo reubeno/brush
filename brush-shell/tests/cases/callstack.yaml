@@ -291,7 +291,6 @@ cases:
       echo "Main script"
 
   - name: "LINENO tracking across contexts"
-    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       echo "Line 1: LINENO=${LINENO}"
       echo "Line 2: LINENO=${LINENO}"
@@ -320,7 +319,6 @@ cases:
       echo "After cmdSub: LINENO=${LINENO}"
 
   - name: "LINENO in sourced script"
-    known_failure: true # TODO(source-info): implement accurate source tracking
     test_files:
       - path: "script.sh"
         contents: |

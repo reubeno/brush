@@ -163,8 +163,7 @@ impl CallCommand {
                     show_args: *show_args,
                 };
 
-                let formatted = stack.format(*show_args);
-                writeln!(context.stdout(), "{formatted}")?;
+                write!(context.stdout(), "{}", stack.format(&format_options))?;
 
                 Ok(ExecutionResult::success())
             }

@@ -182,6 +182,33 @@ pub struct FormatOptions {
     pub show_args: bool,
 }
 
+/// Helper struct for formatting a call stack with custom options.
+///
+/// This struct implements `Display` and can be used to write a formatted
+/// call stack to any type that implements `io::Write`.
+pub struct FormatCallStack<'a> {
+    stack: &'a CallStack,
+    options: &'a FormatOptions,
+}
+
+impl<'a> FormatCallStack<'a> {
+    /// Creates a new formatter for the given call stack with the specified options.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack` - The call stack to format.
+    /// * `options` - The formatting options to use.
+    pub const fn new(stack: &'a CallStack, options: &'a FormatOptions) -> Self {
+        Self { stack, options }
+    }
+}
+
+impl std::fmt::Display for FormatCallStack<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.stack.fmt_with_options(f, self.options)
+    }
+}
+
 /// Encapsulates a script call stack.
 #[derive(Clone, Debug, Default)]
 pub struct CallStack {
@@ -192,13 +219,22 @@ pub struct CallStack {
 }
 
 impl CallStack {
+    /// Creates a formatter for this call stack with the given options.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The formatting options to use.
+    pub const fn format<'a>(&'a self, options: &'a FormatOptions) -> FormatCallStack<'a> {
+        FormatCallStack::new(self, options)
+    }
+
     /// Formats the call stack with the given options.
     ///
     /// # Arguments
     ///
     /// * `f` - The formatter to write to.
     /// * `options` - The formatting options.
-    pub fn fmt_with_options(
+    fn fmt_with_options(
         &self,
         f: &mut std::fmt::Formatter<'_>,
         options: &FormatOptions,
@@ -218,7 +254,9 @@ impl CallStack {
             )?;
 
             if !frame.args.is_empty() && options.show_args {
-                write!(f, "     args: {}", frame.args.join(", "))?;
+                for (i, arg) in frame.args.iter().enumerate() {
+                    writeln!(f, "     ${}: {}", i + 1, arg)?;
+                }
             }
         }
 
