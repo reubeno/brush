@@ -493,9 +493,9 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
         // When in a function, include both functions and sourced scripts in the stack
         stack
             .iter()
-            .filter_map(|frame| match &frame.call_target {
-                crate::callstack::CallTarget::Function(func) => Some(func.function_name.as_str()),
-                crate::callstack::CallTarget::Script(script) => {
+            .filter_map(|frame| match &frame.frame_type {
+                crate::callstack::FrameType::Function(func) => Some(func.function_name.as_str()),
+                crate::callstack::FrameType::Script(script) => {
                     // Only include sourced scripts, not run scripts
                     if matches!(script.call_type, crate::callstack::ScriptCallType::Source) {
                         Some("source")
@@ -503,10 +503,10 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::CallTarget::TrapHandler
-                | crate::callstack::CallTarget::Eval
-                | crate::callstack::CallTarget::CommandString
-                | crate::callstack::CallTarget::InteractiveSession => None,
+                crate::callstack::FrameType::TrapHandler
+                | crate::callstack::FrameType::Eval
+                | crate::callstack::FrameType::CommandString
+                | crate::callstack::FrameType::InteractiveSession => None,
             })
             .collect::<Vec<_>>()
             .into()
@@ -526,11 +526,11 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
         // This mirrors the FUNCNAME array structure
         stack
             .iter()
-            .filter_map(|frame| match &frame.call_target {
-                crate::callstack::CallTarget::Function(func) => {
+            .filter_map(|frame| match &frame.frame_type {
+                crate::callstack::FrameType::Function(func) => {
                     Some(func.function.source().source.clone())
                 }
-                crate::callstack::CallTarget::Script(script) => {
+                crate::callstack::FrameType::Script(script) => {
                     // Only include sourced scripts (matching the "source" in FUNCNAME)
                     if matches!(script.call_type, crate::callstack::ScriptCallType::Source) {
                         Some(script.source_info.source.clone())
@@ -538,11 +538,11 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::CallTarget::TrapHandler | crate::callstack::CallTarget::Eval => {
+                crate::callstack::FrameType::TrapHandler | crate::callstack::FrameType::Eval => {
                     None
                 }
-                crate::callstack::CallTarget::CommandString
-                | crate::callstack::CallTarget::InteractiveSession => None,
+                crate::callstack::FrameType::CommandString
+                | crate::callstack::FrameType::InteractiveSession => None,
             })
             .collect::<Vec<_>>()
             .into()
@@ -550,13 +550,6 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
 }
 
 fn get_lineno(shell: &Shell) -> usize {
-    let Some(frame) = shell.call_stack().current_frame() else {
-        return 0;
-    };
-
-    let Some(pos) = &frame.current.position else {
-        return 0;
-    };
-
-    pos.line
+    let source_info = shell.call_stack().current_pos_as_source_info();
+    source_info.start.as_ref().map_or(1, |pos| pos.line)
 }

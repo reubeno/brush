@@ -59,7 +59,11 @@ enum CompleteCommand {
 enum CallCommand {
     /// Display the current call stack.
     #[clap(name = "stack")]
-    ShowCallStack,
+    ShowCallStack {
+        /// Whether to show args.
+        #[clap(short = 'a', long = "args")]
+        show_args: bool,
+    },
 }
 
 impl builtins::Command for BrushInfoCommand {
@@ -153,9 +157,15 @@ impl CallCommand {
         context: &brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
-            Self::ShowCallStack => {
+            Self::ShowCallStack { show_args } => {
                 let stack = context.shell.call_stack();
-                writeln!(context.stdout(), "{stack}")?;
+                let format_options = brush_core::callstack::FormatOptions {
+                    show_args: *show_args,
+                };
+
+                let formatted = stack.format(*show_args);
+                writeln!(context.stdout(), "{formatted}")?;
+
                 Ok(ExecutionResult::success())
             }
         }

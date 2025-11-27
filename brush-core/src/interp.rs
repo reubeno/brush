@@ -920,7 +920,8 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let source_info = shell.call_stack().current_source_info();
+        // TODO(source-info): verify this; should be relative to the start of function body?
+        let source_info = shell.call_stack().current_pos_as_source_info();
         shell.define_func(self.fname.value.clone(), self.clone(), &source_info);
 
         let result = ExecutionResult::success();

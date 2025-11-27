@@ -96,9 +96,10 @@ impl TrapCommand {
         signals: Vec<TrapSignal>,
         handler: &str,
     ) {
-        // TODO(source-info): Offset the source info by the current command's relative position
-        // within its source info.
-        let source_info = context.shell.call_stack().current_source_info();
+        // Our new source context is relative to the current position.
+        // TODO(source-info): verify this; should be relative to the start of where the handler
+        // string was defined?
+        let source_info = context.shell.call_stack().current_pos_as_source_info();
 
         for signal in signals {
             context

@@ -601,9 +601,7 @@ async fn run_substitution_command(
     }
 
     // TODO(source-info): review this
-    let source_info = crate::SourceInfo {
-        source: String::from("main"),
-    };
+    let source_info = crate::SourceInfo::from("main");
 
     // Handle the parse result using default shell behavior.
     shell

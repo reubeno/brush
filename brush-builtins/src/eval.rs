@@ -21,7 +21,10 @@ impl builtins::Command for EvalCommand {
 
             tracing::debug!("Applying eval to: {:?}", args_concatenated);
 
-            let source_info = context.shell.call_stack().current_source_info();
+            // Our new source context is relative to the current position.
+            // TODO(source-info): verify this; should be relative to the start of the eval
+            // positional arg?
+            let source_info = context.shell.call_stack().current_pos_as_source_info();
 
             // Return the direct result of running the string; we intentionally
             // pass through the result and honor its requested control flow. eval

@@ -446,8 +446,8 @@ impl Shell {
     pub fn current_shell_name(&self) -> Option<Cow<'_, str>> {
         for frame in self.call_stack.iter() {
             // Executed scripts shadow the shell name.
-            if frame.call_target.is_run_script() {
-                return Some(frame.call_target.name());
+            if frame.frame_type.is_run_script() {
+                return Some(frame.frame_type.name());
             }
         }
 
@@ -459,7 +459,7 @@ impl Shell {
     pub fn current_shell_args(&self) -> &[String] {
         for frame in self.call_stack.iter() {
             // Sourced scripts only shadow positional parameters if they have arguments.
-            if frame.call_target.is_sourced_script() && frame.args.is_empty() {
+            if frame.frame_type.is_sourced_script() && frame.args.is_empty() {
                 continue;
             }
 
@@ -474,7 +474,7 @@ impl Shell {
     pub fn current_shell_args_mut(&mut self) -> &mut Vec<String> {
         for frame in self.call_stack.iter_mut() {
             // Sourced scripts only shadow positional parameters if they have arguments.
-            if frame.call_target.is_sourced_script() && frame.args.is_empty() {
+            if frame.frame_type.is_sourced_script() && frame.args.is_empty() {
                 continue;
             }
 
@@ -871,7 +871,15 @@ impl Shell {
         source_info: &crate::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let parse_result = self.parse_string(command.into());
+        let command_str = command.into();
+        let line_count = command_str.lines().count().max(1);
+
+        let parse_result = self.parse_string(command_str);
+
+        // Update cumulative line counter based on actual lines in the command
+        self.call_stack
+            .increment_current_source_info_start_line(line_count);
+
         self.run_parsed_result(parse_result, source_info, params)
             .await
     }
@@ -1125,7 +1133,7 @@ impl Shell {
         if self
             .call_stack
             .current_frame()
-            .is_none_or(|frame| !frame.call_target.is_interactive_session())
+            .is_none_or(|frame| !frame.frame_type.is_interactive_session())
         {
             return Err(error::ErrorKind::NotInInteractiveSession.into());
         }
@@ -1183,7 +1191,7 @@ impl Shell {
         self.env.pop_scope(env::EnvironmentScope::Local)?;
 
         if let Some(exited_call) = self.call_stack.pop() {
-            if let callstack::CallTarget::Function(func_call) = exited_call.call_target {
+            if let callstack::FrameType::Function(func_call) = exited_call.frame_type {
                 if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
                     let depth = self.call_stack.function_call_depth();
                     let prefix = repeated_char_str(' ', depth);

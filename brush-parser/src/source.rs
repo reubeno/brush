@@ -22,12 +22,48 @@ impl Display for SourcePosition {
     }
 }
 
+impl SourcePosition {
+    /// Returns a new `SourcePosition` offset by the given `SourcePositionOffset`.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - The offset to apply.
+    #[must_use]
+    pub const fn offset(&self, offset: &SourcePositionOffset) -> Self {
+        Self {
+            index: self.index + offset.index,
+            line: self.line + offset.line,
+            column: if offset.line == 0 {
+                self.column + offset.column
+            } else {
+                offset.column + 1
+            },
+        }
+    }
+}
+
 #[cfg(feature = "diagnostics")]
 impl From<&SourcePosition> for miette::SourceOffset {
     #[allow(clippy::cast_sign_loss)]
     fn from(position: &SourcePosition) -> Self {
         position.index.into()
     }
+}
+
+/// Represents an offset in source text.
+#[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
+pub struct SourcePositionOffset {
+    /// The 0-based character offset.
+    pub index: usize,
+    /// The 0-based line offset.
+    pub line: usize,
+    /// The 0-based column offset.
+    pub column: usize,
 }
 
 /// Represents a span within source text.
