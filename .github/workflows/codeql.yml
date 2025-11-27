@@ -10,6 +10,11 @@ on:
 
 permissions: {}
 
+# Only allow one run of the workflow per branch / PR at a time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

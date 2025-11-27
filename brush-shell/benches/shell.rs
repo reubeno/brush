@@ -87,19 +87,19 @@ mod unix {
         });
 
         // Benchmark: running an external command.
-        let shell = rt.block_on(instantiate_shell());
-        c.bench_function("run_one_external_command", |b| {
-            b.iter_batched_ref(
-                || shell.clone(),
-                |s| {
-                    rt.block_on(run_one_command(
-                        s,
-                        "/usr/bin/echo 'Hello, world!' >/dev/null",
-                    ));
-                },
-                criterion::BatchSize::SmallInput,
-            );
-        });
+        // let shell = rt.block_on(instantiate_shell());
+        // c.bench_function("run_one_external_command", |b| {
+        //     b.iter_batched_ref(
+        //         || shell.clone(),
+        //         |s| {
+        //             rt.block_on(run_one_command(
+        //                 s,
+        //                 "/usr/bin/echo 'Hello, world!' >/dev/null",
+        //             ));
+        //         },
+        //         criterion::BatchSize::SmallInput,
+        //     );
+        // });
 
         // Benchmark: word expansion.
         let shell = rt.block_on(instantiate_shell());
