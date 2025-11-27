@@ -261,6 +261,10 @@ pub enum ErrorKind {
     /// Expanding an unset variable.
     #[error("expanding unset variable: {0}")]
     ExpandingUnsetVariable(String),
+
+    /// An internal error occurred.
+    #[error("internal shell error: {0}")]
+    InternalError(String),
 }
 
 impl BuiltinError for Error {}

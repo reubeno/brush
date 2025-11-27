@@ -1,6 +1,6 @@
 //! Command execution
 
-use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio, sync::Arc};
+use std::{borrow::Cow, ffi::OsStr, fmt::Display, process::Stdio};
 
 use brush_parser::ast;
 use itertools::Itertools;
@@ -8,7 +8,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, env, error, escape,
+    builtins, env, error, escape, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -175,7 +175,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
         for (func_name, registration) in context.shell.funcs().iter() {
             if registration.is_exported() {
                 let var_name = std::format!("BASH_FUNC_{func_name}%%");
-                let value = std::format!("() {}", registration.definition.body);
+                let value = std::format!("() {}", registration.definition().body);
                 cmd.env(var_name, value);
             }
         }
@@ -317,8 +317,7 @@ pub async fn execute(
             .get(cmd_context.command_name.as_str())
         {
             // Strip the function name off args.
-            return invoke_shell_function(func_reg.definition.clone(), cmd_context, &args[1..])
-                .await;
+            return invoke_shell_function(func_reg.to_owned(), cmd_context, &args[1..]).await;
         }
     }
 
@@ -480,11 +479,11 @@ async fn execute_builtin_command(
 }
 
 pub(crate) async fn invoke_shell_function(
-    function_definition: Arc<ast::FunctionDefinition>,
+    function: functions::Registration,
     mut context: ExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
-    let ast::FunctionBody(body, redirects) = &function_definition.body;
+    let ast::FunctionBody(body, redirects) = &function.definition().body;
 
     // Apply any redirects specified at function definition-time.
     if let Some(redirects) = redirects {
@@ -493,18 +492,19 @@ pub(crate) async fn invoke_shell_function(
         }
     }
 
-    // Temporarily replace positional parameters.
-    let prior_positional_params = std::mem::take(&mut context.shell.positional_parameters);
-    context.shell.positional_parameters = args.iter().map(|a| a.to_string()).collect();
+    let positional_args = args.iter().map(|a| a.to_string());
 
     // Pass through open files.
     let params = context.params.clone();
 
     // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
     // before "exiting" the function.
-    context
-        .shell
-        .enter_function(context.command_name.as_str(), &function_definition)?;
+    context.shell.enter_function(
+        context.command_name.as_str(),
+        &function,
+        positional_args,
+        &context.params,
+    )?;
 
     // Invoke the function.
     let result = body.execute(context.shell, &params).await;
@@ -514,9 +514,6 @@ pub(crate) async fn invoke_shell_function(
 
     // We've come back out, reflect it.
     context.shell.leave_function()?;
-
-    // Restore positional parameters.
-    context.shell.positional_parameters = prior_positional_params;
 
     // Get the actual execution result from the body of the function.
     let mut result = result?;

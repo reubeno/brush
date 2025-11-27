@@ -128,6 +128,7 @@ mod unix {
                 ),
                 source: String::from("/some/path"),
             },
+            &brush_core::SourceInfo::default(),
         );
         c.bench_function("function_call", |b| {
             b.iter_batched_ref(

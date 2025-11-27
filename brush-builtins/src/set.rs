@@ -366,26 +366,28 @@ impl builtins::Command for SetCommand {
             }
         }
 
+        let args = context.shell.current_shell_args_mut();
+
         let skip = match self.positional_args.first() {
             Some(x) if x == "-" => {
                 if self.positional_args.len() > 1 {
-                    context.shell.positional_parameters.clear();
+                    args.clear();
                 }
                 1
             }
             Some(x) if x == "--" => {
-                context.shell.positional_parameters.clear();
+                args.clear();
                 1
             }
             Some(_) => {
-                context.shell.positional_parameters.clear();
+                args.clear();
                 0
             }
             None => 0,
         };
 
         for arg in self.positional_args.iter().skip(skip) {
-            context.shell.positional_parameters.push(arg.to_owned());
+            args.push(arg.to_owned());
         }
 
         saw_option = saw_option || !self.positional_args.is_empty();

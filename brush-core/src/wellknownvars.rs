@@ -45,10 +45,10 @@ pub(crate) fn initialize_vars(
     // TODO(#479): implement $_
 
     // BASH
-    if let Some(shell_name) = &shell.shell_name {
+    if let Some(shell_name) = shell.current_shell_name() {
         shell
             .env
-            .set_global("BASH", ShellVariable::new(shell_name))?;
+            .set_global("BASH", ShellVariable::new(shell_name.as_ref()))?;
     }
 
     // BASHOPTS
@@ -96,7 +96,7 @@ pub(crate) fn initialize_vars(
         "BASH_ARGV0",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
-                let argv0 = shell.shell_name.as_deref().unwrap_or_default();
+                let argv0 = shell.current_shell_name().unwrap_or_default();
                 argv0.to_string().into()
             },
             // TODO(vars): implement updating BASH_ARGV0
@@ -114,7 +114,7 @@ pub(crate) fn initialize_vars(
     )?;
 
     // TODO(vars): implement BASH_COMMAND
-    // TODO(vars): implement BASH_EXECUTIION_STRING
+    // TODO(vars): implement BASH_EXECUTION_STRING
     // TODO(vars): implement BASH_LINENO
 
     // BASH_SOURCE
@@ -485,29 +485,56 @@ fn get_srandom_value(_shell: &Shell) -> ShellValue {
 }
 
 fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
-    if shell.function_call_stack().is_empty() {
+    let stack = shell.call_stack();
+
+    if stack.iter_function_calls().next().is_none() {
         ShellValue::Unset(variables::ShellValueUnsetType::IndexedArray)
     } else {
-        shell
-            .function_call_stack()
+        // When in a function, include both functions and sourced scripts in the stack
+        stack
             .iter()
-            .map(|s| s.function_name.as_str())
+            .filter_map(|frame| match &frame.call_target {
+                crate::callstack::CallTarget::Function(func) => Some(func.function_name.as_str()),
+                crate::callstack::CallTarget::Script(script) => {
+                    // Only include sourced scripts, not run scripts
+                    if matches!(script.call_type, crate::callstack::ScriptCallType::Source) {
+                        Some("source")
+                    } else {
+                        None
+                    }
+                }
+            })
             .collect::<Vec<_>>()
             .into()
     }
 }
 
 fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
-    if shell.function_call_stack().is_empty() {
-        let top_frame = shell.script_call_stack().iter().next();
+    let stack = shell.call_stack();
+
+    if stack.iter_function_calls().next().is_none() {
+        let top_frame = stack.iter_script_calls().next();
         top_frame
-            .map_or_else(Vec::new, |frame| vec![frame.source.as_ref()])
+            .map_or_else(Vec::new, |frame| vec![frame.source_info.source.clone()])
             .into()
     } else {
-        shell
-            .function_call_stack()
+        // When in a function, include both functions and sourced scripts in the stack
+        // This mirrors the FUNCNAME array structure
+        stack
             .iter()
-            .map(|s| s.function_definition.source.as_ref())
+            .filter_map(|frame| match &frame.call_target {
+                crate::callstack::CallTarget::Function(func) => {
+                    Some(func.function.definition().source.clone())
+                }
+                crate::callstack::CallTarget::Script(script) => {
+                    // Only include sourced scripts (matching the "source" in FUNCNAME)
+                    if matches!(script.call_type, crate::callstack::ScriptCallType::Source) {
+                        Some(script.source_info.source.clone())
+                    } else {
+                        None
+                    }
+                }
+            })
             .collect::<Vec<_>>()
             .into()
     }

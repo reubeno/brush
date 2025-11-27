@@ -15,8 +15,8 @@ use crate::results::ExecutionSpawnResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, history, interfaces, pathcache,
-    pathsearch, scripts, trace_categories, wellknownvars,
+    ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history, interfaces,
+    pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -67,23 +67,20 @@ pub struct Shell {
     /// Clone depth from the original ancestor shell.
     depth: usize,
 
-    /// Shell name (a.k.a. $0)
-    pub shell_name: Option<String>,
+    /// Shell name
+    name: Option<String>,
+
+    /// Positional shell arguments (not including shell name).
+    args: Vec<String>,
 
     /// Shell version
     version: Option<String>,
 
-    /// Positional parameters stack ($1 and beyond)
-    pub positional_parameters: Vec<String>,
-
     /// Detailed display string for the shell
     product_display_str: Option<String>,
 
-    /// Script call stack.
-    script_call_stack: scripts::CallStack,
-
-    /// Function call stack.
-    function_call_stack: functions::CallStack,
+    /// Function/script call stack.
+    call_stack: callstack::CallStack,
 
     /// Directory stack used by pushd et al.
     pub directory_stack: Vec<PathBuf>,
@@ -129,12 +126,11 @@ impl Clone for Shell {
             aliases: self.aliases.clone(),
             last_exit_status: self.last_exit_status,
             last_pipeline_statuses: self.last_pipeline_statuses.clone(),
-            positional_parameters: self.positional_parameters.clone(),
-            shell_name: self.shell_name.clone(),
+            name: self.name.clone(),
+            args: self.args.clone(),
             version: self.version.clone(),
             product_display_str: self.product_display_str.clone(),
-            function_call_stack: self.function_call_stack.clone(),
-            script_call_stack: self.script_call_stack.clone(),
+            call_stack: self.call_stack.clone(),
             directory_stack: self.directory_stack.clone(),
             current_line_number: self.current_line_number,
             completion_config: self.completion_config.clone(),
@@ -316,6 +312,8 @@ pub struct CreateOptions {
     pub read_commands_from_stdin: bool,
     /// The name of the shell.
     pub shell_name: Option<String>,
+    /// Base positional arguments for the shell (not including the shell name).
+    pub shell_args: Option<Vec<String>>,
     /// Optionally provides a display string describing the version and variant of the shell.
     pub shell_product_display_str: Option<String>,
     /// Whether to run in maximal POSIX sh compatibility mode.
@@ -365,12 +363,11 @@ impl Shell {
             aliases: HashMap::default(),
             last_exit_status: 0,
             last_pipeline_statuses: vec![0],
-            positional_parameters: vec![],
-            shell_name: options.shell_name,
+            name: options.shell_name,
+            args: options.shell_args.unwrap_or_default(),
             version: options.shell_version,
             product_display_str: options.shell_product_display_str,
-            function_call_stack: functions::CallStack::new(),
-            script_call_stack: scripts::CallStack::new(),
+            call_stack: callstack::CallStack::new(),
             directory_stack: vec![],
             current_line_number: 0,
             completion_config: completion::Config::default(),
@@ -443,14 +440,52 @@ impl Shell {
         self.last_exit_status
     }
 
-    /// Returns a reference to the current function call stack for the shell.
-    pub const fn function_call_stack(&self) -> &functions::CallStack {
-        &self.function_call_stack
+    /// Returns the call stack for the shell.
+    pub const fn call_stack(&self) -> &callstack::CallStack {
+        &self.call_stack
     }
 
-    /// Returns a reference to the current script call stack for the shell.
-    pub const fn script_call_stack(&self) -> &scripts::CallStack {
-        &self.script_call_stack
+    /// Returns the *current* name of the shell ($0).
+    /// Influenced by the current call stack.
+    pub fn current_shell_name(&self) -> Option<Cow<'_, str>> {
+        for frame in self.call_stack.iter() {
+            // Executed scripts shadow the shell name.
+            if frame.call_target.is_run_script() {
+                return Some(frame.call_target.name());
+            }
+        }
+
+        self.name.as_deref().map(|name| name.into())
+    }
+
+    /// Returns the *current* positional arguments for the shell ($1 and beyond).
+    /// Influenced by the current call stack.
+    pub fn current_shell_args(&self) -> &[String] {
+        for frame in self.call_stack.iter() {
+            // Sourced scripts only shadow positional parameters if they have arguments.
+            if frame.call_target.is_sourced_script() && frame.args.is_empty() {
+                continue;
+            }
+
+            return &frame.args;
+        }
+
+        self.args.as_slice()
+    }
+
+    /// Returns a mutable reference to *current* positional parameters for the shell
+    /// ($1 and beyond).
+    pub fn current_shell_args_mut(&mut self) -> &mut Vec<String> {
+        for frame in self.call_stack.iter_mut() {
+            // Sourced scripts only shadow positional parameters if they have arguments.
+            if frame.call_target.is_sourced_script() && frame.args.is_empty() {
+                continue;
+            }
+
+            return &mut frame.args;
+        }
+
+        &mut self.args
     }
 
     /// Returns a mutable reference to the last exit status.
@@ -506,12 +541,15 @@ impl Shell {
     ///
     /// * `name` - The name of the function to define.
     /// * `definition` - The function's definition.
+    /// * `source_info` - Source information for the function definition.
     pub fn define_func(
         &mut self,
         name: impl Into<String>,
         definition: brush_parser::ast::FunctionDefinition,
+        source_info: &crate::SourceInfo,
     ) {
-        self.funcs.update(name.into(), definition.into());
+        let reg = functions::Registration::new(definition, source_info);
+        self.funcs.update(name.into(), reg);
     }
 
     /// Tries to return a mutable reference to the registration for a named function.
@@ -549,7 +587,7 @@ impl Shell {
             source: String::new(),
         };
 
-        self.define_func(name, def);
+        self.define_func(name, def, &crate::SourceInfo::default());
 
         Ok(())
     }
@@ -686,8 +724,13 @@ impl Shell {
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(path.as_ref(), args, params, scripts::CallType::Sourced)
-            .await
+        self.parse_and_execute_script_file(
+            path.as_ref(),
+            args,
+            params,
+            callstack::ScriptCallType::Source,
+        )
+        .await
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.
@@ -703,7 +746,7 @@ impl Shell {
         path: P,
         args: I,
         params: &ExecutionParameters,
-        call_type: scripts::CallType,
+        call_type: callstack::ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
         let path = path.as_ref();
         tracing::debug!("sourcing: {}", path.display());
@@ -723,9 +766,7 @@ impl Shell {
             .into());
         }
 
-        let source_info = brush_parser::SourceInfo {
-            source: path.to_string_lossy().to_string(),
-        };
+        let source_info = crate::SourceInfo::from(path.to_owned());
 
         let mut result = self
             .source_file(opened_file, &source_info, args, params, call_type)
@@ -756,10 +797,10 @@ impl Shell {
     async fn source_file<F: Read, S: AsRef<str>, I: Iterator<Item = S>>(
         &mut self,
         file: F,
-        source_info: &brush_parser::SourceInfo,
+        source_info: &crate::SourceInfo,
         args: I,
         params: &ExecutionParameters,
-        call_type: scripts::CallType,
+        call_type: callstack::ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
         let mut parser =
@@ -768,41 +809,20 @@ impl Shell {
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse_program();
 
-        let mut other_positional_parameters: Vec<_> = args.map(|s| s.as_ref().to_owned()).collect();
-        let mut other_shell_name = Some(source_info.source.clone());
-        let positional_params_given = !other_positional_parameters.is_empty();
+        let script_positional_args = args.map(|s| s.as_ref().to_owned());
 
-        // TODO(positional-args): Find a cleaner way to change args.
-        std::mem::swap(&mut self.shell_name, &mut other_shell_name);
-
-        // NOTE: We only shadow the original positional parameters if any were explicitly given
-        // for the script sourcing.
-        if positional_params_given {
-            std::mem::swap(
-                &mut self.positional_parameters,
-                &mut other_positional_parameters,
-            );
-        }
-
-        self.script_call_stack
-            .push(call_type, source_info.source.clone());
+        self.call_stack.push_script(
+            call_type,
+            source_info,
+            script_positional_args,
+            callstack::CallSite::default(), // TODO(source-info): track call site info
+        );
 
         let result = self
             .run_parsed_result(parse_result, source_info, params)
             .await;
 
-        self.script_call_stack.pop();
-
-        // Restore.
-        std::mem::swap(&mut self.shell_name, &mut other_shell_name);
-
-        // We only restore the original positional parameters if we needed to shadow them.
-        if positional_params_given {
-            std::mem::swap(
-                &mut self.positional_parameters,
-                &mut other_positional_parameters,
-            );
-        }
+        self.call_stack.pop();
 
         result
     }
@@ -826,9 +846,8 @@ impl Shell {
         let func_registration = self
             .funcs
             .get(name)
-            .ok_or_else(|| error::ErrorKind::FunctionNotFound(name.to_owned()))?;
-
-        let func = func_registration.definition.clone();
+            .ok_or_else(|| error::ErrorKind::FunctionNotFound(name.to_owned()))?
+            .to_owned();
 
         let context = commands::ExecutionContext {
             shell: self,
@@ -841,7 +860,7 @@ impl Shell {
             .map(|s| commands::CommandArg::String(String::from(s.as_ref())))
             .collect::<Vec<_>>();
 
-        match commands::invoke_shell_function(func, context, &command_args).await? {
+        match commands::invoke_shell_function(func_registration, context, &command_args).await? {
             ExecutionSpawnResult::StartedProcess(_) => {
                 error::unimp("child spawned from function invocation")
             }
@@ -949,7 +968,7 @@ impl Shell {
                 script_path.as_ref(),
                 args,
                 &params,
-                scripts::CallType::Executed,
+                callstack::ScriptCallType::Run,
             )
             .await?;
 
@@ -1098,12 +1117,12 @@ impl Shell {
 
     /// Returns whether or not the shell is actively executing in a sourced script.
     pub fn in_sourced_script(&self) -> bool {
-        self.script_call_stack.in_sourced_script()
+        self.call_stack.in_sourced_script()
     }
 
     /// Returns whether or not the shell is actively executing in a shell function.
     pub fn in_function(&self) -> bool {
-        !self.function_call_stack.is_empty()
+        self.call_stack.in_function()
     }
 
     /// Updates the shell's internal tracking state to reflect that a new shell
@@ -1112,25 +1131,34 @@ impl Shell {
     /// # Arguments
     ///
     /// * `name` - The name of the function being entered.
-    /// * `function_def` - The definition of the function being entered.
+    /// * `function` - The function being entered.
+    /// * `args` - The arguments being passed to the function.
+    /// * `_params` - Current execution parameters.
     pub(crate) fn enter_function(
         &mut self,
         name: &str,
-        function_def: &Arc<brush_parser::ast::FunctionDefinition>,
+        function: &functions::Registration,
+        args: impl IntoIterator<Item = String>,
+        _params: &ExecutionParameters,
     ) -> Result<(), error::Error> {
         if let Some(max_call_depth) = self.options.max_function_call_depth {
-            if self.function_call_stack.depth() >= max_call_depth {
+            if self.call_stack.function_call_depth() >= max_call_depth {
                 return Err(error::ErrorKind::MaxFunctionCallDepthExceeded.into());
             }
         }
 
         if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
-            let depth = self.function_call_stack.depth();
+            let depth = self.call_stack.function_call_depth();
             let prefix = repeated_char_str(' ', depth);
             tracing::debug!(target: trace_categories::FUNCTIONS, "Entering func [depth={depth}]: {prefix}{name}");
         }
 
-        self.function_call_stack.push(name, function_def);
+        self.call_stack.push_function(
+            name,
+            function,
+            args,
+            callstack::CallSite::default(), // TODO(source-info): track call site info
+        );
         self.env.push_scope(env::EnvironmentScope::Local);
 
         Ok(())
@@ -1141,11 +1169,18 @@ impl Shell {
     pub(crate) fn leave_function(&mut self) -> Result<(), error::Error> {
         self.env.pop_scope(env::EnvironmentScope::Local)?;
 
-        if let Some(exited_call) = self.function_call_stack.pop() {
-            if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
-                let depth = self.function_call_stack.depth();
-                let prefix = repeated_char_str(' ', depth);
-                tracing::debug!(target: trace_categories::FUNCTIONS, "Exiting func  [depth={depth}]: {prefix}{}", exited_call.function_name);
+        if let Some(exited_call) = self.call_stack.pop() {
+            if let callstack::CallTarget::Function(func_call) = exited_call.call_target {
+                if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
+                    let depth = self.call_stack.function_call_depth();
+                    let prefix = repeated_char_str(' ', depth);
+                    tracing::debug!(target: trace_categories::FUNCTIONS, "Exiting func  [depth={depth}]: {prefix}{}", func_call.function_name);
+                }
+            } else {
+                let err: error::Error =
+                    error::ErrorKind::InternalError("mismatched call stack state".to_owned())
+                        .into();
+                return Err(err.into_fatal());
             }
         }
 
@@ -1529,7 +1564,7 @@ impl Shell {
         let mut prefix = ps4;
 
         // Add additional depth-based prefixes using the first character of PS4.
-        let additional_depth = self.script_call_stack.depth() + self.depth;
+        let additional_depth = self.call_stack.script_call_depth() + self.depth;
         if let Some(c) = prefix.chars().next() {
             for _ in 0..additional_depth {
                 prefix.insert(0, c);
