@@ -23,7 +23,7 @@ pub use error::{
 #[cfg(feature = "diagnostics")]
 pub use error::miette::PrettyError;
 
-pub use parser::{Parser, ParserBuilder, ParserOptions, SourceInfo, parse_tokens};
+pub use parser::{Parser, ParserBuilder, ParserOptions, parse_tokens};
 pub use source::{SourcePosition, SourceSpan};
 pub use tokenizer::{
     Token, TokenLocation, TokenizerError, TokenizerOptions, tokenize_str,

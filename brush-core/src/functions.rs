@@ -61,8 +61,10 @@ impl FunctionEnv {
 /// Encapsulates a registration for a defined function.
 #[derive(Clone, Debug)]
 pub struct Registration {
-    /// The definition of the function.
+    /// The parsed definition of the function.
     definition: Arc<brush_parser::ast::FunctionDefinition>,
+    /// The source info for the function definition.
+    source_info: crate::SourceInfo,
     /// Whether or not this function definition should be exported to children.
     exported: bool,
 }
@@ -71,6 +73,7 @@ impl From<brush_parser::ast::FunctionDefinition> for Registration {
     fn from(definition: brush_parser::ast::FunctionDefinition) -> Self {
         Self {
             definition: Arc::new(definition),
+            source_info: crate::SourceInfo::default(),
             exported: false,
         }
     }
@@ -82,13 +85,14 @@ impl Registration {
     /// # Arguments
     ///
     /// * `definition` - The function definition.
-    /// * `_source_info` - Source information for the function definition.
+    /// * `source_info` - Source information for the function definition.
     pub fn new(
         definition: brush_parser::ast::FunctionDefinition,
-        _source_info: &crate::SourceInfo,
+        source_info: &crate::SourceInfo,
     ) -> Self {
         Self {
             definition: Arc::new(definition),
+            source_info: source_info.clone(),
             exported: false,
         }
     }
@@ -96,6 +100,11 @@ impl Registration {
     /// Returns a reference to the function definition.
     pub fn definition(&self) -> &brush_parser::ast::FunctionDefinition {
         &self.definition
+    }
+
+    /// Returns a reference to the source info for the function definition.
+    pub const fn source(&self) -> &crate::SourceInfo {
+        &self.source_info
     }
 
     /// Marks the function for export.

@@ -495,7 +495,6 @@ cases:
 
   # Interactive mode tests
   - name: "Interactive mode - simple function"
-    known_failure: true # TODO(source-info): implement accurate source tracking
     args: ["-i"]
     ignore_stderr: true
     stdin: |
@@ -712,7 +711,6 @@ cases:
       eval 'eval "eval \"my_func\""'
 
   - name: "LINENO persistence in function"
-    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       my_func() {
           local line1=${LINENO}

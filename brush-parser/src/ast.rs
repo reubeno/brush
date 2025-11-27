@@ -898,8 +898,6 @@ pub struct FunctionDefinition {
     pub fname: Word,
     /// The body of the function.
     pub body: FunctionBody,
-    /// The source of the function definition.
-    pub source: String,
 }
 
 impl SourceLocation for FunctionDefinition {

@@ -289,7 +289,7 @@ pub(crate) fn initialize_vars(
     shell.env.set_global(
         "LINENO",
         ShellVariable::new(ShellValue::Dynamic {
-            getter: |shell| shell.current_line_number().to_string().into(),
+            getter: |shell| get_lineno(shell).to_string().into(),
             setter: |_| (),
         }),
     )?;
@@ -503,6 +503,10 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
                         None
                     }
                 }
+                crate::callstack::CallTarget::TrapHandler
+                | crate::callstack::CallTarget::Eval
+                | crate::callstack::CallTarget::CommandString
+                | crate::callstack::CallTarget::InteractiveSession => None,
             })
             .collect::<Vec<_>>()
             .into()
@@ -524,7 +528,7 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
             .iter()
             .filter_map(|frame| match &frame.call_target {
                 crate::callstack::CallTarget::Function(func) => {
-                    Some(func.function.definition().source.clone())
+                    Some(func.function.source().source.clone())
                 }
                 crate::callstack::CallTarget::Script(script) => {
                     // Only include sourced scripts (matching the "source" in FUNCNAME)
@@ -534,8 +538,25 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
                         None
                     }
                 }
+                crate::callstack::CallTarget::TrapHandler | crate::callstack::CallTarget::Eval => {
+                    None
+                }
+                crate::callstack::CallTarget::CommandString
+                | crate::callstack::CallTarget::InteractiveSession => None,
             })
             .collect::<Vec<_>>()
             .into()
     }
+}
+
+fn get_lineno(shell: &Shell) -> usize {
+    let Some(frame) = shell.call_stack().current_frame() else {
+        return 0;
+    };
+
+    let Some(pos) = &frame.current.position else {
+        return 0;
+    };
+
+    pos.line
 }

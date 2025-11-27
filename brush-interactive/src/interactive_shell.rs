@@ -77,6 +77,8 @@ pub trait InteractiveShell: Send {
 
             let mut announce_exit = self.shell().as_ref().options.interactive;
 
+            self.shell_mut().as_mut().start_interactive_session()?;
+
             loop {
                 let result = self.run_interactively_once().await?;
                 match result {
@@ -110,6 +112,8 @@ pub trait InteractiveShell: Send {
                     break;
                 }
             }
+
+            self.shell_mut().as_mut().end_interactive_session()?;
 
             if announce_exit {
                 writeln!(self.shell().as_ref().stderr(), "exit")?;
@@ -154,10 +158,10 @@ pub trait InteractiveShell: Send {
 
             match self.read_line(prompt)? {
                 ReadResult::Input(read_result) => {
-                    self.execute_line(read_result, true /*user input*/).await
+                    self.execute_line(read_result, true /* user input */).await
                 }
                 ReadResult::BoundCommand(read_result) => {
-                    self.execute_line(read_result, false /*user input*/).await
+                    self.execute_line(read_result, false /* user input */).await
                 }
                 ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
                 ReadResult::Interrupted => {
@@ -215,7 +219,12 @@ pub trait InteractiveShell: Send {
 
             // Execute the command.
             let params = shell_mut.as_mut().default_exec_params();
-            let result = match shell_mut.as_mut().run_string(read_result, &params).await {
+            let source_info = brush_core::SourceInfo::from("main");
+            let result = match shell_mut
+                .as_mut()
+                .run_string(read_result, &source_info, &params)
+                .await
+            {
                 Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
                 Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
             };
@@ -272,7 +281,8 @@ async fn run_pre_prompt_command(
 
     // Run the command.
     let params = shell.default_exec_params();
-    shell.run_string(prompt_cmd, &params).await?;
+    let source_info = brush_core::SourceInfo::from("PROMPT_COMMAND");
+    shell.run_string(prompt_cmd, &source_info, &params).await?;
 
     // Restore the last exit status.
     shell.last_pipeline_statuses = prev_last_pipeline_statuses;

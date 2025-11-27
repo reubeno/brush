@@ -168,7 +168,7 @@ pub enum ErrorKind {
 
     /// An error occurred while parsing.
     #[error("{1}: {0}")]
-    ParseError(brush_parser::ParseError, brush_parser::SourceInfo),
+    ParseError(brush_parser::ParseError, crate::SourceInfo),
 
     /// An error occurred while parsing a function body.
     #[error("{0}: {1}")]
@@ -265,6 +265,10 @@ pub enum ErrorKind {
     /// An internal error occurred.
     #[error("internal shell error: {0}")]
     InternalError(String),
+
+    /// Attempted to perform an operation that requires an interactive session.
+    #[error("operation requires an interactive session")]
+    NotInInteractiveSession,
 }
 
 impl BuiltinError for Error {}

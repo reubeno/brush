@@ -202,11 +202,11 @@ async fn run_in_shell(
     if let Some(command) = args.command {
         // Execute the command string.
         let params = shell.shell().as_ref().default_exec_params();
-
+        let source_info = brush_core::SourceInfo::from("-c");
         shell
             .shell_mut()
             .as_mut()
-            .run_string(command, &params)
+            .run_string(command, &source_info, &params)
             .await?;
 
     // If -s was provided, then read commands from stdin. If there was a script (and optionally

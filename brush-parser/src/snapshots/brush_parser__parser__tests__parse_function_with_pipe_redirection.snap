@@ -93,7 +93,6 @@ ParseResult(
           )),
         ))),
       ]))),
-      source: "",
     )),
     Simple(SimpleCommand(
       word_or_name: Some(Word(

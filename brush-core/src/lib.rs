@@ -29,6 +29,7 @@ mod prompt;
 mod regex;
 pub mod results;
 mod shell;
+pub mod sourceinfo;
 pub mod sys;
 pub mod terminal;
 pub mod tests;
@@ -38,11 +39,11 @@ pub mod traps;
 pub mod variables;
 mod wellknownvars;
 
+pub use brush_parser::{SourcePosition, SourceSpan};
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::{BuiltinError, Error, ErrorKind};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
+pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
-
-pub use brush_parser::{SourceInfo, SourceSpan};
