@@ -633,7 +633,7 @@ impl Execute for ast::ForClauseCommand {
             }
         } else {
             // Otherwise, we use the current positional parameters.
-            expanded_values.extend_from_slice(&shell.positional_parameters);
+            expanded_values.extend_from_slice(shell.current_shell_args());
         }
 
         for value in expanded_values {
@@ -916,7 +916,11 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        shell.define_func(self.fname.value.clone(), self.clone());
+        shell.define_func(
+            self.fname.value.clone(),
+            self.clone(),
+            &crate::SourceInfo::default(), // TODO(source-info): Provide real source info
+        );
 
         let result = ExecutionResult::success();
         *shell.last_exit_status_mut() = result.exit_code.into();

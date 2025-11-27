@@ -25,11 +25,13 @@ impl builtins::Command for ShiftCommand {
         #[expect(clippy::cast_sign_loss)]
         let n = n as usize;
 
-        if n > context.shell.positional_parameters.len() {
+        let args = context.shell.current_shell_args_mut();
+
+        if n > args.len() {
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
-        context.shell.positional_parameters.drain(0..n);
+        args.drain(0..n);
 
         Ok(ExecutionResult::success())
     }

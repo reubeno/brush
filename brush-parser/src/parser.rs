@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::ast::{self, SeparatorOperator, SourceLocation, maybe_location};
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 use crate::{SourceSpan, error};
@@ -234,6 +236,14 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
 pub struct SourceInfo {
     /// The source of the tokens.
     pub source: String,
+}
+
+impl From<PathBuf> for SourceInfo {
+    fn from(path: PathBuf) -> Self {
+        Self {
+            source: path.to_string_lossy().to_string(),
+        }
+    }
 }
 
 impl std::fmt::Display for SourceInfo {

@@ -4,6 +4,7 @@
 pub mod arithmetic;
 mod braceexpansion;
 pub mod builtins;
+pub mod callstack;
 pub mod commands;
 pub mod completion;
 pub mod env;
@@ -27,7 +28,6 @@ pub mod processes;
 mod prompt;
 mod regex;
 pub mod results;
-pub mod scripts;
 mod shell;
 pub mod sys;
 pub mod terminal;
@@ -44,3 +44,5 @@ pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
 pub use variables::{ShellValue, ShellVariable};
+
+pub use brush_parser::{SourceInfo, SourceSpan};
