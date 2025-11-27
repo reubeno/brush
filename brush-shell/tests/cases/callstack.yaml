@@ -13,6 +13,8 @@ common_test_files:
           echo "${prefix}  FUNCNAME[@]: ${FUNCNAME[*]}"
           echo "${prefix}  BASH_SOURCE[@]: ${BASH_SOURCE[*]}"
           echo "${prefix}  BASH_LINENO[@]: ${BASH_LINENO[*]}"
+
+          brushinfo call stack -a
       }
 
       # Helper to dump frame-specific call stack state
@@ -26,8 +28,6 @@ common_test_files:
 
       # Helper to dump all stack info
       dump_stack() {
-          flugle
-
           local prefix="${1:-}"
 
           dump_source_info "$prefix"
@@ -271,7 +271,6 @@ cases:
       my_function
 
   - name: "Trap handler - EXIT"
-    known_failure: true # TODO(source-info): implement accurate source tracking
     stdin: |
       source callstack_helpers.sh
 

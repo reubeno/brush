@@ -115,7 +115,15 @@ pub(crate) fn initialize_vars(
 
     // TODO(vars): implement BASH_COMMAND
     // TODO(vars): implement BASH_EXECUTION_STRING
-    // TODO(vars): implement BASH_LINENO
+
+    // BASH_LINENO
+    shell.env.set_global(
+        "BASH_LINENO",
+        ShellVariable::new(ShellValue::Dynamic {
+            getter: |shell| get_bash_lineno_value(shell),
+            setter: |_| (),
+        }),
+    )?;
 
     // BASH_SOURCE
     shell.env.set_global(
@@ -499,6 +507,41 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
                     // Only include sourced scripts, not run scripts
                     if matches!(script.call_type, crate::callstack::ScriptCallType::Source) {
                         Some("source")
+                    } else {
+                        None
+                    }
+                }
+                crate::callstack::FrameType::TrapHandler
+                | crate::callstack::FrameType::Eval
+                | crate::callstack::FrameType::CommandString
+                | crate::callstack::FrameType::InteractiveSession => None,
+            })
+            .collect::<Vec<_>>()
+            .into()
+    }
+}
+
+fn get_bash_lineno_value(shell: &Shell) -> variables::ShellValue {
+    let stack = shell.call_stack();
+
+    // BASH_LINENO[$i] contains the line number where FUNCNAME[$i] was called
+    // This is extracted from the call_site of each frame
+    if stack.iter_function_calls().next().is_none() {
+        ShellValue::Unset(variables::ShellValueUnsetType::IndexedArray)
+    } else {
+        stack
+            .iter()
+            .enumerate()
+            .filter_map(|(frame_idx, frame)| match &frame.frame_type {
+                crate::callstack::FrameType::Function(..)
+                | crate::callstack::FrameType::Script(..) => {
+                    let caller_idx = frame_idx + 1;
+                    if caller_idx < stack.depth() {
+                        let caller_frame = &stack[caller_idx];
+                        caller_frame.current.as_ref().map_or_else(
+                            || Some(String::from("1")),
+                            |pos| Some(pos.line.to_string()),
+                        )
                     } else {
                         None
                     }

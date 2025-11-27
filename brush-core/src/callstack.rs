@@ -173,6 +173,33 @@ impl Frame {
             position: self.current.clone(),
         }
     }
+
+    /// Returns the current position as a new `SourceInfo`, combining the
+    /// frame's `source_info` and `current` position.
+    pub fn pos_as_source_info(&self) -> crate::SourceInfo {
+        let new_start = if let Some(existing_start) = &self.source_info.start {
+            if let Some(current) = &self.current {
+                Some(Arc::new(crate::SourcePosition {
+                    index: existing_start.index + current.index,
+                    line: existing_start.line + (current.line - 1),
+                    column: if current.line <= 1 {
+                        existing_start.column + (current.column - 1)
+                    } else {
+                        current.column
+                    },
+                }))
+            } else {
+                Some(existing_start.clone())
+            }
+        } else {
+            self.current.clone()
+        };
+
+        crate::SourceInfo {
+            source: self.source_info.source.clone(),
+            start: new_start,
+        }
+    }
 }
 
 /// Options for formatting a call stack.
@@ -270,6 +297,14 @@ impl std::fmt::Display for CallStack {
     }
 }
 
+impl std::ops::Index<usize> for CallStack {
+    type Output = Frame;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.frames[index]
+    }
+}
+
 impl CallStack {
     /// Creates a new empty script call stack.
     pub fn new() -> Self {
@@ -311,28 +346,7 @@ impl CallStack {
             return crate::SourceInfo::default();
         };
 
-        let new_start = if let Some(existing_start) = &frame.source_info.start {
-            if let Some(current) = &frame.current {
-                Some(Arc::new(crate::SourcePosition {
-                    index: existing_start.index + current.index,
-                    line: existing_start.line + (current.line - 1),
-                    column: if current.line <= 1 {
-                        existing_start.column + (current.column - 1)
-                    } else {
-                        current.column
-                    },
-                }))
-            } else {
-                Some(existing_start.clone())
-            }
-        } else {
-            frame.current.clone()
-        };
-
-        crate::SourceInfo {
-            source: frame.source_info.source.clone(),
-            start: new_start,
-        }
+        frame.pos_as_source_info()
     }
 
     /// Updates the currently executing position in the top stack frame.
