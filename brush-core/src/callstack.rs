@@ -124,32 +124,9 @@ pub struct CallSite {
     pub source_info: crate::SourceInfo,
 }
 
-// DBG:RRO
-// impl CallSite {
-//     /// Returns the absolute location of the call site, if available.
-//     pub fn abs_location(&self) -> Option<crate::SourceSpan> {
-//         let Some(location) = &self.relative_location else {
-//             return None;
-//         };
-
-//         if let Some(offset) = &self.source_info.start_offset {
-//             Some(location.offset(offset))
-//         } else {
-//             Some(location.to_owned())
-//         }
-//     }
-// }
-
 impl Display for CallSite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.source_info.source)?;
-
-        // DBG:RRO
-        // if let Some(location) = self.abs_location() {
-        //     write!(f, ":{},{}", location.start.line, location.start.column)?;
-        // }
-
-        Ok(())
+        write!(f, "{}", self.source_info.source)
     }
 }
 

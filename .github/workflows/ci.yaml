@@ -22,6 +22,11 @@ permissions:
   actions: read
   contents: read
 
+# Only allow one run of the workflow per branch / PR at a time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Build and upload release binaries for all relevant architectures.
   build:
@@ -511,10 +516,10 @@ jobs:
           sudo apt-get install -y python3
           python3 -m pip install --user pytest pytest-xdist pytest-md-report pytest-json-report
 
-      - name: "Run test suite (oracle)"
-        working-directory: bash-completion/test
-        run: |
-          pytest -n 128 --no-summary ./t || true
+      # - name: "Run test suite (oracle)"
+      #   working-directory: bash-completion/test
+      #   run: |
+      #     pytest -n 128 --no-summary ./t || true
 
       - name: "Run test suite (brush)"
         env:
