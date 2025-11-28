@@ -23,7 +23,7 @@ cases:
       echo "OPTARG: ${OPTARG}"
       echo "OPTIND: ${OPTIND}"
 
-  - name: "getopts: no args given"
+  - name: "getopts: no args"
     stdin: |
       getopts "a:b:" myvar
       echo "Result: $?"
@@ -31,6 +31,42 @@ cases:
       echo "OPTARG: ${OPTARG}"
       echo "OPTIND: ${OPTIND}"
       echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: toplevel positional parameters"
+    stdin: |
+      set -- -a value    
+      getopts "a:b:" myvar
+      echo "Result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: function positional parameters"
+    stdin: |
+      my_function() {
+        getopts "a:b:" myvar
+        echo "Result: $?"
+        echo "myvar: ${myvar}"
+        echo "OPTARG: ${OPTARG}"
+        echo "OPTIND: ${OPTIND}"
+        echo "OPTERR: ${OPTERR}"
+      }
+
+      my_function -b value
+
+  - name: "getopts: function script parameters"
+    test_files:
+      - path: script.sh
+        contents: |
+          getopts "a:b:" myvar
+          echo "Result: $?"
+          echo "myvar: ${myvar}"
+          echo "OPTARG: ${OPTARG}"
+          echo "OPTIND: ${OPTIND}"
+          echo "OPTERR: ${OPTERR}"
+    stdin: |
+      source ./script.sh -a value
 
   - name: "getopts: no options given"
     stdin: |

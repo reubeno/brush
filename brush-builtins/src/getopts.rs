@@ -42,17 +42,17 @@ impl builtins::Command for GetOptsCommand {
         &self,
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut args = HashMap::<char, bool>::new();
+        let mut option_defs = HashMap::<char, bool>::new();
         let mut treat_unknown_options_as_failure = true;
 
-        // Build the args map
+        // Build the map of option definitions from the options spec string.
         let mut last_char = None;
         for c in self.options_string.chars() {
             if c == ':' {
                 if let Some(last_char) = last_char {
-                    args.insert(last_char, true);
+                    option_defs.insert(last_char, true);
                     continue;
-                } else if args.is_empty() {
+                } else if option_defs.is_empty() {
                     // This is the first character of the options string.
                     // Its presence indicates a request for unknown
                     // options *not* to be treated as failures.
@@ -62,7 +62,7 @@ impl builtins::Command for GetOptsCommand {
                 }
             }
 
-            args.insert(c, false);
+            option_defs.insert(c, false);
             last_char = Some(c);
         }
 
@@ -82,10 +82,18 @@ impl builtins::Command for GetOptsCommand {
         let mut variable_value;
         let exit_code;
 
+        // Select the arguments to parse. If none were explicitly provided, we
+        // default to using the shell's current positional parameters.
+        let args_to_parse = if !self.args.is_empty() {
+            &self.args
+        } else {
+            context.shell.current_shell_args()
+        };
+
         // See if there are any args left to parse.
         let mut next_index_zero_based = next_index - 1;
-        if next_index_zero_based < self.args.len() {
-            let arg = self.args[next_index_zero_based].as_str();
+        if next_index_zero_based < args_to_parse.len() {
+            let arg = args_to_parse[next_index_zero_based].as_str();
 
             // See if this is an option.
             if arg.starts_with('-') && arg != "--" {
@@ -104,7 +112,7 @@ impl builtins::Command for GetOptsCommand {
 
                 // Look up the char.
                 let mut is_error = false;
-                if let Some(takes_arg) = args.get(&c) {
+                if let Some(takes_arg) = option_defs.get(&c) {
                     variable_value = String::from(c);
 
                     if *takes_arg {
@@ -114,11 +122,11 @@ impl builtins::Command for GetOptsCommand {
                             next_index += 1;
                             next_index_zero_based += 1;
 
-                            if next_index_zero_based >= self.args.len() {
+                            if next_index_zero_based >= args_to_parse.len() {
                                 return Ok(ExecutionResult::general_error());
                             }
 
-                            new_optarg = Some(self.args[next_index_zero_based].clone());
+                            new_optarg = Some(args_to_parse[next_index_zero_based].clone());
                         } else {
                             is_error = true;
                         }
