@@ -166,3 +166,11 @@ cases:
       var=
       prompt="\${var:+\[text\]}"
       echo "Conditional (unset): '${prompt@P}'"
+
+  - name: "Command substitution in prompt and exit code"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      PS1='$(echo Hello)> '
+      false
+      echo $?
