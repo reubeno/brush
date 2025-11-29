@@ -7,6 +7,10 @@ use crate::{SourceSpan, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
 
+/// Trait implemented by all AST nodes. Used to aggregate traits expected
+/// to be implemented.
+pub trait Node: Display + SourceLocation {}
+
 /// Provides the source location for the syntax item
 pub trait SourceLocation {
     /// The location of the syntax item, when known
@@ -35,6 +39,8 @@ pub struct Program {
     /// A sequence of complete shell commands.
     pub complete_commands: Vec<CompleteCommand>,
 }
+
+impl Node for Program {}
 
 impl SourceLocation for Program {
     fn location(&self) -> Option<SourceSpan> {
@@ -106,6 +112,8 @@ pub struct AndOrList {
     )]
     pub additional: Vec<AndOr>,
 }
+
+impl Node for AndOrList {}
 
 impl SourceLocation for AndOrList {
     fn location(&self) -> Option<SourceSpan> {
@@ -226,6 +234,8 @@ pub enum AndOr {
     Or(Pipeline),
 }
 
+impl Node for AndOr {}
+
 // TODO(source-location): add a loc
 impl SourceLocation for AndOr {
     fn location(&self) -> Option<SourceSpan> {
@@ -259,11 +269,22 @@ pub enum PipelineTimed {
     TimedWithPosixOutput(SourceSpan),
 }
 
+impl Node for PipelineTimed {}
+
 impl SourceLocation for PipelineTimed {
     fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::Timed(t) => Some(t.to_owned()),
             Self::TimedWithPosixOutput(t) => Some(t.to_owned()),
+        }
+    }
+}
+
+impl Display for PipelineTimed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Timed(_) => write!(f, "time"),
+            Self::TimedWithPosixOutput(_) => write!(f, "time -p"),
         }
     }
 }
@@ -302,6 +323,8 @@ pub struct Pipeline {
     pub seq: Vec<Command>,
 }
 
+impl Node for Pipeline {}
+
 impl SourceLocation for Pipeline {
     fn location(&self) -> Option<SourceSpan> {
         let start = self
@@ -317,6 +340,10 @@ impl SourceLocation for Pipeline {
 
 impl Display for Pipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(timed) = &self.timed {
+            write!(f, "{timed} ")?;
+        }
+
         if self.bang {
             write!(f, "!")?;
         }
@@ -349,6 +376,8 @@ pub enum Command {
     /// A command that evaluates an extended test expression.
     ExtendedTest(ExtendedTestExprCommand),
 }
+
+impl Node for Command {}
 
 impl SourceLocation for Command {
     fn location(&self) -> Option<SourceSpan> {
@@ -414,6 +443,8 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
 }
 
+impl Node for CompoundCommand {}
+
 // TODO(source-location): complete the list
 impl SourceLocation for CompoundCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -471,6 +502,8 @@ pub struct ArithmeticCommand {
     pub loc: SourceSpan,
 }
 
+impl Node for ArithmeticCommand {}
+
 impl SourceLocation for ArithmeticCommand {
     fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
@@ -496,6 +529,8 @@ pub struct SubshellCommand {
     /// Location of the subshell
     pub loc: SourceSpan,
 }
+
+impl Node for SubshellCommand {}
 
 impl SourceLocation for SubshellCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -528,6 +563,8 @@ pub struct ForClauseCommand {
     /// Location of the for loop
     pub loc: SourceSpan,
 }
+
+impl Node for ForClauseCommand {}
 
 impl SourceLocation for ForClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -574,6 +611,8 @@ pub struct ArithmeticForClauseCommand {
     /// Location of the clause
     pub loc: SourceSpan,
 }
+
+impl Node for ArithmeticForClauseCommand {}
 
 impl SourceLocation for ArithmeticForClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -622,6 +661,8 @@ pub struct CaseClauseCommand {
     pub cases: Vec<CaseItem>,
 }
 
+impl Node for CaseClauseCommand {}
+
 impl SourceLocation for CaseClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
         let start = self.value.location();
@@ -650,6 +691,8 @@ impl Display for CaseClauseCommand {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub struct CompoundList(pub Vec<CompoundListItem>);
+
+impl Node for CompoundList {}
 
 // TODO(source-location): doublecheck
 impl SourceLocation for CompoundList {
@@ -696,6 +739,8 @@ impl Display for CompoundList {
 )]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
+impl Node for CompoundListItem {}
+
 impl SourceLocation for CompoundListItem {
     fn location(&self) -> Option<SourceSpan> {
         self.0.location()
@@ -731,6 +776,8 @@ pub struct IfClauseCommand {
     /// Location of the if clause
     pub loc: SourceSpan,
 }
+
+impl Node for IfClauseCommand {}
 
 impl SourceLocation for IfClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -812,6 +859,8 @@ pub struct CaseItem {
     pub loc: Option<SourceSpan>,
 }
 
+impl Node for CaseItem {}
+
 impl SourceLocation for CaseItem {
     fn location(&self) -> Option<SourceSpan> {
         self.loc.clone()
@@ -874,6 +923,8 @@ impl Display for CaseItemPostAction {
 )]
 pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand, pub SourceSpan);
 
+impl Node for WhileOrUntilClauseCommand {}
+
 impl SourceLocation for WhileOrUntilClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
         Some(self.2.clone())
@@ -901,6 +952,8 @@ pub struct FunctionDefinition {
     /// The source of the function definition.
     pub source: String,
 }
+
+impl Node for FunctionDefinition {}
 
 impl SourceLocation for FunctionDefinition {
     fn location(&self) -> Option<SourceSpan> {
@@ -931,6 +984,8 @@ impl Display for FunctionDefinition {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
+
+impl Node for FunctionBody {}
 
 impl SourceLocation for FunctionBody {
     fn location(&self) -> Option<SourceSpan> {
@@ -970,6 +1025,8 @@ pub struct BraceGroupCommand {
     /// Location of the group
     pub loc: SourceSpan,
 }
+
+impl Node for BraceGroupCommand {}
 
 impl SourceLocation for BraceGroupCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -1047,6 +1104,8 @@ pub struct SimpleCommand {
     pub suffix: Option<CommandSuffix>,
 }
 
+impl Node for SimpleCommand {}
+
 impl SourceLocation for SimpleCommand {
     fn location(&self) -> Option<SourceSpan> {
         let mid = &self
@@ -1106,6 +1165,8 @@ impl Display for SimpleCommand {
 )]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
+impl Node for CommandPrefix {}
+
 impl SourceLocation for CommandPrefix {
     fn location(&self) -> Option<SourceSpan> {
         let start = self.0.first().and_then(SourceLocation::location);
@@ -1136,6 +1197,8 @@ impl Display for CommandPrefix {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
+
+impl Node for CommandSuffix {}
 
 impl SourceLocation for CommandSuffix {
     fn location(&self) -> Option<SourceSpan> {
@@ -1200,6 +1263,8 @@ pub enum CommandPrefixOrSuffixItem {
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
 }
 
+impl Node for CommandPrefixOrSuffixItem {}
+
 // TODO(source-location): complete
 impl SourceLocation for CommandPrefixOrSuffixItem {
     fn location(&self) -> Option<SourceSpan> {
@@ -1244,6 +1309,8 @@ pub struct Assignment {
     /// Location of the assignment
     pub loc: SourceSpan,
 }
+
+impl Node for Assignment {}
 
 impl SourceLocation for Assignment {
     fn location(&self) -> Option<SourceSpan> {
@@ -1300,6 +1367,8 @@ pub enum AssignmentValue {
     Array(Vec<(Option<Word>, Word)>),
 }
 
+impl Node for AssignmentValue {}
+
 // TODO(source-location): complete
 impl SourceLocation for AssignmentValue {
     fn location(&self) -> Option<SourceSpan> {
@@ -1336,6 +1405,8 @@ impl Display for AssignmentValue {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub struct RedirectList(pub Vec<IoRedirect>);
+
+impl Node for RedirectList {}
 
 // TODO(source-location): complete
 impl SourceLocation for RedirectList {
@@ -1374,6 +1445,8 @@ pub enum IoRedirect {
     OutputAndError(Word, bool),
 }
 
+impl Node for IoRedirect {}
+
 // TODO(source-location): complete
 impl SourceLocation for IoRedirect {
     fn location(&self) -> Option<SourceSpan> {
@@ -1398,28 +1471,12 @@ impl Display for IoRedirect {
                 }
                 write!(f, " {target}")?;
             }
-            Self::HereDocument(
-                fd_num,
-                IoHereDocument {
-                    remove_tabs,
-                    here_end,
-                    doc,
-                    ..
-                },
-            ) => {
+            Self::HereDocument(fd_num, here_doc) => {
                 if let Some(fd_num) = fd_num {
                     write!(f, "{fd_num}")?;
                 }
 
-                write!(f, "<<")?;
-                if *remove_tabs {
-                    write!(f, "-")?;
-                }
-
-                writeln!(f, "{here_end}")?;
-
-                write!(f, "{doc}")?;
-                writeln!(f, "{here_end}")?;
+                write!(f, "<<{here_doc}")?;
             }
             Self::HereString(fd_num, s) => {
                 if let Some(fd_num) = fd_num {
@@ -1532,10 +1589,26 @@ pub struct IoHereDocument {
     pub doc: Word,
 }
 
+impl Node for IoHereDocument {}
+
 // TODO(source-location): complete
 impl SourceLocation for IoHereDocument {
     fn location(&self) -> Option<SourceSpan> {
         None
+    }
+}
+
+impl Display for IoHereDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.remove_tabs {
+            write!(f, "-")?;
+        }
+
+        writeln!(f, "{}", self.here_end)?;
+        write!(f, "{}", self.doc)?;
+        writeln!(f, "{}", self.here_end)?;
+
+        Ok(())
     }
 }
 
@@ -1563,6 +1636,8 @@ pub enum TestExpr {
     /// A binary test operation.
     BinaryTest(BinaryPredicate, String, String),
 }
+
+impl Node for TestExpr {}
 
 // TODO(source-location): complete
 impl SourceLocation for TestExpr {
@@ -1646,6 +1721,8 @@ pub struct ExtendedTestExprCommand {
     /// Location of the expression
     pub loc: SourceSpan,
 }
+
+impl Node for ExtendedTestExprCommand {}
 
 impl SourceLocation for ExtendedTestExprCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -1833,6 +1910,8 @@ pub struct Word {
     pub loc: Option<SourceSpan>,
 }
 
+impl Node for Word {}
+
 impl SourceLocation for Word {
     fn location(&self) -> Option<SourceSpan> {
         self.loc.clone()
@@ -1934,6 +2013,8 @@ pub enum ArithmeticExpr {
     /// A unary assignment operation.
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
+
+impl Node for ArithmeticExpr {}
 
 // TODO(source-location): complete and add loc for literal
 impl SourceLocation for ArithmeticExpr {
@@ -2169,6 +2250,8 @@ pub enum ArithmeticTarget {
     /// An element in an array.
     ArrayElement(String, Box<ArithmeticExpr>),
 }
+
+impl Node for ArithmeticTarget {}
 
 // TODO(source-location): complete and add loc
 impl SourceLocation for ArithmeticTarget {
