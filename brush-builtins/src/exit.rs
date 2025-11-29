@@ -20,7 +20,7 @@ impl builtins::Command for ExitCommand {
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8
         } else {
-            context.shell.last_result()
+            context.shell.last_exit_status()
         };
 
         let mut result = ExecutionResult::new(code_8bit);

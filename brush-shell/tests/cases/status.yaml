@@ -32,3 +32,30 @@ cases:
 
       (cat /non/existent 2>/dev/null)
       echo "[2] Status: $?; pipe status: ${PIPESTATUS[@]}"
+
+  - name: "Stored status"
+    stdin: |
+      false
+      status=$?
+      echo "Stored status from false: $status"
+
+      true
+      status=$?
+      echo "Stored status from true: $status"
+
+  - name: "Status from assignment"
+    stdin: |
+      false
+      false_status=$?
+      assign_status=$?
+
+      echo "Status after assignment: $assign_status"
+
+  - name: "Status within assignments"
+    stdin: |
+      f() {
+        return $1
+      }
+
+      x=$(f 42) y=0 z=$? w=$?
+      echo "x: $x; y: $y; z: $z; w: $w"

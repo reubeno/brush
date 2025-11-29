@@ -221,7 +221,7 @@ impl Execute for ast::Program {
                 }
             }
 
-            *shell.last_exit_status_mut() = result.exit_code.into();
+            shell.set_last_exit_status(result.exit_code.into());
 
             // Check if we should stop executing subsequent commands
             if !result.is_normal_flow() {
@@ -229,7 +229,7 @@ impl Execute for ast::Program {
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
 }
@@ -267,7 +267,7 @@ impl Execute for ast::CompoundList {
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
 }
@@ -366,7 +366,7 @@ impl Execute for ast::Pipeline {
         }
 
         // Update statuses.
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
 
         // If requested, report timing.
         if let Some(timed) = &self.timed {
@@ -481,12 +481,12 @@ async fn wait_for_pipeline_processes_and_update_status(
         match child.wait(!stopped_children.is_empty()).await? {
             ExecutionWaitResult::Completed(current_result) => {
                 result = current_result;
-                *shell.last_exit_status_mut() = result.exit_code.into();
+                shell.set_last_exit_status(result.exit_code.into());
                 shell.last_pipeline_statuses.push(result.exit_code.into());
             }
             ExecutionWaitResult::Stopped(child) => {
                 result = ExecutionResult::stopped();
-                *shell.last_exit_status_mut() = result.exit_code.into();
+                shell.set_last_exit_status(result.exit_code.into());
                 shell.last_pipeline_statuses.push(result.exit_code.into());
 
                 stopped_children.push(jobs::JobTask::External(child));
@@ -679,7 +679,7 @@ impl Execute for ast::ForClauseCommand {
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
 }
@@ -745,7 +745,7 @@ impl Execute for ast::CaseClauseCommand {
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
 
         Ok(result)
     }
@@ -792,7 +792,7 @@ impl Execute for ast::IfClauseCommand {
         }
 
         let result = ExecutionResult::success();
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
 
         Ok(result)
     }
@@ -861,7 +861,7 @@ impl Execute for ast::ArithmeticCommand {
             ExecutionResult::general_error()
         };
 
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
 
         Ok(result)
     }
@@ -904,7 +904,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
         }
 
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
 }
@@ -923,7 +923,7 @@ impl Execute for ast::FunctionDefinition {
         );
 
         let result = ExecutionResult::success();
-        *shell.last_exit_status_mut() = result.exit_code.into();
+        shell.set_last_exit_status(result.exit_code.into());
 
         Ok(result)
     }
@@ -1056,8 +1056,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 }
             }
         } else {
-            // Reset last status.
-            *context.shell.last_exit_status_mut() = 0;
+            let status_change_count = context.shell.last_exit_status_change_count();
 
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
@@ -1074,9 +1073,17 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 .await?;
             }
 
+            // We need to set the last exit status to indicate assignment success,
+            // but only if there was no status set during expansion. Ideally we'd
+            // have a cleaner way of determining if expansion caused a status change,
+            // but this will do for now.
+            if status_change_count == context.shell.last_exit_status_change_count() {
+                context.shell.set_last_exit_status(0);
+            }
+
             // Return the last exit status we have; in some cases, an expansion
             // might result in a non-zero exit status stored in the shell.
-            Ok(ExecutionResult::new(context.shell.last_result()).into())
+            Ok(ExecutionResult::new(context.shell.last_exit_status()).into())
         }
     }
 }

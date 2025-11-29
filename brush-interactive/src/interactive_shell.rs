@@ -154,17 +154,19 @@ pub trait InteractiveShell: Send {
 
             match self.read_line(prompt)? {
                 ReadResult::Input(read_result) => {
-                    self.execute_line(read_result, true /*user input*/).await
+                    self.execute_line(read_result, true /* user input */).await
                 }
                 ReadResult::BoundCommand(read_result) => {
-                    self.execute_line(read_result, false /*user input*/).await
+                    self.execute_line(read_result, false /* user input */).await
                 }
                 ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
                 ReadResult::Interrupted => {
                     let mut shell_mut = self.shell_mut();
                     let result: brush_core::ExecutionResult =
                         brush_core::ExecutionExitCode::Interrupted.into();
-                    *shell_mut.as_mut().last_exit_status_mut() = result.exit_code.into();
+                    shell_mut
+                        .as_mut()
+                        .set_last_exit_status(result.exit_code.into());
                     Ok(InteractiveExecutionResult::Executed(result))
                 }
             }
@@ -267,7 +269,7 @@ async fn run_pre_prompt_command(
     prompt_cmd: impl Into<String>,
 ) -> Result<(), ShellError> {
     // Save (and later restore) the last exit status.
-    let prev_last_result = shell.last_result();
+    let prev_last_result = shell.last_exit_status();
     let prev_last_pipeline_statuses = shell.last_pipeline_statuses.clone();
 
     // Run the command.
@@ -276,7 +278,7 @@ async fn run_pre_prompt_command(
 
     // Restore the last exit status.
     shell.last_pipeline_statuses = prev_last_pipeline_statuses;
-    *shell.last_exit_status_mut() = prev_last_result;
+    shell.set_last_exit_status(prev_last_result);
 
     Ok(())
 }

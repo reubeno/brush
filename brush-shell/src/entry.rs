@@ -234,7 +234,7 @@ async fn run_in_shell(
     }
 
     // Make sure to return the last result observed in the shell.
-    let result = shell.shell().as_ref().last_result();
+    let result = shell.shell().as_ref().last_exit_status();
 
     Ok(result)
 }
