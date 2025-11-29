@@ -1559,7 +1559,7 @@ impl<'a> WordExpander<'a> {
                 Expansion::from(self.shell.current_shell_args().len().to_string())
             }
             brush_parser::word::SpecialParameter::LastExitStatus => {
-                Expansion::from(self.shell.last_result().to_string())
+                Expansion::from(self.shell.last_exit_status().to_string())
             }
             brush_parser::word::SpecialParameter::CurrentOptionFlags => {
                 Expansion::from(self.shell.options.option_flags())

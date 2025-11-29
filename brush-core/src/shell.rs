@@ -61,6 +61,9 @@ pub struct Shell {
     /// The status of the last completed command.
     last_exit_status: u8,
 
+    /// Tracks changes to `last_exit_status`.
+    last_exit_status_change_count: usize,
+
     /// The status of each of the commands in the last pipeline.
     pub last_pipeline_statuses: Vec<u8>,
 
@@ -125,6 +128,7 @@ impl Clone for Shell {
             jobs: jobs::JobManager::new(),
             aliases: self.aliases.clone(),
             last_exit_status: self.last_exit_status,
+            last_exit_status_change_count: self.last_exit_status_change_count,
             last_pipeline_statuses: self.last_pipeline_statuses.clone(),
             name: self.name.clone(),
             args: self.args.clone(),
@@ -362,6 +366,7 @@ impl Shell {
             jobs: jobs::JobManager::new(),
             aliases: HashMap::default(),
             last_exit_status: 0,
+            last_exit_status_change_count: 0,
             last_pipeline_statuses: vec![0],
             name: options.shell_name,
             args: options.shell_args.unwrap_or_default(),
@@ -435,11 +440,6 @@ impl Shell {
         &self.version
     }
 
-    /// Returns the exit status of the last command executed in this shell.
-    pub const fn last_result(&self) -> u8 {
-        self.last_exit_status
-    }
-
     /// Returns the call stack for the shell.
     pub const fn call_stack(&self) -> &callstack::CallStack {
         &self.call_stack
@@ -488,9 +488,19 @@ impl Shell {
         &mut self.args
     }
 
-    /// Returns a mutable reference to the last exit status.
-    pub const fn last_exit_status_mut(&mut self) -> &mut u8 {
-        &mut self.last_exit_status
+    /// Returns the exit status of the last command executed in this shell.
+    pub const fn last_exit_status(&self) -> u8 {
+        self.last_exit_status
+    }
+
+    pub(crate) const fn last_exit_status_change_count(&self) -> usize {
+        self.last_exit_status_change_count
+    }
+
+    /// Updates the last exit status.
+    pub const fn set_last_exit_status(&mut self, status: u8) {
+        self.last_exit_status = status;
+        self.last_exit_status_change_count += 1;
     }
 
     /// Returns the key bindings helper for the shell.
@@ -1029,7 +1039,7 @@ impl Shell {
                 let _ = self.display_error(&mut params.stderr(self), &err).await;
 
                 let result = err.into_result(self);
-                *self.last_exit_status_mut() = result.exit_code.into();
+                self.set_last_exit_status(result.exit_code.into());
 
                 Ok(result)
             }
@@ -1096,7 +1106,7 @@ impl Shell {
         }
 
         // Save (and later restore) the last exit status.
-        let prev_last_result = self.last_result();
+        let prev_last_result = self.last_exit_status();
         let prev_last_pipeline_statuses = self.last_pipeline_statuses.clone();
 
         // Expand it.
@@ -1105,7 +1115,7 @@ impl Shell {
 
         // Restore the last exit status.
         self.last_pipeline_statuses = prev_last_pipeline_statuses;
-        *self.last_exit_status_mut() = prev_last_result;
+        self.set_last_exit_status(prev_last_result);
 
         result
     }
