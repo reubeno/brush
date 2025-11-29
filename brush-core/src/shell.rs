@@ -1095,9 +1095,19 @@ impl Shell {
             return Ok(String::new());
         }
 
+        // Save (and later restore) the last exit status.
+        let prev_last_result = self.last_result();
+        let prev_last_pipeline_statuses = self.last_pipeline_statuses.clone();
+
         // Expand it.
         let params = self.default_exec_params();
-        prompt::expand_prompt(self, &params, prompt_spec.into_owned()).await
+        let result = prompt::expand_prompt(self, &params, prompt_spec.into_owned()).await;
+
+        // Restore the last exit status.
+        self.last_pipeline_statuses = prev_last_pipeline_statuses;
+        *self.last_exit_status_mut() = prev_last_result;
+
+        result
     }
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
