@@ -244,6 +244,8 @@ fn translate_input_function_to_reedline_event(
         InputFunction::AcceptLine => Some(ReedlineEvent::Enter),
         InputFunction::HistorySearchBackward => Some(ReedlineEvent::SearchHistory),
         InputFunction::RedrawCurrentLine => Some(ReedlineEvent::Repaint),
+        InputFunction::BrushAcceptHint => Some(ReedlineEvent::HistoryHintComplete),
+        InputFunction::BrushAcceptHintWord => Some(ReedlineEvent::HistoryHintWordComplete),
         _ => None,
     }
 }
@@ -400,6 +402,12 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
         reedline::ReedlineEvent::Repaint => {
             Some(KeyAction::DoInputFunction(InputFunction::RedrawCurrentLine))
         }
+        reedline::ReedlineEvent::HistoryHintComplete => {
+            Some(KeyAction::DoInputFunction(InputFunction::BrushAcceptHint))
+        }
+        reedline::ReedlineEvent::HistoryHintWordComplete => Some(KeyAction::DoInputFunction(
+            InputFunction::BrushAcceptHintWord,
+        )),
         reedline::ReedlineEvent::Multiple(_) => {
             // TODO(input): Try to extract something from these?
             None
