@@ -171,6 +171,11 @@ cases:
       [[ $first -ge 0 && $first -lt 32768 ]] && echo "RANDOM value is within expected range"
       [[ $second -ge 0 && $second -lt 32768 ]] && echo "RANDOM value is within expected range"
 
+  - name: "SHELL"
+    stdin: |
+      declare -p SHELL
+      echo "SHELL: $SHELL"
+
   - name: "SHELLOPTS"
     stdin: |
       echo "SHELLOPTS: $SHELLOPTS"

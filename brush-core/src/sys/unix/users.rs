@@ -25,6 +25,16 @@ pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
     None
 }
 
+pub(crate) fn get_current_user_default_shell() -> Option<PathBuf> {
+    if let Some(username) = uzers::get_current_username() {
+        if let Some(user_info) = uzers::get_user_by_name(&username) {
+            return Some(user_info.shell().to_path_buf());
+        }
+    }
+
+    None
+}
+
 #[expect(clippy::unnecessary_wraps)]
 pub(crate) fn get_current_uid() -> Result<u32, error::Error> {
     Ok(uzers::get_current_uid())
