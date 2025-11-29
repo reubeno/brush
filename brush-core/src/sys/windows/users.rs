@@ -15,6 +15,10 @@ pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
     homedir::my_home().unwrap_or_default()
 }
 
+pub(crate) fn get_current_user_default_shell() -> Option<PathBuf> {
+    None
+}
+
 pub(crate) fn is_root() -> bool {
     // TODO(windows): implement some version of this for Windows
     false

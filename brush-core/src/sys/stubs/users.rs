@@ -9,6 +9,10 @@ pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
     None
 }
 
+pub(crate) fn get_current_user_default_shell() -> Option<PathBuf> {
+    None
+}
+
 pub(crate) fn is_root() -> bool {
     false
 }

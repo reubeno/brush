@@ -380,12 +380,15 @@ pub(crate) fn initialize_vars(
         }),
     )?;
 
-    // SHELL
-    if let Ok(exe_path) = std::env::current_exe() {
-        shell.env.set_global(
-            "SHELL",
-            ShellVariable::new(exe_path.to_string_lossy().to_string()),
-        )?;
+    // SHELL (if not already set)
+    if !shell.env.is_set("SHELL") {
+        // Per docs, this should be the user's default login shell -- not the current shell.
+        if let Some(default_shell) = sys::users::get_current_user_default_shell() {
+            shell.env.set_global(
+                "SHELL",
+                ShellVariable::new(default_shell.to_string_lossy().to_string()),
+            )?;
+        }
     }
 
     // SHELLOPTS
