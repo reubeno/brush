@@ -6,6 +6,7 @@ use brush_core::{
     ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
+    parser::ast,
     variables::{
         self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
         ShellVariableUpdateTransform,
@@ -365,15 +366,12 @@ impl DeclareCommand {
             }
             brush_core::CommandArg::Assignment(assignment) => {
                 match &assignment.name {
-                    brush_parser::ast::AssignmentName::VariableName(var_name) => {
+                    ast::AssignmentName::VariableName(var_name) => {
                         name = var_name.to_owned();
                         assigned_index = None;
                     }
-                    brush_parser::ast::AssignmentName::ArrayElementName(var_name, index) => {
-                        if matches!(
-                            assignment.value,
-                            brush_parser::ast::AssignmentValue::Array(_)
-                        ) {
+                    ast::AssignmentName::ArrayElementName(var_name, index) => {
+                        if matches!(assignment.value, ast::AssignmentValue::Array(_)) {
                             return Err(ErrorKind::AssigningListToArrayMember.into());
                         }
 
@@ -383,7 +381,7 @@ impl DeclareCommand {
                 }
 
                 match &assignment.value {
-                    brush_parser::ast::AssignmentValue::Scalar(s) => {
+                    ast::AssignmentValue::Scalar(s) => {
                         if let Some(index) = &assigned_index {
                             initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
                                 Some(index.to_owned()),
@@ -395,7 +393,7 @@ impl DeclareCommand {
                             name_is_array = false;
                         }
                     }
-                    brush_parser::ast::AssignmentValue::Array(a) => {
+                    ast::AssignmentValue::Array(a) => {
                         initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
                             a.iter()
                                 .map(|(i, v)| {
