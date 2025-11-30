@@ -7,6 +7,10 @@ use crate::{SourceSpan, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
 
+/// Trait implemented by all AST nodes. Used to aggregate traits expected
+/// to be implemented.
+pub trait Node: Display + SourceLocation {}
+
 /// Provides the source location for the syntax item
 pub trait SourceLocation {
     /// The location of the syntax item, when known
@@ -35,6 +39,8 @@ pub struct Program {
     /// A sequence of complete shell commands.
     pub complete_commands: Vec<CompleteCommand>,
 }
+
+impl Node for Program {}
 
 impl SourceLocation for Program {
     fn location(&self) -> Option<SourceSpan> {
@@ -106,6 +112,8 @@ pub struct AndOrList {
     )]
     pub additional: Vec<AndOr>,
 }
+
+impl Node for AndOrList {}
 
 impl SourceLocation for AndOrList {
     fn location(&self) -> Option<SourceSpan> {
@@ -226,7 +234,9 @@ pub enum AndOr {
     Or(Pipeline),
 }
 
-// TODO(source-location): add a loc
+impl Node for AndOr {}
+
+// TODO(source-location): add a loc to account for the operator
 impl SourceLocation for AndOr {
     fn location(&self) -> Option<SourceSpan> {
         match self {
@@ -259,11 +269,22 @@ pub enum PipelineTimed {
     TimedWithPosixOutput(SourceSpan),
 }
 
+impl Node for PipelineTimed {}
+
 impl SourceLocation for PipelineTimed {
     fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::Timed(t) => Some(t.to_owned()),
             Self::TimedWithPosixOutput(t) => Some(t.to_owned()),
+        }
+    }
+}
+
+impl Display for PipelineTimed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Timed(_) => write!(f, "time"),
+            Self::TimedWithPosixOutput(_) => write!(f, "time -p"),
         }
     }
 }
@@ -302,6 +323,9 @@ pub struct Pipeline {
     pub seq: Vec<Command>,
 }
 
+impl Node for Pipeline {}
+
+// TODO(source-location): Handle the case where `self.timed` is `None` but there is a bang.
 impl SourceLocation for Pipeline {
     fn location(&self) -> Option<SourceSpan> {
         let start = self
@@ -317,6 +341,10 @@ impl SourceLocation for Pipeline {
 
 impl Display for Pipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(timed) = &self.timed {
+            write!(f, "{timed} ")?;
+        }
+
         if self.bang {
             write!(f, "!")?;
         }
@@ -349,6 +377,8 @@ pub enum Command {
     /// A command that evaluates an extended test expression.
     ExtendedTest(ExtendedTestExprCommand),
 }
+
+impl Node for Command {}
 
 impl SourceLocation for Command {
     fn location(&self) -> Option<SourceSpan> {
@@ -414,7 +444,8 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
 }
 
-// TODO(source-location): complete the list
+impl Node for CompoundCommand {}
+
 impl SourceLocation for CompoundCommand {
     fn location(&self) -> Option<SourceSpan> {
         match self {
@@ -471,6 +502,8 @@ pub struct ArithmeticCommand {
     pub loc: SourceSpan,
 }
 
+impl Node for ArithmeticCommand {}
+
 impl SourceLocation for ArithmeticCommand {
     fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
@@ -496,6 +529,8 @@ pub struct SubshellCommand {
     /// Location of the subshell
     pub loc: SourceSpan,
 }
+
+impl Node for SubshellCommand {}
 
 impl SourceLocation for SubshellCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -525,9 +560,11 @@ pub struct ForClauseCommand {
     pub values: Option<Vec<Word>>,
     /// The command to run for each iteration of the loop.
     pub body: DoGroupCommand,
-    /// Location of the for loop
+    /// Location of the for command.
     pub loc: SourceSpan,
 }
+
+impl Node for ForClauseCommand {}
 
 impl SourceLocation for ForClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -575,6 +612,8 @@ pub struct ArithmeticForClauseCommand {
     pub loc: SourceSpan,
 }
 
+impl Node for ArithmeticForClauseCommand {}
+
 impl SourceLocation for ArithmeticForClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
         Some(self.loc.clone())
@@ -620,14 +659,15 @@ pub struct CaseClauseCommand {
     pub value: Word,
     /// The individual case branches.
     pub cases: Vec<CaseItem>,
+    /// Location of the case command.
+    pub loc: SourceSpan,
 }
+
+impl Node for CaseClauseCommand {}
 
 impl SourceLocation for CaseClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
-        let start = self.value.location();
-        let end = self.cases.last().and_then(SourceLocation::location);
-
-        maybe_location(start.as_ref(), end.as_ref())
+        Some(self.loc.clone())
     }
 }
 
@@ -651,7 +691,9 @@ impl Display for CaseClauseCommand {
 )]
 pub struct CompoundList(pub Vec<CompoundListItem>);
 
-// TODO(source-location): doublecheck
+impl Node for CompoundList {}
+
+// TODO(source-location): Handle the optional trailing separator.
 impl SourceLocation for CompoundList {
     fn location(&self) -> Option<SourceSpan> {
         let start = self.0.first().and_then(SourceLocation::location);
@@ -696,6 +738,9 @@ impl Display for CompoundList {
 )]
 pub struct CompoundListItem(pub AndOrList, pub SeparatorOperator);
 
+impl Node for CompoundListItem {}
+
+// TODO(source-location): Account for the location of the separator operator.
 impl SourceLocation for CompoundListItem {
     fn location(&self) -> Option<SourceSpan> {
         self.0.location()
@@ -731,6 +776,8 @@ pub struct IfClauseCommand {
     /// Location of the if clause
     pub loc: SourceSpan,
 }
+
+impl Node for IfClauseCommand {}
 
 impl SourceLocation for IfClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -812,6 +859,8 @@ pub struct CaseItem {
     pub loc: Option<SourceSpan>,
 }
 
+impl Node for CaseItem {}
+
 impl SourceLocation for CaseItem {
     fn location(&self) -> Option<SourceSpan> {
         self.loc.clone()
@@ -874,6 +923,8 @@ impl Display for CaseItemPostAction {
 )]
 pub struct WhileOrUntilClauseCommand(pub CompoundList, pub DoGroupCommand, pub SourceSpan);
 
+impl Node for WhileOrUntilClauseCommand {}
+
 impl SourceLocation for WhileOrUntilClauseCommand {
     fn location(&self) -> Option<SourceSpan> {
         Some(self.2.clone())
@@ -902,6 +953,10 @@ pub struct FunctionDefinition {
     pub source: String,
 }
 
+impl Node for FunctionDefinition {}
+
+// TODO(source-location): Account for the optional 'function' keyword that may
+// precede the function name.
 impl SourceLocation for FunctionDefinition {
     fn location(&self) -> Option<SourceSpan> {
         let start = self.fname.location();
@@ -932,16 +987,21 @@ impl Display for FunctionDefinition {
 )]
 pub struct FunctionBody(pub CompoundCommand, pub Option<RedirectList>);
 
+impl Node for FunctionBody {}
+
 impl SourceLocation for FunctionBody {
     fn location(&self) -> Option<SourceSpan> {
-        let start = self.0.location();
+        let cmd_span = self.0.location();
+        let redirect_span = self.1.as_ref().and_then(SourceLocation::location);
 
-        let end = self.1.as_ref().and_then(SourceLocation::location);
-
-        if let (Some(s), Some(e)) = (start, end) {
-            Some(SourceSpan::within(&s, &e))
-        } else {
-            None
+        match (cmd_span, redirect_span) {
+            // If there's a redirect, include it in the span.
+            (Some(cmd_span), Some(redirect_span)) => {
+                Some(SourceSpan::within(&cmd_span, &redirect_span))
+            }
+            // Otherwise, just return the command span.
+            (Some(cmd_span), None) => Some(cmd_span),
+            _ => None,
         }
     }
 }
@@ -970,6 +1030,8 @@ pub struct BraceGroupCommand {
     /// Location of the group
     pub loc: SourceSpan,
 }
+
+impl Node for BraceGroupCommand {}
 
 impl SourceLocation for BraceGroupCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -1047,6 +1109,8 @@ pub struct SimpleCommand {
     pub suffix: Option<CommandSuffix>,
 }
 
+impl Node for SimpleCommand {}
+
 impl SourceLocation for SimpleCommand {
     fn location(&self) -> Option<SourceSpan> {
         let mid = &self
@@ -1056,10 +1120,14 @@ impl SourceLocation for SimpleCommand {
         let start = self.prefix.as_ref().and_then(SourceLocation::location);
         let end = self.suffix.as_ref().and_then(SourceLocation::location);
 
-        maybe_location(
-            start.as_ref().or(mid.as_ref()),
-            end.as_ref().or(mid.as_ref()),
-        )
+        match (start, mid, end) {
+            (Some(start), _, Some(end)) => Some(SourceSpan::within(&start, &end)),
+            (Some(start), Some(mid), None) => Some(SourceSpan::within(&start, mid)),
+            (Some(start), None, None) => Some(start),
+            (None, Some(mid), Some(end)) => Some(SourceSpan::within(mid, &end)),
+            (None, Some(mid), None) => Some(mid.clone()),
+            _ => None,
+        }
     }
 }
 
@@ -1106,6 +1174,8 @@ impl Display for SimpleCommand {
 )]
 pub struct CommandPrefix(pub Vec<CommandPrefixOrSuffixItem>);
 
+impl Node for CommandPrefix {}
+
 impl SourceLocation for CommandPrefix {
     fn location(&self) -> Option<SourceSpan> {
         let start = self.0.first().and_then(SourceLocation::location);
@@ -1136,6 +1206,8 @@ impl Display for CommandPrefix {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub struct CommandSuffix(pub Vec<CommandPrefixOrSuffixItem>);
+
+impl Node for CommandSuffix {}
 
 impl SourceLocation for CommandSuffix {
     fn location(&self) -> Option<SourceSpan> {
@@ -1200,12 +1272,16 @@ pub enum CommandPrefixOrSuffixItem {
     ProcessSubstitution(ProcessSubstitutionKind, SubshellCommand),
 }
 
-// TODO(source-location): complete
+impl Node for CommandPrefixOrSuffixItem {}
+
 impl SourceLocation for CommandPrefixOrSuffixItem {
     fn location(&self) -> Option<SourceSpan> {
         match self {
             Self::Word(w) => w.location(),
-            _ => None,
+            Self::IoRedirect(io_redirect) => io_redirect.location(),
+            Self::AssignmentWord(assignment, _word) => assignment.location(),
+            // TODO(source-location): account for the kind token
+            Self::ProcessSubstitution(_kind, cmd) => cmd.location(),
         }
     }
 }
@@ -1244,6 +1320,8 @@ pub struct Assignment {
     /// Location of the assignment
     pub loc: SourceSpan,
 }
+
+impl Node for Assignment {}
 
 impl SourceLocation for Assignment {
     fn location(&self) -> Option<SourceSpan> {
@@ -1300,10 +1378,19 @@ pub enum AssignmentValue {
     Array(Vec<(Option<Word>, Word)>),
 }
 
-// TODO(source-location): complete
+impl Node for AssignmentValue {}
+
 impl SourceLocation for AssignmentValue {
     fn location(&self) -> Option<SourceSpan> {
-        None
+        match self {
+            Self::Scalar(word) => word.location(),
+            Self::Array(words) => {
+                // TODO(source-location): account for the surrounding parentheses
+                let first = words.first().and_then(|(_key, value)| value.location());
+                let last = words.last().and_then(|(_key, value)| value.location());
+                maybe_location(first.as_ref(), last.as_ref())
+            }
+        }
     }
 }
 
@@ -1337,10 +1424,13 @@ impl Display for AssignmentValue {
 )]
 pub struct RedirectList(pub Vec<IoRedirect>);
 
-// TODO(source-location): complete
+impl Node for RedirectList {}
+
 impl SourceLocation for RedirectList {
     fn location(&self) -> Option<SourceSpan> {
-        None
+        let first = self.0.first().and_then(SourceLocation::location);
+        let last = self.0.last().and_then(SourceLocation::location);
+        maybe_location(first.as_ref(), last.as_ref())
     }
 }
 
@@ -1374,9 +1464,11 @@ pub enum IoRedirect {
     OutputAndError(Word, bool),
 }
 
-// TODO(source-location): complete
+impl Node for IoRedirect {}
+
 impl SourceLocation for IoRedirect {
     fn location(&self) -> Option<SourceSpan> {
+        // TODO(source-location): complete
         None
     }
 }
@@ -1398,28 +1490,12 @@ impl Display for IoRedirect {
                 }
                 write!(f, " {target}")?;
             }
-            Self::HereDocument(
-                fd_num,
-                IoHereDocument {
-                    remove_tabs,
-                    here_end,
-                    doc,
-                    ..
-                },
-            ) => {
+            Self::HereDocument(fd_num, here_doc) => {
                 if let Some(fd_num) = fd_num {
                     write!(f, "{fd_num}")?;
                 }
 
-                write!(f, "<<")?;
-                if *remove_tabs {
-                    write!(f, "-")?;
-                }
-
-                writeln!(f, "{here_end}")?;
-
-                write!(f, "{doc}")?;
-                writeln!(f, "{here_end}")?;
+                write!(f, "<<{here_doc}")?;
             }
             Self::HereString(fd_num, s) => {
                 if let Some(fd_num) = fd_num {
@@ -1532,10 +1608,26 @@ pub struct IoHereDocument {
     pub doc: Word,
 }
 
-// TODO(source-location): complete
+impl Node for IoHereDocument {}
+
 impl SourceLocation for IoHereDocument {
     fn location(&self) -> Option<SourceSpan> {
+        // TODO(source-location): complete
         None
+    }
+}
+
+impl Display for IoHereDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.remove_tabs {
+            write!(f, "-")?;
+        }
+
+        writeln!(f, "{}", self.here_end)?;
+        write!(f, "{}", self.doc)?;
+        writeln!(f, "{}", self.here_end)?;
+
+        Ok(())
     }
 }
 
@@ -1564,9 +1656,11 @@ pub enum TestExpr {
     BinaryTest(BinaryPredicate, String, String),
 }
 
-// TODO(source-location): complete
+impl Node for TestExpr {}
+
 impl SourceLocation for TestExpr {
     fn location(&self) -> Option<SourceSpan> {
+        // TODO(source-location): complete
         None
     }
 }
@@ -1646,6 +1740,8 @@ pub struct ExtendedTestExprCommand {
     /// Location of the expression
     pub loc: SourceSpan,
 }
+
+impl Node for ExtendedTestExprCommand {}
 
 impl SourceLocation for ExtendedTestExprCommand {
     fn location(&self) -> Option<SourceSpan> {
@@ -1833,6 +1929,8 @@ pub struct Word {
     pub loc: Option<SourceSpan>,
 }
 
+impl Node for Word {}
+
 impl SourceLocation for Word {
     fn location(&self) -> Option<SourceSpan> {
         self.loc.clone()
@@ -1935,9 +2033,11 @@ pub enum ArithmeticExpr {
     UnaryAssignment(UnaryAssignmentOperator, ArithmeticTarget),
 }
 
-// TODO(source-location): complete and add loc for literal
+impl Node for ArithmeticExpr {}
+
 impl SourceLocation for ArithmeticExpr {
     fn location(&self) -> Option<SourceSpan> {
+        // TODO(source-location): complete and add loc for literal
         None
     }
 }
@@ -2170,9 +2270,11 @@ pub enum ArithmeticTarget {
     ArrayElement(String, Box<ArithmeticExpr>),
 }
 
-// TODO(source-location): complete and add loc
+impl Node for ArithmeticTarget {}
+
 impl SourceLocation for ArithmeticTarget {
     fn location(&self) -> Option<SourceSpan> {
+        // TODO(source-location): complete and add loc
         None
     }
 }
@@ -2183,5 +2285,113 @@ impl Display for ArithmeticTarget {
             Self::Variable(name) => write!(f, "{name}"),
             Self::ArrayElement(name, index) => write!(f, "{name}[{index}]"),
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::{ParserOptions, SourceInfo, SourcePosition};
+    use std::io::BufReader;
+
+    fn parse(input: &str) -> Program {
+        let reader = BufReader::new(input.as_bytes());
+        let mut parser =
+            crate::Parser::new(reader, &ParserOptions::default(), &SourceInfo::default());
+        parser.parse_program().unwrap()
+    }
+
+    #[test]
+    fn program_source_loc() {
+        const INPUT: &str = r"echo hi
+echo there
+";
+
+        let loc = parse(INPUT).location().unwrap();
+
+        assert_eq!(
+            *(loc.start),
+            SourcePosition {
+                line: 1,
+                column: 1,
+                index: 0
+            }
+        );
+        assert_eq!(
+            *(loc.end),
+            SourcePosition {
+                line: 2,
+                column: 11,
+                index: 18
+            }
+        );
+    }
+
+    #[test]
+    fn function_def_loc() {
+        const INPUT: &str = r"my_func() {
+  echo hi
+  echo there
+}
+
+my_func
+";
+
+        let program = parse(INPUT);
+
+        let Command::Function(func_def) = &program.complete_commands[0].0[0].0.first.seq[0] else {
+            panic!("expected function definition");
+        };
+
+        let loc = func_def.location().unwrap();
+
+        assert_eq!(
+            *(loc.start),
+            SourcePosition {
+                line: 1,
+                column: 1,
+                index: 0
+            }
+        );
+        assert_eq!(
+            *(loc.end),
+            SourcePosition {
+                line: 4,
+                column: 2,
+                index: 36
+            }
+        );
+    }
+
+    #[test]
+    fn simple_cmd_loc() {
+        const INPUT: &str = r"var=value somecmd arg1 arg2
+";
+
+        let program = parse(INPUT);
+
+        let Command::Simple(cmd) = &program.complete_commands[0].0[0].0.first.seq[0] else {
+            panic!("expected function definition");
+        };
+
+        let loc = cmd.location().unwrap();
+
+        assert_eq!(
+            *(loc.start),
+            SourcePosition {
+                line: 1,
+                column: 1,
+                index: 0
+            }
+        );
+        assert_eq!(
+            *(loc.end),
+            SourcePosition {
+                line: 1,
+                column: 28,
+                index: 27
+            }
+        );
     }
 }
