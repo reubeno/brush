@@ -4,8 +4,7 @@ use std::borrow::Cow;
 use std::cmp::min;
 
 use brush_parser::ast;
-use brush_parser::word::ParameterTransformOp;
-use brush_parser::word::SubstringMatchKind;
+use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
 use itertools::Itertools;
 
 use crate::ExecutionParameters;

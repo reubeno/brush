@@ -168,23 +168,23 @@ pub enum ErrorKind {
 
     /// An error occurred while parsing.
     #[error("{1}: {0}")]
-    ParseError(brush_parser::ParseError, brush_parser::SourceInfo),
+    ParseError(crate::parser::ParseError, crate::SourceInfo),
 
     /// An error occurred while parsing a function body.
     #[error("{0}: {1}")]
-    FunctionParseError(String, brush_parser::ParseError),
+    FunctionParseError(String, crate::parser::ParseError),
 
     /// An error occurred while parsing a word.
     #[error(transparent)]
-    WordParseError(#[from] brush_parser::WordParseError),
+    WordParseError(#[from] crate::parser::WordParseError),
 
     /// Unable to parse a test command.
     #[error(transparent)]
-    TestCommandParseError(#[from] brush_parser::TestCommandParseError),
+    TestCommandParseError(#[from] crate::parser::TestCommandParseError),
 
     /// Unable to parse a key binding specification.
     #[error(transparent)]
-    BindingParseError(#[from] brush_parser::BindingParseError),
+    BindingParseError(#[from] crate::parser::BindingParseError),
 
     /// A threading error occurred.
     #[error("threading error")]
