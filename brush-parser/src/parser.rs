@@ -543,14 +543,15 @@ peg::parser! {
             (w:word() { ast::Word::from(w) })+
 
         pub(crate) rule case_clause() -> ast::CaseClauseCommand =
-            specific_word("case") w:word() linebreak() _in() linebreak() first_items:case_item()* last_item:case_item_ns()? specific_word("esac") {
+            start:specific_word("case") w:word() linebreak() _in() linebreak() first_items:case_item()* last_item:case_item_ns()? end:specific_word("esac") {
                 let mut cases = first_items;
 
                 if let Some(last_item) = last_item {
                     cases.push(last_item);
                 }
 
-                ast::CaseClauseCommand { value: ast::Word::from(w), cases }
+                let loc = SourceSpan::within(start.location(), end.location());
+                ast::CaseClauseCommand { value: ast::Word::from(w), cases, loc }
             }
 
         pub(crate) rule case_item_ns() -> ast::CaseItem =
