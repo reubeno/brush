@@ -84,6 +84,7 @@ impl ReedlineCompleter {
                 start: insertion_index,
                 end: insertion_index + delete_count,
             },
+            match_indices: None,
             append_whitespace,
         }
     }
