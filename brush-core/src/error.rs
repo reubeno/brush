@@ -265,6 +265,14 @@ pub enum ErrorKind {
     /// An internal error occurred.
     #[error("internal shell error: {0}")]
     InternalError(String),
+
+    /// Attempted to perform an operation that requires an interactive session.
+    #[error("operation requires an interactive session")]
+    NotInInteractiveSession,
+
+    /// Attempted to perform an operation that requires command-string mode.
+    #[error("operation requires command-string mode")]
+    NotExecutingCommandString,
 }
 
 impl BuiltinError for Error {}

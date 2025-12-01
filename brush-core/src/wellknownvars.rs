@@ -9,6 +9,8 @@ const BASH_BUILD: u32 = 1;
 const BASH_RELEASE: &str = "release";
 const BASH_MACHINE: &str = "unknown";
 
+const DEFAULT_LINENO: usize = 1;
+
 #[expect(clippy::too_many_lines)]
 pub(crate) fn initialize_vars(
     shell: &mut Shell,
@@ -115,7 +117,15 @@ pub(crate) fn initialize_vars(
 
     // TODO(vars): implement BASH_COMMAND
     // TODO(vars): implement BASH_EXECUTION_STRING
-    // TODO(vars): implement BASH_LINENO
+
+    // BASH_LINENO
+    shell.env.set_global(
+        "BASH_LINENO",
+        ShellVariable::new(ShellValue::Dynamic {
+            getter: |shell| get_bash_lineno_value(shell),
+            setter: |_| (),
+        }),
+    )?;
 
     // BASH_SOURCE
     shell.env.set_global(
@@ -289,7 +299,7 @@ pub(crate) fn initialize_vars(
     shell.env.set_global(
         "LINENO",
         ShellVariable::new(ShellValue::Dynamic {
-            getter: |shell| shell.current_line_number().to_string().into(),
+            getter: |shell| get_lineno(shell).to_string().into(),
             setter: |_| (),
         }),
     )?;
@@ -496,9 +506,9 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
         // When in a function, include both functions and sourced scripts in the stack
         stack
             .iter()
-            .filter_map(|frame| match &frame.call_target {
-                crate::callstack::CallTarget::Function(func) => Some(func.function_name.as_str()),
-                crate::callstack::CallTarget::Script(script) => {
+            .filter_map(|frame| match &frame.frame_type {
+                crate::callstack::FrameType::Function(func) => Some(func.function_name.as_str()),
+                crate::callstack::FrameType::Script(script) => {
                     // Only include sourced scripts, not run scripts
                     if matches!(script.call_type, crate::callstack::ScriptCallType::Source) {
                         Some("source")
@@ -506,6 +516,47 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
                         None
                     }
                 }
+                crate::callstack::FrameType::TrapHandler
+                | crate::callstack::FrameType::Eval
+                | crate::callstack::FrameType::CommandString
+                | crate::callstack::FrameType::InteractiveSession => None,
+            })
+            .collect::<Vec<_>>()
+            .into()
+    }
+}
+
+fn get_bash_lineno_value(shell: &Shell) -> variables::ShellValue {
+    let stack = shell.call_stack();
+
+    // BASH_LINENO[$i] contains the line number where FUNCNAME[$i] was called
+    // This is extracted from the call_site of each frame
+    if stack.iter_function_calls().next().is_none() {
+        ShellValue::Unset(variables::ShellValueUnsetType::IndexedArray)
+    } else {
+        stack
+            .iter()
+            .enumerate()
+            .filter_map(|(frame_idx, frame)| match &frame.frame_type {
+                crate::callstack::FrameType::Function(..)
+                | crate::callstack::FrameType::Script(..) => {
+                    let caller_idx = frame_idx + 1;
+                    if caller_idx < stack.depth() {
+                        let caller_frame = &stack[caller_idx];
+                        Some(
+                            caller_frame
+                                .current_line()
+                                .unwrap_or(DEFAULT_LINENO)
+                                .to_string(),
+                        )
+                    } else {
+                        None
+                    }
+                }
+                crate::callstack::FrameType::TrapHandler
+                | crate::callstack::FrameType::Eval
+                | crate::callstack::FrameType::CommandString
+                | crate::callstack::FrameType::InteractiveSession => None,
             })
             .collect::<Vec<_>>()
             .into()
@@ -525,11 +576,11 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
         // This mirrors the FUNCNAME array structure
         stack
             .iter()
-            .filter_map(|frame| match &frame.call_target {
-                crate::callstack::CallTarget::Function(func) => {
-                    Some(func.function.definition().source.clone())
+            .filter_map(|frame| match &frame.frame_type {
+                crate::callstack::FrameType::Function(func) => {
+                    Some(func.function.source().source.clone())
                 }
-                crate::callstack::CallTarget::Script(script) => {
+                crate::callstack::FrameType::Script(script) => {
                     // Only include sourced scripts (matching the "source" in FUNCNAME)
                     if matches!(script.call_type, crate::callstack::ScriptCallType::Source) {
                         Some(script.source_info.source.clone())
@@ -537,8 +588,21 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
                         None
                     }
                 }
+                crate::callstack::FrameType::TrapHandler | crate::callstack::FrameType::Eval => {
+                    None
+                }
+                crate::callstack::FrameType::CommandString
+                | crate::callstack::FrameType::InteractiveSession => None,
             })
             .collect::<Vec<_>>()
             .into()
     }
+}
+
+fn get_lineno(shell: &Shell) -> usize {
+    shell
+        .call_stack()
+        .current_frame()
+        .and_then(|frame| frame.current_line())
+        .unwrap_or(DEFAULT_LINENO)
 }

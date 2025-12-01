@@ -231,41 +231,48 @@ async fn invoke_debug_trap_handler_if_registered(
     context: &mut ExecutionContext<'_>,
     args: &[CommandArg],
 ) -> Result<(), error::Error> {
-    if context.shell.traps.handler_depth == 0 {
-        let debug_trap_handler = context
-            .shell
-            .traps
-            .handlers
-            .get(&traps::TrapSignal::Debug)
-            .cloned();
-        if let Some(debug_trap_handler) = debug_trap_handler {
-            // TODO(traps): Confirm whether trap handlers should be executed in the same process
-            // group.
-            let mut handler_params = context.params.clone();
-            handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
-
-            let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
-
-            // TODO(well-known-vars): This shouldn't *just* be set in a trap situation.
-            context.shell.env.update_or_add(
-                "BASH_COMMAND",
-                variables::ShellValueLiteral::Scalar(full_cmd),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-
-            context.shell.traps.handler_depth += 1;
-
-            // TODO(traps): Discard result?
-            let _ = context
-                .shell
-                .run_string(debug_trap_handler, &handler_params)
-                .await;
-
-            context.shell.traps.handler_depth -= 1;
-        }
+    if context.shell.call_stack().trap_handler_depth() > 0 {
+        return Ok(());
     }
+
+    let Some(debug_trap_handler) = context
+        .shell
+        .traps
+        .get_handler(traps::TrapSignal::Debug)
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    // TODO(traps): Confirm whether trap handlers should be executed in the same process
+    // group.
+    let mut handler_params = context.params.clone();
+    handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
+    let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
+
+    // TODO(well-known-vars): This shouldn't *just* be set in a trap situation.
+    context.shell.env.update_or_add(
+        "BASH_COMMAND",
+        variables::ShellValueLiteral::Scalar(full_cmd),
+        |_| Ok(()),
+        env::EnvironmentLookup::Anywhere,
+        env::EnvironmentScope::Global,
+    )?;
+
+    context.shell.enter_trap_handler(Some(&debug_trap_handler));
+
+    // TODO(traps): Discard result?
+    let _ = context
+        .shell
+        .run_string(
+            &debug_trap_handler.command,
+            &debug_trap_handler.source_info,
+            &handler_params,
+        )
+        .await;
+
+    context.shell.leave_trap_handler();
 
     Ok(())
 }
@@ -593,9 +600,8 @@ async fn run_substitution_command(
         }
     }
 
-    let source_info = brush_parser::SourceInfo {
-        source: String::from("main"),
-    };
+    // TODO(source-info): review this
+    let source_info = crate::SourceInfo::from("main");
 
     // Handle the parse result using default shell behavior.
     shell

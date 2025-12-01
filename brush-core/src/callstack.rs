@@ -1,7 +1,7 @@
 //! Call stack representations.
 
-use crate::functions;
-use std::{borrow::Cow, collections::VecDeque, fmt::Display};
+use crate::{functions, traps};
+use std::{borrow::Cow, collections::VecDeque, sync::Arc};
 
 use brush_parser::ast::SourceLocation;
 
@@ -15,7 +15,7 @@ pub struct ScriptCall {
 }
 
 impl ScriptCall {
-    /// Returns the name of the script call target.
+    /// Returns the name of the script that was called.
     pub fn name(&self) -> Cow<'_, str> {
         self.source_info.source.as_str().into()
     }
@@ -34,60 +34,92 @@ impl std::fmt::Display for ScriptCall {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.call_type {
             ScriptCallType::Source => write!(f, "source({})", self.source_info),
-            ScriptCallType::Run => write!(f, "run({})", self.source_info),
+            ScriptCallType::Run => write!(f, "script({})", self.source_info),
         }
     }
 }
 
-/// Represents the target of a call.
+/// Represents the type of a frame, indicating how it was invoked from
+/// a different source context.
 #[derive(Clone, Debug)]
-pub enum CallTarget {
-    /// A script was called.
+pub enum FrameType {
+    /// A script was called (sourced or executed).
     Script(ScriptCall),
     /// A function was called.
     Function(FunctionCall),
+    /// A trap handler was invoked.
+    TrapHandler,
+    /// A string was eval'd.
+    Eval,
+    /// A command-line string (i.e., -c) was executed.
+    CommandString,
+    /// An interactive command session was started.
+    InteractiveSession,
 }
 
-impl CallTarget {
-    /// Returns the name of the call target (i.e., script path or function name).
+impl FrameType {
+    /// Returns a name for the frame (i.e., script path or function name).
     pub fn name(&self) -> Cow<'_, str> {
         match self {
             Self::Script(call) => call.name(),
             Self::Function(call) => call.name(),
+            Self::TrapHandler => "trap".into(),
+            Self::Eval => "eval".into(),
+            Self::CommandString => "-c".into(),
+            Self::InteractiveSession => "interactive".into(),
         }
     }
 
-    /// Returns `true` if the call target is a function call.
+    /// Returns `true` if the frame is for a function call.
     pub const fn is_function(&self) -> bool {
         matches!(self, Self::Function(..))
     }
 
-    /// Returns `true` if the call target is a script call.
+    /// Returns `true` if the frame is for a script call.
     pub const fn is_script(&self) -> bool {
         matches!(self, Self::Script(..))
     }
 
-    /// Returns `true` if the call target is a sourced script.
+    /// Returns `true` if the frame is for a trap handler.
+    pub const fn is_trap_handler(&self) -> bool {
+        matches!(self, Self::TrapHandler)
+    }
+
+    /// Returns `true` if the frame is for an interactive session.
+    pub const fn is_interactive_session(&self) -> bool {
+        matches!(self, Self::InteractiveSession)
+    }
+
+    /// Returns `true` if the frame is for a command string being executed.
+    pub const fn is_command_string(&self) -> bool {
+        matches!(self, Self::CommandString)
+    }
+
+    /// Returns `true` if the frame is for a sourced script.
     pub const fn is_sourced_script(&self) -> bool {
         matches!(self, Self::Script(call) if matches!(call.call_type, ScriptCallType::Source))
     }
 
-    /// Returns `true` if the call target is a run script.
+    /// Returns `true` if the frame is for a run script.
     pub const fn is_run_script(&self) -> bool {
         matches!(self, Self::Script(call) if matches!(call.call_type, ScriptCallType::Run))
     }
 }
 
-impl std::fmt::Display for CallTarget {
+impl std::fmt::Display for FrameType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Script(call) => call.fmt(f),
             Self::Function(call) => call.fmt(f),
+            Self::TrapHandler => write!(f, "trap"),
+            Self::Eval => write!(f, "eval"),
+            Self::CommandString => write!(f, "-c"),
+            Self::InteractiveSession => write!(f, "interactive"),
         }
     }
 }
 
-/// Represents the target of a function call.
+/// Describes the target of a function call.
 #[derive(Clone, Debug)]
 pub struct FunctionCall {
     /// The name of the function invoked.
@@ -97,7 +129,7 @@ pub struct FunctionCall {
 }
 
 impl FunctionCall {
-    /// Returns the name of the script call target.
+    /// Returns the name of the function that was called.
     pub fn name(&self) -> Cow<'_, str> {
         self.function_name.as_str().into()
     }
@@ -105,67 +137,234 @@ impl FunctionCall {
 
 impl std::fmt::Display for FunctionCall {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "call({}", self.function_name)?;
+        write!(f, "func({})", self.function_name)
+    }
+}
 
-        if let Some(loc) = &self.function.definition().location() {
-            write!(f, " @ {}", loc.start)?;
+/// Represents a single frame in a `CallStack`.
+#[derive(Clone, Debug)]
+pub struct Frame {
+    /// The type of frame.
+    pub frame_type: FrameType,
+    /// The source information for the frame. The locations associated with AST nodes
+    /// executed in this frame should be interpreted as being relative to this
+    /// source info.
+    pub source_info: crate::SourceInfo,
+    /// The location of the entry point into this frame, within the frame of
+    /// reference of `source_info`. May be `None` if the entry point is not known.
+    pub entry: Option<Arc<crate::SourcePosition>>,
+    /// Information about the currently executing location. For the topmost frame on
+    /// the stack, this represents the current execution location. For older frames,
+    /// this represents the site from which a control transfer was made to the next
+    /// younger frame. May be `None` if the current location is not known. When present,
+    /// it is relative to the frame of reference of `source_info`.
+    pub current: Option<Arc<crate::SourcePosition>>,
+    /// Positional arguments (not including $0). May not be present for all frames.
+    pub args: Vec<String>,
+    /// Optionally, indicates an additional line offset within the current source context.
+    pub current_line_offset: usize,
+}
+
+impl Frame {
+    /// Returns the adjusted source info for this frame, combining the
+    /// frame's `source_info` and `current_line_offset`, if present.
+    pub fn adjusted_source_info(&self) -> crate::SourceInfo {
+        self.pos_as_source_info(None)
+    }
+
+    /// Returns the current position as a new `SourceInfo`, combining the
+    /// frame's `source_info` and `current` position.
+    pub fn current_pos_as_source_info(&self) -> crate::SourceInfo {
+        self.pos_as_source_info(self.current.as_ref())
+    }
+
+    fn pos_as_source_info(&self, pos: Option<&Arc<crate::SourcePosition>>) -> crate::SourceInfo {
+        let mut new_start = if let Some(existing_start) = &self.source_info.start {
+            if let Some(current) = pos {
+                Some(Arc::new(crate::SourcePosition {
+                    index: existing_start.index + current.index,
+                    line: existing_start.line + (current.line - 1),
+                    column: if current.line <= 1 {
+                        existing_start.column + (current.column - 1)
+                    } else {
+                        current.column
+                    },
+                }))
+            } else {
+                Some(existing_start.clone())
+            }
+        } else {
+            pos.cloned()
+        };
+
+        if self.current_line_offset > 0 {
+            new_start = if let Some(new_start) = new_start {
+                let mut pos = (*new_start).clone();
+                pos.line += self.current_line_offset;
+
+                Some(Arc::new(pos))
+            } else {
+                Some(Arc::new(crate::SourcePosition {
+                    index: 0,
+                    line: self.current_line_offset + 1,
+                    column: 1,
+                }))
+            };
         }
 
-        write!(f, ")")?;
+        crate::SourceInfo {
+            source: self.source_info.source.clone(),
+            start: new_start,
+        }
+    }
 
-        Ok(())
+    /// Returns the current line number.
+    pub fn current_line(&self) -> Option<usize> {
+        let start_line = self.source_info.start.as_ref().map_or(1, |pos| pos.line);
+        let current_line = self.current.as_ref().map(|pos| pos.line)?;
+
+        Some(start_line.saturating_sub(1) + current_line + self.current_line_offset)
+    }
+
+    /// Returns the current line number, relative to the frame's entry.
+    pub fn current_frame_relative_line(&self) -> Option<usize> {
+        let current_line = self.current.as_ref().map(|pos| pos.line)?;
+        let entry_line = self.entry.as_ref().map_or(1, |pos| pos.line);
+
+        Some(current_line.saturating_sub(entry_line) + self.current_line_offset + 1)
     }
 }
 
-/// Information about a call site.
-#[derive(Clone, Debug, Default)]
-pub struct CallSite {
-    /// Source information for the call site.
-    pub source_info: crate::SourceInfo,
+/// Options for formatting a call stack.
+#[derive(Default)]
+pub struct FormatOptions {
+    /// Whether or not to show args.
+    pub show_args: bool,
+    /// Whether or not to show frame entry points.
+    pub show_entry_points: bool,
 }
 
-impl Display for CallSite {
+/// Helper struct for formatting a call stack with custom options.
+///
+/// This struct implements `Display` and can be used to write a formatted
+/// call stack to any type that implements `io::Write`.
+pub struct FormatCallStack<'a> {
+    stack: &'a CallStack,
+    options: &'a FormatOptions,
+}
+
+impl<'a> FormatCallStack<'a> {
+    /// Creates a new formatter for the given call stack with the specified options.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack` - The call stack to format.
+    /// * `options` - The formatting options to use.
+    pub const fn new(stack: &'a CallStack, options: &'a FormatOptions) -> Self {
+        Self { stack, options }
+    }
+}
+
+impl std::fmt::Display for FormatCallStack<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.source_info.source)
+        self.stack.fmt_with_options(f, self.options)
     }
-}
-
-/// Represents a single frame in a script call stack.
-#[derive(Clone, Debug)]
-pub struct CallFrame {
-    /// The type of call that resulted in this frame.
-    pub call_target: CallTarget,
-    /// Information about the call site.
-    pub call_site: CallSite,
-    /// Positional arguments (not including the name of the target).
-    pub args: Vec<String>,
 }
 
 /// Encapsulates a script call stack.
 #[derive(Clone, Debug, Default)]
 pub struct CallStack {
-    frames: VecDeque<CallFrame>,
+    frames: VecDeque<Frame>,
     func_call_depth: usize,
     script_call_depth: usize,
+    trap_handler_depth: usize,
 }
 
-impl std::fmt::Display for CallStack {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl CallStack {
+    /// Creates a formatter for this call stack with the given options.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The formatting options to use.
+    pub const fn format<'a>(&'a self, options: &'a FormatOptions) -> FormatCallStack<'a> {
+        FormatCallStack::new(self, options)
+    }
+
+    /// Formats the call stack with the given options.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - The formatter to write to.
+    /// * `options` - The formatting options.
+    fn fmt_with_options(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        options: &FormatOptions,
+    ) -> std::fmt::Result {
         if self.is_empty() {
             return Ok(());
         }
 
-        writeln!(f, "Call stack (most recent first):")?;
+        color_print::cwriteln!(f, "<underline>Call stack (most recent first):</underline>")?;
 
         for (index, frame) in self.iter().enumerate() {
-            writeln!(
+            let si = frame.current_pos_as_source_info();
+
+            color_print::cwrite!(
                 f,
-                "  #{}| {} from {}",
-                index, frame.call_target, frame.call_site
+                "   <dim>#{index}</dim><yellow>|</yellow> <strong>{}</strong>",
+                si.source
             )?;
+
+            if let Some(pos) = &si.start {
+                color_print::cwrite!(f, ":<cyan>{}</cyan>,<cyan>{}</cyan>", pos.line, pos.column)?;
+            }
+
+            color_print::cwrite!(f, " (<dim>{}</dim>", frame.frame_type)?;
+
+            if options.show_entry_points {
+                if let Some(entry) = &frame.entry {
+                    let entry_si = frame.pos_as_source_info(Some(entry));
+                    if let Some(entry_start) = &entry_si.start {
+                        color_print::cwrite!(
+                            f,
+                            " <dim>entered at {}:{}</dim>",
+                            entry_si.source,
+                            entry_start
+                        )?;
+                    }
+                }
+            }
+
+            color_print::cwriteln!(f, ")")?;
+
+            if !frame.args.is_empty() && options.show_args {
+                for (i, arg) in frame.args.iter().enumerate() {
+                    color_print::cwriteln!(
+                        f,
+                        "     <yellow>${}</yellow>: <blue>{}</blue>",
+                        i + 1,
+                        arg
+                    )?;
+                }
+            }
         }
 
         Ok(())
+    }
+}
+
+impl std::fmt::Display for CallStack {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_with_options(f, &FormatOptions::default())
+    }
+}
+
+impl std::ops::Index<usize> for CallStack {
+    type Output = Frame;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.frames[index]
     }
 }
 
@@ -177,18 +376,60 @@ impl CallStack {
 
     /// Removes the top from from the stack. If the stack is empty, does nothing and
     /// returns `None`; otherwise, returns the removed call frame.
-    pub fn pop(&mut self) -> Option<CallFrame> {
+    pub fn pop(&mut self) -> Option<Frame> {
         let frame = self.frames.pop_front()?;
 
-        if frame.call_target.is_function() {
+        if frame.frame_type.is_function() {
             self.func_call_depth = self.func_call_depth.saturating_sub(1);
         }
 
-        if frame.call_target.is_script() {
+        if frame.frame_type.is_script() {
             self.script_call_depth = self.script_call_depth.saturating_sub(1);
         }
 
+        if frame.frame_type.is_trap_handler() {
+            self.trap_handler_depth = self.trap_handler_depth.saturating_sub(1);
+        }
+
         Some(frame)
+    }
+
+    /// Returns a reference to the current (topmost) call frame in the stack.
+    /// Returns `None` if the stack is empty.
+    pub fn current_frame(&self) -> Option<&Frame> {
+        self.frames.front()
+    }
+
+    /// Returns the position in the current (topmost) call frame in the stack,
+    /// expressed as a new `SourceInfo`. Note that this may not be identical
+    /// to that frame's `SourceInfo` since it may include an offset representing
+    /// the current execution position within that source.
+    pub fn current_pos_as_source_info(&self) -> crate::SourceInfo {
+        let Some(frame) = self.frames.front() else {
+            return crate::SourceInfo::default();
+        };
+
+        frame.current_pos_as_source_info()
+    }
+
+    /// Updates the currently executing position in the top stack frame.
+    pub fn set_current_pos(&mut self, position: Option<Arc<crate::SourcePosition>>) {
+        if let Some(frame) = self.frames.front_mut() {
+            frame.current = position;
+        }
+    }
+
+    /// Increments the current line offset in the top stack frame by the given delta.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta` - The number of lines to increment the current line offset by.
+    pub(crate) fn increment_current_line_offset(&mut self, delta: usize) {
+        let Some(frame) = self.frames.front_mut() else {
+            return;
+        };
+
+        frame.current_line_offset += delta;
     }
 
     /// Pushes a new script call frame onto the stack.
@@ -198,24 +439,78 @@ impl CallStack {
     /// * `call_type` - The type of script call (sourced or executed).
     /// * `source_info` - The source of the script.
     /// * `args` - The positional arguments for the script call.
-    /// * `call_site` - Information about the call site.
     pub fn push_script(
         &mut self,
         call_type: ScriptCallType,
         source_info: &crate::SourceInfo,
         args: impl IntoIterator<Item = String>,
-        call_site: CallSite,
     ) {
-        self.frames.push_front(CallFrame {
-            call_target: CallTarget::Script(ScriptCall {
+        self.frames.push_front(Frame {
+            frame_type: FrameType::Script(ScriptCall {
                 call_type,
                 source_info: source_info.to_owned(),
             }),
-            call_site,
             args: args.into_iter().collect(),
+            source_info: source_info.to_owned(),
+            current_line_offset: 0,
+            current: None, // TODO(source-info): fill this out
+            entry: None,   // TODO(source-info): fill this out
         });
 
         self.script_call_depth += 1;
+    }
+
+    /// Pushes a new trap handler frame onto the stack.
+    pub fn push_trap_handler(&mut self, handler: Option<&traps::TrapHandler>) {
+        let source_info =
+            handler.map_or_else(crate::SourceInfo::default, |h| h.source_info.clone());
+
+        self.frames.push_front(Frame {
+            frame_type: FrameType::TrapHandler,
+            args: vec![],
+            source_info,
+            current_line_offset: 0,
+            current: None, // TODO(source-info): fill this out
+            entry: None,   // TODO(source-info): fill this out
+        });
+
+        self.trap_handler_depth += 1;
+    }
+
+    /// Pushes a new eval frame onto the stack.
+    pub fn push_eval(&mut self) {
+        self.frames.push_front(Frame {
+            frame_type: FrameType::Eval,
+            args: vec![],
+            source_info: crate::SourceInfo::from("eval"), // TODO(source-info): fill this out
+            current_line_offset: 0,
+            current: None, // TODO(source-info): fill this out
+            entry: None,   // TODO(source-info): fill this out
+        });
+    }
+
+    /// Pushes a new command string frame onto the stack.
+    pub fn push_command_string(&mut self) {
+        self.frames.push_front(Frame {
+            frame_type: FrameType::CommandString,
+            args: vec![],
+            source_info: crate::SourceInfo::from("environment"),
+            current_line_offset: 0,
+            current: None, // TODO(source-info): fill this out
+            entry: None,   // TODO(source-info): fill this out
+        });
+    }
+
+    /// Pushes a new interactive session frame onto the stack.
+    pub fn push_interactive_session(&mut self) {
+        self.frames.push_front(Frame {
+            frame_type: FrameType::InteractiveSession,
+            args: vec![],
+            current_line_offset: 0,
+            source_info: crate::SourceInfo::from("main"),
+            current: None, // TODO(source-info): fill this out
+            entry: None,   // TODO(source-info): fill this out
+        });
     }
 
     /// Pushes a new function call frame onto the stack.
@@ -225,21 +520,22 @@ impl CallStack {
     /// * `name` - The name of the function being called.
     /// * `function` - The function being called.
     /// * `args` - The positional arguments for the function call.
-    /// * `call_site` - Information about the call site.
     pub fn push_function(
         &mut self,
         name: impl Into<String>,
         function: &functions::Registration,
         args: impl IntoIterator<Item = String>,
-        call_site: CallSite,
     ) {
-        self.frames.push_front(CallFrame {
-            call_target: CallTarget::Function(FunctionCall {
+        self.frames.push_front(Frame {
+            frame_type: FrameType::Function(FunctionCall {
                 function_name: name.into(),
                 function: function.to_owned(),
             }),
-            call_site,
             args: args.into_iter().collect(),
+            source_info: function.source().clone(),
+            entry: function.definition().location().map(|span| span.start),
+            current: None, // TODO(source-info): fill this out
+            current_line_offset: 0,
         });
 
         self.func_call_depth += 1;
@@ -248,7 +544,7 @@ impl CallStack {
     /// Iterates through the function calls on the stack.
     pub fn iter_function_calls(&self) -> impl Iterator<Item = &FunctionCall> {
         self.iter().filter_map(|frame| {
-            if let CallTarget::Function(call) = &frame.call_target {
+            if let FrameType::Function(call) = &frame.frame_type {
                 Some(call)
             } else {
                 None
@@ -259,7 +555,7 @@ impl CallStack {
     /// Iterates through the script calls on the stack.
     pub fn iter_script_calls(&self) -> impl Iterator<Item = &ScriptCall> {
         self.iter().filter_map(|frame| {
-            if let CallTarget::Script(call) = &frame.call_target {
+            if let FrameType::Script(call) = &frame.frame_type {
                 Some(call)
             } else {
                 None
@@ -284,6 +580,11 @@ impl CallStack {
         self.script_call_depth
     }
 
+    /// Returns the current depth of trap handlers in the call stack.
+    pub const fn trap_handler_depth(&self) -> usize {
+        self.trap_handler_depth
+    }
+
     /// Returns whether or not the shell is actively executing in a shell function.
     pub fn in_function(&self) -> bool {
         self.iter_function_calls().next().is_some()
@@ -301,13 +602,13 @@ impl CallStack {
 
     /// Returns an iterator over the call frames, starting from the most
     /// recent.
-    pub fn iter(&self) -> impl Iterator<Item = &CallFrame> {
+    pub fn iter(&self) -> impl Iterator<Item = &Frame> {
         self.frames.iter()
     }
 
     /// Returns a mutable iterator over the call frames, starting from the most
     /// recent.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut CallFrame> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Frame> {
         self.frames.iter_mut()
     }
 }
@@ -342,7 +643,6 @@ mod tests {
             ScriptCallType::Source,
             &SourceInfo::from(PathBuf::from("script1.sh")),
             vec![],
-            CallSite::default(),
         );
         assert!(!stack.is_empty());
         assert_eq!(stack.depth(), 1);
@@ -351,14 +651,13 @@ mod tests {
             ScriptCallType::Run,
             &SourceInfo::from(PathBuf::from("script2.sh")),
             vec![],
-            CallSite::default(),
         );
         assert_eq!(stack.depth(), 2);
 
         let frame = stack.pop().unwrap();
         assert_matches!(
-            frame.call_target,
-            CallTarget::Script(ScriptCall {
+            frame.frame_type,
+            FrameType::Script(ScriptCall {
                 call_type: ScriptCallType::Run,
                 source_info: SourceInfo {
                     source: file_path,
@@ -370,8 +669,8 @@ mod tests {
 
         let frame = stack.pop().unwrap();
         assert_matches!(
-            frame.call_target,
-            CallTarget::Script(ScriptCall {
+            frame.frame_type,
+            FrameType::Script(ScriptCall {
                 call_type: ScriptCallType::Source,
                 source_info: SourceInfo {
                     source: file_path,
@@ -398,7 +697,6 @@ mod tests {
             ScriptCallType::Run,
             &SourceInfo::from(PathBuf::from("script1.sh")),
             vec![],
-            CallSite::default(),
         );
         assert!(!stack.in_sourced_script());
 
@@ -406,7 +704,6 @@ mod tests {
             ScriptCallType::Source,
             &SourceInfo::from(PathBuf::from("script2.sh")),
             vec![],
-            CallSite::default(),
         );
         assert!(stack.in_sourced_script());
 
@@ -421,53 +718,22 @@ mod tests {
             ScriptCallType::Source,
             &SourceInfo::from(PathBuf::from("script1.sh")),
             vec![],
-            CallSite::default(),
         );
         stack.push_script(
             ScriptCallType::Run,
             &SourceInfo::from(PathBuf::from("script2.sh")),
             vec![],
-            CallSite::default(),
         );
         stack.push_script(
             ScriptCallType::Source,
             &SourceInfo::from(PathBuf::from("script3.sh")),
             vec![],
-            CallSite::default(),
         );
 
         let frames: Vec<_> = stack.iter().collect();
         assert_eq!(frames.len(), 3);
-        assert_matches!(&frames[0].call_target, CallTarget::Script(ScriptCall { source_info: SourceInfo { source: file_path, .. }, .. }) if file_path == "script3.sh");
-        assert_matches!(&frames[1].call_target, CallTarget::Script(ScriptCall { source_info: SourceInfo { source: file_path, .. }, .. }) if file_path == "script2.sh");
-        assert_matches!(&frames[2].call_target, CallTarget::Script(ScriptCall { source_info: SourceInfo { source: file_path, .. }, .. }) if file_path == "script1.sh");
-    }
-
-    #[test]
-    fn test_call_stack_display_empty() {
-        let stack = CallStack::new();
-        assert_eq!(stack.to_string(), "");
-    }
-
-    #[test]
-    fn test_call_stack_display_with_frames() {
-        let mut stack = CallStack::new();
-        stack.push_script(
-            ScriptCallType::Source,
-            &SourceInfo::from(PathBuf::from("script1.sh")),
-            vec![],
-            CallSite::default(),
-        );
-        stack.push_script(
-            ScriptCallType::Run,
-            &SourceInfo::from(PathBuf::from("script2.sh")),
-            vec![],
-            CallSite::default(),
-        );
-
-        let output = stack.to_string();
-        assert!(output.contains("Call stack (most recent first):"));
-        assert!(output.contains("#0| run(script2.sh)"));
-        assert!(output.contains("#1| source(script1.sh)"));
+        assert_matches!(&frames[0].frame_type, FrameType::Script(ScriptCall { source_info: SourceInfo { source: file_path, .. }, .. }) if file_path == "script3.sh");
+        assert_matches!(&frames[1].frame_type, FrameType::Script(ScriptCall { source_info: SourceInfo { source: file_path, .. }, .. }) if file_path == "script2.sh");
+        assert_matches!(&frames[2].frame_type, FrameType::Script(ScriptCall { source_info: SourceInfo { source: file_path, .. }, .. }) if file_path == "script1.sh");
     }
 }

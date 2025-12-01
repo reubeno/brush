@@ -356,6 +356,7 @@ dependencies = [
  "cfg-if",
  "chrono",
  "clap",
+ "color-print",
  "command-fds",
  "fancy-regex",
  "futures",

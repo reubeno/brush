@@ -2,7 +2,7 @@
 //!
 //! Run with: `cargo run --package brush-parser --example serde --features serde`
 
-use brush_parser::{Parser, ParserOptions, SourceInfo};
+use brush_parser::{Parser, ParserOptions};
 use std::io::BufReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,9 +10,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = "echo 'Hello, World!' && ls -la";
     let reader = BufReader::new(input.as_bytes());
     let options = ParserOptions::default();
-    let source_info = SourceInfo::default();
 
-    let mut parser = Parser::new(reader, &options, &source_info);
+    let mut parser = Parser::new(reader, &options);
     let program = parser.parse_program()?;
 
     // Serialize the AST to JSON

@@ -200,14 +200,18 @@ async fn run_in_shell(
 ) -> Result<u8, brush_interactive::ShellError> {
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
+        shell.shell_mut().as_mut().start_command_string_mode();
+
         // Execute the command string.
         let params = shell.shell().as_ref().default_exec_params();
-
-        shell
+        let source_info = brush_core::SourceInfo::from("-c");
+        let _ = shell
             .shell_mut()
             .as_mut()
-            .run_string(command, &params)
+            .run_string(command, &source_info, &params)
             .await?;
+
+        shell.shell_mut().as_mut().end_command_string_mode()?;
 
     // If -s was provided, then read commands from stdin. If there was a script (and optionally
     // args) passed on the command line via positional arguments, then we copy over the

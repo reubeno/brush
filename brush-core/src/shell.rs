@@ -88,9 +88,6 @@ pub struct Shell {
     /// Directory stack used by pushd et al.
     pub directory_stack: Vec<PathBuf>,
 
-    /// Current line number being processed.
-    current_line_number: u32,
-
     /// Completion configuration.
     pub completion_config: completion::Config,
 
@@ -136,7 +133,6 @@ impl Clone for Shell {
             product_display_str: self.product_display_str.clone(),
             call_stack: self.call_stack.clone(),
             directory_stack: self.directory_stack.clone(),
-            current_line_number: self.current_line_number,
             completion_config: self.completion_config.clone(),
             builtins: self.builtins.clone(),
             program_location_cache: self.program_location_cache.clone(),
@@ -374,7 +370,6 @@ impl Shell {
             product_display_str: options.shell_product_display_str,
             call_stack: callstack::CallStack::new(),
             directory_stack: vec![],
-            current_line_number: 0,
             completion_config: completion::Config::default(),
             builtins: options.builtins,
             program_location_cache: pathcache::PathCache::default(),
@@ -430,11 +425,6 @@ impl Shell {
         Ok(shell)
     }
 
-    /// Returns the current source line number being processed.
-    pub const fn current_line_number(&self) -> u32 {
-        self.current_line_number
-    }
-
     /// Returns the shell's official version string (if available).
     pub const fn version(&self) -> &Option<String> {
         &self.version
@@ -445,13 +435,29 @@ impl Shell {
         &self.call_stack
     }
 
+    /// Increments the interactive line offset in the shell by the indicated number
+    /// of lines.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta` - The number of lines to increment the current line offset by.
+    pub fn increment_interactive_line_offset(&mut self, delta: usize) {
+        self.call_stack.increment_current_line_offset(delta);
+    }
+
+    /// Updates the currently executing command in the shell.
+    pub fn set_current_cmd(&mut self, cmd: &impl brush_parser::ast::Node) {
+        self.call_stack
+            .set_current_pos(cmd.location().map(|span| span.start));
+    }
+
     /// Returns the *current* name of the shell ($0).
     /// Influenced by the current call stack.
     pub fn current_shell_name(&self) -> Option<Cow<'_, str>> {
         for frame in self.call_stack.iter() {
             // Executed scripts shadow the shell name.
-            if frame.call_target.is_run_script() {
-                return Some(frame.call_target.name());
+            if frame.frame_type.is_run_script() {
+                return Some(frame.frame_type.name());
             }
         }
 
@@ -462,12 +468,19 @@ impl Shell {
     /// Influenced by the current call stack.
     pub fn current_shell_args(&self) -> &[String] {
         for frame in self.call_stack.iter() {
-            // Sourced scripts only shadow positional parameters if they have arguments.
-            if frame.call_target.is_sourced_script() && frame.args.is_empty() {
-                continue;
+            match frame.frame_type {
+                // Function calls always shadow positional parameters.
+                callstack::FrameType::Function(..) => return &frame.args,
+                // Executed scripts always shadow positional parameters.
+                _ if frame.frame_type.is_run_script() => return &frame.args,
+                // Sourced scripts shadow positional parameters if they have arguments.
+                _ if frame.frame_type.is_sourced_script() => {
+                    if !frame.args.is_empty() {
+                        return &frame.args;
+                    }
+                }
+                _ => (),
             }
-
-            return &frame.args;
         }
 
         self.args.as_slice()
@@ -477,12 +490,19 @@ impl Shell {
     /// ($1 and beyond).
     pub fn current_shell_args_mut(&mut self) -> &mut Vec<String> {
         for frame in self.call_stack.iter_mut() {
-            // Sourced scripts only shadow positional parameters if they have arguments.
-            if frame.call_target.is_sourced_script() && frame.args.is_empty() {
-                continue;
+            match frame.frame_type {
+                // Function calls always shadow positional parameters.
+                callstack::FrameType::Function(..) => return &mut frame.args,
+                // Executed scripts always shadow positional parameters.
+                _ if frame.frame_type.is_run_script() => return &mut frame.args,
+                // Sourced scripts shadow positional parameters if they have arguments.
+                _ if frame.frame_type.is_sourced_script() => {
+                    if !frame.args.is_empty() {
+                        return &mut frame.args;
+                    }
+                }
+                _ => (),
             }
-
-            return &mut frame.args;
         }
 
         &mut self.args
@@ -594,7 +614,6 @@ impl Shell {
         let def = brush_parser::ast::FunctionDefinition {
             fname: name.clone().into(),
             body: func_body,
-            source: String::new(),
         };
 
         self.define_func(name, def, &crate::SourceInfo::default());
@@ -813,20 +832,15 @@ impl Shell {
         call_type: callstack::ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
         let mut reader = std::io::BufReader::new(file);
-        let mut parser =
-            brush_parser::Parser::new(&mut reader, &self.parser_options(), source_info);
+        let mut parser = brush_parser::Parser::new(&mut reader, &self.parser_options());
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse_program();
 
         let script_positional_args = args.map(|s| s.as_ref().to_owned());
 
-        self.call_stack.push_script(
-            call_type,
-            source_info,
-            script_positional_args,
-            callstack::CallSite::default(), // TODO(source-info): track call site info
-        );
+        self.call_stack
+            .push_script(call_type, source_info, script_positional_args);
 
         let result = self
             .run_parsed_result(parse_result, source_info, params)
@@ -883,22 +897,16 @@ impl Shell {
     /// # Arguments
     ///
     /// * `command` - The command to execute.
+    /// * `source_info` - Information about the source of the command text.
     /// * `params` - Execution parameters.
     pub async fn run_string<S: Into<String>>(
         &mut self,
         command: S,
+        source_info: &crate::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        // TODO(source-info): Actually track line numbers; this is something of a hack, assuming
-        // each time this function is invoked we are on the next line of the input. For one
-        // thing, each string we run could be multiple lines.
-        self.current_line_number += 1;
-
-        let parse_result = self.parse_string(command.into());
-        let source_info = brush_parser::SourceInfo {
-            source: String::from("main"),
-        };
-        self.run_parsed_result(parse_result, &source_info, params)
+        let parse_result = self.parse_string(command);
+        self.run_parsed_result(parse_result, source_info, params)
             .await
     }
 
@@ -997,7 +1005,7 @@ impl Shell {
     async fn invoke_exit_trap_handler_if_registered(
         &mut self,
     ) -> Result<ExecutionResult, error::Error> {
-        let Some(handler) = self.traps.handlers.get(&traps::TrapSignal::Exit).cloned() else {
+        let Some(handler) = self.traps.get_handler(traps::TrapSignal::Exit).cloned() else {
             return Ok(ExecutionResult::success());
         };
 
@@ -1006,11 +1014,14 @@ impl Shell {
         params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
         let orig_last_exit_status = self.last_exit_status;
-        self.traps.handler_depth += 1;
 
-        let result = self.run_string(handler, &params).await;
+        self.enter_trap_handler(Some(&handler));
 
-        self.traps.handler_depth -= 1;
+        let result = self
+            .run_string(&handler.command, &handler.source_info, &params)
+            .await;
+
+        self.leave_trap_handler();
         self.last_exit_status = orig_last_exit_status;
 
         result
@@ -1019,7 +1030,7 @@ impl Shell {
     pub(crate) async fn run_parsed_result(
         &mut self,
         parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
-        source_info: &brush_parser::SourceInfo,
+        source_info: &crate::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
@@ -1145,6 +1156,59 @@ impl Shell {
         self.call_stack.in_function()
     }
 
+    /// Updates the shell's internal tracking state to reflect that a new interactive
+    /// session is being started.
+    pub fn start_interactive_session(&mut self) -> Result<(), error::Error> {
+        self.call_stack.push_interactive_session();
+        Ok(())
+    }
+
+    /// Updates the shell's internal tracking state to reflect that the current
+    /// interactive session is ending.
+    pub fn end_interactive_session(&mut self) -> Result<(), error::Error> {
+        if self
+            .call_stack
+            .current_frame()
+            .is_none_or(|frame| !frame.frame_type.is_interactive_session())
+        {
+            return Err(error::ErrorKind::NotInInteractiveSession.into());
+        }
+
+        self.call_stack.pop();
+
+        Ok(())
+    }
+
+    /// Updates the shell's internal tracking state to reflect that command
+    /// string mode is being started.
+    pub fn start_command_string_mode(&mut self) {
+        self.call_stack.push_command_string();
+    }
+
+    /// Updates the shell's internal tracking state to reflect that command
+    /// string mode is ending.
+    pub fn end_command_string_mode(&mut self) -> Result<(), error::Error> {
+        if self
+            .call_stack
+            .current_frame()
+            .is_none_or(|frame| !frame.frame_type.is_command_string())
+        {
+            return Err(error::ErrorKind::NotExecutingCommandString.into());
+        }
+
+        self.call_stack.pop();
+
+        Ok(())
+    }
+
+    pub(crate) fn enter_trap_handler(&mut self, handler: Option<&traps::TrapHandler>) {
+        self.call_stack.push_trap_handler(handler);
+    }
+
+    pub(crate) fn leave_trap_handler(&mut self) {
+        self.call_stack.pop();
+    }
+
     /// Updates the shell's internal tracking state to reflect that a new shell
     /// function is being entered.
     ///
@@ -1173,12 +1237,7 @@ impl Shell {
             tracing::debug!(target: trace_categories::FUNCTIONS, "Entering func [depth={depth}]: {prefix}{name}");
         }
 
-        self.call_stack.push_function(
-            name,
-            function,
-            args,
-            callstack::CallSite::default(), // TODO(source-info): track call site info
-        );
+        self.call_stack.push_function(name, function, args);
         self.env.push_scope(env::EnvironmentScope::Local);
 
         Ok(())
@@ -1190,7 +1249,7 @@ impl Shell {
         self.env.pop_scope(env::EnvironmentScope::Local)?;
 
         if let Some(exited_call) = self.call_stack.pop() {
-            if let callstack::CallTarget::Function(func_call) = exited_call.call_target {
+            if let callstack::FrameType::Function(func_call) = exited_call.frame_type {
                 if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
                     let depth = self.call_stack.function_call_depth();
                     let prefix = repeated_char_str(' ', depth);
@@ -1747,11 +1806,7 @@ fn create_parser<R: Read>(
     parser_options: &brush_parser::ParserOptions,
 ) -> brush_parser::Parser<std::io::BufReader<R>> {
     let reader = std::io::BufReader::new(r);
-    let source_info = brush_parser::SourceInfo {
-        source: String::from("main"),
-    };
-
-    brush_parser::Parser::new(reader, parser_options, &source_info)
+    brush_parser::Parser::new(reader, parser_options)
 }
 
 fn repeated_char_str(c: char, count: usize) -> String {
