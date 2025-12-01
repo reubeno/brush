@@ -1,5 +1,10 @@
 name: "Extended tests"
 cases:
+  - name: "Extended test with redirect"
+    stdin: |
+      [[ $(echo hello >&2) ]] 2>/dev/null
+      echo "Result: $?"
+
   - name: "File extended tests"
     stdin: |
       [[ -a /tmp ]] && echo "-a correctly checked /tmp"

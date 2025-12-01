@@ -305,7 +305,7 @@ peg::parser! {
             c:simple_command() { ast::Command::Simple(c) } /
             c:compound_command() r:redirect_list()? { ast::Command::Compound(c, r) } /
             // N.B. Extended test commands are bash extensions.
-            non_posix_extensions_enabled() c:extended_test_command() { ast::Command::ExtendedTest(c) } /
+            non_posix_extensions_enabled() c:extended_test_command() r:redirect_list()? { ast::Command::ExtendedTest(c, r) } /
             expected!("command")
 
         // N.B. The arithmetic command is a non-sh extension.
@@ -978,7 +978,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
         }
         ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
         ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
-        ast::Command::ExtendedTest(_) => return Err("|& unimplemented for extended tests"),
+        ast::Command::ExtendedTest(..) => return Err("|& unimplemented for extended tests"),
     }
 
     Ok(())
