@@ -373,7 +373,7 @@ async fn spawn_pipeline_processes(
 ) -> Result<VecDeque<ExecutionSpawnResult>, error::Error> {
     let pipeline_len = pipeline.seq.len();
     let mut pipe_readers = vec![];
-    let mut pipe_writers: Vec<OpenFile> = vec![];
+    let mut pipe_writers = vec![];
     let mut spawn_results = VecDeque::new();
     let mut process_group_id: Option<i32> = None;
 
@@ -381,11 +381,12 @@ async fn spawn_pipeline_processes(
     if pipeline_len > 1 {
         for _ in 0..(pipeline_len - 1) {
             let (reader, writer) = std::io::pipe()?;
-            pipe_readers.push(reader.into());
-            pipe_writers.push(writer.into());
+            pipe_readers.push(Some(reader.into()));
+            pipe_writers.push(Some(writer.into()));
         }
-        // Push a null reader; it will be popped off by the *first* command.
-        pipe_readers.push(openfiles::null()?);
+        // Push `None` to the readers; it will be popped off by the *first* command, which will
+        // mean that command gets its stdin from the execution parameters' current stdin.
+        pipe_readers.push(None);
     }
 
     for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
@@ -406,10 +407,10 @@ async fn spawn_pipeline_processes(
         let mut cmd_params = params.clone();
 
         // Install pipes.
-        if let Some(reader) = pipe_readers.pop() {
+        if let Some(Some(reader)) = pipe_readers.pop() {
             cmd_params.open_files.set_fd(OpenFiles::STDIN_FD, reader);
         }
-        if let Some(writer) = pipe_writers.pop() {
+        if let Some(Some(writer)) = pipe_writers.pop() {
             cmd_params.open_files.set_fd(OpenFiles::STDOUT_FD, writer);
         }
 
@@ -1073,17 +1074,10 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
-                    // DBG:RRO
                     let _ = parent_shell.display_error(&mut stderr, &err).await;
 
-                    // FIXME: This doesn't use shell context for error conversion, which may
-                    // lose information about control flow (e.g., fatal errors). The proper
-                    // approach would be:
-                    //   let result = err.into_result(&context.shell);
-                    //   Ok(result.into())
-                    // However, context is moved into execute_command, so we can't access it here.
-                    let exit_code: ExecutionExitCode = ExecutionExitCode::from(&err);
-                    Ok(ExecutionResult::from(exit_code).into())
+                    let result = err.into_result(parent_shell);
+                    Ok(result.into())
                 }
             }
         } else {
