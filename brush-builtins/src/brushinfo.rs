@@ -162,7 +162,6 @@ impl CallCommand {
                 let format_options = brush_core::callstack::FormatOptions {
                     show_args: *detailed,
                     show_entry_points: *detailed,
-                    colorize: true,
                 };
 
                 write!(context.stdout(), "{}", stack.format(&format_options))?;

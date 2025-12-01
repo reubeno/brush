@@ -231,7 +231,7 @@ impl Frame {
         let current_line = self.current.as_ref().map(|pos| pos.line)?;
         let entry_line = self.entry.as_ref().map_or(1, |pos| pos.line);
 
-        Some(current_line + self.current_line_offset - entry_line + 1)
+        Some(current_line.saturating_sub(entry_line) + self.current_line_offset + 1)
     }
 }
 
@@ -242,8 +242,6 @@ pub struct FormatOptions {
     pub show_args: bool,
     /// Whether or not to show frame entry points.
     pub show_entry_points: bool,
-    /// Whether or not to colorize the output.
-    pub colorize: bool,
 }
 
 /// Helper struct for formatting a call stack with custom options.

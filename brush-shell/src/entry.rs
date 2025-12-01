@@ -205,11 +205,13 @@ async fn run_in_shell(
         // Execute the command string.
         let params = shell.shell().as_ref().default_exec_params();
         let source_info = brush_core::SourceInfo::from("-c");
-        shell
+        let _ = shell
             .shell_mut()
             .as_mut()
             .run_string(command, &source_info, &params)
             .await?;
+
+        shell.shell_mut().as_mut().end_command_string_mode()?;
 
     // If -s was provided, then read commands from stdin. If there was a script (and optionally
     // args) passed on the command line via positional arguments, then we copy over the
