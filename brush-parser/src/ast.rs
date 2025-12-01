@@ -375,7 +375,7 @@ pub enum Command {
     /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
     /// A command that evaluates an extended test expression.
-    ExtendedTest(ExtendedTestExprCommand),
+    ExtendedTest(ExtendedTestExprCommand, Option<RedirectList>),
 }
 
 impl Node for Command {}
@@ -391,7 +391,7 @@ impl SourceLocation for Command {
                 }
             }
             Self::Function(f) => f.location(),
-            Self::ExtendedTest(e) => e.location(),
+            Self::ExtendedTest(e, _) => e.location(),
         }
     }
 }
@@ -408,8 +408,12 @@ impl Display for Command {
                 Ok(())
             }
             Self::Function(function_definition) => write!(f, "{function_definition}"),
-            Self::ExtendedTest(extended_test_expr) => {
-                write!(f, "[[ {extended_test_expr} ]]")
+            Self::ExtendedTest(extended_test_expr, redirect_list) => {
+                write!(f, "[[ {extended_test_expr} ]]")?;
+                if let Some(redirect_list) = redirect_list {
+                    write!(f, "{redirect_list}")?;
+                }
+                Ok(())
             }
         }
     }
