@@ -1,5 +1,8 @@
 //! Encapsulation of execution results.
 
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt;
+
 use crate::{error, processes};
 
 /// Represents the result of executing a command or similar item.
@@ -93,6 +96,34 @@ impl From<ExecutionExitCode> for ExecutionResult {
             next_control_flow: ExecutionControlFlow::Normal,
             exit_code,
         }
+    }
+}
+
+impl From<ExecutionWaitResult> for ExecutionResult {
+    fn from(wait_result: ExecutionWaitResult) -> Self {
+        match wait_result {
+            ExecutionWaitResult::Completed(result) => result,
+            // TODO(jobs): We need to job-manage the stopped process.
+            ExecutionWaitResult::Stopped(..) => Self::stopped(),
+        }
+    }
+}
+
+impl From<std::process::Output> for ExecutionResult {
+    fn from(output: std::process::Output) -> Self {
+        if let Some(code) = output.status.code() {
+            #[expect(clippy::cast_sign_loss)]
+            return Self::new((code & 0xFF) as u8);
+        }
+
+        #[cfg(unix)]
+        if let Some(signal) = output.status.signal() {
+            #[expect(clippy::cast_sign_loss)]
+            return Self::new((signal & 0xFF) as u8 + 128);
+        }
+
+        tracing::error!("unhandled process exit");
+        Self::new(127)
     }
 }
 
@@ -212,6 +243,8 @@ pub enum ExecutionSpawnResult {
     Completed(ExecutionResult),
     /// Indicates that a process was started and had not yet completed.
     StartedProcess(processes::ChildProcess),
+    /// Indicates that a task was started to handle the execution asynchronously.
+    StartedTask(tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>),
 }
 
 impl From<ExecutionResult> for ExecutionSpawnResult {
@@ -222,32 +255,40 @@ impl From<ExecutionResult> for ExecutionSpawnResult {
 
 impl ExecutionSpawnResult {
     /// Waits for the command to complete.
-    ///
-    /// # Arguments
-    ///
-    /// * `no_wait` - If true, do not wait for the command to complete; return immediately.
-    pub async fn wait(self, no_wait: bool) -> Result<ExecutionWaitResult, error::Error> {
-        match self {
+    pub async fn wait(self) -> Result<ExecutionWaitResult, error::Error> {
+        let result = match self {
             Self::StartedProcess(mut child) => {
-                let process_wait_result = if !no_wait {
-                    // Wait for the process to exit or for a relevant signal, whichever happens
-                    // first.
-                    child.wait().await?
-                } else {
-                    processes::ProcessWaitResult::Stopped
-                };
-
-                let wait_result = match process_wait_result {
+                // Wait for the process to exit or for a relevant signal, whichever happens
+                // first.
+                match child.wait().await? {
                     processes::ProcessWaitResult::Completed(output) => {
                         ExecutionWaitResult::Completed(ExecutionResult::from(output))
                     }
                     processes::ProcessWaitResult::Stopped => ExecutionWaitResult::Stopped(child),
-                };
-
-                Ok(wait_result)
+                }
             }
-            Self::Completed(result) => Ok(ExecutionWaitResult::Completed(result)),
-        }
+            Self::Completed(result) => ExecutionWaitResult::Completed(result),
+            Self::StartedTask(join_handle) => {
+                let result = join_handle.await?;
+                ExecutionWaitResult::Completed(result?)
+            }
+        };
+
+        Ok(result)
+    }
+
+    pub(crate) async fn poll(self) -> Result<ExecutionWaitResult, error::Error> {
+        let result = match self {
+            Self::StartedProcess(child) => ExecutionWaitResult::Stopped(child),
+            Self::Completed(result) => ExecutionWaitResult::Completed(result),
+            Self::StartedTask(join_handle) => {
+                // TODO(jobs): This isn't right.
+                let result = join_handle.await?;
+                ExecutionWaitResult::Completed(result?)
+            }
+        };
+
+        Ok(result)
     }
 }
 

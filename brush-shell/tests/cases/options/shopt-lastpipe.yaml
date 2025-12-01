@@ -2,10 +2,10 @@ name: "shopt lastpipe"
 cases:
   - name: "shopt -s lastpipe"
     stdin: |
-      echo ignored | var=value
+      echo ignored | read var
       echo "1. var='${var}'"
 
       shopt -s lastpipe
       set +o monitor
-      echo ignored | var=value
+      echo ignored | read var
       echo "2. var='${var}'"

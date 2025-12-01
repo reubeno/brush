@@ -49,3 +49,8 @@ cases:
       echo -e "hello" |& wc -l
       cat dfdfgdfgdf |& wc -l
       foo() { cat dfgdfg; } |& wc -l
+
+  - name: "Possible broken pipe case"
+    skip: true # TODO(pipeline): look into suppressing error?
+    stdin: |
+      echo hello | var=value
