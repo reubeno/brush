@@ -12,7 +12,10 @@ common_test_files:
 
           echo "${prefix}  LINENO: ${LINENO}"
           echo "${prefix}  FUNCNAME[@]: ${FUNCNAME[*]}"
-          echo "${prefix}  BASH_SOURCE[@]: ${BASH_SOURCE[*]}"
+
+          # Normalize shell name to make sure it matches.
+          # TODO: Once all tests are run on 5.3, this will need to be revisited.
+          echo "${prefix}  BASH_SOURCE[@]: ${BASH_SOURCE[*]}" | sed -e "s|$0|main|g" | sed -e "s/environment/main/g"
 
           # TODO(BASH_LINENO): implement correct BASH_LINENO tracking
           # echo "${prefix}  BASH_LINENO[@]: ${BASH_LINENO[*]}"

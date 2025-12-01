@@ -906,12 +906,8 @@ impl Shell {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let parse_result = self.parse_string(command);
-
-        let run_result = self
-            .run_parsed_result(parse_result, source_info, params)
-            .await;
-
-        run_result
+        self.run_parsed_result(parse_result, source_info, params)
+            .await
     }
 
     /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
