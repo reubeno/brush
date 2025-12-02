@@ -19,7 +19,6 @@ default = [
     'builtin.bg',
     'builtin.bind',
     'builtin.break',
-    'builtin.brushinfo',
     'builtin.builtin',
     'builtin.cd',
     'builtin.colon',
@@ -74,7 +73,6 @@ default = [
 'builtin.bg' = []
 'builtin.bind' = []
 'builtin.break' = []
-'builtin.brushinfo' = []
 'builtin.builtin' = []
 'builtin.cd' = []
 'builtin.colon' = []

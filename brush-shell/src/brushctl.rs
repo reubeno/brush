@@ -1,11 +1,18 @@
+use brush_core::{ExecutionResult, sys};
 use clap::{Parser, Subcommand};
 use std::io::Write;
 
 use crate::events;
 
 pub(crate) fn register(shell: &mut brush_core::Shell) {
+    // For compatibility with previous releases, we register the command under both
+    // `brushctl` and `brushinfo` names. It will behave identically across the two.
     shell.register_builtin(
         "brushctl",
+        brush_core::builtins::builtin::<BrushCtlCommand>(),
+    );
+    shell.register_builtin(
+        "brushinfo",
         brush_core::builtins::builtin::<BrushCtlCommand>(),
     );
 }
@@ -20,7 +27,40 @@ struct BrushCtlCommand {
 #[derive(Subcommand)]
 enum CommandGroup {
     #[clap(subcommand)]
+    Complete(CompleteCommand),
+    #[clap(subcommand)]
+    Call(CallCommand),
+    #[clap(subcommand)]
     Events(EventsCommand),
+    #[clap(subcommand)]
+    Process(ProcessCommand),
+}
+
+/// Commands for inspecting call state.
+#[derive(Subcommand)]
+enum CallCommand {
+    /// Display the current call stack.
+    #[clap(name = "stack")]
+    ShowCallStack {
+        /// Whether to show more details.
+        #[clap(short = 'd', long = "detailed")]
+        detailed: bool,
+    },
+}
+
+/// Commands for generating completions.
+#[derive(Subcommand)]
+enum CompleteCommand {
+    /// Generate completions for an input line.
+    #[clap(name = "line")]
+    Line {
+        /// The 0-indexed cursor position for generation.
+        #[arg(long = "cursor", short = 'c')]
+        cursor_index: Option<usize>,
+
+        /// The input line to generate completions for.
+        line: String,
+    },
 }
 
 /// Commands for configuring tracing events.
@@ -42,15 +82,77 @@ enum EventsCommand {
     },
 }
 
+/// Commands for inspecting process state.
+#[expect(clippy::enum_variant_names)]
+#[derive(Subcommand)]
+enum ProcessCommand {
+    /// Display process ID.
+    #[clap(name = "pid")]
+    ShowProcessId,
+    /// Display process group ID.
+    #[clap(name = "pgid")]
+    ShowProcessGroupId,
+    /// Display foreground process ID.
+    #[clap(name = "fgpid")]
+    ShowForegroundProcessId,
+    /// Display parent process ID.
+    #[clap(name = "ppid")]
+    ShowParentProcessId,
+}
+
 impl brush_core::builtins::Command for BrushCtlCommand {
     type Error = brush_core::Error;
 
     async fn execute(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        match self.command_group {
-            CommandGroup::Events(ref events) => events.execute(&context),
+        match &self.command_group {
+            CommandGroup::Call(call) => call.execute(&context),
+            CommandGroup::Complete(complete) => complete.execute(&mut context).await,
+            CommandGroup::Events(events) => events.execute(&context),
+            CommandGroup::Process(process) => process.execute(&context),
+        }
+    }
+}
+
+impl CallCommand {
+    fn execute(
+        &self,
+        context: &brush_core::ExecutionContext<'_>,
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        match self {
+            Self::ShowCallStack { detailed } => {
+                let stack = context.shell.call_stack();
+                let format_options = brush_core::callstack::FormatOptions {
+                    show_args: *detailed,
+                    show_entry_points: *detailed,
+                };
+
+                write!(context.stdout(), "{}", stack.format(&format_options))?;
+
+                Ok(ExecutionResult::success())
+            }
+        }
+    }
+}
+
+impl CompleteCommand {
+    async fn execute(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_>,
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        match self {
+            Self::Line { cursor_index, line } => {
+                let completions = context
+                    .shell
+                    .complete(line, cursor_index.unwrap_or(line.len()))
+                    .await?;
+                for candidate in completions.candidates {
+                    writeln!(context.stdout(), "{candidate}")?;
+                }
+                Ok(ExecutionResult::success())
+            }
         }
     }
 }
@@ -83,6 +185,47 @@ impl EventsCommand {
             Ok(brush_core::ExecutionResult::success())
         } else {
             Err(brush_core::ErrorKind::Unimplemented("event configuration not initialized").into())
+        }
+    }
+}
+
+impl ProcessCommand {
+    fn execute(
+        &self,
+        context: &brush_core::ExecutionContext<'_>,
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        match self {
+            Self::ShowProcessId => {
+                writeln!(context.stdout(), "{}", std::process::id())?;
+                Ok(ExecutionResult::success())
+            }
+            Self::ShowProcessGroupId => {
+                if let Some(pgid) = sys::terminal::get_process_group_id() {
+                    writeln!(context.stdout(), "{pgid}")?;
+                    Ok(ExecutionResult::success())
+                } else {
+                    writeln!(context.stderr(), "failed to get process group ID")?;
+                    Ok(ExecutionResult::general_error())
+                }
+            }
+            Self::ShowForegroundProcessId => {
+                if let Some(pid) = sys::terminal::get_foreground_pid() {
+                    writeln!(context.stdout(), "{pid}")?;
+                    Ok(ExecutionResult::success())
+                } else {
+                    writeln!(context.stderr(), "failed to get foreground process ID")?;
+                    Ok(ExecutionResult::general_error())
+                }
+            }
+            Self::ShowParentProcessId => {
+                if let Some(pid) = sys::terminal::get_parent_process_id() {
+                    writeln!(context.stdout(), "{pid}")?;
+                    Ok(ExecutionResult::success())
+                } else {
+                    writeln!(context.stderr(), "failed to get parent process ID")?;
+                    Ok(ExecutionResult::general_error())
+                }
+            }
         }
     }
 }
