@@ -509,10 +509,10 @@ impl builtins::Command for CompGenCommand {
             preceding_token: None,
             command_name: None,
             token_index: 0,
-            tokens: &[&brush_parser::Token::Word(
-                token_to_complete.to_owned(),
-                brush_parser::SourceSpan::default(),
-            )],
+            tokens: &[&completion::CompletionToken {
+                text: token_to_complete,
+                start: 0,
+            }],
             input_line: token_to_complete,
             cursor_index: token_to_complete.len(),
         };
