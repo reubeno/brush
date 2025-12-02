@@ -20,6 +20,7 @@ default = [
     'builtin.bind',
     'builtin.break',
     'builtin.builtin',
+    'builtin.caller',
     'builtin.cd',
     'builtin.colon',
     'builtin.command',
@@ -74,6 +75,7 @@ default = [
 'builtin.bind' = []
 'builtin.break' = []
 'builtin.builtin' = []
+'builtin.caller' = []
 'builtin.cd' = []
 'builtin.colon' = []
 'builtin.command' = []

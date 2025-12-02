@@ -183,8 +183,8 @@ pub fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registrati
         #[cfg(feature = "builtin.history")]
         m.insert("history".into(), builtin::<history::HistoryCommand>());
 
-        // TODO(caller): implement caller builtin
-        m.insert("caller".into(), builtin::<unimp::UnimplementedCommand>());
+        #[cfg(feature = "builtin.caller")]
+        m.insert("caller".into(), builtin::<caller::CallerCommand>());
 
         // TODO(disown): implement disown builtin
         m.insert("disown".into(), builtin::<unimp::UnimplementedCommand>());

@@ -1,7 +1,6 @@
 name: "caller builtin"
 cases:
   - name: "caller in function"
-    known_failure: true # TODO(caller): implement caller builtin
     test_files:
       - path: script.sh
         contents: |
@@ -24,7 +23,7 @@ cases:
       outer
 
   - name: "caller no args"
-    known_failure: true # TODO(caller): implement caller builtin
+    known_failure: true # TODO(caller): needs investigation
     test_files:
       - path: script.sh
         contents: |
@@ -36,19 +35,33 @@ cases:
       source script.sh
       myfunc
 
+  - name: "caller no args (nested)"
+    test_files:
+      - path: script.sh
+        contents: |
+          function myfunc() {
+              echo "In myfunc"
+              caller
+          }
+
+          function myouterfunc() {
+              echo "In myouterfunc"
+              myfunc
+          }
+    stdin: |
+      source script.sh
+      myouterfunc
+
   - name: "caller invalid expr"
-    known_failure: true # TODO(caller): implement caller builtin
     ignore_stderr: true # Different error messages
     stdin: |
       f() { caller x; }
       f
 
   - name: "caller out of range"
-    known_failure: true # TODO(caller): implement caller builtin
     stdin: |
       caller 100
 
   - name: "caller not in function"
-    known_failure: true # TODO(caller): implement caller builtin
     stdin: |
       caller

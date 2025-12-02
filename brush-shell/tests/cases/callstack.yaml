@@ -7,8 +7,9 @@ common_test_files:
       dump_source_info() {
           local prefix="${1:-}"
 
-          # TODO(caller): implement caller builtin
-          # echo "${prefix}  caller: $(caller 2>&1 || echo '<failed>')"
+          # Normalize shell name to make sure it matches.
+          # TODO: Once all tests are run on 5.3, this will need to be revisited.
+          echo "${prefix}  caller: $(caller 2>&1 || echo '<failed>')" | sed -e "s|$0|main|g" | sed -e "s/environment/main/g"
 
           echo "${prefix}  LINENO: ${LINENO}"
           echo "${prefix}  FUNCNAME[@]: ${FUNCNAME[*]}"
@@ -27,7 +28,10 @@ common_test_files:
           local frame="${2:-0}"
           
           echo "${prefix}[Frame $frame]"
-          echo "${prefix}  caller N: $(caller $frame 2>&1 || echo '<failed>')"
+
+          # Normalize shell name to make sure it matches.
+          # TODO: Once all tests are run on 5.3, this will need to be revisited.
+          echo "${prefix}  caller N: $(caller $frame 2>&1 || echo '<failed>')" | sed -e "s|$0|main|g" | sed -e "s/environment/main/g"
       }
 
       # Helper to dump all stack info
@@ -36,15 +40,14 @@ common_test_files:
 
           dump_source_info "$prefix"
 
-          # TODO(caller): implement caller builtin          
-          # local max_frames="${2:-20}"
-          # local i
-          # for ((i=0; i<max_frames; i++)); do
-          #     if ! caller $i >/dev/null 2>&1; then
-          #         break
-          #     fi
-          #     dump_frame "$prefix" $i
-          # done
+          local max_frames="${2:-20}"
+          local i
+          for ((i=0; i<max_frames; i++)); do
+              if ! caller $i >/dev/null 2>&1; then
+                  break
+              fi
+              dump_frame "$prefix" $i
+          done
       }
 
 cases:
