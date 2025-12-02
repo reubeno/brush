@@ -220,7 +220,7 @@ pub struct Context<'a> {
     /// The 0-based index of the cursor in the input line.
     pub cursor_index: usize,
     /// The tokens in the input line.
-    pub tokens: &'a [&'a brush_parser::Token],
+    pub tokens: &'a [&'a CompletionToken<'a>],
 }
 
 impl Spec {
@@ -648,7 +648,7 @@ impl Spec {
                 context
                     .tokens
                     .iter()
-                    .map(|t| t.to_str())
+                    .map(|t| t.text)
                     .collect::<Vec<_>>()
                     .into(),
             ),
@@ -758,6 +758,27 @@ pub struct ProcessingOptions {
     pub no_autoquote_filenames: bool,
     /// Don't append a trailing space to completions at the end of the input line.
     pub no_trailing_space_at_end_of_line: bool,
+}
+
+/// Represents a token in the input line being completed.
+#[derive(Debug, Clone, Copy)]
+pub struct CompletionToken<'a> {
+    /// The text of the token.
+    pub text: &'a str,
+    /// The start of the token, expressed as a byte offset into the input line.
+    pub start: usize,
+}
+
+impl CompletionToken<'_> {
+    /// Returns the length of the token, expressed as a byte count.
+    pub const fn length(&self) -> usize {
+        self.text.len()
+    }
+
+    /// Returns the end of the token, expressed as a byte offset into the input line.
+    pub const fn end(&self) -> usize {
+        self.start + self.length()
+    }
 }
 
 impl Default for ProcessingOptions {
@@ -921,14 +942,14 @@ impl Config {
 
         // Copy a set of references to the tokens; we will adjust this list as
         // we find we need to insert an empty token.
-        let mut adjusted_tokens: Vec<&brush_parser::Token> = tokens.iter().collect();
+        let mut adjusted_tokens: Vec<&CompletionToken<'_>> = tokens.iter().collect();
 
         // Try to find which token we are in.
         for (i, token) in tokens.iter().enumerate() {
             // If the cursor is before the start of the token, then it's between
             // this token and the one that preceded it (or it's before the first
             // token if this is the first token).
-            if cursor < token.location().start.index {
+            if cursor < token.start {
                 // TODO(completions): Should insert an empty token here; the position looks to have
                 // been between this token and the preceding one.
                 completion_token_index = i;
@@ -939,14 +960,13 @@ impl Config {
             // to generate completions to replace/update this token. We'll pay
             // attention to the position to figure out the prefix that we should
             // be completing.
-            else if cursor >= token.location().start.index && cursor <= token.location().end.index
-            {
+            else if cursor >= token.start && cursor <= token.end() {
                 // Update insertion index.
-                insertion_index = token.location().start.index;
+                insertion_index = token.start;
 
                 // Update prefix.
                 let offset_into_token = cursor - insertion_index;
-                let token_str = token.to_str();
+                let token_str = token.text;
                 completion_prefix = &token_str[..offset_into_token];
 
                 // Update token index.
@@ -962,8 +982,10 @@ impl Config {
 
         // If the position is after the last token, then we need to insert an empty
         // token for the new token to be generated.
-        let empty_token =
-            brush_parser::Token::Word(String::new(), brush_parser::SourceSpan::default());
+        let empty_token = CompletionToken {
+            text: "",
+            start: input.len(),
+        };
         if completion_token_index == tokens.len() {
             adjusted_tokens.push(&empty_token);
         }
@@ -979,8 +1001,8 @@ impl Config {
 
             let completion_context = Context {
                 token_to_complete: completion_prefix,
-                preceding_token: preceding_token.map(|t| t.to_str()),
-                command_name: adjusted_tokens.first().map(|token| token.to_str()),
+                preceding_token: preceding_token.map(|t| t.text),
+                command_name: adjusted_tokens.first().map(|token| token.text),
                 input_line: input,
                 token_index: completion_token_index,
                 tokens: adjusted_tokens.as_slice(),
@@ -1010,7 +1032,10 @@ impl Config {
         }
     }
 
-    fn tokenize_input_for_completion(shell: &Shell, input: &str) -> Vec<brush_parser::Token> {
+    fn tokenize_input_for_completion<'a>(
+        shell: &Shell,
+        input: &'a str,
+    ) -> Vec<CompletionToken<'a>> {
         const FALLBACK: &str = " \t\n\"\'@><=;|&(:";
 
         let delimiter_str = shell
@@ -1179,38 +1204,71 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
     Answer::Candidates(candidates, ProcessingOptions::default())
 }
 
-fn simple_tokenize_by_delimiters(input: &str, delimiters: &[char]) -> Vec<brush_parser::Token> {
-    //
-    // This is an overly naive tokenization.
-    //
-
+/// Tokenizes input by splitting on delimiter characters. Words (non-delimiter sequences)
+/// are emitted as tokens. Consecutive non-whitespace delimiters are grouped into a single
+/// token. Whitespace delimiters separate tokens but are not emitted themselves.
+#[allow(clippy::string_slice, reason = "used indices come from char_indices")]
+fn simple_tokenize_by_delimiters<'a>(
+    input: &'a str,
+    delimiters: &[char],
+) -> Vec<CompletionToken<'a>> {
     let mut tokens = vec![];
-    let mut start = 0;
+    let mut word_start = None;
+    let mut word_is_delimiters = false;
 
-    for piece in input.split_inclusive(delimiters) {
-        let next_start = start + piece.len();
-
-        let piece = piece.strip_suffix(delimiters).unwrap_or(piece);
-        let end = start + piece.len();
-        tokens.push(brush_parser::Token::Word(
-            piece.to_string(),
-            brush_parser::SourceSpan {
-                start: brush_parser::SourcePosition {
-                    index: start,
-                    line: 1,
-                    column: start + 1,
+    for (i, c) in input.char_indices() {
+        if delimiters.contains(&c) {
+            // If we were building a regular word and this is a delimiter, then finish it.
+            // Similarly, if this is a whitespace delimiter, finish any delimiter sequence.
+            if let Some(start) = word_start {
+                if !word_is_delimiters || c.is_ascii_whitespace() {
+                    tokens.push(CompletionToken {
+                        text: &input[start..i],
+                        start,
+                    });
+                    word_start = None;
+                    word_is_delimiters = false;
                 }
-                .into(),
-                end: brush_parser::SourcePosition {
-                    index: end,
-                    line: 1,
-                    column: end + 1,
-                }
-                .into(),
-            },
-        ));
 
-        start = next_start;
+                if !c.is_ascii_whitespace() {
+                    if word_start.is_none() {
+                        word_start = Some(i);
+                        word_is_delimiters = true;
+                    }
+                }
+            } else if !c.is_ascii_whitespace() {
+                // Non-whitespace delimiter: start or continue delimiter sequence
+                if word_start.is_none() {
+                    word_start = Some(i);
+                    word_is_delimiters = true;
+                }
+            }
+        } else {
+            // Regular character (not a delimiter). Finish any delimiter sequence.
+            if word_is_delimiters {
+                if let Some(start) = word_start {
+                    tokens.push(CompletionToken {
+                        text: &input[start..i],
+                        start,
+                    });
+                    word_start = None;
+                    word_is_delimiters = false;
+                }
+            }
+
+            // Start or continue a word
+            if word_start.is_none() {
+                word_start = Some(i);
+            }
+        }
+    }
+
+    // Add any remaining delimiter sequence
+    if let Some(start) = word_start {
+        tokens.push(CompletionToken {
+            text: &input[start..],
+            start,
+        });
     }
 
     tokens
@@ -1258,4 +1316,118 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
     }
 
     result.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_matches;
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn completion_tokenization() {
+        assert_matches!(
+            simple_tokenize_by_delimiters("one two", &[' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "two",
+                    start: 4,
+                }
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one \t two", &[' ', '\t']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "two",
+                    start: 6,
+                }
+            ]
+        );
+
+        assert_matches!(simple_tokenize_by_delimiters("    ", &[' ']).as_slice(), []);
+
+        assert_matches!(
+            simple_tokenize_by_delimiters(":", &[':']).as_slice(),
+            [CompletionToken {
+                text: ":",
+                start: 0,
+            }]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("a:::b", &[':', ' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "a",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: ":::",
+                    start: 1,
+                },
+                CompletionToken {
+                    text: "b",
+                    start: 4,
+                }
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("a: : :b", &[':', ' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "a",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: ":",
+                    start: 1,
+                },
+                CompletionToken {
+                    text: ":",
+                    start: 3,
+                },
+                CompletionToken {
+                    text: ":",
+                    start: 5,
+                },
+                CompletionToken {
+                    text: "b",
+                    start: 6,
+                }
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one two:three", &[':', ' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "two",
+                    start: 4,
+                },
+                CompletionToken {
+                    text: ":",
+                    start: 7,
+                },
+                CompletionToken {
+                    text: "three",
+                    start: 8,
+                }
+            ]
+        );
+    }
 }
