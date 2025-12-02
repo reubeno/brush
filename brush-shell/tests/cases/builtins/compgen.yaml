@@ -7,6 +7,10 @@ cases:
 
       compgen -A alias myalias | sort
 
+  - name: "compgen -A binding"
+    stdin: |
+      compgen -A binding tab | sort
+
   - name: "compgen -A builtin"
     stdin: |
       compgen -A builtin cd | sort

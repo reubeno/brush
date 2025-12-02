@@ -23,7 +23,13 @@ impl Display for KeyAction {
 
 /// Defines all input functions. Based on standard `readline` functions,
 /// augmented with some `brush`-specific extensions.
-#[derive(Debug, strum_macros::EnumString, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    strum_macros::EnumString,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    strum_macros::IntoStaticStr,
+)]
 #[strum(serialize_all = "kebab-case")]
 #[expect(missing_docs)]
 pub enum InputFunction {

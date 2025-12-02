@@ -7,9 +7,10 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
+use strum::IntoEnumIterator;
 
 use crate::{
-    Shell, commands, env, error, escape, jobs, namedoptions, patterns,
+    Shell, commands, env, error, escape, interfaces, jobs, namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
@@ -408,7 +409,12 @@ impl Spec {
                     }
                 }
                 CompleteAction::Binding => {
-                    tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -A binding");
+                    for input_func in interfaces::InputFunction::iter() {
+                        let name: &'static str = input_func.into();
+                        if name.starts_with(token) {
+                            candidates.insert(name.to_string());
+                        }
+                    }
                 }
                 CompleteAction::Builtin => {
                     for name in shell.builtins().keys() {
