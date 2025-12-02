@@ -193,11 +193,5 @@ pub fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registrati
         m.insert("logout".into(), builtin::<unimp::UnimplementedCommand>());
     }
 
-    //
-    // Brush-specific builtins.
-    //
-    #[cfg(feature = "builtin.brushinfo")]
-    m.insert("brushinfo".into(), builtin::<brushinfo::BrushInfoCommand>());
-
     m
 }

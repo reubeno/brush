@@ -8,8 +8,6 @@ mod bg;
 mod bind;
 #[cfg(feature = "builtin.break")]
 mod break_;
-#[cfg(feature = "builtin.brushinfo")]
-mod brushinfo;
 #[cfg(feature = "builtin.builtin")]
 mod builtin_;
 #[cfg(feature = "builtin.cd")]
