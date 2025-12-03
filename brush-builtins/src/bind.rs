@@ -142,13 +142,35 @@ impl BindCommand {
         }
 
         if self.list_vars {
-            return error::unimp_with_issue("bind -V", BIND_FEATURE_ISSUE_ID);
+            let options = &context.shell.completion_config.fallback_options;
+
+            // For now we'll just display a few items and show defaults.
+            writeln!(
+                context.stdout(),
+                "mark-directories is set to `{}'",
+                to_onoff(options.mark_directories)
+            )?;
+            writeln!(
+                context.stdout(),
+                "mark-symlinked-directories is set to `{}'",
+                to_onoff(options.mark_symlinked_directories)
+            )?;
         }
 
         if self.list_vars_reusable {
+            let options = &context.shell.completion_config.fallback_options;
+
             // For now we'll just display a few items and show defaults.
-            writeln!(context.stdout(), "set mark-directories on")?;
-            writeln!(context.stdout(), "set mark-symlinked-directories off")?;
+            writeln!(
+                context.stdout(),
+                "set mark-directories {}",
+                to_onoff(options.mark_directories)
+            )?;
+            writeln!(
+                context.stdout(),
+                "set mark-symlinked-directories {}",
+                to_onoff(options.mark_symlinked_directories)
+            )?;
         }
 
         if self.query_func_bindings.is_some() {
@@ -338,6 +360,10 @@ fn parse_readline_function(
     interfaces::InputFunction::from_str(func_name).map_err(|_err| {
         brush_core::ErrorKind::UnknownKeyBindingFunction(func_name.to_owned()).into()
     })
+}
+
+const fn to_onoff(value: bool) -> &'static str {
+    if value { "on" } else { "off" }
 }
 
 #[cfg(test)]
