@@ -23,7 +23,9 @@ pub type CommandExecuteFunc = fn(
 ///
 /// * `name` - The name of the command.
 /// * `content_type` - The type of content to retrieve.
-pub type CommandContentFunc = fn(&str, ContentType) -> Result<String, error::Error>;
+/// * `options` - Additional options for content retrieval.
+pub type CommandContentFunc =
+    fn(&str, ContentType, &ContentOptions) -> Result<String, error::Error>;
 
 /// Trait implemented by built-in shell commands.
 pub trait Command: clap::Parser {
@@ -82,14 +84,26 @@ pub trait Command: clap::Parser {
     ///
     /// * `name` - The name of the command.
     /// * `content_type` - The type of content to retrieve.
-    fn get_content(name: &str, content_type: ContentType) -> Result<String, error::Error> {
+    /// * `options` - Additional options for content retrieval.
+    fn get_content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, error::Error> {
         let mut clap_command = Self::command()
             .styles(brush_help_styles())
             .next_line_help(false);
         clap_command.set_bin_name(name);
 
         let s = match content_type {
-            ContentType::DetailedHelp => clap_command.render_help().ansi().to_string(),
+            ContentType::DetailedHelp => {
+                let rendered = clap_command.render_help();
+                if options.colorized {
+                    rendered.ansi().to_string()
+                } else {
+                    rendered.to_string()
+                }
+            }
             ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
             ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
             ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
@@ -120,6 +134,13 @@ pub enum ContentType {
     ShortDescription,
     /// man-style help page.
     ManPage,
+}
+
+/// Options for retrieving built-in command content.
+#[derive(Default)]
+pub struct ContentOptions {
+    /// Whether or not the content should be colorized.
+    pub colorized: bool,
 }
 
 /// Encapsulates a registration for a built-in command.
@@ -334,7 +355,11 @@ pub fn try_parse_known<T: clap::Parser>(
 /// A simple command that can be registered as a built-in.
 pub trait SimpleCommand {
     /// Returns the content of the built-in command.
-    fn get_content(name: &str, content_type: ContentType) -> Result<String, error::Error>;
+    fn get_content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, error::Error>;
 
     /// Executes the built-in command.
     fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
@@ -400,8 +425,9 @@ pub fn raw_arg_builtin<B: DeclarationCommand + Default + Send + Sync>() -> Regis
 fn get_builtin_content<T: Command + Send + Sync>(
     name: &str,
     content_type: ContentType,
+    options: &ContentOptions,
 ) -> Result<String, error::Error> {
-    T::get_content(name, content_type)
+    T::get_content(name, content_type, options)
 }
 
 fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(

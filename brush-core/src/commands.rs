@@ -566,7 +566,7 @@ pub(crate) fn execute_external_command(
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
     let child_stdin_is_terminal = context
         .try_fd(openfiles::OpenFiles::STDIN_FD)
-        .is_some_and(|f| f.is_term());
+        .is_some_and(|f| f.is_terminal());
 
     // Figure out if we should be setting up a new process group.
     let new_pg = context.should_cmd_lead_own_process_group();

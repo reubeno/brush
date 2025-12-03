@@ -7,6 +7,7 @@ impl builtins::SimpleCommand for ColonCommand {
     fn get_content(
         _name: &str,
         content_type: builtins::ContentType,
+        _options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::Error> {
         match content_type {
             builtins::ContentType::DetailedHelp => {
