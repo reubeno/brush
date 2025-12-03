@@ -1019,27 +1019,20 @@ impl<'a> WordExpander<'a> {
 
                 #[expect(clippy::cast_possible_wrap)]
                 let expanded_parameter_len = expanded_parameter.polymorphic_len() as i64;
-
                 let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
-                if expanded_offset < 0 {
-                    // For arrays--and only arrays--we handle negative indexes as offsets from the
-                    // end of the array, with -1 referencing the last element of
-                    // the array.
-                    if expanded_parameter.from_array {
-                        expanded_offset += expanded_parameter_len;
 
-                        // If the offset is still negative, then we need to yield an empty slice.
-                        // We force the offset to the end of the array.
-                        if expanded_offset < 0 {
-                            expanded_offset = expanded_parameter_len;
-                        }
-                    } else {
-                        // For other values, we just treat negative indexes as 0.
-                        expanded_offset = 0;
+                // We handle negative indexes as offsets from the end of the element, with -1 referencing the last element.
+                if expanded_offset < 0 {
+                    expanded_offset += expanded_parameter_len;
+
+                    // If the offset is still negative, then we need to yield an empty slice.
+                    // We force the offset to the end of the array.
+                    if expanded_offset < 0 {
+                        expanded_offset = expanded_parameter_len;
                     }
                 }
 
-                // Make sure the offset is within the bounds of the array.
+                // Make sure the offset is within the bounds of the item.
                 let expanded_offset = min(expanded_offset, expanded_parameter_len);
 
                 let end_offset = if let Some(length) = length {
