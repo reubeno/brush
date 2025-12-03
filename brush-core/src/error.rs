@@ -87,8 +87,21 @@ pub enum ErrorKind {
     UnimplementedAndTracked(&'static str, u32),
 
     /// An expected environment scope could not be found.
-    #[error("missing scope")]
+    #[error("missing environment scope")]
     MissingScope,
+
+    /// The environment scope required for a new variable is not available.
+    #[error("environment scope required for new variable is not available")]
+    MissingScopeForNewVariable,
+
+    /// An unexpected environment scope type was encountered.
+    #[error("unexpected environment scope type: expected '{expected}', found '{actual}'")]
+    UnexpectedScopeType {
+        /// The expected scope type.
+        expected: crate::env::EnvironmentScope,
+        /// The actual scope type.
+        actual: crate::env::EnvironmentScope,
+    },
 
     /// The given path is not a directory.
     #[error("not a directory: {0}")]
