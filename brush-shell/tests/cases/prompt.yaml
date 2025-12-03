@@ -141,6 +141,18 @@ cases:
       shopt -u promptvars
       echo "Prompt (dollar-sign escaped, without promptvars): ${prompt@P}"
 
+  - name: "Tilde in prompt"
+    stdin: |
+      HOME=$(pwd)
+
+      prompt='~'
+
+      shopt -s promptvars
+      echo "Prompt (with promptvars): ${prompt@P}"
+
+      shopt -u promptvars
+      echo "Prompt (without promptvars): ${prompt@P}"
+
   - name: "Command substitution in prompt"
     stdin: |
       prompt='$(echo Hello)'
