@@ -426,6 +426,10 @@ impl<'a> SimpleCommand<'a> {
             if let Some(path) = path {
                 self.execute_via_external(&path)
             } else {
+                if let Some(post_execute) = self.post_execute {
+                    let _ = post_execute(&mut self.shell);
+                }
+
                 Err(ErrorKind::CommandNotFound(self.command_name).into())
             }
         } else {
@@ -487,11 +491,13 @@ impl<'a> SimpleCommand<'a> {
             params: self.params,
         };
 
-        let result = execute_builtin_command(&builtin, cmd_context, self.args).await?;
+        let result = execute_builtin_command(&builtin, cmd_context, self.args).await;
 
         if let Some(post_execute) = self.post_execute {
-            post_execute(&mut shell)?;
+            let _ = post_execute(&mut shell);
         }
+
+        let result = result?;
 
         Ok(result.into())
     }
@@ -509,13 +515,13 @@ impl<'a> SimpleCommand<'a> {
         };
 
         // Strip the function name off args.
-        let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await?;
+        let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await;
 
         if let Some(post_execute) = self.post_execute {
-            post_execute(&mut shell)?;
+            let _ = post_execute(&mut shell);
         }
 
-        Ok(result)
+        result
     }
 
     fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
@@ -533,13 +539,13 @@ impl<'a> SimpleCommand<'a> {
             resolved_path.as_ref(),
             self.process_group_id,
             &self.args[1..],
-        )?;
+        );
 
         if let Some(post_execute) = self.post_execute {
-            post_execute(&mut shell)?;
+            let _ = post_execute(&mut shell);
         }
 
-        Ok(result)
+        result
     }
 }
 

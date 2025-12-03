@@ -1131,13 +1131,13 @@ async fn execute_command(
     // Push a new ephemeral environment scope for the duration of the command. We'll
     // set command-scoped variable assignments after doing so, and revert them before
     // returning.
-    context.shell.env.push_scope(EnvironmentScope::Command);
+    let mut guard = crate::env::ScopeGuard::new(&mut context.shell, EnvironmentScope::Command);
 
     for assignment in &assignments {
         // Ensure it's tagged as exported and created in the command scope.
         apply_assignment(
             assignment,
-            &mut context.shell,
+            guard.shell(),
             &params,
             true,
             Some(EnvironmentScope::Command),
@@ -1146,15 +1146,18 @@ async fn execute_command(
         .await?;
     }
 
-    if context.shell.options.print_commands_and_arguments {
-        context
-            .shell
+    if guard.shell().options.print_commands_and_arguments {
+        guard
+            .shell()
             .trace_command(
                 &params,
                 args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
             )
             .await?;
     }
+
+    guard.detach();
+    drop(guard);
 
     // Construct the command struct.
     let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name, args);
@@ -1163,8 +1166,8 @@ async fn execute_command(
     // Arrange to pop off that ephemeral environment scope.
     cmd.post_execute = Some(|shell| shell.env.pop_scope(EnvironmentScope::Command));
 
-    // Run through any pre-execution hooks.
-    commands::on_preexecute(&mut cmd).await?;
+    // Run through any pre-execution hooks as best effort.
+    let _ = commands::on_preexecute(&mut cmd).await;
 
     // Execute
     // TODO(jobs): do we need to move self back to foreground on error here?

@@ -32,6 +32,58 @@ pub enum EnvironmentScope {
     Command,
 }
 
+impl std::fmt::Display for EnvironmentScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local => write!(f, "local"),
+            Self::Global => write!(f, "global"),
+            Self::Command => write!(f, "command"),
+        }
+    }
+}
+
+/// A guard that pushes a scope onto a shell environment and pops it when dropped.
+pub(crate) struct ScopeGuard<'a> {
+    scope_type: EnvironmentScope,
+    shell: &'a mut crate::Shell,
+    detached: bool,
+}
+
+impl<'a> ScopeGuard<'a> {
+    /// Creates a new scope guard, pushing the given scope type onto the environment.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell whose environment to modify.
+    /// * `scope_type` - The type of scope to push.
+    pub fn new(shell: &'a mut crate::Shell, scope_type: EnvironmentScope) -> Self {
+        shell.env.push_scope(scope_type);
+        Self {
+            scope_type,
+            shell,
+            detached: false,
+        }
+    }
+
+    /// Returns a mutable reference to the shell.
+    pub const fn shell(&mut self) -> &mut crate::Shell {
+        self.shell
+    }
+
+    /// Detaches the guard, preventing it from popping the scope on drop.
+    pub const fn detach(&mut self) {
+        self.detached = true;
+    }
+}
+
+impl Drop for ScopeGuard<'_> {
+    fn drop(&mut self) {
+        if !self.detached {
+            let _ = self.shell.env.pop_scope(self.scope_type);
+        }
+    }
+}
+
 /// Represents the shell variable environment, composed of a stack of scopes.
 #[derive(Clone, Debug)]
 pub struct ShellEnvironment {
@@ -77,7 +129,12 @@ impl ShellEnvironment {
         // TODO(env): Should we panic instead on failure? It's effectively a broken invariant.
         match self.scopes.pop() {
             Some((actual_scope_type, _)) if actual_scope_type == expected_scope_type => Ok(()),
-            _ => Err(error::ErrorKind::MissingScope.into()),
+            Some((actual_scope_type, _)) => Err(error::ErrorKind::UnexpectedScopeType {
+                expected: expected_scope_type,
+                actual: actual_scope_type,
+            }
+            .into()),
+            None => Err(error::ErrorKind::MissingScope.into()),
         }
     }
 
@@ -500,7 +557,7 @@ impl ShellEnvironment {
             }
         }
 
-        Err(error::ErrorKind::MissingScope.into())
+        Err(error::ErrorKind::MissingScopeForNewVariable.into())
     }
 
     /// Sets a global variable in the environment.
