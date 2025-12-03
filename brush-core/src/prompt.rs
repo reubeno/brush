@@ -36,8 +36,9 @@ pub(crate) async fn expand_prompt(
     }
 
     if shell.options.expand_prompt_strings {
-        // Now expand any remaining escape sequences.
-        formatted_prompt = expansion::basic_expand_str(shell, params, &formatted_prompt).await?;
+        // Now expand any remaining escape sequences, but without tilde-expansion.
+        formatted_prompt =
+            expansion::basic_expand_str_without_tilde(shell, params, &formatted_prompt).await?;
     }
 
     Ok(formatted_prompt)
