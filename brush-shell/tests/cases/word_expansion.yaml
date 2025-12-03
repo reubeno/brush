@@ -759,10 +759,13 @@ cases:
   - name: "Substring from offset"
     stdin: |
       var="Hello, world!"
-      echo "\${var:0}:  ${var:0}"
-      echo "\${var:7}:  ${var:7}"
-      echo "\${var:50}: ${var:50}"
-      echo "\${var:-1}: ${var:-1}"
+      echo "\${var:0}:   ${var:0}"
+      echo "\${var:7}:   ${var:7}"
+      echo "\${var: 7 }: ${var: 7 }"
+      echo "\${var:50}:  ${var:50}"
+      echo "\${var:-1}:  ${var:-1}"
+      echo "\${var: -1}: ${var: -1}"
+      echo "\${var: 2 + 3 }: ${var: 2 + 3 }"
 
   - name: "Substring with length"
     stdin: |

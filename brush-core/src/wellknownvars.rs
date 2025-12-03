@@ -4,7 +4,7 @@ use crate::{Shell, ShellValue, ShellVariable, error, sys, variables};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
-const BASH_PATCH: u32 = 15;
+const BASH_PATCH: u32 = 37;
 const BASH_BUILD: u32 = 1;
 const BASH_RELEASE: &str = "release";
 const BASH_MACHINE: &str = "unknown";
