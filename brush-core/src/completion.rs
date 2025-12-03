@@ -138,6 +138,28 @@ pub struct Config {
     /// Optionally, stores the current completion options in effect. May be mutated
     /// while a completion generation is in-flight.
     pub current_completion_options: Option<GenerationOptions>,
+
+    /// Fallback options to use when 'default' completions are requested (not to be
+    /// confused with the 'default' completion spec, nor 'bashdefault' completions).
+    pub fallback_options: FallbackOptions,
+}
+
+/// Options for fallback completions.
+#[derive(Clone, Debug)]
+pub struct FallbackOptions {
+    /// If true, mark directory completions with a trailing slash.
+    pub mark_directories: bool,
+    /// If true, mark symlinked directory completions with a trailing slash.
+    pub mark_symlinked_directories: bool,
+}
+
+impl Default for FallbackOptions {
+    fn default() -> Self {
+        Self {
+            mark_directories: true,
+            mark_symlinked_directories: false,
+        }
+    }
 }
 
 /// Options for generating completions.
@@ -334,13 +356,13 @@ impl Spec {
             &self.options
         };
 
-        let processing_options = ProcessingOptions {
+        let mut processing_options = ProcessingOptions {
             treat_as_filenames: options.file_names,
             no_autoquote_filenames: options.no_quote,
             no_trailing_space_at_end_of_line: options.no_space,
         };
 
-        if options.plus_dirs {
+        if options.plus_dirs || options.dir_names {
             // Also add dir name completion.
             let mut dir_candidates = get_file_completions(
                 shell,
@@ -351,26 +373,28 @@ impl Spec {
             candidates.append(&mut dir_candidates);
         }
 
-        // If we still haven't found any completion candidates by now, then consider whether any
-        // requests were made for fallbacks.
-        if candidates.is_empty() {
-            if options.bash_default {
-                //
-                // TODO(completions): if we have no completions, then fall back to default "bash"
-                // completions. It's not clear what exactly this means, though. From
-                // basic testing, it doesn't seem to include basic file and
-                // directory name completion.
-                //
-                tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -o bashdefault");
-            }
-            if options.default || options.dir_names {
-                // N.B. We approximate "default" readline completion behavior by getting file and
-                // dir completions.
-                let must_be_dir = options.dir_names;
+        // If we still have no candidates, and bashdefault completions were requested, then generate
+        // those.
+        if candidates.is_empty() && options.bash_default {
+            // TODO(completions): it's not clear what default "bash" completions means. From basic
+            // testing, this doesn't seem to include basic file and directory name
+            // completion.
+            tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -o bashdefault");
+        }
 
-                let mut default_candidates =
-                    get_file_completions(shell, context.token_to_complete, must_be_dir).await;
-                candidates.append(&mut default_candidates);
+        // If we still have no candidates, and default completions were requested, then generate
+        // those.
+        if candidates.is_empty() && options.default {
+            // N.B. We approximate "default" readline completion behavior by getting file and
+            // dir completions.
+            let must_be_dir = options.dir_names;
+
+            let mut default_candidates =
+                get_file_completions(shell, context.token_to_complete, must_be_dir).await;
+            candidates.append(&mut default_candidates);
+
+            if shell.completion_config.fallback_options.mark_directories {
+                processing_options.treat_as_filenames = true;
             }
         }
 
