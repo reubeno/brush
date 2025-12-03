@@ -87,7 +87,8 @@ impl OpenFile {
         }
     }
 
-    pub(crate) fn is_term(&self) -> bool {
+    /// Checks if the open file is associated with a terminal.
+    pub fn is_terminal(&self) -> bool {
         match self {
             Self::Stdin(f) => f.is_terminal(),
             Self::Stdout(f) => f.is_terminal(),

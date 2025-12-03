@@ -117,10 +117,20 @@ impl HelpCommand {
             builtins::ContentType::DetailedHelp
         };
 
-        let content = (registration.content_func)(name, content_type)?;
+        let Some(mut stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
+            // If there's no stdout, nothing to do.
+            return Ok(());
+        };
 
-        write!(context.stdout(), "{content}")?;
-        context.stdout().flush()?;
+        // For now, we assume colorized output if stdout is a terminal.
+        let options = builtins::ContentOptions {
+            colorized: stdout.is_terminal(),
+        };
+
+        let content = (registration.content_func)(name, content_type, &options)?;
+
+        write!(stdout, "{content}")?;
+        stdout.flush()?;
 
         Ok(())
     }

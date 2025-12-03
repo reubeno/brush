@@ -128,7 +128,7 @@ pub(crate) fn apply_unary_predicate_to_str(
         ast::UnaryPredicate::FdIsOpenTerminal => {
             if let Ok(fd) = operand.parse::<ShellFd>() {
                 if let Some(open_file) = params.try_fd(shell, fd) {
-                    Ok(open_file.is_term())
+                    Ok(open_file.is_terminal())
                 } else {
                     Ok(false)
                 }
