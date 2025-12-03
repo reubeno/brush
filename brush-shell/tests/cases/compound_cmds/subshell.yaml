@@ -30,3 +30,9 @@ cases:
         echo $i
         (for i in 1 2 3; do break 2; done)
       done
+
+  - name: "Exec in subshell"
+    stdin: |
+      echo "Before subshell"
+      (exec cat <<<"Hello from exec in subshell")
+      echo "After subshell"

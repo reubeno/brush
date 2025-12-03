@@ -7,23 +7,23 @@ use brush_core::{
 };
 
 /// Directly invokes an external command, without going through typical search order.
-#[derive(Parser)]
+#[derive(Default, Parser)]
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
     #[arg(short = 'p')]
-    use_default_path: bool,
+    pub use_default_path: bool,
 
     /// Display a short description of the command.
     #[arg(short = 'v')]
-    print_description: bool,
+    pub print_description: bool,
 
     /// Display a more verbose description of the command.
     #[arg(short = 'V')]
-    print_verbose_description: bool,
+    pub print_verbose_description: bool,
 
     /// Command and arguments.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    command_and_args: Vec<String>,
+    pub command_and_args: Vec<String>,
 }
 
 impl CommandCommand {

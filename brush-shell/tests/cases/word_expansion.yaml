@@ -99,7 +99,6 @@ cases:
       y=$(true) && echo "2. Made it past true"
 
   - name: "Command substitution with exec"
-    known_failure: true
     stdin: |
       x=$(exec echo hi)
       echo "x: $x"
