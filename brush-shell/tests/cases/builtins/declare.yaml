@@ -132,6 +132,7 @@ cases:
     stdin: |
       declare -x myunsetexportedvar
       env | grep myunsetexportedvar
+      set | grep myunsetexportedvar=
 
   - name: "Re-declaring variable"
     stdin: |

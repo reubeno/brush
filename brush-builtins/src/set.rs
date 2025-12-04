@@ -417,6 +417,11 @@ fn display_all(context: &brush_core::ExecutionContext<'_>) -> Result<(), brush_c
             continue;
         }
 
+        // Skip variables that have been declared but are unset.
+        if !var.value().is_set() {
+            continue;
+        }
+
         writeln!(
             context.stdout(),
             "{name}={}",
