@@ -1,67 +1,30 @@
-pub(crate) trait ShellFactory {
-    type ShellType: brush_interactive::InteractiveShell + Send;
+pub(crate) trait InputBackendFactory {
+    type InputBackendType: brush_interactive::InputBackend + Send;
 
-    async fn create(
+    fn create(
         &self,
-        options: brush_interactive::Options,
-    ) -> Result<Self::ShellType, brush_interactive::ShellError>;
+        options: brush_interactive::UIOptions,
+        shell_ref: &brush_interactive::ShellRef,
+    ) -> Result<Self::InputBackendType, brush_interactive::ShellError>;
 }
 
-#[allow(dead_code, reason = "unused on some platforms")]
-pub(crate) struct StubShell;
-
-#[expect(clippy::panic)]
-impl brush_interactive::InteractiveShell for StubShell {
-    #[expect(unreachable_code)]
-    fn shell(&self) -> impl AsRef<brush_core::Shell> + Send {
-        panic!("No interactive shell implementation available");
-        self
-    }
-
-    #[expect(unreachable_code)]
-    fn shell_mut(&mut self) -> impl AsMut<brush_core::Shell> + Send {
-        panic!("No interactive shell implementation available");
-        self
-    }
-
-    fn read_line(
-        &mut self,
-        _prompt: brush_interactive::InteractivePrompt,
-    ) -> Result<brush_interactive::ReadResult, brush_interactive::ShellError> {
-        Err(brush_interactive::ShellError::InputBackendNotSupported)
-    }
-}
-
-#[expect(clippy::panic)]
-impl AsRef<brush_core::Shell> for StubShell {
-    fn as_ref(&self) -> &brush_core::Shell {
-        panic!("No interactive shell implementation available")
-    }
-}
-
-#[expect(clippy::panic)]
-impl AsMut<brush_core::Shell> for StubShell {
-    fn as_mut(&mut self) -> &mut brush_core::Shell {
-        panic!("No interactive shell implementation available")
-    }
-}
-
-pub(crate) struct ReedlineShellFactory;
+pub(crate) struct ReedlineInputBackendFactory;
 
 #[allow(unused_variables, reason = "options are not used on all platforms")]
-impl ShellFactory for ReedlineShellFactory {
+impl InputBackendFactory for ReedlineInputBackendFactory {
     #[cfg(all(feature = "reedline", any(unix, windows)))]
-    type ShellType = brush_interactive::ReedlineShell;
+    type InputBackendType = brush_interactive::ReedlineInputBackend;
     #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
-    type ShellType = StubShell;
+    type InputBackendType = StubShell;
 
-    async fn create(
+    fn create(
         &self,
-        options: brush_interactive::Options,
-    ) -> Result<Self::ShellType, brush_interactive::ShellError> {
+        options: brush_interactive::UIOptions,
+        shell_ref: &brush_interactive::ShellRef,
+    ) -> Result<Self::InputBackendType, brush_interactive::ShellError> {
         #[cfg(all(feature = "reedline", any(unix, windows)))]
         {
-            brush_interactive::ReedlineShell::new(options).await
+            brush_interactive::ReedlineInputBackend::new(&options, shell_ref)
         }
         #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
         {
@@ -70,22 +33,23 @@ impl ShellFactory for ReedlineShellFactory {
     }
 }
 
-pub(crate) struct BasicShellFactory;
+pub(crate) struct BasicInputBackendFactory;
 
 #[allow(unused_variables, reason = "options are not used on all platforms")]
-impl ShellFactory for BasicShellFactory {
+impl InputBackendFactory for BasicInputBackendFactory {
     #[cfg(feature = "basic")]
-    type ShellType = brush_interactive::BasicShell;
+    type InputBackendType = brush_interactive::BasicInputBackend;
     #[cfg(not(feature = "basic"))]
-    type ShellType = StubShell;
+    type InputBackendType = StubShell;
 
-    async fn create(
+    fn create(
         &self,
-        options: brush_interactive::Options,
-    ) -> Result<Self::ShellType, brush_interactive::ShellError> {
+        _options: brush_interactive::UIOptions,
+        _shell_ref: &brush_interactive::ShellRef,
+    ) -> Result<Self::InputBackendType, brush_interactive::ShellError> {
         #[cfg(feature = "basic")]
         {
-            brush_interactive::BasicShell::new(options).await
+            Ok(brush_interactive::BasicInputBackend)
         }
         #[cfg(not(feature = "basic"))]
         {
@@ -94,22 +58,23 @@ impl ShellFactory for BasicShellFactory {
     }
 }
 
-pub(crate) struct MinimalShellFactory;
+pub(crate) struct MinimalInputBackendFactory;
 
-impl ShellFactory for MinimalShellFactory {
+impl InputBackendFactory for MinimalInputBackendFactory {
     #[cfg(feature = "minimal")]
-    type ShellType = brush_interactive::MinimalShell;
+    type InputBackendType = brush_interactive::MinimalInputBackend;
     #[cfg(not(feature = "minimal"))]
-    type ShellType = StubShell;
+    type InputBackendType = StubShell;
 
     #[allow(unused_variables, reason = "options are not used on all platforms")]
-    async fn create(
+    fn create(
         &self,
-        options: brush_interactive::Options,
-    ) -> Result<Self::ShellType, brush_interactive::ShellError> {
+        _options: brush_interactive::UIOptions,
+        _shell_ref: &brush_interactive::ShellRef,
+    ) -> Result<Self::InputBackendType, brush_interactive::ShellError> {
         #[cfg(feature = "minimal")]
         {
-            brush_interactive::MinimalShell::new(options).await
+            Ok(brush_interactive::MinimalInputBackend)
         }
         #[cfg(not(feature = "minimal"))]
         {

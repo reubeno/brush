@@ -2,7 +2,7 @@ mod basic_shell;
 mod non_term_line_reader;
 mod term_line_reader;
 
-pub use basic_shell::BasicShell;
+pub use basic_shell::BasicInputBackend;
 
 use crate::{ReadResult, ShellError};
 

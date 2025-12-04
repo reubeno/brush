@@ -1,4 +1,4 @@
-use super::refs;
+use crate::refs;
 
 pub(crate) struct ReedlineValidator {
     pub shell: refs::ShellRef,

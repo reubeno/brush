@@ -1,4 +1,4 @@
-use super::refs;
+use crate::refs;
 
 pub(crate) struct ReedlineHistory {
     pub shell: refs::ShellRef,

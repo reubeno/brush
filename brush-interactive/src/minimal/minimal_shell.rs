@@ -1,40 +1,22 @@
 use std::io::{IsTerminal, Write};
 
+use brush_core::Shell;
+
 use crate::{
-    ShellError,
-    interactive_shell::{InteractivePrompt, InteractiveShell, ReadResult},
+    InputBackend, ShellError,
+    interactive_shell::{InteractivePrompt, ReadResult},
 };
 
-/// Represents a minimal shell capable of taking commands from standard input
-/// and reporting results to standard output and standard error streams.
-pub struct MinimalShell {
-    shell: brush_core::Shell,
-}
+/// Represents a minimal shell input backend, capable of taking commands from standard input.
+#[derive(Default)]
+pub struct MinimalInputBackend;
 
-impl MinimalShell {
-    /// Returns a new interactive shell instance, created with the provided options.
-    ///
-    /// # Arguments
-    ///
-    /// * `options` - Options for creating the interactive shell.
-    pub async fn new(options: crate::Options) -> Result<Self, ShellError> {
-        let shell = brush_core::Shell::new(options.shell).await?;
-        Ok(Self { shell })
-    }
-}
-
-impl InteractiveShell for MinimalShell {
-    /// Returns an immutable reference to the inner shell object.
-    fn shell(&self) -> impl AsRef<brush_core::Shell> {
-        self.shell.as_ref()
-    }
-
-    /// Returns a mutable reference to the inner shell object.
-    fn shell_mut(&mut self) -> impl AsMut<brush_core::Shell> {
-        self.shell.as_mut()
-    }
-
-    fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
+impl InputBackend for MinimalInputBackend {
+    fn read_line(
+        &mut self,
+        shell_ref: &crate::ShellRef,
+        prompt: InteractivePrompt,
+    ) -> Result<ReadResult, ShellError> {
         self.display_prompt(&prompt)?;
 
         let mut result = String::new();
@@ -43,7 +25,12 @@ impl InteractiveShell for MinimalShell {
             match Self::read_input_line()? {
                 ReadResult::Input(s) => {
                     result.push_str(s.as_str());
-                    if self.is_valid_input(result.as_str()) {
+
+                    let shell = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(shell_ref.lock())
+                    });
+
+                    if Self::is_valid_input(&shell, result.as_str()) {
                         break;
                     }
                 }
@@ -64,7 +51,7 @@ impl InteractiveShell for MinimalShell {
     }
 }
 
-impl MinimalShell {
+impl MinimalInputBackend {
     #[expect(clippy::unused_self)]
     fn should_display_prompt(&self) -> bool {
         std::io::stdin().is_terminal()
@@ -92,8 +79,8 @@ impl MinimalShell {
         }
     }
 
-    fn is_valid_input(&self, input: &str) -> bool {
-        match self.shell.parse_string(input.to_owned()) {
+    fn is_valid_input(shell: &Shell, input: &str) -> bool {
+        match shell.parse_string(input.to_owned()) {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>
             {
