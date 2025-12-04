@@ -1555,10 +1555,7 @@ impl Shell {
         self.env.update_or_add(
             "PWD",
             variables::ShellValueLiteral::Scalar(pwd),
-            |var| {
-                var.export();
-                Ok(())
-            },
+            |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
         )?;
@@ -1567,10 +1564,7 @@ impl Shell {
         self.env.update_or_add(
             "OLDPWD",
             variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
-            |var| {
-                var.export();
-                Ok(())
-            },
+            |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
         )?;

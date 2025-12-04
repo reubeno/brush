@@ -32,6 +32,11 @@ pub(crate) fn initialize_vars(
                 }
             }
 
+            // Special case OLDPWD for bash compatibility.
+            if k == "OLDPWD" {
+                continue;
+            }
+
             let mut var = ShellVariable::new(ShellValue::String(v));
             var.export();
             shell.env.set_global(k, var)?;
