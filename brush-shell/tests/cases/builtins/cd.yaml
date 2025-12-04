@@ -41,7 +41,6 @@ cases:
       echo $?
       echo "pwd: $PWD"
 
-
   - name: "cd ~"
     stdin: |
       mkdir ./my_home
@@ -62,7 +61,6 @@ cases:
         cd -P ~
         echo "pwd: $(basename $PWD)"
       )
-
 
   - name: "cd with symlink"
     stdin: |
@@ -142,3 +140,32 @@ cases:
         cd ..
         echo "cd .. => $(basename $PWD)"
       )
+
+  - name: "OLDPWD"
+    env:
+      OLDPWD: "/nonexistent/path"
+    stdin: |
+      mkdir subdir
+
+      echo "[0]"
+      echo ${OLDPWD+set}
+
+      echo "[1]"
+      echo ${OLDPWD-NOTSET}
+
+      echo "[2]"
+      declare -p OLDPWD 2>&1 | grep -o "declare -[a-z]* OLDPWD"
+
+      echo "[3]"
+      env | grep "^OLDPWD=" || echo "NOT_IN_ENV"
+
+      echo
+      echo "[Unsetting + cd'ing...]"
+      unset OLDPWD
+      cd $PWD/subdir
+
+      echo "[4]"
+      declare -p OLDPWD 2>&1 | grep -o "declare -[a-z]* OLDPWD"
+
+      echo "[5]"
+      env | grep -o "^OLDPWD="
