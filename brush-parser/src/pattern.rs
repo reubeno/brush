@@ -70,7 +70,7 @@ peg::parser! {
         rule bracket_member() -> String =
             char_class_expression() /
             char_range() /
-            char_list()
+            single_char_bracket_member()
 
         rule char_class_expression() -> String =
             e:$("[:" char_class() ":]") { e.to_owned() }
@@ -81,8 +81,10 @@ peg::parser! {
         rule char_range() -> String =
             range:$([_] "-" [c if c != ']']) { range.to_owned() }
 
-        rule char_list() -> String =
-            chars:$([c if c != ']']+) { escape_char_class_char_list(chars) }
+        rule single_char_bracket_member() -> String =
+            s:$(['\\'] [c]) { s.to_owned() } /
+            ['['] { String::from(r"\[") } /
+            [c if c != ']'] { c.to_string() }
 
         rule wildcard() -> String =
             "?" { String::from(".") } /
@@ -154,10 +156,6 @@ pub const fn regex_char_needs_escaping(c: char) -> bool {
         c,
         '[' | ']' | '(' | ')' | '{' | '}' | '*' | '?' | '.' | '+' | '^' | '$' | '|' | '\\'
     )
-}
-
-fn escape_char_class_char_list(s: &str) -> String {
-    s.replace('[', r"\[")
 }
 
 #[cfg(test)]
