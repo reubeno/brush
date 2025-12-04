@@ -166,3 +166,21 @@ cases:
       echo "OPTARG: ${OPTARG}"
       echo "OPTIND: ${OPTIND}"
       echo "OPTERR: ${OPTERR}"
+
+  - name: "getopts: short option and value in single arg"
+    stdin: |
+      getopts "p:" myvar -p-
+      echo "Result: $?"
+      echo "myvar: ${myvar}"
+      echo "OPTARG: ${OPTARG}"
+      echo "OPTIND: ${OPTIND}"
+      echo "OPTERR: ${OPTERR}"
+
+      while getopts "abep:" myvar -abpsomething-else; do
+        echo "Result: $?"
+        echo "myvar: ${myvar}"
+        echo "OPTARG: ${OPTARG}"
+        echo "OPTIND: ${OPTIND}"
+        echo "OPTERR: ${OPTERR}"
+        echo "-----------------"
+      done
