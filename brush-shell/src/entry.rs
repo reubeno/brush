@@ -138,7 +138,7 @@ async fn run_async(
     cli_args: Vec<String>,
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
-    let default_backend = get_default_input_backend(&args);
+    let default_backend = get_default_input_backend();
     let selected_backend = args.input_backend.unwrap_or(default_backend);
 
     match selected_backend {
@@ -349,13 +349,13 @@ fn new_error_formatter(
     Arc::new(Mutex::new(formatter))
 }
 
-fn get_default_input_backend(args: &CommandLineArgs) -> InputBackend {
+fn get_default_input_backend() -> InputBackend {
     #[cfg(any(unix, windows))]
     {
         // If stdin isn't a terminal, then `reedline` doesn't do the right thing
         // (reference: https://github.com/nushell/reedline/issues/509). Switch to
         // the minimal input backend instead for that scenario.
-        if std::io::stdin().is_terminal() && args.command.is_none() {
+        if std::io::stdin().is_terminal() {
             InputBackend::Reedline
         } else {
             InputBackend::Minimal
