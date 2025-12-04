@@ -116,6 +116,9 @@ cases:
       [[ "x" == [!xyz] ]] && echo "4. Matched"
       [[ "(" == [\(]   ]] && echo "5. Matched"
       [[ "+" == [+-]   ]] && echo "6. Matched"
+      [[ "[" == [\[]   ]] && echo "7. Matched"
+      [[ "]" == [\]]   ]] && echo "8. Matched"
+      [[ "^" == [\^]   ]] && echo "9. Matched"
 
   - name: "Pattern matching: character classes"
     stdin: |
