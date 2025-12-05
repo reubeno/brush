@@ -7,6 +7,8 @@ use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
+#[cfg(feature = "experimental-builtins")]
+use brush_experimental_builtins::ShellBuilderExt as _;
 use brush_interactive::InteractiveShellExt as _;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
@@ -336,6 +338,10 @@ async fn instantiate_shell(
 
     // Add builtins.
     let shell = shell.default_builtins(builtin_set).brush_builtins();
+
+    // Add experimental builtins (if enabled).
+    #[cfg(feature = "experimental-builtins")]
+    let shell = shell.experimental_builtins();
 
     // Build the shell.
     let shell = shell.build().await?;

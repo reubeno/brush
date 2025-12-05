@@ -6,6 +6,7 @@ members = [
     "brush-parser",
     "brush-core",
     "brush-builtins",
+    "brush-experimental-builtins",
     "brush-interactive",
     "fuzz",
     "xtask",
