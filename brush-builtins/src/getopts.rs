@@ -108,7 +108,7 @@ impl builtins::Command for GetOptsCommand {
 
                 // Find the char.
                 let c = arg.chars().nth(next_char_index).unwrap();
-                let is_last_char_in_option = next_char_index == arg.len() - 1;
+                let mut is_last_char_in_option = next_char_index == arg.len() - 1;
 
                 // Look up the char.
                 let mut is_error = false;
@@ -116,8 +116,9 @@ impl builtins::Command for GetOptsCommand {
                     variable_value = String::from(c);
 
                     if *takes_arg {
-                        // If the option takes a value but it's not the last option in this
-                        // argument, then this is an error.
+                        // This option takes a value. If it's the last character in the option,
+                        // then we need to look for its value in the next argument. If it's
+                        // not, then the rest of this argument will be its value.
                         if is_last_char_in_option {
                             next_index += 1;
                             next_index_zero_based += 1;
@@ -128,9 +129,14 @@ impl builtins::Command for GetOptsCommand {
 
                             new_optarg = Some(args_to_parse[next_index_zero_based].clone());
                         } else {
-                            is_error = true;
+                            new_optarg = Some(arg.chars().skip(next_char_index + 1).collect());
+
+                            // Note that we have reached the end of the option, and we'll be ready
+                            // to move the next argument.
+                            is_last_char_in_option = true;
                         }
                     } else {
+                        // This option doesn't take a value.
                         new_optarg = None;
                     }
                 } else {
