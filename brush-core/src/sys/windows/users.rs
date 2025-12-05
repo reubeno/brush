@@ -7,12 +7,14 @@ use std::path::PathBuf;
 // Non-Unix implementation
 //
 
-pub(crate) fn get_user_home_dir(username: &str) -> Option<PathBuf> {
-    homedir::home(username).unwrap_or_default()
+pub(crate) fn get_user_home_dir(_username: &str) -> Option<PathBuf> {
+    // std::env::home_dir() doesn't support getting home dir for arbitrary users
+    // For now, we only support getting the current user's home dir
+    None
 }
 
 pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
-    homedir::my_home().unwrap_or_default()
+    std::env::home_dir()
 }
 
 pub(crate) fn get_current_user_default_shell() -> Option<PathBuf> {

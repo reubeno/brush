@@ -6,7 +6,7 @@ pub(crate) fn get_user_home_dir(_username: &str) -> Option<PathBuf> {
 }
 
 pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
-    None
+    std::env::home_dir()
 }
 
 pub(crate) fn get_current_user_default_shell() -> Option<PathBuf> {
