@@ -22,6 +22,27 @@ pub enum TrapSignal {
     Return,
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for TrapSignal {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for TrapSignal {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::try_from(s.as_str()).map_err(serde::de::Error::custom)
+    }
+}
+
 impl Display for TrapSignal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -143,6 +164,7 @@ impl TryFrom<TrapSignal> for i32 {
 
 /// A handler for a trap signal.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TrapHandler {
     /// The source text of the command to invoke.
     pub command: String,
@@ -152,6 +174,7 @@ pub struct TrapHandler {
 
 /// Configuration for trap handlers in the shell.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TrapHandlerConfig {
     /// Registered handlers for traps; maps signal type to command.
     handlers: HashMap<TrapSignal, TrapHandler>,

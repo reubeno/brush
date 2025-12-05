@@ -4,6 +4,7 @@ use std::{path::PathBuf, sync::Arc};
 
 /// Source context.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SourceInfo {
     /// The name of the source.
     pub source: String,

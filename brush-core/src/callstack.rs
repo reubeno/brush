@@ -7,6 +7,7 @@ use brush_parser::ast::SourceLocation;
 
 /// Encapsulates info regarding a script call.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScriptCall {
     /// The type of script call.
     pub call_type: ScriptCallType,
@@ -23,6 +24,7 @@ impl ScriptCall {
 
 /// The type of script call.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ScriptCallType {
     /// A script was sourced.
     Source,
@@ -42,6 +44,7 @@ impl std::fmt::Display for ScriptCall {
 /// Represents the type of a frame, indicating how it was invoked from
 /// a different source context.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FrameType {
     /// A script was called (sourced or executed).
     Script(ScriptCall),
@@ -121,6 +124,7 @@ impl std::fmt::Display for FrameType {
 
 /// Describes the target of a function call.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FunctionCall {
     /// The name of the function invoked.
     pub function_name: String,
@@ -143,6 +147,7 @@ impl std::fmt::Display for FunctionCall {
 
 /// Represents a single frame in a `CallStack`.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Frame {
     /// The type of frame.
     pub frame_type: FrameType,
@@ -273,6 +278,7 @@ impl std::fmt::Display for FormatCallStack<'_> {
 
 /// Encapsulates a script call stack.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CallStack {
     frames: VecDeque<Frame>,
     func_call_depth: usize,

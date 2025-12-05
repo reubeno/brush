@@ -18,6 +18,7 @@ use crate::{
 
 /// Type of action to take to generate completion candidates.
 #[derive(Clone, Debug, ValueEnum)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteAction {
     /// Complete with valid aliases.
     #[clap(name = "alias")]
@@ -124,6 +125,7 @@ pub enum CompleteOption {
 
 /// Encapsulates the shell's programmable command completion configuration.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Config {
     commands: HashMap<String, Spec>,
 
@@ -146,6 +148,7 @@ pub struct Config {
 
 /// Options for fallback completions.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FallbackOptions {
     /// If true, mark directory completions with a trailing slash.
     pub mark_directories: bool,
@@ -164,6 +167,7 @@ impl Default for FallbackOptions {
 
 /// Options for generating completions.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GenerationOptions {
     //
     // Options
@@ -188,6 +192,7 @@ pub struct GenerationOptions {
 /// Encapsulates a command completion specification; provides policy for how to
 /// generate completions for a given input.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Spec {
     //
     // Options

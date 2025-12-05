@@ -6,6 +6,7 @@ use crate::{CreateOptions, namedoptions};
 
 /// Runtime changeable options for a shell instance.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[expect(clippy::module_name_repetitions)]
 pub struct RuntimeOptions {
     //

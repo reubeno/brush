@@ -4,6 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 
 /// An environment for defined, named functions.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FunctionEnv {
     functions: HashMap<String, Registration>,
 }
@@ -60,6 +61,7 @@ impl FunctionEnv {
 
 /// Encapsulates a registration for a defined function.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Registration {
     /// The parsed definition of the function.
     definition: Arc<brush_parser::ast::FunctionDefinition>,
