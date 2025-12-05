@@ -175,9 +175,15 @@ pub(crate) fn initialize_vars(
     )?;
 
     // COMP_WORDBREAKS
-    shell
-        .env
-        .set_global("COMP_WORDBREAKS", ShellVariable::new(" \t\n\"\'@><=;|&(:"))?;
+    let mut default_comp_wordbreaks = String::from(" \t\n\"\'><=;|&(:");
+    if shell.options.enable_hostname_completion {
+        default_comp_wordbreaks.push('@');
+    }
+
+    shell.env.set_global(
+        "COMP_WORDBREAKS",
+        ShellVariable::new(default_comp_wordbreaks),
+    )?;
 
     // DIRSTACK
     shell.env.set_global(

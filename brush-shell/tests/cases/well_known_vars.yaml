@@ -129,6 +129,18 @@ cases:
       cleaned=${BASH_VERSION//+([0-9])/d}
       echo "Cleaned BASH_VERSION: $cleaned"
 
+  - name: "COMP_WORDBREAKS"
+    stdin: |
+      dump_var() {
+        echo -n "COMP_WORDBREAKS:"
+        for ((i=0; i<${#COMP_WORDBREAKS}; i++)); do
+          c="${COMP_WORDBREAKS:i:1}"
+          echo "  ${c@Q}"
+        done | sort
+      }
+
+      dump_var
+
   - name: "EPOCHSECONDS"
     stdin: |
       external=$(date +%s)
