@@ -1,3 +1,3 @@
-mod minimal_shell;
+mod input_backend;
 
-pub use minimal_shell::MinimalInputBackend;
+pub use input_backend::MinimalInputBackend;
