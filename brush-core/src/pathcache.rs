@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 /// A cache of paths associated with names.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PathCache {
     /// The cache itself.
     cache: std::collections::HashMap<String, PathBuf>,

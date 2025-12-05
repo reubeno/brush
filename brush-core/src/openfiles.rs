@@ -24,6 +24,44 @@ pub enum OpenFile {
     PipeWriter(std::io::PipeWriter),
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for OpenFile {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Stdin(_) => serializer.serialize_str("stdin"),
+            Self::Stdout(_) => serializer.serialize_str("stdout"),
+            Self::Stderr(_) => serializer.serialize_str("stderr"),
+            Self::File(_) => serializer.serialize_str("file"),
+            Self::PipeReader(_) => serializer.serialize_str("pipe_reader"),
+            Self::PipeWriter(_) => serializer.serialize_str("pipe_writer"),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for OpenFile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match String::deserialize(deserializer)?.as_str() {
+            "stdin" => return Ok(Self::Stdin(std::io::stdin())),
+            "stdout" => return Ok(Self::Stdout(std::io::stdout())),
+            "stderr" => return Ok(Self::Stderr(std::io::stderr())),
+            "file" => (),
+            "pipe_reader" => (),
+            "pipe_writer" => (),
+            _ => return Err(serde::de::Error::custom("invalid open file")),
+        }
+
+        // TODO(serde): Figure out something better to do with open pipes and files.
+        null().map_err(serde::de::Error::custom)
+    }
+}
+
 /// Returns an open file that will discard all I/O.
 pub fn null() -> Result<OpenFile, error::Error> {
     let file = sys::fs::open_null_file()?;
@@ -205,6 +243,7 @@ pub enum OpenFileEntry<'a> {
 
 /// Represents the open files in a shell context.
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OpenFiles {
     /// Maps shell file descriptors to open files.
     files: HashMap<ShellFd, Option<OpenFile>>,

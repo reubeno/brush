@@ -33,6 +33,7 @@ pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 pub type ShellFd = i32;
 
 /// Represents an instance of a shell.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell {
     /// Trap handler configuration for the shell.
     pub traps: traps::TrapHandlerConfig,
@@ -53,6 +54,8 @@ pub struct Shell {
     pub options: RuntimeOptions,
 
     /// State of managed jobs.
+    /// TODO(serde): Need to warn somehow that jobs cannot be serialized.
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub jobs: jobs::JobManager,
 
     /// Shell aliases.
@@ -92,6 +95,7 @@ pub struct Shell {
     pub completion_config: completion::Config,
 
     /// Shell built-in commands.
+    #[cfg_attr(feature = "serde", serde(skip))]
     builtins: HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
@@ -104,12 +108,14 @@ pub struct Shell {
     last_stopwatch_offset: u32,
 
     /// Key bindings for the shell, optionally implemented by an interactive shell.
+    #[cfg_attr(feature = "serde", serde(skip))]
     key_bindings: Option<KeyBindingsHelper>,
 
     /// History of commands executed in the shell.
     history: Option<history::History>,
 
     /// Error formatter for customizing error display.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: ErrorFormatterHelper,
 }
 
@@ -379,7 +385,7 @@ impl Shell {
             history: None,
             error_formatter: options
                 .error_formatter
-                .unwrap_or_else(|| Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))),
+                .unwrap_or_else(default_error_formatter),
             depth: 0,
         };
 
@@ -1808,4 +1814,8 @@ fn create_parser<R: Read>(
 
 fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
+}
+
+fn default_error_formatter() -> ErrorFormatterHelper {
+    Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))
 }

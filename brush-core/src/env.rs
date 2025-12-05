@@ -23,6 +23,7 @@ pub enum EnvironmentLookup {
 
 /// Represents a shell environment scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EnvironmentScope {
     /// Scope local to a function instance
     Local,
@@ -86,6 +87,7 @@ impl Drop for ScopeGuard<'_> {
 
 /// Represents the shell variable environment, composed of a stack of scopes.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShellEnvironment {
     /// Stack of scopes, with the top of the stack being the current scope.
     scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
@@ -577,6 +579,7 @@ impl ShellEnvironment {
 
 /// Represents a map from names to shell variables.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShellVariableMap {
     variables: HashMap<String, ShellVariable>,
 }

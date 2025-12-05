@@ -369,6 +369,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.9.2",
  "rpds",
+ "serde",
  "strum 0.27.2",
  "strum_macros 0.27.2",
  "terminfo",
@@ -2616,6 +2617,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e75f485e819d4d3015e6c0d55d02a4fd3db47c1993d9e603e0361fba2bffb34"
 dependencies = [
  "archery",
+ "serde",
 ]
 
 [[package]]
