@@ -211,7 +211,6 @@ async fn run_impl(
             let shell = shell.lock().await;
             let mut stderr = shell.stderr();
             let _ = shell.display_error(&mut stderr, &e).await;
-            drop(stderr);
             drop(shell);
             1
         }

@@ -4,6 +4,7 @@ use std::io::Write;
 
 use crate::events;
 
+/// Extension trait for adding brush-specific built-in commands to a shell builder.
 pub(crate) trait ShellBuilderBrushBuiltinExt {
     /// Add brush-specific builtins to a shell being built.
     #[must_use]
