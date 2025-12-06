@@ -30,7 +30,7 @@ const HEADING_UI_OPTIONS: &str = "User interface options";
 
 /// Identifies the input backend to use for the shell.
 #[derive(Clone, Copy, clap::ValueEnum)]
-pub enum InputBackend {
+pub enum InputBackendType {
     /// Richest input backend, based on reedline.
     Reedline,
     /// Basic input backend that provides minimal completion support for testing.
@@ -40,7 +40,7 @@ pub enum InputBackend {
 }
 
 /// Parsed command-line arguments for the brush shell.
-#[derive(Parser)]
+#[derive(Clone, Parser)]
 #[clap(name = productinfo::PRODUCT_NAME,
        version = VERSION,
        about = SHORT_DESCRIPTION,
@@ -120,7 +120,8 @@ pub struct CommandLineArgs {
     #[clap(long = "posix", help_heading = HEADING_STANDARD_OPTIONS)]
     pub posix: bool,
 
-    /// Path to the rc file to load in interactive shells (instead of `bash.bashrc` and `~/.bashrc`).
+    /// Path to the rc file to load in interactive shells (instead of `bash.bashrc` and
+    /// `~/.bashrc`).
     #[clap(long = "rcfile", alias = "init-file", value_name = "FILE", help_heading = HEADING_STANDARD_OPTIONS)]
     pub rc_file: Option<PathBuf>,
 
@@ -162,7 +163,7 @@ pub struct CommandLineArgs {
 
     /// Input backend.
     #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
-    pub input_backend: Option<InputBackend>,
+    pub input_backend: Option<InputBackendType>,
 
     /// Enable debug logging for classes of tracing events.
     #[clap(long = "debug", alias = "log-enable", value_name = "EVENT", help_heading = HEADING_UI_OPTIONS)]

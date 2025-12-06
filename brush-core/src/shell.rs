@@ -355,7 +355,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub async fn new(options: CreateOptions) -> Result<Self, error::Error> {
+    pub(crate) async fn new(options: CreateOptions) -> Result<Self, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
@@ -532,6 +532,11 @@ impl Shell {
     /// Returns the key bindings helper for the shell.
     pub const fn key_bindings(&self) -> &Option<KeyBindingsHelper> {
         &self.key_bindings
+    }
+
+    /// Sets the key bindings helper for the shell.
+    pub fn set_key_bindings(&mut self, key_bindings: Option<KeyBindingsHelper>) {
+        self.key_bindings = key_bindings;
     }
 
     /// Returns the registered builtins for the shell.
@@ -1621,13 +1626,13 @@ impl Shell {
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
-    pub fn stdout(&self) -> impl std::io::Write {
+    pub fn stdout(&self) -> impl std::io::Write + 'static {
         self.open_files.try_stdout().cloned().unwrap()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write {
+    pub fn stderr(&self) -> impl std::io::Write + 'static {
         self.open_files.try_stderr().cloned().unwrap()
     }
 

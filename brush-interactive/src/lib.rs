@@ -5,11 +5,11 @@ pub use error::ShellError;
 
 mod interactive_shell;
 pub use interactive_shell::{
-    InteractiveExecutionResult, InteractivePrompt, InteractiveShell, ReadResult,
+    InputBackend, InteractiveExecutionResult, InteractivePrompt, InteractiveShellExt, ReadResult,
 };
 
 mod options;
-pub use options::Options;
+pub use options::UIOptions;
 
 #[cfg(feature = "completion")]
 mod completion;
@@ -18,18 +18,21 @@ mod completion;
 #[cfg(feature = "reedline")]
 mod reedline;
 #[cfg(feature = "reedline")]
-pub use reedline::ReedlineShell;
+pub use reedline::ReedlineInputBackend;
 
 // Basic shell
 #[cfg(feature = "basic")]
 mod basic;
 #[cfg(feature = "basic")]
-pub use basic::BasicShell;
+pub use basic::BasicInputBackend;
 
 // Minimal shell
 #[cfg(feature = "minimal")]
 mod minimal;
 #[cfg(feature = "minimal")]
-pub use minimal::MinimalShell;
+pub use minimal::MinimalInputBackend;
 
+mod refs;
 mod trace_categories;
+
+pub use refs::ShellRef;

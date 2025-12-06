@@ -2,9 +2,8 @@ mod completer;
 mod edit_mode;
 mod highlighter;
 mod history;
+mod input_backend;
 mod prompt;
-mod reedline_shell;
-mod refs;
 mod validator;
 
-pub use reedline_shell::ReedlineShell;
+pub use input_backend::ReedlineInputBackend;

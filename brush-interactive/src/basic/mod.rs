@@ -1,8 +1,8 @@
-mod basic_shell;
+mod input_backend;
 mod non_term_line_reader;
 mod term_line_reader;
 
-pub use basic_shell::BasicShell;
+pub use input_backend::BasicInputBackend;
 
 use crate::{ReadResult, ShellError};
 

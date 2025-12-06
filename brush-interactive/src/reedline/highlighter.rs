@@ -1,6 +1,6 @@
 use std::str::Chars;
 
-use super::refs;
+use crate::refs;
 use nu_ansi_term::{Color, Style};
 
 mod styles {
