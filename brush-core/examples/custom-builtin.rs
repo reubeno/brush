@@ -122,8 +122,7 @@ async fn run_example() -> Result<()> {
     // Create a shell instance with custom builtin registered.
     let mut shell = brush_core::Shell::builder()
         .builtin("greet", brush_core::builtins::builtin::<GreetCommand>())
-        .build()
-        .await?;
+        .build()?;
 
     // Demonstrate basic usage.
     let result = shell

@@ -8,22 +8,25 @@ mod unix {
     use brush_parser::SourceSpan;
     use criterion::{Criterion, black_box};
 
-    async fn instantiate_shell() -> brush_core::Shell {
+    fn instantiate_shell() -> brush_core::Shell {
         brush_core::Shell::builder()
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
-            .await
             .unwrap()
     }
 
     async fn instantiate_shell_with_init_scripts() -> brush_core::Shell {
-        brush_core::Shell::builder()
+        let mut shell = brush_core::Shell::builder()
             .interactive(true)
             .read_commands_from_stdin(true)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
-            .await
-            .unwrap()
+            .unwrap();
+        
+        // Initialize the shell (load RC/profile scripts)
+        shell.initialize(false, false, None).await.unwrap();
+        
+        shell
     }
 
     async fn run_one_command(shell: &mut brush_core::Shell, command: &str) {
@@ -57,7 +60,7 @@ mod unix {
 
         // Benchmark shell instantiation.
         c.bench_function("instantiate_shell", |b| {
-            b.to_async(&rt).iter(|| black_box(instantiate_shell()));
+            b.iter(|| black_box(instantiate_shell()));
         });
         c.bench_function("instantiate_shell_with_init_scripts", |b| {
             b.to_async(&rt)
@@ -65,13 +68,13 @@ mod unix {
         });
 
         // Benchmark: cloning a shell object.
-        let shell = rt.block_on(instantiate_shell());
+        let shell = instantiate_shell();
         c.bench_function("clone_shell_object", |b| {
             b.iter(|| black_box(shell.clone()));
         });
 
         // Benchmark: parsing and evaluating an arithmetic expression..
-        let shell = rt.block_on(instantiate_shell());
+        let shell = instantiate_shell();
         c.bench_function("eval_arithmetic", |b| {
             b.iter_batched_ref(
                 || shell.clone(),
@@ -81,7 +84,7 @@ mod unix {
         });
 
         // Benchmark: running the echo built-in command.
-        let shell = rt.block_on(instantiate_shell());
+        let shell = instantiate_shell();
         c.bench_function("run_echo_builtin_command", |b| {
             b.iter_batched_ref(
                 || shell.clone(),
@@ -106,7 +109,7 @@ mod unix {
         // });
 
         // Benchmark: word expansion.
-        let shell = rt.block_on(instantiate_shell());
+        let shell = instantiate_shell();
         c.bench_function("expand_one_string", |b| {
             b.iter_batched_ref(
                 || shell.clone(),
@@ -116,7 +119,7 @@ mod unix {
         });
 
         // Benchmark: function invocation.
-        let mut shell = rt.block_on(instantiate_shell());
+        let mut shell = instantiate_shell();
         shell.define_func(
             String::from("testfunc"),
             brush_parser::ast::FunctionDefinition {
@@ -144,7 +147,7 @@ mod unix {
         });
 
         // Benchmark: for loop.
-        let shell = rt.block_on(instantiate_shell());
+        let shell = instantiate_shell();
         c.bench_function("for_loop", |b| {
             b.iter_batched_ref(
                 || shell.clone(),

@@ -193,7 +193,12 @@ async fn run_impl(
     drop(event_config);
 
     // Instantiate an appropriately configured shell.
-    let shell = instantiate_shell(&args, cli_args).await?;
+    let mut shell = instantiate_shell(&args, &cli_args)?;
+
+    // Initialize the shell by loading RC/profile scripts (unless disabled).
+    shell
+        .initialize(args.no_profile, args.no_rc, args.rc_file.as_deref())
+        .await?;
 
     // Wrap the shell.
     let shell = Arc::new(Mutex::new(shell));
@@ -285,9 +290,9 @@ fn instantiate_ui(
     factory.create(ui_options, shell)
 }
 
-async fn instantiate_shell(
+fn instantiate_shell(
     args: &CommandLineArgs,
-    cli_args: Vec<String>,
+    cli_args: &[String],
 ) -> Result<brush_core::Shell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
@@ -366,8 +371,8 @@ async fn instantiate_shell(
     // Add builtins.
     let shell = shell.default_builtins(builtin_set).brush_builtins();
 
-    // Build the shell.
-    let shell = shell.build().await?;
+    // Build the shell (now synchronous - RC/profile loading will happen later if needed).
+    let shell = shell.build()?;
 
     Ok(shell)
 }

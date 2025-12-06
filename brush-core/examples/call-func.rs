@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 
-async fn instantiate_shell() -> Result<brush_core::Shell> {
-    let shell = brush_core::Shell::builder().build().await?;
+fn instantiate_shell() -> Result<brush_core::Shell> {
+    let shell = brush_core::Shell::builder().build()?;
     Ok(shell)
 }
 
@@ -44,7 +44,7 @@ async fn run_func(shell: &mut brush_core::Shell, suppress_stdout: bool) -> Resul
 }
 
 async fn run(suppress_stdout: bool) -> Result<()> {
-    let mut shell = instantiate_shell().await?;
+    let mut shell = instantiate_shell()?;
 
     define_func(&mut shell).await?;
 

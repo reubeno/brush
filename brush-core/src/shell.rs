@@ -167,11 +167,33 @@ impl AsMut<Self> for Shell {
 pub use shell_builder::State as ShellBuilderState;
 
 impl<S: shell_builder::IsComplete> ShellBuilder<S> {
-    /// Returns a new shell instance created with the options provided
-    pub async fn build(self) -> Result<Shell, error::Error> {
+    /// Returns a new shell instance created with the options provided.
+    ///
+    /// This method constructs the shell without loading RC/profile scripts.
+    /// If you need the shell to load its standard configuration files,
+    /// call [`Shell::initialize()`] on the returned shell instance.
+    pub fn build(self) -> Result<Shell, error::Error> {
         let options = self.build_settings();
 
-        Shell::new(options).await
+        Shell::new_unconfigured(options)
+    }
+
+    /// Returns a new shell instance created with the options provided and
+    /// initializes it by loading RC and profile scripts.
+    ///
+    /// This is a convenience method that combines [`build()`](Self::build) and
+    /// [`Shell::initialize()`] into a single async call.
+    pub async fn build_initialized(self) -> Result<Shell, error::Error> {
+        let options = self.build_settings();
+        let skip_profile = options.no_profile;
+        let skip_rc = options.no_rc;
+        let rc_file = options.rc_file.clone();
+
+        let mut shell = Shell::new_unconfigured(options)?;
+        shell
+            .initialize(skip_profile, skip_rc, rc_file.as_deref())
+            .await?;
+        Ok(shell)
     }
 }
 
@@ -242,6 +264,21 @@ impl<S: shell_builder::State> ShellBuilder<S> {
         self.builtins.extend(builtins);
         self
     }
+
+    /// Add a single custom variable to the shell's initial environment
+    pub fn with_variable(mut self, name: impl Into<String>, var: ShellVariable) -> Self {
+        self.initial_vars.insert(name.into(), var);
+        self
+    }
+
+    /// Add multiple custom variables to the shell's initial environment
+    pub fn with_variables(
+        mut self,
+        vars: impl IntoIterator<Item = (String, ShellVariable)>,
+    ) -> Self {
+        self.initial_vars.extend(vars);
+        self
+    }
 }
 
 /// Options for creating a new shell.
@@ -276,6 +313,9 @@ pub struct CreateOptions {
     /// Registered builtins.
     #[builder(field)]
     pub builtins: HashMap<String, builtins::Registration>,
+    /// Custom initial variables to set in the shell environment.
+    #[builder(field)]
+    pub initial_vars: HashMap<String, ShellVariable>,
     /// Disallow overwriting regular files via output redirection.
     #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
@@ -342,6 +382,9 @@ pub struct CreateOptions {
     pub error_formatter: Option<ErrorFormatterHelper>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
+    /// Whether to skip initialization of well-known shell variables.
+    #[builder(default)]
+    pub skip_wellknown_vars: bool,
 }
 
 impl Shell {
@@ -352,10 +395,41 @@ impl Shell {
 
     /// Returns a new shell instance created with the given options.
     ///
+    /// # Deprecated
+    ///
+    /// This method is deprecated. Use [`Shell::builder()`] to construct shell instances
+    /// instead. The builder pattern provides better type safety and more flexible
+    /// configuration options.
+    ///
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub(crate) async fn new(options: CreateOptions) -> Result<Self, error::Error> {
+    #[deprecated(
+        since = "0.3.0",
+        note = "Use Shell::builder() instead for better type safety and flexibility"
+    )]
+    pub async fn new(options: CreateOptions) -> Result<Self, error::Error> {
+        let skip_profile = options.no_profile;
+        let skip_rc = options.no_rc;
+        let rc_file = options.rc_file.clone();
+
+        let mut shell = Self::new_unconfigured(options)?;
+        shell
+            .initialize(skip_profile, skip_rc, rc_file.as_deref())
+            .await?;
+        Ok(shell)
+    }
+
+    /// Returns a new shell instance created with the given options, without loading
+    /// RC/profile scripts.
+    ///
+    /// This method creates a shell in its most basic configured state. After creation,
+    /// you may want to call [`Shell::initialize()`] to load configuration files.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The options to use when creating the shell.
+    pub(crate) fn new_unconfigured(options: CreateOptions) -> Result<Self, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             traps: traps::TrapHandlerConfig::default(),
@@ -398,17 +472,24 @@ impl Shell {
         // parse the entire script with the same settings.
         shell.options.extended_globbing = true;
 
-        // Initialize environment.
-        wellknownvars::initialize_vars(&mut shell, options.do_not_inherit_env)?;
+        // Initialize environment if not skipped.
+        if !options.skip_wellknown_vars {
+            wellknownvars::initialize_vars(&mut shell, options.do_not_inherit_env)?;
+        }
+
+        // Apply any custom variables.
+        for (name, var) in options.initial_vars {
+            shell.env.set_global(name, var)?;
+        }
 
         // Set up history, if relevant.
         if shell.options.enable_command_history {
             if let Some(history_path) = shell.history_file_path() {
-                let mut options = std::fs::File::options();
-                options.read(true);
+                let mut file_options = std::fs::File::options();
+                file_options.read(true);
 
                 if let Ok(history_file) =
-                    shell.open_file(&options, history_path, &shell.default_exec_params())
+                    shell.open_file(&file_options, history_path, &shell.default_exec_params())
                 {
                     shell.history = Some(history::History::import(history_file)?);
                 }
@@ -419,16 +500,33 @@ impl Shell {
             }
         }
 
-        // Load profiles/configuration.
-        shell
-            .load_config(
-                options.no_profile,
-                options.no_rc,
-                options.rc_file.as_deref(),
-            )
-            .await?;
-
         Ok(shell)
+    }
+
+    /// Initializes the shell by loading RC and profile scripts.
+    ///
+    /// This method loads the shell's standard configuration files (e.g., .bashrc, .profile)
+    /// according to the specified options.
+    ///
+    /// # Arguments
+    ///
+    /// * `skip_profile` - Whether to skip loading profile scripts
+    /// * `skip_rc` - Whether to skip loading RC scripts  
+    /// * `rc_file` - Optional path to a specific RC file to load
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are issues loading or executing the configuration files.
+    pub async fn initialize(
+        &mut self,
+        skip_profile: bool,
+        skip_rc: bool,
+        rc_file: Option<&Path>,
+    ) -> Result<(), error::Error> {
+        // Load profiles/configuration.
+        self.load_config(skip_profile, skip_rc, rc_file).await?;
+
+        Ok(())
     }
 
     /// Returns the shell's official version string (if available).

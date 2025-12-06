@@ -22,8 +22,7 @@ impl TestShellWithBashCompletion {
             .no_profile(true)
             .no_rc(true)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
-            .build()
-            .await?;
+            .build()?;
 
         let temp_dir = assert_fs::TempDir::new()?;
         let bash_completion_script_path = Self::find_bash_completion_script()?;

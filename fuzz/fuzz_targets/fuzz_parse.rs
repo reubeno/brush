@@ -9,13 +9,10 @@ static TOKIO_RT: LazyLock<tokio::runtime::Runtime> =
     LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
 static SHELL_TEMPLATE: LazyLock<brush_core::Shell> = LazyLock::new(|| {
-    TOKIO_RT
-        .block_on(
-            brush_core::Shell::builder()
-                .no_profile(true)
-                .no_rc(true)
-                .build(),
-        )
+    brush_core::Shell::builder()
+        .no_profile(true)
+        .no_rc(true)
+        .build()
         .unwrap()
 });
 

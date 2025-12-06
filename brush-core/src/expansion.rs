@@ -1846,7 +1846,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_full_expansion() -> Result<()> {
-        let mut shell = crate::shell::Shell::builder().build().await?;
+        let mut shell = crate::shell::Shell::builder().build()?;
         let params = shell.default_exec_params();
 
         assert_eq!(
@@ -1883,7 +1883,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_brace_expansion() -> Result<()> {
-        let mut shell = crate::shell::Shell::builder().build().await?;
+        let mut shell = crate::shell::Shell::builder().build()?;
         let params = shell.default_exec_params();
         let expander = WordExpander::new(&mut shell, &params);
 
@@ -1910,7 +1910,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_field_splitting() -> Result<()> {
-        let mut shell = crate::shell::Shell::builder().build().await?;
+        let mut shell = crate::shell::Shell::builder().build()?;
         let params = shell.default_exec_params();
         let expander = WordExpander::new(&mut shell, &params);
 
