@@ -37,7 +37,7 @@ pub struct InteractivePrompt {
     pub continuation_prompt: String,
 }
 
-/// Extension trait providing interactive shell capabilities for [`ShellRef`].
+/// Extension trait providing interactive shell capabilities for a [`Shell`].
 #[allow(async_fn_in_trait)]
 pub trait InteractiveShellExt {
     /// Runs the interactive shell loop, reading commands from standard input and writing
