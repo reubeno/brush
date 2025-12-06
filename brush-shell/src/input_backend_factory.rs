@@ -15,7 +15,7 @@ impl InputBackendFactory for ReedlineInputBackendFactory {
     #[cfg(all(feature = "reedline", any(unix, windows)))]
     type InputBackendType = brush_interactive::ReedlineInputBackend;
     #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
-    type InputBackendType = StubShell;
+    type InputBackendType = StubInputBackend;
 
     fn create(
         &self,
@@ -40,7 +40,7 @@ impl InputBackendFactory for BasicInputBackendFactory {
     #[cfg(feature = "basic")]
     type InputBackendType = brush_interactive::BasicInputBackend;
     #[cfg(not(feature = "basic"))]
-    type InputBackendType = StubShell;
+    type InputBackendType = StubInputBackend;
 
     fn create(
         &self,
@@ -64,7 +64,7 @@ impl InputBackendFactory for MinimalInputBackendFactory {
     #[cfg(feature = "minimal")]
     type InputBackendType = brush_interactive::MinimalInputBackend;
     #[cfg(not(feature = "minimal"))]
-    type InputBackendType = StubShell;
+    type InputBackendType = StubInputBackend;
 
     #[allow(unused_variables, reason = "options are not used on all platforms")]
     fn create(
@@ -80,5 +80,17 @@ impl InputBackendFactory for MinimalInputBackendFactory {
         {
             Err(brush_interactive::ShellError::InputBackendNotSupported)
         }
+    }
+}
+
+pub(crate) struct StubInputBackend;
+
+impl brush_interactive::InputBackend for StubInputBackend {
+    fn read_line(
+        &mut self,
+        _shell_ref: &brush_interactive::ShellRef,
+        _prompt: brush_interactive::InteractivePrompt,
+    ) -> Result<brush_interactive::ReadResult, brush_interactive::ShellError> {
+        Err(brush_interactive::ShellError::InputBackendNotSupported)
     }
 }

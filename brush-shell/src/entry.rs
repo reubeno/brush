@@ -5,8 +5,8 @@ use crate::args::InputBackendType;
 use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
 use crate::error_formatter;
 use crate::events;
+use crate::input_backend_factory;
 use crate::productinfo;
-use crate::shell_factory;
 use brush_builtins::ShellBuilderExt as _;
 use brush_interactive::InputBackend;
 use brush_interactive::InteractiveShellExt as _;
@@ -146,13 +146,28 @@ async fn run_async(
 
     match selected_backend {
         InputBackendType::Reedline => {
-            run_impl(cli_args, args, shell_factory::ReedlineInputBackendFactory).await
+            run_impl(
+                cli_args,
+                args,
+                input_backend_factory::ReedlineInputBackendFactory,
+            )
+            .await
         }
         InputBackendType::Basic => {
-            run_impl(cli_args, args, shell_factory::BasicInputBackendFactory).await
+            run_impl(
+                cli_args,
+                args,
+                input_backend_factory::BasicInputBackendFactory,
+            )
+            .await
         }
         InputBackendType::Minimal => {
-            run_impl(cli_args, args, shell_factory::MinimalInputBackendFactory).await
+            run_impl(
+                cli_args,
+                args,
+                input_backend_factory::MinimalInputBackendFactory,
+            )
+            .await
         }
     }
 }
@@ -167,7 +182,7 @@ async fn run_async(
 async fn run_impl(
     cli_args: Vec<String>,
     args: CommandLineArgs,
-    factory: impl shell_factory::InputBackendFactory + Send + 'static,
+    factory: impl input_backend_factory::InputBackendFactory + Send + 'static,
 ) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
@@ -259,7 +274,7 @@ async fn run_in_shell(
 
 fn instantiate_ui(
     args: &CommandLineArgs,
-    factory: &(impl shell_factory::InputBackendFactory + Send + 'static),
+    factory: &(impl input_backend_factory::InputBackendFactory + Send + 'static),
     shell: &brush_interactive::ShellRef,
 ) -> Result<impl InputBackend, brush_interactive::ShellError> {
     let ui_options = brush_interactive::UIOptions {

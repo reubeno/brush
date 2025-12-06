@@ -1,7 +1,5 @@
 use std::io::{IsTerminal, Write};
 
-use brush_core::Shell;
-
 use crate::{
     InputBackend, ShellError,
     interactive_shell::{InteractivePrompt, ReadResult},
@@ -14,34 +12,17 @@ pub struct MinimalInputBackend;
 impl InputBackend for MinimalInputBackend {
     fn read_line(
         &mut self,
-        shell_ref: &crate::ShellRef,
+        _shell_ref: &crate::ShellRef,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         self.display_prompt(&prompt)?;
 
-        let mut result = String::new();
-
-        loop {
-            match Self::read_input_line()? {
-                ReadResult::Input(s) => {
-                    result.push_str(s.as_str());
-
-                    let shell = tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().block_on(shell_ref.lock())
-                    });
-
-                    if Self::is_valid_input(&shell, result.as_str()) {
-                        break;
-                    }
-                }
-                ReadResult::BoundCommand(s) => {
-                    result.push_str(s.as_str());
-                    break;
-                }
-                ReadResult::Eof => break,
-                ReadResult::Interrupted => return Ok(ReadResult::Interrupted),
-            }
-        }
+        let result = match Self::read_input_line()? {
+            ReadResult::Input(s) => s,
+            ReadResult::BoundCommand(s) => s,
+            ReadResult::Eof => return Ok(ReadResult::Eof),
+            ReadResult::Interrupted => return Ok(ReadResult::Interrupted),
+        };
 
         if result.is_empty() {
             Ok(ReadResult::Eof)
@@ -76,18 +57,6 @@ impl MinimalInputBackend {
             Ok(ReadResult::Eof)
         } else {
             Ok(ReadResult::Input(input))
-        }
-    }
-
-    fn is_valid_input(shell: &Shell, input: &str) -> bool {
-        match shell.parse_string(input.to_owned()) {
-            Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
-                if inner.is_incomplete() =>
-            {
-                false
-            }
-            Err(brush_parser::ParseError::ParsingAtEndOfInput) => false,
-            _ => true,
         }
     }
 }
