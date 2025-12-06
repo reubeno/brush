@@ -209,8 +209,8 @@ async fn run_impl(
         Ok(code) => code,
         Err(brush_interactive::ShellError::ShellError(e)) => {
             let shell = shell.lock().await;
-            let mut stderr = shell.as_ref().stderr();
-            let _ = shell.as_ref().display_error(&mut stderr, &e).await;
+            let mut stderr = shell.stderr();
+            let _ = shell.display_error(&mut stderr, &e).await;
             drop(stderr);
             drop(shell);
             1
