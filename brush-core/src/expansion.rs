@@ -1021,7 +1021,8 @@ impl<'a> WordExpander<'a> {
                 let expanded_parameter_len = expanded_parameter.polymorphic_len() as i64;
                 let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
 
-                // We handle negative indexes as offsets from the end of the element, with -1 referencing the last element.
+                // We handle negative indexes as offsets from the end of the element, with -1
+                // referencing the last element.
                 if expanded_offset < 0 {
                     expanded_offset += expanded_parameter_len;
 

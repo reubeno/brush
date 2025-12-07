@@ -5,10 +5,8 @@ use crate::args::InputBackendType;
 use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
 use crate::error_formatter;
 use crate::events;
-use crate::input_backend_factory;
 use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
-use brush_interactive::InputBackend;
 use brush_interactive::InteractiveShellExt as _;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
@@ -141,49 +139,6 @@ async fn run_async(
     cli_args: Vec<String>,
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
-    let default_backend = get_default_input_backend_type();
-    let selected_backend = args.input_backend.unwrap_or(default_backend);
-
-    match selected_backend {
-        InputBackendType::Reedline => {
-            run_impl(
-                cli_args,
-                args,
-                input_backend_factory::ReedlineInputBackendFactory,
-            )
-            .await
-        }
-        InputBackendType::Basic => {
-            run_impl(
-                cli_args,
-                args,
-                input_backend_factory::BasicInputBackendFactory,
-            )
-            .await
-        }
-        InputBackendType::Minimal => {
-            run_impl(
-                cli_args,
-                args,
-                input_backend_factory::MinimalInputBackendFactory,
-            )
-            .await
-        }
-    }
-}
-
-/// Run the brush shell. Returns the exit code.
-///
-/// # Arguments
-///
-/// * `cli_args` - The command-line arguments to the shell, in string form.
-/// * `args` - The already-parsed command-line arguments.
-#[doc(hidden)]
-async fn run_impl(
-    cli_args: Vec<String>,
-    args: CommandLineArgs,
-    factory: impl input_backend_factory::InputBackendFactory + Send + 'static,
-) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
     *event_config = Some(events::TraceEventConfig::init(
@@ -192,17 +147,47 @@ async fn run_impl(
     ));
     drop(event_config);
 
-    // Instantiate an appropriately configured shell.
+    // Instantiate an appropriately configured shell and wrap it in an `Arc`.
     let shell = instantiate_shell(&args, cli_args).await?;
-
-    // Wrap the shell.
     let shell = Arc::new(Mutex::new(shell));
 
-    // Attach a UI.
-    let ui = instantiate_ui(&args, &factory, &shell)?;
+    // Run with the selected input backend. Each branch instantiates the concrete
+    // backend type and calls `run_in_shell`, preserving static dispatch.
+    let default_backend = get_default_input_backend_type();
+    let selected_backend = args.input_backend.unwrap_or(default_backend);
 
-    // Run in that shell.
-    let result = run_in_shell(&shell, args.clone(), ui).await;
+    #[allow(unused_variables, reason = "not used when no backend features enabled")]
+    let ui_options = brush_interactive::UIOptions {
+        disable_bracketed_paste: args.disable_bracketed_paste,
+        disable_color: args.disable_color,
+        disable_highlighting: !args.enable_highlighting,
+    };
+
+    let result = match selected_backend {
+        #[cfg(all(feature = "reedline", any(unix, windows)))]
+        InputBackendType::Reedline => {
+            let mut ui = brush_interactive::ReedlineInputBackend::new(&ui_options, &shell)?;
+            run_in_shell(&shell, args.clone(), &mut ui).await
+        }
+        #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
+        InputBackendType::Reedline => Err(brush_interactive::ShellError::InputBackendNotSupported),
+
+        #[cfg(feature = "basic")]
+        InputBackendType::Basic => {
+            let mut ui = brush_interactive::BasicInputBackend;
+            run_in_shell(&shell, args.clone(), &mut ui).await
+        }
+        #[cfg(not(feature = "basic"))]
+        InputBackendType::Basic => Err(brush_interactive::ShellError::InputBackendNotSupported),
+
+        #[cfg(feature = "minimal")]
+        InputBackendType::Minimal => {
+            let mut ui = brush_interactive::MinimalInputBackend;
+            run_in_shell(&shell, args.clone(), &mut ui).await
+        }
+        #[cfg(not(feature = "minimal"))]
+        InputBackendType::Minimal => Err(brush_interactive::ShellError::InputBackendNotSupported),
+    };
 
     // Display any error that percolated up.
     let exit_code = match result {
@@ -226,7 +211,7 @@ async fn run_impl(
 async fn run_in_shell(
     shell_ref: &brush_interactive::ShellRef,
     args: CommandLineArgs,
-    mut ui: impl InputBackend,
+    ui: &mut impl brush_interactive::InputBackend,
 ) -> Result<u8, brush_interactive::ShellError> {
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
@@ -245,7 +230,7 @@ async fn run_in_shell(
     // args) passed on the command line via positional arguments, then we copy over the
     // parameters but do *not* execute it.
     } else if args.read_commands_from_stdin {
-        shell_ref.run_interactively(&mut ui).await?;
+        shell_ref.run_interactively(ui).await?;
 
     // If a script path was provided, then run the script.
     } else if !args.script_args.is_empty() {
@@ -262,27 +247,13 @@ async fn run_in_shell(
     // If we got down here, then we don't have any commands to run. We'll be reading
     // them in from stdin one way or the other.
     } else {
-        shell_ref.run_interactively(&mut ui).await?;
+        shell_ref.run_interactively(ui).await?;
     }
 
     // Make sure to return the last result observed in the shell.
     let result = shell_ref.lock().await.last_exit_status();
 
     Ok(result)
-}
-
-fn instantiate_ui(
-    args: &CommandLineArgs,
-    factory: &(impl input_backend_factory::InputBackendFactory + Send + 'static),
-    shell: &brush_interactive::ShellRef,
-) -> Result<impl InputBackend, brush_interactive::ShellError> {
-    let ui_options = brush_interactive::UIOptions {
-        disable_bracketed_paste: args.disable_bracketed_paste,
-        disable_color: args.disable_color,
-        disable_highlighting: !args.enable_highlighting,
-    };
-
-    factory.create(ui_options, shell)
 }
 
 async fn instantiate_shell(
