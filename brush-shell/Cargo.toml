@@ -45,8 +45,9 @@ default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
-experimental = ["experimental-builtins"]
+experimental = ["experimental-builtins", "experimental-load"]
 experimental-builtins = ["dep:brush-experimental-builtins"]
+experimental-load = ["dep:serde_json", "brush-core/serde"]
 
 [lints]
 workspace = true

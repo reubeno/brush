@@ -271,6 +271,42 @@ async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
 ) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+    #[cfg(feature = "experimental")]
+    if let Some(load_file) = &args.load_file {
+        return instantiate_shell_from_file(load_file.as_path());
+    }
+
+    instantiate_shell_from_args(args, cli_args).await
+}
+
+#[cfg(feature = "experimental")]
+fn instantiate_shell_from_file(
+    file_path: &Path,
+) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+    let mut shell: brush_core::Shell = serde_json::from_reader(std::fs::File::open(file_path)?)
+        .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
+
+    // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
+    // TODO(serde): we should consider whether we could/should at least track *which* are enabled.
+    let builtin_set = if shell.options.sh_mode {
+        brush_builtins::BuiltinSet::ShMode
+    } else {
+        brush_builtins::BuiltinSet::BashMode
+    };
+
+    let builtins = brush_builtins::default_builtins(builtin_set);
+
+    for (builtin_name, builtin) in builtins {
+        shell.register_builtin(&builtin_name, builtin);
+    }
+
+    Ok(shell)
+}
+
+async fn instantiate_shell_from_args(
+    args: &CommandLineArgs,
+    cli_args: Vec<String>,
+) -> Result<brush_core::Shell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
