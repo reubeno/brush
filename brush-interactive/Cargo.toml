@@ -25,6 +25,7 @@ reedline = ["dep:reedline", "dep:nu-ansi-term", "completion"]
 workspace = true
 
 [dependencies]
+bon = "3.8.1"
 brush-parser = { version = "^0.3.0", path = "../brush-parser" }
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 crossterm = { version = "0.29.0", features = ["serde"], optional = true }

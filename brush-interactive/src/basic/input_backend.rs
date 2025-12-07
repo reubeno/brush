@@ -11,6 +11,7 @@ use super::{non_term_line_reader, term_line_reader};
 
 /// Represents a basic shell input backend capable of interactive usage, with primitive support
 /// for completion and test-focused automation via pexpect and similar technologies.
+#[derive(Default)]
 pub struct BasicInputBackend;
 
 impl InputBackend for BasicInputBackend {

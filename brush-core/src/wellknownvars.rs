@@ -11,38 +11,41 @@ const BASH_MACHINE: &str = "unknown";
 
 const DEFAULT_LINENO: usize = 1;
 
-#[expect(clippy::too_many_lines)]
-pub(crate) fn initialize_vars(
-    shell: &mut Shell,
-    do_not_inherit_env: bool,
-) -> Result<(), error::Error> {
-    // Seed parameters from environment (unless requested not to do so).
-    if !do_not_inherit_env {
-        for (k, v) in std::env::vars() {
-            // See if it's a function exported by an ancestor process.
-            if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
-                if let Some(func_name) = func_name.strip_suffix("%%") {
-                    // Intentionally best-effort; don't fail out of the shell if we can't
-                    // parse an incoming function.
-                    if shell.define_func_from_str(func_name, v.as_str()).is_ok() {
-                        shell.func_mut(func_name).unwrap().export();
-                    }
-
-                    continue;
+/// Inherit environment variables from the host process into the shell's environment.
+///
+/// # Arguments
+///
+/// * `shell` - The shell instance to inherit environment variables into.
+pub(crate) fn inherit_env_vars(shell: &mut Shell) -> Result<(), error::Error> {
+    for (k, v) in std::env::vars() {
+        // See if it's a function exported by an ancestor process.
+        if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
+            if let Some(func_name) = func_name.strip_suffix("%%") {
+                // Intentionally best-effort; don't fail out of the shell if we can't
+                // parse an incoming function.
+                if shell.define_func_from_str(func_name, v.as_str()).is_ok() {
+                    shell.func_mut(func_name).unwrap().export();
                 }
-            }
 
-            // Special case OLDPWD for bash compatibility.
-            if k == "OLDPWD" {
                 continue;
             }
-
-            let mut var = ShellVariable::new(ShellValue::String(v));
-            var.export();
-            shell.env.set_global(k, var)?;
         }
+
+        // Special case OLDPWD for bash compatibility.
+        if k == "OLDPWD" {
+            continue;
+        }
+
+        let mut var = ShellVariable::new(ShellValue::String(v));
+        var.export();
+        shell.env.set_global(k, var)?;
     }
 
+    Ok(())
+}
+
+#[expect(clippy::too_many_lines)]
+pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error> {
     let shell_version = shell.version().clone();
     shell.env.set_global(
         "BRUSH_VERSION",

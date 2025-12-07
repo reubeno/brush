@@ -397,6 +397,7 @@ dependencies = [
 name = "brush-interactive"
 version = "0.3.0"
 dependencies = [
+ "bon",
  "brush-core",
  "brush-parser",
  "crossterm",
