@@ -130,6 +130,11 @@ fn install_panic_handlers() {
     }
 }
 
+#[cfg(feature = "experimental")]
+const DEFAULT_ENABLE_HIGHLIGHTING: bool = true;
+#[cfg(not(feature = "experimental"))]
+const DEFAULT_ENABLE_HIGHLIGHTING: bool = false;
+
 /// Run the brush shell. Returns the exit code.
 ///
 /// # Arguments
@@ -158,12 +163,16 @@ async fn run_async(
     let default_backend = get_default_input_backend_type();
     let selected_backend = args.input_backend.unwrap_or(default_backend);
 
+    let highlighting = args
+        .enable_highlighting
+        .unwrap_or(DEFAULT_ENABLE_HIGHLIGHTING);
+
     #[allow(unused_variables, reason = "not used when no backend features enabled")]
-    let ui_options = brush_interactive::UIOptions {
-        disable_bracketed_paste: args.disable_bracketed_paste,
-        disable_color: args.disable_color,
-        disable_highlighting: !args.enable_highlighting,
-    };
+    let ui_options = brush_interactive::UIOptions::builder()
+        .disable_bracketed_paste(args.disable_bracketed_paste)
+        .disable_color(args.disable_color)
+        .disable_highlighting(!highlighting)
+        .build();
 
     let result = match selected_backend {
         #[cfg(all(feature = "reedline", any(unix, windows)))]

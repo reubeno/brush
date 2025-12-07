@@ -159,7 +159,7 @@ pub struct CommandLineArgs {
 
     /// Enable syntax highlighting (experimental).
     #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS)]
-    pub enable_highlighting: bool,
+    pub enable_highlighting: Option<bool>,
 
     /// Input backend.
     #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
