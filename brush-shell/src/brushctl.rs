@@ -4,22 +4,31 @@ use std::io::Write;
 
 use crate::events;
 
-pub(crate) fn register(shell: &mut brush_core::Shell) {
-    // For compatibility with previous releases, we register the command under both
-    // `brushctl` and `brushinfo` names. It will behave identically across the two.
-    shell.register_builtin(
-        "brushctl",
-        brush_core::builtins::builtin::<BrushCtlCommand>(),
-    );
-    shell.register_builtin(
-        "brushinfo",
-        brush_core::builtins::builtin::<BrushCtlCommand>(),
-    );
+/// Extension trait for adding brush-specific built-in commands to a shell builder.
+pub(crate) trait ShellBuilderBrushBuiltinExt {
+    /// Add brush-specific builtins to a shell being built.
+    #[must_use]
+    fn brush_builtins(self) -> Self;
+}
+
+impl<S: brush_core::ShellBuilderState> ShellBuilderBrushBuiltinExt for brush_core::ShellBuilder<S> {
+    fn brush_builtins(self) -> Self {
+        // For compatibility with previous releases, we register the command under both
+        // `brushctl` and `brushinfo` names. It will behave identically across the two.
+        self.builtin(
+            "brushctl",
+            brush_core::builtins::builtin::<BrushCtlCommand>(),
+        )
+        .builtin(
+            "brushinfo",
+            brush_core::builtins::builtin::<BrushCtlCommand>(),
+        )
+    }
 }
 
 /// Configure the running brush shell.
 #[derive(Parser)]
-struct BrushCtlCommand {
+pub(crate) struct BrushCtlCommand {
     #[clap(subcommand)]
     command_group: CommandGroup,
 }

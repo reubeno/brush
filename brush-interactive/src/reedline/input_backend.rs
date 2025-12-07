@@ -1,42 +1,31 @@
 use nu_ansi_term::Color;
 use reedline::MenuBuilder;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
-use super::{completer, edit_mode, highlighter, history, refs, validator};
-use crate::{InteractiveShell, ReadResult, ShellError, interactive_shell::InteractivePrompt};
+use super::{completer, edit_mode, highlighter, history, validator};
+use crate::{InputBackend, ReadResult, ShellError, interactive_shell::InteractivePrompt, refs};
 
 /// Represents an interactive shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.
-pub struct ReedlineShell {
+pub struct ReedlineInputBackend {
     reedline: Option<reedline::Reedline>,
-    shell: refs::ShellRef,
 }
 
 const COMPLETION_MENU_NAME: &str = "completion_menu";
 
-impl ReedlineShell {
+impl ReedlineInputBackend {
     /// Returns a new interactive shell instance, created with the provided options.
     ///
     /// # Arguments
     ///
-    /// * `options` - Options for creating the interactive shell.
-    pub async fn new(mut options: crate::Options) -> Result<Self, ShellError> {
+    /// * `options` - Options for creating the input backend.
+    /// * `shell_ref` - Shell that the backend will be used with.
+    pub fn new(options: &crate::UIOptions, shell_ref: &refs::ShellRef) -> Result<Self, ShellError> {
         // Set up key bindings.
         let key_bindings = compose_key_bindings(COMPLETION_MENU_NAME);
 
         // Set up mutable edit mode.
         let mutable_edit_mode = edit_mode::MutableEditMode::new(key_bindings);
         let updatable_bindings = mutable_edit_mode.bindings();
-        options.shell.key_bindings = Some(updatable_bindings);
-
-        // Set up shell first. Its initialization may influence how the
-        // editor needs to operate.
-        let shell = brush_core::Shell::new(options.shell).await?;
-
-        // Wrap the shell in an Arc<Mutex> so we can share it with the helper
-        // objects we'll need to set up for reedline.
-        let shell_ref = Arc::new(Mutex::new(shell));
 
         // Create helper objects that implement reedline traits; each will
         // hold a reference to the shell.
@@ -93,14 +82,20 @@ impl ReedlineShell {
             reedline = reedline.with_highlighter(Box::new(highlighter));
         }
 
+        let mut shell = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(shell_ref.lock())
+        });
+
+        shell.set_key_bindings(Some(updatable_bindings));
+        drop(shell);
+
         Ok(Self {
             reedline: Some(reedline),
-            shell: shell_ref,
         })
     }
 }
 
-impl Drop for ReedlineShell {
+impl Drop for ReedlineInputBackend {
     fn drop(&mut self) {
         // It's unpleasant to need to do so, but if we detect a panic in the process of being
         // unwound, then we arrange for our reedline::Reedline instance to *not* get dropped.
@@ -117,27 +112,17 @@ impl Drop for ReedlineShell {
     }
 }
 
-impl InteractiveShell for ReedlineShell {
-    /// Returns an immutable reference to the inner shell object.
-    fn shell(&self) -> impl AsRef<brush_core::Shell> + Send {
-        refs::ReedlineShellReader {
-            shell: self.shell.try_lock().unwrap(),
-        }
-    }
-
-    /// Returns a mutable reference to the inner shell object.
-    fn shell_mut(&mut self) -> impl AsMut<brush_core::Shell> + Send {
-        refs::ReedlineShellWriter {
-            shell: self.shell.try_lock().unwrap(),
-        }
-    }
-
+impl InputBackend for ReedlineInputBackend {
     /// Reads a line of input, using the given prompt.
     ///
     /// # Arguments
     ///
     /// * `prompt` - The prompt to display to the user.
-    fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
+    fn read_line(
+        &mut self,
+        _shell: &crate::ShellRef,
+        prompt: InteractivePrompt,
+    ) -> Result<ReadResult, ShellError> {
         if let Some(reedline) = &mut self.reedline {
             match reedline.read_line(&prompt) {
                 Ok(reedline::Signal::Success(s)) => {

@@ -377,7 +377,8 @@ async fn spawn_pipeline_processes(
     let mut spawn_results = VecDeque::new();
     let mut process_group_id: Option<i32> = None;
 
-    // Create pipes to use between commands, but only bother doing so if there's more than one command.
+    // Create pipes to use between commands, but only bother doing so if there's more than one
+    // command.
     if pipeline_len > 1 {
         for _ in 0..(pipeline_len - 1) {
             let (reader, writer) = std::io::pipe()?;

@@ -167,11 +167,26 @@ impl AsMut<Self> for Shell {
 pub use shell_builder::State as ShellBuilderState;
 
 impl<S: shell_builder::IsComplete> ShellBuilder<S> {
-    /// Returns a new shell instance created with the options provided
+    /// Returns a new shell instance created with the options provided. Runs any
+    /// configuration loading as well.
     pub async fn build(self) -> Result<Shell, error::Error> {
-        let options = self.build_settings();
+        let mut options = self.build_settings();
 
-        Shell::new(options).await
+        let no_profile = options.no_profile;
+        let no_rc = options.no_rc;
+        let rc_file = std::mem::take(&mut options.rc_file);
+
+        // Construct the shell.
+        let mut shell = Shell::new(options)?;
+
+        // Load profiles/configuration, unless skipped.
+        if !no_profile || !no_rc {
+            shell
+                .load_config(no_profile, no_rc, rc_file.as_deref())
+                .await?;
+        }
+
+        Ok(shell)
     }
 }
 
@@ -242,6 +257,12 @@ impl<S: shell_builder::State> ShellBuilder<S> {
         self.builtins.extend(builtins);
         self
     }
+
+    /// Adds a single variable to be initialized in the shell.
+    pub fn var(mut self, name: impl Into<String>, variable: ShellVariable) -> Self {
+        self.vars.insert(name.into(), variable);
+        self
+    }
 }
 
 /// Options for creating a new shell.
@@ -276,6 +297,10 @@ pub struct CreateOptions {
     /// Registered builtins.
     #[builder(field)]
     pub builtins: HashMap<String, builtins::Registration>,
+    /// Provides a set of variables to be initialized in the shell. If present, they
+    /// are assigned *after* inherited or well-known variables are set (when applicable).
+    #[builder(field)]
+    pub vars: HashMap<String, ShellVariable>,
     /// Disallow overwriting regular files via output redirection.
     #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
@@ -305,8 +330,15 @@ pub struct CreateOptions {
     /// Whether to skip inheriting environment variables from the calling process.
     #[builder(default)]
     pub do_not_inherit_env: bool,
+    /// Whether to skip initializing well-known variables.
+    #[builder(default)]
+    pub skip_well_known_vars: bool,
     /// Provides a set of initial open files to be tracked by the shell.
-    pub fds: Option<HashMap<ShellFd, openfiles::OpenFile>>,
+    #[builder(default)]
+    pub fds: HashMap<ShellFd, openfiles::OpenFile>,
+    /// Initial working dir for the shell. If left unspecified, will be populated from
+    /// the host environment.
+    pub working_dir: Option<PathBuf>,
     /// Whether the shell is in POSIX compliance mode.
     #[builder(default)]
     pub posix: bool,
@@ -344,6 +376,39 @@ pub struct CreateOptions {
     pub shell_version: Option<String>,
 }
 
+impl Default for Shell {
+    fn default() -> Self {
+        Self {
+            traps: traps::TrapHandlerConfig::default(),
+            open_files: openfiles::OpenFiles::default(),
+            working_dir: PathBuf::default(),
+            env: env::ShellEnvironment::default(),
+            funcs: functions::FunctionEnv::default(),
+            options: RuntimeOptions::default(),
+            jobs: jobs::JobManager::default(),
+            aliases: HashMap::default(),
+            last_exit_status: 0,
+            last_exit_status_change_count: 0,
+            last_pipeline_statuses: vec![0],
+            depth: 0,
+            name: None,
+            args: vec![],
+            version: None,
+            product_display_str: None,
+            call_stack: callstack::CallStack::new(),
+            directory_stack: vec![],
+            completion_config: completion::Config::default(),
+            builtins: HashMap::default(),
+            program_location_cache: pathcache::PathCache::default(),
+            last_stopwatch_time: std::time::SystemTime::now(),
+            last_stopwatch_offset: 0,
+            key_bindings: None,
+            history: None,
+            error_formatter: default_error_formatter(),
+        }
+    }
+}
+
 impl Shell {
     /// Create an instance of [Shell] using the builder syntax
     pub fn builder() -> ShellBuilder<shell_builder::Empty> {
@@ -351,55 +416,50 @@ impl Shell {
     }
 
     /// Returns a new shell instance created with the given options.
+    /// Does *not* load any configuration files (e.g., bashrc).
     ///
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub async fn new(options: CreateOptions) -> Result<Self, error::Error> {
+    pub(crate) fn new(options: CreateOptions) -> Result<Self, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
-            traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::new(),
-            // Populate working directory from the host environment.
-            working_dir: std::env::current_dir()?,
-            env: env::ShellEnvironment::new(),
-            funcs: functions::FunctionEnv::default(),
             options: RuntimeOptions::defaults_from(&options),
-            jobs: jobs::JobManager::new(),
-            aliases: HashMap::default(),
-            last_exit_status: 0,
-            last_exit_status_change_count: 0,
-            last_pipeline_statuses: vec![0],
             name: options.shell_name,
             args: options.shell_args.unwrap_or_default(),
             version: options.shell_version,
             product_display_str: options.shell_product_display_str,
-            call_stack: callstack::CallStack::new(),
-            directory_stack: vec![],
-            completion_config: completion::Config::default(),
+            working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
             builtins: options.builtins,
-            program_location_cache: pathcache::PathCache::default(),
-            last_stopwatch_time: std::time::SystemTime::now(),
-            last_stopwatch_offset: 0,
             key_bindings: options.key_bindings,
-            history: None,
             error_formatter: options
                 .error_formatter
                 .unwrap_or_else(default_error_formatter),
-            depth: 0,
+            ..Self::default()
         };
 
         // Add in any open files provided.
-        if let Some(fds) = options.fds {
-            shell.open_files.update_from(fds.into_iter());
-        }
+        shell.open_files.update_from(options.fds.into_iter());
 
         // TODO(patterns): Without this a script that sets extglob will fail because we
         // parse the entire script with the same settings.
         shell.options.extended_globbing = true;
 
-        // Initialize environment.
-        wellknownvars::initialize_vars(&mut shell, options.do_not_inherit_env)?;
+        // If requested, seed parameters from environment.
+        if !options.do_not_inherit_env {
+            wellknownvars::inherit_env_vars(&mut shell)?;
+        }
+
+        // If requested, set well-known variables.
+        if !options.skip_well_known_vars {
+            wellknownvars::init_well_known_vars(&mut shell)?;
+        }
+
+        // Set any provided variables.
+        for (var_name, var_value) in options.vars {
+            shell.env.set_global(var_name, var_value)?;
+        }
 
         // Set up history, if relevant.
         if shell.options.enable_command_history {
@@ -418,15 +478,6 @@ impl Shell {
                 shell.history = Some(history::History::default());
             }
         }
-
-        // Load profiles/configuration.
-        shell
-            .load_config(
-                options.no_profile,
-                options.no_rc,
-                options.rc_file.as_deref(),
-            )
-            .await?;
 
         Ok(shell)
     }
@@ -534,6 +585,11 @@ impl Shell {
         &self.key_bindings
     }
 
+    /// Sets the key bindings helper for the shell.
+    pub fn set_key_bindings(&mut self, key_bindings: Option<KeyBindingsHelper>) {
+        self.key_bindings = key_bindings;
+    }
+
     /// Returns the registered builtins for the shell.
     pub const fn builtins(&self) -> &HashMap<String, builtins::Registration> {
         &self.builtins
@@ -637,7 +693,14 @@ impl Shell {
         self.last_stopwatch_offset
     }
 
-    async fn load_config(
+    /// Loads and executes standard shell configuration files (i.e., rc and profile).
+    ///
+    /// # Arguments
+    ///
+    /// * `skip_profile` - Whether to skip loading profile files.
+    /// * `skip_rc` - Whether to skip loading rc files.
+    /// * `rc_file` - Optionally provides non-default path to rc file to load.
+    pub async fn load_config(
         &mut self,
         skip_profile: bool,
         skip_rc: bool,
@@ -1621,13 +1684,13 @@ impl Shell {
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
-    pub fn stdout(&self) -> impl std::io::Write {
+    pub fn stdout(&self) -> impl std::io::Write + 'static {
         self.open_files.try_stdout().cloned().unwrap()
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write {
+    pub fn stderr(&self) -> impl std::io::Write + 'static {
         self.open_files.try_stderr().cloned().unwrap()
     }
 

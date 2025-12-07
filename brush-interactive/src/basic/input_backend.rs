@@ -1,53 +1,37 @@
 use std::io::IsTerminal;
 
+use brush_core::Shell;
+
 use crate::{
-    ShellError, completion,
-    interactive_shell::{InteractivePrompt, InteractiveShell, ReadResult},
+    InputBackend, ShellError, completion,
+    interactive_shell::{InteractivePrompt, ReadResult},
 };
 
 use super::{non_term_line_reader, term_line_reader};
 
-/// Represents a basic shell capable of interactive usage, with primitive support
+/// Represents a basic shell input backend capable of interactive usage, with primitive support
 /// for completion and test-focused automation via pexpect and similar technologies.
-pub struct BasicShell {
-    shell: brush_core::Shell,
-}
+#[derive(Default)]
+pub struct BasicInputBackend;
 
-impl BasicShell {
-    /// Returns a new interactive shell instance, created with the provided options.
-    ///
-    /// # Arguments
-    ///
-    /// * `options` - Options for creating the interactive shell.
-    pub async fn new(options: crate::Options) -> Result<Self, ShellError> {
-        let shell = brush_core::Shell::new(options.shell).await?;
-        Ok(Self { shell })
-    }
-}
-
-impl InteractiveShell for BasicShell {
-    /// Returns an immutable reference to the inner shell object.
-    fn shell(&self) -> impl AsRef<brush_core::Shell> {
-        self.shell.as_ref()
-    }
-
-    /// Returns a mutable reference to the inner shell object.
-    fn shell_mut(&mut self) -> impl AsMut<brush_core::Shell> {
-        self.shell.as_mut()
-    }
-
-    fn read_line(&mut self, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
+impl InputBackend for BasicInputBackend {
+    fn read_line(
+        &mut self,
+        shell: &crate::ShellRef,
+        prompt: InteractivePrompt,
+    ) -> Result<ReadResult, ShellError> {
         if std::io::stdin().is_terminal() {
-            self.read_line_via(&term_line_reader::TermLineReader::new()?, &prompt)
+            self.read_line_via(shell, &term_line_reader::TermLineReader::new()?, &prompt)
         } else {
-            self.read_line_via(&non_term_line_reader::NonTermLineReader, &prompt)
+            self.read_line_via(shell, &non_term_line_reader::NonTermLineReader, &prompt)
         }
     }
 }
 
-impl BasicShell {
+impl BasicInputBackend {
     fn read_line_via<R: super::LineReader>(
-        &mut self,
+        &self,
+        shell_ref: &crate::ShellRef,
         reader: &R,
         prompt: &InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
@@ -56,13 +40,23 @@ impl BasicShell {
 
         loop {
             match reader.read_line(prompt_to_use.map(|p| p.prompt.as_str()), |line, cursor| {
-                self.generate_completions(line, cursor)
+                let mut shell = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(shell_ref.lock())
+                });
+
+                Self::generate_completions(&mut shell, line, cursor)
             })? {
                 ReadResult::Input(s) => {
                     result.push_str(s.as_str());
-                    if self.is_valid_input(result.as_str()) {
+
+                    let shell = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(shell_ref.lock())
+                    });
+
+                    if Self::is_valid_input(&shell, result.as_str()) {
                         break;
                     }
+
                     prompt_to_use = None;
                 }
                 ReadResult::BoundCommand(s) => {
@@ -87,8 +81,8 @@ impl BasicShell {
         std::io::stdin().is_terminal()
     }
 
-    fn is_valid_input(&self, input: &str) -> bool {
-        match self.shell.parse_string(input.to_owned()) {
+    fn is_valid_input(shell: &Shell, input: &str) -> bool {
+        match shell.parse_string(input.to_owned()) {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>
             {
@@ -100,21 +94,21 @@ impl BasicShell {
     }
 
     fn generate_completions(
-        &mut self,
+        shell: &mut Shell,
         line: &str,
         cursor: usize,
     ) -> Result<brush_core::completion::Completions, ShellError> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current()
-                .block_on(self.generate_completions_async(line, cursor))
+                .block_on(Self::generate_completions_async(shell, line, cursor))
         })
     }
 
     async fn generate_completions_async(
-        &mut self,
+        shell: &mut Shell,
         line: &str,
         cursor: usize,
     ) -> Result<brush_core::completion::Completions, ShellError> {
-        Ok(completion::complete_async(&mut self.shell, line, cursor).await)
+        Ok(completion::complete_async(shell, line, cursor).await)
     }
 }

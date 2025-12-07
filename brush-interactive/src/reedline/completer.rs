@@ -1,8 +1,7 @@
 use nu_ansi_term::{Color, Style};
 use std::borrow::BorrowMut;
 
-use super::refs;
-use crate::completion;
+use crate::{completion, refs};
 
 pub(crate) struct ReedlineCompleter {
     pub shell: refs::ShellRef,

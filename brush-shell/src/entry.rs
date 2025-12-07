@@ -1,12 +1,13 @@
 //! Implements the command-line interface for the `brush` shell.
 
-use crate::args::{CommandLineArgs, InputBackend};
-use crate::brushctl;
+use crate::args::CommandLineArgs;
+use crate::args::InputBackendType;
+use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
 use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
-use crate::shell_factory;
-use brush_interactive::InteractiveShell;
+use brush_builtins::ShellBuilderExt as _;
+use brush_interactive::InteractiveShellExt as _;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
@@ -138,30 +139,6 @@ async fn run_async(
     cli_args: Vec<String>,
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
-    let default_backend = get_default_input_backend();
-    let selected_backend = args.input_backend.unwrap_or(default_backend);
-
-    match selected_backend {
-        InputBackend::Reedline => {
-            run_impl(cli_args, args, shell_factory::ReedlineShellFactory).await
-        }
-        InputBackend::Basic => run_impl(cli_args, args, shell_factory::BasicShellFactory).await,
-        InputBackend::Minimal => run_impl(cli_args, args, shell_factory::MinimalShellFactory).await,
-    }
-}
-
-/// Run the brush shell. Returns the exit code.
-///
-/// # Arguments
-///
-/// * `cli_args` - The command-line arguments to the shell, in string form.
-/// * `args` - The already-parsed command-line arguments.
-#[doc(hidden)]
-async fn run_impl(
-    cli_args: Vec<String>,
-    args: CommandLineArgs,
-    factory: impl shell_factory::ShellFactory + Send + 'static,
-) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
     *event_config = Some(events::TraceEventConfig::init(
@@ -170,19 +147,56 @@ async fn run_impl(
     ));
     drop(event_config);
 
-    // Instantiate an appropriately configured shell.
-    let mut shell = instantiate_shell(&args, cli_args, factory).await?;
+    // Instantiate an appropriately configured shell and wrap it in an `Arc`.
+    let shell = instantiate_shell(&args, cli_args).await?;
+    let shell = Arc::new(Mutex::new(shell));
 
-    // Run in that shell.
-    let result = run_in_shell(&mut shell, args).await;
+    // Run with the selected input backend. Each branch instantiates the concrete
+    // backend type and calls `run_in_shell`, preserving static dispatch.
+    let default_backend = get_default_input_backend_type();
+    let selected_backend = args.input_backend.unwrap_or(default_backend);
+
+    #[allow(unused_variables, reason = "not used when no backend features enabled")]
+    let ui_options = brush_interactive::UIOptions {
+        disable_bracketed_paste: args.disable_bracketed_paste,
+        disable_color: args.disable_color,
+        disable_highlighting: !args.enable_highlighting,
+    };
+
+    let result = match selected_backend {
+        #[cfg(all(feature = "reedline", any(unix, windows)))]
+        InputBackendType::Reedline => {
+            let mut ui = brush_interactive::ReedlineInputBackend::new(&ui_options, &shell)?;
+            run_in_shell(&shell, args.clone(), &mut ui).await
+        }
+        #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
+        InputBackendType::Reedline => Err(brush_interactive::ShellError::InputBackendNotSupported),
+
+        #[cfg(feature = "basic")]
+        InputBackendType::Basic => {
+            let mut ui = brush_interactive::BasicInputBackend;
+            run_in_shell(&shell, args.clone(), &mut ui).await
+        }
+        #[cfg(not(feature = "basic"))]
+        InputBackendType::Basic => Err(brush_interactive::ShellError::InputBackendNotSupported),
+
+        #[cfg(feature = "minimal")]
+        InputBackendType::Minimal => {
+            let mut ui = brush_interactive::MinimalInputBackend;
+            run_in_shell(&shell, args.clone(), &mut ui).await
+        }
+        #[cfg(not(feature = "minimal"))]
+        InputBackendType::Minimal => Err(brush_interactive::ShellError::InputBackendNotSupported),
+    };
 
     // Display any error that percolated up.
     let exit_code = match result {
         Ok(code) => code,
         Err(brush_interactive::ShellError::ShellError(e)) => {
-            let core_shell = shell.shell();
-            let mut stderr = core_shell.as_ref().stderr();
-            let _ = core_shell.as_ref().display_error(&mut stderr, &e).await;
+            let shell = shell.lock().await;
+            let mut stderr = shell.stderr();
+            let _ = shell.display_error(&mut stderr, &e).await;
+            drop(shell);
             1
         }
         Err(err) => {
@@ -195,36 +209,35 @@ async fn run_impl(
 }
 
 async fn run_in_shell(
-    shell: &mut impl brush_interactive::InteractiveShell,
+    shell_ref: &brush_interactive::ShellRef,
     args: CommandLineArgs,
+    ui: &mut impl brush_interactive::InputBackend,
 ) -> Result<u8, brush_interactive::ShellError> {
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
-        shell.shell_mut().as_mut().start_command_string_mode();
+        let mut shell = shell_ref.lock().await;
+
+        shell.start_command_string_mode();
 
         // Execute the command string.
-        let params = shell.shell().as_ref().default_exec_params();
+        let params = shell.default_exec_params();
         let source_info = brush_core::SourceInfo::from("-c");
-        let _ = shell
-            .shell_mut()
-            .as_mut()
-            .run_string(command, &source_info, &params)
-            .await?;
+        let _ = shell.run_string(command, &source_info, &params).await?;
 
-        shell.shell_mut().as_mut().end_command_string_mode()?;
+        shell.end_command_string_mode()?;
 
     // If -s was provided, then read commands from stdin. If there was a script (and optionally
     // args) passed on the command line via positional arguments, then we copy over the
     // parameters but do *not* execute it.
     } else if args.read_commands_from_stdin {
-        shell.run_interactively().await?;
+        shell_ref.run_interactively(ui).await?;
 
     // If a script path was provided, then run the script.
     } else if !args.script_args.is_empty() {
         // The path to a script was provided on the command line; run the script.
-        shell
-            .shell_mut()
-            .as_mut()
+        shell_ref
+            .lock()
+            .await
             .run_script(
                 Path::new(&args.script_args[0]),
                 args.script_args.iter().skip(1),
@@ -234,11 +247,11 @@ async fn run_in_shell(
     // If we got down here, then we don't have any commands to run. We'll be reading
     // them in from stdin one way or the other.
     } else {
-        shell.run_interactively().await?;
+        shell_ref.run_interactively(ui).await?;
     }
 
     // Make sure to return the last result observed in the shell.
-    let result = shell.shell().as_ref().last_exit_status();
+    let result = shell_ref.lock().await.last_exit_status();
 
     Ok(result)
 }
@@ -246,8 +259,7 @@ async fn run_in_shell(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-    factory: impl shell_factory::ShellFactory + Send + 'static,
-) -> Result<impl brush_interactive::InteractiveShell + 'static, brush_interactive::ShellError> {
+) -> Result<brush_core::Shell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
@@ -277,11 +289,11 @@ async fn instantiate_shell(
     let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
         || (args.script_args.is_empty() && args.command.is_none());
 
-    let builtins = brush_builtins::default_builtins(if args.sh_mode {
+    let builtin_set = if args.sh_mode {
         brush_builtins::BuiltinSet::ShMode
     } else {
         brush_builtins::BuiltinSet::BashMode
-    });
+    };
 
     // Identify the file descriptors to inherit.
     let fds = args
@@ -290,51 +302,43 @@ async fn instantiate_shell(
         .filter_map(|&fd| brush_core::sys::fd::try_get_file_for_open_fd(fd).map(|file| (fd, file)))
         .collect();
 
-    // Compose the options we'll use to create the shell.
-    let options = brush_interactive::Options {
-        shell: brush_core::CreateOptions {
-            disabled_options: args.disabled_options.clone(),
-            disabled_shopt_options: args.disabled_shopt_options.clone(),
-            disallow_overwriting_regular_files_via_output_redirection: args
-                .disallow_overwriting_regular_files_via_output_redirection,
-            enabled_options: args.enabled_options.clone(),
-            enabled_shopt_options: args.enabled_shopt_options.clone(),
-            do_not_execute_commands: args.do_not_execute_commands,
-            exit_after_one_command: args.exit_after_one_command,
-            login,
-            interactive: args.is_interactive(),
-            command_string_mode: args.command.is_some(),
-            no_editing: args.no_editing,
-            no_profile: args.no_profile,
-            no_rc: args.no_rc,
-            rc_file: args.rc_file.clone(),
-            do_not_inherit_env: args.do_not_inherit_env,
-            fds: Some(fds),
-            shell_args,
-            posix: args.posix || args.sh_mode,
-            print_commands_and_arguments: args.print_commands_and_arguments,
-            read_commands_from_stdin,
-            shell_name,
-            shell_product_display_str: Some(productinfo::get_product_display_str()),
-            sh_mode: args.sh_mode,
-            treat_unset_variables_as_error: args.treat_unset_variables_as_error,
-            verbose: args.verbose,
-            max_function_call_depth: None,
-            key_bindings: None,
-            error_formatter: Some(new_error_formatter(args)),
-            shell_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            builtins,
-        },
-        disable_bracketed_paste: args.disable_bracketed_paste,
-        disable_color: args.disable_color,
-        disable_highlighting: !args.enable_highlighting,
-    };
+    // Set up the shell builder with the requested options.
+    let shell = brush_core::Shell::builder()
+        .disable_options(args.disabled_options.clone())
+        .disable_shopt_options(args.disabled_shopt_options.clone())
+        .disallow_overwriting_regular_files_via_output_redirection(
+            args.disallow_overwriting_regular_files_via_output_redirection,
+        )
+        .enable_options(args.enabled_options.clone())
+        .enable_shopt_options(args.enabled_shopt_options.clone())
+        .do_not_execute_commands(args.do_not_execute_commands)
+        .exit_after_one_command(args.exit_after_one_command)
+        .login(login)
+        .interactive(args.is_interactive())
+        .command_string_mode(args.command.is_some())
+        .no_editing(args.no_editing)
+        .no_profile(args.no_profile)
+        .no_rc(args.no_rc)
+        .maybe_rc_file(args.rc_file.clone())
+        .do_not_inherit_env(args.do_not_inherit_env)
+        .fds(fds)
+        .maybe_shell_args(shell_args)
+        .posix(args.posix || args.sh_mode)
+        .print_commands_and_arguments(args.print_commands_and_arguments)
+        .read_commands_from_stdin(read_commands_from_stdin)
+        .maybe_shell_name(shell_name)
+        .shell_product_display_str(productinfo::get_product_display_str())
+        .sh_mode(args.sh_mode)
+        .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
+        .verbose(args.verbose)
+        .error_formatter(new_error_formatter(args))
+        .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
-    // Create the shell.
-    let mut shell = factory.create(options).await?;
+    // Add builtins.
+    let shell = shell.default_builtins(builtin_set).brush_builtins();
 
-    // Register our own built-in(s) with the shell.
-    brushctl::register(shell.shell_mut().as_mut());
+    // Build the shell.
+    let shell = shell.build().await?;
 
     Ok(shell)
 }
@@ -349,21 +353,21 @@ fn new_error_formatter(
     Arc::new(Mutex::new(formatter))
 }
 
-fn get_default_input_backend() -> InputBackend {
+fn get_default_input_backend_type() -> InputBackendType {
     #[cfg(any(unix, windows))]
     {
         // If stdin isn't a terminal, then `reedline` doesn't do the right thing
         // (reference: https://github.com/nushell/reedline/issues/509). Switch to
         // the minimal input backend instead for that scenario.
         if std::io::stdin().is_terminal() {
-            InputBackend::Reedline
+            InputBackendType::Reedline
         } else {
-            InputBackend::Minimal
+            InputBackendType::Minimal
         }
     }
     #[cfg(not(any(unix, windows)))]
     {
-        InputBackend::Minimal
+        InputBackendType::Minimal
     }
 }
 

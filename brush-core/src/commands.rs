@@ -410,8 +410,8 @@ impl<'a> SimpleCommand<'a> {
 
         // We still haven't found a command to invoke. We'll need to look for an external command.
         if !self.command_name.contains(std::path::MAIN_SEPARATOR) {
-            // All else failed; if we were given path directories to search, try to look through them
-            // for a matching executable. Otherwise, use our default search logic.
+            // All else failed; if we were given path directories to search, try to look through
+            // them for a matching executable. Otherwise, use our default search logic.
             let path = if let Some(path_dirs) = &self.path_dirs {
                 pathsearch::search_for_executable(
                     path_dirs.iter().map(String::as_str),
