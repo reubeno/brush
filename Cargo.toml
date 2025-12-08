@@ -7,6 +7,7 @@ members = [
     "brush-core",
     "brush-builtins",
     "brush-interactive",
+    "tuish",
     "fuzz",
     "xtask",
 ]
