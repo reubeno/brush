@@ -71,7 +71,7 @@ pub struct RatatuiInputBackend {
 1. **Fix draw_ui() borrowing issue** ⚠️ BLOCKED
    - Problem: Can't call `pane.render(frame, area)` inside `terminal.draw(|frame| {...})`
    - Need to either:
-     a) Use RefCell<Vec<Box<dyn ContentPane>>>
+     a) Use `RefCell<Vec<Box<dyn ContentPane>>>`
      b) Render panes to buffers before terminal.draw()
      c) Redesign to work with ratatui's widget system
 

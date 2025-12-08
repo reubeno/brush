@@ -1,4 +1,4 @@
-//! Terminal content pane using tui_term for PTY display.
+//! Terminal content pane using `tui_term` for PTY display.
 
 #![allow(dead_code)]
 
@@ -20,7 +20,7 @@ pub struct TerminalPane {
 
 impl TerminalPane {
     /// Create a new terminal pane with the given PTY resources.
-    pub fn new(parser: Arc<RwLock<vt100::Parser>>, pty_writer: Sender<Bytes>) -> Self {
+    pub const fn new(parser: Arc<RwLock<vt100::Parser>>, pty_writer: Sender<Bytes>) -> Self {
         Self { parser, pty_writer }
     }
 
@@ -39,11 +39,7 @@ impl TerminalPane {
 }
 
 impl ContentPane for TerminalPane {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Terminal"
     }
 
@@ -63,13 +59,10 @@ impl ContentPane for TerminalPane {
                 match key {
                     KeyCode::Char(c) if modifiers.contains(KeyModifiers::CONTROL) => {
                         // Handle Ctrl+key combinations
-                        match c {
-                            'a'..='z' => {
-                                // Ctrl+A = 1, Ctrl+B = 2, ..., Ctrl+Z = 26
-                                let ctrl_code = c as u8 - b'a' + 1;
-                                self.send_to_pty(vec![ctrl_code]);
-                            }
-                            _ => {}
+                        if let 'a'..='z' = c {
+                            // Ctrl+A = 1, Ctrl+B = 2, ..., Ctrl+Z = 26
+                            let ctrl_code = c as u8 - b'a' + 1;
+                            self.send_to_pty(vec![ctrl_code]);
                         }
                     }
                     KeyCode::Char(c) => {
