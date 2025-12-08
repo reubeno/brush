@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use std::sync::Arc;
+
 use crossterm::event::KeyCode;
 use ratatui::{
     prelude::*,
@@ -12,51 +14,47 @@ use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult};
 
 /// A content pane that displays environment variables in a scrollable table.
 pub struct EnvironmentPane {
-    variables: Vec<(String, String)>,
+    shell: Arc<tokio::sync::Mutex<brush_core::Shell>>,
     scroll_offset: usize,
 }
 
 impl EnvironmentPane {
     /// Create a new environment pane.
-    pub fn new() -> Self {
+    pub const fn new(shell: Arc<tokio::sync::Mutex<brush_core::Shell>>) -> Self {
         Self {
-            variables: Vec::new(),
+            shell,
             scroll_offset: 0,
         }
-    }
-
-    /// Updates the environment variables displayed in this pane.
-    pub fn update_variables(&mut self, mut vars: Vec<(String, String)>) {
-        vars.sort_by(|a, b| a.0.cmp(&b.0));
-        self.variables = vars;
-        // Reset scroll if we're past the end
-        self.clamp_scroll(0);
-    }
-
-    /// Clamps scroll offset based on available height.
-    fn clamp_scroll(&mut self, available_height: u16) {
-        let max_scroll = self
-            .variables
-            .len()
-            .saturating_sub(available_height as usize);
-        self.scroll_offset = self.scroll_offset.min(max_scroll);
     }
 }
 
 impl ContentPane for EnvironmentPane {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Environment"
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        if self.variables.is_empty() {
+        // Try to get shell variables without blocking
+        let variables = if let Ok(shell) = self.shell.try_lock() {
+            let mut vars: Vec<(String, String)> = shell
+                .env
+                .iter()
+                .map(|(name, var)| (name.clone(), var.value().to_cow_str(&shell).into_owned()))
+                .collect();
+            vars.sort_by(|a, b| a.0.cmp(&b.0));
+            vars
+        } else {
+            // Shell is locked (command running), show loading message
             let loading = ratatui::widgets::Paragraph::new("Loading environment variables...")
                 .style(Style::default().fg(Color::White));
             frame.render_widget(loading, area);
+            return;
+        };
+
+        if variables.is_empty() {
+            let empty = ratatui::widgets::Paragraph::new("No environment variables")
+                .style(Style::default().fg(Color::White));
+            frame.render_widget(empty, area);
             return;
         }
 
@@ -69,19 +67,23 @@ impl ContentPane for EnvironmentPane {
 
         // Clamp scroll offset to prevent scrolling past content
         let available_height = area.height.saturating_sub(2); // Subtract header and margin
-        self.clamp_scroll(available_height);
+        let max_scroll = variables.len().saturating_sub(available_height as usize);
+        self.scroll_offset = self.scroll_offset.min(max_scroll);
 
         // Skip rows based on scroll offset
-        let rows = self.variables.iter().skip(self.scroll_offset).map(|(k, v)| {
+        let rows = variables.iter().skip(self.scroll_offset).map(|(k, v)| {
             Row::new(vec![
                 Cell::from(k.as_str()).style(Style::default().add_modifier(Modifier::ITALIC)),
                 Cell::from(v.as_str()),
             ])
         });
 
-        let table = Table::new(rows, [Constraint::Percentage(30), Constraint::Percentage(70)])
-            .header(header)
-            .style(Style::default().fg(Color::White));
+        let table = Table::new(
+            rows,
+            [Constraint::Percentage(30), Constraint::Percentage(70)],
+        )
+        .header(header)
+        .style(Style::default().fg(Color::White));
 
         frame.render_widget(table, area);
     }
