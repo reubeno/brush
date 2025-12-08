@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use brush_builtins::ShellBuilderExt;
 use brush_core::openfiles::OpenFile;
-use brush_core::{ExecutionParameters, ShellFd, SourceInfo};
+use brush_core::{ExecutionParameters, SourceInfo};
 use ratatui_backend::RatatuiInputBackend;
 
 #[tokio::main]
@@ -31,31 +31,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the ratatui TUI with shell reference
     let mut backend = RatatuiInputBackend::new(Arc::clone(&shell))?;
 
-    // Now rebuild shell with PTY fds from backend
-    let mut fds = HashMap::new();
-    fds.insert(
-        ShellFd::from(0),
-        OpenFile::File(backend.pty_stdin.try_clone()?),
-    );
-    fds.insert(
-        ShellFd::from(1),
-        OpenFile::File(backend.pty_stdout.try_clone()?),
-    );
-    fds.insert(
-        ShellFd::from(2),
-        OpenFile::File(backend.pty_stderr.try_clone()?),
-    );
-
-    let new_shell = brush_core::Shell::builder()
-        .interactive(true)
-        .fds(fds)
-        .default_builtins(brush_builtins::BuiltinSet::BashMode)
-        .external_cmd_leads_session(true)
-        .build()
-        .await?;
-
-    // Replace shell in Arc
-    *shell.lock().await = new_shell;
+    // Now update shell with PTY fds from backend
+    let fds = HashMap::from([
+        (
+            brush_core::openfiles::OpenFiles::STDIN_FD,
+            OpenFile::File(backend.pty_stdin.try_clone()?),
+        ),
+        (
+            brush_core::openfiles::OpenFiles::STDOUT_FD,
+            OpenFile::File(backend.pty_stdout.try_clone()?),
+        ),
+        (
+            brush_core::openfiles::OpenFiles::STDERR_FD,
+            OpenFile::File(backend.pty_stderr.try_clone()?),
+        ),
+    ]);
+    shell.lock().await.replace_open_files(fds.into_iter());
 
     // Run the main event loop
     run_event_loop(&mut backend, shell).await?;
