@@ -1,6 +1,9 @@
 //! tuish - A TUI-based interactive shell built on brush.
 
+mod content_pane;
+mod environment_pane;
 mod ratatui_backend;
+mod terminal_pane;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,6 +11,7 @@ use std::sync::Arc;
 use brush_builtins::ShellBuilderExt;
 use brush_core::openfiles::OpenFile;
 use brush_core::{ExecutionParameters, ShellFd, SourceInfo};
+use environment_pane::EnvironmentPane;
 use ratatui_backend::RatatuiInputBackend;
 
 #[tokio::main]
@@ -59,28 +63,27 @@ async fn run_event_loop(
     let params = ExecutionParameters::default();
 
     loop {
-        // Get environment variables only if the Environment tab is visible
+        // Get environment variables and update the environment pane if visible
         // Use try_lock to avoid blocking the UI if a command is running
-        let env_vars = if backend.selected_tab == 1 {
-            if let Ok(shell) = shell.try_lock() {
-                let mut vars: Vec<(String, String)> = shell
-                    .env
-                    .iter()
-                    .map(|(name, var)| (name.clone(), var.value().to_cow_str(&shell).into_owned()))
-                    .collect();
-                vars.sort_by(|a, b| a.0.cmp(&b.0));
-                drop(shell);
-                Some(vars)
-            } else {
-                // Shell is locked by a running command, use cached or empty data
-                None
+        if let Ok(shell) = shell.try_lock() {
+            let mut vars: Vec<(String, String)> = shell
+                .env
+                .iter()
+                .map(|(name, var)| (name.clone(), var.value().to_cow_str(&shell).into_owned()))
+                .collect();
+            vars.sort_by(|a, b| a.0.cmp(&b.0));
+            drop(shell);
+
+            // Update environment pane (index 1)
+            if let Some(pane) = backend.get_pane_mut(1) {
+                if let Some(env_pane) = pane.as_any_mut().downcast_mut::<EnvironmentPane>() {
+                    env_pane.update_variables(vars);
+                }
             }
-        } else {
-            None
-        };
+        }
 
         // Render the UI
-        backend.draw_ui(env_vars.as_deref())?;
+        backend.draw_ui()?;
 
         // Handle events (keyboard input, etc.) with 16ms timeout (~60 FPS)
         match backend.handle_events()? {

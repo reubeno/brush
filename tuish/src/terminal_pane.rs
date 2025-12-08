@@ -1,0 +1,145 @@
+//! Terminal content pane using tui_term for PTY display.
+
+#![allow(dead_code)]
+
+use std::sync::{Arc, RwLock};
+
+use bytes::Bytes;
+use crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::prelude::*;
+use tokio::sync::mpsc::Sender;
+use tui_term::widget::PseudoTerminal;
+
+use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult};
+
+/// A content pane that displays a `PTY` terminal using `tui_term`.
+pub struct TerminalPane {
+    parser: Arc<RwLock<vt100::Parser>>,
+    pty_writer: Sender<Bytes>,
+}
+
+impl TerminalPane {
+    /// Create a new terminal pane with the given PTY resources.
+    pub fn new(parser: Arc<RwLock<vt100::Parser>>, pty_writer: Sender<Bytes>) -> Self {
+        Self { parser, pty_writer }
+    }
+
+    /// Sends raw bytes to the PTY.
+    fn send_to_pty(&self, bytes: impl AsRef<[u8]>) {
+        let _ = self
+            .pty_writer
+            .try_send(Bytes::copy_from_slice(bytes.as_ref()));
+    }
+
+    /// Process output from the PTY and forward to the parser
+    pub fn process_output(&self, data: &[u8]) {
+        let mut parser = self.parser.write().unwrap();
+        parser.process(data);
+    }
+}
+
+impl ContentPane for TerminalPane {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "Terminal"
+    }
+
+    fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let screen = {
+            let parser = self.parser.read().unwrap();
+            parser.screen().clone()
+        };
+        let pseudo_term = PseudoTerminal::new(&screen);
+        frame.render_widget(pseudo_term, area);
+    }
+
+    fn handle_event(&mut self, event: PaneEvent) -> PaneEventResult {
+        match event {
+            PaneEvent::KeyPress(key, modifiers) => {
+                // Forward all keyboard input to PTY when we're focused
+                match key {
+                    KeyCode::Char(c) if modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Handle Ctrl+key combinations
+                        match c {
+                            'a'..='z' => {
+                                // Ctrl+A = 1, Ctrl+B = 2, ..., Ctrl+Z = 26
+                                let ctrl_code = c as u8 - b'a' + 1;
+                                self.send_to_pty(vec![ctrl_code]);
+                            }
+                            _ => {}
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        self.send_to_pty(c.to_string().into_bytes());
+                    }
+                    KeyCode::Enter => {
+                        self.send_to_pty(vec![b'\r']);
+                    }
+                    KeyCode::Backspace => {
+                        self.send_to_pty(vec![0x7f]);
+                    }
+                    KeyCode::Tab => {
+                        self.send_to_pty(vec![b'\t']);
+                    }
+                    KeyCode::Esc => {
+                        self.send_to_pty(vec![0x1b]);
+                    }
+                    KeyCode::Up => {
+                        self.send_to_pty(vec![0x1b, b'[', b'A']);
+                    }
+                    KeyCode::Down => {
+                        self.send_to_pty(vec![0x1b, b'[', b'B']);
+                    }
+                    KeyCode::Right => {
+                        self.send_to_pty(vec![0x1b, b'[', b'C']);
+                    }
+                    KeyCode::Left => {
+                        self.send_to_pty(vec![0x1b, b'[', b'D']);
+                    }
+                    KeyCode::Home => {
+                        self.send_to_pty(vec![0x1b, b'[', b'H']);
+                    }
+                    KeyCode::End => {
+                        self.send_to_pty(vec![0x1b, b'[', b'F']);
+                    }
+                    KeyCode::PageUp => {
+                        self.send_to_pty(vec![0x1b, b'[', b'5', b'~']);
+                    }
+                    KeyCode::PageDown => {
+                        self.send_to_pty(vec![0x1b, b'[', b'6', b'~']);
+                    }
+                    KeyCode::Delete => {
+                        self.send_to_pty(vec![0x1b, b'[', b'3', b'~']);
+                    }
+                    KeyCode::Insert => {
+                        self.send_to_pty(vec![0x1b, b'[', b'2', b'~']);
+                    }
+                    KeyCode::F(n) => {
+                        let seq = match n {
+                            1 => vec![0x1b, b'O', b'P'],
+                            2 => vec![0x1b, b'O', b'Q'],
+                            3 => vec![0x1b, b'O', b'R'],
+                            4 => vec![0x1b, b'O', b'S'],
+                            5 => vec![0x1b, b'[', b'1', b'5', b'~'],
+                            6 => vec![0x1b, b'[', b'1', b'7', b'~'],
+                            7 => vec![0x1b, b'[', b'1', b'8', b'~'],
+                            8 => vec![0x1b, b'[', b'1', b'9', b'~'],
+                            9 => vec![0x1b, b'[', b'2', b'0', b'~'],
+                            10 => vec![0x1b, b'[', b'2', b'1', b'~'],
+                            11 => vec![0x1b, b'[', b'2', b'3', b'~'],
+                            12 => vec![0x1b, b'[', b'2', b'4', b'~'],
+                            _ => return PaneEventResult::NotHandled,
+                        };
+                        self.send_to_pty(seq);
+                    }
+                    _ => return PaneEventResult::NotHandled,
+                }
+                PaneEventResult::Handled
+            }
+            _ => PaneEventResult::NotHandled,
+        }
+    }
+}
