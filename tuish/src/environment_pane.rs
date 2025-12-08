@@ -7,7 +7,10 @@ use std::sync::Arc;
 use crossterm::event::KeyCode;
 use ratatui::{
     prelude::*,
-    widgets::{Cell, Row, Table},
+    widgets::{
+        Cell, HighlightSpacing, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
+        TableState,
+    },
 };
 
 use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult};
@@ -15,15 +18,17 @@ use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult};
 /// A content pane that displays environment variables in a scrollable table.
 pub struct EnvironmentPane {
     shell: Arc<tokio::sync::Mutex<brush_core::Shell>>,
-    scroll_offset: usize,
+    table_state: TableState,
+    scrollbar_state: ScrollbarState,
 }
 
 impl EnvironmentPane {
     /// Create a new environment pane.
-    pub const fn new(shell: Arc<tokio::sync::Mutex<brush_core::Shell>>) -> Self {
+    pub fn new(shell: Arc<tokio::sync::Mutex<brush_core::Shell>>) -> Self {
         Self {
             shell,
-            scroll_offset: 0,
+            table_state: TableState::default(),
+            scrollbar_state: ScrollbarState::default(),
         }
     }
 }
@@ -58,6 +63,17 @@ impl ContentPane for EnvironmentPane {
             return;
         }
 
+        // Select first item if nothing is selected
+        if self.table_state.selected().is_none() && !variables.is_empty() {
+            self.table_state.select(Some(0));
+        }
+
+        // Update scrollbar state with content length
+        self.scrollbar_state = self.scrollbar_state.content_length(variables.len());
+        if let Some(selected) = self.table_state.selected() {
+            self.scrollbar_state = self.scrollbar_state.position(selected);
+        }
+
         // Create table with header and rows
         let header = Row::new(vec![
             Cell::from("Variable").style(Style::default().add_modifier(Modifier::BOLD)),
@@ -65,54 +81,93 @@ impl ContentPane for EnvironmentPane {
         ])
         .style(Style::default().bg(Color::DarkGray));
 
-        // Clamp scroll offset to prevent scrolling past content
-        let available_height = area.height.saturating_sub(2); // Subtract header and margin
-        let max_scroll = variables.len().saturating_sub(available_height as usize);
-        self.scroll_offset = self.scroll_offset.min(max_scroll);
-
-        // Skip rows based on scroll offset
-        let rows = variables.iter().skip(self.scroll_offset).map(|(k, v)| {
-            Row::new(vec![
-                Cell::from(k.as_str()).style(Style::default().add_modifier(Modifier::ITALIC)),
-                Cell::from(v.as_str()),
-            ])
-        });
+        let rows: Vec<Row<'_>> = variables
+            .iter()
+            .map(|(k, v)| {
+                Row::new(vec![
+                    Cell::from(k.as_str()).style(Style::default().add_modifier(Modifier::ITALIC)),
+                    Cell::from(v.as_str()),
+                ])
+            })
+            .collect();
 
         let table = Table::new(
             rows,
             [Constraint::Percentage(30), Constraint::Percentage(70)],
         )
         .header(header)
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol(">> ")
+        .highlight_spacing(HighlightSpacing::Always)
         .style(Style::default().fg(Color::White));
 
-        frame.render_widget(table, area);
+        // Render table with state
+        frame.render_stateful_widget(table, area, &mut self.table_state);
+
+        // Render scrollbar on the right side
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("↑"))
+            .end_symbol(Some("↓"));
+
+        let scrollbar_area = area.inner(Margin {
+            vertical: 1, // Leave space for header
+            horizontal: 0,
+        });
+
+        frame.render_stateful_widget(scrollbar, scrollbar_area, &mut self.scrollbar_state);
     }
 
     fn handle_event(&mut self, event: PaneEvent) -> PaneEventResult {
         match event {
             PaneEvent::KeyPress(key, _modifiers) => match key {
                 KeyCode::Up => {
-                    self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                    self.table_state.select_previous();
+                    if let Some(selected) = self.table_state.selected() {
+                        self.scrollbar_state = self.scrollbar_state.position(selected);
+                    }
                     PaneEventResult::Handled
                 }
                 KeyCode::Down => {
-                    self.scroll_offset = self.scroll_offset.saturating_add(1);
+                    self.table_state.select_next();
+                    if let Some(selected) = self.table_state.selected() {
+                        self.scrollbar_state = self.scrollbar_state.position(selected);
+                    }
                     PaneEventResult::Handled
                 }
                 KeyCode::PageUp => {
-                    self.scroll_offset = self.scroll_offset.saturating_sub(10);
+                    // Move up by 10 rows
+                    for _ in 0..10 {
+                        self.table_state.select_previous();
+                    }
+                    if let Some(selected) = self.table_state.selected() {
+                        self.scrollbar_state = self.scrollbar_state.position(selected);
+                    }
                     PaneEventResult::Handled
                 }
                 KeyCode::PageDown => {
-                    self.scroll_offset = self.scroll_offset.saturating_add(10);
+                    // Move down by 10 rows
+                    for _ in 0..10 {
+                        self.table_state.select_next();
+                    }
+                    if let Some(selected) = self.table_state.selected() {
+                        self.scrollbar_state = self.scrollbar_state.position(selected);
+                    }
                     PaneEventResult::Handled
                 }
                 KeyCode::Home => {
-                    self.scroll_offset = 0;
+                    self.table_state.select_first();
+                    self.scrollbar_state = self.scrollbar_state.position(0);
                     PaneEventResult::Handled
                 }
                 KeyCode::End => {
-                    self.scroll_offset = usize::MAX; // Will be clamped on next render
+                    self.table_state.select_last();
+                    if let Some(selected) = self.table_state.selected() {
+                        self.scrollbar_state = self.scrollbar_state.position(selected);
+                    }
                     PaneEventResult::Handled
                 }
                 _ => PaneEventResult::NotHandled,
