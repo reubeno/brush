@@ -44,20 +44,33 @@ Or after building:
 
 ## Controls
 
-- **Type commands**: Enter text in the bottom command pane
+### Focus Switching
+
+- **Tab**: Switch focus between Terminal pane and Command Input pane
+  - When Terminal is focused: Can scroll/select (future enhancement)
+  - When Command Input is focused: Can type and execute commands
+  - The focused pane is indicated in the title bar
+
+### Command Input (when Command Input pane is focused)
+
+- **Type commands**: Enter text in the command input area
 - **Enter**: Execute command
-- **Ctrl+C**: Interrupt current command
-- **Ctrl+D** (on empty line): Exit shell
 - **Arrow keys, Home, End**: Navigate within command input
 - **Backspace, Delete**: Edit command text
+
+### Global Controls
+
+- **Ctrl+C**: Interrupt current command
+- **Ctrl+D** (on empty line): Exit shell
 
 ## Future Enhancements
 
 Potential areas for expansion:
 
+- **Tab key for completion**: Once completion is implemented, Tab will be used for that in the command pane
+- Terminal pane scrolling when focused
 - Additional panes for shell state visibility (variables, jobs, history)
 - Resizable and rearrangeable panes
-- Command completion support
 - Command history navigation (up/down arrows)
 - Multiple terminal output panes
 - Per-command PTY spawning (vs single persistent PTY)
