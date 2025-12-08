@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::unused_async)]
 async fn run_event_loop(
     backend: &mut RatatuiInputBackend,
     shell: Arc<tokio::sync::Mutex<brush_core::Shell>>,
@@ -59,16 +60,21 @@ async fn run_event_loop(
 
     loop {
         // Get environment variables only if the Environment tab is visible
+        // Use try_lock to avoid blocking the UI if a command is running
         let env_vars = if backend.selected_tab == 1 {
-            let shell = shell.lock().await;
-            let mut vars: Vec<(String, String)> = shell
-                .env
-                .iter()
-                .map(|(name, var)| (name.clone(), var.value().to_cow_str(&shell).into_owned()))
-                .collect();
-            vars.sort_by(|a, b| a.0.cmp(&b.0));
-            drop(shell);
-            Some(vars)
+            if let Ok(shell) = shell.try_lock() {
+                let mut vars: Vec<(String, String)> = shell
+                    .env
+                    .iter()
+                    .map(|(name, var)| (name.clone(), var.value().to_cow_str(&shell).into_owned()))
+                    .collect();
+                vars.sort_by(|a, b| a.0.cmp(&b.0));
+                drop(shell);
+                Some(vars)
+            } else {
+                // Shell is locked by a running command, use cached or empty data
+                None
+            }
         } else {
             None
         };
