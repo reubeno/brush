@@ -336,6 +336,9 @@ pub struct CreateOptions {
     /// Provides a set of initial open files to be tracked by the shell.
     #[builder(default)]
     pub fds: HashMap<ShellFd, openfiles::OpenFile>,
+    /// Whether to launch external commands as session leaders.
+    #[builder(default)]
+    pub external_cmd_leads_session: bool,
     /// Initial working dir for the shell. If left unspecified, will be populated from
     /// the host environment.
     pub working_dir: Option<PathBuf>,
