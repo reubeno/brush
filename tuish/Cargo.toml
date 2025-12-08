@@ -21,12 +21,13 @@ bench = false
 workspace = true
 
 [dependencies]
+brush-builtins = { version = "^0.1.0", path = "../brush-builtins" }
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 brush-interactive = { version = "^0.3.0", path = "../brush-interactive" }
 ratatui = "0.29.0"
 tui-term = { version = "0.2.0", features = ["vt100"] }
 crossterm = { version = "0.29.0", features = ["event-stream"] }
-portable-pty = "0.9.0"
+libc = "0.2"
 vt100 = "0.15.2"
 tokio = { version = "1.48.0", features = [
     "rt",

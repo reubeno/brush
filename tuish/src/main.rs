@@ -4,6 +4,7 @@ mod ratatui_backend;
 
 use std::sync::Arc;
 
+use brush_builtins::ShellBuilderExt;
 use brush_interactive::{InteractiveShellExt, ShellRef};
 use ratatui_backend::RatatuiInputBackend;
 
@@ -15,10 +16,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the ratatui input backend
     let mut backend = RatatuiInputBackend::new()?;
 
-    // Build the shell - it will use standard stdin/stdout/stderr by default
-    // The PTY integration happens transparently through the backend
+    // Build the shell with PTY stdin/stdout/stderr
+    // This ensures commands run in the PTY and their output appears in the terminal pane
+    use brush_core::ShellFd;
+    use brush_core::openfiles::OpenFile;
+    use std::collections::HashMap;
+
+    let mut fds = HashMap::new();
+    fds.insert(
+        ShellFd::from(0),
+        OpenFile::File(backend.pty_stdin.try_clone()?),
+    );
+    fds.insert(
+        ShellFd::from(1),
+        OpenFile::File(backend.pty_stdout.try_clone()?),
+    );
+    fds.insert(
+        ShellFd::from(2),
+        OpenFile::File(backend.pty_stderr.try_clone()?),
+    );
+
     let shell = brush_core::Shell::builder()
         .interactive(true)
+        .fds(fds)
+        .default_builtins(brush_builtins::BuiltinSet::BashMode)
         .build()
         .await?;
 
