@@ -41,13 +41,13 @@ serde = { version = "1.0.228", optional = true, features = ["derive"] }
 strum = "0.27.2"
 strum_macros = "0.27.2"
 thiserror = "2.0.17"
-tracing = "0.1.41"
+tracing = "0.1.43"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 tokio = { version = "1.48.0", features = ["io-util", "macros", "rt", "sync"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
-hostname = "0.4.1"
+hostname = "0.4.2"
 tokio = { version = "1.48.0", features = [
     "io-util",
     "macros",
