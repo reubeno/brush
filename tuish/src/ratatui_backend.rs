@@ -12,29 +12,30 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Tabs},
+    widgets::{Block, Borders, Paragraph, Tabs},
 };
-use tokio::sync::mpsc::{Sender, channel};
-use tui_term::widget::PseudoTerminal;
+use tokio::sync::mpsc::channel;
 
-/// Which pane currently has focus
+use crate::content_pane::ContentPane;
+use crate::environment_pane::EnvironmentPane;
+use crate::terminal_pane::TerminalPane;
+
+/// Which area currently has focus
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FocusedPane {
-    /// A terminal tab is focused (index of the tab)
-    Tab(usize),
-    /// Command input pane is focused
+enum FocusedArea {
+    /// A content pane is focused (index of the pane)
+    Pane(usize),
+    /// Command input area is focused
     CommandInput,
 }
 
-/// Ratatui-based TUI that displays terminal output in a tui-term widget
+/// Ratatui-based TUI that displays content panes in tabs
 /// and accepts command input in a bottom pane.
 pub struct RatatuiInputBackend {
     /// The ratatui terminal instance
     terminal: DefaultTerminal,
-    /// VT100 parser for the PTY output
-    parser: Arc<RwLock<vt100::Parser>>,
-    /// Sender for writing to the PTY
-    pty_writer: Sender<Bytes>,
+    /// Content panes displayed in tabs
+    panes: Vec<Box<dyn ContentPane>>,
     /// PTY slave for shell stdin
     pub pty_stdin: std::fs::File,
     /// PTY slave for shell stdout
@@ -45,14 +46,8 @@ pub struct RatatuiInputBackend {
     input_buffer: String,
     /// Cursor position in input buffer
     cursor_pos: usize,
-    /// Which pane currently has focus
-    focused_pane: FocusedPane,
-    /// Tab titles
-    tab_titles: Vec<String>,
-    /// Currently selected tab index
-    pub selected_tab: usize,
-    /// Scroll offset for environment tab
-    env_scroll_offset: usize,
+    /// Which area currently has focus
+    focused_area: FocusedArea,
 }
 
 impl RatatuiInputBackend {
@@ -171,40 +166,59 @@ impl RatatuiInputBackend {
             libc::close(slave_fd);
         }
 
+        // Create content panes
+        let panes: Vec<Box<dyn ContentPane>> = vec![
+            Box::new(TerminalPane::new(
+                Arc::clone(&parser),
+                tx,
+            )),
+            Box::new(EnvironmentPane::new()),
+        ];
+
         Ok(Self {
             terminal,
-            parser,
-            pty_writer: tx,
+            panes,
             pty_stdin: slave_stdin,
             pty_stdout: slave_stdout,
             pty_stderr: slave_stderr,
             input_buffer: String::new(),
             cursor_pos: 0,
-            focused_pane: FocusedPane::CommandInput,
-            tab_titles: vec!["Terminal 1".to_string(), "Environment".to_string()],
-            selected_tab: 0,
-            env_scroll_offset: 0,
+            focused_area: FocusedArea::CommandInput,
         })
     }
 
-    /// Draws the UI with the terminal pane and command input pane.
-    #[allow(clippy::too_many_lines)]
-    pub fn draw_ui(&mut self, env_vars: Option<&[(String, String)]>) -> Result<(), std::io::Error> {
-        let screen = {
-            let parser = self
-                .parser
-                .read()
-                .map_err(|_| std::io::Error::other("Failed to lock parser"))?;
-            let screen = parser.screen().clone();
-            drop(parser);
-            screen
-        };
+    /// Gets mutable access to a specific pane.
+    pub fn get_pane_mut(&mut self, index: usize) -> Option<&mut dyn ContentPane> {
+        if let Some(boxed_pane) = self.panes.get_mut(index) {
+            Some(boxed_pane.as_mut())
+        } else {
+            None
+        }
+    }
+
+    /// Returns the currently selected pane index.
+    #[allow(dead_code)]
+    pub const fn selected_pane(&self) -> Option<usize> {
+        match self.focused_area {
+            FocusedArea::Pane(index) => Some(index),
+            FocusedArea::CommandInput => None,
+        }
+    }
+
+    /// Draws the UI with content panes and command input.
+    pub fn draw_ui(&mut self) -> Result<(), std::io::Error> {
         let input_buffer = self.input_buffer.clone();
         let cursor_pos = self.cursor_pos;
-        let focused_pane = self.focused_pane;
-        let tab_titles = self.tab_titles.clone();
-        let selected_tab = self.selected_tab;
-        let env_scroll_offset = self.env_scroll_offset;
+        let focused_area = self.focused_area;
+        
+        // Collect tab titles from panes
+        let tab_titles: Vec<String> = self.panes.iter().map(|p| p.name().to_string()).collect();
+        
+        // Track which pane is selected (for rendering) vs focused (for input)
+        let selected_pane_index = match focused_area {
+            FocusedArea::Pane(idx) => idx,
+            FocusedArea::CommandInput => 0, // Keep showing first pane when command input is focused
+        };
 
         self.terminal.draw(|f| {
             let chunks = Layout::default()
@@ -226,10 +240,9 @@ impl RatatuiInputBackend {
 
             // Render the tabs (outside any borders)
             // Deselect all tabs when command input is focused
-            let tab_selection = if matches!(focused_pane, FocusedPane::CommandInput) {
-                usize::MAX // Invalid index = no selection
-            } else {
-                selected_tab
+            let tab_selection = match focused_area {
+                FocusedArea::Pane(idx) => idx,
+                FocusedArea::CommandInput => usize::MAX, // Deselect when command input focused
             };
 
             let tabs = Tabs::new(tab_titles.iter().map(|t| Line::from(t.as_str())))
@@ -245,9 +258,9 @@ impl RatatuiInputBackend {
                 .padding(" ", " ");
             f.render_widget(tabs, tab_area_chunks[0]);
 
-            // Render content area with borders based on focus and selected tab
-            let tab_focused = matches!(focused_pane, FocusedPane::Tab(_));
-            let content_border_style = if tab_focused {
+            // Render content area with borders based on focus
+            let pane_focused = matches!(focused_area, FocusedArea::Pane(_));
+            let content_border_style = if pane_focused {
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD)
@@ -255,64 +268,20 @@ impl RatatuiInputBackend {
                 Style::default().fg(Color::DarkGray)
             };
 
-            // Render content based on selected tab
-            if selected_tab == 0 {
-                // Tab 0: Terminal with bordered block
-                let terminal_block = Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(content_border_style);
-                let terminal_inner = terminal_block.inner(tab_area_chunks[1]);
-                f.render_widget(terminal_block, tab_area_chunks[1]);
+            // Render the selected pane's content with borders
+            let content_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(content_border_style);
+            let content_inner = content_block.inner(tab_area_chunks[1]);
+            f.render_widget(content_block, tab_area_chunks[1]);
 
-                let pseudo_term = PseudoTerminal::new(&screen);
-                f.render_widget(pseudo_term, terminal_inner);
-            } else if selected_tab == 1 {
-                // Tab 1: Environment with bordered block
-                let env_block = Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(content_border_style);
-                let env_inner = env_block.inner(tab_area_chunks[1]);
-                f.render_widget(env_block, tab_area_chunks[1]);
-
-                if let Some(vars) = &env_vars {
-                    // Create table with header and rows
-                    let header = Row::new(vec![
-                        Cell::from("Variable").style(Style::default().add_modifier(Modifier::BOLD)),
-                        Cell::from("Value").style(Style::default().add_modifier(Modifier::BOLD)),
-                    ])
-                    .style(Style::default().bg(Color::DarkGray));
-
-                    // Clamp scroll offset to prevent scrolling past content
-                    let available_height = env_inner.height.saturating_sub(2); // Subtract header and bottom margin
-                    let max_scroll = vars.len().saturating_sub(available_height as usize);
-                    let clamped_scroll = env_scroll_offset.min(max_scroll);
-
-                    // Skip rows based on scroll offset
-                    let rows = vars.iter().skip(clamped_scroll).map(|(k, v)| {
-                        Row::new(vec![
-                            Cell::from(k.as_str())
-                                .style(Style::default().add_modifier(Modifier::ITALIC)),
-                            Cell::from(v.as_str()),
-                        ])
-                    });
-
-                    let table = Table::new(
-                        rows,
-                        [Constraint::Percentage(30), Constraint::Percentage(70)],
-                    )
-                    .header(header)
-                    .style(Style::default().fg(Color::White));
-
-                    f.render_widget(table, env_inner);
-                } else {
-                    let loading = Paragraph::new("Loading environment variables...")
-                        .style(Style::default().fg(Color::White));
-                    f.render_widget(loading, env_inner);
-                }
+            // Render the selected pane's content inside the bordered area
+            if selected_pane_index < self.panes.len() {
+                self.panes[selected_pane_index].render(f, content_inner);
             }
 
             // Render the command input pane
-            let (input_title, input_border_style) = if focused_pane == FocusedPane::CommandInput {
+            let (input_title, input_border_style) = if matches!(focused_area, FocusedArea::CommandInput) {
                 (
                     "Command Input [FOCUSED - Ctrl+Space to switch, Ctrl+Q to quit]",
                     Style::default()
@@ -337,7 +306,7 @@ impl RatatuiInputBackend {
             f.render_widget(input_paragraph, chunks[1]);
 
             // Render cursor in command input pane when focused
-            if focused_pane == FocusedPane::CommandInput {
+            if matches!(focused_area, FocusedArea::CommandInput) {
                 // Cursor position: "> " = 2 chars + border = 1, so x = 3 + cursor_pos
                 // y position: top border = 1
                 let cursor_x = chunks[1].x + 3 + u16::try_from(cursor_pos).unwrap_or(0);
@@ -356,61 +325,27 @@ impl RatatuiInputBackend {
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    // Ctrl+Space cycles focus through tabs and command input
+                    // Ctrl+Space cycles focus through panes and command input
                     KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.focused_pane = match self.focused_pane {
-                            FocusedPane::Tab(idx) => {
-                                // Move to next tab, or to command input if at last tab
-                                if idx + 1 < self.tab_titles.len() {
-                                    self.selected_tab = idx + 1;
-                                    FocusedPane::Tab(idx + 1)
-                                } else {
-                                    FocusedPane::CommandInput
-                                }
+                        let num_panes = self.panes.len();
+                        self.focused_area = match self.focused_area {
+                            FocusedArea::Pane(idx) if idx + 1 < num_panes => {
+                                FocusedArea::Pane(idx + 1)
                             }
-                            FocusedPane::CommandInput => {
-                                // Cycle back to first tab
-                                self.selected_tab = 0;
-                                FocusedPane::Tab(0)
-                            }
+                            FocusedArea::Pane(_) => FocusedArea::CommandInput,
+                            FocusedArea::CommandInput => FocusedArea::Pane(0),
                         };
                     }
                     // Ctrl+Q quits the application by returning None to signal shutdown
                     KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         return Ok(None);
                     }
-                    // Scrolling in environment tab
-                    KeyCode::Up if self.focused_pane == FocusedPane::Tab(1) => {
-                        self.env_scroll_offset = self.env_scroll_offset.saturating_sub(1);
-                    }
-                    KeyCode::Down if self.focused_pane == FocusedPane::Tab(1) => {
-                        self.env_scroll_offset = self.env_scroll_offset.saturating_add(1);
-                    }
-                    KeyCode::PageUp if self.focused_pane == FocusedPane::Tab(1) => {
-                        self.env_scroll_offset = self.env_scroll_offset.saturating_sub(10);
-                    }
-                    KeyCode::PageDown if self.focused_pane == FocusedPane::Tab(1) => {
-                        self.env_scroll_offset = self.env_scroll_offset.saturating_add(10);
-                    }
-                    KeyCode::Char('c')
-                        if key.modifiers.contains(KeyModifiers::CONTROL)
-                            && matches!(self.focused_pane, FocusedPane::Tab(_)) =>
-                    {
-                        // Send Ctrl+C to PTY when in Terminal pane
-                        let _ = self.pty_writer.try_send(Bytes::from(vec![0x03]));
-                    }
-                    KeyCode::Char('d')
-                        if key.modifiers.contains(KeyModifiers::CONTROL)
-                            && matches!(self.focused_pane, FocusedPane::Tab(_)) =>
-                    {
-                        // Send Ctrl+D to PTY when in Terminal pane
-                        let _ = self.pty_writer.try_send(Bytes::from(vec![0x04]));
-                    }
-                    KeyCode::Char(c) if self.focused_pane == FocusedPane::CommandInput => {
+                    // Command input handling
+                    KeyCode::Char(c) if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         self.input_buffer.insert(self.cursor_pos, c);
                         self.cursor_pos += c.len_utf8();
                     }
-                    KeyCode::Backspace if self.focused_pane == FocusedPane::CommandInput => {
+                    KeyCode::Backspace if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         if self.cursor_pos > 0 {
                             let prev_pos = self.input_buffer[..self.cursor_pos]
                                 .char_indices()
@@ -421,12 +356,12 @@ impl RatatuiInputBackend {
                             self.cursor_pos = prev_pos;
                         }
                     }
-                    KeyCode::Delete if self.focused_pane == FocusedPane::CommandInput => {
+                    KeyCode::Delete if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         if self.cursor_pos < self.input_buffer.len() {
                             self.input_buffer.remove(self.cursor_pos);
                         }
                     }
-                    KeyCode::Left if self.focused_pane == FocusedPane::CommandInput => {
+                    KeyCode::Left if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         if self.cursor_pos > 0 {
                             let prev_pos = self.input_buffer[..self.cursor_pos]
                                 .char_indices()
@@ -436,7 +371,7 @@ impl RatatuiInputBackend {
                             self.cursor_pos = prev_pos;
                         }
                     }
-                    KeyCode::Right if self.focused_pane == FocusedPane::CommandInput => {
+                    KeyCode::Right if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         if self.cursor_pos < self.input_buffer.len() {
                             let next_pos = self.input_buffer[self.cursor_pos..]
                                 .char_indices()
@@ -446,95 +381,30 @@ impl RatatuiInputBackend {
                             self.cursor_pos = next_pos;
                         }
                     }
-                    KeyCode::Home if self.focused_pane == FocusedPane::CommandInput => {
+                    KeyCode::Home if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         self.cursor_pos = 0;
                     }
-                    KeyCode::End if self.focused_pane == FocusedPane::CommandInput => {
+                    KeyCode::End if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         self.cursor_pos = self.input_buffer.len();
                     }
-                    KeyCode::Enter if self.focused_pane == FocusedPane::CommandInput => {
+                    KeyCode::Enter if matches!(self.focused_area, FocusedArea::CommandInput) => {
                         let input = self.input_buffer.clone();
                         self.input_buffer.clear();
                         self.cursor_pos = 0;
                         return Ok(Some(input));
                     }
-                    // Forward keyboard input to PTY when a tab is focused
-                    KeyCode::Char(c) if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        // Handle Ctrl+key combinations
-                        if key.modifiers.contains(KeyModifiers::CONTROL) {
-                            // Ctrl+A through Ctrl+Z map to 0x01-0x1A
-                            if c.is_ascii_alphabetic() {
-                                let ctrl_code = (c.to_ascii_lowercase() as u8) - b'a' + 1;
-                                let _ = self.pty_writer.try_send(Bytes::from(vec![ctrl_code]));
-                            } else {
-                                // Other Ctrl combinations, send as-is
-                                let _ = self.pty_writer.try_send(Bytes::from(c.to_string()));
+                    // Delegate all other keys to the focused pane
+                    _ if matches!(self.focused_area, FocusedArea::Pane(idx) if idx < self.panes.len()) => {
+                        if let FocusedArea::Pane(idx) = self.focused_area {
+                            if let Some(pane) = self.panes.get_mut(idx) {
+                                use crate::content_pane::{PaneEvent, PaneEventResult};
+                                let result = pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
+                                match result {
+                                    PaneEventResult::Handled => {},
+                                    PaneEventResult::NotHandled => {},
+                                    PaneEventResult::RequestClose => {},
+                                }
                             }
-                        } else {
-                            let _ = self.pty_writer.try_send(Bytes::from(c.to_string()));
-                        }
-                    }
-                    KeyCode::Tab if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(vec![b'\t']));
-                    }
-                    KeyCode::Enter if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(vec![b'\r']));
-                    }
-                    KeyCode::Backspace if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(vec![0x7f]));
-                    }
-                    KeyCode::Esc if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(vec![0x1b]));
-                    }
-                    KeyCode::Delete if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[3~".as_slice()));
-                    }
-                    KeyCode::Insert if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[2~".as_slice()));
-                    }
-                    KeyCode::Home if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[H".as_slice()));
-                    }
-                    KeyCode::End if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[F".as_slice()));
-                    }
-                    KeyCode::PageUp if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[5~".as_slice()));
-                    }
-                    KeyCode::PageDown if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[6~".as_slice()));
-                    }
-                    KeyCode::Up if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[A".as_slice()));
-                    }
-                    KeyCode::Down if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[B".as_slice()));
-                    }
-                    KeyCode::Right if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[C".as_slice()));
-                    }
-                    KeyCode::Left if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        let _ = self.pty_writer.try_send(Bytes::from(b"\x1b[D".as_slice()));
-                    }
-                    KeyCode::F(n) if matches!(self.focused_pane, FocusedPane::Tab(_)) => {
-                        // F1-F12 function keys
-                        let seq = match n {
-                            1 => b"\x1bOP".as_slice(),
-                            2 => b"\x1bOQ".as_slice(),
-                            3 => b"\x1bOR".as_slice(),
-                            4 => b"\x1bOS".as_slice(),
-                            5 => b"\x1b[15~".as_slice(),
-                            6 => b"\x1b[17~".as_slice(),
-                            7 => b"\x1b[18~".as_slice(),
-                            8 => b"\x1b[19~".as_slice(),
-                            9 => b"\x1b[20~".as_slice(),
-                            10 => b"\x1b[21~".as_slice(),
-                            11 => b"\x1b[23~".as_slice(),
-                            12 => b"\x1b[24~".as_slice(),
-                            _ => b"".as_slice(),
-                        };
-                        if !seq.is_empty() {
-                            let _ = self.pty_writer.try_send(Bytes::from(seq));
                         }
                     }
                     _ => {}
