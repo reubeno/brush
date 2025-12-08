@@ -52,7 +52,7 @@ pub struct RatatuiInputBackend {
 
 impl RatatuiInputBackend {
     /// Creates a new `RatatuiInputBackend` with a persistent PTY.
-    pub fn new() -> Result<Self, std::io::Error> {
+    pub fn new(shell: Arc<tokio::sync::Mutex<brush_core::Shell>>) -> Result<Self, std::io::Error> {
         // Initialize the ratatui terminal in raw mode
         let terminal = ratatui::init();
 
@@ -168,11 +168,8 @@ impl RatatuiInputBackend {
 
         // Create content panes
         let panes: Vec<Box<dyn ContentPane>> = vec![
-            Box::new(TerminalPane::new(
-                Arc::clone(&parser),
-                tx,
-            )),
-            Box::new(EnvironmentPane::new()),
+            Box::new(TerminalPane::new(Arc::clone(&parser), tx)),
+            Box::new(EnvironmentPane::new(shell)),
         ];
 
         Ok(Self {
@@ -188,6 +185,7 @@ impl RatatuiInputBackend {
     }
 
     /// Gets mutable access to a specific pane.
+    #[allow(dead_code)]
     pub fn get_pane_mut(&mut self, index: usize) -> Option<&mut dyn ContentPane> {
         if let Some(boxed_pane) = self.panes.get_mut(index) {
             Some(boxed_pane.as_mut())
@@ -210,10 +208,10 @@ impl RatatuiInputBackend {
         let input_buffer = self.input_buffer.clone();
         let cursor_pos = self.cursor_pos;
         let focused_area = self.focused_area;
-        
+
         // Collect tab titles from panes
         let tab_titles: Vec<String> = self.panes.iter().map(|p| p.name().to_string()).collect();
-        
+
         // Track which pane is selected (for rendering) vs focused (for input)
         let selected_pane_index = match focused_area {
             FocusedArea::Pane(idx) => idx,
@@ -281,19 +279,20 @@ impl RatatuiInputBackend {
             }
 
             // Render the command input pane
-            let (input_title, input_border_style) = if matches!(focused_area, FocusedArea::CommandInput) {
-                (
-                    "Command Input [FOCUSED - Ctrl+Space to switch, Ctrl+Q to quit]",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                (
-                    "Command Input [Ctrl+Space to focus]",
-                    Style::default().fg(Color::DarkGray),
-                )
-            };
+            let (input_title, input_border_style) =
+                if matches!(focused_area, FocusedArea::CommandInput) {
+                    (
+                        "Command Input [FOCUSED - Ctrl+Space to switch, Ctrl+Q to quit]",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    (
+                        "Command Input [Ctrl+Space to focus]",
+                        Style::default().fg(Color::DarkGray),
+                    )
+                };
             let input_text = format!("> {input_buffer}");
             let input_paragraph = Paragraph::new(input_text)
                 .block(
@@ -345,7 +344,9 @@ impl RatatuiInputBackend {
                         self.input_buffer.insert(self.cursor_pos, c);
                         self.cursor_pos += c.len_utf8();
                     }
-                    KeyCode::Backspace if matches!(self.focused_area, FocusedArea::CommandInput) => {
+                    KeyCode::Backspace
+                        if matches!(self.focused_area, FocusedArea::CommandInput) =>
+                    {
                         if self.cursor_pos > 0 {
                             let prev_pos = self.input_buffer[..self.cursor_pos]
                                 .char_indices()
@@ -398,11 +399,12 @@ impl RatatuiInputBackend {
                         if let FocusedArea::Pane(idx) = self.focused_area {
                             if let Some(pane) = self.panes.get_mut(idx) {
                                 use crate::content_pane::{PaneEvent, PaneEventResult};
-                                let result = pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
+                                let result =
+                                    pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
                                 match result {
-                                    PaneEventResult::Handled => {},
-                                    PaneEventResult::NotHandled => {},
-                                    PaneEventResult::RequestClose => {},
+                                    PaneEventResult::Handled => {}
+                                    PaneEventResult::NotHandled => {}
+                                    PaneEventResult::RequestClose => {}
                                 }
                             }
                         }

@@ -11,7 +11,6 @@ use std::sync::Arc;
 use brush_builtins::ShellBuilderExt;
 use brush_core::openfiles::OpenFile;
 use brush_core::{ExecutionParameters, ShellFd, SourceInfo};
-use environment_pane::EnvironmentPane;
 use ratatui_backend::RatatuiInputBackend;
 
 #[tokio::main]
@@ -19,11 +18,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    // Create the ratatui TUI
-    let mut backend = RatatuiInputBackend::new()?;
+    // Build the shell first (without PTY fds yet)
+    let shell = brush_core::Shell::builder()
+        .interactive(true)
+        .default_builtins(brush_builtins::BuiltinSet::BashMode)
+        .external_cmd_leads_session(true)
+        .build()
+        .await?;
 
-    // Build the shell with PTY stdin/stdout/stderr
-    // This ensures commands run in the PTY and their output appears in the terminal pane
+    let shell = Arc::new(tokio::sync::Mutex::new(shell));
+
+    // Create the ratatui TUI with shell reference
+    let mut backend = RatatuiInputBackend::new(Arc::clone(&shell))?;
+
+    // Now rebuild shell with PTY fds from backend
     let mut fds = HashMap::new();
     fds.insert(
         ShellFd::from(0),
@@ -38,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         OpenFile::File(backend.pty_stderr.try_clone()?),
     );
 
-    let shell = brush_core::Shell::builder()
+    let new_shell = brush_core::Shell::builder()
         .interactive(true)
         .fds(fds)
         .default_builtins(brush_builtins::BuiltinSet::BashMode)
@@ -46,7 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    let shell = Arc::new(tokio::sync::Mutex::new(shell));
+    // Replace shell in Arc
+    *shell.lock().await = new_shell;
 
     // Run the main event loop
     run_event_loop(&mut backend, shell).await?;
@@ -63,25 +72,6 @@ async fn run_event_loop(
     let params = ExecutionParameters::default();
 
     loop {
-        // Get environment variables and update the environment pane if visible
-        // Use try_lock to avoid blocking the UI if a command is running
-        if let Ok(shell) = shell.try_lock() {
-            let mut vars: Vec<(String, String)> = shell
-                .env
-                .iter()
-                .map(|(name, var)| (name.clone(), var.value().to_cow_str(&shell).into_owned()))
-                .collect();
-            vars.sort_by(|a, b| a.0.cmp(&b.0));
-            drop(shell);
-
-            // Update environment pane (index 1)
-            if let Some(pane) = backend.get_pane_mut(1) {
-                if let Some(env_pane) = pane.as_any_mut().downcast_mut::<EnvironmentPane>() {
-                    env_pane.update_variables(vars);
-                }
-            }
-        }
-
         // Render the UI
         backend.draw_ui()?;
 

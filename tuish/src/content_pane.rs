@@ -40,12 +40,9 @@ pub enum PaneEventResult {
 ///
 /// When a pane is focused, it receives all keyboard input except global shortcuts
 /// (like Ctrl+Q and Ctrl+Space). Each pane decides how to handle its input.
-pub trait ContentPane {
-    /// Enable downcasting to concrete types
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-
+pub trait ContentPane: Send {
     /// Returns the display name for this pane (shown in tab bar)
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Renders the pane content to the given area.
     ///
@@ -66,17 +63,4 @@ pub trait ContentPane {
     ///
     /// Allows panes to clean up or pause updates.
     fn on_hide(&mut self) {}
-
-    /// Returns whether this pane wants to receive all keyboard input.
-    ///
-    /// If true, the pane gets raw keyboard events (useful for terminal emulation).
-    /// If false, only navigation keys are forwarded.
-    fn wants_all_input(&self) -> bool {
-        false
-    }
-
-    /// Returns whether this pane is scrollable.
-    fn is_scrollable(&self) -> bool {
-        false
-    }
 }
