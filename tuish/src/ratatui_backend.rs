@@ -12,7 +12,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Block, Borders, Paragraph, Tabs},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Tabs},
 };
 use tokio::sync::mpsc::{Sender, channel};
 use tui_term::widget::PseudoTerminal;
@@ -66,16 +66,16 @@ impl RatatuiInputBackend {
         // Create a PTY using libc directly so we can keep both master and slave fds
         let mut master_fd: libc::c_int = -1;
         let mut slave_fd: libc::c_int = -1;
-        // PTY dimensions: The top area (80% of screen) contains a bordered tab area.
-        // Tab area borders: 2 lines (top + bottom)
-        // Tabs bar: 1 line for the tab labels
+        // PTY dimensions: The top area (80% of screen) contains tabs + bordered content.
+        // Tabs bar: 1 line
+        // Content border: 2 lines (top + bottom)
         // Additionally, tui-term appears to not use the last row for content, so subtract 1 more.
         let terminal_pane_height = (terminal_size.height * 80) / 100;
         let pty_rows = terminal_pane_height
-            .saturating_sub(2)
-            .saturating_sub(1)
-            .saturating_sub(1);
-        let pty_cols = terminal_size.width.saturating_sub(2).saturating_sub(2);
+            .saturating_sub(1) // Tabs bar
+            .saturating_sub(2) // Content border
+            .saturating_sub(1); // tui-term quirk
+        let pty_cols = terminal_size.width.saturating_sub(2); // Content left + right borders
         let winsize = libc::winsize {
             ws_row: pty_rows,
             ws_col: pty_cols,
@@ -188,6 +188,7 @@ impl RatatuiInputBackend {
     }
 
     /// Draws the UI with the terminal pane and command input pane.
+    #[allow(clippy::too_many_lines)]
     pub fn draw_ui(&mut self, env_vars: Option<&[(String, String)]>) -> Result<(), std::io::Error> {
         let screen = {
             let parser = self
@@ -214,9 +215,39 @@ impl RatatuiInputBackend {
                 ])
                 .split(f.area());
 
-            // Create an outer block for the entire tab area
+            // Split tab area into: tabs bar (1 line) + content
+            let tab_area_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Tabs bar (just the labels, no borders)
+                    Constraint::Min(0),    // Content area with borders
+                ])
+                .split(chunks[0]);
+
+            // Render the tabs (outside any borders)
+            // Deselect all tabs when command input is focused
+            let tab_selection = if matches!(focused_pane, FocusedPane::CommandInput) {
+                usize::MAX // Invalid index = no selection
+            } else {
+                selected_tab
+            };
+
+            let tabs = Tabs::new(tab_titles.iter().map(|t| Line::from(t.as_str())))
+                .select(tab_selection)
+                .style(Style::default().fg(Color::White).bg(Color::DarkGray)) // Unselected tabs
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .divider(" │ ")
+                .padding(" ", " ");
+            f.render_widget(tabs, tab_area_chunks[0]);
+
+            // Render content area with borders based on focus and selected tab
             let tab_focused = matches!(focused_pane, FocusedPane::Tab(_));
-            let tab_area_style = if tab_focused {
+            let content_border_style = if tab_focused {
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD)
@@ -224,54 +255,60 @@ impl RatatuiInputBackend {
                 Style::default().fg(Color::DarkGray)
             };
 
-            let tab_area_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(tab_area_style);
-
-            let inner_area = tab_area_block.inner(chunks[0]);
-            f.render_widget(tab_area_block, chunks[0]);
-
-            // Split the inner area into tabs bar and content
-            let tab_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1), // Tabs bar (just the labels, no borders)
-                    Constraint::Min(0),    // Tab content
-                ])
-                .split(inner_area);
-
-            // Render the tabs (just the labels)
-            let tabs = Tabs::new(tab_titles.iter().map(|t| Line::from(t.as_str())))
-                .select(selected_tab)
-                .style(Style::default().fg(Color::White))
-                .highlight_style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .divider(" | ");
-            f.render_widget(tabs, tab_chunks[0]);
-
             // Render content based on selected tab
             if selected_tab == 0 {
-                // Tab 0: Terminal
-                let pseudo_term = PseudoTerminal::new(&screen);
-                f.render_widget(pseudo_term, tab_chunks[1]);
-            } else if selected_tab == 1 {
-                // Tab 1: Environment
-                let env_text = if let Some(vars) = &env_vars {
-                    vars.iter()
-                        .map(|(k, v)| format!("{k}={v}"))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                } else {
-                    "Loading environment variables...".to_string()
-                };
+                // Tab 0: Terminal with bordered block
+                let terminal_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(content_border_style);
+                let terminal_inner = terminal_block.inner(tab_area_chunks[1]);
+                f.render_widget(terminal_block, tab_area_chunks[1]);
 
-                let env_paragraph = Paragraph::new(env_text)
-                    .style(Style::default().fg(Color::White))
-                    .scroll((u16::try_from(env_scroll_offset).unwrap_or(u16::MAX), 0));
-                f.render_widget(env_paragraph, tab_chunks[1]);
+                let pseudo_term = PseudoTerminal::new(&screen);
+                f.render_widget(pseudo_term, terminal_inner);
+            } else if selected_tab == 1 {
+                // Tab 1: Environment with bordered block
+                let env_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(content_border_style);
+                let env_inner = env_block.inner(tab_area_chunks[1]);
+                f.render_widget(env_block, tab_area_chunks[1]);
+
+                if let Some(vars) = &env_vars {
+                    // Create table with header and rows
+                    let header = Row::new(vec![
+                        Cell::from("Variable").style(Style::default().add_modifier(Modifier::BOLD)),
+                        Cell::from("Value").style(Style::default().add_modifier(Modifier::BOLD)),
+                    ])
+                    .style(Style::default().bg(Color::DarkGray));
+
+                    // Clamp scroll offset to prevent scrolling past content
+                    let available_height = env_inner.height.saturating_sub(2); // Subtract header and bottom margin
+                    let max_scroll = vars.len().saturating_sub(available_height as usize);
+                    let clamped_scroll = env_scroll_offset.min(max_scroll);
+
+                    // Skip rows based on scroll offset
+                    let rows = vars.iter().skip(clamped_scroll).map(|(k, v)| {
+                        Row::new(vec![
+                            Cell::from(k.as_str())
+                                .style(Style::default().add_modifier(Modifier::ITALIC)),
+                            Cell::from(v.as_str()),
+                        ])
+                    });
+
+                    let table = Table::new(
+                        rows,
+                        [Constraint::Percentage(30), Constraint::Percentage(70)],
+                    )
+                    .header(header)
+                    .style(Style::default().fg(Color::White));
+
+                    f.render_widget(table, env_inner);
+                } else {
+                    let loading = Paragraph::new("Loading environment variables...")
+                        .style(Style::default().fg(Color::White));
+                    f.render_widget(loading, env_inner);
+                }
             }
 
             // Render the command input pane
