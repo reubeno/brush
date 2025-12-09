@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Result;
 use brush_core::{ExecutionParameters, SourceInfo};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -273,7 +274,7 @@ impl AppUI {
     /// # Errors
     /// Returns an error if rendering or event handling fails
     #[allow(clippy::unused_async)]
-    pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(&mut self) -> Result<()> {
         let source_info = SourceInfo::default();
         let params = ExecutionParameters::default();
 
