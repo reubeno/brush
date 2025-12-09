@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
 };
 use tokio::sync::Mutex;
 
@@ -242,7 +242,8 @@ impl CommandInput {
         let input_paragraph = Paragraph::new(input_text)
             .block(
                 Block::default()
-                    .borders(Borders::ALL)
+                    .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+                    .border_type(BorderType::Rounded)
                     .title(title)
                     .border_style(border_style),
             )
