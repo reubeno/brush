@@ -24,9 +24,9 @@ pub struct EnvironmentPane {
 
 impl EnvironmentPane {
     /// Create a new environment pane.
-    pub fn new(shell: Arc<tokio::sync::Mutex<brush_core::Shell>>) -> Self {
+    pub fn new(shell: &Arc<tokio::sync::Mutex<brush_core::Shell>>) -> Self {
         Self {
-            shell,
+            shell: shell.clone(),
             table_state: TableState::default(),
             scrollbar_state: ScrollbarState::default(),
         }
