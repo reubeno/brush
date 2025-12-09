@@ -27,13 +27,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .interactive(true)
         .default_builtins(brush_builtins::BuiltinSet::BashMode)
         .external_cmd_leads_session(true)
+        .shell_name(String::from("tuish"))
+        .shell_product_display_str(String::from("tuish"))
         .build()
         .await?;
 
     let shell = Arc::new(tokio::sync::Mutex::new(shell));
 
     // Create the ratatui TUI backend (empty, no panes yet)
-    let mut ui = AppUI::new();
+    let mut ui = AppUI::new(&shell);
 
     // Calculate PTY dimensions based on UI layout and create the PTY.
     let (pty_rows, pty_cols) = ui.content_pane_dimensions()?;
@@ -65,5 +67,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.add_pane(environment_pane);
 
     // Run the main event loop
-    ui.run(shell).await
+    ui.run().await
 }
