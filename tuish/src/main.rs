@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
 
     // Create content panes
     let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer()));
-    let environment_pane = Box::new(EnvironmentPane::new(Arc::clone(&shell)));
+    let environment_pane = Box::new(EnvironmentPane::new(&shell));
 
     // Add panes to the backend
     ui.add_pane(terminal_pane);
