@@ -3,6 +3,8 @@
 //! This module provides a reusable command input component that handles
 //! text editing, cursor movement, and rendering.
 
+use std::sync::Arc;
+
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
@@ -10,6 +12,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, Paragraph},
 };
+use tokio::sync::Mutex;
 
 /// A command input widget that maintains its own state and handles text editing.
 pub struct CommandInput {
@@ -23,22 +26,40 @@ pub struct CommandInput {
     focused_title: &'static str,
     /// Title to display when not focused
     unfocused_title: &'static str,
+    /// Reference to the shell for prompt rendering
+    shell: Arc<Mutex<brush_core::Shell>>,
+    /// Cached prompt string (updated during render)
+    cached_prompt: String,
 }
 
 impl CommandInput {
     /// Creates a new command input widget.
     ///
     /// # Arguments
+    /// * `shell` - Reference to the shell for prompt rendering
     /// * `focused_title` - Title to display when the widget is focused
     /// * `unfocused_title` - Title to display when the widget is not focused
     #[must_use]
-    pub const fn new(focused_title: &'static str, unfocused_title: &'static str) -> Self {
+    pub fn new(shell: &Arc<Mutex<brush_core::Shell>>) -> Self {
         Self {
             buffer: String::new(),
             cursor_pos: 0,
             focused: false,
-            focused_title,
-            unfocused_title,
+            focused_title: "Command Input [FOCUSED - Ctrl+Space to switch, Ctrl+Q to quit]",
+            unfocused_title: "Command Input [Ctrl+Space to focus, Ctrl+Q to quit]",
+            shell: shell.clone(),
+            cached_prompt: "> ".to_string(),
+        }
+    }
+
+    /// Updates the cached prompt from the shell.
+    pub async fn try_update_prompt_async(&mut self) {
+        if let Ok(mut shell) = self.shell.try_lock() {
+            if let Ok(prompt) = shell.compose_prompt().await {
+                let mut parser = vt100::Parser::new(1, 1000, 0);
+                parser.process(prompt.as_bytes());
+                self.cached_prompt = parser.screen().contents();
+            }
         }
     }
 
@@ -47,11 +68,9 @@ impl CommandInput {
         self.focused = focused;
     }
 
-    /// Returns whether this widget is currently focused.
-    #[must_use]
-    #[allow(dead_code)]
-    pub const fn is_focused(&self) -> bool {
-        self.focused
+    /// Refreshes the command input state, updating the prompt.
+    pub async fn try_refresh(&mut self) {
+        self.try_update_prompt_async().await;
     }
 
     /// Handles a key press event and returns `Some(command)` if Enter was pressed.
@@ -125,6 +144,16 @@ impl CommandInput {
         }
     }
 
+    /// Calculates the display width of a string containing ANSI escape sequences.
+    ///
+    /// This strips ANSI codes and returns the actual visible character count.
+    fn calculate_display_width(text: &str) -> usize {
+        // Use vt100 parser to strip ANSI escape sequences
+        let mut parser = vt100::Parser::new(1, 1000, 0);
+        parser.process(text.as_bytes());
+        parser.screen().contents().chars().count()
+    }
+
     /// Renders the command input widget to the given area.
     ///
     /// # Arguments
@@ -145,7 +174,7 @@ impl CommandInput {
             (self.unfocused_title, Style::default().fg(Color::DarkGray))
         };
 
-        let input_text = format!("> {}", self.buffer);
+        let input_text = format!("{}{}", self.cached_prompt, self.buffer);
         let input_paragraph = Paragraph::new(input_text)
             .block(
                 Block::default()
@@ -158,22 +187,17 @@ impl CommandInput {
 
         // Return cursor position if focused
         if self.focused {
-            // Cursor position: "> " = 2 chars + border = 1, so x = 3 + cursor_pos
-            // y position: top border = 1
-            let cursor_x = area.x + 3 + u16::try_from(self.cursor_pos).unwrap_or(0);
+            // Calculate the display width of the prompt (stripping ANSI escape sequences)
+            let prompt_display_width = Self::calculate_display_width(&self.cached_prompt);
+            // Cursor position: prompt width + cursor_pos + left border (1)
+            let cursor_x = area.x
+                + 1
+                + u16::try_from(prompt_display_width).unwrap_or(0)
+                + u16::try_from(self.cursor_pos).unwrap_or(0);
             let cursor_y = area.y + 1;
             Some((cursor_x, cursor_y))
         } else {
             None
         }
-    }
-}
-
-impl Default for CommandInput {
-    fn default() -> Self {
-        Self::new(
-            "Command Input [FOCUSED - Ctrl+Space to switch, Ctrl+Q to quit]",
-            "Command Input [Ctrl+Space to focus, Ctrl+Q to quit]",
-        )
     }
 }

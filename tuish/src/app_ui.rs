@@ -12,6 +12,7 @@ use ratatui::{
     text::Line,
     widgets::{Block, Borders, Tabs},
 };
+use tokio::sync::Mutex;
 
 use crate::command_input::CommandInput;
 use crate::content_pane::ContentPane;
@@ -30,6 +31,8 @@ enum FocusedArea {
 pub struct AppUI {
     /// The ratatui terminal instance
     terminal: DefaultTerminal,
+    /// The shell instance
+    shell: Arc<Mutex<brush_core::Shell>>,
     /// Content panes displayed in tabs
     panes: Vec<Box<dyn ContentPane>>,
     /// Command input widget
@@ -42,14 +45,19 @@ impl AppUI {
     /// Creates a new `AppUI` without any content panes.
     ///
     /// Use `add_pane` to add content panes after construction.
-    pub fn new() -> Self {
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell to run the UI for.
+    pub fn new(shell: &Arc<Mutex<brush_core::Shell>>) -> Self {
         // Initialize the ratatui terminal in raw mode
         let terminal = ratatui::init();
 
         Self {
             terminal,
+            shell: shell.clone(),
             panes: Vec::new(),
-            command_input: CommandInput::default(),
+            command_input: CommandInput::new(shell),
             focused_area: FocusedArea::CommandInput,
         }
     }
@@ -262,20 +270,17 @@ impl AppUI {
     ///
     /// This method blocks until the user quits (Ctrl+Q).
     ///
-    /// # Arguments
-    /// * `shell` - The shell instance to execute commands in
-    ///
     /// # Errors
     /// Returns an error if rendering or event handling fails
     #[allow(clippy::unused_async)]
-    pub async fn run(
-        &mut self,
-        shell: Arc<tokio::sync::Mutex<brush_core::Shell>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let source_info = SourceInfo::default();
         let params = ExecutionParameters::default();
 
         loop {
+            // Update the command.
+            self.command_input.try_refresh().await;
+
             // Render the UI
             self.render()?;
 
@@ -283,15 +288,13 @@ impl AppUI {
             match self.handle_events()? {
                 Some(command) if !command.is_empty() => {
                     // User pressed Enter in command pane - execute the command
-                    let shell = Arc::clone(&shell);
+                    let shell = self.shell.clone();
                     let source_info = source_info.clone();
                     let params = params.clone();
                     tokio::spawn(async move {
-                        let result = {
-                            let mut shell = shell.lock().await;
-                            shell.run_string(command, &source_info, &params).await
-                        };
-                        let _ = result;
+                        let mut shell = shell.lock().await;
+                        let _ = shell.run_string(command, &source_info, &params).await;
+                        drop(shell);
                     });
                 }
                 Some(_) => {
