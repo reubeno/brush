@@ -10,7 +10,7 @@ use ratatui::prelude::*;
 use tokio::sync::mpsc::Sender;
 use tui_term::widget::PseudoTerminal;
 
-use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult};
+use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult, PaneKind};
 
 /// A content pane that displays a `PTY` terminal using `tui_term`.
 pub struct TerminalPane {
@@ -41,6 +41,10 @@ impl TerminalPane {
 impl ContentPane for TerminalPane {
     fn name(&self) -> &'static str {
         "Terminal"
+    }
+
+    fn kind(&self) -> PaneKind {
+        PaneKind::Terminal
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

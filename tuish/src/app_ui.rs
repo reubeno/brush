@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Block, Borders, Tabs},
+    widgets::{Block, BorderType, Borders, Tabs},
 };
 use tokio::sync::Mutex;
 
@@ -85,6 +85,8 @@ impl AppUI {
         self.terminal.size()
     }
 
+    const CONTENT_PANE_HEIGHT_PERCENTAGE: u16 = 80;
+
     /// Calculates the appropriate dimensions for a content pane that will be displayed
     /// in the tabbed area.
     ///
@@ -104,11 +106,12 @@ impl AppUI {
         let terminal_size = self.terminal_size()?;
 
         // PTY dimensions: The top area (80% of screen) contains tabs + bordered content.
-        let terminal_pane_height = (terminal_size.height * 80) / 100;
+        let terminal_pane_height =
+            (terminal_size.height * Self::CONTENT_PANE_HEIGHT_PERCENTAGE) / 100;
         let rows = terminal_pane_height
             .saturating_sub(1) // Tabs bar
             .saturating_sub(2) // Content border
-            .saturating_sub(1); // tui-term quirk
+            .saturating_add(1); // tui-term quirk: add 1 back
         let cols = terminal_size.width.saturating_sub(2); // Content left + right borders
 
         Ok((rows, cols))
@@ -121,15 +124,6 @@ impl AppUI {
             Some(boxed_pane.as_mut())
         } else {
             None
-        }
-    }
-
-    /// Returns the currently selected pane index.
-    #[allow(dead_code)]
-    pub const fn selected_pane(&self) -> Option<usize> {
-        match self.focused_area {
-            FocusedArea::Pane(index) => Some(index),
-            FocusedArea::CommandInput => None,
         }
     }
 
@@ -154,7 +148,8 @@ impl AppUI {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Percentage(80), // Tab area (tabs + content)
+                    Constraint::Percentage(Self::CONTENT_PANE_HEIGHT_PERCENTAGE), /* Tab area (tabs +
+                                                                                   * content) */
                     Constraint::Percentage(20), // Command input pane
                 ])
                 .split(f.area());
@@ -176,12 +171,10 @@ impl AppUI {
             };
 
             let colors = [
-                Color::Green,
-                Color::Blue,
-                Color::Yellow,
-                Color::Magenta,
-                Color::Red,
-                Color::Cyan,
+                Color::Rgb(100, 100, 100),
+                Color::Rgb(140, 140, 140),
+                Color::Rgb(180, 180, 180),
+                Color::Rgb(220, 220, 220),
             ];
 
             let tabs = Tabs::new(tab_titles.iter().enumerate().map(|(i, t)| {
@@ -190,13 +183,14 @@ impl AppUI {
             }))
             .select(tab_selection)
             .style(Style::default().fg(Color::White).bg(Color::DarkGray)) // Unselected tabs
-            .highlight_style(Modifier::REVERSED)
+            .highlight_style(Style::default().bg(Color::Green))
             .divider("")
             .padding("", "");
             f.render_widget(tabs, tab_area_chunks[0]);
 
             // Render content area with borders based on focus
             let pane_focused = matches!(focused_area, FocusedArea::Pane(_));
+
             let content_border_style = if pane_focused {
                 Style::default()
                     .fg(Color::Green)
@@ -208,6 +202,7 @@ impl AppUI {
             // Render the selected pane's content with borders
             let content_block = Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .border_style(content_border_style);
             let content_inner = content_block.inner(tab_area_chunks[1]);
             f.render_widget(content_block, tab_area_chunks[1]);
@@ -226,6 +221,25 @@ impl AppUI {
         Ok(())
     }
 
+    const fn set_focus_to_command_input(&mut self) {
+        self.focused_area = FocusedArea::CommandInput;
+    }
+
+    fn set_focus_to_next_pane_or_area(&mut self) {
+        let num_panes = self.panes.len();
+        self.focused_area = match self.focused_area {
+            FocusedArea::Pane(idx) if idx + 1 < num_panes => FocusedArea::Pane(idx + 1),
+            FocusedArea::Pane(_) => {
+                if self.command_input.is_enabled() {
+                    FocusedArea::CommandInput
+                } else {
+                    FocusedArea::Pane(0)
+                }
+            }
+            FocusedArea::CommandInput => FocusedArea::Pane(0),
+        };
+    }
+
     /// Handles input events.
     #[allow(clippy::too_many_lines)]
     pub fn handle_events(&mut self) -> Result<UIEventResult, std::io::Error> {
@@ -234,20 +248,7 @@ impl AppUI {
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                     // Ctrl+Space cycles focus through panes and command input
                     KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        let num_panes = self.panes.len();
-                        self.focused_area = match self.focused_area {
-                            FocusedArea::Pane(idx) if idx + 1 < num_panes => {
-                                FocusedArea::Pane(idx + 1)
-                            }
-                            FocusedArea::Pane(_) => {
-                                if self.command_input.is_enabled() {
-                                    FocusedArea::CommandInput
-                                } else {
-                                    FocusedArea::Pane(0)
-                                }
-                            }
-                            FocusedArea::CommandInput => FocusedArea::Pane(0),
-                        };
+                        self.set_focus_to_next_pane_or_area();
                     }
                     // Ctrl+Q quits the application by returning None to signal shutdown
                     KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -324,6 +325,7 @@ impl AppUI {
                     running_command = None;
 
                     self.command_input.enable();
+                    self.set_focus_to_command_input();
                 }
             }
 
@@ -351,6 +353,7 @@ impl AppUI {
 
                     // Once it's running, disable the command area.
                     self.command_input.disable();
+                    self.set_focus_to_next_pane_or_area();
 
                     // TODO: Check for exit signal from command execution
                 }
