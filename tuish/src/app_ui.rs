@@ -42,6 +42,16 @@ pub struct AppUI {
     focused_area: FocusedArea,
 }
 
+/// Result of handling a UI event.
+pub enum UIEventResult {
+    /// The application has been asked to terminate.
+    RequestExit,
+    /// The application should continue running.
+    Continue,
+    /// The application should execute the given command.
+    ExecuteCommand(String),
+}
+
 impl AppUI {
     /// Creates a new `AppUI` without any content panes.
     ///
@@ -165,17 +175,24 @@ impl AppUI {
                 FocusedArea::CommandInput => usize::MAX, // Deselect when command input focused
             };
 
-            let tabs = Tabs::new(tab_titles.iter().map(|t| Line::from(t.as_str())))
-                .select(tab_selection)
-                .style(Style::default().fg(Color::White).bg(Color::DarkGray)) // Unselected tabs
-                .highlight_style(
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .divider(" │ ")
-                .padding(" ", " ");
+            let colors = [
+                Color::Green,
+                Color::Blue,
+                Color::Yellow,
+                Color::Magenta,
+                Color::Red,
+                Color::Cyan,
+            ];
+
+            let tabs = Tabs::new(tab_titles.iter().enumerate().map(|(i, t)| {
+                Line::from(std::format!(" {t} "))
+                    .style(Style::default().bg(colors[i % colors.len()]))
+            }))
+            .select(tab_selection)
+            .style(Style::default().fg(Color::White).bg(Color::DarkGray)) // Unselected tabs
+            .highlight_style(Modifier::REVERSED)
+            .divider("")
+            .padding("", "");
             f.render_widget(tabs, tab_area_chunks[0]);
 
             // Render content area with borders based on focus
@@ -209,10 +226,9 @@ impl AppUI {
         Ok(())
     }
 
-    /// Handles keyboard input and returns Some(command) when Enter is pressed in command pane.
-    /// Returns None to signal application shutdown (Ctrl+Q).
+    /// Handles input events.
     #[allow(clippy::too_many_lines)]
-    pub fn handle_events(&mut self) -> Result<Option<String>, std::io::Error> {
+    pub fn handle_events(&mut self) -> Result<UIEventResult, std::io::Error> {
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
@@ -223,20 +239,30 @@ impl AppUI {
                             FocusedArea::Pane(idx) if idx + 1 < num_panes => {
                                 FocusedArea::Pane(idx + 1)
                             }
-                            FocusedArea::Pane(_) => FocusedArea::CommandInput,
+                            FocusedArea::Pane(_) => {
+                                if self.command_input.is_enabled() {
+                                    FocusedArea::CommandInput
+                                } else {
+                                    FocusedArea::Pane(0)
+                                }
+                            }
                             FocusedArea::CommandInput => FocusedArea::Pane(0),
                         };
                     }
                     // Ctrl+Q quits the application by returning None to signal shutdown
                     KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Ok(None);
+                        return Ok(UIEventResult::RequestExit);
                     }
                     // Command input handling
                     _ if matches!(self.focused_area, FocusedArea::CommandInput) => {
-                        if let Some(command) =
-                            self.command_input.handle_key(key.code, key.modifiers)
-                        {
-                            return Ok(Some(command));
+                        match self.command_input.handle_key(key.code, key.modifiers) {
+                            crate::command_input::CommandKeyResult::RequestExit => {
+                                return Ok(UIEventResult::RequestExit);
+                            }
+                            crate::command_input::CommandKeyResult::NoAction => {}
+                            crate::command_input::CommandKeyResult::CommandEntered(command) => {
+                                return Ok(UIEventResult::ExecuteCommand(command));
+                            }
                         }
                     }
                     // Delegate all other keys to the focused pane
@@ -264,7 +290,7 @@ impl AppUI {
             }
         }
 
-        Ok(Some(String::new()))
+        Ok(UIEventResult::Continue)
     }
 
     /// Runs the main event loop, executing commands in the provided shell.
@@ -278,8 +304,30 @@ impl AppUI {
         let source_info = SourceInfo::default();
         let params = ExecutionParameters::default();
 
+        let mut running_command: Option<
+            tokio::task::JoinHandle<Result<brush_core::ExecutionResult, brush_core::Error>>,
+        > = None;
+
         loop {
-            // Update the command.
+            // See if we're waiting on a command (and it finished).
+            if let Some(handle) = &mut running_command {
+                if handle.is_finished() {
+                    if let Ok(result) = handle.await? {
+                        if matches!(
+                            result.next_control_flow,
+                            brush_core::ExecutionControlFlow::ExitShell
+                        ) {
+                            break;
+                        }
+                    }
+
+                    running_command = None;
+
+                    self.command_input.enable();
+                }
+            }
+
+            // Update the command input area if it's not busy.
             self.command_input.try_refresh().await;
 
             // Render the UI
@@ -287,22 +335,28 @@ impl AppUI {
 
             // Handle input events.
             match self.handle_events()? {
-                Some(command) if !command.is_empty() => {
+                UIEventResult::ExecuteCommand(command) => {
                     // User pressed Enter in command pane - execute the command
                     let shell = self.shell.clone();
                     let source_info = source_info.clone();
                     let params = params.clone();
-                    tokio::spawn(async move {
+
+                    running_command = Some(tokio::spawn(async move {
                         let mut shell = shell.lock().await;
-                        let _ = shell.run_string(command, &source_info, &params).await;
+                        let result = shell.run_string(command, &source_info, &params).await;
                         drop(shell);
-                    });
+
+                        result
+                    }));
+
+                    // Once it's running, disable the command area.
+                    self.command_input.disable();
+
+                    // TODO: Check for exit signal from command execution
                 }
-                Some(_) => {
-                    // Empty command, continue loop
-                }
-                None => {
-                    // None signals shutdown (Ctrl+Q was pressed)
+                UIEventResult::Continue => {}
+                UIEventResult::RequestExit => {
+                    // User requested exit (Ctrl+Q)
                     break;
                 }
             }
