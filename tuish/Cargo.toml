@@ -21,6 +21,7 @@ bench = false
 workspace = true
 
 [dependencies]
+anyhow = "1.0.100"
 brush-builtins = { version = "^0.1.0", path = "../brush-builtins" }
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 brush-interactive = { version = "^0.3.0", path = "../brush-interactive" }

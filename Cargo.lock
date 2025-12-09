@@ -3293,6 +3293,7 @@ dependencies = [
 name = "tuish"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "brush-builtins",
  "brush-core",
  "brush-interactive",

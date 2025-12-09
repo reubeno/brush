@@ -10,6 +10,7 @@ mod terminal_pane;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use anyhow::Result;
 use app_ui::AppUI;
 use brush_builtins::ShellBuilderExt;
 use brush_core::openfiles::OpenFile;
@@ -18,7 +19,7 @@ use pty::Pty;
 use terminal_pane::TerminalPane;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
