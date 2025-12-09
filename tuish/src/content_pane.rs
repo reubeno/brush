@@ -32,6 +32,14 @@ pub enum PaneEventResult {
     RequestClose,
 }
 
+/// Kinds of content panes available in tuish.
+pub enum PaneKind {
+    /// A terminal pane
+    Terminal,
+    /// An environment variables pane
+    Environment,
+}
+
 /// A content pane that can be displayed in a tab.
 ///
 /// Implementations handle their own state, scrolling, and rendering,
@@ -43,6 +51,9 @@ pub enum PaneEventResult {
 pub trait ContentPane: Send {
     /// Returns the display name for this pane (shown in tab bar)
     fn name(&self) -> &'static str;
+
+    /// Returns the kind of the pane.
+    fn kind(&self) -> PaneKind;
 
     /// Renders the pane content to the given area.
     ///

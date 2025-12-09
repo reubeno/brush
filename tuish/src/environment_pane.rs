@@ -13,7 +13,7 @@ use ratatui::{
     },
 };
 
-use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult};
+use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult, PaneKind};
 
 /// A content pane that displays environment variables in a scrollable table.
 pub struct EnvironmentPane {
@@ -36,6 +36,10 @@ impl EnvironmentPane {
 impl ContentPane for EnvironmentPane {
     fn name(&self) -> &'static str {
         "Environment"
+    }
+
+    fn kind(&self) -> PaneKind {
+        PaneKind::Environment
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
