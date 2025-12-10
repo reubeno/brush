@@ -905,17 +905,19 @@ impl Shell {
             args: args.iter().map(AsRef::as_ref).collect(),
         };
 
-        let filter = self.filters.source_script.clone();
-        crate::filter::do_with_filter(input, &filter, async |input| {
-            self.parse_and_execute_script_file(
-                &input.path,
-                input.args.iter(),
-                params,
-                callstack::ScriptCallType::Source,
-            )
-            .await
-        })
-        .await
+        crate::filter::do_with_filter!(
+            input,
+            &self.filters.source_script,
+            async |input: ScriptArgs<'_>| {
+                self.parse_and_execute_script_file(
+                    input.path,
+                    input.args.iter(),
+                    params,
+                    callstack::ScriptCallType::Source,
+                )
+                .await
+            }
+        )
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.

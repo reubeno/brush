@@ -492,11 +492,9 @@ impl<'a> WordExpander<'a> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// yield pieces that could be further processed.
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        let filter = self.shell.filters().expand_word.clone();
-        filter::do_with_filter(word, &filter, async |word| {
+        filter::do_with_filter!(word, &self.shell.filters().expand_word, async |word| {
             self.basic_expand_impl(word).await
         })
-        .await
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;

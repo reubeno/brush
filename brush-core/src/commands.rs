@@ -375,8 +375,11 @@ impl<'a> SimpleCommand<'a> {
 
     /// Executes the simple command, applying any registered filters.
     pub async fn execute(self) -> Result<ExecutionSpawnResult, error::Error> {
-        let filter = self.shell.filters().exec_simple_command.clone();
-        filter::do_with_filter(self, &filter, |cmd| cmd.execute_impl()).await
+        filter::do_with_filter!(
+            self,
+            &self.shell.filters().exec_simple_command,
+            |cmd: SimpleCommand<'a>| cmd.execute_impl()
+        )
     }
 
     /// Executes the simple command.
@@ -622,7 +625,7 @@ pub(crate) async fn execute_external_command(
     );
 
     let filter = &context.shell.filters().exec_external_command;
-    match filter::do_with_filter(cmd, filter, |cmd| async { sys::process::spawn(cmd) }).await {
+    match filter::do_with_filter!(cmd, filter, |cmd| async { sys::process::spawn(cmd) }) {
         Ok(child) => {
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
