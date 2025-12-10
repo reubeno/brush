@@ -47,7 +47,3 @@ impl std::io::Write for PipeWriter {
         Ok(())
     }
 }
-
-pub(crate) fn pipe() -> std::io::Result<(PipeReader, PipeWriter)> {
-    Ok((PipeReader {}, PipeWriter {}))
-}
