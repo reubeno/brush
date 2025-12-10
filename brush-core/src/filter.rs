@@ -58,11 +58,45 @@ pub trait OpFilter<O: FilterableOp>: Send {
     }
 }
 
+/// Executes an operation with a filter.
+///
+/// This is the slow path, marked as `#[cold]` to optimize for the common case
+/// where no filter is present.
+#[cold]
+async fn do_with_filter_slow<O, F, Exec, Fut>(
+    input: O::Input,
+    filter: &Arc<Mutex<F>>,
+    executor: Exec,
+) -> O::Output
+where
+    O: FilterableOp,
+    F: OpFilter<O> + ?Sized,
+    Exec: FnOnce(O::Input) -> Fut,
+    Fut: Future<Output = O::Output> + Send,
+{
+    let mut filter_guard = filter.lock().await;
+    let pre_op_result = filter_guard.pre_op(input);
+    drop(filter_guard);
+
+    let output = match pre_op_result {
+        PreFilterResult::Continue(input) => executor(input).await,
+        PreFilterResult::Return(output) => output,
+    };
+
+    let mut filter_guard = filter.lock().await;
+    match filter_guard.post_op(output) {
+        PostFilterResult::Return(output) => output,
+    }
+}
+
 /// Executes an operation with the provided inputs, applying a filter if present.
 ///
 /// The filter can inspect and modify inputs before execution, and inspect and
 /// modify outputs after execution. If no filter is provided, the executor is
 /// called directly.
+///
+/// This function is marked `#[inline]` to ensure the compiler can optimize
+/// the no-filter fast path when filters are not used.
 ///
 /// # Arguments
 ///
@@ -76,6 +110,7 @@ pub trait OpFilter<O: FilterableOp>: Send {
 /// * `F` - The filter type.
 /// * `Exec` - The executor closure type.
 /// * `Fut` - The future type returned by the executor.
+#[inline]
 pub async fn do_with_filter<O, F, Exec, Fut>(
     input: O::Input,
     filter: &Option<Arc<Mutex<F>>>,
@@ -87,21 +122,8 @@ where
     Exec: FnOnce(O::Input) -> Fut,
     Fut: Future<Output = O::Output> + Send,
 {
-    let Some(filter) = filter else {
-        return executor(input).await;
-    };
-
-    let mut filter_guard = filter.lock().await;
-    let pre_op_result = filter_guard.pre_op(input);
-    drop(filter_guard);
-
-    let output = match pre_op_result {
-        PreFilterResult::Continue(input) => executor(input).await,
-        PreFilterResult::Return(output) => output,
-    };
-
-    let mut filter_guard = filter.lock().await;
-    match filter_guard.post_op(output) {
-        PostFilterResult::Return(output) => output,
+    match filter {
+        None => executor(input).await,
+        Some(filter) => do_with_filter_slow::<O, F, Exec, Fut>(input, filter, executor).await,
     }
 }
