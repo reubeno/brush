@@ -63,8 +63,9 @@ async fn main() -> Result<()> {
     let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer()));
     let environment_pane = Box::new(EnvironmentPane::new(&shell));
 
-    // Add panes to the backend
-    ui.add_pane(terminal_pane);
+    // Set the terminal pane (first in tab order, accessible for direct writes)
+    ui.set_terminal_pane(terminal_pane);
+    // Add other panes
     ui.add_pane(environment_pane);
 
     // Run the main event loop
