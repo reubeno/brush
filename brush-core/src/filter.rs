@@ -111,7 +111,7 @@ where
 /// * `Exec` - The executor closure type.
 /// * `Fut` - The future type returned by the executor.
 #[inline]
-pub async fn do_with_filter<O, F, Exec, Fut>(
+pub async fn do_with_filter_func<O, F, Exec, Fut>(
     input: O::Input,
     filter: &Option<Arc<Mutex<F>>>,
     executor: Exec,
@@ -127,3 +127,19 @@ where
         Some(filter) => do_with_filter_slow::<O, F, Exec, Fut>(input, filter, executor).await,
     }
 }
+
+/// Macro to execute an operation with a filter, optimizing for the case where
+/// no filter is present.
+#[macro_export]
+macro_rules! do_with_filter {
+    ($input:expr, $filter:expr, $executor:expr) => {
+        if ($filter).is_none() {
+            ($executor)($input).await
+        } else {
+            let filter = ($filter).clone();
+            $crate::filter::do_with_filter_func($input, &filter, $executor).await
+        }
+    };
+}
+
+pub use do_with_filter;
