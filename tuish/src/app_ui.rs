@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 
 use crate::command_input::CommandInput;
 use crate::content_pane::ContentPane;
+use crate::terminal_pane::TerminalPane;
 
 /// Which area currently has focus
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,8 +35,10 @@ pub struct AppUI {
     terminal: DefaultTerminal,
     /// The shell instance
     shell: Arc<Mutex<brush_core::Shell>>,
-    /// Content panes displayed in tabs
-    panes: Vec<Box<dyn ContentPane>>,
+    /// The terminal pane (stored separately for direct access)
+    terminal_pane: Option<Box<TerminalPane>>,
+    /// Other content panes displayed in tabs
+    other_panes: Vec<Box<dyn ContentPane>>,
     /// Command input widget
     command_input: CommandInput,
     /// Which area currently has focus
@@ -55,7 +58,7 @@ pub enum UIEventResult {
 impl AppUI {
     /// Creates a new `AppUI` without any content panes.
     ///
-    /// Use `add_pane` to add content panes after construction.
+    /// Use `set_terminal_pane` and `add_pane` to add content panes after construction.
     ///
     /// # Arguments
     ///
@@ -67,17 +70,79 @@ impl AppUI {
         Self {
             terminal,
             shell: shell.clone(),
-            panes: Vec::new(),
+            terminal_pane: None,
+            other_panes: Vec::new(),
             command_input: CommandInput::new(shell),
             focused_area: FocusedArea::CommandInput,
         }
     }
 
+    /// Sets the terminal pane.
+    ///
+    /// The terminal pane is displayed first in the tab order and can be
+    /// written to directly by the UI (e.g., for status messages between commands).
+    pub fn set_terminal_pane(&mut self, pane: Box<TerminalPane>) {
+        self.terminal_pane = Some(pane);
+    }
+
     /// Adds a content pane to the backend.
     ///
-    /// Panes are displayed in tabs in the order they are added.
+    /// Panes are displayed in tabs after the terminal pane (if set),
+    /// in the order they are added.
     pub fn add_pane(&mut self, pane: Box<dyn ContentPane>) {
-        self.panes.push(pane);
+        self.other_panes.push(pane);
+    }
+
+    /// Returns the total number of panes (terminal pane + other panes).
+    fn pane_count(&self) -> usize {
+        let terminal_count = if self.terminal_pane.is_some() { 1 } else { 0 };
+        terminal_count + self.other_panes.len()
+    }
+
+    /// Returns a mutable reference to a pane by index.
+    ///
+    /// Index 0 is the terminal pane (if set), followed by other panes.
+    fn pane_at_mut(&mut self, index: usize) -> Option<&mut dyn ContentPane> {
+        Self::pane_at_mut_impl(self.terminal_pane.as_mut(), &mut self.other_panes, index)
+    }
+
+    /// Implementation helper for `pane_at_mut` that doesn't borrow `self`.
+    fn pane_at_mut_impl<'a>(
+        terminal_pane: Option<&'a mut Box<TerminalPane>>,
+        other_panes: &'a mut [Box<dyn ContentPane>],
+        index: usize,
+    ) -> Option<&'a mut dyn ContentPane> {
+        if terminal_pane.is_some() {
+            if index == 0 {
+                terminal_pane.map(|p| &mut **p as &mut dyn ContentPane)
+            } else {
+                other_panes
+                    .get_mut(index - 1)
+                    .map(|p| &mut **p as &mut dyn ContentPane)
+            }
+        } else {
+            other_panes
+                .get_mut(index)
+                .map(|p| &mut **p as &mut dyn ContentPane)
+        }
+    }
+
+    /// Returns an iterator over all pane names.
+    fn pane_names(&self) -> impl Iterator<Item = &'static str> + '_ {
+        let terminal_name = self.terminal_pane.as_ref().map(|p| p.name());
+        terminal_name
+            .into_iter()
+            .chain(self.other_panes.iter().map(|p| p.name()))
+    }
+
+    /// Writes output to the terminal pane.
+    ///
+    /// This allows the UI to display messages in the terminal between command executions.
+    /// If no terminal pane is set, this is a no-op.
+    pub fn write_to_terminal(&self, data: &[u8]) {
+        if let Some(terminal_pane) = &self.terminal_pane {
+            terminal_pane.process_output(data);
+        }
     }
 
     /// Returns the current terminal size.
@@ -120,11 +185,7 @@ impl AppUI {
     /// Gets mutable access to a specific pane.
     #[allow(dead_code)]
     pub fn get_pane_mut(&mut self, index: usize) -> Option<&mut dyn ContentPane> {
-        if let Some(boxed_pane) = self.panes.get_mut(index) {
-            Some(boxed_pane.as_mut())
-        } else {
-            None
-        }
+        self.pane_at_mut(index)
     }
 
     /// Draws the UI with content panes and command input.
@@ -132,7 +193,7 @@ impl AppUI {
         let focused_area = self.focused_area;
 
         // Collect tab titles from panes
-        let tab_titles: Vec<String> = self.panes.iter().map(|p| p.name().to_string()).collect();
+        let tab_titles: Vec<String> = self.pane_names().map(String::from).collect();
 
         // Track which pane is selected (for rendering) vs focused (for input)
         let selected_pane_index = match focused_area {
@@ -143,6 +204,11 @@ impl AppUI {
         // Update command input focus state
         self.command_input
             .set_focused(matches!(focused_area, FocusedArea::CommandInput));
+
+        // Borrow fields separately to avoid capturing `self` in the closure
+        let terminal_pane = &mut self.terminal_pane;
+        let other_panes = &mut self.other_panes;
+        let command_input = &mut self.command_input;
 
         self.terminal.draw(|f| {
             let chunks = Layout::default()
@@ -208,12 +274,14 @@ impl AppUI {
             f.render_widget(content_block, tab_area_chunks[1]);
 
             // Render the selected pane's content inside the bordered area
-            if selected_pane_index < self.panes.len() {
-                self.panes[selected_pane_index].render(f, content_inner);
+            if let Some(pane) =
+                Self::pane_at_mut_impl(terminal_pane.as_mut(), other_panes, selected_pane_index)
+            {
+                pane.render(f, content_inner);
             }
 
             // Render the command input pane using the widget
-            if let Some((cursor_x, cursor_y)) = self.command_input.render(f, chunks[1]) {
+            if let Some((cursor_x, cursor_y)) = command_input.render(f, chunks[1]) {
                 f.set_cursor_position((cursor_x, cursor_y));
             }
         })?;
@@ -226,7 +294,7 @@ impl AppUI {
     }
 
     fn set_focus_to_next_pane_or_area(&mut self) {
-        let num_panes = self.panes.len();
+        let num_panes = self.pane_count();
         self.focused_area = match self.focused_area {
             FocusedArea::Pane(idx) if idx + 1 < num_panes => FocusedArea::Pane(idx + 1),
             FocusedArea::Pane(_) => {
@@ -267,9 +335,9 @@ impl AppUI {
                         }
                     }
                     // Delegate all other keys to the focused pane
-                    _ if matches!(self.focused_area, FocusedArea::Pane(idx) if idx < self.panes.len()) => {
+                    _ if matches!(self.focused_area, FocusedArea::Pane(idx) if idx < self.pane_count()) => {
                         if let FocusedArea::Pane(idx) = self.focused_area {
-                            if let Some(pane) = self.panes.get_mut(idx) {
+                            if let Some(pane) = self.pane_at_mut(idx) {
                                 use crate::content_pane::{PaneEvent, PaneEventResult};
                                 let result =
                                     pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
@@ -314,6 +382,13 @@ impl AppUI {
             if let Some(handle) = &mut running_command {
                 if handle.is_finished() {
                     if let Ok(result) = handle.await? {
+                        // Write a status message to the terminal pane
+                        let exit_code: u8 = (&result.exit_code).into();
+                        let status_msg = std::format!(
+                            "\r\n----------- [tuish: command exited with code {exit_code}] ----------- \r\n\r\n"
+                        );
+                        self.write_to_terminal(status_msg.as_bytes());
+
                         if matches!(
                             result.next_control_flow,
                             brush_core::ExecutionControlFlow::ExitShell
