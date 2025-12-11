@@ -12,16 +12,33 @@ use tui_term::widget::PseudoTerminal;
 
 use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult, PaneKind};
 
+/// Maximum length for command display in the border title.
+const MAX_COMMAND_DISPLAY_LENGTH: usize = 40;
+
 /// A content pane that displays a `PTY` terminal using `tui_term`.
 pub struct TerminalPane {
     parser: Arc<RwLock<vt100::Parser>>,
     pty_writer: Sender<Bytes>,
+    /// The currently running command, if any.
+    running_command: Option<String>,
+    /// Whether the terminal pane is currently focused.
+    is_focused: bool,
 }
 
 impl TerminalPane {
     /// Create a new terminal pane with the given PTY resources.
     pub const fn new(parser: Arc<RwLock<vt100::Parser>>, pty_writer: Sender<Bytes>) -> Self {
-        Self { parser, pty_writer }
+        Self {
+            parser,
+            pty_writer,
+            running_command: None,
+            is_focused: false,
+        }
+    }
+
+    /// Sets the currently running command to display in the border.
+    pub fn set_running_command(&mut self, command: Option<String>) {
+        self.running_command = command;
     }
 
     /// Sends raw bytes to the PTY.
@@ -47,17 +64,40 @@ impl ContentPane for TerminalPane {
         PaneKind::Terminal
     }
 
+    fn border_title(&self) -> Option<String> {
+        self.running_command.as_ref().map(|cmd| {
+            let trimmed = cmd.trim();
+            if trimmed.chars().count() > MAX_COMMAND_DISPLAY_LENGTH {
+                let truncated: String = trimmed.chars().take(MAX_COMMAND_DISPLAY_LENGTH).collect();
+                format!("Running: {truncated}...")
+            } else {
+                format!("Running: {trimmed}")
+            }
+        })
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         let screen = {
             let parser = self.parser.read().unwrap();
             parser.screen().clone()
         };
-        let pseudo_term = PseudoTerminal::new(&screen);
+
+        // Hide the cursor when the terminal pane is not focused
+        let cursor = tui_term::widget::Cursor::default().visibility(self.is_focused);
+        let pseudo_term = PseudoTerminal::new(&screen).cursor(cursor);
         frame.render_widget(pseudo_term, area);
     }
 
     fn handle_event(&mut self, event: PaneEvent) -> PaneEventResult {
         match event {
+            PaneEvent::Focused => {
+                self.is_focused = true;
+                PaneEventResult::Handled
+            }
+            PaneEvent::Unfocused => {
+                self.is_focused = false;
+                PaneEventResult::Handled
+            }
             PaneEvent::KeyPress(key, modifiers) => {
                 // Forward all keyboard input to PTY when we're focused
                 match key {
@@ -136,7 +176,7 @@ impl ContentPane for TerminalPane {
                 }
                 PaneEventResult::Handled
             }
-            _ => PaneEventResult::NotHandled,
+            PaneEvent::Resized { .. } => PaneEventResult::NotHandled,
         }
     }
 }

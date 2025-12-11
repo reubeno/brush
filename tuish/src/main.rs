@@ -1,20 +1,28 @@
 //! tuish - A TUI-based interactive shell built on brush.
 
+mod aliases_pane;
 mod app_ui;
+mod callstack_pane;
 mod command_input;
 mod content_pane;
 mod environment_pane;
+mod functions_pane;
+mod history_pane;
 mod pty;
 mod terminal_pane;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use aliases_pane::AliasesPane;
 use anyhow::Result;
 use app_ui::AppUI;
 use brush_builtins::ShellBuilderExt;
 use brush_core::openfiles::OpenFile;
+use callstack_pane::CallStackPane;
 use environment_pane::EnvironmentPane;
+use functions_pane::FunctionsPane;
+use history_pane::HistoryPane;
 use pty::Pty;
 use terminal_pane::TerminalPane;
 
@@ -62,11 +70,19 @@ async fn main() -> Result<()> {
     // Create content panes
     let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer()));
     let environment_pane = Box::new(EnvironmentPane::new(&shell));
+    let history_pane = Box::new(HistoryPane::new(&shell));
+    let aliases_pane = Box::new(AliasesPane::new(&shell));
+    let functions_pane = Box::new(FunctionsPane::new(&shell));
+    let callstack_pane = Box::new(CallStackPane::new(&shell));
 
     // Set the terminal pane (first in tab order, accessible for direct writes)
     ui.set_terminal_pane(terminal_pane);
     // Add other panes
     ui.add_pane(environment_pane);
+    ui.add_pane(history_pane);
+    ui.add_pane(aliases_pane);
+    ui.add_pane(functions_pane);
+    ui.add_pane(callstack_pane);
 
     // Run the main event loop
     ui.run().await
