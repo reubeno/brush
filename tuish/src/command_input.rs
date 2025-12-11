@@ -190,7 +190,7 @@ impl CommandInput {
                 self.buffer.truncate(self.cursor_pos);
                 CommandKeyResult::NoAction
             }
-            KeyCode::Enter => {
+            KeyCode::Enter if !self.buffer.is_empty() => {
                 let command = std::mem::take(&mut self.buffer);
                 self.cursor_pos = 0;
                 CommandKeyResult::CommandEntered(command)

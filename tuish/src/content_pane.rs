@@ -38,6 +38,14 @@ pub enum PaneKind {
     Terminal,
     /// An environment variables pane
     Environment,
+    /// A command history pane
+    History,
+    /// A shell aliases pane
+    Aliases,
+    /// A shell functions pane
+    Functions,
+    /// A call stack pane
+    CallStack,
 }
 
 /// A content pane that can be displayed in a tab.
@@ -74,4 +82,12 @@ pub trait ContentPane: Send {
     ///
     /// Allows panes to clean up or pause updates.
     fn on_hide(&mut self) {}
+
+    /// Returns an optional title to display in the pane's border.
+    ///
+    /// The default implementation returns `None`, meaning no title is displayed.
+    /// Panes can override this to show dynamic status information.
+    fn border_title(&self) -> Option<String> {
+        None
+    }
 }

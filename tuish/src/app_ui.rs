@@ -145,6 +145,15 @@ impl AppUI {
         }
     }
 
+    /// Sets the currently running command to display in the terminal pane's border.
+    ///
+    /// Pass `None` to clear the running command display.
+    pub fn set_running_command(&mut self, command: Option<String>) {
+        if let Some(terminal_pane) = &mut self.terminal_pane {
+            terminal_pane.set_running_command(command);
+        }
+    }
+
     /// Returns the current terminal size.
     pub fn terminal_size(&self) -> Result<ratatui::layout::Size, std::io::Error> {
         self.terminal.size()
@@ -237,10 +246,12 @@ impl AppUI {
             };
 
             let colors = [
-                Color::Rgb(100, 100, 100),
-                Color::Rgb(140, 140, 140),
-                Color::Rgb(180, 180, 180),
-                Color::Rgb(220, 220, 220),
+                Color::Rgb(70, 70, 70),
+                Color::Rgb(90, 90, 90),
+                Color::Rgb(110, 110, 110),
+                Color::Rgb(130, 130, 130),
+                Color::Rgb(150, 150, 150),
+                Color::Rgb(170, 170, 170),
             ];
 
             let tabs = Tabs::new(tab_titles.iter().enumerate().map(|(i, t)| {
@@ -265,11 +276,27 @@ impl AppUI {
                 Style::default().fg(Color::DarkGray)
             };
 
+            // Get border title from the selected pane if available
+            let border_title =
+                Self::pane_at_mut_impl(terminal_pane.as_mut(), other_panes, selected_pane_index)
+                    .and_then(|pane| pane.border_title());
+
             // Render the selected pane's content with borders
-            let content_block = Block::default()
+            let mut content_block = Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(content_border_style);
+
+            if let Some(title) = border_title {
+                content_block = content_block.title(
+                    Line::from(title).style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                );
+            }
+
             let content_inner = content_block.inner(tab_area_chunks[1]);
             f.render_widget(content_block, tab_area_chunks[1]);
 
@@ -289,12 +316,20 @@ impl AppUI {
         Ok(())
     }
 
-    const fn set_focus_to_command_input(&mut self) {
+    fn set_focus_to_command_input(&mut self) {
+        // Send Unfocused event to currently focused pane
+        if let FocusedArea::Pane(idx) = self.focused_area {
+            if let Some(pane) = self.pane_at_mut(idx) {
+                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+            }
+        }
         self.focused_area = FocusedArea::CommandInput;
     }
 
     fn set_focus_to_next_pane_or_area(&mut self) {
         let num_panes = self.pane_count();
+        let old_focused_area = self.focused_area;
+
         self.focused_area = match self.focused_area {
             FocusedArea::Pane(idx) if idx + 1 < num_panes => FocusedArea::Pane(idx + 1),
             FocusedArea::Pane(_) => {
@@ -306,6 +341,20 @@ impl AppUI {
             }
             FocusedArea::CommandInput => FocusedArea::Pane(0),
         };
+
+        // Send Unfocused event to previously focused pane
+        if let FocusedArea::Pane(old_idx) = old_focused_area {
+            if let Some(pane) = self.pane_at_mut(old_idx) {
+                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+            }
+        }
+
+        // Send Focused event to newly focused pane
+        if let FocusedArea::Pane(new_idx) = self.focused_area {
+            if let Some(pane) = self.pane_at_mut(new_idx) {
+                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+            }
+        }
     }
 
     /// Handles input events.
@@ -399,6 +448,9 @@ impl AppUI {
 
                     running_command = None;
 
+                    // Clear the running command display
+                    self.set_running_command(None);
+
                     self.command_input.enable();
                     self.set_focus_to_command_input();
                 }
@@ -417,6 +469,9 @@ impl AppUI {
                     let shell = self.shell.clone();
                     let source_info = source_info.clone();
                     let params = params.clone();
+
+                    // Show the running command in the terminal pane's border
+                    self.set_running_command(Some(command.clone()));
 
                     running_command = Some(tokio::spawn(async move {
                         let mut shell = shell.lock().await;
