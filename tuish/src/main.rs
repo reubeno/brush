@@ -56,8 +56,7 @@ async fn main() -> Result<()> {
     let content_height = (terminal_size.height * 80) / 100;
     let pty_rows = content_height
         .saturating_sub(1) // Tabs bar
-        .saturating_sub(2) // Content border
-        .saturating_add(1); // tui-term quirk: add 1 back
+        .saturating_sub(2); // Content border
     let pty_cols = terminal_size.width.saturating_sub(2); // Content left + right borders
     
     let pty = Pty::new(pty_rows, pty_cols)?;
