@@ -16,6 +16,7 @@ use ratatui::{
 use tokio::sync::Mutex;
 
 use crate::command_input::CommandInput;
+use crate::completion_pane::CompletionPane;
 use crate::content_pane::ContentPane;
 use crate::terminal_pane::TerminalPane;
 
@@ -37,12 +38,16 @@ pub struct AppUI {
     shell: Arc<Mutex<brush_core::Shell>>,
     /// The terminal pane (stored separately for direct access)
     terminal_pane: Option<Box<TerminalPane>>,
+    /// The completion pane (stored separately for completion workflow)
+    completion_pane: Option<Box<CompletionPane>>,
     /// Other content panes displayed in tabs
     other_panes: Vec<Box<dyn ContentPane>>,
     /// Command input widget
     command_input: CommandInput,
     /// Which area currently has focus
     focused_area: FocusedArea,
+    /// The pane that was focused before completion was triggered
+    pre_completion_focus: Option<FocusedArea>,
 }
 
 /// Result of handling a UI event.
@@ -53,6 +58,8 @@ pub enum UIEventResult {
     Continue,
     /// The application should execute the given command.
     ExecuteCommand(String),
+    /// The application should trigger completion.
+    RequestCompletion,
 }
 
 impl AppUI {
@@ -71,9 +78,11 @@ impl AppUI {
             terminal,
             shell: shell.clone(),
             terminal_pane: None,
+            completion_pane: None,
             other_panes: Vec::new(),
             command_input: CommandInput::new(shell),
             focused_area: FocusedArea::CommandInput,
+            pre_completion_focus: None,
         }
     }
 
@@ -83,6 +92,14 @@ impl AppUI {
     /// written to directly by the UI (e.g., for status messages between commands).
     pub fn set_terminal_pane(&mut self, pane: Box<TerminalPane>) {
         self.terminal_pane = Some(pane);
+    }
+
+    /// Sets the completion pane.
+    ///
+    /// The completion pane is shown when tab completion is triggered.
+    /// It is not shown in the normal tab order.
+    pub fn set_completion_pane(&mut self, pane: Box<CompletionPane>) {
+        self.completion_pane = Some(pane);
     }
 
     /// Adds a content pane to the backend.
@@ -201,8 +218,18 @@ impl AppUI {
     pub fn render(&mut self) -> Result<(), std::io::Error> {
         let focused_area = self.focused_area;
 
-        // Collect tab titles from panes
-        let tab_titles: Vec<String> = self.pane_names().map(String::from).collect();
+        // Check if we should show the completion pane instead of normal panes
+        let show_completion = self
+            .completion_pane
+            .as_ref()
+            .map_or(false, |p| p.is_active());
+
+        // Collect tab titles from panes (unless showing completion)
+        let tab_titles: Vec<String> = if show_completion {
+            vec!["Completions".to_string()]
+        } else {
+            self.pane_names().map(String::from).collect()
+        };
 
         // Track which pane is selected (for rendering) vs focused (for input)
         let selected_pane_index = match focused_area {
@@ -216,6 +243,7 @@ impl AppUI {
 
         // Borrow fields separately to avoid capturing `self` in the closure
         let terminal_pane = &mut self.terminal_pane;
+        let completion_pane = &mut self.completion_pane;
         let other_panes = &mut self.other_panes;
         let command_input = &mut self.command_input;
 
@@ -301,7 +329,12 @@ impl AppUI {
             f.render_widget(content_block, tab_area_chunks[1]);
 
             // Render the selected pane's content inside the bordered area
-            if let Some(pane) =
+            // If completion pane is active, show it instead
+            if show_completion {
+                if let Some(pane) = completion_pane.as_mut() {
+                    pane.render(f, content_inner);
+                }
+            } else if let Some(pane) =
                 Self::pane_at_mut_impl(terminal_pane.as_mut(), other_panes, selected_pane_index)
             {
                 pane.render(f, content_inner);
@@ -360,9 +393,111 @@ impl AppUI {
     /// Handles input events.
     #[allow(clippy::too_many_lines)]
     pub fn handle_events(&mut self) -> Result<UIEventResult, std::io::Error> {
+        // Check if completion pane is active
+        let completion_active = self
+            .completion_pane
+            .as_ref()
+            .map_or(false, |p| p.is_active());
+
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                    // If completion is active, handle special keys
+                    KeyCode::Esc if completion_active => {
+                        // Cancel completion
+                        if let Some(pane) = &mut self.completion_pane {
+                            pane.clear();
+                        }
+                        // Restore focus
+                        if let Some(prev_focus) = self.pre_completion_focus.take() {
+                            self.focused_area = prev_focus;
+                        }
+                    }
+                    KeyCode::Enter if completion_active => {
+                        // Accept completion
+                        if let Some(pane) = &mut self.completion_pane {
+                            if let Some(completion) = pane.selected_completion() {
+                                let (insertion_index, delete_count) = pane.insertion_params();
+                                // Apply to command input
+                                self.command_input.apply_completion(
+                                    completion,
+                                    insertion_index,
+                                    delete_count,
+                                );
+                            }
+                            pane.clear();
+                        }
+                        // Restore focus
+                        if let Some(prev_focus) = self.pre_completion_focus.take() {
+                            self.focused_area = prev_focus;
+                        }
+                    }
+                    // Tab/Shift-Tab for navigation when completion is active
+                    KeyCode::Tab
+                        if completion_active && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                    {
+                        if let Some(pane) = &mut self.completion_pane {
+                            pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
+                                KeyCode::Down,
+                                KeyModifiers::empty(),
+                            ));
+                        }
+                    }
+                    KeyCode::BackTab | KeyCode::Tab
+                        if completion_active && key.modifiers.contains(KeyModifiers::SHIFT) =>
+                    {
+                        if let Some(pane) = &mut self.completion_pane {
+                            pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
+                                KeyCode::Up,
+                                KeyModifiers::empty(),
+                            ));
+                        }
+                    }
+                    // Arrow keys for navigation
+                    KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+                    | KeyCode::Home
+                    | KeyCode::End
+                        if completion_active =>
+                    {
+                        if let Some(pane) = &mut self.completion_pane {
+                            pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
+                                key.code,
+                                key.modifiers,
+                            ));
+                        }
+                    }
+                    // Allow typing to update buffer and re-trigger completion
+                    _ if completion_active => {
+                        // First, let command input handle the key (updates buffer)
+                        match self.command_input.handle_key(key.code, key.modifiers) {
+                            crate::command_input::CommandKeyResult::NoAction => {
+                                // Buffer was updated, re-trigger completion
+                                return Ok(UIEventResult::RequestCompletion);
+                            }
+                            crate::command_input::CommandKeyResult::CommandEntered(command) => {
+                                // User pressed Enter with actual command text - cancel completion and execute
+                                if let Some(pane) = &mut self.completion_pane {
+                                    pane.clear();
+                                }
+                                if let Some(prev_focus) = self.pre_completion_focus.take() {
+                                    self.focused_area = prev_focus;
+                                }
+                                return Ok(UIEventResult::ExecuteCommand(command));
+                            }
+                            _ => {
+                                // Cancel completion for other cases (e.g., Ctrl+D)
+                                if let Some(pane) = &mut self.completion_pane {
+                                    pane.clear();
+                                }
+                                if let Some(prev_focus) = self.pre_completion_focus.take() {
+                                    self.focused_area = prev_focus;
+                                }
+                            }
+                        }
+                    }
                     // Ctrl+Space cycles focus through panes and command input
                     KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.set_focus_to_next_pane_or_area();
@@ -380,6 +515,9 @@ impl AppUI {
                             crate::command_input::CommandKeyResult::NoAction => {}
                             crate::command_input::CommandKeyResult::CommandEntered(command) => {
                                 return Ok(UIEventResult::ExecuteCommand(command));
+                            }
+                            crate::command_input::CommandKeyResult::RequestCompletion => {
+                                return Ok(UIEventResult::RequestCompletion);
                             }
                         }
                     }
@@ -486,6 +624,40 @@ impl AppUI {
                     self.set_focus_to_next_pane_or_area();
 
                     // TODO: Check for exit signal from command execution
+                }
+                UIEventResult::RequestCompletion => {
+                    // User pressed Tab - trigger completion
+                    let mut shell = self.shell.lock().await;
+                    let buffer = self.command_input.buffer();
+                    let cursor_pos = self.command_input.cursor_pos();
+
+                    if let Ok(completions) = shell.complete(buffer, cursor_pos).await {
+                        drop(shell); // Release lock
+
+                        if completions.candidates.is_empty() {
+                            // No completions available
+                        } else if completions.candidates.len() == 1 {
+                            // Auto-accept single completion
+                            let completion = completions.candidates.into_iter().next().unwrap();
+                            self.command_input.apply_completion(
+                                completion,
+                                completions.insertion_index,
+                                completions.delete_count,
+                            );
+                        } else {
+                            // Multiple completions - show pane
+                            // Store current focus to restore later
+                            self.pre_completion_focus = Some(self.focused_area);
+
+                            // Show completion pane
+                            if let Some(pane) = &mut self.completion_pane {
+                                pane.set_completions(completions);
+                            }
+                        }
+                    } else {
+                        drop(shell);
+                        tracing::debug!("Completion failed");
+                    }
                 }
                 UIEventResult::Continue => {}
                 UIEventResult::RequestExit => {
