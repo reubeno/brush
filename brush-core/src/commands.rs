@@ -377,9 +377,7 @@ impl<'a> SimpleCommand<'a> {
     }
 
     /// Executes the simple command, applying any registered filters.
-    pub async fn execute(self) -> Result<ExecutionSpawnResult, error::Error> {
-        // For SimpleCommand, we don't use the macro because self contains a shell reference
-        // and we need to consume self. Instead, handle filtering inline without the macro.
+    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         #[cfg(not(feature = "experimental-filters"))]
         {
             self.execute_impl().await
@@ -387,12 +385,30 @@ impl<'a> SimpleCommand<'a> {
 
         #[cfg(feature = "experimental-filters")]
         {
-            // Note: We can't easily apply filters here without restructuring SimpleCommand
-            // because self contains a reference to shell, making it impossible to
-            // both borrow shell.extensions() and move self into the filter.
-            // For now, skip filtering for simple commands.
-            // TODO: Restructure to enable filtering
-            self.execute_impl().await
+            // Extract and clone extensions before moving self
+            let extensions = self.shell.extensions().map(|ext| ext.clone_for_subshell());
+
+            if let Some(ext) = extensions {
+                // Apply pre-filter
+                match ext.pre_exec_simple_command(self) {
+                    filter::PreFilterResult::Continue(cmd) => {
+                        self = cmd;
+                    }
+                    filter::PreFilterResult::Return(output) => {
+                        return output;
+                    }
+                }
+
+                // Execute the command
+                let output = self.execute_impl().await;
+
+                // Apply post-filter
+                match ext.post_exec_simple_command(output) {
+                    filter::PostFilterResult::Return(output) => output,
+                }
+            } else {
+                self.execute_impl().await
+            }
         }
     }
 
