@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 ///
 /// This trait only associates types; it does not include execution logic.
 /// The actual execution is provided as a closure to [`do_with_filter`].
-pub trait FilterableOp {
+pub trait FilterableOp: Send {
     /// The input type consumed by this operation.
     type Input;
     /// The output type produced by this operation.
@@ -45,6 +45,7 @@ pub trait OpFilter<O: FilterableOp>: Send {
     /// # Arguments
     ///
     /// * `input` - The inputs that would be provided to the operation if it is to be executed.
+    #[inline]
     fn pre_op(&mut self, input: O::Input) -> PreFilterResult<O> {
         PreFilterResult::Continue(input)
     }
@@ -56,30 +57,46 @@ pub trait OpFilter<O: FilterableOp>: Send {
     /// # Arguments
     ///
     /// * `output` - The outputs produced by the operation.
+    #[inline]
     fn post_op(&mut self, output: O::Output) -> PostFilterResult<O> {
         PostFilterResult::Return(output)
     }
 }
+
+/// Default implementation of an operation filter that performs no filtering.
+pub struct DefaultOpFilter<O: FilterableOp> {
+    _marker: std::marker::PhantomData<O>,
+}
+
+impl<O: FilterableOp> Default for DefaultOpFilter<O> {
+    fn default() -> Self {
+        DefaultOpFilter {
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<O: FilterableOp> OpFilter<O> for DefaultOpFilter<O> {}
 
 /// Type alias for a boxed filter behind an async mutex.
 pub type BoxedFilter<O> = Arc<Mutex<dyn OpFilter<O> + Send>>;
 
 /// Macro for executing a filterable operation.
 ///
-/// This macro handles all the boilerplate of checking for a filter, acquiring
-/// the mutex, calling `pre_op`/`post_op`, and handling early returns.
+/// This macro handles all the boilerplate of checking for extensions and calling
+/// pre/post filter methods, handling early returns.
 ///
 /// # Arguments
 ///
 /// * `$shell` - Expression yielding a reference to the Shell
-/// * `$filter_method` - The method name on `ShellExtensions` to get the filter
-/// * `$input_val` - The input value to pass to the filter's `pre_op`
+/// * `$filter_method` - The base filter method name (e.g., `exec_simple_command_filter`)
+/// * `$input_val` - The input value to pass to the pre filter method
 /// * `|$input_ident|` - Binding name for the (possibly modified) input in body
 /// * `$body` - The expression to execute
 ///
 /// # Variants
 ///
-/// - Default: Can `return` from enclosing function if `pre_op` returns `Return`
+/// - Default: Can `return` from enclosing function if pre filter returns `Return`
 /// - `no_return:`: Captures output instead of returning (for intermediate filters)
 ///
 /// # Example
@@ -91,23 +108,13 @@ pub type BoxedFilter<O> = Arc<Mutex<dyn OpFilter<O> + Send>>;
 /// ```
 #[macro_export]
 macro_rules! with_filter {
-    // Variant that can early-return (for top-level function filters)
-    ($shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        // Get the filter Option, cloning the Arc if present to release the borrow on shell
-        let filter_opt: Option<_> = {
-            let shell_ref = &$shell;
-            shell_ref
-                .extensions()
-                .and_then(|ext| ext.$filter_method())
-                .map(|f| std::sync::Arc::clone(&f))
-        };
-
+    // Variant that can early-return - exec_simple_command_filter
+    ($shell:expr, exec_simple_command_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
         let mut $input_ident = $input_val;
 
-        // If we have a filter, apply pre_op
-        if let Some(ref filter) = filter_opt {
-            let mut guard = filter.lock().await;
-            match $crate::filter::OpFilter::pre_op(&mut *guard, $input_ident) {
+        // If we have extensions, apply pre filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.pre_exec_simple_command($input_ident) {
                 $crate::filter::PreFilterResult::Continue(new_input) => {
                     $input_ident = new_input;
                 }
@@ -120,10 +127,9 @@ macro_rules! with_filter {
         // Execute the body
         let output = $body;
 
-        // If we have a filter, apply post_op
-        if let Some(ref filter) = filter_opt {
-            let mut guard = filter.lock().await;
-            match $crate::filter::OpFilter::post_op(&mut *guard, output) {
+        // If we have extensions, apply post filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.post_exec_simple_command(output) {
                 $crate::filter::PostFilterResult::Return(output) => output,
             }
         } else {
@@ -131,27 +137,102 @@ macro_rules! with_filter {
         }
     }};
 
-    // Variant without early-return (for intermediate filters like spawn)
-    // The pre_op Return case just uses that output directly instead of returning from function
-    (no_return: $shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        // Get the filter Option, cloning the Arc if present to release the borrow on shell
-        let filter_opt: Option<_> = {
-            let shell_ref = &$shell;
-            shell_ref
-                .extensions()
-                .and_then(|ext| ext.$filter_method())
-                .map(|f| std::sync::Arc::clone(&f))
-        };
+    // Variant that can early-return - exec_external_command_filter
+    ($shell:expr, exec_external_command_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        let mut $input_ident = $input_val;
 
+        // If we have extensions, apply pre filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.pre_exec_external_command($input_ident) {
+                $crate::filter::PreFilterResult::Continue(new_input) => {
+                    $input_ident = new_input;
+                }
+                $crate::filter::PreFilterResult::Return(output) => {
+                    return output;
+                }
+            }
+        }
+
+        // Execute the body
+        let output = $body;
+
+        // If we have extensions, apply post filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.post_exec_external_command(output) {
+                $crate::filter::PostFilterResult::Return(output) => output,
+            }
+        } else {
+            output
+        }
+    }};
+
+    // Variant that can early-return - expand_word_filter
+    ($shell:expr, expand_word_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        let mut $input_ident = $input_val;
+
+        // If we have extensions, apply pre filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.pre_expand_word($input_ident) {
+                $crate::filter::PreFilterResult::Continue(new_input) => {
+                    $input_ident = new_input;
+                }
+                $crate::filter::PreFilterResult::Return(output) => {
+                    return output;
+                }
+            }
+        }
+
+        // Execute the body
+        let output = $body;
+
+        // If we have extensions, apply post filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.post_expand_word(output) {
+                $crate::filter::PostFilterResult::Return(output) => output,
+            }
+        } else {
+            output
+        }
+    }};
+
+    // Variant that can early-return - source_script_filter
+    ($shell:expr, source_script_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        let mut $input_ident = $input_val;
+
+        // If we have extensions, apply pre filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.pre_source_script($input_ident) {
+                $crate::filter::PreFilterResult::Continue(new_input) => {
+                    $input_ident = new_input;
+                }
+                $crate::filter::PreFilterResult::Return(output) => {
+                    return output;
+                }
+            }
+        }
+
+        // Execute the body
+        let output = $body;
+
+        // If we have extensions, apply post filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.post_source_script(output) {
+                $crate::filter::PostFilterResult::Return(output) => output,
+            }
+        } else {
+            output
+        }
+    }};
+
+    // Variant without early-return - exec_external_command_filter
+    (no_return: $shell:expr, exec_external_command_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
         let $input_ident = $input_val;
 
-        // If we have a filter, apply pre_op and potentially execute
-        let output = if let Some(ref filter) = filter_opt {
-            let mut guard = filter.lock().await;
-            match $crate::filter::OpFilter::pre_op(&mut *guard, $input_ident) {
+        // If we have extensions, apply pre filter and potentially execute
+        let output = if let Some(ext) = $shell.extensions() {
+            match ext.pre_exec_external_command($input_ident) {
                 $crate::filter::PreFilterResult::Continue($input_ident) => {
                     // Execute body with potentially modified input
-                    drop(guard);
                     $body
                 }
                 $crate::filter::PreFilterResult::Return(output) => {
@@ -160,14 +241,13 @@ macro_rules! with_filter {
                 }
             }
         } else {
-            // No filter, execute body directly
+            // No extensions, execute body directly
             $body
         };
 
-        // If we have a filter, apply post_op
-        if let Some(ref filter) = filter_opt {
-            let mut guard = filter.lock().await;
-            match $crate::filter::OpFilter::post_op(&mut *guard, output) {
+        // If we have extensions, apply post filter
+        if let Some(ext) = $shell.extensions() {
+            match ext.post_exec_external_command(output) {
                 $crate::filter::PostFilterResult::Return(output) => output,
             }
         } else {

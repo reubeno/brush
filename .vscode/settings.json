@@ -17,4 +17,7 @@
     "rust-analyzer.check.allTargets": true,
     "rust-analyzer.check.workspace": true,
     "sarif-viewer.connectToGithubCodeScanning": "on",
+    "rust-analyzer.cargo.features": [
+        "experimental-filters"
+    ],
 }

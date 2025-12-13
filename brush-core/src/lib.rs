@@ -13,6 +13,8 @@ pub mod escape;
 pub mod expansion;
 mod extendedtests;
 #[cfg(feature = "experimental-filters")]
+pub mod extensions;
+#[cfg(feature = "experimental-filters")]
 pub mod filter;
 pub mod functions;
 pub mod history;
@@ -55,9 +57,6 @@ pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
-
-#[cfg(feature = "experimental-filters")]
-pub use shell::extensions;
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
 

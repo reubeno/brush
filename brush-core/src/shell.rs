@@ -23,6 +23,9 @@ use crate::{
     prompt, sys::users, traps,
 };
 
+#[cfg(feature = "experimental-filters")]
+use crate::extensions;
+
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 
@@ -31,108 +34,6 @@ pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
-
-#[cfg(feature = "experimental-filters")]
-pub mod extensions {
-    //! Experimental shell extensions support.
-
-    use std::path::Path;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
-
-    use super::{ExecutionResult, commands, error, expansion};
-
-    /// Type alias for a generic operation filter.
-    pub type Filter<A> = Arc<Mutex<dyn crate::filter::OpFilter<A>>>;
-
-    /// Type for storing a simple command filter.
-    pub type ExecSimpleCommandFilter =
-        Arc<Mutex<dyn for<'a> crate::filter::OpFilter<commands::SimpleCommand<'a>>>>;
-
-    /// Type for storing an external command filter.
-    pub type ExecExternalCommandFilter = Filter<commands::ExecuteExternalCommand>;
-
-    /// Type for storing a word expansion filter.
-    pub type ExpandWordFilter =
-        Arc<Mutex<dyn for<'a> crate::filter::OpFilter<expansion::ExpandWordOp<'a>>>>;
-
-    /// Type for storing a source script filter.
-    pub type SourceScriptFilter =
-        Arc<Mutex<dyn for<'a> crate::filter::OpFilter<SourceScriptOp<'a>>>>;
-
-    /// Input for the source script operation.
-    #[derive(Clone, Debug)]
-    pub struct ScriptArgs<'a> {
-        /// The path to the script to source.
-        pub path: &'a Path,
-        /// The arguments to pass to the script as positional parameters.
-        pub args: Vec<&'a str>,
-    }
-
-    /// Marker type for source script filtering.
-    ///
-    /// This type defines the input/output signature for filtering script
-    /// sourcing operations.
-    pub struct SourceScriptOp<'a> {
-        marker: std::marker::PhantomData<&'a ()>,
-    }
-
-    impl<'a> crate::filter::FilterableOp for SourceScriptOp<'a> {
-        type Input = ScriptArgs<'a>;
-        type Output = Result<ExecutionResult, error::Error>;
-    }
-
-    /// Trait for extending shell behavior with custom filters and hooks.
-    ///
-    /// This trait allows clients to intercept and modify shell operations at
-    /// key points during execution. All methods have default implementations
-    /// that perform no filtering.
-    ///
-    /// This is an experimental API that may change or be replaced with a
-    /// generic-based approach in the future.
-    pub trait ShellExtensions: Send + Sync {
-        /// Returns a filter for simple command execution, if any.
-        ///
-        /// This filter can intercept and modify commands before they are
-        /// dispatched to builtins, functions, or external executables.
-        fn exec_simple_command_filter(&self) -> Option<ExecSimpleCommandFilter> {
-            None
-        }
-
-        /// Returns a filter for external command spawning, if any.
-        ///
-        /// This filter can intercept the final `std::process::Command` before
-        /// it is spawned as a child process.
-        fn exec_external_command_filter(&self) -> Option<ExecExternalCommandFilter> {
-            None
-        }
-
-        /// Returns a filter for word expansion, if any.
-        ///
-        /// This filter can intercept and modify word expansion operations,
-        /// including parameter expansion, command substitution, and arithmetic
-        /// expansion.
-        fn expand_word_filter(&self) -> Option<ExpandWordFilter> {
-            None
-        }
-
-        /// Returns a filter for script sourcing, if any.
-        ///
-        /// This filter can intercept when a script is sourced (e.g., via the
-        /// `.` or `source` builtins).
-        fn source_script_filter(&self) -> Option<SourceScriptFilter> {
-            None
-        }
-    }
-
-    /// Default implementation of [`ShellExtensions`] that provides no filtering.
-    ///
-    /// This is a zero-sized type that incurs no runtime overhead.
-    #[derive(Debug, Default, Clone, Copy)]
-    pub struct DefaultExtensions;
-
-    impl ShellExtensions for DefaultExtensions {}
-}
 
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -255,7 +156,7 @@ impl Clone for Shell {
             history: self.history.clone(),
             error_formatter: self.error_formatter.clone(),
             #[cfg(feature = "experimental-filters")]
-            extensions: None, // Extensions are not cloned to subshells
+            extensions: self.extensions.as_ref().map(|e| e.clone_for_subshell()),
             depth: self.depth + 1,
         }
     }
@@ -938,10 +839,6 @@ impl Shell {
     /// * `path` - The path to the file to source.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    #[allow(
-        clippy::future_not_send,
-        reason = "Generic path/iterator parameters may not be Send"
-    )]
     pub async fn source_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
         path: P,
@@ -951,10 +848,6 @@ impl Shell {
         self.source_script_impl(path.as_ref(), args, params).await
     }
 
-    #[allow(
-        clippy::future_not_send,
-        reason = "Generic iterator parameter may not be Send"
-    )]
     async fn source_script_impl<S: AsRef<str>, I: Iterator<Item = S>>(
         &mut self,
         path: &Path,
