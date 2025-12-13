@@ -7,6 +7,8 @@ use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
+#[cfg(feature = "experimental-builtins")]
+use brush_experimental_builtins::ShellBuilderExt as _;
 use brush_interactive::InteractiveShellExt as _;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
@@ -128,6 +130,11 @@ fn install_panic_handlers() {
     }
 }
 
+#[cfg(feature = "experimental")]
+const DEFAULT_ENABLE_HIGHLIGHTING: bool = true;
+#[cfg(not(feature = "experimental"))]
+const DEFAULT_ENABLE_HIGHLIGHTING: bool = false;
+
 /// Run the brush shell. Returns the exit code.
 ///
 /// # Arguments
@@ -156,12 +163,16 @@ async fn run_async(
     let default_backend = get_default_input_backend_type();
     let selected_backend = args.input_backend.unwrap_or(default_backend);
 
+    let highlighting = args
+        .enable_highlighting
+        .unwrap_or(DEFAULT_ENABLE_HIGHLIGHTING);
+
     #[allow(unused_variables, reason = "not used when no backend features enabled")]
-    let ui_options = brush_interactive::UIOptions {
-        disable_bracketed_paste: args.disable_bracketed_paste,
-        disable_color: args.disable_color,
-        disable_highlighting: !args.enable_highlighting,
-    };
+    let ui_options = brush_interactive::UIOptions::builder()
+        .disable_bracketed_paste(args.disable_bracketed_paste)
+        .disable_color(args.disable_color)
+        .disable_highlighting(!highlighting)
+        .build();
 
     let result = match selected_backend {
         #[cfg(all(feature = "reedline", any(unix, windows)))]
@@ -260,6 +271,48 @@ async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
 ) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+    #[cfg(feature = "experimental-load")]
+    if let Some(load_file) = &args.load_file {
+        return instantiate_shell_from_file(load_file.as_path());
+    }
+
+    instantiate_shell_from_args(args, cli_args).await
+}
+
+#[cfg(feature = "experimental-load")]
+fn instantiate_shell_from_file(
+    file_path: &Path,
+) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+    let mut shell: brush_core::Shell = serde_json::from_reader(std::fs::File::open(file_path)?)
+        .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
+
+    // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
+    // TODO(serde): we should consider whether we could/should at least track *which* are enabled.
+    let builtin_set = if shell.options.sh_mode {
+        brush_builtins::BuiltinSet::ShMode
+    } else {
+        brush_builtins::BuiltinSet::BashMode
+    };
+
+    let builtins = brush_builtins::default_builtins(builtin_set);
+
+    for (builtin_name, builtin) in builtins {
+        shell.register_builtin(&builtin_name, builtin);
+    }
+
+    // Add experimental builtins (if enabled).
+    #[cfg(feature = "experimental-builtins")]
+    for (builtin_name, builtin) in brush_experimental_builtins::experimental_builtins() {
+        shell.register_builtin(&builtin_name, builtin);
+    }
+
+    Ok(shell)
+}
+
+async fn instantiate_shell_from_args(
+    args: &CommandLineArgs,
+    cli_args: Vec<String>,
+) -> Result<brush_core::Shell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
@@ -336,6 +389,10 @@ async fn instantiate_shell(
 
     // Add builtins.
     let shell = shell.default_builtins(builtin_set).brush_builtins();
+
+    // Add experimental builtins (if enabled).
+    #[cfg(feature = "experimental-builtins")]
+    let shell = shell.experimental_builtins();
 
     // Build the shell.
     let shell = shell.build().await?;

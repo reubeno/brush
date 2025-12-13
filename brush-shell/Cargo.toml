@@ -45,6 +45,9 @@ default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
+experimental = ["experimental-builtins", "experimental-load"]
+experimental-builtins = ["dep:brush-experimental-builtins"]
+experimental-load = ["dep:serde_json", "brush-core/serde"]
 
 [lints]
 workspace = true
@@ -52,10 +55,12 @@ workspace = true
 [dependencies]
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 brush-builtins = { version = "^0.1.0", path = "../brush-builtins" }
+brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
 clap = { version = "4.5.51", features = ["derive", "env"] }
 color-print = "0.3.7"
 const_format = "0.2.35"
 git-version = "0.3.9"
+serde_json = { version = "1.0.138", optional = true }
 tracing = "0.1.43"
 tracing-subscriber = "0.3.22"
 human-panic = "2.0.4"

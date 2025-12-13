@@ -24,6 +24,7 @@ default = ["brush-shell/default"]
 basic = ["brush-shell/basic"]
 minimal = ["brush-shell/minimal"]
 reedline = ["brush-shell/reedline"]
+experimental = ["brush-shell/experimental"]
 
 [lints]
 workspace = true

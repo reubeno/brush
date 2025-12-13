@@ -28,6 +28,9 @@ const HEADING_STANDARD_OPTIONS: &str = "Standard shell options";
 
 const HEADING_UI_OPTIONS: &str = "User interface options";
 
+#[cfg(feature = "experimental")]
+const HEADING_EXPERIMENTAL_OPTIONS: &str = "Experimental options";
+
 /// Identifies the input backend to use for the shell.
 #[derive(Clone, Copy, clap::ValueEnum)]
 pub enum InputBackendType {
@@ -159,11 +162,17 @@ pub struct CommandLineArgs {
 
     /// Enable syntax highlighting (experimental).
     #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS)]
-    pub enable_highlighting: bool,
+    pub enable_highlighting: Option<bool>,
 
     /// Input backend.
     #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
     pub input_backend: Option<InputBackendType>,
+
+    /// Load state from the given file; the saved state should be in JSON format
+    /// and overrides any non-UI command-line options provided.
+    #[cfg(feature = "experimental-load")]
+    #[clap(long = "load", value_name = "FILE", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    pub load_file: Option<PathBuf>,
 
     /// Enable debug logging for classes of tracing events.
     #[clap(long = "debug", alias = "log-enable", value_name = "EVENT", help_heading = HEADING_UI_OPTIONS)]

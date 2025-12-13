@@ -382,6 +382,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "brush-experimental-builtins"
+version = "0.1.0"
+dependencies = [
+ "brush-core",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
 name = "brush-fuzz"
 version = "0.2.2"
 dependencies = [
@@ -441,6 +450,7 @@ dependencies = [
  "assert_fs",
  "brush-builtins",
  "brush-core",
+ "brush-experimental-builtins",
  "brush-interactive",
  "brush-parser",
  "clap",
@@ -465,6 +475,7 @@ dependencies = [
  "pretty_assertions",
  "regex",
  "serde",
+ "serde_json",
  "serde_yaml",
  "strip-ansi-escapes",
  "test-with",
