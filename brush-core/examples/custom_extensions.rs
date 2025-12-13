@@ -30,9 +30,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             input: brush_core::commands::SimpleCommand<'a>,
         ) -> PreFilterResult<brush_core::commands::SimpleCommand<'a>> {
             // Increment and log command count
-            let mut count = self.command_count.lock().unwrap();
-            *count += 1;
-            eprintln!("[FILTER] Command #{}: {}", *count, input.command_name);
+            let count_val = {
+                let mut count = self.command_count.lock().unwrap();
+                *count += 1;
+                *count
+            };
+            eprintln!("[FILTER] Command #{}: {}", count_val, input.command_name);
 
             PreFilterResult::Continue(input)
         }
@@ -63,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
         let mut shell = Shell::builder()
-            .extensions(LoggingExtensions::new())
+            .extensions(Box::new(LoggingExtensions::new()))
             .build()
             .await?;
 

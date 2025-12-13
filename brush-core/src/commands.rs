@@ -579,9 +579,9 @@ impl filter::FilterableOp for commands::SimpleCommand<'_> {
     type Output = Result<results::ExecutionSpawnResult, error::Error>;
 }
 
-#[cfg_attr(
-    not(feature = "experimental-filters"),
-    allow(clippy::unused_async, reason = "Async needed when filters are enabled")
+#[expect(
+    clippy::unused_async,
+    reason = "Async needed when experimental-filters feature is enabled"
 )]
 pub(crate) async fn execute_external_command(
     context: ExecutionContext<'_>,

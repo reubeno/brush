@@ -467,7 +467,6 @@ dependencies = [
  "glob",
  "human-panic",
  "indent",
- "itertools 0.14.0",
  "junit-report",
  "nix 0.30.1",
  "os-release",

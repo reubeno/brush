@@ -4,9 +4,6 @@
 //! at key execution points. It is only available when the `experimental-filters` feature
 //! is enabled.
 
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
 /// Trait that defines the input and output types for a filterable operation.
 ///
 /// This trait only associates types; it does not include execution logic.
@@ -34,52 +31,6 @@ pub enum PostFilterResult<O: FilterableOp> {
     /// yielded as the results of the operation.
     Return(O::Output),
 }
-
-/// Trait implemented by a filter that can be applied to an operation of the
-/// given type.
-pub trait OpFilter<O: FilterableOp>: Send {
-    /// Called before an operation is executed, providing the intended inputs to
-    /// the operation. The implementation must return a result indicating how
-    /// execution should proceed.
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - The inputs that would be provided to the operation if it is to be executed.
-    #[inline]
-    fn pre_op(&mut self, input: O::Input) -> PreFilterResult<O> {
-        PreFilterResult::Continue(input)
-    }
-
-    /// Called after an operation is executed, providing the outputs produced by
-    /// the operation. The implementation must return a result indicating how
-    /// to return results from the execution.
-    ///
-    /// # Arguments
-    ///
-    /// * `output` - The outputs produced by the operation.
-    #[inline]
-    fn post_op(&mut self, output: O::Output) -> PostFilterResult<O> {
-        PostFilterResult::Return(output)
-    }
-}
-
-/// Default implementation of an operation filter that performs no filtering.
-pub struct DefaultOpFilter<O: FilterableOp> {
-    _marker: std::marker::PhantomData<O>,
-}
-
-impl<O: FilterableOp> Default for DefaultOpFilter<O> {
-    fn default() -> Self {
-        DefaultOpFilter {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<O: FilterableOp> OpFilter<O> for DefaultOpFilter<O> {}
-
-/// Type alias for a boxed filter behind an async mutex.
-pub type BoxedFilter<O> = Arc<Mutex<dyn OpFilter<O> + Send>>;
 
 /// Macro for executing a filterable operation.
 ///
