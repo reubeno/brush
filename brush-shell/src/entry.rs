@@ -271,7 +271,7 @@ async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
 ) -> Result<brush_core::Shell, brush_interactive::ShellError> {
-    #[cfg(feature = "experimental")]
+    #[cfg(feature = "experimental-load")]
     if let Some(load_file) = &args.load_file {
         return instantiate_shell_from_file(load_file.as_path());
     }
@@ -279,7 +279,7 @@ async fn instantiate_shell(
     instantiate_shell_from_args(args, cli_args).await
 }
 
-#[cfg(feature = "experimental")]
+#[cfg(feature = "experimental-load")]
 fn instantiate_shell_from_file(
     file_path: &Path,
 ) -> Result<brush_core::Shell, brush_interactive::ShellError> {
@@ -297,6 +297,12 @@ fn instantiate_shell_from_file(
     let builtins = brush_builtins::default_builtins(builtin_set);
 
     for (builtin_name, builtin) in builtins {
+        shell.register_builtin(&builtin_name, builtin);
+    }
+
+    // Add experimental builtins (if enabled).
+    #[cfg(feature = "experimental-builtins")]
+    for (builtin_name, builtin) in brush_experimental_builtins::experimental_builtins() {
         shell.register_builtin(&builtin_name, builtin);
     }
 
