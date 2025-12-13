@@ -29,58 +29,109 @@ pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 /// Type for storing an error formatter.
 pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 
-pub type Filter<A> = Arc<Mutex<dyn crate::filter::OpFilter<A>>>;
-
-/// Type for storing a simple command filter.
-pub type ExecSimpleCommandFilter =
-    Arc<Mutex<dyn for<'a> crate::filter::OpFilter<commands::SimpleCommand<'a>>>>;
-
-/// Type for storing an external command filter.
-pub type ExecExternalCommandFilter = Filter<commands::ExecuteExternalCommand>;
-
-/// Type for storing a word expansion filter.
-pub type ExpandWordFilter =
-    Arc<Mutex<dyn for<'a> crate::filter::OpFilter<expansion::ExpandWordOp<'a>>>>;
-
-/// Type for storing a source script filter.
-pub type SourceScriptFilter = Arc<Mutex<dyn for<'a> crate::filter::OpFilter<SourceScriptOp<'a>>>>;
-
-/// Input for the source script operation.
-#[derive(Clone, Debug)]
-pub struct ScriptArgs<'a> {
-    /// The path to the script to source.
-    pub path: &'a Path,
-    /// The arguments to pass to the script as positional parameters.
-    pub args: Vec<&'a str>,
-}
-
-/// Marker type for source script filtering.
-///
-/// This type defines the input/output signature for filtering script
-/// sourcing operations.
-pub struct SourceScriptOp<'a> {
-    marker: std::marker::PhantomData<&'a ()>,
-}
-
-impl<'a> crate::filter::FilterableOp for SourceScriptOp<'a> {
-    type Input = ScriptArgs<'a>;
-    type Output = Result<ExecutionResult, error::Error>;
-}
-
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
 
-/// Collection of filters applied to shell operations.
-#[derive(Clone, Default)]
-pub struct ShellFilters {
-    /// Simple command filter.
-    pub exec_simple_command: Option<ExecSimpleCommandFilter>,
-    /// External command filter.
-    pub exec_external_command: Option<ExecExternalCommandFilter>,
-    /// Word expansion filter.
-    pub expand_word: Option<ExpandWordFilter>,
-    /// Source script filter.
-    pub source_script: Option<SourceScriptFilter>,
+#[cfg(feature = "experimental-filters")]
+pub mod extensions {
+    //! Experimental shell extensions support.
+
+    use std::path::Path;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    use super::{ExecutionResult, commands, error, expansion};
+
+    /// Type alias for a generic operation filter.
+    pub type Filter<A> = Arc<Mutex<dyn crate::filter::OpFilter<A>>>;
+
+    /// Type for storing a simple command filter.
+    pub type ExecSimpleCommandFilter =
+        Arc<Mutex<dyn for<'a> crate::filter::OpFilter<commands::SimpleCommand<'a>>>>;
+
+    /// Type for storing an external command filter.
+    pub type ExecExternalCommandFilter = Filter<commands::ExecuteExternalCommand>;
+
+    /// Type for storing a word expansion filter.
+    pub type ExpandWordFilter =
+        Arc<Mutex<dyn for<'a> crate::filter::OpFilter<expansion::ExpandWordOp<'a>>>>;
+
+    /// Type for storing a source script filter.
+    pub type SourceScriptFilter =
+        Arc<Mutex<dyn for<'a> crate::filter::OpFilter<SourceScriptOp<'a>>>>;
+
+    /// Input for the source script operation.
+    #[derive(Clone, Debug)]
+    pub struct ScriptArgs<'a> {
+        /// The path to the script to source.
+        pub path: &'a Path,
+        /// The arguments to pass to the script as positional parameters.
+        pub args: Vec<&'a str>,
+    }
+
+    /// Marker type for source script filtering.
+    ///
+    /// This type defines the input/output signature for filtering script
+    /// sourcing operations.
+    pub struct SourceScriptOp<'a> {
+        marker: std::marker::PhantomData<&'a ()>,
+    }
+
+    impl<'a> crate::filter::FilterableOp for SourceScriptOp<'a> {
+        type Input = ScriptArgs<'a>;
+        type Output = Result<ExecutionResult, error::Error>;
+    }
+
+    /// Trait for extending shell behavior with custom filters and hooks.
+    ///
+    /// This trait allows clients to intercept and modify shell operations at
+    /// key points during execution. All methods have default implementations
+    /// that perform no filtering.
+    ///
+    /// This is an experimental API that may change or be replaced with a
+    /// generic-based approach in the future.
+    pub trait ShellExtensions: Send + Sync {
+        /// Returns a filter for simple command execution, if any.
+        ///
+        /// This filter can intercept and modify commands before they are
+        /// dispatched to builtins, functions, or external executables.
+        fn exec_simple_command_filter(&self) -> Option<ExecSimpleCommandFilter> {
+            None
+        }
+
+        /// Returns a filter for external command spawning, if any.
+        ///
+        /// This filter can intercept the final `std::process::Command` before
+        /// it is spawned as a child process.
+        fn exec_external_command_filter(&self) -> Option<ExecExternalCommandFilter> {
+            None
+        }
+
+        /// Returns a filter for word expansion, if any.
+        ///
+        /// This filter can intercept and modify word expansion operations,
+        /// including parameter expansion, command substitution, and arithmetic
+        /// expansion.
+        fn expand_word_filter(&self) -> Option<ExpandWordFilter> {
+            None
+        }
+
+        /// Returns a filter for script sourcing, if any.
+        ///
+        /// This filter can intercept when a script is sourced (e.g., via the
+        /// `.` or `source` builtins).
+        fn source_script_filter(&self) -> Option<SourceScriptFilter> {
+            None
+        }
+    }
+
+    /// Default implementation of [`ShellExtensions`] that provides no filtering.
+    ///
+    /// This is a zero-sized type that incurs no runtime overhead.
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct DefaultExtensions;
+
+    impl ShellExtensions for DefaultExtensions {}
 }
 
 /// Represents an instance of a shell.
@@ -169,9 +220,10 @@ pub struct Shell {
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: ErrorFormatterHelper,
 
-    /// Filters
+    /// Shell extensions for filtering and customization.
+    #[cfg(feature = "experimental-filters")]
     #[cfg_attr(feature = "serde", serde(skip))]
-    filters: ShellFilters,
+    extensions: Option<Box<dyn extensions::ShellExtensions>>,
 }
 
 impl Clone for Shell {
@@ -202,7 +254,8 @@ impl Clone for Shell {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             error_formatter: self.error_formatter.clone(),
-            filters: self.filters.clone(),
+            #[cfg(feature = "experimental-filters")]
+            extensions: None, // Extensions are not cloned to subshells
             depth: self.depth + 1,
         }
     }
@@ -428,14 +481,9 @@ pub struct CreateOptions {
     pub key_bindings: Option<KeyBindingsHelper>,
     /// Error formatter helper for the shell to use.
     pub error_formatter: Option<ErrorFormatterHelper>,
-    /// Filter for simple command execution.
-    pub exec_simple_command_filter: Option<ExecSimpleCommandFilter>,
-    /// Filter for external command execution.
-    pub exec_external_command_filter: Option<ExecExternalCommandFilter>,
-    /// Filter for word expansion operations.
-    pub expand_word_filter: Option<ExpandWordFilter>,
-    /// Filter for source script operations.
-    pub source_script_filter: Option<SourceScriptFilter>,
+    /// Shell extensions for filtering and customization.
+    #[cfg(feature = "experimental-filters")]
+    pub extensions: Option<Box<dyn extensions::ShellExtensions>>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
 }
@@ -469,7 +517,8 @@ impl Default for Shell {
             key_bindings: None,
             history: None,
             error_formatter: default_error_formatter(),
-            filters: ShellFilters::default(),
+            #[cfg(feature = "experimental-filters")]
+            extensions: None,
         }
     }
 }
@@ -501,12 +550,8 @@ impl Shell {
             error_formatter: options
                 .error_formatter
                 .unwrap_or_else(default_error_formatter),
-            filters: ShellFilters {
-                exec_simple_command: options.exec_simple_command_filter,
-                exec_external_command: options.exec_external_command_filter,
-                expand_word: options.expand_word_filter,
-                source_script: options.source_script_filter,
-            },
+            #[cfg(feature = "experimental-filters")]
+            extensions: options.extensions,
             ..Self::default()
         };
 
@@ -563,9 +608,10 @@ impl Shell {
         &self.call_stack
     }
 
-    /// Returns the filters applied to the shell.
-    pub const fn filters(&self) -> &ShellFilters {
-        &self.filters
+    /// Returns the shell extensions, if any.
+    #[cfg(feature = "experimental-filters")]
+    pub fn extensions(&self) -> Option<&dyn extensions::ShellExtensions> {
+        self.extensions.as_deref()
     }
 
     /// Increments the interactive line offset in the shell by the indicated number
@@ -892,32 +938,58 @@ impl Shell {
     /// * `path` - The path to the file to source.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
+    #[allow(
+        clippy::future_not_send,
+        reason = "Generic path/iterator parameters may not be Send"
+    )]
     pub async fn source_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
         path: P,
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
+        self.source_script_impl(path.as_ref(), args, params).await
+    }
+
+    #[allow(
+        clippy::future_not_send,
+        reason = "Generic iterator parameter may not be Send"
+    )]
+    async fn source_script_impl<S: AsRef<str>, I: Iterator<Item = S>>(
+        &mut self,
+        path: &Path,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
         // Collect iterator items first so we can borrow from them.
         let args: Vec<_> = args.collect();
-        let input = ScriptArgs {
-            path: path.as_ref(),
-            args: args.iter().map(AsRef::as_ref).collect(),
-        };
 
-        crate::filter::do_with_filter!(
-            input,
-            &self.filters.source_script,
-            async |input: ScriptArgs<'_>| {
+        #[cfg(feature = "experimental-filters")]
+        {
+            let script_args = extensions::ScriptArgs {
+                path,
+                args: args.iter().map(AsRef::as_ref).collect(),
+            };
+
+            return crate::with_filter!(self, source_script_filter, script_args, |args| {
                 self.parse_and_execute_script_file(
-                    input.path,
-                    input.args.iter(),
+                    args.path,
+                    args.args.iter(),
                     params,
                     callstack::ScriptCallType::Source,
                 )
                 .await
-            }
+            });
+        }
+
+        #[cfg(not(feature = "experimental-filters"))]
+        self.parse_and_execute_script_file(
+            path,
+            args.iter(),
+            params,
+            callstack::ScriptCallType::Source,
         )
+        .await
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.

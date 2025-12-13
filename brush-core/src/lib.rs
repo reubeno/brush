@@ -12,6 +12,7 @@ pub mod error;
 pub mod escape;
 pub mod expansion;
 mod extendedtests;
+#[cfg(feature = "experimental-filters")]
 pub mod filter;
 pub mod functions;
 pub mod history;
@@ -53,9 +54,32 @@ pub use error::{BuiltinError, Error, ErrorKind};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
-pub use shell::{
-    CreateOptions, ScriptArgs, Shell, ShellBuilder, ShellBuilderState, ShellFd, ShellFilters,
-    SourceScriptOp,
-};
+pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
+
+#[cfg(feature = "experimental-filters")]
+pub use shell::extensions;
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
+
+/// No-op version of `with_filter!` when experimental-filters is disabled.
+///
+/// This macro expands directly to the body with zero overhead.
+#[cfg(not(feature = "experimental-filters"))]
+#[macro_export]
+macro_rules! with_filter {
+    ($shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        #[allow(unused_variables)]
+        let shell_unused = &$shell;
+        #[allow(clippy::redundant_locals)]
+        let $input_ident = $input_val;
+        $body
+    }};
+
+    (no_return: $shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        #[allow(unused_variables)]
+        let shell_unused = &$shell;
+        #[allow(clippy::redundant_locals)]
+        let $input_ident = $input_val;
+        $body
+    }};
+}

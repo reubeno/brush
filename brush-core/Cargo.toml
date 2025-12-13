@@ -18,6 +18,7 @@ workspace = true
 
 [features]
 default = []
+experimental-filters = []
 serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
 
 [dependencies]

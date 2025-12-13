@@ -2,12 +2,15 @@
 
 use std::borrow::Cow;
 use std::cmp::min;
+
+#[cfg(feature = "experimental-filters")]
 use std::marker::PhantomData;
 
 use brush_parser::ast;
 use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
 use itertools::Itertools;
 
+use crate::ExecutionParameters;
 use crate::arithmetic;
 use crate::arithmetic::ExpandAndEvaluate;
 use crate::braceexpansion;
@@ -23,7 +26,9 @@ use crate::trace_categories;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
-use crate::{ExecutionParameters, filter};
+
+#[cfg(feature = "experimental-filters")]
+use crate::filter;
 
 /// Encapsulates the result of a word expansion.
 #[derive(Debug)]
@@ -385,10 +390,12 @@ pub async fn assign_to_named_parameter(
 }
 
 /// Operation for expanding a word.
+#[cfg(feature = "experimental-filters")]
 pub struct ExpandWordOp<'a> {
     marker: PhantomData<&'a ()>,
 }
 
+#[cfg(feature = "experimental-filters")]
 impl<'a> filter::FilterableOp for ExpandWordOp<'a> {
     type Input = &'a str;
     type Output = Result<Expansion, error::Error>;
@@ -492,7 +499,7 @@ impl<'a> WordExpander<'a> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// yield pieces that could be further processed.
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        filter::do_with_filter!(word, &self.shell.filters().expand_word, async |word| {
+        crate::with_filter!(self.shell, expand_word_filter, word, |word| {
             self.basic_expand_impl(word).await
         })
     }

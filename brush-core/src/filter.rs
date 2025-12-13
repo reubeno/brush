@@ -1,6 +1,9 @@
-//! Filter facilities
+//! Experimental filter facilities for shell extensions.
+//!
+//! This module provides a mechanism for intercepting and modifying shell operations
+//! at key execution points. It is only available when the `experimental-filters` feature
+//! is enabled.
 
-use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -58,88 +61,119 @@ pub trait OpFilter<O: FilterableOp>: Send {
     }
 }
 
-/// Executes an operation with a filter.
-///
-/// This is the slow path, marked as `#[cold]` to optimize for the common case
-/// where no filter is present.
-#[cold]
-async fn do_with_filter_slow<O, F, Exec, Fut>(
-    input: O::Input,
-    filter: &Arc<Mutex<F>>,
-    executor: Exec,
-) -> O::Output
-where
-    O: FilterableOp,
-    F: OpFilter<O> + ?Sized,
-    Exec: FnOnce(O::Input) -> Fut,
-    Fut: Future<Output = O::Output> + Send,
-{
-    let mut filter_guard = filter.lock().await;
-    let pre_op_result = filter_guard.pre_op(input);
-    drop(filter_guard);
+/// Type alias for a boxed filter behind an async mutex.
+pub type BoxedFilter<O> = Arc<Mutex<dyn OpFilter<O> + Send>>;
 
-    let output = match pre_op_result {
-        PreFilterResult::Continue(input) => executor(input).await,
-        PreFilterResult::Return(output) => output,
-    };
-
-    let mut filter_guard = filter.lock().await;
-    match filter_guard.post_op(output) {
-        PostFilterResult::Return(output) => output,
-    }
-}
-
-/// Executes an operation with the provided inputs, applying a filter if present.
+/// Macro for executing a filterable operation.
 ///
-/// The filter can inspect and modify inputs before execution, and inspect and
-/// modify outputs after execution. If no filter is provided, the executor is
-/// called directly.
-///
-/// This function is marked `#[inline]` to ensure the compiler can optimize
-/// the no-filter fast path when filters are not used.
+/// This macro handles all the boilerplate of checking for a filter, acquiring
+/// the mutex, calling `pre_op`/`post_op`, and handling early returns.
 ///
 /// # Arguments
 ///
-/// * `input` - The inputs to the operation.
-/// * `filter` - The optional filter to apply to the operation.
-/// * `executor` - The function that performs the actual operation.
+/// * `$shell` - Expression yielding a reference to the Shell
+/// * `$filter_method` - The method name on `ShellExtensions` to get the filter
+/// * `$input_val` - The input value to pass to the filter's `pre_op`
+/// * `|$input_ident|` - Binding name for the (possibly modified) input in body
+/// * `$body` - The expression to execute
 ///
-/// # Type Parameters
+/// # Variants
 ///
-/// * `O` - The filterable operation type (defines Input/Output types).
-/// * `F` - The filter type.
-/// * `Exec` - The executor closure type.
-/// * `Fut` - The future type returned by the executor.
-#[inline]
-pub async fn do_with_filter_func<O, F, Exec, Fut>(
-    input: O::Input,
-    filter: &Option<Arc<Mutex<F>>>,
-    executor: Exec,
-) -> O::Output
-where
-    O: FilterableOp,
-    F: OpFilter<O> + ?Sized,
-    Exec: FnOnce(O::Input) -> Fut,
-    Fut: Future<Output = O::Output> + Send,
-{
-    match filter {
-        None => executor(input).await,
-        Some(filter) => do_with_filter_slow::<O, F, Exec, Fut>(input, filter, executor).await,
-    }
-}
-
-/// Macro to execute an operation with a filter, optimizing for the case where
-/// no filter is present.
+/// - Default: Can `return` from enclosing function if `pre_op` returns `Return`
+/// - `no_return:`: Captures output instead of returning (for intermediate filters)
+///
+/// # Example
+///
+/// ```ignore
+/// crate::with_filter!(self.shell, expand_word_filter, word, |word| {
+///     self.basic_expand_impl(word).await
+/// })
+/// ```
 #[macro_export]
-macro_rules! do_with_filter {
-    ($input:expr, $filter:expr, $executor:expr) => {
-        if ($filter).is_none() {
-            ($executor)($input).await
-        } else {
-            let filter = ($filter).clone();
-            $crate::filter::do_with_filter_func($input, &filter, $executor).await
+macro_rules! with_filter {
+    // Variant that can early-return (for top-level function filters)
+    ($shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        // Get the filter Option, cloning the Arc if present to release the borrow on shell
+        let filter_opt: Option<_> = {
+            let shell_ref = &$shell;
+            shell_ref
+                .extensions()
+                .and_then(|ext| ext.$filter_method())
+                .map(|f| std::sync::Arc::clone(&f))
+        };
+
+        let mut $input_ident = $input_val;
+
+        // If we have a filter, apply pre_op
+        if let Some(ref filter) = filter_opt {
+            let mut guard = filter.lock().await;
+            match $crate::filter::OpFilter::pre_op(&mut *guard, $input_ident) {
+                $crate::filter::PreFilterResult::Continue(new_input) => {
+                    $input_ident = new_input;
+                }
+                $crate::filter::PreFilterResult::Return(output) => {
+                    return output;
+                }
+            }
         }
-    };
+
+        // Execute the body
+        let output = $body;
+
+        // If we have a filter, apply post_op
+        if let Some(ref filter) = filter_opt {
+            let mut guard = filter.lock().await;
+            match $crate::filter::OpFilter::post_op(&mut *guard, output) {
+                $crate::filter::PostFilterResult::Return(output) => output,
+            }
+        } else {
+            output
+        }
+    }};
+
+    // Variant without early-return (for intermediate filters like spawn)
+    // The pre_op Return case just uses that output directly instead of returning from function
+    (no_return: $shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        // Get the filter Option, cloning the Arc if present to release the borrow on shell
+        let filter_opt: Option<_> = {
+            let shell_ref = &$shell;
+            shell_ref
+                .extensions()
+                .and_then(|ext| ext.$filter_method())
+                .map(|f| std::sync::Arc::clone(&f))
+        };
+
+        let $input_ident = $input_val;
+
+        // If we have a filter, apply pre_op and potentially execute
+        let output = if let Some(ref filter) = filter_opt {
+            let mut guard = filter.lock().await;
+            match $crate::filter::OpFilter::pre_op(&mut *guard, $input_ident) {
+                $crate::filter::PreFilterResult::Continue($input_ident) => {
+                    // Execute body with potentially modified input
+                    drop(guard);
+                    $body
+                }
+                $crate::filter::PreFilterResult::Return(output) => {
+                    // Filter provided output directly, skip body
+                    output
+                }
+            }
+        } else {
+            // No filter, execute body directly
+            $body
+        };
+
+        // If we have a filter, apply post_op
+        if let Some(ref filter) = filter_opt {
+            let mut guard = filter.lock().await;
+            match $crate::filter::OpFilter::post_op(&mut *guard, output) {
+                $crate::filter::PostFilterResult::Return(output) => output,
+            }
+        } else {
+            output
+        }
+    }};
 }
 
-pub use do_with_filter;
+pub use with_filter;

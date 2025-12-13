@@ -14,13 +14,16 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, commands, env, error, escape, filter, functions,
+    builtins, commands, env, error, escape, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
-    results::{self, ExecutionSpawnResult},
+    results::ExecutionSpawnResult,
     sys, trace_categories, traps, variables,
 };
+
+#[cfg(feature = "experimental-filters")]
+use crate::{filter, results};
 
 /// Encapsulates the result of waiting for a command to complete.
 pub enum CommandWaitResult {
@@ -375,11 +378,9 @@ impl<'a> SimpleCommand<'a> {
 
     /// Executes the simple command, applying any registered filters.
     pub async fn execute(self) -> Result<ExecutionSpawnResult, error::Error> {
-        filter::do_with_filter!(
-            self,
-            &self.shell.filters().exec_simple_command,
-            |cmd: SimpleCommand<'a>| cmd.execute_impl()
-        )
+        crate::with_filter!(&self.shell, exec_simple_command_filter, self, |cmd| {
+            cmd.execute_impl().await
+        })
     }
 
     /// Executes the simple command.
@@ -559,11 +560,16 @@ impl<'a> SimpleCommand<'a> {
     }
 }
 
+#[cfg(feature = "experimental-filters")]
 impl filter::FilterableOp for commands::SimpleCommand<'_> {
     type Input = Self;
     type Output = Result<results::ExecutionSpawnResult, error::Error>;
 }
 
+#[cfg_attr(
+    not(feature = "experimental-filters"),
+    allow(clippy::unused_async, reason = "Async needed when filters are enabled")
+)]
 pub(crate) async fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
@@ -624,8 +630,14 @@ pub(crate) async fn execute_external_command(
             .join(" ")
     );
 
-    let filter = &context.shell.filters().exec_external_command;
-    match filter::do_with_filter!(cmd, filter, |cmd| async { sys::process::spawn(cmd) }) {
+    let spawn_result = crate::with_filter!(
+        no_return: context.shell,
+        exec_external_command_filter,
+        cmd,
+        |cmd| sys::process::spawn(cmd)
+    );
+
+    match spawn_result {
         Ok(child) => {
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
@@ -672,8 +684,10 @@ pub(crate) async fn execute_external_command(
 /// This type defines the input/output signature for filtering external
 /// command spawns. It does not contain execution logic; that is provided
 /// at the call site.
+#[cfg(feature = "experimental-filters")]
 pub struct ExecuteExternalCommand;
 
+#[cfg(feature = "experimental-filters")]
 impl filter::FilterableOp for ExecuteExternalCommand {
     type Input = std::process::Command;
     type Output = Result<sys::process::Child, std::io::Error>;
