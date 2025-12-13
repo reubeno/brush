@@ -39,19 +39,19 @@ pub struct AppUI {
     terminal: DefaultTerminal,
     /// The shell instance
     shell: Arc<Mutex<brush_core::Shell>>,
-    
+
     // Special panes with direct access (not in general storage)
     /// Primary terminal pane (needs direct access for output writing)
     primary_terminal: Box<TerminalPane>,
     /// Completion pane (needs direct access for modal workflow)
     completion_pane: Box<CompletionPane>,
-    
+
     /// General content panes (Environment, History, etc.)
     panes: HashMap<PaneRole, Box<dyn ContentPane>>,
-    
+
     /// Order of panes in the tab bar (excluding special panes)
     tab_order: Vec<PaneRole>,
-    
+
     /// Command input widget
     command_input: CommandInput,
     /// Which area currently has focus
@@ -130,18 +130,19 @@ impl AppUI {
             Some(&mut *self.primary_terminal as &mut dyn ContentPane)
         } else {
             let role = self.tab_order.get(index - 1)?;
-            self.panes.get_mut(role).map(|p| &mut **p as &mut dyn ContentPane)
+            self.panes
+                .get_mut(role)
+                .map(|p| &mut **p as &mut dyn ContentPane)
         }
     }
 
     /// Returns an iterator over all pane names for the tab bar.
     fn pane_names(&self) -> impl Iterator<Item = String> + '_ {
-        std::iter::once(self.primary_terminal.name().to_string())
-            .chain(
-                self.tab_order
-                    .iter()
-                    .filter_map(|role| self.panes.get(role).map(|p| p.name().to_string()))
-            )
+        std::iter::once(self.primary_terminal.name().to_string()).chain(
+            self.tab_order
+                .iter()
+                .filter_map(|role| self.panes.get(role).map(|p| p.name().to_string())),
+        )
     }
 
     /// Writes output to the primary terminal pane.
@@ -366,7 +367,8 @@ impl AppUI {
                     KeyCode::Enter if completion_active => {
                         // Accept completion
                         if let Some(completion) = self.completion_pane.selected_completion() {
-                            let (insertion_index, delete_count) = self.completion_pane.insertion_params();
+                            let (insertion_index, delete_count) =
+                                self.completion_pane.insertion_params();
                             // Apply to command input
                             self.command_input.apply_completion(
                                 completion,
@@ -384,18 +386,22 @@ impl AppUI {
                     KeyCode::Tab
                         if completion_active && !key.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
-                        self.completion_pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
-                            KeyCode::Down,
-                            KeyModifiers::empty(),
-                        ));
+                        self.completion_pane.handle_event(
+                            crate::content_pane::PaneEvent::KeyPress(
+                                KeyCode::Down,
+                                KeyModifiers::empty(),
+                            ),
+                        );
                     }
                     KeyCode::BackTab | KeyCode::Tab
                         if completion_active && key.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
-                        self.completion_pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
-                            KeyCode::Up,
-                            KeyModifiers::empty(),
-                        ));
+                        self.completion_pane.handle_event(
+                            crate::content_pane::PaneEvent::KeyPress(
+                                KeyCode::Up,
+                                KeyModifiers::empty(),
+                            ),
+                        );
                     }
                     // Arrow keys for navigation
                     KeyCode::Up
@@ -406,10 +412,9 @@ impl AppUI {
                     | KeyCode::End
                         if completion_active =>
                     {
-                        self.completion_pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
-                            key.code,
-                            key.modifiers,
-                        ));
+                        self.completion_pane.handle_event(
+                            crate::content_pane::PaneEvent::KeyPress(key.code, key.modifiers),
+                        );
                     }
                     // Allow typing to update buffer and re-trigger completion
                     _ if completion_active => {

@@ -10,6 +10,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
 };
 use tokio::sync::Mutex;
@@ -264,15 +265,22 @@ impl CommandInput {
             (self.unfocused_title, Style::default().fg(Color::DarkGray))
         };
 
-        let input_text = format!("{}{}", self.cached_prompt, self.buffer);
-
         let para_style = if self.enabled {
             Style::default()
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
-        let input_paragraph = Paragraph::new(input_text)
+        // Build the input line with syntax highlighting
+        let input_line = if self.enabled {
+            self.build_highlighted_input()
+        } else {
+            // When disabled, render without highlighting
+            let input_text = format!("{}{}", self.cached_prompt, self.buffer);
+            Line::from(Span::styled(input_text, para_style))
+        };
+
+        let input_paragraph = Paragraph::new(input_line)
             .block(
                 Block::default()
                     .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
@@ -296,6 +304,73 @@ impl CommandInput {
             Some((cursor_x, cursor_y))
         } else {
             None
+        }
+    }
+
+    /// Builds a highlighted input line with syntax highlighting.
+    fn build_highlighted_input(&self) -> Line<'_> {
+        let mut spans = Vec::new();
+
+        // Add the prompt (without highlighting)
+        spans.push(Span::raw(self.cached_prompt.clone()));
+
+        // Get syntax highlighting for the buffer
+        if let Ok(shell) = self.shell.try_lock() {
+            let highlight_spans =
+                brush_interactive::highlight_command(&shell, &self.buffer, self.cursor_pos);
+
+            for highlight_span in highlight_spans {
+                let text = highlight_span.text(&self.buffer);
+                let style = Self::kind_to_style(highlight_span.kind);
+                spans.push(Span::styled(text.to_owned(), style));
+            }
+        } else {
+            // If we can't lock the shell, just render without highlighting
+            spans.push(Span::raw(self.buffer.clone()));
+        }
+
+        Line::from(spans)
+    }
+
+    /// Maps a highlight kind to a ratatui style.
+    fn kind_to_style(kind: brush_interactive::HighlightKind) -> Style {
+        use brush_interactive::HighlightKind;
+
+        match kind {
+            HighlightKind::Default => Style::default().fg(Color::White),
+            HighlightKind::Comment => Style::default().fg(Color::DarkGray),
+            HighlightKind::Arithmetic => Style::default().fg(Color::LightBlue),
+            HighlightKind::Parameter => Style::default().fg(Color::LightMagenta),
+            HighlightKind::CommandSubstitution => Style::default().fg(Color::LightBlue),
+            HighlightKind::Quoted => Style::default().fg(Color::Yellow),
+            HighlightKind::Operator => Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::ITALIC),
+            HighlightKind::Assignment => Style::default().fg(Color::Gray),
+            HighlightKind::HyphenOption => Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::ITALIC),
+            HighlightKind::Function => Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            HighlightKind::Keyword => Style::default()
+                .fg(Color::LightYellow)
+                .add_modifier(Modifier::BOLD | Modifier::ITALIC),
+            HighlightKind::Builtin => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            HighlightKind::Alias => Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+            HighlightKind::ExternalCommand => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            HighlightKind::NotFoundCommand => {
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+            }
+            HighlightKind::UnknownCommand => Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         }
     }
 }

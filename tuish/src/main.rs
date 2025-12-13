@@ -51,14 +51,14 @@ async fn main() -> Result<()> {
     let temp_terminal = ratatui::init();
     let terminal_size = temp_terminal.size()?;
     ratatui::restore();
-    
+
     // PTY dimensions: 80% of screen height for content area
     let content_height = (terminal_size.height * 80) / 100;
     let pty_rows = content_height
         .saturating_sub(1) // Tabs bar
         .saturating_sub(2); // Content border
     let pty_cols = terminal_size.width.saturating_sub(2); // Content left + right borders
-    
+
     let pty = Pty::new(pty_rows, pty_cols)?;
 
     // Update shell with PTY fds
@@ -81,13 +81,16 @@ async fn main() -> Result<()> {
     // Create special panes (terminal and completion)
     let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer()));
     let completion_pane = Box::new(CompletionPane::new(&shell));
-    
+
     // Create the UI with special panes
     let mut ui = AppUI::new(&shell, terminal_pane, completion_pane);
 
     // Add general content panes with their roles
     use pane_role::PaneRole;
-    ui.add_pane(PaneRole::Environment, Box::new(EnvironmentPane::new(&shell)));
+    ui.add_pane(
+        PaneRole::Environment,
+        Box::new(EnvironmentPane::new(&shell)),
+    );
     ui.add_pane(PaneRole::History, Box::new(HistoryPane::new(&shell)));
     ui.add_pane(PaneRole::Aliases, Box::new(AliasesPane::new(&shell)));
     ui.add_pane(PaneRole::Functions, Box::new(FunctionsPane::new(&shell)));
