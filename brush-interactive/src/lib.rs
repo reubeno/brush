@@ -11,6 +11,9 @@ pub use interactive_shell::{
 mod options;
 pub use options::UIOptions;
 
+mod highlighting;
+pub use highlighting::{HighlightKind, HighlightSpan, highlight_command};
+
 #[cfg(feature = "completion")]
 mod completion;
 
