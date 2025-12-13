@@ -44,6 +44,8 @@ pub enum CommandKeyResult {
     RequestExit,
     /// A complete command has been entered.
     CommandEntered(String),
+    /// Completion is requested.
+    RequestCompletion,
 }
 
 impl CommandInput {
@@ -108,11 +110,34 @@ impl CommandInput {
         self.enabled
     }
 
-    /// Handles a key press event and returns `Some(command)` if Enter was pressed.
+    /// Returns the current buffer content.
+    pub fn buffer(&self) -> &str {
+        &self.buffer
+    }
+
+    /// Returns the current cursor position.
+    pub const fn cursor_pos(&self) -> usize {
+        self.cursor_pos
+    }
+
+    /// Applies a completion to the buffer.
     ///
-    /// # Returns
-    /// - `Some(String)` - The complete command when Enter is pressed
-    /// - `None` - For all other keys
+    /// This is called from the UI when a completion is accepted.
+    pub fn apply_completion(
+        &mut self,
+        completion: String,
+        insertion_index: usize,
+        delete_count: usize,
+    ) {
+        // Remove the text that will be replaced
+        let end = insertion_index + delete_count;
+        self.buffer.replace_range(insertion_index..end, &completion);
+
+        // Update cursor position
+        self.cursor_pos = insertion_index + completion.len();
+    }
+
+    /// Handles a key press event and returns the appropriate result.
     #[allow(clippy::string_slice, clippy::map_unwrap_or)]
     pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> CommandKeyResult {
         if !self.enabled {
@@ -120,6 +145,10 @@ impl CommandInput {
         }
 
         match code {
+            KeyCode::Tab => {
+                // Request completion
+                CommandKeyResult::RequestCompletion
+            }
             KeyCode::Char('d')
                 if modifiers.contains(KeyModifiers::CONTROL) && self.buffer.is_empty() =>
             {
@@ -168,6 +197,10 @@ impl CommandInput {
                         .unwrap_or(self.buffer.len());
                     self.cursor_pos = next_pos;
                 }
+                CommandKeyResult::NoAction
+            }
+            KeyCode::Up | KeyCode::Down => {
+                // Reserved for future history navigation when completion is not active
                 CommandKeyResult::NoAction
             }
             KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
