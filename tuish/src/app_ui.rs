@@ -15,9 +15,12 @@ use ratatui::{
 };
 use tokio::sync::Mutex;
 
+use std::collections::HashMap;
+
 use crate::command_input::CommandInput;
 use crate::completion_pane::CompletionPane;
 use crate::content_pane::ContentPane;
+use crate::pane_role::PaneRole;
 use crate::terminal_pane::TerminalPane;
 
 /// Which area currently has focus
@@ -36,12 +39,19 @@ pub struct AppUI {
     terminal: DefaultTerminal,
     /// The shell instance
     shell: Arc<Mutex<brush_core::Shell>>,
-    /// The terminal pane (stored separately for direct access)
-    terminal_pane: Option<Box<TerminalPane>>,
-    /// The completion pane (stored separately for completion workflow)
-    completion_pane: Option<Box<CompletionPane>>,
-    /// Other content panes displayed in tabs
-    other_panes: Vec<Box<dyn ContentPane>>,
+    
+    // Special panes with direct access (not in general storage)
+    /// Primary terminal pane (needs direct access for output writing)
+    primary_terminal: Box<TerminalPane>,
+    /// Completion pane (needs direct access for modal workflow)
+    completion_pane: Box<CompletionPane>,
+    
+    /// General content panes (Environment, History, etc.)
+    panes: HashMap<PaneRole, Box<dyn ContentPane>>,
+    
+    /// Order of panes in the tab bar (excluding special panes)
+    tab_order: Vec<PaneRole>,
+    
     /// Command input widget
     command_input: CommandInput,
     /// Which area currently has focus
@@ -63,150 +73,92 @@ pub enum UIEventResult {
 }
 
 impl AppUI {
-    /// Creates a new `AppUI` without any content panes.
+    /// Creates a new `AppUI` with the given special panes.
     ///
-    /// Use `set_terminal_pane` and `add_pane` to add content panes after construction.
+    /// Use `add_pane` to add general content panes after construction.
     ///
     /// # Arguments
     ///
-    /// * `shell` - The shell to run the UI for.
-    pub fn new(shell: &Arc<Mutex<brush_core::Shell>>) -> Self {
+    /// * `shell` - The shell to run the UI for
+    /// * `primary_terminal` - The primary terminal pane
+    /// * `completion_pane` - The completion pane
+    pub fn new(
+        shell: &Arc<Mutex<brush_core::Shell>>,
+        primary_terminal: Box<TerminalPane>,
+        completion_pane: Box<CompletionPane>,
+    ) -> Self {
         // Initialize the ratatui terminal in raw mode
         let terminal = ratatui::init();
 
         Self {
             terminal,
             shell: shell.clone(),
-            terminal_pane: None,
-            completion_pane: None,
-            other_panes: Vec::new(),
+            primary_terminal,
+            completion_pane,
+            panes: HashMap::new(),
+            tab_order: Vec::new(),
             command_input: CommandInput::new(shell),
             focused_area: FocusedArea::CommandInput,
             pre_completion_focus: None,
         }
     }
 
-    /// Sets the terminal pane.
+    /// Adds a content pane with the given role.
     ///
-    /// The terminal pane is displayed first in the tab order and can be
-    /// written to directly by the UI (e.g., for status messages between commands).
-    pub fn set_terminal_pane(&mut self, pane: Box<TerminalPane>) {
-        self.terminal_pane = Some(pane);
+    /// The pane will be displayed in tabs in the order added.
+    ///
+    /// # Panics
+    /// Panics if a pane with this role already exists.
+    pub fn add_pane(&mut self, role: PaneRole, pane: Box<dyn ContentPane>) {
+        if self.panes.contains_key(&role) {
+            panic!("Pane with role {:?} already exists", role);
+        }
+        self.tab_order.push(role);
+        self.panes.insert(role, pane);
     }
 
-    /// Sets the completion pane.
-    ///
-    /// The completion pane is shown when tab completion is triggered.
-    /// It is not shown in the normal tab order.
-    pub fn set_completion_pane(&mut self, pane: Box<CompletionPane>) {
-        self.completion_pane = Some(pane);
-    }
-
-    /// Adds a content pane to the backend.
-    ///
-    /// Panes are displayed in tabs after the terminal pane (if set),
-    /// in the order they are added.
-    pub fn add_pane(&mut self, pane: Box<dyn ContentPane>) {
-        self.other_panes.push(pane);
-    }
-
-    /// Returns the total number of panes (terminal pane + other panes).
+    /// Returns the total number of visible panes (terminal + general panes).
     fn pane_count(&self) -> usize {
-        let terminal_count = if self.terminal_pane.is_some() { 1 } else { 0 };
-        terminal_count + self.other_panes.len()
+        1 + self.panes.len() // Terminal always visible + general panes
     }
 
-    /// Returns a mutable reference to a pane by index.
+    /// Returns a mutable reference to a pane by tab index.
     ///
-    /// Index 0 is the terminal pane (if set), followed by other panes.
+    /// Index 0 is always the terminal pane, followed by panes in tab_order.
     fn pane_at_mut(&mut self, index: usize) -> Option<&mut dyn ContentPane> {
-        Self::pane_at_mut_impl(self.terminal_pane.as_mut(), &mut self.other_panes, index)
-    }
-
-    /// Implementation helper for `pane_at_mut` that doesn't borrow `self`.
-    fn pane_at_mut_impl<'a>(
-        terminal_pane: Option<&'a mut Box<TerminalPane>>,
-        other_panes: &'a mut [Box<dyn ContentPane>],
-        index: usize,
-    ) -> Option<&'a mut dyn ContentPane> {
-        if terminal_pane.is_some() {
-            if index == 0 {
-                terminal_pane.map(|p| &mut **p as &mut dyn ContentPane)
-            } else {
-                other_panes
-                    .get_mut(index - 1)
-                    .map(|p| &mut **p as &mut dyn ContentPane)
-            }
+        if index == 0 {
+            Some(&mut *self.primary_terminal as &mut dyn ContentPane)
         } else {
-            other_panes
-                .get_mut(index)
-                .map(|p| &mut **p as &mut dyn ContentPane)
+            let role = self.tab_order.get(index - 1)?;
+            self.panes.get_mut(role).map(|p| &mut **p as &mut dyn ContentPane)
         }
     }
 
-    /// Returns an iterator over all pane names.
-    fn pane_names(&self) -> impl Iterator<Item = &'static str> + '_ {
-        let terminal_name = self.terminal_pane.as_ref().map(|p| p.name());
-        terminal_name
-            .into_iter()
-            .chain(self.other_panes.iter().map(|p| p.name()))
+    /// Returns an iterator over all pane names for the tab bar.
+    fn pane_names(&self) -> impl Iterator<Item = String> + '_ {
+        std::iter::once(self.primary_terminal.name().to_string())
+            .chain(
+                self.tab_order
+                    .iter()
+                    .filter_map(|role| self.panes.get(role).map(|p| p.name().to_string()))
+            )
     }
 
-    /// Writes output to the terminal pane.
+    /// Writes output to the primary terminal pane.
     ///
     /// This allows the UI to display messages in the terminal between command executions.
-    /// If no terminal pane is set, this is a no-op.
     pub fn write_to_terminal(&self, data: &[u8]) {
-        if let Some(terminal_pane) = &self.terminal_pane {
-            terminal_pane.process_output(data);
-        }
+        self.primary_terminal.process_output(data);
     }
 
     /// Sets the currently running command to display in the terminal pane's border.
     ///
     /// Pass `None` to clear the running command display.
     pub fn set_running_command(&mut self, command: Option<String>) {
-        if let Some(terminal_pane) = &mut self.terminal_pane {
-            terminal_pane.set_running_command(command);
-        }
-    }
-
-    /// Returns the current terminal size.
-    pub fn terminal_size(&self) -> Result<ratatui::layout::Size, std::io::Error> {
-        self.terminal.size()
+        self.primary_terminal.set_running_command(command);
     }
 
     const CONTENT_PANE_HEIGHT_PERCENTAGE: u16 = 80;
-
-    /// Calculates the appropriate dimensions for a content pane that will be displayed
-    /// in the tabbed area.
-    ///
-    /// This accounts for:
-    /// - The tab area taking 80% of screen height
-    /// - Tab bar (1 line)
-    /// - Content borders (2 lines)
-    /// - tui-term quirk (doesn't use last row, so subtract 1 more)
-    /// - Content left + right borders (2 columns)
-    ///
-    /// # Returns
-    /// A tuple of (rows, cols) suitable for PTY or other content pane sizing
-    ///
-    /// # Errors
-    /// Returns an error if terminal size cannot be determined
-    pub fn content_pane_dimensions(&self) -> Result<(u16, u16), std::io::Error> {
-        let terminal_size = self.terminal_size()?;
-
-        // PTY dimensions: The top area (80% of screen) contains tabs + bordered content.
-        let terminal_pane_height =
-            (terminal_size.height * Self::CONTENT_PANE_HEIGHT_PERCENTAGE) / 100;
-        let rows = terminal_pane_height
-            .saturating_sub(1) // Tabs bar
-            .saturating_sub(2) // Content border
-            .saturating_add(1); // tui-term quirk: add 1 back
-        let cols = terminal_size.width.saturating_sub(2); // Content left + right borders
-
-        Ok((rows, cols))
-    }
 
     /// Gets mutable access to a specific pane.
     #[allow(dead_code)]
@@ -219,10 +171,7 @@ impl AppUI {
         let focused_area = self.focused_area;
 
         // Check if we should show the completion pane instead of normal panes
-        let show_completion = self
-            .completion_pane
-            .as_ref()
-            .map_or(false, |p| p.is_active());
+        let show_completion = self.completion_pane.is_active();
 
         // Collect tab titles from panes (unless showing completion)
         let tab_titles: Vec<String> = if show_completion {
@@ -242,9 +191,10 @@ impl AppUI {
             .set_focused(matches!(focused_area, FocusedArea::CommandInput));
 
         // Borrow fields separately to avoid capturing `self` in the closure
-        let terminal_pane = &mut self.terminal_pane;
+        let primary_terminal = &mut self.primary_terminal;
         let completion_pane = &mut self.completion_pane;
-        let other_panes = &mut self.other_panes;
+        let panes = &mut self.panes;
+        let tab_order = &self.tab_order;
         let command_input = &mut self.command_input;
 
         self.terminal.draw(|f| {
@@ -305,9 +255,14 @@ impl AppUI {
             };
 
             // Get border title from the selected pane if available
-            let border_title =
-                Self::pane_at_mut_impl(terminal_pane.as_mut(), other_panes, selected_pane_index)
-                    .and_then(|pane| pane.border_title());
+            let border_title = if selected_pane_index == 0 {
+                primary_terminal.as_ref().border_title()
+            } else {
+                tab_order
+                    .get(selected_pane_index - 1)
+                    .and_then(|role| panes.get(role))
+                    .and_then(|pane| pane.border_title())
+            };
 
             // Render the selected pane's content with borders
             let mut content_block = Block::default()
@@ -331,13 +286,13 @@ impl AppUI {
             // Render the selected pane's content inside the bordered area
             // If completion pane is active, show it instead
             if show_completion {
-                if let Some(pane) = completion_pane.as_mut() {
+                completion_pane.as_mut().render(f, content_inner);
+            } else if selected_pane_index == 0 {
+                primary_terminal.as_mut().render(f, content_inner);
+            } else if let Some(role) = tab_order.get(selected_pane_index - 1) {
+                if let Some(pane) = panes.get_mut(role) {
                     pane.render(f, content_inner);
                 }
-            } else if let Some(pane) =
-                Self::pane_at_mut_impl(terminal_pane.as_mut(), other_panes, selected_pane_index)
-            {
-                pane.render(f, content_inner);
             }
 
             // Render the command input pane using the widget
@@ -394,10 +349,7 @@ impl AppUI {
     #[allow(clippy::too_many_lines)]
     pub fn handle_events(&mut self) -> Result<UIEventResult, std::io::Error> {
         // Check if completion pane is active
-        let completion_active = self
-            .completion_pane
-            .as_ref()
-            .map_or(false, |p| p.is_active());
+        let completion_active = self.completion_pane.is_active();
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
@@ -405,9 +357,7 @@ impl AppUI {
                     // If completion is active, handle special keys
                     KeyCode::Esc if completion_active => {
                         // Cancel completion
-                        if let Some(pane) = &mut self.completion_pane {
-                            pane.clear();
-                        }
+                        self.completion_pane.clear();
                         // Restore focus
                         if let Some(prev_focus) = self.pre_completion_focus.take() {
                             self.focused_area = prev_focus;
@@ -415,18 +365,16 @@ impl AppUI {
                     }
                     KeyCode::Enter if completion_active => {
                         // Accept completion
-                        if let Some(pane) = &mut self.completion_pane {
-                            if let Some(completion) = pane.selected_completion() {
-                                let (insertion_index, delete_count) = pane.insertion_params();
-                                // Apply to command input
-                                self.command_input.apply_completion(
-                                    completion,
-                                    insertion_index,
-                                    delete_count,
-                                );
-                            }
-                            pane.clear();
+                        if let Some(completion) = self.completion_pane.selected_completion() {
+                            let (insertion_index, delete_count) = self.completion_pane.insertion_params();
+                            // Apply to command input
+                            self.command_input.apply_completion(
+                                completion,
+                                insertion_index,
+                                delete_count,
+                            );
                         }
+                        self.completion_pane.clear();
                         // Restore focus
                         if let Some(prev_focus) = self.pre_completion_focus.take() {
                             self.focused_area = prev_focus;
@@ -436,22 +384,18 @@ impl AppUI {
                     KeyCode::Tab
                         if completion_active && !key.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
-                        if let Some(pane) = &mut self.completion_pane {
-                            pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
-                                KeyCode::Down,
-                                KeyModifiers::empty(),
-                            ));
-                        }
+                        self.completion_pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
+                            KeyCode::Down,
+                            KeyModifiers::empty(),
+                        ));
                     }
                     KeyCode::BackTab | KeyCode::Tab
                         if completion_active && key.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
-                        if let Some(pane) = &mut self.completion_pane {
-                            pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
-                                KeyCode::Up,
-                                KeyModifiers::empty(),
-                            ));
-                        }
+                        self.completion_pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
+                            KeyCode::Up,
+                            KeyModifiers::empty(),
+                        ));
                     }
                     // Arrow keys for navigation
                     KeyCode::Up
@@ -462,12 +406,10 @@ impl AppUI {
                     | KeyCode::End
                         if completion_active =>
                     {
-                        if let Some(pane) = &mut self.completion_pane {
-                            pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
-                                key.code,
-                                key.modifiers,
-                            ));
-                        }
+                        self.completion_pane.handle_event(crate::content_pane::PaneEvent::KeyPress(
+                            key.code,
+                            key.modifiers,
+                        ));
                     }
                     // Allow typing to update buffer and re-trigger completion
                     _ if completion_active => {
@@ -479,9 +421,7 @@ impl AppUI {
                             }
                             crate::command_input::CommandKeyResult::CommandEntered(command) => {
                                 // User pressed Enter with actual command text - cancel completion and execute
-                                if let Some(pane) = &mut self.completion_pane {
-                                    pane.clear();
-                                }
+                                self.completion_pane.clear();
                                 if let Some(prev_focus) = self.pre_completion_focus.take() {
                                     self.focused_area = prev_focus;
                                 }
@@ -489,9 +429,7 @@ impl AppUI {
                             }
                             _ => {
                                 // Cancel completion for other cases (e.g., Ctrl+D)
-                                if let Some(pane) = &mut self.completion_pane {
-                                    pane.clear();
-                                }
+                                self.completion_pane.clear();
                                 if let Some(prev_focus) = self.pre_completion_focus.take() {
                                     self.focused_area = prev_focus;
                                 }
@@ -650,9 +588,7 @@ impl AppUI {
                             self.pre_completion_focus = Some(self.focused_area);
 
                             // Show completion pane
-                            if let Some(pane) = &mut self.completion_pane {
-                                pane.set_completions(completions);
-                            }
+                            self.completion_pane.set_completions(completions);
                         }
                     } else {
                         drop(shell);
