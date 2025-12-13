@@ -9,6 +9,7 @@ mod content_pane;
 mod environment_pane;
 mod functions_pane;
 mod history_pane;
+mod pane_role;
 mod pty;
 mod terminal_pane;
 
@@ -45,11 +46,20 @@ async fn main() -> Result<()> {
 
     let shell = Arc::new(tokio::sync::Mutex::new(shell));
 
-    // Create the ratatui TUI backend (empty, no panes yet)
-    let mut ui = AppUI::new(&shell);
-
     // Calculate PTY dimensions based on UI layout and create the PTY.
-    let (pty_rows, pty_cols) = ui.content_pane_dimensions()?;
+    // We need to create the UI temporarily to get dimensions
+    let temp_terminal = ratatui::init();
+    let terminal_size = temp_terminal.size()?;
+    ratatui::restore();
+    
+    // PTY dimensions: 80% of screen height for content area
+    let content_height = (terminal_size.height * 80) / 100;
+    let pty_rows = content_height
+        .saturating_sub(1) // Tabs bar
+        .saturating_sub(2) // Content border
+        .saturating_add(1); // tui-term quirk: add 1 back
+    let pty_cols = terminal_size.width.saturating_sub(2); // Content left + right borders
+    
     let pty = Pty::new(pty_rows, pty_cols)?;
 
     // Update shell with PTY fds
@@ -69,25 +79,20 @@ async fn main() -> Result<()> {
     ]);
     shell.lock().await.replace_open_files(fds.into_iter());
 
-    // Create content panes
+    // Create special panes (terminal and completion)
     let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer()));
     let completion_pane = Box::new(CompletionPane::new(&shell));
-    let environment_pane = Box::new(EnvironmentPane::new(&shell));
-    let history_pane = Box::new(HistoryPane::new(&shell));
-    let aliases_pane = Box::new(AliasesPane::new(&shell));
-    let functions_pane = Box::new(FunctionsPane::new(&shell));
-    let callstack_pane = Box::new(CallStackPane::new(&shell));
+    
+    // Create the UI with special panes
+    let mut ui = AppUI::new(&shell, terminal_pane, completion_pane);
 
-    // Set the terminal pane (first in tab order, accessible for direct writes)
-    ui.set_terminal_pane(terminal_pane);
-    // Set the completion pane (special pane for completions)
-    ui.set_completion_pane(completion_pane);
-    // Add other panes
-    ui.add_pane(environment_pane);
-    ui.add_pane(history_pane);
-    ui.add_pane(aliases_pane);
-    ui.add_pane(functions_pane);
-    ui.add_pane(callstack_pane);
+    // Add general content panes with their roles
+    use pane_role::PaneRole;
+    ui.add_pane(PaneRole::Environment, Box::new(EnvironmentPane::new(&shell)));
+    ui.add_pane(PaneRole::History, Box::new(HistoryPane::new(&shell)));
+    ui.add_pane(PaneRole::Aliases, Box::new(AliasesPane::new(&shell)));
+    ui.add_pane(PaneRole::Functions, Box::new(FunctionsPane::new(&shell)));
+    ui.add_pane(PaneRole::CallStack, Box::new(CallStackPane::new(&shell)));
 
     // Run the main event loop
     ui.run().await
