@@ -12,7 +12,6 @@ pub mod error;
 pub mod escape;
 pub mod expansion;
 mod extendedtests;
-#[cfg(feature = "experimental-filters")]
 pub mod extensions;
 #[cfg(feature = "experimental-filters")]
 pub mod filter;

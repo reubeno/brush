@@ -19,18 +19,12 @@ use crate::{
     pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
-    builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
-    prompt, sys::users, traps,
+    builtins, commands, completion, env, error, expansion, extensions, functions, jobs, keywords,
+    openfiles, prompt, sys::users, traps,
 };
-
-#[cfg(feature = "experimental-filters")]
-use crate::extensions;
 
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
-
-/// Type for storing an error formatter.
-pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
@@ -126,14 +120,9 @@ pub struct Shell {
     /// History of commands executed in the shell.
     history: Option<history::History>,
 
-    /// Error formatter for customizing error display.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
-    error_formatter: ErrorFormatterHelper,
-
     /// Shell extensions for filtering and customization.
-    #[cfg(feature = "experimental-filters")]
-    #[cfg_attr(feature = "serde", serde(skip))]
-    extensions: Option<Box<dyn extensions::ShellExtensions>>,
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_shell_extensions"))]
+    extensions: Box<dyn extensions::ShellExtensions>,
 }
 
 impl Clone for Shell {
@@ -163,9 +152,7 @@ impl Clone for Shell {
             last_stopwatch_offset: self.last_stopwatch_offset,
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
-            error_formatter: self.error_formatter.clone(),
-            #[cfg(feature = "experimental-filters")]
-            extensions: self.extensions.as_ref().map(|e| e.clone_for_subshell()),
+            extensions: self.extensions.clone_for_subshell(),
             depth: self.depth + 1,
         }
     }
@@ -389,10 +376,7 @@ pub struct CreateOptions {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
-    /// Error formatter helper for the shell to use.
-    pub error_formatter: Option<ErrorFormatterHelper>,
     /// Shell extensions for filtering and customization.
-    #[cfg(feature = "experimental-filters")]
     pub extensions: Option<Box<dyn extensions::ShellExtensions>>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
@@ -426,9 +410,7 @@ impl Default for Shell {
             last_stopwatch_offset: 0,
             key_bindings: None,
             history: None,
-            error_formatter: default_error_formatter(),
-            #[cfg(feature = "experimental-filters")]
-            extensions: None,
+            extensions: default_shell_extensions(),
         }
     }
 }
@@ -457,11 +439,7 @@ impl Shell {
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
             builtins: options.builtins,
             key_bindings: options.key_bindings,
-            error_formatter: options
-                .error_formatter
-                .unwrap_or_else(default_error_formatter),
-            #[cfg(feature = "experimental-filters")]
-            extensions: options.extensions,
+            extensions: options.extensions.unwrap_or_else(default_shell_extensions),
             ..Self::default()
         };
 
@@ -519,9 +497,8 @@ impl Shell {
     }
 
     /// Returns the shell extensions, if any.
-    #[cfg(feature = "experimental-filters")]
-    pub fn extensions(&self) -> Option<&dyn extensions::ShellExtensions> {
-        self.extensions.as_deref()
+    pub fn extensions(&self) -> &dyn extensions::ShellExtensions {
+        self.extensions.as_ref()
     }
 
     /// Increments the interactive line offset in the shell by the indicated number
@@ -1906,7 +1883,7 @@ impl Shell {
         file: &mut impl std::io::Write,
         err: &error::Error,
     ) -> Result<(), error::Error> {
-        let str = self.error_formatter.lock().await.format_error(err, self);
+        let str = self.extensions.format_error(err, self);
         write!(file, "{str}")?;
 
         Ok(())
@@ -1936,6 +1913,6 @@ fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
 }
 
-fn default_error_formatter() -> ErrorFormatterHelper {
-    Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))
+fn default_shell_extensions() -> Box<dyn extensions::ShellExtensions> {
+    Box::new(extensions::DefaultExtensions)
 }

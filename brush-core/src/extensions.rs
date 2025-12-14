@@ -1,7 +1,12 @@
-//! Experimental shell extensions support.
+//! Shell extensions support.
 
-use crate::{ExecutionResult, commands, error, expansion, filter, shell};
+use crate::error;
+use crate::shell::Shell;
 
+#[cfg(feature = "experimental-filters")]
+use crate::{ExecutionResult, commands, expansion, filter, shell};
+
+#[cfg(feature = "experimental-filters")]
 /// Marker type for source script filtering.
 ///
 /// This type defines the input/output signature for filtering script
@@ -10,24 +15,32 @@ pub struct SourceScriptOp<'a> {
     marker: std::marker::PhantomData<&'a ()>,
 }
 
+#[cfg(feature = "experimental-filters")]
 impl<'a> crate::filter::FilterableOp for SourceScriptOp<'a> {
     type Input = shell::ScriptArgs<'a>;
     type Output = Result<ExecutionResult, error::Error>;
 }
 
-/// Trait for extending shell behavior with custom filters and hooks.
+/// Trait for extending core shell behaviors.
 ///
-/// This trait allows clients to intercept and modify shell operations at
-/// key points during execution. All methods have default implementations
-/// that perform no filtering.
+/// This trait allows clients to handle, and in some cases, intercept and modify
+/// shell operations at key points during execution. All methods have default
+/// implementations.
 ///
 /// Implementations should use interior mutability (`Arc<Mutex<T>>`, etc.) to share
-/// mutable state across shell clones, since `clone_for_subshell()` should create
-/// a new instance that shares the same underlying state.
-///
-/// This is an experimental API that may change or be replaced with a
-/// generic-based approach in the future.
+/// mutable state.
 pub trait ShellExtensions: Send + Sync {
+    /// Format an error to generate a string displayable to a user.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The error to format.
+    /// * `shell` - The shell instance where the error occurred.
+    #[allow(unused_variables)]
+    fn format_error(&self, err: &error::Error, shell: &Shell) -> String {
+        std::format!("error: {err:#}\n")
+    }
+
     /// Called before a simple command is executed.
     ///
     /// This can intercept and modify commands before they are dispatched
@@ -41,6 +54,7 @@ pub trait ShellExtensions: Send + Sync {
     ///
     /// A [`filter::PreFilterResult`] indicating whether to continue with execution
     /// or return early with a custom result.
+    #[cfg(feature = "experimental-filters")]
     fn pre_exec_simple_command<'a>(
         &self,
         input: commands::SimpleCommand<'a>,
@@ -57,6 +71,7 @@ pub trait ShellExtensions: Send + Sync {
     /// # Returns
     ///
     /// A [`filter::PostFilterResult`] with the (possibly modified) result.
+    #[cfg(feature = "experimental-filters")]
     fn post_exec_simple_command<'a>(
         &self,
         output: <commands::SimpleCommand<'a> as filter::FilterableOp>::Output,
@@ -77,6 +92,7 @@ pub trait ShellExtensions: Send + Sync {
     ///
     /// A [`filter::PreFilterResult`] indicating whether to continue with spawning
     /// or return early with a custom result.
+    #[cfg(feature = "experimental-filters")]
     fn pre_exec_external_command(
         &self,
         input: std::process::Command,
@@ -93,6 +109,7 @@ pub trait ShellExtensions: Send + Sync {
     /// # Returns
     ///
     /// A [`filter::PostFilterResult`] with the (possibly modified) result.
+    #[cfg(feature = "experimental-filters")]
     fn post_exec_external_command(
         &self,
         output: <commands::ExecuteExternalCommand as filter::FilterableOp>::Output,
@@ -113,6 +130,7 @@ pub trait ShellExtensions: Send + Sync {
     ///
     /// A [`filter::PreFilterResult`] indicating whether to continue with expansion
     /// or return early with a custom result.
+    #[cfg(feature = "experimental-filters")]
     fn pre_expand_word<'a>(
         &self,
         input: &'a str,
@@ -129,6 +147,7 @@ pub trait ShellExtensions: Send + Sync {
     /// # Returns
     ///
     /// A [`filter::PostFilterResult`] with the (possibly modified) result.
+    #[cfg(feature = "experimental-filters")]
     fn post_expand_word<'a>(
         &self,
         output: <expansion::ExpandWordOp<'a> as filter::FilterableOp>::Output,
@@ -148,6 +167,7 @@ pub trait ShellExtensions: Send + Sync {
     ///
     /// A [`filter::PreFilterResult`] indicating whether to continue with sourcing
     /// or return early with a custom result.
+    #[cfg(feature = "experimental-filters")]
     fn pre_source_script<'a>(
         &self,
         input: shell::ScriptArgs<'a>,
@@ -164,6 +184,7 @@ pub trait ShellExtensions: Send + Sync {
     /// # Returns
     ///
     /// A [`filter::PostFilterResult`] with the (possibly modified) result.
+    #[cfg(feature = "experimental-filters")]
     fn post_source_script<'a>(
         &self,
         output: <SourceScriptOp<'a> as filter::FilterableOp>::Output,
@@ -185,7 +206,8 @@ pub trait ShellExtensions: Send + Sync {
     fn clone_for_subshell(&self) -> Box<dyn ShellExtensions>;
 }
 
-/// Default implementation of [`ShellExtensions`] that provides no filtering.
+/// Default implementation of [`ShellExtensions`] that provides no filtering and
+/// supplies default behaviors.
 ///
 /// This is a zero-sized type that incurs no runtime overhead.
 #[derive(Debug, Default, Copy, Clone)]

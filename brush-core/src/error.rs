@@ -402,21 +402,6 @@ pub trait ErrorFormatter: Send {
     fn format_error(&self, error: &Error, shell: &Shell) -> String;
 }
 
-/// Default implementation of the [`ErrorFormatter`] trait.
-pub(crate) struct DefaultErrorFormatter {}
-
-impl DefaultErrorFormatter {
-    pub const fn new() -> Self {
-        Self {}
-    }
-}
-
-impl ErrorFormatter for DefaultErrorFormatter {
-    fn format_error(&self, err: &Error, _shell: &Shell) -> String {
-        std::format!("error: {err:#}\n")
-    }
-}
-
 /// Convenience function for returning an error for unimplemented functionality.
 ///
 /// # Arguments

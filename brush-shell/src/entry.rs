@@ -384,7 +384,7 @@ async fn instantiate_shell_from_args(
         .sh_mode(args.sh_mode)
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .verbose(args.verbose)
-        .error_formatter(new_error_formatter(args))
+        .extensions(new_shell_extensions(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.
@@ -400,14 +400,27 @@ async fn instantiate_shell_from_args(
     Ok(shell)
 }
 
-fn new_error_formatter(
-    args: &CommandLineArgs,
-) -> Arc<Mutex<dyn brush_core::error::ErrorFormatter>> {
-    let formatter = error_formatter::Formatter {
-        use_color: !args.disable_color,
-    };
+#[derive(Clone)]
+struct BrushShellExtensions {
+    use_color: bool,
+}
 
-    Arc::new(Mutex::new(formatter))
+impl brush_core::extensions::ShellExtensions for BrushShellExtensions {
+    fn format_error(&self, err: &brush_core::error::Error, shell: &brush_core::Shell) -> String {
+        error_formatter::format_error(err, shell, self.use_color)
+    }
+
+    fn clone_for_subshell(&self) -> Box<dyn brush_core::extensions::ShellExtensions> {
+        Box::new(self.clone())
+    }
+}
+
+fn new_shell_extensions(
+    args: &CommandLineArgs,
+) -> Box<dyn brush_core::extensions::ShellExtensions> {
+    Box::new(BrushShellExtensions {
+        use_color: !args.disable_color,
+    })
 }
 
 fn get_default_input_backend_type() -> InputBackendType {
