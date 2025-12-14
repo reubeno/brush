@@ -35,6 +35,15 @@ pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
 
+/// Input for the source script operation.
+#[derive(Clone, Debug)]
+pub struct ScriptArgs<'a> {
+    /// The path to the script to source.
+    pub path: &'a Path,
+    /// The arguments to pass to the script as positional parameters.
+    pub args: Vec<&'a str>,
+}
+
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell {
@@ -857,14 +866,17 @@ impl Shell {
         // Collect iterator items first so we can borrow from them.
         let args: Vec<_> = args.collect();
 
-        #[cfg(feature = "experimental-filters")]
-        {
-            let script_args = extensions::ScriptArgs {
-                path,
-                args: args.iter().map(AsRef::as_ref).collect(),
-            };
+        let script_args = ScriptArgs {
+            path,
+            args: args.iter().map(AsRef::as_ref).collect(),
+        };
 
-            return crate::with_filter!(self, source_script_filter, script_args, |args| {
+        crate::with_filter!(
+            self,
+            pre_source_script,
+            post_source_script,
+            script_args,
+            |args| {
                 self.parse_and_execute_script_file(
                     args.path,
                     args.args.iter(),
@@ -872,17 +884,8 @@ impl Shell {
                     callstack::ScriptCallType::Source,
                 )
                 .await
-            });
-        }
-
-        #[cfg(not(feature = "experimental-filters"))]
-        self.parse_and_execute_script_file(
-            path,
-            args.iter(),
-            params,
-            callstack::ScriptCallType::Source,
+            }
         )
-        .await
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.

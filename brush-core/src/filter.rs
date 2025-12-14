@@ -32,177 +32,62 @@ pub enum PostFilterResult<O: FilterableOp> {
     Return(O::Output),
 }
 
-/// Macro for executing a filterable operation.
+/// Macro for executing a filterable operation with optional filtering.
 ///
-/// This macro handles all the boilerplate of checking for extensions and calling
-/// pre/post filter methods, handling early returns.
+/// This macro handles all the boilerplate of checking for extensions, cloning them,
+/// and calling pre/post filter methods. The macro yields a value that the caller
+/// can use (e.g., assign to a variable or return).
 ///
 /// # Arguments
 ///
-/// * `$shell` - Expression yielding a reference to the Shell
-/// * `$filter_method` - The base filter method name (e.g., `exec_simple_command_filter`)
+/// * `$shell` - Expression yielding a reference to the Shell (extensions are extracted first)
+/// * `$pre_method` - Method name to call for pre-filtering (e.g., `pre_expand_word`)
+/// * `$post_method` - Method name to call for post-filtering (e.g., `post_expand_word`)
 /// * `$input_val` - The input value to pass to the pre filter method
 /// * `|$input_ident|` - Binding name for the (possibly modified) input in body
-/// * `$body` - The expression to execute
-///
-/// # Variants
-///
-/// - Default: Can `return` from enclosing function if pre filter returns `Return`
-/// - `no_return:`: Captures output instead of returning (for intermediate filters)
+/// * `$body` - The expression to execute if filtering continues
 ///
 /// # Example
 ///
 /// ```ignore
-/// crate::with_filter!(self.shell, expand_word_filter, word, |word| {
-///     self.basic_expand_impl(word).await
-/// })
+/// crate::with_filter!(
+///     self.shell,
+///     pre_expand_word,
+///     post_expand_word,
+///     word,
+///     |word| self.basic_expand_impl(word).await
+/// )
 /// ```
 #[macro_export]
 macro_rules! with_filter {
-    // Variant that can early-return - exec_simple_command_filter
-    ($shell:expr, exec_simple_command_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        let mut $input_ident = $input_val;
+    ($shell:expr, $pre_method:ident, $post_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        // Extract extensions FIRST, before any potential move of input
+        let __extensions = $shell.extensions().map(|ext| ext.clone_for_subshell());
 
-        // If we have extensions, apply pre filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.pre_exec_simple_command($input_ident) {
-                $crate::filter::PreFilterResult::Continue(new_input) => {
-                    $input_ident = new_input;
+        // Now safe to move input_val
+        #[allow(unused_mut, reason = "may be needed based on calling context")]
+        let mut __input_temp = $input_val;
+
+        if let Some(__extensions) = __extensions {
+            // Apply pre-filter
+            match __extensions.$pre_method(__input_temp) {
+                $crate::filter::PreFilterResult::Continue(__filtered_input) => {
+                    // Bind the filtered input and execute the body
+                    #[allow(unused_mut, reason = "may be needed based on calling context")]
+                    let mut $input_ident = __filtered_input;
+                    let __output = $body;
+                    // Apply post-filter
+                    match __extensions.$post_method(__output) {
+                        $crate::filter::PostFilterResult::Return(__final_output) => __final_output,
+                    }
                 }
-                $crate::filter::PreFilterResult::Return(output) => {
-                    return output;
-                }
-            }
-        }
-
-        // Execute the body
-        let output = $body;
-
-        // If we have extensions, apply post filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.post_exec_simple_command(output) {
-                $crate::filter::PostFilterResult::Return(output) => output,
-            }
-        } else {
-            output
-        }
-    }};
-
-    // Variant that can early-return - exec_external_command_filter
-    ($shell:expr, exec_external_command_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        let mut $input_ident = $input_val;
-
-        // If we have extensions, apply pre filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.pre_exec_external_command($input_ident) {
-                $crate::filter::PreFilterResult::Continue(new_input) => {
-                    $input_ident = new_input;
-                }
-                $crate::filter::PreFilterResult::Return(output) => {
-                    return output;
-                }
-            }
-        }
-
-        // Execute the body
-        let output = $body;
-
-        // If we have extensions, apply post filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.post_exec_external_command(output) {
-                $crate::filter::PostFilterResult::Return(output) => output,
+                $crate::filter::PreFilterResult::Return(__output) => __output,
             }
         } else {
-            output
-        }
-    }};
-
-    // Variant that can early-return - expand_word_filter
-    ($shell:expr, expand_word_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        let mut $input_ident = $input_val;
-
-        // If we have extensions, apply pre filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.pre_expand_word($input_ident) {
-                $crate::filter::PreFilterResult::Continue(new_input) => {
-                    $input_ident = new_input;
-                }
-                $crate::filter::PreFilterResult::Return(output) => {
-                    return output;
-                }
-            }
-        }
-
-        // Execute the body
-        let output = $body;
-
-        // If we have extensions, apply post filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.post_expand_word(output) {
-                $crate::filter::PostFilterResult::Return(output) => output,
-            }
-        } else {
-            output
-        }
-    }};
-
-    // Variant that can early-return - source_script_filter
-    ($shell:expr, source_script_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        let mut $input_ident = $input_val;
-
-        // If we have extensions, apply pre filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.pre_source_script($input_ident) {
-                $crate::filter::PreFilterResult::Continue(new_input) => {
-                    $input_ident = new_input;
-                }
-                $crate::filter::PreFilterResult::Return(output) => {
-                    return output;
-                }
-            }
-        }
-
-        // Execute the body
-        let output = $body;
-
-        // If we have extensions, apply post filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.post_source_script(output) {
-                $crate::filter::PostFilterResult::Return(output) => output,
-            }
-        } else {
-            output
-        }
-    }};
-
-    // Variant without early-return - exec_external_command_filter
-    (no_return: $shell:expr, exec_external_command_filter, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        let $input_ident = $input_val;
-
-        // If we have extensions, apply pre filter and potentially execute
-        let output = if let Some(ext) = $shell.extensions() {
-            match ext.pre_exec_external_command($input_ident) {
-                $crate::filter::PreFilterResult::Continue($input_ident) => {
-                    // Execute body with potentially modified input
-                    $body
-                }
-                $crate::filter::PreFilterResult::Return(output) => {
-                    // Filter provided output directly, skip body
-                    output
-                }
-            }
-        } else {
-            // No extensions, execute body directly
+            // No extensions - execute body directly with input
+            #[allow(unused_mut, reason = "may be needed based on calling context")]
+            let mut $input_ident = __input_temp;
             $body
-        };
-
-        // If we have extensions, apply post filter
-        if let Some(ext) = $shell.extensions() {
-            match ext.post_exec_external_command(output) {
-                $crate::filter::PostFilterResult::Return(output) => output,
-            }
-        } else {
-            output
         }
     }};
 }

@@ -60,23 +60,16 @@ pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
 
+#[cfg(feature = "experimental-filters")]
+pub use shell::ScriptArgs;
+
 /// No-op version of `with_filter!` when experimental-filters is disabled.
 ///
 /// This macro expands directly to the body with zero overhead.
 #[cfg(not(feature = "experimental-filters"))]
 #[macro_export]
 macro_rules! with_filter {
-    ($shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        #[allow(unused_variables)]
-        let shell_unused = &$shell;
-        #[allow(clippy::redundant_locals)]
-        let $input_ident = $input_val;
-        $body
-    }};
-
-    (no_return: $shell:expr, $filter_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
-        #[allow(unused_variables)]
-        let shell_unused = &$shell;
+    ($shell:expr, $pre_method:ident, $post_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
         #[allow(clippy::redundant_locals)]
         let $input_ident = $input_val;
         $body

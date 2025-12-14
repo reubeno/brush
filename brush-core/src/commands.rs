@@ -377,39 +377,18 @@ impl<'a> SimpleCommand<'a> {
     }
 
     /// Executes the simple command, applying any registered filters.
+    #[allow(
+        unused_mut,
+        reason = "mut needed when experimental-filters feature is enabled"
+    )]
     pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
-        #[cfg(not(feature = "experimental-filters"))]
-        {
-            self.execute_impl().await
-        }
-
-        #[cfg(feature = "experimental-filters")]
-        {
-            // Extract and clone extensions before moving self
-            let extensions = self.shell.extensions().map(|ext| ext.clone_for_subshell());
-
-            if let Some(ext) = extensions {
-                // Apply pre-filter
-                match ext.pre_exec_simple_command(self) {
-                    filter::PreFilterResult::Continue(cmd) => {
-                        self = cmd;
-                    }
-                    filter::PreFilterResult::Return(output) => {
-                        return output;
-                    }
-                }
-
-                // Execute the command
-                let output = self.execute_impl().await;
-
-                // Apply post-filter
-                match ext.post_exec_simple_command(output) {
-                    filter::PostFilterResult::Return(output) => output,
-                }
-            } else {
-                self.execute_impl().await
-            }
-        }
+        crate::with_filter!(
+            self.shell,
+            pre_exec_simple_command,
+            post_exec_simple_command,
+            self,
+            |cmd| cmd.execute_impl().await
+        )
     }
 
     /// Executes the simple command.
@@ -660,8 +639,9 @@ pub(crate) async fn execute_external_command(
     );
 
     let spawn_result = crate::with_filter!(
-        no_return: context.shell,
-        exec_external_command_filter,
+        context.shell,
+        pre_exec_external_command,
+        post_exec_external_command,
         cmd,
         |cmd| sys::process::spawn(cmd)
     );

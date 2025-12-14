@@ -1,17 +1,6 @@
 //! Experimental shell extensions support.
 
-use std::path::Path;
-
-use crate::{ExecutionResult, commands, error, expansion, filter};
-
-/// Input for the source script operation.
-#[derive(Clone, Debug)]
-pub struct ScriptArgs<'a> {
-    /// The path to the script to source.
-    pub path: &'a Path,
-    /// The arguments to pass to the script as positional parameters.
-    pub args: Vec<&'a str>,
-}
+use crate::{ExecutionResult, commands, error, expansion, filter, shell};
 
 /// Marker type for source script filtering.
 ///
@@ -22,7 +11,7 @@ pub struct SourceScriptOp<'a> {
 }
 
 impl<'a> crate::filter::FilterableOp for SourceScriptOp<'a> {
-    type Input = ScriptArgs<'a>;
+    type Input = shell::ScriptArgs<'a>;
     type Output = Result<ExecutionResult, error::Error>;
 }
 
@@ -161,7 +150,7 @@ pub trait ShellExtensions: Send + Sync {
     /// or return early with a custom result.
     fn pre_source_script<'a>(
         &self,
-        input: ScriptArgs<'a>,
+        input: shell::ScriptArgs<'a>,
     ) -> filter::PreFilterResult<SourceScriptOp<'a>> {
         filter::PreFilterResult::Continue(input)
     }

@@ -499,9 +499,13 @@ impl<'a> WordExpander<'a> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
     /// yield pieces that could be further processed.
     async fn basic_expand(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        crate::with_filter!(self.shell, expand_word_filter, word, |word| {
-            self.basic_expand_impl(word).await
-        })
+        crate::with_filter!(
+            self.shell,
+            pre_expand_word,
+            post_expand_word,
+            word,
+            |word| self.basic_expand_impl(word).await
+        )
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
