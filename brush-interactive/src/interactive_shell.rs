@@ -90,7 +90,7 @@ impl InteractiveShellExt for crate::ShellRef {
                     // Report the error, but continue to execute.
                     let shell = self.lock().await;
                     let mut stderr = shell.stderr();
-                    let _ = shell.display_error(&mut stderr, &err).await;
+                    let _ = shell.display_error(&mut stderr, &err);
 
                     drop(shell);
                 }

@@ -185,7 +185,7 @@ impl Execute for ast::Program {
                 Ok(exec_result) => result = exec_result,
                 Err(err) => {
                     // Display the error and convert to an execution result.
-                    let _ = shell.display_error(&mut params.stderr(shell), &err).await;
+                    let _ = shell.display_error(&mut params.stderr(shell), &err);
                     result = err.into_result(shell);
                 }
             }
@@ -596,7 +596,7 @@ impl Execute for ast::CompoundCommand {
                     Err(error) => {
                         // Display the error to stderr, but prevent fatal error propagation
                         let mut stderr = params.stderr(shell);
-                        let _ = shell.display_error(&mut stderr, &error).await;
+                        let _ = shell.display_error(&mut stderr, &error);
 
                         // Convert error to result in subshell context
                         error.into_result(&subshell)
@@ -1083,7 +1083,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
-                    let _ = parent_shell.display_error(&mut stderr, &err).await;
+                    let _ = parent_shell.display_error(&mut stderr, &err);
 
                     let result = err.into_result(parent_shell);
                     Ok(result.into())

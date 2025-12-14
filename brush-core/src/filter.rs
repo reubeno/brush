@@ -62,32 +62,25 @@ pub enum PostFilterResult<O: FilterableOp> {
 macro_rules! with_filter {
     ($shell:expr, $pre_method:ident, $post_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
         // Extract extensions FIRST, before any potential move of input
-        let __extensions = $shell.extensions().map(|ext| ext.clone_for_subshell());
+        let __extensions = $shell.extensions().clone_for_subshell();
 
         // Now safe to move input_val
         #[allow(unused_mut, reason = "may be needed based on calling context")]
         let mut __input_temp = $input_val;
 
-        if let Some(__extensions) = __extensions {
-            // Apply pre-filter
-            match __extensions.$pre_method(__input_temp) {
-                $crate::filter::PreFilterResult::Continue(__filtered_input) => {
-                    // Bind the filtered input and execute the body
-                    #[allow(unused_mut, reason = "may be needed based on calling context")]
-                    let mut $input_ident = __filtered_input;
-                    let __output = $body;
-                    // Apply post-filter
-                    match __extensions.$post_method(__output) {
-                        $crate::filter::PostFilterResult::Return(__final_output) => __final_output,
-                    }
+        // Apply pre-filter
+        match __extensions.$pre_method(__input_temp) {
+            $crate::filter::PreFilterResult::Continue(__filtered_input) => {
+                // Bind the filtered input and execute the body
+                #[allow(unused_mut, reason = "may be needed based on calling context")]
+                let mut $input_ident = __filtered_input;
+                let __output = $body;
+                // Apply post-filter
+                match __extensions.$post_method(__output) {
+                    $crate::filter::PostFilterResult::Return(__final_output) => __final_output,
                 }
-                $crate::filter::PreFilterResult::Return(__output) => __output,
             }
-        } else {
-            // No extensions - execute body directly with input
-            #[allow(unused_mut, reason = "may be needed based on calling context")]
-            let mut $input_ident = __input_temp;
-            $body
+            $crate::filter::PreFilterResult::Return(__output) => __output,
         }
     }};
 }

@@ -1153,7 +1153,7 @@ impl Shell {
         match result {
             Ok(result) => Ok(result),
             Err(err) => {
-                let _ = self.display_error(&mut params.stderr(self), &err).await;
+                let _ = self.display_error(&mut params.stderr(self), &err);
 
                 let result = err.into_result(self);
                 self.set_last_exit_status(result.exit_code.into());
@@ -1878,7 +1878,7 @@ impl Shell {
     ///
     /// * `file_table` - The open file table to use for any file descriptor references.
     /// * `err` - The error to display.
-    pub async fn display_error(
+    pub fn display_error(
         &self,
         file: &mut impl std::io::Write,
         err: &error::Error,
