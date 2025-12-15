@@ -183,10 +183,10 @@ impl AppUI {
                 }),
                 split_percent: 80,
             },
-            content_region_id,  // Start with content region focused
+            command_input_region_id,  // Start with command input focused for typing
         );
 
-        Self {
+        let mut app = Self {
             terminal,
             shell: shell.clone(),
             store,
@@ -199,7 +199,14 @@ impl AppUI {
             layout,
             pre_completion_active_region: None,
             navigation_mode: false,
+        };
+
+        // Focus the command input pane initially
+        if let Some(pane) = app.store.get_pane_mut(command_input_pane_id) {
+            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
         }
+
+        app
     }
 
     /// Adds a content pane to the content region.
