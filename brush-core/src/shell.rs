@@ -496,7 +496,7 @@ impl Shell {
         &self.call_stack
     }
 
-    /// Returns the shell extensions, if any.
+    /// Returns the extensions registered with this shell instance.
     pub fn extensions(&self) -> &dyn extensions::ShellExtensions {
         self.extensions.as_ref()
     }

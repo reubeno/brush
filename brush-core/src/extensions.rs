@@ -11,6 +11,7 @@ use crate::{ExecutionResult, commands, expansion, filter, shell};
 ///
 /// This type defines the input/output signature for filtering script
 /// sourcing operations.
+#[derive(Debug)]
 pub struct SourceScriptOp<'a> {
     marker: std::marker::PhantomData<&'a ()>,
 }
@@ -34,10 +35,10 @@ pub trait ShellExtensions: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `error` - The error to format.
-    /// * `shell` - The shell instance where the error occurred.
-    #[allow(unused_variables)]
+    /// * `err` - The error to format.
+    /// * `_shell` - The shell instance where the error occurred.
     fn format_error(&self, err: &error::Error, shell: &Shell) -> String {
+        let _ = shell;
         std::format!("error: {err:#}\n")
     }
 
@@ -216,5 +217,90 @@ pub struct DefaultExtensions;
 impl ShellExtensions for DefaultExtensions {
     fn clone_for_subshell(&self) -> Box<dyn ShellExtensions> {
         Box::new(*self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_extensions_formats_error() {
+        let ext = DefaultExtensions;
+        let err = error::Error::from(error::ErrorKind::CommandNotFound("test".to_string()));
+        let shell = Shell::default();
+
+        let formatted = ext.format_error(&err, &shell);
+        assert!(formatted.starts_with("error:"));
+        assert!(formatted.contains("command not found: test"));
+    }
+
+    #[cfg(feature = "experimental-filters")]
+    #[test]
+    fn default_extensions_pre_expand_word_continues() {
+        let ext = DefaultExtensions;
+        let word = "test";
+
+        let result = ext.pre_expand_word(word);
+        assert!(matches!(
+            result,
+            filter::PreFilterResult::Continue(w) if w == word
+        ));
+    }
+
+    #[cfg(feature = "experimental-filters")]
+    #[test]
+    fn default_extensions_post_expand_word_returns_unchanged() {
+        use crate::expansion::Expansion;
+
+        let ext = DefaultExtensions;
+        let input = Expansion::default();
+        let output: Result<Expansion, error::Error> = Ok(input);
+
+        let result = ext.post_expand_word(output);
+        assert!(matches!(result, filter::PostFilterResult::Return(Ok(_))));
+    }
+
+    #[cfg(feature = "experimental-filters")]
+    #[test]
+    fn default_extensions_pre_exec_external_command_continues() {
+        let ext = DefaultExtensions;
+        let mut cmd = std::process::Command::new("echo");
+        cmd.arg("test");
+
+        let result = ext.pre_exec_external_command(cmd);
+        assert!(matches!(
+            result,
+            filter::PreFilterResult::Continue(c) if c.get_program() == "echo"
+        ));
+    }
+
+    #[cfg(feature = "experimental-filters")]
+    #[test]
+    fn default_extensions_pre_source_script_continues() {
+        use std::path::Path;
+
+        let ext = DefaultExtensions;
+        let args = shell::ScriptArgs {
+            path: Path::new("/test.sh"),
+            args: vec![],
+        };
+
+        let result = ext.pre_source_script(args);
+        assert!(matches!(
+            result,
+            filter::PreFilterResult::Continue(a) if a.path == Path::new("/test.sh")
+        ));
+    }
+
+    #[test]
+    fn default_extensions_clone_for_subshell_works() {
+        let ext = DefaultExtensions;
+        let cloned = ext.clone_for_subshell();
+
+        let shell = Shell::default();
+        let err = error::Error::from(error::ErrorKind::CommandNotFound("test".to_string()));
+        let formatted = cloned.format_error(&err, &shell);
+        assert!(formatted.contains("command not found: test"));
     }
 }
