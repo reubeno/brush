@@ -21,10 +21,9 @@ use crate::command_input::CommandInput;
 use crate::completion_pane::CompletionPane;
 use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult, PaneKind};
 use crate::layout::LayoutManager;
+use crate::region::{PaneId, RegionId};
+use crate::region_pane_store::RegionPaneStore;
 use crate::terminal_pane::TerminalPane;
-
-/// Unique identifier for pane instances
-pub type PaneId = usize;
 
 /// Wrapper that allows an `Rc<RefCell<T: ContentPane>>` to be stored as `Box<dyn ContentPane>`.
 /// This enables dual access: typed references for special interfaces, trait objects for generic layout.
@@ -83,35 +82,29 @@ pub struct AppUI {
     /// The shell instance
     shell: Arc<Mutex<brush_core::Shell>>,
 
-    /// Unified pane storage - ALL panes stored here
-    panes: HashMap<PaneId, Box<dyn ContentPane>>,
-    /// Next available pane ID
-    next_pane_id: PaneId,
+    /// Central store for all regions and panes
+    store: RegionPaneStore,
 
-    /// Direct typed references to special panes (also in panes `HashMap`)
+    /// Direct typed references to special panes (also in store)
     /// These allow access to custom interfaces without downcasting
     primary_terminal: std::rc::Rc<std::cell::RefCell<TerminalPane>>,
     completion_pane: std::rc::Rc<std::cell::RefCell<CompletionPane>>,
-
-    /// ID of primary terminal pane (for layout references)
-    #[allow(dead_code)]
-    primary_terminal_id: PaneId,
-    /// ID of completion pane (for layout references)
-    #[allow(dead_code)]
-    completion_pane_id: PaneId,
-
-    /// Layout manager for flexible pane arrangements
-    layout: LayoutManager,
-    /// ID of currently active region in layout tree (unified focus model)
-    active_region_id: crate::layout::LayoutId,
-
-    /// Direct handle to `CommandInput` pane for cursor positioning
     command_input_handle: std::rc::Rc<std::cell::RefCell<CommandInput>>,
-    /// ID of `CommandInput` pane
+
+    /// IDs of special panes
+    primary_terminal_id: PaneId,
+    completion_pane_id: PaneId,
     command_input_pane_id: PaneId,
 
+    /// IDs of special regions
+    content_region_id: RegionId,
+    command_input_region_id: RegionId,
+
+    /// Layout manager for spatial arrangement
+    layout: LayoutManager,
+
     /// The region that was active before completion was triggered
-    pre_completion_active_region: Option<crate::layout::LayoutId>,
+    pre_completion_active_region: Option<RegionId>,
     /// Navigation mode active (Ctrl+B pressed, waiting for next key)
     navigation_mode: bool,
 }
@@ -145,12 +138,7 @@ impl AppUI {
         completion_pane: Box<CompletionPane>,
     ) -> Self {
         let terminal = ratatui::init();
-
-        // IDs: 0=command_input, 1=primary_terminal, 2=completion, 3+=others
-        let command_input_pane_id = 0;
-        let primary_terminal_id = 1;
-        let completion_pane_id = 2;
-        let next_pane_id = 3;
+        let mut store = RegionPaneStore::new();
 
         // Create CommandInput
         let command_input = CommandInput::new(shell);
@@ -160,74 +148,75 @@ impl AppUI {
         let primary_terminal_rc = std::rc::Rc::new(std::cell::RefCell::new(*primary_terminal));
         let completion_pane_rc = std::rc::Rc::new(std::cell::RefCell::new(*completion_pane));
 
-        // Store all panes
-        let mut panes = HashMap::new();
-        panes.insert(
-            command_input_pane_id,
+        // Add panes to store
+        let command_input_pane_id = store.add_pane(
             Box::new(RcRefCellPaneWrapper::new(command_input_rc.clone())) as Box<dyn ContentPane>,
         );
-        panes.insert(
-            primary_terminal_id,
+        let primary_terminal_id = store.add_pane(
             Box::new(RcRefCellPaneWrapper::new(primary_terminal_rc.clone())) as Box<dyn ContentPane>,
         );
-        panes.insert(
-            completion_pane_id,
+        let completion_pane_id = store.add_pane(
             Box::new(RcRefCellPaneWrapper::new(completion_pane_rc.clone())) as Box<dyn ContentPane>,
+        );
+
+        // Create regions
+        let content_region_id = store.create_region(
+            vec![primary_terminal_id],  // Start with just terminal
+            true,   // splittable
+            true,   // closeable
+        );
+        let command_input_region_id = store.create_region(
+            vec![command_input_pane_id],
+            false,  // not splittable
+            false,  // not closeable
         );
 
         // Create VSplit layout: content region (80%) + command input region (20%)
         let layout = LayoutManager::new(
             crate::layout::LayoutNode::VSplit {
                 id: 0,  // Root split node
-                top: Box::new(crate::layout::LayoutNode::Tabs {
-                    id: 1,  // Content region
-                    panes: vec![primary_terminal_id],  // Start with just terminal
-                    selected: 0,
-                    splittable: true,
-                    closeable: true,
+                top: Box::new(crate::layout::LayoutNode::Region {
+                    id: 1,
+                    region_id: content_region_id,
                 }),
-                bottom: Box::new(crate::layout::LayoutNode::Tabs {
-                    id: 2,  // CommandInput region
-                    panes: vec![command_input_pane_id],
-                    selected: 0,
-                    splittable: false,  // Can't split command input
-                    closeable: false,   // Can't close command input
+                bottom: Box::new(crate::layout::LayoutNode::Region {
+                    id: 2,
+                    region_id: command_input_region_id,
                 }),
                 split_percent: 80,
-            }
+            },
+            content_region_id,  // Start with content region focused
         );
-
-        // Start with content region active (region id = 1)
-        let active_region_id = 1;
 
         Self {
             terminal,
             shell: shell.clone(),
-            panes,
-            next_pane_id,
+            store,
             primary_terminal: primary_terminal_rc,
             completion_pane: completion_pane_rc,
             command_input_handle: command_input_rc,
             primary_terminal_id,
             completion_pane_id,
             command_input_pane_id,
+            content_region_id,
+            command_input_region_id,
             layout,
-            active_region_id,
             pre_completion_active_region: None,
             navigation_mode: false,
         }
     }
 
-    /// Adds a content pane to the content region (region id=1).
+    /// Adds a content pane to the content region.
     ///
     /// Returns the `PaneId` assigned to the new pane.
     pub fn add_pane(&mut self, pane: Box<dyn ContentPane>) -> PaneId {
-        let pane_id = self.next_pane_id;
-        self.next_pane_id += 1;
-        self.panes.insert(pane_id, pane);
+        // Add pane to store
+        let pane_id = self.store.add_pane(pane);
 
-        // Add to content region (id=1), not command input region (id=2)
-        self.layout.add_pane_to_region(1, pane_id);
+        // Add to content region
+        if let Some(region) = self.store.get_region_mut(self.content_region_id) {
+            region.add_pane(pane_id);
+        }
 
         pane_id
     }
@@ -235,8 +224,8 @@ impl AppUI {
     /// Gets a pane by ID.
     #[allow(dead_code)]
     fn get_pane_mut(&mut self, pane_id: PaneId) -> Option<&mut dyn ContentPane> {
-        self.panes
-            .get_mut(&pane_id)
+        self.store
+            .get_pane_mut(pane_id)
             .map(|p| &mut **p as &mut dyn ContentPane)
     }
 
@@ -259,9 +248,10 @@ impl AppUI {
     /// Draws the UI with content panes and command input.
     #[allow(clippy::too_many_lines)]
     pub fn render(&mut self) -> Result<(), std::io::Error> {
-        let active_region_id = self.active_region_id;
+        let focused_region_id = self.layout.focused_region_id();
         let navigation_mode = self.navigation_mode;
         let command_input_pane_id = self.command_input_pane_id;
+        let command_input_region_id = self.command_input_region_id;
         let command_input_handle = self.command_input_handle.clone();
 
         // Check if we should show the completion pane instead of normal panes
@@ -269,7 +259,7 @@ impl AppUI {
 
         // Borrow fields separately to avoid capturing `self` in the closure
         let completion_pane = &self.completion_pane;
-        let panes = &mut self.panes;
+        let store = &mut self.store;
         let layout = &self.layout;
 
         self.terminal.draw(|f| {
@@ -293,12 +283,21 @@ impl AppUI {
                 // (completion pane renders its own borders internally)
                 completion_pane.borrow_mut().render(f, content_area);
             } else {
-                // Get all regions from layout tree
-                let regions = layout.render_layout(content_area);
+                // Get all regions with their rendering positions
+                let regions = layout.render(content_area);
 
-                // Render each region (which may contain multiple tabs)
-                for (region_id, pane_ids, selected_tab, rect) in regions {
-                    let is_focused_region = region_id == active_region_id;
+                // Render each region
+                for (region_id, rect) in regions {
+                    let is_focused_region = Some(region_id) == focused_region_id;
+
+                    // Get region info from store
+                    let region = match store.get_region(region_id) {
+                        Some(r) => r,
+                        None => continue,
+                    };
+                    
+                    let pane_ids = region.panes();
+                    let focused_pane_id = region.focused_pane();
 
                     // If region has multiple panes, render a tab bar
                     if pane_ids.len() > 1 {
@@ -313,7 +312,7 @@ impl AppUI {
 
                         // Build tab titles
                         let tab_titles: Vec<String> = pane_ids.iter().filter_map(|&pane_id| {
-                            panes.get(&pane_id).map(|p| p.name().to_string())
+                            store.get_pane(pane_id).map(|p| p.name().to_string())
                         }).collect();
 
                         // Gradient colors for tabs
@@ -328,7 +327,8 @@ impl AppUI {
 
                         let tabs = Tabs::new(tab_titles.iter().enumerate().map(|(i, t)| {
                             let (color, icon) = gradient_colors[i % gradient_colors.len()];
-                            let is_selected = i == selected_tab;
+                            let pane_id = pane_ids[i];
+                            let is_selected = pane_id == focused_pane_id;
 
                             // Build tab text with underlined first character for hotkey hint
                             let mut spans = vec![Span::raw(format!(" {icon}"))];
@@ -367,13 +367,13 @@ impl AppUI {
                         f.render_widget(tabs, region_chunks[0]);
 
                         // Render selected pane with border
-                        let selected_pane_id = pane_ids[selected_tab];
+                        let selected_index = pane_ids.iter().position(|&id| id == focused_pane_id).unwrap_or(0);
                         let border_color = if is_focused_region {
                             // Bright color when this region is active
-                            gradient_colors[selected_tab % gradient_colors.len()].0
+                            gradient_colors[selected_index % gradient_colors.len()].0
                         } else {
                             // Dimmer color when region is not active
-                            let (r, g, b) = match gradient_colors[selected_tab % gradient_colors.len()].0 {
+                            let (r, g, b) = match gradient_colors[selected_index % gradient_colors.len()].0 {
                                 Color::Rgb(r, g, b) => (r / 2, g / 2, b / 2),
                                 _ => (60, 60, 80),
                             };
@@ -381,7 +381,7 @@ impl AppUI {
                         };
 
                         // Get title from selected pane (shows running command for Terminal)
-                        let title = panes.get(&selected_pane_id)
+                        let title = store.get_pane(focused_pane_id)
                             .map_or_else(
                                 || "Pane".to_string(),
                                 |p| p.border_title().unwrap_or_else(|| p.name().to_string())
@@ -407,14 +407,14 @@ impl AppUI {
                         f.render_widget(block, region_chunks[1]);
 
                         // Track rect for cursor positioning
-                        pane_rects.insert(selected_pane_id, inner);
+                        pane_rects.insert(focused_pane_id, inner);
 
-                        if let Some(pane) = panes.get_mut(&selected_pane_id) {
+                        if let Some(pane) = store.get_pane_mut(focused_pane_id) {
                             pane.render(f, inner);
                         }
-                    } else if selected_tab < pane_ids.len() {
+                    } else {
                         // Single pane in region - render with border
-                        let pane_id = pane_ids[selected_tab];
+                        let pane_id = focused_pane_id;
 
                         let border_color = if is_focused_region {
                             Color::Rgb(139, 92, 246) // Bright purple when focused
@@ -422,7 +422,7 @@ impl AppUI {
                             Color::Rgb(69, 46, 123) // Dimmer purple when not focused
                         };
 
-                        let title = panes.get(&pane_id)
+                        let title = store.get_pane(pane_id)
                             .map_or_else(
                                 || "Pane".to_string(),
                                 |p| p.border_title().unwrap_or_else(|| p.name().to_string())
@@ -450,15 +450,15 @@ impl AppUI {
                         // Track rect for cursor positioning
                         pane_rects.insert(pane_id, inner);
 
-                        if let Some(pane) = panes.get_mut(&pane_id) {
+                        if let Some(pane) = store.get_pane_mut(pane_id) {
                             pane.render(f, inner);
                         }
                     }
                 }
             }
 
-            // Set cursor if CommandInput is active
-            if active_region_id == 2 && !navigation_mode {
+            // Set cursor if CommandInput region is active
+            if focused_region_id == Some(command_input_region_id) && !navigation_mode {
                 if let Some(&cmd_rect) = pane_rects.get(&command_input_pane_id) {
                     if let Some((cursor_x, cursor_y)) = command_input_handle.borrow_mut()
                         .render_with_cursor(f, cmd_rect)
@@ -471,7 +471,7 @@ impl AppUI {
             // Render navigation banner at bottom if in navigation mode
             if let Some(nav_rect) = nav_area {
                 // Get number of regions to conditionally show n/p
-                let num_regions = layout.get_all_regions().len();
+                let num_regions = layout.get_all_region_ids().len();
                 let region_nav = if num_regions > 1 {
                     ", n/p=region"
                 } else {
@@ -498,19 +498,20 @@ impl AppUI {
     }
 
     fn set_focus_to_command_input(&mut self) {
-        // Unfocus current pane
-        if let Some(pane_id) = self.layout.focused_pane() {
-            if let Some(pane) = self.panes.get_mut(&pane_id) {
-                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+        // Unfocus current pane in current region
+        if let Some(current_region_id) = self.layout.focused_region_id() {
+            if let Some(pane_id) = self.store.get_region_focused_pane(current_region_id) {
+                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                }
             }
         }
         
-        // Focus command input region (id = 2)
-        self.layout.set_focused_node(2);  // CommandInput region ID
-        self.active_region_id = 2;
+        // Focus command input region
+        self.layout.set_focused_region(self.command_input_region_id);
         
-        // Focus the pane
-        if let Some(pane) = self.panes.get_mut(&self.command_input_pane_id) {
+        // Focus the pane in that region
+        if let Some(pane) = self.store.get_pane_mut(self.command_input_pane_id) {
             let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
         }
     }
