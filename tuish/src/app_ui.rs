@@ -719,7 +719,7 @@ impl AppUI {
                     KeyCode::Char('t') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
                     }
-                    KeyCode::Char('y') if self.navigation_mode => {
+                    KeyCode::Char('h') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::History);
                     }
                     KeyCode::Char('a') if self.navigation_mode => {
