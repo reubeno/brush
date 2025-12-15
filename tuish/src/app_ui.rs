@@ -105,6 +105,8 @@ pub struct AppUI {
     pre_completion_active_region: Option<RegionId>,
     /// Navigation mode active (Ctrl+B pressed, waiting for next key)
     navigation_mode: bool,
+    /// Pane marked for moving (for mark-and-move workflow)
+    marked_pane_for_move: Option<PaneId>,
 }
 
 /// Result of handling a UI event.
@@ -199,6 +201,7 @@ impl AppUI {
             layout,
             pre_completion_active_region: None,
             navigation_mode: false,
+            marked_pane_for_move: None,
         };
 
         // Focus the command input pane initially
@@ -701,6 +704,7 @@ impl AppUI {
                         if self.navigation_mode {
                             // Exit navigation mode - refocus current pane
                             self.navigation_mode = false;
+                            self.marked_pane_for_move = None;
                             if let Some(region_id) = self.layout.focused_region_id() {
                                 if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
                                     if let Some(pane) = self.store.get_pane_mut(pane_id) {
@@ -746,6 +750,7 @@ impl AppUI {
                     // Action: Go to Input (exits mode - you're done navigating, time to type)
                     KeyCode::Char('i') if self.navigation_mode => {
                         self.navigation_mode = false;
+                        self.marked_pane_for_move = None;
                         self.set_focus_to_command_input();
                     }
                     
@@ -855,6 +860,7 @@ impl AppUI {
                     // Action: Split vertical (exits mode - new pane is ready to use)
                     KeyCode::Char('v') if self.navigation_mode => {
                         self.navigation_mode = false;
+                        self.marked_pane_for_move = None;
                         if let Some(focused_region_id) = self.layout.focused_region_id() {
                             // Check if this region can be split
                             let can_split = self.store.get_region(focused_region_id)
@@ -896,6 +902,7 @@ impl AppUI {
                     // Action: Split horizontal (exits mode - new pane is ready to use)
                     KeyCode::Char('s') if self.navigation_mode => {
                         self.navigation_mode = false;
+                        self.marked_pane_for_move = None;
                         if let Some(focused_region_id) = self.layout.focused_region_id() {
                             // Check if this region can be split
                             let can_split = self.store.get_region(focused_region_id)
@@ -934,15 +941,70 @@ impl AppUI {
                             }
                         }
                     }
+                    // Mark pane for moving (stays in mode)
+                    KeyCode::Char('m') if self.navigation_mode => {
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                self.marked_pane_for_move = Some(pane_id);
+                                // TODO: Visual indicator that pane is marked
+                            }
+                        }
+                    }
+                    
+                    // Move marked pane to current region (exits mode)
+                    KeyCode::Char('M') if self.navigation_mode => {
+                        self.navigation_mode = false;
+                        
+                        if let Some(marked_pane_id) = self.marked_pane_for_move.take() {
+                            if let Some(target_region_id) = self.layout.focused_region_id() {
+                                // Find which region currently contains the marked pane
+                                let source_region_id = self.layout.get_all_region_ids()
+                                    .into_iter()
+                                    .find(|&rid| {
+                                        self.store.get_region(rid)
+                                            .map_or(false, |r| r.panes().contains(&marked_pane_id))
+                                    });
+                                
+                                if let Some(source_rid) = source_region_id {
+                                    // Don't move to same region
+                                    if source_rid != target_region_id {
+                                        // Unfocus the pane before moving
+                                        if let Some(pane) = self.store.get_pane_mut(marked_pane_id) {
+                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                        }
+                                        
+                                        // Remove from source region
+                                        if let Some(source_region) = self.store.get_region_mut(source_rid) {
+                                            source_region.remove_pane(marked_pane_id);
+                                        }
+                                        
+                                        // Add to target region
+                                        if let Some(target_region) = self.store.get_region_mut(target_region_id) {
+                                            target_region.add_pane(marked_pane_id);
+                                            target_region.select_pane(marked_pane_id);
+                                        }
+                                        
+                                        // Focus the moved pane
+                                        if let Some(pane) = self.store.get_pane_mut(marked_pane_id) {
+                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
                     // Action: Close pane (exits mode - not yet implemented)
                     KeyCode::Char('x') if self.navigation_mode => {
                         self.navigation_mode = false;
+                        self.marked_pane_for_move = None;
                         // Close/unsplit not yet implemented
                     }
                     
                     // Exit navigation mode without action
                     KeyCode::Esc if self.navigation_mode => {
                         self.navigation_mode = false;
+                        self.marked_pane_for_move = None;
                         // Send Focused event to current pane in focused region
                         if let Some(region_id) = self.layout.focused_region_id() {
                             if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
