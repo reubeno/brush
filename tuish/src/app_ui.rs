@@ -604,9 +604,9 @@ impl AppUI {
                     KeyCode::Esc if completion_active => {
                         // Cancel completion
                         self.completion_pane.borrow_mut().clear();
-                        // Restore active region
+                        // Restore focus to the region that was active before completion
                         if let Some(prev_region) = self.pre_completion_active_region.take() {
-                            self.active_region_id = prev_region;
+                            self.layout.set_focused_region(prev_region);
                         }
                     }
                     KeyCode::Enter if completion_active => {
@@ -624,9 +624,9 @@ impl AppUI {
                             );
                         }
                         self.completion_pane.borrow_mut().clear();
-                        // Restore active region
+                        // Restore focus to the region that was active before completion
                         if let Some(prev_region) = self.pre_completion_active_region.take() {
-                            self.active_region_id = prev_region;
+                            self.layout.set_focused_region(prev_region);
                         }
                     }
                     // Tab/Shift-Tab for navigation when completion is active
@@ -694,10 +694,11 @@ impl AppUI {
                             && !self.navigation_mode =>
                     {
                         // Unfocus current pane when entering navigation mode
-                        if let Some(pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&pane_id) {
-                                let _ =
-                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
                             }
                         }
                         self.navigation_mode = true;
@@ -748,79 +749,97 @@ impl AppUI {
                     }
                     // Navigation mode: 'n' for next region
                     KeyCode::Char('n') if self.navigation_mode => {
-                        // Send Unfocused to current pane
-                        if let Some(old_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                        // Unfocus current pane in current region
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
                             }
                         }
 
+                        // Move to next region
                         self.layout.focus_next_region();
-                        self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
 
-                        // Send Focused to new pane
-                        if let Some(new_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                        // Focus the pane in new region
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
                             }
                         }
                     }
                     // Navigation mode: 'p' for previous region
                     KeyCode::Char('p') if self.navigation_mode => {
-                        // Send Unfocused to current pane
-                        if let Some(old_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                        // Unfocus current pane in current region
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
                             }
                         }
 
+                        // Move to previous region
                         self.layout.focus_prev_region();
-                        self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
 
-                        // Send Focused to new pane
-                        if let Some(new_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                        // Focus the pane in new region
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
                             }
                         }
                     }
-                    // Navigation mode: Tab to cycle tabs in current region (forward)
+                    // Navigation mode: Tab to cycle tabs/panes in current region (forward)
                     KeyCode::Tab
                         if self.navigation_mode && !key.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
-                        // Send Unfocused to current pane
-                        if let Some(old_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                let _ =
-                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                        // Cycle panes within the current region
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            // Unfocus current pane
+                            if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
                             }
-                        }
 
-                        self.layout.cycle_tabs_in_focused_region(true);
+                            // Cycle to next pane in region
+                            if let Some(region) = self.store.get_region_mut(region_id) {
+                                region.select_next_pane();
+                            }
 
-                        // Send Focused to new pane
-                        if let Some(new_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            // Focus new pane
+                            if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
                             }
                         }
                     }
-                    // Navigation mode: Shift+Tab to cycle tabs in current region (backward)
+                    // Navigation mode: Shift+Tab to cycle tabs/panes in current region (backward)
                     KeyCode::BackTab if self.navigation_mode => {
-                        // Send Unfocused to current pane
-                        if let Some(old_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                let _ =
-                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                        // Cycle panes within the current region
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            // Unfocus current pane
+                            if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
                             }
-                        }
 
-                        self.layout.cycle_tabs_in_focused_region(false);
+                            // Cycle to previous pane in region
+                            if let Some(region) = self.store.get_region_mut(region_id) {
+                                region.select_prev_pane();
+                            }
 
-                        // Send Focused to new pane
-                        if let Some(new_pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            // Focus new pane
+                            if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
                             }
                         }
                     }
@@ -833,71 +852,18 @@ impl AppUI {
                     }
                     // Navigation mode: 'v' for vertical split (side by side)
                     KeyCode::Char('v') if self.navigation_mode => {
-                        // Check if current region is splittable (not CommandInput region)
-                        // CommandInput region (id=2) has splittable=false
-                        if self.active_region_id != 2 {
-                            // Create a new Environment pane for the new region
-                            let new_pane_id = self.next_pane_id;
-                            self.next_pane_id += 1;
-                            self.panes.insert(
-                                new_pane_id,
-                                Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
-                            );
-
-                            // Split the focused region vertically
-                            if self.layout.split_vertical(new_pane_id) {
-                                // Update active region ID
-                                self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
-                                
-                                // Send Unfocused to old pane
-                                if let Some(old_pane_id) = self.layout.focused_pane() {
-                                    if old_pane_id != new_pane_id {
-                                        if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                        }
-                                    }
-                                }
-                                
-                                // Send Focused to new pane
-                                if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
+                        // TODO: Implement region splitting in new architecture
+                        // Splitting requires:
+                        // 1. Check if current region is splittable
+                        // 2. Create new region with new pane
+                        // 3. Modify layout tree to create HSplit/VSplit
+                        // 4. Update focus to new region
+                        // This needs careful design for the new architecture
                     }
                     // Navigation mode: 'h' for horizontal split (top and bottom)
                     KeyCode::Char('h') if self.navigation_mode => {
-                        // Check if current region is splittable (not CommandInput region)
-                        // CommandInput region (id=2) has splittable=false
-                        if self.active_region_id != 2 {
-                            // Create a new Environment pane for the new region
-                            let new_pane_id = self.next_pane_id;
-                            self.next_pane_id += 1;
-                            self.panes.insert(
-                                new_pane_id,
-                                Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
-                            );
-
-                            // Split the focused region horizontally
-                            if self.layout.split_horizontal(new_pane_id) {
-                                // Update active region ID
-                                self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
-                                
-                                // Send Unfocused to old pane
-                                if let Some(old_pane_id) = self.layout.focused_pane() {
-                                    if old_pane_id != new_pane_id {
-                                        if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                        }
-                                    }
-                                }
-                                
-                                // Send Focused to new pane
-                                if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
+                        // TODO: Implement region splitting in new architecture
+                        // (same as above)
                     }
                     // Navigation mode: 'x' for close - not yet implemented
                     KeyCode::Char('x') if self.navigation_mode => {
@@ -970,22 +936,24 @@ impl AppUI {
                     KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         return Ok(UIEventResult::RequestExit);
                     }
-                    // Route all other keys to active pane
+                    // Route all other keys to focused pane in focused region
                     _ => {
-                        if let Some(pane_id) = self.layout.focused_pane() {
-                            if let Some(pane) = self.panes.get_mut(&pane_id) {
-                                use crate::content_pane::{PaneEvent, PaneEventResult};
-                                let result =
-                                    pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
-                                match result {
-                                    PaneEventResult::Handled => {}
-                                    PaneEventResult::NotHandled => {}
-                                    PaneEventResult::RequestClose => {}
-                                    PaneEventResult::RequestExecute(cmd) => {
-                                        return Ok(UIEventResult::ExecuteCommand(cmd));
-                                    }
-                                    PaneEventResult::RequestCompletion => {
-                                        return Ok(UIEventResult::RequestCompletion);
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    use crate::content_pane::{PaneEvent, PaneEventResult};
+                                    let result =
+                                        pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
+                                    match result {
+                                        PaneEventResult::Handled => {}
+                                        PaneEventResult::NotHandled => {}
+                                        PaneEventResult::RequestClose => {}
+                                        PaneEventResult::RequestExecute(cmd) => {
+                                            return Ok(UIEventResult::ExecuteCommand(cmd));
+                                        }
+                                        PaneEventResult::RequestCompletion => {
+                                            return Ok(UIEventResult::RequestCompletion);
+                                        }
                                     }
                                 }
                             }
