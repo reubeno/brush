@@ -328,4 +328,72 @@ impl LayoutManager {
             _ => false,
         }
     }
+
+    /// Removes a region from the layout by collapsing its parent split.
+    ///
+    /// When a region becomes empty, we need to remove it and replace its parent
+    /// split with the sibling node. Returns true if the region was found and removed.
+    pub fn remove_region(&mut self, region_id: RegionId) -> bool {
+        let removed = Self::remove_region_recursive(&mut self.root, region_id);
+        // If we removed the focused region, update focus
+        if removed && self.focused_region_id == Some(region_id) {
+            self.focus_next_region();
+        }
+        removed
+    }
+
+    fn remove_region_recursive(node: &mut LayoutNode, target_region_id: RegionId) -> bool {
+        match node {
+            LayoutNode::Region { region_id: _, .. } => {
+                // Can't remove the root region node directly
+                false
+            }
+            LayoutNode::HSplit { left, right, .. } => {
+                // Check if left child is the target region
+                if let LayoutNode::Region { region_id, .. } = **left {
+                    if region_id == target_region_id {
+                        // Replace this split with the right child
+                        *node = (**right).clone();
+                        return true;
+                    }
+                }
+                
+                // Check if right child is the target region
+                if let LayoutNode::Region { region_id, .. } = **right {
+                    if region_id == target_region_id {
+                        // Replace this split with the left child
+                        *node = (**left).clone();
+                        return true;
+                    }
+                }
+                
+                // Recurse into children
+                Self::remove_region_recursive(left, target_region_id)
+                    || Self::remove_region_recursive(right, target_region_id)
+            }
+            LayoutNode::VSplit { top, bottom, .. } => {
+                // Check if top child is the target region
+                if let LayoutNode::Region { region_id, .. } = **top {
+                    if region_id == target_region_id {
+                        // Replace this split with the bottom child
+                        *node = (**bottom).clone();
+                        return true;
+                    }
+                }
+                
+                // Check if bottom child is the target region
+                if let LayoutNode::Region { region_id, .. } = **bottom {
+                    if region_id == target_region_id {
+                        // Replace this split with the top child
+                        *node = (**top).clone();
+                        return true;
+                    }
+                }
+                
+                // Recurse into children
+                Self::remove_region_recursive(top, target_region_id)
+                    || Self::remove_region_recursive(bottom, target_region_id)
+            }
+        }
+    }
 }
