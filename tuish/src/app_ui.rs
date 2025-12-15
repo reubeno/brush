@@ -73,16 +73,7 @@ impl<T: ContentPane + 'static> ContentPane for RcRefCellPaneWrapper<T> {
     }
 }
 
-/// Which area currently has focus
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FocusedArea {
-    /// A content region is focused
-    ContentArea,
-    /// Command input area is focused
-    CommandInput,
-    /// Navigation banner is active (defocuses everything else)
-    NavigationBanner,
-}
+// FocusedArea enum removed - now using active_region_id for unified focus model
 
 /// Ratatui-based TUI that displays content panes in tabs
 /// and accepts command input in a bottom pane.
@@ -91,9 +82,6 @@ pub struct AppUI {
     terminal: DefaultTerminal,
     /// The shell instance
     shell: Arc<Mutex<brush_core::Shell>>,
-
-    /// PTY handle for dynamic resizing
-    pty_handle: std::sync::Arc<crate::pty::Pty>,
 
     /// Unified pane storage - ALL panes stored here
     panes: HashMap<PaneId, Box<dyn ContentPane>>,
@@ -114,19 +102,18 @@ pub struct AppUI {
 
     /// Layout manager for flexible pane arrangements
     layout: LayoutManager,
-    /// ID of currently focused region in layout tree
-    focused_region_id: crate::layout::LayoutId,
+    /// ID of currently active region in layout tree (unified focus model)
+    active_region_id: crate::layout::LayoutId,
 
-    /// Command input widget
-    command_input: CommandInput,
-    /// Which area currently has focus
-    focused_area: FocusedArea,
-    /// The area that was focused before completion was triggered
-    pre_completion_focus: Option<FocusedArea>,
+    /// Direct handle to CommandInput pane for cursor positioning
+    command_input_handle: std::rc::Rc<std::cell::RefCell<CommandInput>>,
+    /// ID of CommandInput pane
+    command_input_pane_id: PaneId,
+
+    /// The region that was active before completion was triggered
+    pre_completion_active_region: Option<crate::layout::LayoutId>,
     /// Navigation mode active (Ctrl+B pressed, waiting for next key)
     navigation_mode: bool,
-    /// Whether command input should be minimized (command running)
-    minimize_command_input: bool,
 }
 
 /// Result of handling a UI event.
@@ -151,13 +138,11 @@ impl AppUI {
     /// * `shell` - The shell to run the UI for
     /// * `primary_terminal` - The primary terminal pane
     /// * `completion_pane` - The completion pane
-    /// * `pty` - The PTY handle for dynamic resizing
     #[allow(clippy::boxed_local)]
     pub fn new(
         shell: &Arc<Mutex<brush_core::Shell>>,
         primary_terminal: Box<TerminalPane>,
         completion_pane: Box<CompletionPane>,
-        pty: std::sync::Arc<crate::pty::Pty>,
     ) -> Self {
         // Initialize the ratatui terminal in raw mode
         let terminal = ratatui::init();
@@ -190,7 +175,6 @@ impl AppUI {
         Self {
             terminal,
             shell: shell.clone(),
-            pty_handle: pty,
             panes,
             next_pane_id,
             primary_terminal: primary_terminal_rc,
@@ -266,7 +250,6 @@ impl AppUI {
         let command_input = &mut self.command_input;
         let navigation_mode = self.navigation_mode;
         let minimize_command_input = self.minimize_command_input;
-        let pty_handle = &self.pty_handle;
         let layout = &self.layout;
         let focused_region_id = self.focused_region_id;
         let content_area_focused = matches!(focused_area, FocusedArea::ContentArea);
@@ -304,24 +287,13 @@ impl AppUI {
                 .constraints(main_constraints)
                 .split(f.area());
 
-            // Calculate PTY size from content area.
-            // We need to account for:
-            // - Tab bar height (1 line when multiple tabs exist)
-            // - Border (2 lines + 2 cols)
-            // The actual calculation happens after we know region structure below.
-            // For now, use a conservative estimate.
-            let content_height = chunks[0].height.saturating_sub(3); // -1 for tabs, -2 for borders
-            let content_width = chunks[0].width.saturating_sub(2);   // -2 for borders
-
-            // Resize PTY if dimensions changed
-            let _ = pty_handle.resize(content_height, content_width);
-
             // Content area will be split by layout manager
             let content_inner = chunks[0];
 
             // Render the content area using new region-based layout
             if show_completion {
                 // Special case: show completion pane fullscreen
+                // (completion pane renders its own borders internally)
                 completion_pane.borrow_mut().render(f, content_inner);
             } else {
                 // Get all regions from layout tree
@@ -492,7 +464,7 @@ impl AppUI {
             }
 
             // Render command input (always visible, but might be minimized)
-            if let Some((cursor_x, cursor_y)) = command_input.render(f, chunks[1]) {
+            if let Some((cursor_x, cursor_y)) = command_input.render_with_cursor(f, chunks[1]) {
                 // Only set cursor if not in navigation mode
                 if !navigation_mode {
                     f.set_cursor_position((cursor_x, cursor_y));
@@ -501,16 +473,27 @@ impl AppUI {
 
             // Render navigation banner at bottom if in navigation mode
             if navigation_mode {
-                let nav_indicator = Paragraph::new(
-                    " ⚡ NAV: Ctrl+E/H/A/F/C/T=panes, 0=input, n/p=region, Tab=tab, v/h=split, x=close, Esc=exit "
-                )
-                .style(
-                    Style::default()
-                        .bg(Color::Rgb(250, 204, 21)) // Bright yellow
-                        .fg(Color::Rgb(0, 0, 0))      // Black text
-                        .add_modifier(Modifier::BOLD)
-                )
-                .alignment(Alignment::Center);
+                // Get number of regions to conditionally show n/p
+                let num_regions = layout.get_all_regions().len();
+                let region_nav = if num_regions > 1 {
+                    ", n/p=region"
+                } else {
+                    ""
+                };
+                
+                let nav_text = format!(
+                    " ⚡ NAV: Ctrl+E/H/A/F/C/T=panes, i=input, Tab=cycle{}, v/h=split, Ctrl+Space=toggle, Esc=exit ",
+                    region_nav
+                );
+                
+                let nav_indicator = Paragraph::new(nav_text)
+                    .style(
+                        Style::default()
+                            .bg(Color::Rgb(250, 204, 21)) // Bright yellow
+                            .fg(Color::Rgb(0, 0, 0))      // Black text
+                            .add_modifier(Modifier::BOLD)
+                    )
+                    .alignment(Alignment::Center);
                 f.render_widget(nav_indicator, chunks[2]);
             }
         })?;
@@ -746,21 +729,33 @@ impl AppUI {
                     {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
                     }
-                    KeyCode::Char('0') if self.navigation_mode => {
-                        self.set_focus_to_command_input();
+                    // Navigation mode: 'i' for command input (like vim insert mode)
+                    KeyCode::Char('i') if self.navigation_mode => {
+                        // Exit navigation mode and focus command input directly
+                        self.navigation_mode = false;
+                        self.focused_area = FocusedArea::CommandInput;
+                        
+                        // Send Unfocused to current pane
+                        if let Some(pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
                     }
-                    // Navigation mode: n for next region, p for previous region
+                    // Navigation mode: 'n' for next region
                     KeyCode::Char('n') if self.navigation_mode => {
                         // Send Unfocused to current pane
                         if let Some(old_pane_id) = self.layout.focused_pane() {
                             if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                let _ =
-                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
                             }
                         }
 
                         self.layout.focus_next_region();
                         self.focused_region_id = self.layout.focused_node_id().unwrap_or(0);
+                        
+                        // Ensure we're in ContentArea focus mode
+                        self.focused_area = FocusedArea::ContentArea;
 
                         // Send Focused to new pane
                         if let Some(new_pane_id) = self.layout.focused_pane() {
@@ -769,17 +764,20 @@ impl AppUI {
                             }
                         }
                     }
+                    // Navigation mode: 'p' for previous region
                     KeyCode::Char('p') if self.navigation_mode => {
                         // Send Unfocused to current pane
                         if let Some(old_pane_id) = self.layout.focused_pane() {
                             if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                let _ =
-                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
                             }
                         }
 
                         self.layout.focus_prev_region();
                         self.focused_region_id = self.layout.focused_node_id().unwrap_or(0);
+                        
+                        // Ensure we're in ContentArea focus mode
+                        self.focused_area = FocusedArea::ContentArea;
 
                         // Send Focused to new pane
                         if let Some(new_pane_id) = self.layout.focused_pane() {
@@ -788,8 +786,10 @@ impl AppUI {
                             }
                         }
                     }
-                    // Navigation mode: Tab to cycle tabs in current region
-                    KeyCode::Tab if self.navigation_mode => {
+                    // Navigation mode: Tab to cycle tabs in current region (forward)
+                    KeyCode::Tab
+                        if self.navigation_mode && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                    {
                         // Send Unfocused to current pane
                         if let Some(old_pane_id) = self.layout.focused_pane() {
                             if let Some(pane) = self.panes.get_mut(&old_pane_id) {
@@ -807,20 +807,116 @@ impl AppUI {
                             }
                         }
                     }
-                    // Navigation mode: Vertical split (side by side)
+                    // Navigation mode: Shift+Tab to cycle tabs in current region (backward)
+                    KeyCode::BackTab if self.navigation_mode => {
+                        // Send Unfocused to current pane
+                        if let Some(old_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        self.layout.cycle_tabs_in_focused_region(false);
+
+                        // Send Focused to new pane
+                        if let Some(new_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                    // Navigation mode: Ctrl+Space toggles between content area and command input
+                    KeyCode::Char(' ')
+                        if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        self.navigation_mode = false;
+                        
+                        // Toggle between ContentArea and CommandInput
+                        match self.focused_area {
+                            FocusedArea::NavigationBanner | FocusedArea::ContentArea => {
+                                // Switch to command input
+                                if let Some(pane_id) = self.layout.focused_pane() {
+                                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                    }
+                                }
+                                self.focused_area = FocusedArea::CommandInput;
+                            }
+                            FocusedArea::CommandInput => {
+                                // Switch to content area
+                                self.focused_area = FocusedArea::ContentArea;
+                                if let Some(pane_id) = self.layout.focused_pane() {
+                                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Navigation mode: 'v' for vertical split (side by side)
                     KeyCode::Char('v') if self.navigation_mode => {
-                        // TODO: Create new pane and split
-                        // For now, just ignore
+                        // Create a new Environment pane for the new region
+                        let new_pane_id = self.next_pane_id;
+                        self.next_pane_id += 1;
+                        self.panes.insert(
+                            new_pane_id,
+                            Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
+                        );
+
+                        // Split the focused region vertically
+                        if self.layout.split_vertical(new_pane_id) {
+                            // Update focused region ID
+                            self.focused_region_id = self.layout.focused_node_id().unwrap_or(0);
+                            
+                            // Send Unfocused to old pane
+                            if let Some(old_pane_id) = self.layout.focused_pane() {
+                                if old_pane_id != new_pane_id {
+                                    if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                    }
+                                }
+                            }
+                            
+                            // Send Focused to new pane
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
                     }
-                    // Navigation mode: Horizontal split (top and bottom)
+                    // Navigation mode: 'h' for horizontal split (top and bottom)
                     KeyCode::Char('h') if self.navigation_mode => {
-                        // TODO: Create new pane and split
-                        // For now, just ignore
+                        // Create a new Environment pane for the new region
+                        let new_pane_id = self.next_pane_id;
+                        self.next_pane_id += 1;
+                        self.panes.insert(
+                            new_pane_id,
+                            Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
+                        );
+
+                        // Split the focused region horizontally
+                        if self.layout.split_horizontal(new_pane_id) {
+                            // Update focused region ID
+                            self.focused_region_id = self.layout.focused_node_id().unwrap_or(0);
+                            
+                            // Send Unfocused to old pane
+                            if let Some(old_pane_id) = self.layout.focused_pane() {
+                                if old_pane_id != new_pane_id {
+                                    if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                    }
+                                }
+                            }
+                            
+                            // Send Focused to new pane
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
                     }
-                    // Navigation mode: Close focused pane (unsplit)
+                    // Navigation mode: 'x' for close - not yet implemented
                     KeyCode::Char('x') if self.navigation_mode => {
-                        // TODO: Implement close/unsplit functionality
-                        // For now, just ignore
+                        // Close/unsplit not yet implemented - silently ignore
                     }
                     // Navigation mode: Esc to exit (only way out)
                     KeyCode::Esc if self.navigation_mode => {
@@ -916,6 +1012,12 @@ impl AppUI {
                                     PaneEventResult::Handled => {}
                                     PaneEventResult::NotHandled => {}
                                     PaneEventResult::RequestClose => {}
+                                    PaneEventResult::RequestExecute(_) => {
+                                        // Will be handled by CommandInput pane
+                                    }
+                                    PaneEventResult::RequestCompletion => {
+                                        // Will be handled by CommandInput pane
+                                    }
                                 }
                             }
                         }

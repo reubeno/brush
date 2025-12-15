@@ -20,6 +20,10 @@ pub enum LayoutNode {
         id: LayoutId,
         panes: Vec<PaneId>,
         selected: usize,
+        /// Whether this region can be split
+        splittable: bool,
+        /// Whether this region can be closed
+        closeable: bool,
     },
     /// Horizontal split (left | right)
     HSplit {
@@ -54,7 +58,11 @@ impl LayoutNode {
     pub fn visible_panes(&self) -> Vec<PaneId> {
         match self {
             Self::Tabs {
-                panes, selected, ..
+                panes,
+                selected,
+                splittable: _,
+                closeable: _,
+                ..
             } => {
                 if *selected < panes.len() {
                     vec![panes[*selected]]
@@ -101,6 +109,8 @@ impl LayoutNode {
                 id,
                 panes,
                 selected,
+                splittable: _,
+                closeable: _,
             } => {
                 if *selected < panes.len() {
                     Some((*id, panes[*selected]))
@@ -115,7 +125,7 @@ impl LayoutNode {
 
     /// Renders this layout node into the given area, returning rectangles for each region.
     ///
-    /// Returns a vector of (LayoutId, Vec<PaneId>, usize, Rect) tuples representing regions.
+    /// Returns a vector of `(LayoutId, Vec<PaneId>, usize, Rect)` tuples representing regions.
     /// Each tuple contains: region ID, all panes in region, selected tab index, and rectangle.
     pub fn render_layout(&self, area: Rect) -> Vec<(LayoutId, Vec<PaneId>, usize, Rect)> {
         match self {
@@ -123,6 +133,8 @@ impl LayoutNode {
                 id,
                 panes,
                 selected,
+                splittable: _,
+                closeable: _,
             } => {
                 vec![(*id, panes.clone(), *selected, area)]
             }
@@ -234,6 +246,8 @@ impl LayoutManager {
             id: 0,
             panes,
             selected,
+            splittable: true,
+            closeable: true,
         };
         Self::new(root)
     }
@@ -265,8 +279,9 @@ impl LayoutManager {
 
     /// Splits the focused region vertically (side by side).
     ///
-    /// Replaces the focused region with an HSplit containing the original on the left
-    /// and a new tab group with the given pane on the right.
+    /// Splits OUT the currently selected pane from the focused region:
+    /// - If the region has only 1 pane, creates a new pane (given as parameter)
+    /// - If the region has multiple panes, the selected pane moves to new region on right
     pub fn split_vertical(&mut self, new_pane_id: PaneId) -> bool {
         let Some(focused_id) = self.focused_node_id else {
             return false;
@@ -280,6 +295,24 @@ impl LayoutManager {
             return false;
         };
 
+        // Extract the pane to split out (or use new_pane_id if only one pane)
+        let split_out_pane = if let LayoutNode::Tabs { panes, selected, .. } = node {
+            if panes.len() > 1 {
+                // Multiple panes: remove and split out the selected one
+                let pane_id = panes.remove(*selected);
+                // Adjust selected index if needed
+                if *selected >= panes.len() && !panes.is_empty() {
+                    *selected = panes.len() - 1;
+                }
+                pane_id
+            } else {
+                // Single pane: use the new pane ID (create new pane)
+                new_pane_id
+            }
+        } else {
+            return false;
+        };
+
         // Take ownership of the current node
         let old_node = std::mem::replace(
             node,
@@ -287,6 +320,8 @@ impl LayoutManager {
                 id: 0,
                 panes: vec![],
                 selected: 0,
+                splittable: true,
+                closeable: true,
             },
         );
 
@@ -296,21 +331,24 @@ impl LayoutManager {
             left: Box::new(old_node),
             right: Box::new(LayoutNode::Tabs {
                 id: new_region_id,
-                panes: vec![new_pane_id],
+                panes: vec![split_out_pane],
                 selected: 0,
+                splittable: true,
+                closeable: true,
             }),
             split_percent: 50,
         };
 
-        // Focus the new region
+        // Focus the new region (with the split-out pane)
         self.focused_node_id = Some(new_region_id);
         true
     }
 
     /// Splits the focused region horizontally (top and bottom).
     ///
-    /// Replaces the focused region with a VSplit containing the original on top
-    /// and a new tab group with the given pane on bottom.
+    /// Splits OUT the currently selected pane from the focused region:
+    /// - If the region has only 1 pane, creates a new pane (given as parameter)
+    /// - If the region has multiple panes, the selected pane moves to new region on bottom
     pub fn split_horizontal(&mut self, new_pane_id: PaneId) -> bool {
         let Some(focused_id) = self.focused_node_id else {
             return false;
@@ -324,6 +362,24 @@ impl LayoutManager {
             return false;
         };
 
+        // Extract the pane to split out (or use new_pane_id if only one pane)
+        let split_out_pane = if let LayoutNode::Tabs { panes, selected, .. } = node {
+            if panes.len() > 1 {
+                // Multiple panes: remove and split out the selected one
+                let pane_id = panes.remove(*selected);
+                // Adjust selected index if needed
+                if *selected >= panes.len() && !panes.is_empty() {
+                    *selected = panes.len() - 1;
+                }
+                pane_id
+            } else {
+                // Single pane: use the new pane ID (create new pane)
+                new_pane_id
+            }
+        } else {
+            return false;
+        };
+
         // Take ownership of the current node
         let old_node = std::mem::replace(
             node,
@@ -331,6 +387,8 @@ impl LayoutManager {
                 id: 0,
                 panes: vec![],
                 selected: 0,
+                splittable: true,
+                closeable: true,
             },
         );
 
@@ -340,13 +398,15 @@ impl LayoutManager {
             top: Box::new(old_node),
             bottom: Box::new(LayoutNode::Tabs {
                 id: new_region_id,
-                panes: vec![new_pane_id],
+                panes: vec![split_out_pane],
                 selected: 0,
+                splittable: true,
+                closeable: true,
             }),
             split_percent: 50,
         };
 
-        // Focus the new region
+        // Focus the new region (with the split-out pane)
         self.focused_node_id = Some(new_region_id);
         true
     }
@@ -454,7 +514,7 @@ impl LayoutManager {
         };
 
         if let LayoutNode::Tabs {
-            panes, selected, ..
+            panes, selected, splittable: _, closeable: _, ..
         } = node
         {
             if panes.is_empty() {
@@ -483,6 +543,8 @@ impl LayoutManager {
                     id,
                     panes,
                     selected: _,
+                    splittable: _,
+                    closeable: _,
                 } => panes
                     .iter()
                     .position(|&p| p == pane_id)

@@ -30,6 +30,10 @@ pub enum PaneEventResult {
     NotHandled,
     /// Request to close this pane
     RequestClose,
+    /// Request to execute a command
+    RequestExecute(String),
+    /// Request to trigger completion
+    RequestCompletion,
 }
 
 /// Kinds of content panes available in tuish.
@@ -46,6 +50,8 @@ pub enum PaneKind {
     Functions,
     /// A call stack pane
     CallStack,
+    /// The command input pane
+    CommandInput,
 }
 
 /// A content pane that can be displayed in a tab.
