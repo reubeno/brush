@@ -519,67 +519,73 @@ impl AppUI {
     /// Cycles focus to the next region, skipping regions where all panes are disabled.
     fn focus_next_region(&mut self) {
         // Unfocus current pane in current region
-        if let Some(old_pane_id) = self.layout.focused_pane() {
-            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+        if let Some(current_region_id) = self.layout.focused_region_id() {
+            if let Some(pane_id) = self.store.get_region_focused_pane(current_region_id) {
+                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                }
             }
         }
 
         // Cycle through regions to find one with an enabled pane
-        let regions = self.layout.get_all_regions();
-        let start_region = self.active_region_id;
+        let regions = self.layout.get_all_region_ids();
+        let start_region = self.layout.focused_region_id();
         
         for _ in 0..regions.len() {
             self.layout.focus_next_region();
-            let new_region_id = self.layout.focused_node_id().unwrap_or(self.active_region_id);
-            self.active_region_id = new_region_id;
             
-            // Check if this region's selected pane is enabled
-            if let Some(pane_id) = self.layout.focused_pane() {
-                if let Some(pane) = self.panes.get(&pane_id) {
-                    if pane.is_enabled() {
-                        // Send Focused event to the pane in this region
-                        if let Some(pane_mut) = self.panes.get_mut(&pane_id) {
-                            let _ = pane_mut.handle_event(crate::content_pane::PaneEvent::Focused);
+            // Check if this region is focusable
+            if let Some(new_region_id) = self.layout.focused_region_id() {
+                if self.store.is_region_focusable(new_region_id) {
+                    // Focus the pane in this region
+                    if let Some(pane_id) = self.store.get_region_focused_pane(new_region_id) {
+                        if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
                         }
-                        return;
                     }
+                    return;
                 }
             }
         }
         
         // All regions have disabled panes - restore original
-        self.active_region_id = start_region;
+        if let Some(start) = start_region {
+            self.layout.set_focused_region(start);
+        }
     }
 
     /// Focuses the first pane of the given kind, switching regions if necessary.
     fn focus_pane_by_kind(&mut self, kind: &crate::content_pane::PaneKind) {
-        // Send Unfocused to currently focused pane
-        let old_pane_id = self.layout.focused_pane();
+        // Unfocus current pane
+        if let Some(current_region_id) = self.layout.focused_region_id() {
+            if let Some(old_pane_id) = self.store.get_region_focused_pane(current_region_id) {
+                if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
+                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                }
+            }
+        }
 
         // Find the first pane matching this kind
-        for (&pane_id, pane) in &self.panes {
-            if std::mem::discriminant(&pane.kind()) == std::mem::discriminant(kind) {
-                // Found a matching pane! Try to focus it
-                if self.layout.focus_pane(pane_id) {
-                    // Send Unfocused to old pane if it changed
-                    if let Some(old_id) = old_pane_id {
-                        if old_id != pane_id {
-                            if let Some(old_pane) = self.panes.get_mut(&old_id) {
-                                let _ = old_pane
-                                    .handle_event(crate::content_pane::PaneEvent::Unfocused);
+        for pane_id in self.store.pane_ids() {
+            if let Some(pane) = self.store.get_pane(pane_id) {
+                if std::mem::discriminant(&pane.kind()) == std::mem::discriminant(kind) {
+                    // Found a matching pane! Find which region contains it and focus that region
+                    for region_id in self.layout.get_all_region_ids() {
+                        if let Some(region) = self.store.get_region_mut(region_id) {
+                            if region.panes().contains(&pane_id) {
+                                // Set this pane as focused in the region
+                                // (We'd need to add a method to Region to set focused pane)
+                                // For now, just focus the region and it will use its current selection
+                                self.layout.set_focused_region(region_id);
+                                
+                                // Focus the pane
+                                if let Some(pane_mut) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane_mut.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
+                                return;
                             }
                         }
                     }
-
-                    // Send Focused to new pane
-                    if let Some(new_pane) = self.panes.get_mut(&pane_id) {
-                        let _ = new_pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                    }
-
-                    // Update our tracked active region
-                    self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
-                    return;
                 }
             }
         }
