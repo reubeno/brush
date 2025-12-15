@@ -19,20 +19,29 @@ const MAX_COMMAND_DISPLAY_LENGTH: usize = 40;
 pub struct TerminalPane {
     parser: Arc<RwLock<vt100::Parser>>,
     pty_writer: Sender<Bytes>,
+    pty_handle: std::sync::Arc<crate::pty::Pty>,
     /// The currently running command, if any.
     running_command: Option<String>,
     /// Whether the terminal pane is currently focused.
     is_focused: bool,
+    /// Last known dimensions (rows, cols) of the rendered area
+    last_dimensions: (u16, u16),
 }
 
 impl TerminalPane {
     /// Create a new terminal pane with the given PTY resources.
-    pub const fn new(parser: Arc<RwLock<vt100::Parser>>, pty_writer: Sender<Bytes>) -> Self {
+    pub fn new(
+        parser: Arc<RwLock<vt100::Parser>>,
+        pty_writer: Sender<Bytes>,
+        pty_handle: std::sync::Arc<crate::pty::Pty>,
+    ) -> Self {
         Self {
             parser,
             pty_writer,
+            pty_handle,
             running_command: None,
             is_focused: false,
+            last_dimensions: (0, 0),
         }
     }
 
@@ -81,6 +90,16 @@ impl ContentPane for TerminalPane {
         let bg =
             ratatui::widgets::Block::default().style(Style::default().bg(Color::Rgb(18, 18, 26)));
         frame.render_widget(bg, area);
+
+        // Resize parser and PTY if area dimensions changed
+        let new_dimensions = (area.height, area.width);
+        if new_dimensions != self.last_dimensions && area.height > 0 && area.width > 0 {
+            // Resize both parser and PTY to match the actual rendered area
+            if let Err(e) = self.pty_handle.resize(area.height, area.width) {
+                tracing::warn!("Failed to resize PTY: {}", e);
+            }
+            self.last_dimensions = new_dimensions;
+        }
 
         let screen = {
             let parser = self.parser.read().unwrap();

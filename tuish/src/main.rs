@@ -80,11 +80,11 @@ async fn main() -> Result<()> {
     shell.lock().await.replace_open_files(fds.into_iter());
 
     // Create special panes (terminal and completion)
-    let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer()));
+    let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer(), Arc::clone(&pty)));
     let completion_pane = Box::new(CompletionPane::new(&shell));
 
     // Create the UI with special panes
-    let mut ui = AppUI::new(&shell, terminal_pane, completion_pane, Arc::clone(&pty));
+    let mut ui = AppUI::new(&shell, terminal_pane, completion_pane);
 
     // Add general content panes (roles no longer needed - IDs auto-assigned)
     ui.add_pane(Box::new(EnvironmentPane::new(&shell)));

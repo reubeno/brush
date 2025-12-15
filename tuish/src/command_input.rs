@@ -251,7 +251,7 @@ impl CommandInput {
     ///
     /// # Returns
     /// The cursor position (x, y) if focused, otherwise `None`
-    pub fn render(&self, frame: &mut Frame<'_>, area: Rect) -> Option<(u16, u16)> {
+    pub fn render_with_cursor(&self, frame: &mut Frame<'_>, area: Rect) -> Option<(u16, u16)> {
         let (title, border_style, bg_color) = if !self.enabled {
             (
                 self.disabled_title,
@@ -387,5 +387,49 @@ impl CommandInput {
                 .fg(Color::Rgb(200, 200, 220))
                 .add_modifier(Modifier::BOLD),
         }
+    }
+}
+
+impl crate::content_pane::ContentPane for CommandInput {
+    fn name(&self) -> &'static str {
+        "Command Input"
+    }
+
+    fn kind(&self) -> crate::content_pane::PaneKind {
+        crate::content_pane::PaneKind::CommandInput
+    }
+
+    fn render(&mut self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
+        // CommandInput has its own render_with_cursor implementation
+        // This trait implementation ignores the cursor position
+        let _ = self.render_with_cursor(frame, area);
+    }
+
+    fn handle_event(&mut self, event: crate::content_pane::PaneEvent) -> crate::content_pane::PaneEventResult {
+        use crate::content_pane::{PaneEvent, PaneEventResult};
+        
+        match event {
+            PaneEvent::Focused => {
+                self.set_focused(true);
+                PaneEventResult::Handled
+            }
+            PaneEvent::Unfocused => {
+                self.set_focused(false);
+                PaneEventResult::Handled
+            }
+            PaneEvent::KeyPress(code, modifiers) => {
+                match self.handle_key(code, modifiers) {
+                    CommandKeyResult::NoAction => PaneEventResult::Handled,
+                    CommandKeyResult::RequestExit => PaneEventResult::Handled, // Will be handled by AppUI
+                    CommandKeyResult::CommandEntered(cmd) => PaneEventResult::RequestExecute(cmd),
+                    CommandKeyResult::RequestCompletion => PaneEventResult::RequestCompletion,
+                }
+            }
+            PaneEvent::Resized { .. } => PaneEventResult::Handled,
+        }
+    }
+
+    fn border_title(&self) -> Option<String> {
+        None // CommandInput renders its own title as part of its border
     }
 }

@@ -75,7 +75,8 @@ impl Pty {
         }
 
         // Set up the VT100 parser with same dimensions as PTY
-        let parser = Arc::new(RwLock::new(vt100::Parser::new(rows, cols, 0)));
+        // Use 10000 lines of scrollback to preserve command output
+        let parser = Arc::new(RwLock::new(vt100::Parser::new(rows, cols, 10000)));
 
         // Spawn a thread to read from PTY master and update the parser
         {
