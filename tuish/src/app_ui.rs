@@ -515,27 +515,29 @@ impl AppUI {
         }
     }
 
-    fn set_focus_to_next_pane_or_area(&mut self) {
-        // Unfocus current pane
+    /// Cycles focus to the next region, skipping regions where all panes are disabled.
+    fn focus_next_region(&mut self) {
+        // Unfocus current pane in current region
         if let Some(old_pane_id) = self.layout.focused_pane() {
             if let Some(pane) = self.panes.get_mut(&old_pane_id) {
                 let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
             }
         }
 
-        // Try to find the next enabled region
+        // Cycle through regions to find one with an enabled pane
         let regions = self.layout.get_all_regions();
         let start_region = self.active_region_id;
         
         for _ in 0..regions.len() {
             self.layout.focus_next_region();
-            self.active_region_id = self.layout.focused_node_id().unwrap_or(self.active_region_id);
+            let new_region_id = self.layout.focused_node_id().unwrap_or(self.active_region_id);
+            self.active_region_id = new_region_id;
             
-            // Check if this region has an enabled pane
+            // Check if this region's selected pane is enabled
             if let Some(pane_id) = self.layout.focused_pane() {
                 if let Some(pane) = self.panes.get(&pane_id) {
                     if pane.is_enabled() {
-                        // Focus this pane
+                        // Send Focused event to the pane in this region
                         if let Some(pane_mut) = self.panes.get_mut(&pane_id) {
                             let _ = pane_mut.handle_event(crate::content_pane::PaneEvent::Focused);
                         }
@@ -545,7 +547,7 @@ impl AppUI {
             }
         }
         
-        // All regions disabled - restore original focus
+        // All regions have disabled panes - restore original
         self.active_region_id = start_region;
     }
 
@@ -820,7 +822,7 @@ impl AppUI {
                         if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
                     {
                         self.navigation_mode = false;
-                        self.set_focus_to_next_pane_or_area();
+                        self.focus_next_region();
                     }
                     // Navigation mode: 'v' for vertical split (side by side)
                     KeyCode::Char('v') if self.navigation_mode => {
@@ -951,7 +953,7 @@ impl AppUI {
                     }
                     // Ctrl+Space cycles focus through panes and command input (legacy support)
                     KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.set_focus_to_next_pane_or_area();
+                        self.focus_next_region();
                     }
                     // Ctrl+0: Jump to command input
                     KeyCode::Char('0') if key.modifiers.contains(KeyModifiers::ALT) => {
@@ -1074,7 +1076,7 @@ impl AppUI {
 
                     // Once it's running, disable command input pane and switch focus
                     self.command_input_handle.borrow_mut().disable();
-                    self.set_focus_to_next_pane_or_area();
+                    self.focus_next_region();
 
                     // TODO: Check for exit signal from command execution
                 }
