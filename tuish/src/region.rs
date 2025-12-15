@@ -109,10 +109,9 @@ impl Region {
         self.panes.push(pane_id);
     }
 
-    /// Removes a pane from this region (for future close pane implementation).
+    /// Removes a pane from this region.
     ///
     /// Returns `true` if the pane was removed, `false` if not found.
-    #[allow(dead_code)]
     pub fn remove_pane(&mut self, pane_id: PaneId) -> bool {
         if let Some(idx) = self.panes.iter().position(|&id| id == pane_id) {
             self.panes.remove(idx);

@@ -854,30 +854,33 @@ impl AppUI {
                                 .map_or(false, |r| r.splittable());
 
                             if can_split {
-                                // Unfocus current pane
-                                if let Some(pane_id) = self.store.get_region_focused_pane(focused_region_id) {
+                                // Get the currently focused pane to move it
+                                let pane_to_move = self.store.get_region_focused_pane(focused_region_id);
+
+                                if let Some(pane_id) = pane_to_move {
+                                    // Unfocus the pane before moving
                                     if let Some(pane) = self.store.get_pane_mut(pane_id) {
                                         let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
                                     }
-                                }
 
-                                // Create a new pane for the new region (Environment pane)
-                                let new_pane_id = self.store.add_pane(
-                                    Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell))
-                                );
+                                    // Remove the pane from the original region
+                                    if let Some(region) = self.store.get_region_mut(focused_region_id) {
+                                        region.remove_pane(pane_id);
+                                    }
 
-                                // Create a new region with the pane
-                                let new_region_id = self.store.create_region(
-                                    vec![new_pane_id],
-                                    true,  // splittable
-                                    true,  // closeable
-                                );
+                                    // Create a new region with the moved pane
+                                    let new_region_id = self.store.create_region(
+                                        vec![pane_id],
+                                        true,  // splittable
+                                        true,  // closeable
+                                    );
 
-                                // Split the layout
-                                if self.layout.split_vertical(new_region_id) {
-                                    // Focus the new pane
-                                    if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                    // Split the layout
+                                    if self.layout.split_vertical(new_region_id) {
+                                        // Focus the moved pane
+                                        if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                        }
                                     }
                                 }
                             }
@@ -891,30 +894,33 @@ impl AppUI {
                                 .map_or(false, |r| r.splittable());
 
                             if can_split {
-                                // Unfocus current pane
-                                if let Some(pane_id) = self.store.get_region_focused_pane(focused_region_id) {
+                                // Get the currently focused pane to move it
+                                let pane_to_move = self.store.get_region_focused_pane(focused_region_id);
+
+                                if let Some(pane_id) = pane_to_move {
+                                    // Unfocus the pane before moving
                                     if let Some(pane) = self.store.get_pane_mut(pane_id) {
                                         let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
                                     }
-                                }
 
-                                // Create a new pane for the new region (Environment pane)
-                                let new_pane_id = self.store.add_pane(
-                                    Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell))
-                                );
+                                    // Remove the pane from the original region
+                                    if let Some(region) = self.store.get_region_mut(focused_region_id) {
+                                        region.remove_pane(pane_id);
+                                    }
 
-                                // Create a new region with the pane
-                                let new_region_id = self.store.create_region(
-                                    vec![new_pane_id],
-                                    true,  // splittable
-                                    true,  // closeable
-                                );
+                                    // Create a new region with the moved pane
+                                    let new_region_id = self.store.create_region(
+                                        vec![pane_id],
+                                        true,  // splittable
+                                        true,  // closeable
+                                    );
 
-                                // Split the layout
-                                if self.layout.split_horizontal(new_region_id) {
-                                    // Focus the new pane
-                                    if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                    // Split the layout
+                                    if self.layout.split_horizontal(new_region_id) {
+                                        // Focus the moved pane
+                                        if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                        }
                                     }
                                 }
                             }
