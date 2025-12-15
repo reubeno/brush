@@ -82,12 +82,6 @@ impl RegionPaneStore {
         self.panes.get_mut(&id)
     }
 
-    /// Returns an iterator over all region IDs.
-    #[allow(dead_code)]
-    pub fn region_ids(&self) -> impl Iterator<Item = RegionId> + '_ {
-        self.regions.keys().copied()
-    }
-
     /// Returns an iterator over all pane IDs.
     pub fn pane_ids(&self) -> impl Iterator<Item = PaneId> + '_ {
         self.panes.keys().copied()

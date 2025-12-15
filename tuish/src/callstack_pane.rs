@@ -1,6 +1,5 @@
 //! Shell call stack content pane.
 
-#![allow(dead_code)]
 
 use std::sync::Arc;
 

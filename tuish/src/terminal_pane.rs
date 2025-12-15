@@ -1,6 +1,5 @@
 //! Terminal content pane using `tui_term` for PTY display.
 
-#![allow(dead_code)]
 
 use std::sync::{Arc, RwLock};
 
