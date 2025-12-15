@@ -3,7 +3,6 @@
 //! This module defines the `ContentPane` trait that allows different types of content
 //! to be displayed in tabbed panes without knowledge of screen positioning.
 
-#![allow(dead_code)]
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::prelude::*;
@@ -17,7 +16,8 @@ pub enum PaneEvent {
     Focused,
     /// The pane lost focus
     Unfocused,
-    /// The pane's render area has changed
+    /// The pane's render area has changed (for future resize handling)
+    #[allow(dead_code)]
     Resized { width: u16, height: u16 },
 }
 
@@ -28,7 +28,8 @@ pub enum PaneEventResult {
     Handled,
     /// Event was not handled (propagate to parent)
     NotHandled,
-    /// Request to close this pane
+    /// Request to close this pane (for future close implementation)
+    #[allow(dead_code)]
     RequestClose,
     /// Request to execute a command
     RequestExecute(String),
@@ -79,14 +80,16 @@ pub trait ContentPane: Send {
     /// Returns `PaneEventResult` indicating how the event was handled.
     fn handle_event(&mut self, event: PaneEvent) -> PaneEventResult;
 
-    /// Called when the pane becomes visible (tab selected).
+    /// Called when the pane becomes visible (tab selected) - for future use.
     ///
     /// Allows panes to refresh or initialize state.
+    #[allow(dead_code)]
     fn on_show(&mut self) {}
 
-    /// Called when the pane becomes hidden (tab deselected).
+    /// Called when the pane becomes hidden (tab deselected) - for future use.
     ///
     /// Allows panes to clean up or pause updates.
+    #[allow(dead_code)]
     fn on_hide(&mut self) {}
 
     /// Returns an optional title to display in the pane's border.

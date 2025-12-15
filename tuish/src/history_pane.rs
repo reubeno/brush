@@ -1,6 +1,5 @@
 //! Command history content pane.
 
-#![allow(dead_code)]
 
 use std::sync::Arc;
 

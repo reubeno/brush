@@ -1,6 +1,5 @@
 //! Shell functions content pane.
 
-#![allow(dead_code)]
 
 use std::sync::Arc;
 

@@ -92,10 +92,6 @@ pub struct AppUI {
     command_input_handle: std::rc::Rc<std::cell::RefCell<CommandInput>>,
 
     /// IDs of special panes
-    #[allow(dead_code)]
-    primary_terminal_id: PaneId,
-    #[allow(dead_code)]
-    completion_pane_id: PaneId,
     command_input_pane_id: PaneId,
 
     /// IDs of special regions
@@ -157,7 +153,7 @@ impl AppUI {
         let primary_terminal_id = store.add_pane(
             Box::new(RcRefCellPaneWrapper::new(primary_terminal_rc.clone())) as Box<dyn ContentPane>,
         );
-        let completion_pane_id = store.add_pane(
+        let _completion_pane_id = store.add_pane(
             Box::new(RcRefCellPaneWrapper::new(completion_pane_rc.clone())) as Box<dyn ContentPane>,
         );
 
@@ -197,8 +193,6 @@ impl AppUI {
             primary_terminal: primary_terminal_rc,
             completion_pane: completion_pane_rc,
             command_input_handle: command_input_rc,
-            primary_terminal_id,
-            completion_pane_id,
             command_input_pane_id,
             content_region_id,
             command_input_region_id,
@@ -221,14 +215,6 @@ impl AppUI {
         }
 
         pane_id
-    }
-
-    /// Gets a pane by ID.
-    #[allow(dead_code)]
-    fn get_pane_mut(&mut self, pane_id: PaneId) -> Option<&mut dyn ContentPane> {
-        self.store
-            .get_pane_mut(pane_id)
-            .map(|p| &mut **p as &mut dyn ContentPane)
     }
 
     /// Writes output to the primary terminal pane.

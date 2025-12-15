@@ -2,7 +2,6 @@
 //!
 //! A Region represents a visual area containing one or more panes arranged as tabs.
 
-#![allow(dead_code)]
 
 /// Unique identifier for a region
 pub type RegionId = usize;
@@ -14,14 +13,17 @@ pub type PaneId = usize;
 #[derive(Debug, Clone)]
 pub struct Region {
     /// Unique identifier for this region
+    #[allow(dead_code)]
     id: RegionId,
     /// List of pane IDs in this region (at least one)
     panes: Vec<PaneId>,
     /// Index of the selected (focused) pane within this region
     selected_pane_index: usize,
-    /// Whether this region can be split
+    /// Whether this region can be split (for future split implementation)
+    #[allow(dead_code)]
     splittable: bool,
-    /// Whether this region can be closed
+    /// Whether this region can be closed (for future close implementation)
+    #[allow(dead_code)]
     closeable: bool,
 }
 
@@ -44,6 +46,7 @@ impl Region {
 
     /// Returns the region ID.
     #[must_use]
+    #[allow(dead_code)]
     pub const fn id(&self) -> RegionId {
         self.id
     }
@@ -69,14 +72,16 @@ impl Region {
         self.panes.iter().any(|&pane_id| pane_lookup(pane_id))
     }
 
-    /// Returns whether this region can be split.
+    /// Returns whether this region can be split (for future split implementation).
     #[must_use]
+    #[allow(dead_code)]
     pub const fn splittable(&self) -> bool {
         self.splittable
     }
 
-    /// Returns whether this region can be closed.
+    /// Returns whether this region can be closed (for future close implementation).
     #[must_use]
+    #[allow(dead_code)]
     pub const fn closeable(&self) -> bool {
         self.closeable
     }
@@ -104,9 +109,10 @@ impl Region {
         self.panes.push(pane_id);
     }
 
-    /// Removes a pane from this region.
+    /// Removes a pane from this region (for future close pane implementation).
     ///
     /// Returns `true` if the pane was removed, `false` if not found.
+    #[allow(dead_code)]
     pub fn remove_pane(&mut self, pane_id: PaneId) -> bool {
         if let Some(idx) = self.panes.iter().position(|&id| id == pane_id) {
             self.panes.remove(idx);
