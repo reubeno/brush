@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use crossterm::event::KeyCode;
 use ratatui::{
+    layout::Alignment,
     prelude::*,
     widgets::{
-        Cell, HighlightSpacing, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
-        TableState,
+        Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Table, TableState,
     },
 };
 
@@ -53,16 +54,27 @@ impl ContentPane for EnvironmentPane {
             vars.sort_by(|a, b| a.0.cmp(&b.0));
             vars
         } else {
-            // Shell is locked (command running), show loading message
-            let loading = ratatui::widgets::Paragraph::new("Loading environment variables...")
-                .style(Style::default().fg(Color::White));
+            // Shell is locked (command running), show loading message with modern styling
+            let loading = Paragraph::new(" ⏳ Loading environment variables...")
+                .style(
+                    Style::default()
+                        .fg(Color::Rgb(165, 243, 252)) // Cyan
+                        .bg(Color::Rgb(20, 20, 30))
+                        .add_modifier(Modifier::ITALIC),
+                )
+                .alignment(Alignment::Center);
             frame.render_widget(loading, area);
             return;
         };
 
         if variables.is_empty() {
-            let empty = ratatui::widgets::Paragraph::new("No environment variables")
-                .style(Style::default().fg(Color::White));
+            let empty = Paragraph::new(" ⚠ No environment variables ")
+                .style(
+                    Style::default()
+                        .fg(Color::Rgb(251, 146, 60)) // Orange
+                        .bg(Color::Rgb(20, 20, 30)),
+                )
+                .alignment(Alignment::Center);
             frame.render_widget(empty, area);
             return;
         }
@@ -78,19 +90,39 @@ impl ContentPane for EnvironmentPane {
             self.scrollbar_state = self.scrollbar_state.position(selected);
         }
 
-        // Create table with header and rows
+        // Create table with modern header styling
         let header = Row::new(vec![
-            Cell::from("Variable").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Value").style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from(" 󰂆 Variable").style(
+                Style::default()
+                    .fg(Color::Rgb(165, 243, 252)) // Cyan
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Cell::from(" 󰂖 Value").style(
+                Style::default()
+                    .fg(Color::Rgb(165, 243, 252)) // Cyan
+                    .add_modifier(Modifier::BOLD),
+            ),
         ])
-        .style(Style::default().bg(Color::DarkGray));
+        .style(Style::default().bg(Color::Rgb(30, 40, 50)));
 
         let rows: Vec<Row<'_>> = variables
             .iter()
-            .map(|(k, v)| {
+            .enumerate()
+            .map(|(idx, (k, v))| {
+                let bg = if idx % 2 == 0 {
+                    Color::Rgb(20, 20, 30)
+                } else {
+                    Color::Rgb(25, 25, 35)
+                };
                 Row::new(vec![
-                    Cell::from(k.as_str()).style(Style::default().add_modifier(Modifier::ITALIC)),
-                    Cell::from(v.as_str()),
+                    Cell::from(k.as_str()).style(
+                        Style::default()
+                            .fg(Color::Rgb(196, 181, 253)) // Light purple
+                            .bg(bg)
+                            .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+                    ),
+                    Cell::from(v.as_str())
+                        .style(Style::default().fg(Color::Rgb(220, 220, 230)).bg(bg)),
                 ])
             })
             .collect();
@@ -102,20 +134,26 @@ impl ContentPane for EnvironmentPane {
         .header(header)
         .row_highlight_style(
             Style::default()
-                .bg(Color::Blue)
+                .bg(Color::Rgb(34, 211, 238)) // Cyan gradient highlight
+                .fg(Color::Rgb(10, 10, 20))
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(">> ")
+        .highlight_symbol(" ▶ ")
         .highlight_spacing(HighlightSpacing::Always)
-        .style(Style::default().fg(Color::White));
+        .style(
+            Style::default()
+                .fg(Color::Rgb(220, 220, 230))
+                .bg(Color::Rgb(20, 20, 30)),
+        );
 
         // Render table with state
         frame.render_stateful_widget(table, area, &mut self.table_state);
 
-        // Render scrollbar on the right side
+        // Render modern scrollbar on the right side
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(Some("↑"))
-            .end_symbol(Some("↓"));
+            .style(Style::default().fg(Color::Rgb(34, 211, 238))) // Cyan
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"));
 
         let scrollbar_area = area.inner(Margin {
             vertical: 1, // Leave space for header

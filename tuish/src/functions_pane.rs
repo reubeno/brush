@@ -58,14 +58,14 @@ impl ContentPane for FunctionsPane {
             functions
         } else {
             // Shell is locked (command running), show loading message
-            let loading = ratatui::widgets::Paragraph::new("Loading functions...")
+            let loading = ratatui::widgets::Paragraph::new("⏳ Loading functions...")
                 .style(Style::default().fg(Color::White));
             frame.render_widget(loading, area);
             return;
         };
 
         if functions.is_empty() {
-            let empty = ratatui::widgets::Paragraph::new("No functions defined")
+            let empty = ratatui::widgets::Paragraph::new("⚠ No functions defined")
                 .style(Style::default().fg(Color::White));
             frame.render_widget(empty, area);
             return;

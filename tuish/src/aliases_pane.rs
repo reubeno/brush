@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use crossterm::event::KeyCode;
 use ratatui::{
+    layout::Alignment,
     prelude::*,
     widgets::{
-        Cell, HighlightSpacing, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
-        TableState,
+        Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Table, TableState,
     },
 };
 
@@ -53,16 +54,27 @@ impl ContentPane for AliasesPane {
             aliases.sort_by(|a, b| a.0.cmp(&b.0));
             aliases
         } else {
-            // Shell is locked (command running), show loading message
-            let loading = ratatui::widgets::Paragraph::new("Loading aliases...")
-                .style(Style::default().fg(Color::White));
+            // Shell is locked (command running), show modern loading message
+            let loading = Paragraph::new(" ⏳ Loading aliases...")
+                .style(
+                    Style::default()
+                        .fg(Color::Rgb(236, 72, 153)) // Pink
+                        .bg(Color::Rgb(20, 20, 30))
+                        .add_modifier(Modifier::ITALIC),
+                )
+                .alignment(Alignment::Center);
             frame.render_widget(loading, area);
             return;
         };
 
         if aliases.is_empty() {
-            let empty = ratatui::widgets::Paragraph::new("No aliases defined")
-                .style(Style::default().fg(Color::White));
+            let empty = Paragraph::new(" ⚠ No aliases defined ")
+                .style(
+                    Style::default()
+                        .fg(Color::Rgb(236, 72, 153)) // Pink
+                        .bg(Color::Rgb(20, 20, 30)),
+                )
+                .alignment(Alignment::Center);
             frame.render_widget(empty, area);
             return;
         }
@@ -78,23 +90,39 @@ impl ContentPane for AliasesPane {
             self.scrollbar_state = self.scrollbar_state.position(selected);
         }
 
-        // Create table with header and rows
+        // Create table with modern header and rows
         let header = Row::new(vec![
-            Cell::from("Alias").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Command").style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from(" 󰬪 Alias ").style(
+                Style::default()
+                    .fg(Color::Rgb(236, 72, 153)) // Pink
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Cell::from(" 󰆍 Command ").style(
+                Style::default()
+                    .fg(Color::Rgb(236, 72, 153)) // Pink
+                    .add_modifier(Modifier::BOLD),
+            ),
         ])
-        .style(Style::default().bg(Color::DarkGray));
+        .style(Style::default().bg(Color::Rgb(30, 40, 50)));
 
         let rows: Vec<Row<'_>> = aliases
             .iter()
-            .map(|(name, value)| {
+            .enumerate()
+            .map(|(idx, (name, value))| {
+                let bg = if idx % 2 == 0 {
+                    Color::Rgb(20, 20, 30)
+                } else {
+                    Color::Rgb(25, 25, 35)
+                };
                 Row::new(vec![
-                    Cell::from(name.as_str()).style(
+                    Cell::from(format!(" {name} ")).style(
                         Style::default()
-                            .fg(Color::Yellow)
+                            .fg(Color::Rgb(244, 114, 182)) // Light pink
+                            .bg(bg)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Cell::from(value.as_str()).style(Style::default().fg(Color::Cyan)),
+                    Cell::from(format!(" {value} "))
+                        .style(Style::default().fg(Color::Rgb(220, 220, 230)).bg(bg)),
                 ])
             })
             .collect();
@@ -106,20 +134,26 @@ impl ContentPane for AliasesPane {
         .header(header)
         .row_highlight_style(
             Style::default()
-                .bg(Color::Blue)
+                .bg(Color::Rgb(236, 72, 153)) // Pink gradient highlight
+                .fg(Color::Rgb(10, 10, 20))
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(">> ")
+        .highlight_symbol(" ▶ ")
         .highlight_spacing(HighlightSpacing::Always)
-        .style(Style::default().fg(Color::White));
+        .style(
+            Style::default()
+                .fg(Color::Rgb(220, 220, 230))
+                .bg(Color::Rgb(20, 20, 30)),
+        );
 
         // Render table with state
         frame.render_stateful_widget(table, area, &mut self.table_state);
 
-        // Render scrollbar on the right side
+        // Render modern scrollbar on the right side
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(Some("↑"))
-            .end_symbol(Some("↓"));
+            .style(Style::default().fg(Color::Rgb(236, 72, 153))) // Pink
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"));
 
         let scrollbar_area = area.inner(Margin {
             vertical: 1, // Leave space for header

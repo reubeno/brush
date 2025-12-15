@@ -104,23 +104,53 @@ ui.add_pane(
 );
 ```
 
-## Future Architecture: Flexible Layouts
+## Layout System
 
-### Layout Tree (Not Yet Implemented)
+### Layout Tree (Implemented, Not Yet Rendered)
 
-When splits are added, layouts will be represented as trees:
+Layouts are represented as trees in `src/layout.rs`:
 ```rust
 pub enum LayoutNode {
-    Pane(PaneRole),           // Leaf: single pane
-    HSplit { left, right },   // Horizontal split
-    VSplit { top, bottom },   // Vertical split
-    Tabs { panes, selected }, // Tabbed (current)
+    Pane { id: LayoutId, role: PaneRole },
+    HSplit { 
+        id: LayoutId, 
+        left: Box<LayoutNode>, 
+        right: Box<LayoutNode>, 
+        split_percent: u16 
+    },
+    VSplit { 
+        id: LayoutId, 
+        top: Box<LayoutNode>, 
+        bottom: Box<LayoutNode>, 
+        split_percent: u16 
+    },
+    Tabs { 
+        id: LayoutId, 
+        panes: Vec<PaneRole>, 
+        selected: usize 
+    },
 }
 ```
 
+**Layout Manager:**
+```rust
+pub struct LayoutManager {
+    next_id: LayoutId,
+    root: LayoutNode,
+    focused_node_id: Option<LayoutId>,
+}
+```
+
+**Key operations:**
+- `split_vertical(role)` - Split focused node side by side
+- `split_horizontal(role)` - Split focused node top and bottom
+- `render_layout(area)` - Convert tree to rectangles (Vec<(LayoutId, PaneRole, Rect)>)
+
 **Key properties:**
-- Recursive rendering (splits divide area and render children)
+- Recursive tree structure supports arbitrary nesting
+- Each node has unique `LayoutId` for focus tracking
 - Panes referenced by role (stable across layout changes)
+- Split operations create new pane instances of specified role
 - Direct access to special panes still works (role-based lookup)
 
 ### Overlay Stack (Partially Implemented)
@@ -194,6 +224,65 @@ Events flow:
 4. Render command input area
 5. Set cursor position if command input focused
 
+## Split View Implementation Status
+
+### ✅ Completed (Fully Functional!)
+- **Layout module** (`src/layout.rs`):
+  - `LayoutNode` enum with Pane, HSplit, VSplit, Tabs variants
+  - `LayoutManager` with split operations and ID generation
+  - Tree traversal methods (visible_panes, all_panes, focused_pane)
+  - `render_layout()` method to convert tree to rectangles
+  - Proper ID management and focus tracking
+
+- **Navigation mode integration** (`src/app_ui.rs`):
+  - `v` key triggers `layout.split_vertical(role)` ✅ Works!
+  - `h` key triggers `layout.split_horizontal(role)` ✅ Works!
+  - `x` key placeholder for close/unsplit (not yet implemented)
+  - Layout state stored in `AppUI.layout` field
+  - Layout updated when panes are added
+
+- **Split rendering** (`src/app_ui.rs`):
+  - Detects when layout has splits vs tabs
+  - Calls `layout.render_layout(area)` to get pane rectangles ✅ 
+  - Renders each visible pane with its own border ✅
+  - Color-coded borders match pane type ✅
+  - Handles multiple visible panes simultaneously ✅
+
+### 🚧 Not Yet Implemented (Enhancements)
+  
+- **Focus navigation**: Cycle focus between visible splits in navigation mode
+  - Currently focus is tab-based (pane index) when in tab mode
+  - For split mode, could track focused LayoutId and highlight with brighter border
+  - Update navigation mode to let you select which split pane has focus
+
+- **Close/unsplit**: Remove split nodes from tree
+  - `x` key has placeholder handler
+  - Need tree surgery to remove focused node and promote sibling
+  - Should revert to parent layout when last split is closed
+
+### Remaining Enhancements
+
+1. **Per-pane focus in splits**:
+   - Change `FocusedArea::Pane(usize)` to `FocusedArea::Pane(LayoutId)`
+   - Update navigation keys to cycle through visible LayoutIds
+   - Render brighter border on focused pane
+
+2. **Implement close/unsplit**:
+   - Add `LayoutManager::close_pane(id)` method
+   - When closing split, promote sibling to take parent's place
+   - Handle edge case of closing last pane in split
+
+4. **Multiple terminal instances**:
+   - Currently only `PaneRole::Terminal(0)` is instantiated
+   - When splitting terminal, create new `TerminalPane` instances
+   - Store in `HashMap<u32, Box<TerminalPane>>` instead of single field
+   - Update PTY management to support multiple terminals
+
+5. **Dynamic pane instantiation**:
+   - Currently all panes (Environment, History, etc.) created at startup
+   - For splits, may want to create instances on demand
+   - Consider pane factory pattern for role → instance creation
+
 ## Building and Running
 
 ```bash
@@ -203,6 +292,15 @@ cargo build --package tuish
 # Run
 cargo run --package tuish
 ```
+
+### Testing Split View
+Split view is fully functional! Try it:
+1. Press `Ctrl+B` to enter navigation mode
+2. Press `v` for vertical split (splits current pane side-by-side) ✅
+3. Press `h` for horizontal split (splits current pane top/bottom) ✅
+4. Press `Esc` to exit navigation mode
+5. Each pane renders with its own colored border
+6. You can continue splitting - creates nested layouts!
 
 PTY dimensions are calculated from terminal size (80% of height for content area).
 Shell stdout/stderr/stdin are redirected to the PTY for proper terminal emulation.

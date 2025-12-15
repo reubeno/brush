@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use crossterm::event::KeyCode;
 use ratatui::{
+    layout::Alignment,
     prelude::*,
     widgets::{
-        Cell, HighlightSpacing, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
-        TableState,
+        Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Table, TableState,
     },
 };
 
@@ -114,16 +115,27 @@ impl ContentPane for HistoryPane {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         // Refresh cache if needed (only actually rebuilds if history changed)
         if !self.refresh_cache() {
-            // Shell is locked (command running), show loading message
-            let loading = ratatui::widgets::Paragraph::new("Loading history...")
-                .style(Style::default().fg(Color::White));
+            // Shell is locked (command running), show loading message with modern styling
+            let loading = Paragraph::new(" ⏳ Loading history...")
+                .style(
+                    Style::default()
+                        .fg(Color::Rgb(251, 146, 60)) // Orange
+                        .bg(Color::Rgb(20, 20, 30))
+                        .add_modifier(Modifier::ITALIC),
+                )
+                .alignment(Alignment::Center);
             frame.render_widget(loading, area);
             return;
         }
 
         if self.cached_entries.is_empty() {
-            let empty = ratatui::widgets::Paragraph::new("No history entries")
-                .style(Style::default().fg(Color::White));
+            let empty = Paragraph::new(" ⚠ No history entries ")
+                .style(
+                    Style::default()
+                        .fg(Color::Rgb(251, 146, 60)) // Orange
+                        .bg(Color::Rgb(20, 20, 30)),
+                )
+                .alignment(Alignment::Center);
             frame.render_widget(empty, area);
             return;
         }
@@ -160,26 +172,49 @@ impl ContentPane for HistoryPane {
         // Adjust selection offset for the windowed view
         let adjusted_selection = selected.saturating_sub(start_idx);
 
-        // Create table with header and ONLY visible rows
+        // Create table with modern header and ONLY visible rows
         let header = Row::new(vec![
-            Cell::from("#").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Time").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Command").style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from(" # ").style(
+                Style::default()
+                    .fg(Color::Rgb(251, 146, 60)) // Orange
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Cell::from(" 󰕗 Time ").style(
+                Style::default()
+                    .fg(Color::Rgb(251, 146, 60)) // Orange
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Cell::from(" 󰆍 Command ").style(
+                Style::default()
+                    .fg(Color::Rgb(251, 146, 60)) // Orange
+                    .add_modifier(Modifier::BOLD),
+            ),
         ])
-        .style(Style::default().bg(Color::DarkGray));
+        .style(Style::default().bg(Color::Rgb(30, 40, 50)));
 
         let rows: Vec<Row<'_>> = self.cached_entries[start_idx..end_idx]
             .iter()
-            .map(|entry| {
+            .enumerate()
+            .map(|(idx, entry)| {
+                let bg = if (start_idx + idx) % 2 == 0 {
+                    Color::Rgb(20, 20, 30)
+                } else {
+                    Color::Rgb(25, 25, 35)
+                };
                 Row::new(vec![
-                    Cell::from(entry.number.to_string()).style(
+                    Cell::from(format!(" {} ", entry.number)).style(
                         Style::default()
-                            .fg(Color::DarkGray)
+                            .fg(Color::Rgb(120, 120, 140))
+                            .bg(bg)
                             .add_modifier(Modifier::DIM),
                     ),
-                    Cell::from(entry.formatted_timestamp.as_str())
-                        .style(Style::default().fg(Color::Cyan)),
-                    Cell::from(entry.command.as_str()),
+                    Cell::from(format!(" {} ", entry.formatted_timestamp)).style(
+                        Style::default()
+                            .fg(Color::Rgb(253, 186, 116)) // Light orange
+                            .bg(bg),
+                    ),
+                    Cell::from(format!(" {} ", entry.command))
+                        .style(Style::default().fg(Color::Rgb(220, 220, 230)).bg(bg)),
                 ])
             })
             .collect();
@@ -190,28 +225,34 @@ impl ContentPane for HistoryPane {
         let table = Table::new(
             rows,
             [
-                Constraint::Length(6),      // History number column
-                Constraint::Length(16),     // Timestamp column
+                Constraint::Length(7),      // History number column
+                Constraint::Length(18),     // Timestamp column
                 Constraint::Percentage(75), // Command column (takes remaining space)
             ],
         )
         .header(header)
         .row_highlight_style(
             Style::default()
-                .bg(Color::Blue)
+                .bg(Color::Rgb(251, 146, 60)) // Orange gradient highlight
+                .fg(Color::Rgb(10, 10, 20))
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(">> ")
+        .highlight_symbol(" ▶ ")
         .highlight_spacing(HighlightSpacing::Always)
-        .style(Style::default().fg(Color::White));
+        .style(
+            Style::default()
+                .fg(Color::Rgb(220, 220, 230))
+                .bg(Color::Rgb(20, 20, 30)),
+        );
 
         // Render table with windowed state
         frame.render_stateful_widget(table, area, &mut windowed_state);
 
-        // Render scrollbar on the right side (still reflects total content)
+        // Render modern scrollbar on the right side (still reflects total content)
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(Some("↑"))
-            .end_symbol(Some("↓"));
+            .style(Style::default().fg(Color::Rgb(251, 146, 60))) // Orange
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"));
 
         let scrollbar_area = area.inner(Margin {
             vertical: 1, // Leave space for header

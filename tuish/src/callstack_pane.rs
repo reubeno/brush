@@ -67,7 +67,7 @@ impl ContentPane for CallStackPane {
             }
         } else {
             // Shell is locked (command running), show loading message
-            let loading = ratatui::widgets::Paragraph::new("Loading call stack...")
+            let loading = ratatui::widgets::Paragraph::new("⏳ Loading call stack...")
                 .style(Style::default().fg(Color::White));
             frame.render_widget(loading, area);
             return;
