@@ -1027,7 +1027,10 @@ impl AppUI {
                                     match result {
                                         PaneEventResult::Handled => {}
                                         PaneEventResult::NotHandled => {}
-                                        PaneEventResult::RequestClose => {}
+                                        PaneEventResult::RequestClose => {
+                                            // Ctrl+D in command input - exit the shell
+                                            return Ok(UIEventResult::RequestExit);
+                                        }
                                         PaneEventResult::RequestExecute(cmd) => {
                                             return Ok(UIEventResult::ExecuteCommand(cmd));
                                         }

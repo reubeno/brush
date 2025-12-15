@@ -383,7 +383,7 @@ impl crate::content_pane::ContentPane for CommandInput {
             PaneEvent::KeyPress(code, modifiers) => {
                 match self.handle_key(code, modifiers) {
                     CommandKeyResult::NoAction => PaneEventResult::Handled,
-                    CommandKeyResult::RequestExit => PaneEventResult::Handled, // Will be handled by AppUI
+                    CommandKeyResult::RequestExit => PaneEventResult::RequestClose, // Signal exit to AppUI
                     CommandKeyResult::CommandEntered(cmd) => PaneEventResult::RequestExecute(cmd),
                     CommandKeyResult::RequestCompletion => PaneEventResult::RequestCompletion,
                 }
