@@ -19,6 +19,8 @@ pub struct Pty {
     parser: Arc<RwLock<vt100::Parser>>,
     /// Channel sender for writing to the PTY
     writer: Sender<Bytes>,
+    /// Master file descriptor for ioctl operations
+    master_fd: libc::c_int,
     /// PTY slave file for stdin
     pub stdin: std::fs::File,
     /// PTY slave file for stdout
@@ -138,6 +140,7 @@ impl Pty {
         Ok(Self {
             parser,
             writer: tx,
+            master_fd,
             stdin: slave_stdin,
             stdout: slave_stdout,
             stderr: slave_stderr,
@@ -156,12 +159,41 @@ impl Pty {
 
     /// Resizes the PTY to the specified dimensions.
     ///
+    /// Updates both the VT100 parser and sends TIOCSWINSZ to the PTY master.
+    ///
     /// # Arguments
     /// * `rows` - New number of rows
     /// * `cols` - New number of columns
-    #[allow(dead_code)]
-    pub fn resize(&self, rows: u16, cols: u16) {
+    ///
+    /// # Errors
+    /// Returns an error if the ioctl call fails.
+    pub fn resize(&self, rows: u16, cols: u16) -> Result<(), std::io::Error> {
+        // Update parser size
         let mut parser = self.parser.write().unwrap();
         parser.set_size(rows, cols);
+        drop(parser); // Release lock
+
+        // Update PTY window size via ioctl
+        let winsize = libc::winsize {
+            ws_row: rows,
+            ws_col: cols,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+
+        // SAFETY: ioctl with TIOCSWINSZ and valid winsize struct
+        let result = unsafe {
+            libc::ioctl(
+                self.master_fd,
+                libc::TIOCSWINSZ,
+                std::ptr::addr_of!(winsize),
+            )
+        };
+
+        if result != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        Ok(())
     }
 }

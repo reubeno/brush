@@ -63,9 +63,9 @@ impl CommandInput {
             buffer: String::new(),
             cursor_pos: 0,
             focused: false,
-            focused_title: "Command Input [FOCUSED - Ctrl+Space to switch, Ctrl+Q to quit]",
-            unfocused_title: "Command Input [Ctrl+Space to focus, Ctrl+Q to quit]",
-            disabled_title: "Command is running...",
+            focused_title: " ⌨  Command Input [Ctrl+B for Navigation, Ctrl+Q to Quit] ",
+            unfocused_title: " ⌨  Command Input [Ctrl+B then 0 to focus] ",
+            disabled_title: " ⏳ Running command... ",
             shell: shell.clone(),
             cached_prompt: "> ".to_string(),
         }
@@ -252,23 +252,34 @@ impl CommandInput {
     /// # Returns
     /// The cursor position (x, y) if focused, otherwise `None`
     pub fn render(&self, frame: &mut Frame<'_>, area: Rect) -> Option<(u16, u16)> {
-        let (title, border_style) = if !self.enabled {
-            (self.disabled_title, Style::default().fg(Color::DarkGray))
+        let (title, border_style, bg_color) = if !self.enabled {
+            (
+                self.disabled_title,
+                Style::default()
+                    .fg(Color::Rgb(100, 100, 120))
+                    .add_modifier(Modifier::DIM),
+                Color::Rgb(30, 30, 40),
+            )
         } else if self.focused {
             (
                 self.focused_title,
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::Rgb(167, 139, 250)) // Brighter purple
                     .add_modifier(Modifier::BOLD),
+                Color::Rgb(30, 25, 40),
             )
         } else {
-            (self.unfocused_title, Style::default().fg(Color::DarkGray))
+            (
+                self.unfocused_title,
+                Style::default().fg(Color::Rgb(60, 60, 80)),
+                Color::Rgb(25, 25, 35),
+            )
         };
 
         let para_style = if self.enabled {
-            Style::default()
+            Style::default().bg(bg_color)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::DarkGray).bg(bg_color)
         };
 
         // Build the input line with syntax highlighting
@@ -337,39 +348,43 @@ impl CommandInput {
         use brush_interactive::HighlightKind;
 
         match kind {
-            HighlightKind::Default => Style::default().fg(Color::White),
-            HighlightKind::Comment => Style::default().fg(Color::DarkGray),
-            HighlightKind::Arithmetic => Style::default().fg(Color::LightBlue),
-            HighlightKind::Parameter => Style::default().fg(Color::LightMagenta),
-            HighlightKind::CommandSubstitution => Style::default().fg(Color::LightBlue),
-            HighlightKind::Quoted => Style::default().fg(Color::Yellow),
-            HighlightKind::Operator => Style::default()
-                .fg(Color::White)
+            HighlightKind::Default => Style::default().fg(Color::Rgb(220, 220, 230)),
+            HighlightKind::Comment => Style::default()
+                .fg(Color::Rgb(100, 100, 120))
                 .add_modifier(Modifier::ITALIC),
-            HighlightKind::Assignment => Style::default().fg(Color::Gray),
+            HighlightKind::Arithmetic => Style::default().fg(Color::Rgb(165, 243, 252)), // Cyan
+            HighlightKind::Parameter => Style::default().fg(Color::Rgb(244, 114, 182)),  // Pink
+            HighlightKind::CommandSubstitution => Style::default().fg(Color::Rgb(165, 243, 252)), // Cyan
+            HighlightKind::Quoted => Style::default().fg(Color::Rgb(253, 224, 71)), // Yellow
+            HighlightKind::Operator => Style::default()
+                .fg(Color::Rgb(196, 181, 253)) // Light purple
+                .add_modifier(Modifier::ITALIC),
+            HighlightKind::Assignment => Style::default().fg(Color::Rgb(150, 150, 170)),
             HighlightKind::HyphenOption => Style::default()
-                .fg(Color::White)
+                .fg(Color::Rgb(187, 247, 208)) // Light green
                 .add_modifier(Modifier::ITALIC),
             HighlightKind::Function => Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::Rgb(253, 224, 71)) // Yellow
                 .add_modifier(Modifier::BOLD),
             HighlightKind::Keyword => Style::default()
-                .fg(Color::LightYellow)
+                .fg(Color::Rgb(251, 146, 60)) // Orange
                 .add_modifier(Modifier::BOLD | Modifier::ITALIC),
             HighlightKind::Builtin => Style::default()
-                .fg(Color::Green)
+                .fg(Color::Rgb(134, 239, 172)) // Green
                 .add_modifier(Modifier::BOLD),
             HighlightKind::Alias => Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Rgb(165, 243, 252)) // Cyan
                 .add_modifier(Modifier::BOLD),
             HighlightKind::ExternalCommand => Style::default()
-                .fg(Color::Green)
+                .fg(Color::Rgb(187, 247, 208)) // Light green
                 .add_modifier(Modifier::BOLD),
             HighlightKind::NotFoundCommand => {
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Rgb(248, 113, 113))
+                    .add_modifier(Modifier::BOLD) // Red
             }
             HighlightKind::UnknownCommand => Style::default()
-                .fg(Color::White)
+                .fg(Color::Rgb(200, 200, 220))
                 .add_modifier(Modifier::BOLD),
         }
     }

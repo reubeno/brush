@@ -77,6 +77,11 @@ impl ContentPane for TerminalPane {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        // Add subtle background for depth
+        let bg =
+            ratatui::widgets::Block::default().style(Style::default().bg(Color::Rgb(18, 18, 26)));
+        frame.render_widget(bg, area);
+
         let screen = {
             let parser = self.parser.read().unwrap();
             parser.screen().clone()

@@ -9,6 +9,7 @@ mod content_pane;
 mod environment_pane;
 mod functions_pane;
 mod history_pane;
+mod layout;
 mod pane_role;
 mod pty;
 mod terminal_pane;
@@ -59,7 +60,7 @@ async fn main() -> Result<()> {
         .saturating_sub(2); // Content border
     let pty_cols = terminal_size.width.saturating_sub(2); // Content left + right borders
 
-    let pty = Pty::new(pty_rows, pty_cols)?;
+    let pty = Arc::new(Pty::new(pty_rows, pty_cols)?);
 
     // Update shell with PTY fds
     let fds = HashMap::from([
@@ -83,18 +84,14 @@ async fn main() -> Result<()> {
     let completion_pane = Box::new(CompletionPane::new(&shell));
 
     // Create the UI with special panes
-    let mut ui = AppUI::new(&shell, terminal_pane, completion_pane);
+    let mut ui = AppUI::new(&shell, terminal_pane, completion_pane, Arc::clone(&pty));
 
-    // Add general content panes with their roles
-    use pane_role::PaneRole;
-    ui.add_pane(
-        PaneRole::Environment,
-        Box::new(EnvironmentPane::new(&shell)),
-    );
-    ui.add_pane(PaneRole::History, Box::new(HistoryPane::new(&shell)));
-    ui.add_pane(PaneRole::Aliases, Box::new(AliasesPane::new(&shell)));
-    ui.add_pane(PaneRole::Functions, Box::new(FunctionsPane::new(&shell)));
-    ui.add_pane(PaneRole::CallStack, Box::new(CallStackPane::new(&shell)));
+    // Add general content panes (roles no longer needed - IDs auto-assigned)
+    ui.add_pane(Box::new(EnvironmentPane::new(&shell)));
+    ui.add_pane(Box::new(HistoryPane::new(&shell)));
+    ui.add_pane(Box::new(AliasesPane::new(&shell)));
+    ui.add_pane(Box::new(FunctionsPane::new(&shell)));
+    ui.add_pane(Box::new(CallStackPane::new(&shell)));
 
     // Run the main event loop
     ui.run().await

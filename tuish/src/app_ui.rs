@@ -8,10 +8,10 @@ use brush_core::{ExecutionParameters, SourceInfo};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{Block, BorderType, Borders, Tabs},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Borders, Paragraph, Tabs},
 };
 use tokio::sync::Mutex;
 
@@ -19,17 +19,69 @@ use std::collections::HashMap;
 
 use crate::command_input::CommandInput;
 use crate::completion_pane::CompletionPane;
-use crate::content_pane::ContentPane;
-use crate::pane_role::PaneRole;
+use crate::content_pane::{ContentPane, PaneEvent, PaneEventResult, PaneKind};
+use crate::layout::LayoutManager;
 use crate::terminal_pane::TerminalPane;
+
+/// Unique identifier for pane instances
+pub type PaneId = usize;
+
+/// Wrapper that allows an `Rc<RefCell<T: ContentPane>>` to be stored as `Box<dyn ContentPane>`.
+/// This enables dual access: typed references for special interfaces, trait objects for generic layout.
+struct RcRefCellPaneWrapper<T: ContentPane> {
+    inner: std::rc::Rc<std::cell::RefCell<T>>,
+}
+
+impl<T: ContentPane> RcRefCellPaneWrapper<T> {
+    const fn new(inner: std::rc::Rc<std::cell::RefCell<T>>) -> Self {
+        Self { inner }
+    }
+}
+
+#[allow(clippy::non_send_fields_in_send_ty)]
+/// SAFETY: `RcRefCellPaneWrapper` is only used in single-threaded context within tuish TUI.
+/// The inner `Rc<RefCell<T>>` is never actually sent between threads.
+unsafe impl<T: ContentPane + 'static> Send for RcRefCellPaneWrapper<T> {}
+
+impl<T: ContentPane + 'static> ContentPane for RcRefCellPaneWrapper<T> {
+    fn name(&self) -> &'static str {
+        self.inner.borrow().name()
+    }
+
+    fn kind(&self) -> PaneKind {
+        self.inner.borrow().kind()
+    }
+
+    fn render(&mut self, frame: &mut ratatui::Frame<'_>, area: ratatui::layout::Rect) {
+        self.inner.borrow_mut().render(frame, area);
+    }
+
+    fn handle_event(&mut self, event: PaneEvent) -> PaneEventResult {
+        self.inner.borrow_mut().handle_event(event)
+    }
+
+    fn on_show(&mut self) {
+        self.inner.borrow_mut().on_show();
+    }
+
+    fn on_hide(&mut self) {
+        self.inner.borrow_mut().on_hide();
+    }
+
+    fn border_title(&self) -> Option<String> {
+        self.inner.borrow().border_title()
+    }
+}
 
 /// Which area currently has focus
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FocusedArea {
-    /// A content pane is focused (index of the pane)
-    Pane(usize),
+    /// A content region is focused
+    ContentArea,
     /// Command input area is focused
     CommandInput,
+    /// Navigation banner is active (defocuses everything else)
+    NavigationBanner,
 }
 
 /// Ratatui-based TUI that displays content panes in tabs
@@ -40,24 +92,41 @@ pub struct AppUI {
     /// The shell instance
     shell: Arc<Mutex<brush_core::Shell>>,
 
-    // Special panes with direct access (not in general storage)
-    /// Primary terminal pane (needs direct access for output writing)
-    primary_terminal: Box<TerminalPane>,
-    /// Completion pane (needs direct access for modal workflow)
-    completion_pane: Box<CompletionPane>,
+    /// PTY handle for dynamic resizing
+    pty_handle: std::sync::Arc<crate::pty::Pty>,
 
-    /// General content panes (Environment, History, etc.)
-    panes: HashMap<PaneRole, Box<dyn ContentPane>>,
+    /// Unified pane storage - ALL panes stored here
+    panes: HashMap<PaneId, Box<dyn ContentPane>>,
+    /// Next available pane ID
+    next_pane_id: PaneId,
 
-    /// Order of panes in the tab bar (excluding special panes)
-    tab_order: Vec<PaneRole>,
+    /// Direct typed references to special panes (also in panes `HashMap`)
+    /// These allow access to custom interfaces without downcasting
+    primary_terminal: std::rc::Rc<std::cell::RefCell<TerminalPane>>,
+    completion_pane: std::rc::Rc<std::cell::RefCell<CompletionPane>>,
+
+    /// ID of primary terminal pane (for layout references)
+    #[allow(dead_code)]
+    primary_terminal_id: PaneId,
+    /// ID of completion pane (for layout references)
+    #[allow(dead_code)]
+    completion_pane_id: PaneId,
+
+    /// Layout manager for flexible pane arrangements
+    layout: LayoutManager,
+    /// ID of currently focused region in layout tree
+    focused_region_id: crate::layout::LayoutId,
 
     /// Command input widget
     command_input: CommandInput,
     /// Which area currently has focus
     focused_area: FocusedArea,
-    /// The pane that was focused before completion was triggered
+    /// The area that was focused before completion was triggered
     pre_completion_focus: Option<FocusedArea>,
+    /// Navigation mode active (Ctrl+B pressed, waiting for next key)
+    navigation_mode: bool,
+    /// Whether command input should be minimized (command running)
+    minimize_command_input: bool,
 }
 
 /// Result of handling a UI event.
@@ -82,223 +151,367 @@ impl AppUI {
     /// * `shell` - The shell to run the UI for
     /// * `primary_terminal` - The primary terminal pane
     /// * `completion_pane` - The completion pane
+    /// * `pty` - The PTY handle for dynamic resizing
+    #[allow(clippy::boxed_local)]
     pub fn new(
         shell: &Arc<Mutex<brush_core::Shell>>,
         primary_terminal: Box<TerminalPane>,
         completion_pane: Box<CompletionPane>,
+        pty: std::sync::Arc<crate::pty::Pty>,
     ) -> Self {
         // Initialize the ratatui terminal in raw mode
         let terminal = ratatui::init();
 
+        // Assign PaneIds for special panes
+        let primary_terminal_id: PaneId = 0;
+        let completion_pane_id: PaneId = 1;
+        let next_pane_id: PaneId = 2;
+
+        // Wrap special panes in Rc<RefCell> for dual access
+        let primary_terminal_rc = std::rc::Rc::new(std::cell::RefCell::new(*primary_terminal));
+        let completion_pane_rc = std::rc::Rc::new(std::cell::RefCell::new(*completion_pane));
+
+        // Store all panes in unified storage (using wrapper that holds Rc)
+        let mut panes = HashMap::new();
+        panes.insert(
+            primary_terminal_id,
+            Box::new(RcRefCellPaneWrapper::new(primary_terminal_rc.clone()))
+                as Box<dyn ContentPane>,
+        );
+        panes.insert(
+            completion_pane_id,
+            Box::new(RcRefCellPaneWrapper::new(completion_pane_rc.clone())) as Box<dyn ContentPane>,
+        );
+
+        // Start with single tab region containing primary terminal
+        let layout = LayoutManager::new_tabs(vec![primary_terminal_id], 0);
+        let focused_region_id = 0; // Root region
+
         Self {
             terminal,
             shell: shell.clone(),
-            primary_terminal,
-            completion_pane,
-            panes: HashMap::new(),
-            tab_order: Vec::new(),
+            pty_handle: pty,
+            panes,
+            next_pane_id,
+            primary_terminal: primary_terminal_rc,
+            completion_pane: completion_pane_rc,
+            primary_terminal_id,
+            completion_pane_id,
+            layout,
+            focused_region_id,
             command_input: CommandInput::new(shell),
             focused_area: FocusedArea::CommandInput,
             pre_completion_focus: None,
+            navigation_mode: false,
+            minimize_command_input: false,
         }
     }
 
-    /// Adds a content pane with the given role.
+    /// Adds a content pane to the focused region.
     ///
-    /// The pane will be displayed in tabs in the order added.
-    ///
-    /// # Panics
-    /// Panics if a pane with this role already exists.
-    pub fn add_pane(&mut self, role: PaneRole, pane: Box<dyn ContentPane>) {
-        if self.panes.contains_key(&role) {
-            panic!("Pane with role {:?} already exists", role);
-        }
-        self.tab_order.push(role);
-        self.panes.insert(role, pane);
+    /// Returns the `PaneId` assigned to the new pane.
+    pub fn add_pane(&mut self, pane: Box<dyn ContentPane>) -> PaneId {
+        let pane_id = self.next_pane_id;
+        self.next_pane_id += 1;
+        self.panes.insert(pane_id, pane);
+
+        // Add to focused region's tab group
+        self.layout
+            .add_pane_to_region(self.focused_region_id, pane_id);
+
+        pane_id
     }
 
-    /// Returns the total number of visible panes (terminal + general panes).
-    fn pane_count(&self) -> usize {
-        1 + self.panes.len() // Terminal always visible + general panes
-    }
-
-    /// Returns a mutable reference to a pane by tab index.
-    ///
-    /// Index 0 is always the terminal pane, followed by panes in tab_order.
-    fn pane_at_mut(&mut self, index: usize) -> Option<&mut dyn ContentPane> {
-        if index == 0 {
-            Some(&mut *self.primary_terminal as &mut dyn ContentPane)
-        } else {
-            let role = self.tab_order.get(index - 1)?;
-            self.panes
-                .get_mut(role)
-                .map(|p| &mut **p as &mut dyn ContentPane)
-        }
-    }
-
-    /// Returns an iterator over all pane names for the tab bar.
-    fn pane_names(&self) -> impl Iterator<Item = String> + '_ {
-        std::iter::once(self.primary_terminal.name().to_string()).chain(
-            self.tab_order
-                .iter()
-                .filter_map(|role| self.panes.get(role).map(|p| p.name().to_string())),
-        )
+    /// Gets a pane by ID.
+    #[allow(dead_code)]
+    fn get_pane_mut(&mut self, pane_id: PaneId) -> Option<&mut dyn ContentPane> {
+        self.panes
+            .get_mut(&pane_id)
+            .map(|p| &mut **p as &mut dyn ContentPane)
     }
 
     /// Writes output to the primary terminal pane.
     ///
     /// This allows the UI to display messages in the terminal between command executions.
     pub fn write_to_terminal(&self, data: &[u8]) {
-        self.primary_terminal.process_output(data);
+        self.primary_terminal.borrow_mut().process_output(data);
     }
 
     /// Sets the currently running command to display in the terminal pane's border.
     ///
     /// Pass `None` to clear the running command display.
     pub fn set_running_command(&mut self, command: Option<String>) {
-        self.primary_terminal.set_running_command(command);
-    }
-
-    const CONTENT_PANE_HEIGHT_PERCENTAGE: u16 = 80;
-
-    /// Gets mutable access to a specific pane.
-    #[allow(dead_code)]
-    pub fn get_pane_mut(&mut self, index: usize) -> Option<&mut dyn ContentPane> {
-        self.pane_at_mut(index)
+        // Minimize command input when command is running, restore when done
+        self.minimize_command_input = command.is_some();
+        self.primary_terminal
+            .borrow_mut()
+            .set_running_command(command);
     }
 
     /// Draws the UI with content panes and command input.
+    #[allow(clippy::too_many_lines)]
     pub fn render(&mut self) -> Result<(), std::io::Error> {
         let focused_area = self.focused_area;
 
         // Check if we should show the completion pane instead of normal panes
-        let show_completion = self.completion_pane.is_active();
-
-        // Collect tab titles from panes (unless showing completion)
-        let tab_titles: Vec<String> = if show_completion {
-            vec!["Completions".to_string()]
-        } else {
-            self.pane_names().map(String::from).collect()
-        };
-
-        // Track which pane is selected (for rendering) vs focused (for input)
-        let selected_pane_index = match focused_area {
-            FocusedArea::Pane(idx) => idx,
-            FocusedArea::CommandInput => 0, // Keep showing first pane when command input is focused
-        };
+        let show_completion = self.completion_pane.borrow().is_active();
 
         // Update command input focus state
         self.command_input
             .set_focused(matches!(focused_area, FocusedArea::CommandInput));
 
         // Borrow fields separately to avoid capturing `self` in the closure
-        let primary_terminal = &mut self.primary_terminal;
-        let completion_pane = &mut self.completion_pane;
+        let completion_pane = &self.completion_pane;
         let panes = &mut self.panes;
-        let tab_order = &self.tab_order;
         let command_input = &mut self.command_input;
+        let navigation_mode = self.navigation_mode;
+        let minimize_command_input = self.minimize_command_input;
+        let pty_handle = &self.pty_handle;
+        let layout = &self.layout;
+        let focused_region_id = self.focused_region_id;
+        let content_area_focused = matches!(focused_area, FocusedArea::ContentArea);
 
         self.terminal.draw(|f| {
+            // Dynamic sizing: minimize command input when command is running
+            let command_input_size = if minimize_command_input {
+                Constraint::Length(3) // Just enough for border + title
+            } else {
+                Constraint::Percentage(20) // Full height
+            };
+
+            // Main layout: content area + command input + optional nav banner
+            let main_constraints = if navigation_mode {
+                // Shrink command input by 1 line to make space for banner
+                let shrunk_size = match command_input_size {
+                    Constraint::Length(n) => Constraint::Length(n.saturating_sub(1).max(2)),
+                    Constraint::Percentage(p) => Constraint::Percentage(p),
+                    _ => command_input_size,
+                };
+                vec![
+                    Constraint::Min(10),         // Content area (takes remaining space)
+                    shrunk_size,                 // Command input shrunk by 1 line
+                    Constraint::Length(1),       // Navigation mode banner
+                ]
+            } else {
+                vec![
+                    Constraint::Min(10),         // Content area (takes remaining space)
+                    command_input_size,          // Command input pane (dynamic)
+                ]
+            };
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Percentage(Self::CONTENT_PANE_HEIGHT_PERCENTAGE), /* Tab area (tabs +
-                                                                                   * content) */
-                    Constraint::Percentage(20), // Command input pane
-                ])
+                .constraints(main_constraints)
                 .split(f.area());
 
-            // Split tab area into: tabs bar (1 line) + content
-            let tab_area_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1), // Tabs bar (just the labels, no borders)
-                    Constraint::Min(0),    // Content area with borders
-                ])
-                .split(chunks[0]);
+            // Calculate PTY size from content area.
+            // We need to account for:
+            // - Tab bar height (1 line when multiple tabs exist)
+            // - Border (2 lines + 2 cols)
+            // The actual calculation happens after we know region structure below.
+            // For now, use a conservative estimate.
+            let content_height = chunks[0].height.saturating_sub(3); // -1 for tabs, -2 for borders
+            let content_width = chunks[0].width.saturating_sub(2);   // -2 for borders
 
-            // Render the tabs (outside any borders)
-            // Deselect all tabs when command input is focused
-            let tab_selection = match focused_area {
-                FocusedArea::Pane(idx) => idx,
-                FocusedArea::CommandInput => usize::MAX, // Deselect when command input focused
-            };
+            // Resize PTY if dimensions changed
+            let _ = pty_handle.resize(content_height, content_width);
 
-            let colors = [
-                Color::Rgb(70, 70, 70),
-                Color::Rgb(90, 90, 90),
-                Color::Rgb(110, 110, 110),
-                Color::Rgb(130, 130, 130),
-                Color::Rgb(150, 150, 150),
-                Color::Rgb(170, 170, 170),
-            ];
+            // Content area will be split by layout manager
+            let content_inner = chunks[0];
 
-            let tabs = Tabs::new(tab_titles.iter().enumerate().map(|(i, t)| {
-                Line::from(std::format!(" {t} "))
-                    .style(Style::default().bg(colors[i % colors.len()]))
-            }))
-            .select(tab_selection)
-            .style(Style::default().fg(Color::White).bg(Color::DarkGray)) // Unselected tabs
-            .highlight_style(Style::default().bg(Color::Green))
-            .divider("")
-            .padding("", "");
-            f.render_widget(tabs, tab_area_chunks[0]);
-
-            // Render content area with borders based on focus
-            let pane_focused = matches!(focused_area, FocusedArea::Pane(_));
-
-            let content_border_style = if pane_focused {
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            };
-
-            // Get border title from the selected pane if available
-            let border_title = if selected_pane_index == 0 {
-                primary_terminal.as_ref().border_title()
-            } else {
-                tab_order
-                    .get(selected_pane_index - 1)
-                    .and_then(|role| panes.get(role))
-                    .and_then(|pane| pane.border_title())
-            };
-
-            // Render the selected pane's content with borders
-            let mut content_block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(content_border_style);
-
-            if let Some(title) = border_title {
-                content_block = content_block.title(
-                    Line::from(title).style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                );
-            }
-
-            let content_inner = content_block.inner(tab_area_chunks[1]);
-            f.render_widget(content_block, tab_area_chunks[1]);
-
-            // Render the selected pane's content inside the bordered area
-            // If completion pane is active, show it instead
+            // Render the content area using new region-based layout
             if show_completion {
-                completion_pane.as_mut().render(f, content_inner);
-            } else if selected_pane_index == 0 {
-                primary_terminal.as_mut().render(f, content_inner);
-            } else if let Some(role) = tab_order.get(selected_pane_index - 1) {
-                if let Some(pane) = panes.get_mut(role) {
-                    pane.render(f, content_inner);
+                // Special case: show completion pane fullscreen
+                completion_pane.borrow_mut().render(f, content_inner);
+            } else {
+                // Get all regions from layout tree
+                let regions = layout.render_layout(content_inner);
+
+                // Render each region (which may contain multiple tabs)
+                for (region_id, pane_ids, selected_tab, rect) in regions {
+                    let is_focused_region = region_id == focused_region_id;
+
+                    // If region has multiple panes, render a tab bar
+                    if pane_ids.len() > 1 {
+                        // Split area for tabs bar + content
+                        let region_chunks = Layout::default()
+                            .direction(Direction::Vertical)
+                            .constraints([
+                                Constraint::Length(1), // Tab bar
+                                Constraint::Min(0),    // Content
+                            ])
+                            .split(rect);
+
+                        // Build tab titles
+                        let tab_titles: Vec<String> = pane_ids.iter().filter_map(|&pane_id| {
+                            panes.get(&pane_id).map(|p| p.name().to_string())
+                        }).collect();
+
+                        // Gradient colors for tabs
+                        let gradient_colors = [
+                            (Color::Rgb(139, 92, 246), "󰆍 "),  // Purple
+                            (Color::Rgb(34, 211, 238), "󰘚 "),   // Cyan
+                            (Color::Rgb(251, 146, 60), "󱑗 "),  // Orange
+                            (Color::Rgb(236, 72, 153), "󰬪 "),   // Pink
+                            (Color::Rgb(134, 239, 172), "󰊕 "),  // Green
+                            (Color::Rgb(250, 204, 21), "󰜎 "),   // Yellow
+                        ];
+
+                        let tabs = Tabs::new(tab_titles.iter().enumerate().map(|(i, t)| {
+                            let (color, icon) = gradient_colors[i % gradient_colors.len()];
+                            let is_selected = i == selected_tab;
+
+                            // Build tab text with underlined first character for hotkey hint
+                            let mut spans = vec![Span::raw(format!(" {icon}"))];
+                            if let Some(first_char) = t.chars().next() {
+                                spans.push(Span::styled(
+                                    first_char.to_string(),
+                                    Style::default().add_modifier(Modifier::UNDERLINED)
+                                ));
+                                spans.push(Span::raw(t.chars().skip(1).collect::<String>()));
+                            } else {
+                                spans.push(Span::raw(t.clone()));
+                            }
+                            spans.push(Span::raw(" "));
+
+                            let base_style = if is_selected {
+                                Style::default()
+                                    .fg(Color::Rgb(255, 255, 255))
+                                    .bg(color)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                let dimmed_color = match color {
+                                    Color::Rgb(r, g, b) => Color::Rgb(r / 3, g / 3, b / 3),
+                                    _ => Color::Rgb(40, 42, 54),
+                                };
+                                Style::default()
+                                    .fg(Color::Rgb(200, 200, 220))
+                                    .bg(dimmed_color)
+                            };
+
+                            Line::from(spans).style(base_style)
+                        }))
+                        .select(selected_tab)
+                        .style(Style::default().bg(Color::Rgb(15, 15, 25)))
+                        .divider("│");
+
+                        f.render_widget(tabs, region_chunks[0]);
+
+                        // Render selected pane with border
+                        let selected_pane_id = pane_ids[selected_tab];
+                        let border_color = if is_focused_region && content_area_focused {
+                            // Bright color when this region AND content area are focused
+                            gradient_colors[selected_tab % gradient_colors.len()].0
+                        } else if content_area_focused {
+                            // Dimmer color when content area focused but different region
+                            let (r, g, b) = match gradient_colors[selected_tab % gradient_colors.len()].0 {
+                                Color::Rgb(r, g, b) => (r / 2, g / 2, b / 2),
+                                _ => (60, 60, 80),
+                            };
+                            Color::Rgb(r, g, b)
+                        } else {
+                            // Very dim when command input is focused
+                            Color::Rgb(40, 42, 54)
+                        };
+
+                        // Get title from selected pane (shows running command for Terminal)
+                        let title = panes.get(&selected_pane_id)
+                            .map_or_else(
+                                || "Pane".to_string(),
+                                |p| p.border_title().unwrap_or_else(|| p.name().to_string())
+                            );
+
+                        let title_color = if is_focused_region && content_area_focused {
+                            Color::Rgb(220, 208, 255) // Bright when focused
+                        } else if content_area_focused {
+                            Color::Rgb(150, 150, 170) // Medium when content area focused
+                        } else {
+                            Color::Rgb(80, 80, 90) // Dim when command input focused
+                        };
+
+                        let block = Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .border_style(Style::default().fg(border_color))
+                            .title(Line::from(format!(" 󰐊 {title} ")).style(
+                                Style::default()
+                                    .fg(title_color)
+                                    .add_modifier(Modifier::BOLD)
+                            ));
+
+                        let inner = block.inner(region_chunks[1]);
+                        f.render_widget(block, region_chunks[1]);
+
+                        if let Some(pane) = panes.get_mut(&selected_pane_id) {
+                            pane.render(f, inner);
+                        }
+                    } else if selected_tab < pane_ids.len() {
+                        // Single pane in region - render with border
+                        let pane_id = pane_ids[selected_tab];
+
+                        let border_color = if is_focused_region && content_area_focused {
+                            Color::Rgb(139, 92, 246) // Bright purple when focused
+                        } else if content_area_focused {
+                            Color::Rgb(69, 46, 123) // Dimmer purple when content area focused but different region
+                        } else {
+                            Color::Rgb(40, 42, 54) // Very dim when command input focused
+                        };
+
+                        let title = panes.get(&pane_id)
+                            .map_or_else(
+                                || "Pane".to_string(),
+                                |p| p.border_title().unwrap_or_else(|| p.name().to_string())
+                            );
+
+                        let title_color = if is_focused_region && content_area_focused {
+                            Color::Rgb(220, 208, 255) // Bright when focused
+                        } else if content_area_focused {
+                            Color::Rgb(150, 150, 170) // Medium when content area focused
+                        } else {
+                            Color::Rgb(80, 80, 90) // Dim when command input focused
+                        };
+
+                        let block = Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .border_style(Style::default().fg(border_color))
+                            .title(Line::from(format!(" 󰐊 {title} ")).style(
+                                Style::default()
+                                    .fg(title_color)
+                                    .add_modifier(Modifier::BOLD)
+                            ));
+
+                        let inner = block.inner(rect);
+                        f.render_widget(block, rect);
+
+                        if let Some(pane) = panes.get_mut(&pane_id) {
+                            pane.render(f, inner);
+                        }
+                    }
                 }
             }
 
-            // Render the command input pane using the widget
+            // Render command input (always visible, but might be minimized)
             if let Some((cursor_x, cursor_y)) = command_input.render(f, chunks[1]) {
-                f.set_cursor_position((cursor_x, cursor_y));
+                // Only set cursor if not in navigation mode
+                if !navigation_mode {
+                    f.set_cursor_position((cursor_x, cursor_y));
+                }
+            }
+
+            // Render navigation banner at bottom if in navigation mode
+            if navigation_mode {
+                let nav_indicator = Paragraph::new(
+                    " ⚡ NAV: Ctrl+E/H/A/F/C/T=panes, 0=input, n/p=region, Tab=tab, v/h=split, x=close, Esc=exit "
+                )
+                .style(
+                    Style::default()
+                        .bg(Color::Rgb(250, 204, 21)) // Bright yellow
+                        .fg(Color::Rgb(0, 0, 0))      // Black text
+                        .add_modifier(Modifier::BOLD)
+                )
+                .alignment(Alignment::Center);
+                f.render_widget(nav_indicator, chunks[2]);
             }
         })?;
 
@@ -307,41 +520,78 @@ impl AppUI {
 
     fn set_focus_to_command_input(&mut self) {
         // Send Unfocused event to currently focused pane
-        if let FocusedArea::Pane(idx) = self.focused_area {
-            if let Some(pane) = self.pane_at_mut(idx) {
+        if let Some(pane_id) = self.layout.focused_pane() {
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
                 let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
             }
         }
         self.focused_area = FocusedArea::CommandInput;
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     fn set_focus_to_next_pane_or_area(&mut self) {
-        let num_panes = self.pane_count();
-        let old_focused_area = self.focused_area;
-
+        // For now, just cycle between content area and command input
+        // TODO: Implement proper region cycling when multiple regions exist
+        let old_area = self.focused_area;
         self.focused_area = match self.focused_area {
-            FocusedArea::Pane(idx) if idx + 1 < num_panes => FocusedArea::Pane(idx + 1),
-            FocusedArea::Pane(_) => {
+            FocusedArea::ContentArea => {
                 if self.command_input.is_enabled() {
+                    // Send Unfocused to current pane before switching away
+                    if let Some(pane_id) = self.layout.focused_pane() {
+                        if let Some(pane) = self.panes.get_mut(&pane_id) {
+                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                        }
+                    }
                     FocusedArea::CommandInput
                 } else {
-                    FocusedArea::Pane(0)
+                    FocusedArea::ContentArea
                 }
             }
-            FocusedArea::CommandInput => FocusedArea::Pane(0),
+            FocusedArea::CommandInput => FocusedArea::ContentArea,
+            FocusedArea::NavigationBanner => FocusedArea::NavigationBanner, // Stay in nav mode
         };
 
-        // Send Unfocused event to previously focused pane
-        if let FocusedArea::Pane(old_idx) = old_focused_area {
-            if let Some(pane) = self.pane_at_mut(old_idx) {
-                let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+        // Send Focused event if we switched to content area
+        if old_area != self.focused_area && matches!(self.focused_area, FocusedArea::ContentArea) {
+            if let Some(pane_id) = self.layout.focused_pane() {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                }
             }
         }
+    }
 
-        // Send Focused event to newly focused pane
-        if let FocusedArea::Pane(new_idx) = self.focused_area {
-            if let Some(pane) = self.pane_at_mut(new_idx) {
-                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+    /// Focuses the first pane of the given kind, switching regions if necessary.
+    fn focus_pane_by_kind(&mut self, kind: &crate::content_pane::PaneKind) {
+        // Send Unfocused to currently focused pane
+        let old_pane_id = self.layout.focused_pane();
+
+        // Find the first pane matching this kind
+        for (&pane_id, pane) in &self.panes {
+            if std::mem::discriminant(&pane.kind()) == std::mem::discriminant(kind) {
+                // Found a matching pane! Try to focus it
+                if self.layout.focus_pane(pane_id) {
+                    // Send Unfocused to old pane if it changed
+                    if let Some(old_id) = old_pane_id {
+                        if old_id != pane_id {
+                            if let Some(old_pane) = self.panes.get_mut(&old_id) {
+                                let _ = old_pane
+                                    .handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+                    }
+
+                    // Send Focused to new pane
+                    if let Some(new_pane) = self.panes.get_mut(&pane_id) {
+                        let _ = new_pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                    }
+
+                    // Update our tracked focused region
+                    self.focused_region_id = self.layout.focused_node_id().unwrap_or(0);
+                    // Ensure content area is focused (not command input)
+                    self.focused_area = FocusedArea::ContentArea;
+                    return;
+                }
             }
         }
     }
@@ -350,7 +600,7 @@ impl AppUI {
     #[allow(clippy::too_many_lines)]
     pub fn handle_events(&mut self) -> Result<UIEventResult, std::io::Error> {
         // Check if completion pane is active
-        let completion_active = self.completion_pane.is_active();
+        let completion_active = self.completion_pane.borrow().is_active();
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
@@ -358,7 +608,7 @@ impl AppUI {
                     // If completion is active, handle special keys
                     KeyCode::Esc if completion_active => {
                         // Cancel completion
-                        self.completion_pane.clear();
+                        self.completion_pane.borrow_mut().clear();
                         // Restore focus
                         if let Some(prev_focus) = self.pre_completion_focus.take() {
                             self.focused_area = prev_focus;
@@ -366,9 +616,11 @@ impl AppUI {
                     }
                     KeyCode::Enter if completion_active => {
                         // Accept completion
-                        if let Some(completion) = self.completion_pane.selected_completion() {
+                        if let Some(completion) =
+                            self.completion_pane.borrow().selected_completion()
+                        {
                             let (insertion_index, delete_count) =
-                                self.completion_pane.insertion_params();
+                                self.completion_pane.borrow().insertion_params();
                             // Apply to command input
                             self.command_input.apply_completion(
                                 completion,
@@ -376,7 +628,7 @@ impl AppUI {
                                 delete_count,
                             );
                         }
-                        self.completion_pane.clear();
+                        self.completion_pane.borrow_mut().clear();
                         // Restore focus
                         if let Some(prev_focus) = self.pre_completion_focus.take() {
                             self.focused_area = prev_focus;
@@ -386,7 +638,7 @@ impl AppUI {
                     KeyCode::Tab
                         if completion_active && !key.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
-                        self.completion_pane.handle_event(
+                        self.completion_pane.borrow_mut().handle_event(
                             crate::content_pane::PaneEvent::KeyPress(
                                 KeyCode::Down,
                                 KeyModifiers::empty(),
@@ -396,7 +648,7 @@ impl AppUI {
                     KeyCode::BackTab | KeyCode::Tab
                         if completion_active && key.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
-                        self.completion_pane.handle_event(
+                        self.completion_pane.borrow_mut().handle_event(
                             crate::content_pane::PaneEvent::KeyPress(
                                 KeyCode::Up,
                                 KeyModifiers::empty(),
@@ -412,7 +664,7 @@ impl AppUI {
                     | KeyCode::End
                         if completion_active =>
                     {
-                        self.completion_pane.handle_event(
+                        self.completion_pane.borrow_mut().handle_event(
                             crate::content_pane::PaneEvent::KeyPress(key.code, key.modifiers),
                         );
                     }
@@ -426,7 +678,7 @@ impl AppUI {
                             }
                             crate::command_input::CommandKeyResult::CommandEntered(command) => {
                                 // User pressed Enter with actual command text - cancel completion and execute
-                                self.completion_pane.clear();
+                                self.completion_pane.borrow_mut().clear();
                                 if let Some(prev_focus) = self.pre_completion_focus.take() {
                                     self.focused_area = prev_focus;
                                 }
@@ -434,16 +686,205 @@ impl AppUI {
                             }
                             _ => {
                                 // Cancel completion for other cases (e.g., Ctrl+D)
-                                self.completion_pane.clear();
+                                self.completion_pane.borrow_mut().clear();
                                 if let Some(prev_focus) = self.pre_completion_focus.take() {
                                     self.focused_area = prev_focus;
                                 }
                             }
                         }
                     }
-                    // Ctrl+Space cycles focus through panes and command input
+                    // Ctrl+B: Enter navigation mode
+                    KeyCode::Char('b')
+                        if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && !self.navigation_mode =>
+                    {
+                        // Unfocus current pane when entering navigation mode
+                        if let Some(pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+                        self.navigation_mode = true;
+                        self.focused_area = FocusedArea::NavigationBanner;
+                    }
+                    // Navigation mode active: handle navigation keys (mode stays active)
+                    // Navigation mode: Letter keys jump to specific pane types
+                    KeyCode::Char('e')
+                        if self.navigation_mode
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Environment);
+                    }
+                    KeyCode::Char('h')
+                        if self.navigation_mode
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::History);
+                    }
+                    KeyCode::Char('a')
+                        if self.navigation_mode
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Aliases);
+                    }
+                    KeyCode::Char('f')
+                        if self.navigation_mode
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Functions);
+                    }
+                    KeyCode::Char('c')
+                        if self.navigation_mode
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::CallStack);
+                    }
+                    KeyCode::Char('t')
+                        if self.navigation_mode
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
+                    }
+                    KeyCode::Char('0') if self.navigation_mode => {
+                        self.set_focus_to_command_input();
+                    }
+                    // Navigation mode: n for next region, p for previous region
+                    KeyCode::Char('n') if self.navigation_mode => {
+                        // Send Unfocused to current pane
+                        if let Some(old_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        self.layout.focus_next_region();
+                        self.focused_region_id = self.layout.focused_node_id().unwrap_or(0);
+
+                        // Send Focused to new pane
+                        if let Some(new_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                    KeyCode::Char('p') if self.navigation_mode => {
+                        // Send Unfocused to current pane
+                        if let Some(old_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        self.layout.focus_prev_region();
+                        self.focused_region_id = self.layout.focused_node_id().unwrap_or(0);
+
+                        // Send Focused to new pane
+                        if let Some(new_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                    // Navigation mode: Tab to cycle tabs in current region
+                    KeyCode::Tab if self.navigation_mode => {
+                        // Send Unfocused to current pane
+                        if let Some(old_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        self.layout.cycle_tabs_in_focused_region(true);
+
+                        // Send Focused to new pane
+                        if let Some(new_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                    // Navigation mode: Vertical split (side by side)
+                    KeyCode::Char('v') if self.navigation_mode => {
+                        // TODO: Create new pane and split
+                        // For now, just ignore
+                    }
+                    // Navigation mode: Horizontal split (top and bottom)
+                    KeyCode::Char('h') if self.navigation_mode => {
+                        // TODO: Create new pane and split
+                        // For now, just ignore
+                    }
+                    // Navigation mode: Close focused pane (unsplit)
+                    KeyCode::Char('x') if self.navigation_mode => {
+                        // TODO: Implement close/unsplit functionality
+                        // For now, just ignore
+                    }
+                    // Navigation mode: Esc to exit (only way out)
+                    KeyCode::Esc if self.navigation_mode => {
+                        self.navigation_mode = false;
+                        // Restore focus to content area and send Focused event to current pane
+                        self.focused_area = FocusedArea::ContentArea;
+                        if let Some(pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                    // Navigation mode: Ignore unrecognized keys (stay in mode)
+                    _ if self.navigation_mode => {
+                        // Unknown key - just ignore it, stay in navigation mode
+                    }
+
+                    // Ctrl+Tab: Next tab in current region
+                    KeyCode::Tab
+                        if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                    {
+                        // Send Unfocused to current pane
+                        if let Some(old_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        self.layout.cycle_tabs_in_focused_region(true);
+
+                        // Send Focused to new pane
+                        if let Some(new_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                    KeyCode::BackTab if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Send Unfocused to current pane
+                        if let Some(old_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        self.layout.cycle_tabs_in_focused_region(false);
+
+                        // Send Focused to new pane
+                        if let Some(new_pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                    // Ctrl+Space cycles focus through panes and command input (legacy support)
                     KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.set_focus_to_next_pane_or_area();
+                    }
+                    // Ctrl+0: Jump to command input
+                    KeyCode::Char('0') if key.modifiers.contains(KeyModifiers::ALT) => {
+                        self.set_focus_to_command_input();
                     }
                     // Ctrl+Q quits the application by returning None to signal shutdown
                     KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -465,9 +906,9 @@ impl AppUI {
                         }
                     }
                     // Delegate all other keys to the focused pane
-                    _ if matches!(self.focused_area, FocusedArea::Pane(idx) if idx < self.pane_count()) => {
-                        if let FocusedArea::Pane(idx) = self.focused_area {
-                            if let Some(pane) = self.pane_at_mut(idx) {
+                    _ if matches!(self.focused_area, FocusedArea::ContentArea) => {
+                        if let Some(pane_id) = self.layout.focused_pane() {
+                            if let Some(pane) = self.panes.get_mut(&pane_id) {
                                 use crate::content_pane::{PaneEvent, PaneEventResult};
                                 let result =
                                     pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
@@ -498,7 +939,7 @@ impl AppUI {
     ///
     /// # Errors
     /// Returns an error if rendering or event handling fails
-    #[allow(clippy::unused_async)]
+    #[allow(clippy::unused_async, clippy::future_not_send)]
     pub async fn run(&mut self) -> Result<()> {
         let source_info = SourceInfo::default();
         let params = ExecutionParameters::default();
@@ -593,7 +1034,9 @@ impl AppUI {
                             self.pre_completion_focus = Some(self.focused_area);
 
                             // Show completion pane
-                            self.completion_pane.set_completions(completions);
+                            self.completion_pane
+                                .borrow_mut()
+                                .set_completions(completions);
                         }
                     } else {
                         drop(shell);
