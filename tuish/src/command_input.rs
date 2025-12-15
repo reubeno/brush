@@ -97,16 +97,19 @@ impl CommandInput {
     }
 
     /// Disables the command input (e.g., when a command is running).
+    #[allow(dead_code)]
     pub const fn disable(&mut self) {
         self.enabled = false;
     }
 
     /// Enables the command input (e.g., when no command is running).
+    #[allow(dead_code)]
     pub const fn enable(&mut self) {
         self.enabled = true;
     }
 
     /// Checks if the command input is enabled.
+    #[allow(dead_code)]
     pub const fn is_enabled(&self) -> bool {
         self.enabled
     }
