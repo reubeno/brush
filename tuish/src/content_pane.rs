@@ -96,4 +96,14 @@ pub trait ContentPane: Send {
     fn border_title(&self) -> Option<String> {
         None
     }
+
+    /// Returns whether this pane is currently enabled.
+    ///
+    /// Disabled panes cannot receive focus. When a region contains only disabled panes,
+    /// the region itself cannot receive focus (will be skipped during Ctrl+Space rotation).
+    ///
+    /// The default implementation returns `true` (always enabled).
+    fn is_enabled(&self) -> bool {
+        true
+    }
 }

@@ -197,8 +197,8 @@ impl AppUI {
             }
         );
 
-        // Start with CommandInput region active (region id = 2)
-        let active_region_id = 2;
+        // Start with content region active (region id = 1)
+        let active_region_id = 1;
 
         Self {
             terminal,
@@ -218,7 +218,7 @@ impl AppUI {
         }
     }
 
-    /// Adds a content pane to the focused region.
+    /// Adds a content pane to the content region (region id=1).
     ///
     /// Returns the `PaneId` assigned to the new pane.
     pub fn add_pane(&mut self, pane: Box<dyn ContentPane>) -> PaneId {
@@ -226,9 +226,8 @@ impl AppUI {
         self.next_pane_id += 1;
         self.panes.insert(pane_id, pane);
 
-        // Add to focused region's tab group
-        self.layout
-            .add_pane_to_region(self.active_region_id, pane_id);
+        // Add to content region (id=1), not command input region (id=2)
+        self.layout.add_pane_to_region(1, pane_id);
 
         pane_id
     }
@@ -525,16 +524,30 @@ impl AppUI {
             }
         }
 
-        // Rotate to next region
-        self.layout.focus_next_region();
-        self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
-
-        // Focus new pane
-        if let Some(new_pane_id) = self.layout.focused_pane() {
-            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+        // Rotate to next region, skipping regions with only disabled panes
+        let regions = self.layout.get_all_regions();
+        let num_regions = regions.len();
+        
+        for _ in 0..num_regions {
+            self.layout.focus_next_region();
+            self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
+            
+            // Check if any pane in this region is enabled
+            if let Some(pane_id) = self.layout.focused_pane() {
+                if let Some(pane) = self.panes.get(&pane_id) {
+                    if pane.is_enabled() {
+                        // Found an enabled pane, focus it
+                        if let Some(pane_mut) = self.panes.get_mut(&pane_id) {
+                            let _ = pane_mut.handle_event(crate::content_pane::PaneEvent::Focused);
+                        }
+                        return;
+                    }
+                }
             }
+            // This region has no enabled panes, try next
         }
+        
+        // If we get here, no enabled panes found anywhere (shouldn't happen)
     }
 
     /// Focuses the first pane of the given kind, switching regions if necessary.
@@ -812,61 +825,69 @@ impl AppUI {
                     }
                     // Navigation mode: 'v' for vertical split (side by side)
                     KeyCode::Char('v') if self.navigation_mode => {
-                        // Create a new Environment pane for the new region
-                        let new_pane_id = self.next_pane_id;
-                        self.next_pane_id += 1;
-                        self.panes.insert(
-                            new_pane_id,
-                            Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
-                        );
+                        // Check if current region is splittable (not CommandInput region)
+                        // CommandInput region (id=2) has splittable=false
+                        if self.active_region_id != 2 {
+                            // Create a new Environment pane for the new region
+                            let new_pane_id = self.next_pane_id;
+                            self.next_pane_id += 1;
+                            self.panes.insert(
+                                new_pane_id,
+                                Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
+                            );
 
-                        // Split the focused region vertically
-                        if self.layout.split_vertical(new_pane_id) {
-                            // Update active region ID
-                            self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
-                            
-                            // Send Unfocused to old pane
-                            if let Some(old_pane_id) = self.layout.focused_pane() {
-                                if old_pane_id != new_pane_id {
-                                    if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            // Split the focused region vertically
+                            if self.layout.split_vertical(new_pane_id) {
+                                // Update active region ID
+                                self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
+                                
+                                // Send Unfocused to old pane
+                                if let Some(old_pane_id) = self.layout.focused_pane() {
+                                    if old_pane_id != new_pane_id {
+                                        if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                        }
                                     }
                                 }
-                            }
-                            
-                            // Send Focused to new pane
-                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                
+                                // Send Focused to new pane
+                                if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
                             }
                         }
                     }
                     // Navigation mode: 'h' for horizontal split (top and bottom)
                     KeyCode::Char('h') if self.navigation_mode => {
-                        // Create a new Environment pane for the new region
-                        let new_pane_id = self.next_pane_id;
-                        self.next_pane_id += 1;
-                        self.panes.insert(
-                            new_pane_id,
-                            Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
-                        );
+                        // Check if current region is splittable (not CommandInput region)
+                        // CommandInput region (id=2) has splittable=false
+                        if self.active_region_id != 2 {
+                            // Create a new Environment pane for the new region
+                            let new_pane_id = self.next_pane_id;
+                            self.next_pane_id += 1;
+                            self.panes.insert(
+                                new_pane_id,
+                                Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell)),
+                            );
 
-                        // Split the focused region horizontally
-                        if self.layout.split_horizontal(new_pane_id) {
-                            // Update active region ID
-                            self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
-                            
-                            // Send Unfocused to old pane
-                            if let Some(old_pane_id) = self.layout.focused_pane() {
-                                if old_pane_id != new_pane_id {
-                                    if let Some(pane) = self.panes.get_mut(&old_pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            // Split the focused region horizontally
+                            if self.layout.split_horizontal(new_pane_id) {
+                                // Update active region ID
+                                self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
+                                
+                                // Send Unfocused to old pane
+                                if let Some(old_pane_id) = self.layout.focused_pane() {
+                                    if old_pane_id != new_pane_id {
+                                        if let Some(pane) = self.panes.get_mut(&old_pane_id) {
+                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                        }
                                     }
                                 }
-                            }
-                            
-                            // Send Focused to new pane
-                            if let Some(pane) = self.panes.get_mut(&new_pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                
+                                // Send Focused to new pane
+                                if let Some(pane) = self.panes.get_mut(&new_pane_id) {
+                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
                             }
                         }
                     }
@@ -1014,10 +1035,8 @@ impl AppUI {
                     // Clear the running command display
                     self.set_running_command(None);
 
-                    // Re-enable command input through pane interface
-                    if let Some(pane) = self.panes.get_mut(&self.command_input_pane_id) {
-                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                    }
+                    // Re-enable command input pane and focus it
+                    self.command_input_handle.borrow_mut().enable();
                     self.set_focus_to_command_input();
                 }
             }
@@ -1054,10 +1073,8 @@ impl AppUI {
                         result
                     }));
 
-                    // Once it's running, disable command input by unfocusing
-                    if let Some(pane) = self.panes.get_mut(&self.command_input_pane_id) {
-                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                    }
+                    // Once it's running, disable command input pane and switch focus
+                    self.command_input_handle.borrow_mut().disable();
                     self.set_focus_to_next_pane_or_area();
 
                     // TODO: Check for exit signal from command execution

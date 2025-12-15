@@ -97,21 +97,13 @@ impl CommandInput {
     }
 
     /// Disables the command input (e.g., when a command is running).
-    #[allow(dead_code)]
-    pub const fn disable(&mut self) {
+    pub fn disable(&mut self) {
         self.enabled = false;
     }
 
     /// Enables the command input (e.g., when no command is running).
-    #[allow(dead_code)]
-    pub const fn enable(&mut self) {
+    pub fn enable(&mut self) {
         self.enabled = true;
-    }
-
-    /// Checks if the command input is enabled.
-    #[allow(dead_code)]
-    pub const fn is_enabled(&self) -> bool {
-        self.enabled
     }
 
     /// Returns the current buffer content.
@@ -434,5 +426,9 @@ impl crate::content_pane::ContentPane for CommandInput {
 
     fn border_title(&self) -> Option<String> {
         None // CommandInput renders its own title as part of its border
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
     }
 }
