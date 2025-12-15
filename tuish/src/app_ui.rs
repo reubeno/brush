@@ -366,7 +366,14 @@ impl AppUI {
 
                         // Render selected pane with border
                         let selected_index = pane_ids.iter().position(|&id| id == focused_pane_id).unwrap_or(0);
-                        let border_color = if is_focused_region {
+                        
+                        // Check if this pane is marked for moving
+                        let is_marked = self.marked_pane_for_move == Some(focused_pane_id);
+                        
+                        let border_color = if is_marked {
+                            // Bright yellow/gold when marked for moving
+                            Color::Rgb(255, 215, 0)
+                        } else if is_focused_region {
                             // Bright color when this region is active
                             gradient_colors[selected_index % gradient_colors.len()].0
                         } else {
@@ -379,13 +386,20 @@ impl AppUI {
                         };
 
                         // Get title from selected pane (shows running command for Terminal)
-                        let title = store.get_pane(focused_pane_id)
+                        let mut title = store.get_pane(focused_pane_id)
                             .map_or_else(
                                 || "Pane".to_string(),
                                 |p| p.border_title().unwrap_or_else(|| p.name().to_string())
                             );
+                        
+                        // Add MARKED indicator to title
+                        if is_marked {
+                            title = format!("󰃀 MARKED: {}", title);
+                        }
 
-                        let title_color = if is_focused_region {
+                        let title_color = if is_marked {
+                            Color::Rgb(255, 215, 0) // Bright gold when marked
+                        } else if is_focused_region {
                             Color::Rgb(220, 208, 255) // Bright when focused
                         } else {
                             Color::Rgb(150, 150, 170) // Dimmer when not focused
@@ -393,7 +407,7 @@ impl AppUI {
 
                         let block = Block::default()
                             .borders(Borders::ALL)
-                            .border_type(BorderType::Rounded)
+                            .border_type(if is_marked { BorderType::Double } else { BorderType::Rounded })
                             .border_style(Style::default().fg(border_color))
                             .title(Line::from(format!(" 󰐊 {title} ")).style(
                                 Style::default()
