@@ -123,6 +123,35 @@ impl LayoutNode {
         }
     }
 
+    /// Returns the focused pane within the specified region.
+    ///
+    /// Searches for the region with the given ID and returns its focused pane.
+    pub fn focused_pane_in_region(&self, focused_region_id: LayoutId) -> Option<(LayoutId, PaneId)> {
+        match self {
+            Self::Tabs {
+                id,
+                panes,
+                selected,
+                splittable: _,
+                closeable: _,
+            } => {
+                if *id == focused_region_id && *selected < panes.len() {
+                    Some((*id, panes[*selected]))
+                } else {
+                    None
+                }
+            }
+            Self::HSplit { left, right, .. } => {
+                left.focused_pane_in_region(focused_region_id)
+                    .or_else(|| right.focused_pane_in_region(focused_region_id))
+            }
+            Self::VSplit { top, bottom, .. } => {
+                top.focused_pane_in_region(focused_region_id)
+                    .or_else(|| bottom.focused_pane_in_region(focused_region_id))
+            }
+        }
+    }
+
     /// Renders this layout node into the given area, returning rectangles for each region.
     ///
     /// Returns a vector of `(LayoutId, Vec<PaneId>, usize, Rect)` tuples representing regions.
@@ -266,7 +295,9 @@ impl LayoutManager {
 
     /// Returns the currently focused pane ID, if any.
     pub fn focused_pane(&self) -> Option<PaneId> {
-        self.root.focused_pane().map(|(_, pane_id)| pane_id)
+        self.focused_node_id
+            .and_then(|focused_id| self.root.focused_pane_in_region(focused_id))
+            .map(|(_, pane_id)| pane_id)
     }
 
     /// Generates a new unique layout ID.

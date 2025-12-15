@@ -515,7 +515,6 @@ impl AppUI {
         }
     }
 
-    #[allow(clippy::missing_const_for_fn)]
     fn set_focus_to_next_pane_or_area(&mut self) {
         // Unfocus current pane
         if let Some(old_pane_id) = self.layout.focused_pane() {
@@ -524,19 +523,19 @@ impl AppUI {
             }
         }
 
-        // Rotate to next region, skipping regions with only disabled panes
+        // Try to find the next enabled region
         let regions = self.layout.get_all_regions();
-        let num_regions = regions.len();
+        let start_region = self.active_region_id;
         
-        for _ in 0..num_regions {
+        for _ in 0..regions.len() {
             self.layout.focus_next_region();
-            self.active_region_id = self.layout.focused_node_id().unwrap_or(0);
+            self.active_region_id = self.layout.focused_node_id().unwrap_or(self.active_region_id);
             
-            // Check if any pane in this region is enabled
+            // Check if this region has an enabled pane
             if let Some(pane_id) = self.layout.focused_pane() {
                 if let Some(pane) = self.panes.get(&pane_id) {
                     if pane.is_enabled() {
-                        // Found an enabled pane, focus it
+                        // Focus this pane
                         if let Some(pane_mut) = self.panes.get_mut(&pane_id) {
                             let _ = pane_mut.handle_event(crate::content_pane::PaneEvent::Focused);
                         }
@@ -544,10 +543,10 @@ impl AppUI {
                     }
                 }
             }
-            // This region has no enabled panes, try next
         }
         
-        // If we get here, no enabled panes found anywhere (shouldn't happen)
+        // All regions disabled - restore original focus
+        self.active_region_id = start_region;
     }
 
     /// Focuses the first pane of the given kind, switching regions if necessary.
