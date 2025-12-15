@@ -19,6 +19,7 @@ pub enum LayoutNode {
         region_id: RegionId,
     },
     /// Horizontal split (left | right)
+    #[allow(dead_code)]
     HSplit {
         id: LayoutId,
         left: Box<LayoutNode>,
@@ -44,6 +45,7 @@ impl LayoutNode {
     }
 
     /// Finds a mutable reference to a node by ID.
+    #[allow(dead_code)]
     pub fn find_node_mut(&mut self, target_id: LayoutId) -> Option<&mut Self> {
         if self.id() == target_id {
             return Some(self);
@@ -214,6 +216,7 @@ impl LayoutManager {
     }
 
     /// Generates a new unique layout ID.
+    #[allow(dead_code)]
     fn next_layout_id(&mut self) -> LayoutId {
         let id = self.next_layout_id;
         self.next_layout_id += 1;
