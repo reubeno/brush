@@ -104,6 +104,18 @@ impl Region {
         }
     }
 
+    /// Selects a specific pane by ID.
+    ///
+    /// Returns `true` if the pane was found and selected, `false` otherwise.
+    pub fn select_pane(&mut self, pane_id: PaneId) -> bool {
+        if let Some(index) = self.panes.iter().position(|&id| id == pane_id) {
+            self.selected_pane_index = index;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Adds a pane to this region.
     pub fn add_pane(&mut self, pane_id: PaneId) {
         self.panes.push(pane_id);

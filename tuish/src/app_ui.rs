@@ -580,6 +580,11 @@ impl AppUI {
                     };
 
                     if contains_pane {
+                        // Select this pane in the region
+                        if let Some(region) = self.store.get_region_mut(region_id) {
+                            region.select_pane(pane_id);
+                        }
+                        
                         // Focus this region
                         self.layout.set_focused_region(region_id);
                         
@@ -708,41 +713,23 @@ impl AppUI {
                     }
                     // Navigation mode active: handle navigation keys (mode stays active)
                     // Navigation mode: Letter keys jump to specific pane types
-                    KeyCode::Char('e')
-                        if self.navigation_mode
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
+                    KeyCode::Char('e') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Environment);
                     }
-                    KeyCode::Char('h')
-                        if self.navigation_mode
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
+                    KeyCode::Char('t') if self.navigation_mode => {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
+                    }
+                    KeyCode::Char('y') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::History);
                     }
-                    KeyCode::Char('a')
-                        if self.navigation_mode
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
+                    KeyCode::Char('a') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Aliases);
                     }
-                    KeyCode::Char('f')
-                        if self.navigation_mode
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
+                    KeyCode::Char('f') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Functions);
                     }
-                    KeyCode::Char('c')
-                        if self.navigation_mode
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
+                    KeyCode::Char('c') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::CallStack);
-                    }
-                    KeyCode::Char('t')
-                        if self.navigation_mode
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
                     }
                     // Navigation mode: 'i' for command input (like vim insert mode)
                     KeyCode::Char('i') if self.navigation_mode => {
