@@ -848,18 +848,77 @@ impl AppUI {
                     }
                     // Navigation mode: 'v' for vertical split (side by side)
                     KeyCode::Char('v') if self.navigation_mode => {
-                        // TODO: Implement region splitting in new architecture
-                        // Splitting requires:
-                        // 1. Check if current region is splittable
-                        // 2. Create new region with new pane
-                        // 3. Modify layout tree to create HSplit/VSplit
-                        // 4. Update focus to new region
-                        // This needs careful design for the new architecture
+                        if let Some(focused_region_id) = self.layout.focused_region_id() {
+                            // Check if this region can be split
+                            let can_split = self.store.get_region(focused_region_id)
+                                .map_or(false, |r| r.splittable());
+
+                            if can_split {
+                                // Unfocus current pane
+                                if let Some(pane_id) = self.store.get_region_focused_pane(focused_region_id) {
+                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                    }
+                                }
+
+                                // Create a new pane for the new region (Environment pane)
+                                let new_pane_id = self.store.add_pane(
+                                    Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell))
+                                );
+
+                                // Create a new region with the pane
+                                let new_region_id = self.store.create_region(
+                                    vec![new_pane_id],
+                                    true,  // splittable
+                                    true,  // closeable
+                                );
+
+                                // Split the layout
+                                if self.layout.split_vertical(new_region_id) {
+                                    // Focus the new pane
+                                    if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                    }
+                                }
+                            }
+                        }
                     }
                     // Navigation mode: 'h' for horizontal split (top and bottom)
                     KeyCode::Char('h') if self.navigation_mode => {
-                        // TODO: Implement region splitting in new architecture
-                        // (same as above)
+                        if let Some(focused_region_id) = self.layout.focused_region_id() {
+                            // Check if this region can be split
+                            let can_split = self.store.get_region(focused_region_id)
+                                .map_or(false, |r| r.splittable());
+
+                            if can_split {
+                                // Unfocus current pane
+                                if let Some(pane_id) = self.store.get_region_focused_pane(focused_region_id) {
+                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                    }
+                                }
+
+                                // Create a new pane for the new region (Environment pane)
+                                let new_pane_id = self.store.add_pane(
+                                    Box::new(crate::environment_pane::EnvironmentPane::new(&self.shell))
+                                );
+
+                                // Create a new region with the pane
+                                let new_region_id = self.store.create_region(
+                                    vec![new_pane_id],
+                                    true,  // splittable
+                                    true,  // closeable
+                                );
+
+                                // Split the layout
+                                if self.layout.split_horizontal(new_region_id) {
+                                    // Focus the new pane
+                                    if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                    }
+                                }
+                            }
+                        }
                     }
                     // Navigation mode: 'x' for close - not yet implemented
                     KeyCode::Char('x') if self.navigation_mode => {
