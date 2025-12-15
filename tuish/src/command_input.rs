@@ -11,7 +11,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::Paragraph,
 };
 use tokio::sync::Mutex;
 
@@ -25,12 +25,6 @@ pub struct CommandInput {
     cursor_pos: usize,
     /// Whether this widget currently has focus
     focused: bool,
-    /// Title to display when focused
-    focused_title: &'static str,
-    /// Title to display when not focused
-    unfocused_title: &'static str,
-    /// Title to display when disabled
-    disabled_title: &'static str,
     /// Reference to the shell for prompt rendering
     shell: Arc<Mutex<brush_core::Shell>>,
     /// Cached prompt string (updated during render)
@@ -63,9 +57,6 @@ impl CommandInput {
             buffer: String::new(),
             cursor_pos: 0,
             focused: false,
-            focused_title: " ⌨  Command Input [Ctrl+B for Navigation, Ctrl+Q to Quit] ",
-            unfocused_title: " ⌨  Command Input [Ctrl+B then 0 to focus] ",
-            disabled_title: " ⏳ Running command... ",
             shell: shell.clone(),
             cached_prompt: "> ".to_string(),
         }
@@ -247,28 +238,12 @@ impl CommandInput {
     /// # Returns
     /// The cursor position (x, y) if focused, otherwise `None`
     pub fn render_with_cursor(&self, frame: &mut Frame<'_>, area: Rect) -> Option<(u16, u16)> {
-        let (title, border_style, bg_color) = if !self.enabled {
-            (
-                self.disabled_title,
-                Style::default()
-                    .fg(Color::Rgb(100, 100, 120))
-                    .add_modifier(Modifier::DIM),
-                Color::Rgb(30, 30, 40),
-            )
+        let bg_color = if !self.enabled {
+            Color::Rgb(30, 30, 40)
         } else if self.focused {
-            (
-                self.focused_title,
-                Style::default()
-                    .fg(Color::Rgb(167, 139, 250)) // Brighter purple
-                    .add_modifier(Modifier::BOLD),
-                Color::Rgb(30, 25, 40),
-            )
+            Color::Rgb(30, 25, 40)
         } else {
-            (
-                self.unfocused_title,
-                Style::default().fg(Color::Rgb(60, 60, 80)),
-                Color::Rgb(25, 25, 35),
-            )
+            Color::Rgb(25, 25, 35)
         };
 
         let para_style = if self.enabled {
@@ -286,14 +261,8 @@ impl CommandInput {
             Line::from(Span::styled(input_text, para_style))
         };
 
+        // No border - region handles that
         let input_paragraph = Paragraph::new(input_line)
-            .block(
-                Block::default()
-                    .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-                    .border_type(BorderType::Rounded)
-                    .title(title)
-                    .border_style(border_style),
-            )
             .style(para_style);
         frame.render_widget(input_paragraph, area);
 
@@ -301,12 +270,11 @@ impl CommandInput {
         if self.focused {
             // Calculate the display width of the prompt (stripping ANSI escape sequences)
             let prompt_display_width = Self::calculate_display_width(&self.cached_prompt);
-            // Cursor position: prompt width + cursor_pos + left border (1)
+            // Cursor position: prompt width + cursor_pos (no border offset needed)
             let cursor_x = area.x
-                + 1
                 + u16::try_from(prompt_display_width).unwrap_or(0)
                 + u16::try_from(self.cursor_pos).unwrap_or(0);
-            let cursor_y = area.y + 1;
+            let cursor_y = area.y;
             Some((cursor_x, cursor_y))
         } else {
             None
