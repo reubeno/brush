@@ -482,23 +482,36 @@ impl AppUI {
 
             // Render navigation banner at bottom if in navigation mode
             if let Some(nav_rect) = nav_area {
-                // Get number of regions to conditionally show n/p
-                let num_regions = layout.get_all_region_ids().len();
-                let region_nav = if num_regions > 1 {
-                    ", n/p=region"
+                let nav_text = if self.marked_pane_for_move.is_some() {
+                    // Special message when a pane is marked
+                    " 󰃀 MARKED: Navigate to target region (n/p) then press Shift+M to MOVE pane here, or Esc to cancel "
                 } else {
-                    ""
+                    // Normal navigation help
+                    let num_regions = layout.get_all_region_ids().len();
+                    let region_nav = if num_regions > 1 {
+                        ", n/p=region"
+                    } else {
+                        ""
+                    };
+                    
+                    &format!(
+                        " ⚡ NAV: t/e/h/a/f/c=panes, i=input, Tab=cycle{region_nav}, v/s=split, m=mark, Esc=exit "
+                    )
                 };
                 
-                let nav_text = format!(
-                    " ⚡ NAV: Ctrl+E/H/A/F/C/T=panes, i=input, Tab=cycle{region_nav}, v/h=split, Ctrl+Space=toggle, Esc=exit "
-                );
+                let (bg_color, fg_color) = if self.marked_pane_for_move.is_some() {
+                    // Gold background when marked (matches border)
+                    (Color::Rgb(255, 215, 0), Color::Rgb(0, 0, 0))
+                } else {
+                    // Yellow background for normal nav mode
+                    (Color::Rgb(250, 204, 21), Color::Rgb(0, 0, 0))
+                };
                 
                 let nav_indicator = Paragraph::new(nav_text)
                     .style(
                         Style::default()
-                            .bg(Color::Rgb(250, 204, 21)) // Bright yellow
-                            .fg(Color::Rgb(0, 0, 0))      // Black text
+                            .bg(bg_color)
+                            .fg(fg_color)
                             .add_modifier(Modifier::BOLD)
                     )
                     .alignment(Alignment::Center);
