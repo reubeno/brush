@@ -1005,6 +1005,18 @@ impl AppUI {
                                             source_region.remove_pane(marked_pane_id);
                                         }
                                         
+                                        // Check if source region is now empty and remove it from layout
+                                        let source_is_empty = self.store.get_region(source_rid)
+                                            .map_or(true, |r| r.panes().is_empty());
+                                        
+                                        if source_is_empty {
+                                            // Don't remove special regions (content and command input)
+                                            if source_rid != self.content_region_id 
+                                                && source_rid != self.command_input_region_id {
+                                                self.layout.remove_region(source_rid);
+                                            }
+                                        }
+                                        
                                         // Add to target region
                                         if let Some(target_region) = self.store.get_region_mut(target_region_id) {
                                             target_region.add_pane(marked_pane_id);
