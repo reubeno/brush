@@ -26,7 +26,7 @@ pub struct RegionPaneStore {
 impl RegionPaneStore {
     /// Creates a new empty store.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             regions: HashMap::new(),
             panes: HashMap::new(),
@@ -83,6 +83,7 @@ impl RegionPaneStore {
     }
 
     /// Returns an iterator over all region IDs.
+    #[allow(dead_code)]
     pub fn region_ids(&self) -> impl Iterator<Item = RegionId> + '_ {
         self.regions.keys().copied()
     }
