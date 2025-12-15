@@ -13,6 +13,7 @@ mod layout;
 mod pane_role;
 mod pty;
 mod region;
+mod region_pane_store;
 mod terminal_pane;
 
 use std::collections::HashMap;
