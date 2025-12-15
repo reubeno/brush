@@ -696,48 +696,60 @@ impl AppUI {
                             }
                         }
                     }
-                    // Ctrl+B: Enter navigation mode
-                    KeyCode::Char('b')
-                        if key.modifiers.contains(KeyModifiers::CONTROL)
-                            && !self.navigation_mode =>
-                    {
-                        // Unfocus current pane when entering navigation mode
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                    // Ctrl+B: Toggle navigation mode
+                    KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if self.navigation_mode {
+                            // Exit navigation mode - refocus current pane
+                            self.navigation_mode = false;
+                            if let Some(region_id) = self.layout.focused_region_id() {
+                                if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                    }
                                 }
                             }
+                        } else {
+                            // Enter navigation mode - unfocus current pane
+                            if let Some(region_id) = self.layout.focused_region_id() {
+                                if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                    }
+                                }
+                            }
+                            self.navigation_mode = true;
                         }
-                        self.navigation_mode = true;
                     }
-                    // Navigation mode active: handle navigation keys (mode stays active)
-                    // Navigation mode: Ctrl+letter keys jump to specific pane types
-                    KeyCode::Char('e') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Environment);
-                    }
-                    KeyCode::Char('t') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // === NAVIGATION MODE: Plain letter keys (no Ctrl required) ===
+                    // Philosophy: Commands that navigate STAY in mode, actions that change context EXIT mode
+                    
+                    // Pane Selection (stays in mode for chaining)
+                    KeyCode::Char('t') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
                     }
-                    KeyCode::Char('h') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    KeyCode::Char('e') if self.navigation_mode => {
+                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Environment);
+                    }
+                    KeyCode::Char('h') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::History);
                     }
-                    KeyCode::Char('a') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    KeyCode::Char('a') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Aliases);
                     }
-                    KeyCode::Char('f') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    KeyCode::Char('f') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::Functions);
                     }
-                    KeyCode::Char('c') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    KeyCode::Char('c') if self.navigation_mode => {
                         self.focus_pane_by_kind(&crate::content_pane::PaneKind::CallStack);
                     }
-                    // Navigation mode: Ctrl+I for command input
-                    KeyCode::Char('i') if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        // Exit navigation mode and focus command input directly
+                    
+                    // Action: Go to Input (exits mode - you're done navigating, time to type)
+                    KeyCode::Char('i') if self.navigation_mode => {
                         self.navigation_mode = false;
                         self.set_focus_to_command_input();
                     }
-                    // Navigation mode: 'n' for next region
+                    
+                    // Navigation: Next region (stays in mode)
                     KeyCode::Char('n') if self.navigation_mode => {
                         // Unfocus current pane in current region
                         if let Some(region_id) = self.layout.focused_region_id() {
@@ -760,7 +772,7 @@ impl AppUI {
                             }
                         }
                     }
-                    // Navigation mode: 'p' for previous region
+                    // Navigation: Previous region (stays in mode)
                     KeyCode::Char('p') if self.navigation_mode => {
                         // Unfocus current pane in current region
                         if let Some(region_id) = self.layout.focused_region_id() {
@@ -840,8 +852,9 @@ impl AppUI {
                         self.navigation_mode = false;
                         self.focus_next_region();
                     }
-                    // Navigation mode: 'v' for vertical split (side by side)
+                    // Action: Split vertical (exits mode - new pane is ready to use)
                     KeyCode::Char('v') if self.navigation_mode => {
+                        self.navigation_mode = false;
                         if let Some(focused_region_id) = self.layout.focused_region_id() {
                             // Check if this region can be split
                             let can_split = self.store.get_region(focused_region_id)
@@ -880,8 +893,9 @@ impl AppUI {
                             }
                         }
                     }
-                    // Navigation mode: 'h' for horizontal split (top and bottom)
-                    KeyCode::Char('h') if self.navigation_mode => {
+                    // Action: Split horizontal (exits mode - new pane is ready to use)
+                    KeyCode::Char('s') if self.navigation_mode => {
+                        self.navigation_mode = false;
                         if let Some(focused_region_id) = self.layout.focused_region_id() {
                             // Check if this region can be split
                             let can_split = self.store.get_region(focused_region_id)
@@ -920,11 +934,13 @@ impl AppUI {
                             }
                         }
                     }
-                    // Navigation mode: 'x' for close - not yet implemented
+                    // Action: Close pane (exits mode - not yet implemented)
                     KeyCode::Char('x') if self.navigation_mode => {
-                        // Close/unsplit not yet implemented - silently ignore
+                        self.navigation_mode = false;
+                        // Close/unsplit not yet implemented
                     }
-                    // Navigation mode: Esc to exit (only way out)
+                    
+                    // Exit navigation mode without action
                     KeyCode::Esc if self.navigation_mode => {
                         self.navigation_mode = false;
                         // Send Focused event to current pane in focused region
