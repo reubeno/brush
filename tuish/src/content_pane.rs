@@ -28,8 +28,7 @@ pub enum PaneEventResult {
     Handled,
     /// Event was not handled (propagate to parent)
     NotHandled,
-    /// Request to close this pane (for future close implementation)
-    #[allow(dead_code)]
+    /// Request to close this pane (e.g., Ctrl+D in command input to exit shell)
     RequestClose,
     /// Request to execute a command
     RequestExecute(String),
