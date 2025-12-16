@@ -26,12 +26,53 @@ cases:
       echo "x: ${x}"
 
   - name: "Assignment with tilde expansion"
-    known_failure: true
+    env:
+      HOME: /some/dir
     stdin: |
-      HOME=/some/dir
-
+      # Basic tilde at start (currently works)
       var=~/file1.txt
       echo "~/file1.txt: ${var}"
 
+      # Tilde after colon in assignment (currently broken - doesn't expand second tilde)
       var=~/file1.txt:~/file2.txt
       echo "~/file1.txt:~/file2.txt: ${var}"
+
+      # Multiple tildes after colons
+      var=~:~/bin:~/local/bin
+      echo "~:~/bin:~/local/bin: ${var}"
+
+      # Mixed with regular paths
+      PATH=/usr/bin:~:/bin:~/local
+      echo "PATH-like: ${PATH}"
+
+  - name: "Array assignment with tilde expansion"
+    env:
+      HOME: /testhome
+    stdin: |
+      # Array elements with tildes
+      arr=(~ ~/bin ~root)
+      echo "Array elements:"
+      for i in "${arr[@]}"; do
+        echo "  $i"
+      done
+
+      # Array elements with colon-tilde
+      arr2=(~:~/bin /usr/bin:~)
+      echo "Array with colons:"
+      for i in "${arr2[@]}"; do
+        echo "  $i"
+      done
+
+  - name: "Append assignment with tilde expansion"
+    env:
+      HOME: /testhome
+    stdin: |
+      # Basic append
+      PATH=/usr/bin
+      PATH+=:~
+      echo "After append tilde: ${PATH}"
+
+      # Append with colon-tilde
+      PATH=/usr/bin
+      PATH+=:~:~/local
+      echo "After append colon-tilde: ${PATH}"

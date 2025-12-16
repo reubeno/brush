@@ -75,10 +75,9 @@ cases:
     stdin: "echo file[!2].txt"
 
   - name: "Expansion with tilde"
-    skip: true # Started failing with 5.3 on macOS
+    env:
+      HOME: /some/dir
     stdin: |
-      HOME=/some/dir
-
       echo ~/file1.txt
       echo ~/file1.txt:~/file1.txt
 
