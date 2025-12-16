@@ -26,9 +26,9 @@ cases:
       echo "x: ${x}"
 
   - name: "Assignment with tilde expansion"
+    env:
+      HOME: /some/dir
     stdin: |
-      HOME=/some/dir
-
       # Basic tilde at start (currently works)
       var=~/file1.txt
       echo "~/file1.txt: ${var}"
@@ -46,9 +46,9 @@ cases:
       echo "PATH-like: ${PATH}"
 
   - name: "Array assignment with tilde expansion"
+    env:
+      HOME: /testhome
     stdin: |
-      HOME=/testhome
-
       # Array elements with tildes
       arr=(~ ~/bin ~root)
       echo "Array elements:"
@@ -64,9 +64,9 @@ cases:
       done
 
   - name: "Append assignment with tilde expansion"
+    env:
+      HOME: /testhome
     stdin: |
-      HOME=/testhome
-
       # Basic append
       PATH=/usr/bin
       PATH+=:~

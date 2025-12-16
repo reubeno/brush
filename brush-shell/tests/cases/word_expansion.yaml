@@ -1068,19 +1068,21 @@ cases:
       done
 
   - name: "Tilde expansion: basic"
+    home_dir: .
     stdin: |
-      test_root=$(pwd)
-      HOME=${test_root}
+      test_root=$(realpath $(pwd))
 
       mkdir subdir
       cd subdir
 
       D=~
+      D=$(realpath $D)
       echo "~: ${D//${test_root}/TEST_ROOT}"
 
   - name: "Tilde expansion: explicit user"
+    home_dir: .
     stdin: |
-      HOME=${test_root}
+      test_root=$(pwd)
 
       D=~root
       echo "~root: $D"
@@ -1089,9 +1091,9 @@ cases:
       echo "~<non-existent-username>: $D"
 
   - name: "Tilde expansion: working dirs"
+    home_dir: .
     stdin: |
       test_root=$(pwd)
-      HOME=${test_root}
 
       mkdir subdir
       cd subdir
@@ -1134,11 +1136,9 @@ cases:
       echo "~-9: ${D//${test_root}/TEST_ROOT}"
 
   - name: "Tilde expansion: after colons"
+    home_dir: .
     stdin: |
-      test_root=$(pwd)
-      HOME=${test_root}
-
-      echo "something:~"
+      test_root=~
 
       D=something:~
       echo "D: ${D//${test_root}/TEST_ROOT}"
@@ -1153,9 +1153,9 @@ cases:
       echo "D: ${D//${test_root}/TEST_ROOT}"
 
   - name: "Tilde expansion: unexpanded tildes"
+    home_dir: .
     stdin: |
       test_root=$(pwd)
-      HOME=${test_root}
 
       D="~"
       echo "D: ${D//${test_root}/TEST_ROOT}"
@@ -1164,9 +1164,9 @@ cases:
       echo "D: ${D//${test_root}/TEST_ROOT}"
 
   - name: "Tilde expansion: colon context sensitivity"
+    env:
+      HOME: /testhome
     stdin: |
-      HOME=/testhome
-
       # Tilde at word start always expands (in both contexts)
       echo "echo tilde: $(echo ~)"
       var=~
@@ -1185,9 +1185,9 @@ cases:
       echo "PATH: ${PATH}"
 
   - name: "Tilde expansion: parameter defaults"
+    env:
+      HOME: /testhome
     stdin: |
-      HOME=/testhome
-
       echo "Use default value with tilde"      
       unset myvar
       echo "Default: ${myvar:-~}"

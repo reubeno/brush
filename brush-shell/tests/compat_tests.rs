@@ -398,6 +398,8 @@ struct TestCase {
     #[serde(default)]
     pub env: HashMap<String, String>,
     #[serde(default)]
+    pub home_dir: Option<PathBuf>,
+    #[serde(default)]
     pub skip: bool,
     #[serde(default)]
     pub pty: bool,
@@ -1113,6 +1115,16 @@ impl TestCase {
 
         for (k, v) in &self.env {
             test_cmd.env(k, v);
+        }
+
+        if let Some(home_dir) = &self.home_dir {
+            let abs_home_dir = if home_dir.is_relative() {
+                working_dir.join(home_dir)
+            } else {
+                home_dir.to_owned()
+            };
+
+            test_cmd.env("HOME", abs_home_dir.to_string_lossy().to_string());
         }
 
         test_cmd.current_dir(working_dir.to_string_lossy().to_string());
