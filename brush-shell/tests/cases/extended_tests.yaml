@@ -199,7 +199,6 @@ cases:
       [[ "abc" != "a*" ]] && echo "2. Matches"
 
   - name: "Tilde binary string matching"
-    known_failure: true
     stdin: |
       x='~/'
       [[ $x == ~* ]] && echo "1. Matches"

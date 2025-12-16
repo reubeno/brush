@@ -48,8 +48,8 @@ pub enum WordPiece {
     DoubleQuotedSequence(Vec<WordPieceWithSource>),
     /// Gettext enabled variant of [`WordPiece::DoubleQuotedSequence`].
     GettextDoubleQuotedSequence(Vec<WordPieceWithSource>),
-    /// A tilde prefix.
-    TildePrefix(String),
+    /// A tilde expansion.
+    TildeExpansion(TildeExpr),
     /// A parameter expansion.
     ParameterExpansion(ParameterExpr),
     /// A command substitution.
@@ -60,6 +60,27 @@ pub enum WordPiece {
     EscapeSequence(String),
     /// An arithmetic expression.
     ArithmeticExpression(ast::UnexpandedArithmeticExpr),
+}
+
+/// Represents an expandable tilde expression (e.g., ~).
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
+pub enum TildeExpr {
+    /// ~
+    Home,
+    /// ~<user>
+    UserHome(String),
+    /// ~+
+    WorkingDir,
+    /// ~-
+    OldWorkingDir,
+    /// ~N or ~+N
+    NthDirInDirStack(usize, bool),
+    /// ~-N
+    NthDirFromEndOfDirStack(usize),
 }
 
 /// Type of a parameter test.
@@ -729,7 +750,7 @@ peg::parser! {
             !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
 
         rule enabled_tilde_expr_after_colon() -> WordPiece =
-            tilde_exprs_after_colon_enabled() last_char_is_colon() expr:tilde_expression() { expr }
+            tilde_exprs_after_colon_enabled() last_char_is_colon() piece:tilde_expression_piece() { piece }
 
         rule last_char_is_colon() = #{|input, pos| {
             if pos == 0 {
@@ -778,13 +799,25 @@ peg::parser! {
             }
 
         rule tilde_expr_prefix() -> WordPiece =
-            tilde_exprs_at_word_start_enabled() wp:tilde_expression() { wp }
+            tilde_exprs_at_word_start_enabled() piece:tilde_expression_piece() { piece }
 
         rule tilde_expr_after_colon() -> WordPiece =
-            tilde_exprs_after_colon_enabled() wp:tilde_expression() { wp }
+            tilde_exprs_after_colon_enabled() piece:tilde_expression_piece() { piece }
 
-        rule tilde_expression() -> WordPiece =
-            "~" cs:$((!['/' | ':' | ';'] [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
+        rule tilde_expression_piece() -> WordPiece =
+            "~" expr:tilde_expression() { WordPiece::TildeExpansion(expr) }
+
+        rule tilde_expression() -> TildeExpr =
+            &tilde_terminator() { TildeExpr::Home } /
+            "+" &tilde_terminator() { TildeExpr::WorkingDir } /
+            plus:("+"?) n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirInDirStack(n.parse().unwrap(), plus.is_some()) } /
+            "-" &tilde_terminator() { TildeExpr::OldWorkingDir } /
+            "-" n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirFromEndOfDirStack(n.parse().unwrap()) } /
+            user:$(portable_filename_char()*) &tilde_terminator() { TildeExpr::UserHome(user.to_owned()) }
+
+        rule tilde_terminator() = ['/' | ':' | ';' | '}'] / ![_]
+
+        rule portable_filename_char() = ['A'..='Z' | 'a'..='z' | '0'..='9' | '.' | '_' | '-']
 
         // TODO(parser): Deal with fact that there may be a quoted word or escaped closing brace chars.
         // TODO(parser): Improve on how we handle a '$' not followed by a valid variable name or parameter.
@@ -1021,15 +1054,17 @@ mod tests {
 
     #[test]
     fn parse_tilde_after_colon() -> Result<()> {
-        let mut opts = ParserOptions::default();
-        opts.tilde_expansion_after_colon = true;
+        let opts = ParserOptions {
+            tilde_expansion_after_colon: true,
+            ..ParserOptions::default()
+        };
 
         let parsed = super::parse("a:~", &opts)?;
 
-        // Should have: Text("a:"), TildePrefix("")
+        // Should have: Text("a:"), TildeExpansion("")
         assert_eq!(parsed.len(), 2);
         assert_matches!(parsed[0].piece, WordPiece::Text(_));
-        assert_matches!(parsed[1].piece, WordPiece::TildePrefix(_));
+        assert_matches!(parsed[1].piece, WordPiece::TildeExpansion(_));
 
         Ok(())
     }

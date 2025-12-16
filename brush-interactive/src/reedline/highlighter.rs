@@ -191,7 +191,7 @@ impl<'a> StyledInputLine<'a> {
                 self.set_next_missing_style(styles::quoted());
             }
             brush_parser::word::WordPiece::ParameterExpansion(_)
-            | brush_parser::word::WordPiece::TildePrefix(_) => {
+            | brush_parser::word::WordPiece::TildeExpansion(_) => {
                 self.append_style(
                     styles::parameter(),
                     global_offset + word_piece.start_index,

@@ -1067,7 +1067,103 @@ cases:
           echo "Element: '$i'"
       done
 
-  - name: "Tilde expansion - colon context sensitivity"
+  - name: "Tilde expansion: basic"
+    stdin: |
+      test_root=$(pwd)
+      HOME=${test_root}
+
+      mkdir subdir
+      cd subdir
+
+      D=~
+      echo "~: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: explicit user"
+    stdin: |
+      HOME=${test_root}
+
+      D=~root
+      echo "~root: $D"
+
+      D=~nonexistentuserwhodoesnotexist
+      echo "~<non-existent-username>: $D"
+
+  - name: "Tilde expansion: working dirs"
+    stdin: |
+      test_root=$(pwd)
+      HOME=${test_root}
+
+      mkdir subdir
+      cd subdir
+
+      D=~+
+      echo "~+: ${D//${test_root}/TEST_ROOT}"
+
+      D=~-
+      echo "~-: ${D//${test_root}/TEST_ROOT}"
+
+      unset OLDPWD
+      D=~-
+      echo "~- (without OLDPWD): ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: dir stack"
+    stdin: |
+      test_root=$(pwd)
+
+      for name in a b c d e f g; do
+        mkdir $name
+        pushd $name >/dev/null 2>&1
+      done
+
+      D=~2
+      echo "~2: ${D//${test_root}/TEST_ROOT}"
+
+      D=~9
+      echo "~9: ${D//${test_root}/TEST_ROOT}"
+
+      D=~+2
+      echo "~+2: ${D//${test_root}/TEST_ROOT}"
+
+      D=~+9
+      echo "~+9: ${D//${test_root}/TEST_ROOT}"
+
+      D=~-2
+      echo "~-2: ${D//${test_root}/TEST_ROOT}"
+
+      D=~-9
+      echo "~-9: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: after colons"
+    stdin: |
+      test_root=$(pwd)
+      HOME=${test_root}
+
+      echo "something:~"
+
+      D=something:~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=something":"~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=something:"~"
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=something:~:another:~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: unexpanded tildes"
+    stdin: |
+      test_root=$(pwd)
+      HOME=${test_root}
+
+      D="~"
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=x~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: colon context sensitivity"
     stdin: |
       HOME=/testhome
 
@@ -1088,7 +1184,7 @@ cases:
       PATH=/usr/bin:~:/bin:~/local
       echo "PATH: ${PATH}"
 
-  - name: "Tilde in parameter expansion defaults"
+  - name: "Tilde expansion: parameter defaults"
     stdin: |
       HOME=/testhome
 

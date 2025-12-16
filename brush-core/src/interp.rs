@@ -1224,10 +1224,13 @@ async fn expand_assignment_value(
             let mut expanded_values = vec![];
             for (key, value) in arr {
                 if let Some(k) = key {
-                    let expanded_key = expansion::basic_expand_assignment_word(shell, params, k).await?.into();
-                    let expanded_value = expansion::basic_expand_assignment_word(shell, params, value)
+                    let expanded_key = expansion::basic_expand_assignment_word(shell, params, k)
                         .await?
                         .into();
+                    let expanded_value =
+                        expansion::basic_expand_assignment_word(shell, params, value)
+                            .await?
+                            .into();
                     expanded_values.push((Some(expanded_key), expanded_value));
                 } else {
                     // Array elements are treated as regular words, not assignments
@@ -1273,22 +1276,25 @@ async fn apply_assignment(
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
-            let value = expansion::basic_expand_assignment_word(shell, params, unexpanded_value).await?;
+            let value =
+                expansion::basic_expand_assignment_word(shell, params, unexpanded_value).await?;
             ShellValueLiteral::Scalar(value)
         }
         ast::AssignmentValue::Array(unexpanded_values) => {
             let mut elements = vec![];
             for (unexpanded_key, unexpanded_value) in unexpanded_values {
                 let key = match unexpanded_key {
-                    Some(unexpanded_key) => {
-                        Some(expansion::basic_expand_assignment_word(shell, params, unexpanded_key).await?)
-                    }
+                    Some(unexpanded_key) => Some(
+                        expansion::basic_expand_assignment_word(shell, params, unexpanded_key)
+                            .await?,
+                    ),
                     None => None,
                 };
 
                 if key.is_some() {
                     let value =
-                        expansion::basic_expand_assignment_word(shell, params, unexpanded_value).await?;
+                        expansion::basic_expand_assignment_word(shell, params, unexpanded_value)
+                            .await?;
                     elements.push((key, value));
                 } else {
                     // Array elements are treated as regular words, not assignments
