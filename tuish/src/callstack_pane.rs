@@ -1,6 +1,5 @@
 //! Shell call stack content pane.
 
-
 use std::sync::Arc;
 
 use crossterm::event::KeyCode;

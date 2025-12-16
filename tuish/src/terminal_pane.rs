@@ -1,6 +1,5 @@
 //! Terminal content pane using `tui_term` for PTY display.
 
-
 use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
@@ -100,14 +99,13 @@ impl ContentPane for TerminalPane {
             self.last_dimensions = new_dimensions;
         }
 
-        let screen = {
-            let parser = self.parser.read().unwrap();
-            parser.screen().clone()
-        };
+        // Borrow the screen directly instead of cloning (performance optimization)
+        let parser = self.parser.read().unwrap();
+        let screen = parser.screen();
 
         // Hide the cursor when the terminal pane is not focused
         let cursor = tui_term::widget::Cursor::default().visibility(self.is_focused);
-        let pseudo_term = PseudoTerminal::new(&screen).cursor(cursor);
+        let pseudo_term = PseudoTerminal::new(screen).cursor(cursor);
         frame.render_widget(pseudo_term, area);
     }
 

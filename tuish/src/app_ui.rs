@@ -14,6 +14,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph, Tabs},
 };
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 
 use std::collections::HashMap;
 
@@ -26,7 +27,8 @@ use crate::region_pane_store::RegionPaneStore;
 use crate::terminal_pane::TerminalPane;
 
 /// Wrapper that allows an `Rc<RefCell<T: ContentPane>>` to be stored as `Box<dyn ContentPane>`.
-/// This enables dual access: typed references for special interfaces, trait objects for generic layout.
+/// This enables dual access: typed references for special interfaces, trait objects for generic
+/// layout.
 struct RcRefCellPaneWrapper<T: ContentPane> {
     inner: std::rc::Rc<std::cell::RefCell<T>>,
 }
@@ -74,6 +76,26 @@ impl<T: ContentPane + 'static> ContentPane for RcRefCellPaneWrapper<T> {
 
 // FocusedArea enum removed - now using active_region_id for unified focus model
 
+/// Events that trigger UI updates.
+#[allow(dead_code)]
+pub enum UIEvent {
+    /// User input event (keyboard, mouse, resize)
+    Input(Event),
+    /// PTY has new output to display
+    PtyOutput,
+    /// Shell prompt has been updated
+    PromptReady,
+    /// Command execution started
+    CommandStarted(String),
+    /// Command execution finished with exit code and control flow
+    CommandFinished {
+        exit_code: brush_core::ExecutionExitCode,
+        should_exit: bool,
+    },
+    /// Periodic tick (rare, for time-based UI elements)
+    Tick,
+}
+
 /// Ratatui-based TUI that displays content panes in tabs
 /// and accepts command input in a bottom pane.
 pub struct AppUI {
@@ -107,6 +129,10 @@ pub struct AppUI {
     navigation_mode: bool,
     /// Pane marked for moving (for mark-and-move workflow)
     marked_pane_for_move: Option<PaneId>,
+
+    /// Event channel for triggering renders
+    ui_event_tx: mpsc::UnboundedSender<UIEvent>,
+    ui_event_rx: mpsc::UnboundedReceiver<UIEvent>,
 }
 
 /// Result of handling a UI event.
@@ -140,6 +166,9 @@ impl AppUI {
         let terminal = ratatui::init();
         let mut store = RegionPaneStore::new();
 
+        // Create event channel for UI updates
+        let (ui_event_tx, ui_event_rx) = mpsc::unbounded_channel();
+
         // Create CommandInput
         let command_input = CommandInput::new(shell);
         let command_input_rc = std::rc::Rc::new(std::cell::RefCell::new(command_input));
@@ -149,32 +178,32 @@ impl AppUI {
         let completion_pane_rc = std::rc::Rc::new(std::cell::RefCell::new(*completion_pane));
 
         // Add panes to store
-        let command_input_pane_id = store.add_pane(
-            Box::new(RcRefCellPaneWrapper::new(command_input_rc.clone())) as Box<dyn ContentPane>,
-        );
-        let primary_terminal_id = store.add_pane(
-            Box::new(RcRefCellPaneWrapper::new(primary_terminal_rc.clone())) as Box<dyn ContentPane>,
-        );
-        let _completion_pane_id = store.add_pane(
-            Box::new(RcRefCellPaneWrapper::new(completion_pane_rc.clone())) as Box<dyn ContentPane>,
-        );
+        let command_input_pane_id = store.add_pane(Box::new(RcRefCellPaneWrapper::new(
+            command_input_rc.clone(),
+        )) as Box<dyn ContentPane>);
+        let primary_terminal_id = store.add_pane(Box::new(RcRefCellPaneWrapper::new(
+            primary_terminal_rc.clone(),
+        )) as Box<dyn ContentPane>);
+        let _completion_pane_id = store.add_pane(Box::new(RcRefCellPaneWrapper::new(
+            completion_pane_rc.clone(),
+        )) as Box<dyn ContentPane>);
 
         // Create regions
         let content_region_id = store.create_region(
-            vec![primary_terminal_id],  // Start with just terminal
-            true,   // splittable
-            true,   // closeable
+            vec![primary_terminal_id], // Start with just terminal
+            true,                      // splittable
+            true,                      // closeable
         );
         let command_input_region_id = store.create_region(
             vec![command_input_pane_id],
-            false,  // not splittable
-            false,  // not closeable
+            false, // not splittable
+            false, // not closeable
         );
 
         // Create VSplit layout: content region (80%) + command input region (20%)
         let layout = LayoutManager::new(
             crate::layout::LayoutNode::VSplit {
-                id: 0,  // Root split node
+                id: 0, // Root split node
                 top: Box::new(crate::layout::LayoutNode::Region {
                     id: 1,
                     region_id: content_region_id,
@@ -185,7 +214,7 @@ impl AppUI {
                 }),
                 split_percent: 80,
             },
-            command_input_region_id,  // Start with command input focused for typing
+            command_input_region_id, // Start with command input focused for typing
         );
 
         let mut app = Self {
@@ -202,6 +231,8 @@ impl AppUI {
             pre_completion_active_region: None,
             navigation_mode: false,
             marked_pane_for_move: None,
+            ui_event_tx,
+            ui_event_rx,
         };
 
         // Focus the command input pane initially
@@ -531,10 +562,10 @@ impl AppUI {
                 }
             }
         }
-        
+
         // Focus command input region
         self.layout.set_focused_region(self.command_input_region_id);
-        
+
         // Focus the pane in that region
         if let Some(pane) = self.store.get_pane_mut(self.command_input_pane_id) {
             let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
@@ -555,10 +586,10 @@ impl AppUI {
         // Cycle through regions to find one with an enabled pane
         let regions = self.layout.get_all_region_ids();
         let start_region = self.layout.focused_region_id();
-        
+
         for _ in 0..regions.len() {
             self.layout.focus_next_region();
-            
+
             // Check if this region is focusable
             if let Some(new_region_id) = self.layout.focused_region_id() {
                 if self.store.is_region_focusable(new_region_id) {
@@ -572,7 +603,7 @@ impl AppUI {
                 }
             }
         }
-        
+
         // All regions have disabled panes - restore original
         if let Some(start) = start_region {
             self.layout.set_focused_region(start);
@@ -614,10 +645,10 @@ impl AppUI {
                         if let Some(region) = self.store.get_region_mut(region_id) {
                             region.select_pane(pane_id);
                         }
-                        
+
                         // Focus this region
                         self.layout.set_focused_region(region_id);
-                        
+
                         // Focus the pane
                         if let Some(pane_mut) = self.store.get_pane_mut(pane_id) {
                             let _ = pane_mut.handle_event(crate::content_pane::PaneEvent::Focused);
@@ -629,530 +660,563 @@ impl AppUI {
         }
     }
 
-    /// Handles input events.
+    /// Handles a single input event (keyboard, mouse, resize).
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    pub fn handle_events(&mut self) -> Result<UIEventResult, std::io::Error> {
+    pub fn handle_input_event(
+        &mut self,
+        input_event: Event,
+    ) -> Result<UIEventResult, std::io::Error> {
         // Check if completion pane is active
         let completion_active = self.completion_pane.borrow().is_active();
 
-        if event::poll(Duration::from_millis(50))? {
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    // If completion is active, handle special keys
-                    KeyCode::Esc if completion_active => {
-                        // Cancel completion
-                        self.completion_pane.borrow_mut().clear();
-                        // Restore focus to the region that was active before completion
-                        if let Some(prev_region) = self.pre_completion_active_region.take() {
-                            self.layout.set_focused_region(prev_region);
-                        }
+        match input_event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                // If completion is active, handle special keys
+                KeyCode::Esc if completion_active => {
+                    // Cancel completion
+                    self.completion_pane.borrow_mut().clear();
+                    // Restore focus to the region that was active before completion
+                    if let Some(prev_region) = self.pre_completion_active_region.take() {
+                        self.layout.set_focused_region(prev_region);
                     }
-                    KeyCode::Enter if completion_active => {
-                        // Accept completion
-                        if let Some(completion) =
-                            self.completion_pane.borrow().selected_completion()
-                        {
-                            let (insertion_index, delete_count) =
-                                self.completion_pane.borrow().insertion_params();
-                            // Apply to command input
-                            self.command_input_handle.borrow_mut().apply_completion(
-                                completion,
-                                insertion_index,
-                                delete_count,
-                            );
-                        }
-                        self.completion_pane.borrow_mut().clear();
-                        // Restore focus to the region that was active before completion
-                        if let Some(prev_region) = self.pre_completion_active_region.take() {
-                            self.layout.set_focused_region(prev_region);
-                        }
-                    }
-                    // Tab/Shift-Tab for navigation when completion is active
-                    KeyCode::Tab
-                        if completion_active && !key.modifiers.contains(KeyModifiers::SHIFT) =>
-                    {
-                        self.completion_pane.borrow_mut().handle_event(
-                            crate::content_pane::PaneEvent::KeyPress(
-                                KeyCode::Down,
-                                KeyModifiers::empty(),
-                            ),
-                        );
-                    }
-                    KeyCode::BackTab | KeyCode::Tab
-                        if completion_active && key.modifiers.contains(KeyModifiers::SHIFT) =>
-                    {
-                        self.completion_pane.borrow_mut().handle_event(
-                            crate::content_pane::PaneEvent::KeyPress(
-                                KeyCode::Up,
-                                KeyModifiers::empty(),
-                            ),
-                        );
-                    }
-                    // Arrow keys for navigation
-                    KeyCode::Up
-                    | KeyCode::Down
-                    | KeyCode::PageUp
-                    | KeyCode::PageDown
-                    | KeyCode::Home
-                    | KeyCode::End
-                        if completion_active =>
-                    {
-                        self.completion_pane.borrow_mut().handle_event(
-                            crate::content_pane::PaneEvent::KeyPress(key.code, key.modifiers),
-                        );
-                    }
-                    // Allow typing to update buffer and re-trigger completion
-                    _ if completion_active => {
-                        // First, let command input handle the key (updates buffer)
-                        match self.command_input_handle.borrow_mut().handle_key(key.code, key.modifiers) {
-                            crate::command_input::CommandKeyResult::NoAction => {
-                                // Buffer was updated, re-trigger completion
-                                return Ok(UIEventResult::RequestCompletion);
-                            }
-                            crate::command_input::CommandKeyResult::CommandEntered(command) => {
-                                // User pressed Enter with actual command text - cancel completion and execute
-                                self.completion_pane.borrow_mut().clear();
-                                if let Some(prev_region) = self.pre_completion_active_region.take() {
-                                    self.layout.set_focused_region(prev_region);
-                                }
-                                return Ok(UIEventResult::ExecuteCommand(command));
-                            }
-                            _ => {
-                                // Cancel completion for other cases (e.g., Ctrl+D)
-                                self.completion_pane.borrow_mut().clear();
-                                if let Some(prev_region) = self.pre_completion_active_region.take() {
-                                    self.layout.set_focused_region(prev_region);
-                                }
-                            }
-                        }
-                    }
-                    // Ctrl+B: Toggle navigation mode
-                    KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        if self.navigation_mode {
-                            // Exit navigation mode - refocus current pane
-                            self.navigation_mode = false;
-                            self.marked_pane_for_move = None;
-                            if let Some(region_id) = self.layout.focused_region_id() {
-                                if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                    }
-                                }
-                            }
-                        } else {
-                            // Enter navigation mode - unfocus current pane
-                            if let Some(region_id) = self.layout.focused_region_id() {
-                                if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                    }
-                                }
-                            }
-                            self.navigation_mode = true;
-                        }
-                    }
-                    // === NAVIGATION MODE: Plain letter keys (no Ctrl required) ===
-                    // Philosophy: Commands that navigate STAY in mode, actions that change context EXIT mode
-                    
-                    // Pane Selection (stays in mode for chaining)
-                    KeyCode::Char('t') if self.navigation_mode => {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
-                    }
-                    KeyCode::Char('e') if self.navigation_mode => {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Environment);
-                    }
-                    KeyCode::Char('h') if self.navigation_mode => {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::History);
-                    }
-                    KeyCode::Char('a') if self.navigation_mode => {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Aliases);
-                    }
-                    KeyCode::Char('f') if self.navigation_mode => {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::Functions);
-                    }
-                    KeyCode::Char('c') if self.navigation_mode => {
-                        self.focus_pane_by_kind(&crate::content_pane::PaneKind::CallStack);
-                    }
-                    
-                    // Action: Go to Input (exits mode - you're done navigating, time to type)
-                    KeyCode::Char('i') if self.navigation_mode => {
-                        self.navigation_mode = false;
-                        self.marked_pane_for_move = None;
-                        self.set_focus_to_command_input();
-                    }
-                    
-                    // Navigation: Next region (stays in mode)
-                    KeyCode::Char('n') if self.navigation_mode => {
-                        // Unfocus current pane in current region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                }
-                            }
-                        }
-
-                        // Move to next region
-                        self.layout.focus_next_region();
-
-                        // Focus the pane in new region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
-                    }
-                    // Navigation: Previous region (stays in mode)
-                    KeyCode::Char('p') if self.navigation_mode => {
-                        // Unfocus current pane in current region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                }
-                            }
-                        }
-
-                        // Move to previous region
-                        self.layout.focus_prev_region();
-
-                        // Focus the pane in new region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
-                    }
-                    // Navigation mode: Tab to cycle tabs/panes in current region (forward)
-                    KeyCode::Tab
-                        if self.navigation_mode && !key.modifiers.contains(KeyModifiers::SHIFT) =>
-                    {
-                        // Cycle panes within the current region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            // Unfocus current pane
-                            if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                }
-                            }
-
-                            // Cycle to next pane in region
-                            if let Some(region) = self.store.get_region_mut(region_id) {
-                                region.select_next_pane();
-                            }
-
-                            // Focus new pane
-                            if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
-                    }
-                    // Navigation mode: Shift+Tab to cycle tabs/panes in current region (backward)
-                    KeyCode::BackTab if self.navigation_mode => {
-                        // Cycle panes within the current region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            // Unfocus current pane
-                            if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                }
-                            }
-
-                            // Cycle to previous pane in region
-                            if let Some(region) = self.store.get_region_mut(region_id) {
-                                region.select_prev_pane();
-                            }
-
-                            // Focus new pane
-                            if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
-                    }
-                    // Navigation mode: Ctrl+Space exits nav mode and cycles regions
-                    KeyCode::Char(' ')
-                        if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        self.navigation_mode = false;
-                        self.focus_next_region();
-                    }
-                    // Action: Split vertical (exits mode - new pane is ready to use)
-                    KeyCode::Char('v') if self.navigation_mode => {
-                        self.navigation_mode = false;
-                        self.marked_pane_for_move = None;
-                        if let Some(focused_region_id) = self.layout.focused_region_id() {
-                            // Check if this region can be split
-                            let can_split = self.store.get_region(focused_region_id)
-                                .map_or(false, |r| r.splittable());
-
-                            if can_split {
-                                // Get the currently focused pane to move it
-                                let pane_to_move = self.store.get_region_focused_pane(focused_region_id);
-
-                                if let Some(pane_id) = pane_to_move {
-                                    // Unfocus the pane before moving
-                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                    }
-
-                                    // Remove the pane from the original region
-                                    if let Some(region) = self.store.get_region_mut(focused_region_id) {
-                                        region.remove_pane(pane_id);
-                                    }
-
-                                    // Create a new region with the moved pane
-                                    let new_region_id = self.store.create_region(
-                                        vec![pane_id],
-                                        true,  // splittable
-                                        true,  // closeable
-                                    );
-
-                                    // Split the layout
-                                    if self.layout.split_vertical(new_region_id) {
-                                        // Focus the moved pane
-                                        if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Action: Split horizontal (exits mode - new pane is ready to use)
-                    KeyCode::Char('s') if self.navigation_mode => {
-                        self.navigation_mode = false;
-                        self.marked_pane_for_move = None;
-                        if let Some(focused_region_id) = self.layout.focused_region_id() {
-                            // Check if this region can be split
-                            let can_split = self.store.get_region(focused_region_id)
-                                .map_or(false, |r| r.splittable());
-
-                            if can_split {
-                                // Get the currently focused pane to move it
-                                let pane_to_move = self.store.get_region_focused_pane(focused_region_id);
-
-                                if let Some(pane_id) = pane_to_move {
-                                    // Unfocus the pane before moving
-                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                        let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                    }
-
-                                    // Remove the pane from the original region
-                                    if let Some(region) = self.store.get_region_mut(focused_region_id) {
-                                        region.remove_pane(pane_id);
-                                    }
-
-                                    // Create a new region with the moved pane
-                                    let new_region_id = self.store.create_region(
-                                        vec![pane_id],
-                                        true,  // splittable
-                                        true,  // closeable
-                                    );
-
-                                    // Split the layout
-                                    if self.layout.split_horizontal(new_region_id) {
-                                        // Focus the moved pane
-                                        if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Mark pane for moving (stays in mode)
-                    KeyCode::Char('m') if self.navigation_mode => {
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                self.marked_pane_for_move = Some(pane_id);
-                                // TODO: Visual indicator that pane is marked
-                            }
-                        }
-                    }
-                    
-                    // Move marked pane to current region (exits mode)
-                    KeyCode::Char('M') if self.navigation_mode => {
-                        self.navigation_mode = false;
-                        
-                        if let Some(marked_pane_id) = self.marked_pane_for_move.take() {
-                            if let Some(target_region_id) = self.layout.focused_region_id() {
-                                // Find which region currently contains the marked pane
-                                let source_region_id = self.layout.get_all_region_ids()
-                                    .into_iter()
-                                    .find(|&rid| {
-                                        self.store.get_region(rid)
-                                            .map_or(false, |r| r.panes().contains(&marked_pane_id))
-                                    });
-                                
-                                if let Some(source_rid) = source_region_id {
-                                    // Don't move to same region
-                                    if source_rid != target_region_id {
-                                        // Unfocus the pane before moving
-                                        if let Some(pane) = self.store.get_pane_mut(marked_pane_id) {
-                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                        }
-                                        
-                                        // Remove from source region
-                                        if let Some(source_region) = self.store.get_region_mut(source_rid) {
-                                            source_region.remove_pane(marked_pane_id);
-                                        }
-                                        
-                                        // Check if source region is now empty and remove it from layout
-                                        let source_is_empty = self.store.get_region(source_rid)
-                                            .map_or(true, |r| r.panes().is_empty());
-                                        
-                                        if source_is_empty {
-                                            // Don't remove special regions (content and command input)
-                                            if source_rid != self.content_region_id 
-                                                && source_rid != self.command_input_region_id {
-                                                self.layout.remove_region(source_rid);
-                                            }
-                                        }
-                                        
-                                        // Add to target region
-                                        if let Some(target_region) = self.store.get_region_mut(target_region_id) {
-                                            target_region.add_pane(marked_pane_id);
-                                            target_region.select_pane(marked_pane_id);
-                                        }
-                                        
-                                        // Focus the moved pane
-                                        if let Some(pane) = self.store.get_pane_mut(marked_pane_id) {
-                                            let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Action: Close pane (exits mode - not yet implemented)
-                    KeyCode::Char('x') if self.navigation_mode => {
-                        self.navigation_mode = false;
-                        self.marked_pane_for_move = None;
-                        // Close/unsplit not yet implemented
-                    }
-                    
-                    // Exit navigation mode without action
-                    KeyCode::Esc if self.navigation_mode => {
-                        self.navigation_mode = false;
-                        self.marked_pane_for_move = None;
-                        // Send Focused event to current pane in focused region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
-                    }
-                    // Navigation mode: Ignore unrecognized keys (stay in mode)
-                    _ if self.navigation_mode => {
-                        // Unknown key - just ignore it, stay in navigation mode
-                    }
-
-                    // Ctrl+Tab: Next pane in current region
-                    KeyCode::Tab
-                        if key.modifiers.contains(KeyModifiers::CONTROL)
-                            && !key.modifiers.contains(KeyModifiers::SHIFT) =>
-                    {
-                        // Cycle panes within focused region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            // Unfocus current pane
-                            if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                }
-                            }
-
-                            // Cycle to next pane
-                            if let Some(region) = self.store.get_region_mut(region_id) {
-                                region.select_next_pane();
-                            }
-
-                            // Focus new pane
-                            if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
-                    }
-                    KeyCode::BackTab if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        // Cycle panes within focused region
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            // Unfocus current pane
-                            if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                                }
-                            }
-
-                            // Cycle to previous pane
-                            if let Some(region) = self.store.get_region_mut(region_id) {
-                                region.select_prev_pane();
-                            }
-
-                            // Focus new pane
-                            if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
-                                    let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                                }
-                            }
-                        }
-                    }
-                    // Ctrl+Space cycles focus through panes and command input (legacy support)
-                    KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.focus_next_region();
-                    }
-                    // Ctrl+0: Jump to command input
-                    KeyCode::Char('0') if key.modifiers.contains(KeyModifiers::ALT) => {
-                        self.set_focus_to_command_input();
-                    }
-                    // Ctrl+Q quits the application by returning None to signal shutdown
-                    KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Ok(UIEventResult::RequestExit);
-                    }
-                    // Route all other keys to focused pane in focused region
-                    _ => {
-                        if let Some(region_id) = self.layout.focused_region_id() {
-                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                    use crate::content_pane::{PaneEvent, PaneEventResult};
-                                    let result =
-                                        pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
-                                    match result {
-                                        PaneEventResult::Handled => {}
-                                        PaneEventResult::NotHandled => {}
-                                        PaneEventResult::RequestClose => {
-                                            // Ctrl+D in command input - exit the shell
-                                            return Ok(UIEventResult::RequestExit);
-                                        }
-                                        PaneEventResult::RequestExecute(cmd) => {
-                                            return Ok(UIEventResult::ExecuteCommand(cmd));
-                                        }
-                                        PaneEventResult::RequestCompletion => {
-                                            return Ok(UIEventResult::RequestCompletion);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                Event::Resize(_, _) => {
-                    // Handle terminal resize
-                    // TODO: Resize PTY and parser
                 }
-                _ => {}
+                KeyCode::Enter if completion_active => {
+                    // Accept completion
+                    if let Some(completion) = self.completion_pane.borrow().selected_completion() {
+                        let (insertion_index, delete_count) =
+                            self.completion_pane.borrow().insertion_params();
+                        // Apply to command input
+                        self.command_input_handle.borrow_mut().apply_completion(
+                            completion,
+                            insertion_index,
+                            delete_count,
+                        );
+                    }
+                    self.completion_pane.borrow_mut().clear();
+                    // Restore focus to the region that was active before completion
+                    if let Some(prev_region) = self.pre_completion_active_region.take() {
+                        self.layout.set_focused_region(prev_region);
+                    }
+                }
+                // Tab/Shift-Tab for navigation when completion is active
+                KeyCode::Tab
+                    if completion_active && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                {
+                    self.completion_pane.borrow_mut().handle_event(
+                        crate::content_pane::PaneEvent::KeyPress(
+                            KeyCode::Down,
+                            KeyModifiers::empty(),
+                        ),
+                    );
+                }
+                KeyCode::BackTab | KeyCode::Tab
+                    if completion_active && key.modifiers.contains(KeyModifiers::SHIFT) =>
+                {
+                    self.completion_pane.borrow_mut().handle_event(
+                        crate::content_pane::PaneEvent::KeyPress(
+                            KeyCode::Up,
+                            KeyModifiers::empty(),
+                        ),
+                    );
+                }
+                // Arrow keys for navigation
+                KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End
+                    if completion_active =>
+                {
+                    self.completion_pane.borrow_mut().handle_event(
+                        crate::content_pane::PaneEvent::KeyPress(key.code, key.modifiers),
+                    );
+                }
+                // Allow typing to update buffer and re-trigger completion
+                _ if completion_active => {
+                    // First, let command input handle the key (updates buffer)
+                    match self
+                        .command_input_handle
+                        .borrow_mut()
+                        .handle_key(key.code, key.modifiers)
+                    {
+                        crate::command_input::CommandKeyResult::NoAction => {
+                            // Buffer was updated, re-trigger completion
+                            return Ok(UIEventResult::RequestCompletion);
+                        }
+                        crate::command_input::CommandKeyResult::CommandEntered(command) => {
+                            // User pressed Enter with actual command text - cancel completion and
+                            // execute
+                            self.completion_pane.borrow_mut().clear();
+                            if let Some(prev_region) = self.pre_completion_active_region.take() {
+                                self.layout.set_focused_region(prev_region);
+                            }
+                            return Ok(UIEventResult::ExecuteCommand(command));
+                        }
+                        _ => {
+                            // Cancel completion for other cases (e.g., Ctrl+D)
+                            self.completion_pane.borrow_mut().clear();
+                            if let Some(prev_region) = self.pre_completion_active_region.take() {
+                                self.layout.set_focused_region(prev_region);
+                            }
+                        }
+                    }
+                }
+                // Ctrl+B: Toggle navigation mode
+                KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if self.navigation_mode {
+                        // Exit navigation mode - refocus current pane
+                        self.navigation_mode = false;
+                        self.marked_pane_for_move = None;
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ =
+                                        pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                                }
+                            }
+                        }
+                    } else {
+                        // Enter navigation mode - unfocus current pane
+                        if let Some(region_id) = self.layout.focused_region_id() {
+                            if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane
+                                        .handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
+                            }
+                        }
+                        self.navigation_mode = true;
+                    }
+                }
+                // === NAVIGATION MODE: Plain letter keys (no Ctrl required) ===
+                // Philosophy: Commands that navigate STAY in mode, actions that change context EXIT
+                // mode
+
+                // Pane Selection (stays in mode for chaining)
+                KeyCode::Char('t') if self.navigation_mode => {
+                    self.focus_pane_by_kind(&crate::content_pane::PaneKind::Terminal);
+                }
+                KeyCode::Char('e') if self.navigation_mode => {
+                    self.focus_pane_by_kind(&crate::content_pane::PaneKind::Environment);
+                }
+                KeyCode::Char('h') if self.navigation_mode => {
+                    self.focus_pane_by_kind(&crate::content_pane::PaneKind::History);
+                }
+                KeyCode::Char('a') if self.navigation_mode => {
+                    self.focus_pane_by_kind(&crate::content_pane::PaneKind::Aliases);
+                }
+                KeyCode::Char('f') if self.navigation_mode => {
+                    self.focus_pane_by_kind(&crate::content_pane::PaneKind::Functions);
+                }
+                KeyCode::Char('c') if self.navigation_mode => {
+                    self.focus_pane_by_kind(&crate::content_pane::PaneKind::CallStack);
+                }
+
+                // Action: Go to Input (exits mode - you're done navigating, time to type)
+                KeyCode::Char('i') if self.navigation_mode => {
+                    self.navigation_mode = false;
+                    self.marked_pane_for_move = None;
+                    self.set_focus_to_command_input();
+                }
+
+                // Navigation: Next region (stays in mode)
+                KeyCode::Char('n') if self.navigation_mode => {
+                    // Unfocus current pane in current region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+                    }
+
+                    // Move to next region
+                    self.layout.focus_next_region();
+
+                    // Focus the pane in new region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                }
+                // Navigation: Previous region (stays in mode)
+                KeyCode::Char('p') if self.navigation_mode => {
+                    // Unfocus current pane in current region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+                    }
+
+                    // Move to previous region
+                    self.layout.focus_prev_region();
+
+                    // Focus the pane in new region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                }
+                // Navigation mode: Tab to cycle tabs/panes in current region (forward)
+                KeyCode::Tab
+                    if self.navigation_mode && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                {
+                    // Cycle panes within the current region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        // Unfocus current pane
+                        if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        // Cycle to next pane in region
+                        if let Some(region) = self.store.get_region_mut(region_id) {
+                            region.select_next_pane();
+                        }
+
+                        // Focus new pane
+                        if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                }
+                // Navigation mode: Shift+Tab to cycle tabs/panes in current region (backward)
+                KeyCode::BackTab if self.navigation_mode => {
+                    // Cycle panes within the current region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        // Unfocus current pane
+                        if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        // Cycle to previous pane in region
+                        if let Some(region) = self.store.get_region_mut(region_id) {
+                            region.select_prev_pane();
+                        }
+
+                        // Focus new pane
+                        if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                }
+                // Navigation mode: Ctrl+Space exits nav mode and cycles regions
+                KeyCode::Char(' ')
+                    if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                {
+                    self.navigation_mode = false;
+                    self.focus_next_region();
+                }
+                // Action: Split vertical (exits mode - new pane is ready to use)
+                KeyCode::Char('v') if self.navigation_mode => {
+                    self.navigation_mode = false;
+                    self.marked_pane_for_move = None;
+                    if let Some(focused_region_id) = self.layout.focused_region_id() {
+                        // Check if this region can be split
+                        let can_split = self
+                            .store
+                            .get_region(focused_region_id)
+                            .map_or(false, |r| r.splittable());
+
+                        if can_split {
+                            // Get the currently focused pane to move it
+                            let pane_to_move =
+                                self.store.get_region_focused_pane(focused_region_id);
+
+                            if let Some(pane_id) = pane_to_move {
+                                // Unfocus the pane before moving
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane
+                                        .handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
+
+                                // Remove the pane from the original region
+                                if let Some(region) = self.store.get_region_mut(focused_region_id) {
+                                    region.remove_pane(pane_id);
+                                }
+
+                                // Create a new region with the moved pane
+                                let new_region_id = self.store.create_region(
+                                    vec![pane_id],
+                                    true, // splittable
+                                    true, // closeable
+                                );
+
+                                // Split the layout
+                                if self.layout.split_vertical(new_region_id) {
+                                    // Focus the moved pane
+                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                        let _ = pane
+                                            .handle_event(crate::content_pane::PaneEvent::Focused);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Action: Split horizontal (exits mode - new pane is ready to use)
+                KeyCode::Char('s') if self.navigation_mode => {
+                    self.navigation_mode = false;
+                    self.marked_pane_for_move = None;
+                    if let Some(focused_region_id) = self.layout.focused_region_id() {
+                        // Check if this region can be split
+                        let can_split = self
+                            .store
+                            .get_region(focused_region_id)
+                            .map_or(false, |r| r.splittable());
+
+                        if can_split {
+                            // Get the currently focused pane to move it
+                            let pane_to_move =
+                                self.store.get_region_focused_pane(focused_region_id);
+
+                            if let Some(pane_id) = pane_to_move {
+                                // Unfocus the pane before moving
+                                if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                    let _ = pane
+                                        .handle_event(crate::content_pane::PaneEvent::Unfocused);
+                                }
+
+                                // Remove the pane from the original region
+                                if let Some(region) = self.store.get_region_mut(focused_region_id) {
+                                    region.remove_pane(pane_id);
+                                }
+
+                                // Create a new region with the moved pane
+                                let new_region_id = self.store.create_region(
+                                    vec![pane_id],
+                                    true, // splittable
+                                    true, // closeable
+                                );
+
+                                // Split the layout
+                                if self.layout.split_horizontal(new_region_id) {
+                                    // Focus the moved pane
+                                    if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                        let _ = pane
+                                            .handle_event(crate::content_pane::PaneEvent::Focused);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Mark pane for moving (stays in mode)
+                KeyCode::Char('m') if self.navigation_mode => {
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                            self.marked_pane_for_move = Some(pane_id);
+                            // TODO: Visual indicator that pane is marked
+                        }
+                    }
+                }
+
+                // Move marked pane to current region (exits mode)
+                KeyCode::Char('M') if self.navigation_mode => {
+                    self.navigation_mode = false;
+
+                    if let Some(marked_pane_id) = self.marked_pane_for_move.take() {
+                        if let Some(target_region_id) = self.layout.focused_region_id() {
+                            // Find which region currently contains the marked pane
+                            let source_region_id =
+                                self.layout.get_all_region_ids().into_iter().find(|&rid| {
+                                    self.store
+                                        .get_region(rid)
+                                        .map_or(false, |r| r.panes().contains(&marked_pane_id))
+                                });
+
+                            if let Some(source_rid) = source_region_id {
+                                // Don't move to same region
+                                if source_rid != target_region_id {
+                                    // Unfocus the pane before moving
+                                    if let Some(pane) = self.store.get_pane_mut(marked_pane_id) {
+                                        let _ = pane.handle_event(
+                                            crate::content_pane::PaneEvent::Unfocused,
+                                        );
+                                    }
+
+                                    // Remove from source region
+                                    if let Some(source_region) =
+                                        self.store.get_region_mut(source_rid)
+                                    {
+                                        source_region.remove_pane(marked_pane_id);
+                                    }
+
+                                    // Check if source region is now empty and remove it from layout
+                                    let source_is_empty = self
+                                        .store
+                                        .get_region(source_rid)
+                                        .map_or(true, |r| r.panes().is_empty());
+
+                                    if source_is_empty {
+                                        // Don't remove special regions (content and command input)
+                                        if source_rid != self.content_region_id
+                                            && source_rid != self.command_input_region_id
+                                        {
+                                            self.layout.remove_region(source_rid);
+                                        }
+                                    }
+
+                                    // Add to target region
+                                    if let Some(target_region) =
+                                        self.store.get_region_mut(target_region_id)
+                                    {
+                                        target_region.add_pane(marked_pane_id);
+                                        target_region.select_pane(marked_pane_id);
+                                    }
+
+                                    // Focus the moved pane
+                                    if let Some(pane) = self.store.get_pane_mut(marked_pane_id) {
+                                        let _ = pane
+                                            .handle_event(crate::content_pane::PaneEvent::Focused);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Action: Close pane (exits mode - not yet implemented)
+                KeyCode::Char('x') if self.navigation_mode => {
+                    self.navigation_mode = false;
+                    self.marked_pane_for_move = None;
+                    // Close/unsplit not yet implemented
+                }
+
+                // Exit navigation mode without action
+                KeyCode::Esc if self.navigation_mode => {
+                    self.navigation_mode = false;
+                    self.marked_pane_for_move = None;
+                    // Send Focused event to current pane in focused region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                }
+                // Navigation mode: Ignore unrecognized keys (stay in mode)
+                _ if self.navigation_mode => {
+                    // Unknown key - just ignore it, stay in navigation mode
+                }
+
+                // Ctrl+Tab: Next pane in current region
+                KeyCode::Tab
+                    if key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                {
+                    // Cycle panes within focused region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        // Unfocus current pane
+                        if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        // Cycle to next pane
+                        if let Some(region) = self.store.get_region_mut(region_id) {
+                            region.select_next_pane();
+                        }
+
+                        // Focus new pane
+                        if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                }
+                KeyCode::BackTab if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Cycle panes within focused region
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        // Unfocus current pane
+                        if let Some(old_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(old_pane_id) {
+                                let _ =
+                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
+                            }
+                        }
+
+                        // Cycle to previous pane
+                        if let Some(region) = self.store.get_region_mut(region_id) {
+                            region.select_prev_pane();
+                        }
+
+                        // Focus new pane
+                        if let Some(new_pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(new_pane_id) {
+                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
+                            }
+                        }
+                    }
+                }
+                // Ctrl+Space cycles focus through panes and command input (legacy support)
+                KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.focus_next_region();
+                }
+                // Ctrl+0: Jump to command input
+                KeyCode::Char('0') if key.modifiers.contains(KeyModifiers::ALT) => {
+                    self.set_focus_to_command_input();
+                }
+                // Ctrl+Q quits the application by returning None to signal shutdown
+                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(UIEventResult::RequestExit);
+                }
+                // Route all other keys to focused pane in focused region
+                _ => {
+                    if let Some(region_id) = self.layout.focused_region_id() {
+                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
+                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
+                                use crate::content_pane::{PaneEvent, PaneEventResult};
+                                let result =
+                                    pane.handle_event(PaneEvent::KeyPress(key.code, key.modifiers));
+                                match result {
+                                    PaneEventResult::Handled => {}
+                                    PaneEventResult::NotHandled => {}
+                                    PaneEventResult::RequestClose => {
+                                        // Ctrl+D in command input - exit the shell
+                                        return Ok(UIEventResult::RequestExit);
+                                    }
+                                    PaneEventResult::RequestExecute(cmd) => {
+                                        return Ok(UIEventResult::ExecuteCommand(cmd));
+                                    }
+                                    PaneEventResult::RequestCompletion => {
+                                        return Ok(UIEventResult::RequestCompletion);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            Event::Resize(_, _) => {
+                // Handle terminal resize
+                // TODO: Resize PTY and parser
             }
+            _ => {}
         }
 
         Ok(UIEventResult::Continue)
@@ -1164,8 +1228,8 @@ impl AppUI {
     ///
     /// # Errors
     /// Returns an error if rendering or event handling fails
-    #[allow(clippy::unused_async, clippy::future_not_send, clippy::await_holding_refcell_ref)]
-    pub async fn run(&mut self) -> Result<()> {
+    #[allow(clippy::unused_async, clippy::future_not_send)]
+    pub async fn run(&mut self, mut pty_output_rx: mpsc::UnboundedReceiver<()>) -> Result<()> {
         let source_info = SourceInfo::default();
         let params = ExecutionParameters::default();
 
@@ -1173,24 +1237,92 @@ impl AppUI {
             tokio::task::JoinHandle<Result<brush_core::ExecutionResult, brush_core::Error>>,
         > = None;
 
-        loop {
-            // See if we're waiting on a command (and it finished).
-            if let Some(handle) = &mut running_command {
-                if handle.is_finished() {
-                    if let Ok(result) = handle.await? {
-                        // Write a status message to the terminal pane
-                        let exit_code: u8 = (&result.exit_code).into();
-                        let status_msg = std::format!(
-                            "\r\n----------- [tuish: command exited with code {exit_code}] ----------- \r\n\r\n"
-                        );
-                        self.write_to_terminal(status_msg.as_bytes());
+        // Spawn task to poll for input events and forward to our channel
+        let ui_event_tx = self.ui_event_tx.clone();
 
-                        if matches!(
-                            result.next_control_flow,
-                            brush_core::ExecutionControlFlow::ExitShell
-                        ) {
+        let input_poll_task = tokio::task::spawn_blocking(move || {
+            loop {
+                // Poll for input with a short timeout
+                if let Ok(true) = event::poll(Duration::from_millis(100)) {
+                    if let Ok(evt) = event::read() {
+                        if ui_event_tx.send(UIEvent::Input(evt)).is_err() {
+                            // Channel closed, main loop exited - we should exit too
                             break;
                         }
+                    }
+                }
+            }
+        });
+
+        // Initial render
+        self.render()?;
+
+        let exit_result = loop {
+            // Wait for events using tokio::select!
+            let ui_event = tokio::select! {
+                // Check if running command finished
+                result = async {
+                    if let Some(ref mut handle) = running_command {
+                        if handle.is_finished() {
+                            Some(handle.await)
+                        } else {
+                            // Not finished, don't block
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                            None
+                        }
+                    } else {
+                        // No command running, yield indefinitely
+                        std::future::pending().await
+                    }
+                }, if running_command.is_some() => {
+                    if let Some(Ok(Ok(result))) = result {
+                        // Command finished - extract exit code and check if we should exit shell
+                        let should_exit = matches!(
+                            result.next_control_flow,
+                            brush_core::ExecutionControlFlow::ExitShell
+                        );
+                        Some(UIEvent::CommandFinished {
+                            exit_code: result.exit_code,
+                            should_exit,
+                        })
+                    } else {
+                        // Command errored or still running
+                        None
+                    }
+                }
+
+                // PTY output arrived
+                _ = pty_output_rx.recv() => {
+                    Some(UIEvent::PtyOutput)
+                }
+
+                // UI event from input poll task or other sources
+                evt = self.ui_event_rx.recv() => {
+                    evt
+                }
+            };
+
+            // Process the event if we got one
+            let Some(evt) = ui_event else {
+                continue;
+            };
+
+            // Handle the event
+            match evt {
+                UIEvent::CommandFinished {
+                    exit_code,
+                    should_exit,
+                } => {
+                    // Write a status message to the terminal pane
+                    let code: u8 = (&exit_code).into();
+                    let status_msg = std::format!(
+                        "\r\n----------- [tuish: command exited with code {code}] ----------- \r\n\r\n"
+                    );
+                    self.write_to_terminal(status_msg.as_bytes());
+
+                    // Check if we should exit the shell
+                    if should_exit {
+                        break Ok(());
                     }
 
                     running_command = None;
@@ -1201,93 +1333,137 @@ impl AppUI {
                     // Re-enable command input pane and focus it
                     self.command_input_handle.borrow_mut().enable();
                     self.set_focus_to_command_input();
+
+                    // Request prompt update
+                    let _ = self.ui_event_tx.send(UIEvent::PromptReady);
+
+                    // Render to show updated state
+                    self.render()?;
                 }
-            }
 
-            // Update the command input area if it's not busy.
-            // SAFETY: We hold the RefCell borrow across an await point, but this is safe because:
-            // 1. This is single-threaded code (tokio::task::LocalSet)
-            // 2. No other code path borrows command_input_handle during try_refresh()
-            // 3. The async operation doesn't yield to other tasks that could borrow it
-            #[allow(clippy::await_holding_refcell_ref)]
-            {
-                self.command_input_handle.borrow_mut().try_refresh().await;
-            }
-
-            // Render the UI
-            self.render()?;
-
-            // Handle input events.
-            match self.handle_events()? {
-                UIEventResult::ExecuteCommand(command) => {
-                    // User pressed Enter in command pane - execute the command
-                    let shell = self.shell.clone();
-                    let source_info = source_info.clone();
-                    let params = params.clone();
-
-                    // Show the running command in the terminal pane's border
-                    self.set_running_command(Some(command.clone()));
-
-                    running_command = Some(tokio::spawn(async move {
-                        let mut shell = shell.lock().await;
-                        let result = shell.run_string(command, &source_info, &params).await;
-                        drop(shell);
-
-                        result
-                    }));
-
-                    // Once it's running, disable command input pane and switch focus
-                    self.command_input_handle.borrow_mut().disable();
-                    self.focus_next_region();
-
-                    // TODO: Check for exit signal from command execution
+                UIEvent::PtyOutput => {
+                    // PTY has new output, render it
+                    self.render()?;
                 }
-                UIEventResult::RequestCompletion => {
-                    // User pressed Tab - trigger completion
-                    let mut shell = self.shell.lock().await;
-                    let buffer = {
-                        let cmd_input = self.command_input_handle.borrow();
-                        cmd_input.buffer().to_string()
-                    };
-                    let cursor_pos = self.command_input_handle.borrow().cursor_pos();
 
-                    if let Ok(completions) = shell.complete(&buffer, cursor_pos).await {
-                        drop(shell); // Release lock
-
-                        if completions.candidates.is_empty() {
-                            // No completions available
-                        } else if completions.candidates.len() == 1 {
-                            // Auto-accept single completion
-                            let completion = completions.candidates.into_iter().next().unwrap();
-                            self.command_input_handle.borrow_mut().apply_completion(
-                                completion,
-                                completions.insertion_index,
-                                completions.delete_count,
-                            );
-                        } else {
-                            // Multiple completions - show pane
-                            // Store current focused region to restore later
-                            self.pre_completion_active_region = self.layout.focused_region_id();
-
-                            // Show completion pane
-                            self.completion_pane
-                                .borrow_mut()
-                                .set_completions(completions);
-                        }
+                UIEvent::PromptReady => {
+                    // Update prompt synchronously (we're already in async context)
+                    let prompt_opt = if let Ok(mut shell_guard) = self.shell.try_lock() {
+                        let p = shell_guard.compose_prompt().await.ok();
+                        drop(shell_guard);
+                        p
                     } else {
-                        drop(shell);
-                        tracing::debug!("Completion failed");
+                        None
+                    };
+
+                    if let Some(prompt) = prompt_opt {
+                        // Update the cached prompt
+                        let mut parser = vt100::Parser::new(1, 1000, 0);
+                        parser.process(prompt.as_bytes());
+                        self.command_input_handle
+                            .borrow_mut()
+                            .set_cached_prompt(parser.screen().contents());
+                        // Render to show updated prompt
+                        self.render()?;
                     }
                 }
-                UIEventResult::Continue => {}
-                UIEventResult::RequestExit => {
-                    // User requested exit (Ctrl+Q)
-                    break;
+
+                UIEvent::Input(input_event) => {
+                    // Handle user input and render if needed
+                    match self.handle_input_event(input_event)? {
+                        UIEventResult::ExecuteCommand(command) => {
+                            // User pressed Enter in command pane - execute the command
+                            let shell = self.shell.clone();
+                            let source_info = source_info.clone();
+                            let params = params.clone();
+
+                            // Show the running command in the terminal pane's border
+                            self.set_running_command(Some(command.clone()));
+
+                            running_command = Some(tokio::spawn(async move {
+                                let mut shell = shell.lock().await;
+                                let result = shell.run_string(command, &source_info, &params).await;
+                                drop(shell);
+
+                                result
+                            }));
+
+                            // Once it's running, disable command input pane and switch focus
+                            self.command_input_handle.borrow_mut().disable();
+                            self.focus_next_region();
+
+                            // Render to show the change
+                            self.render()?;
+                        }
+                        UIEventResult::RequestCompletion => {
+                            // User pressed Tab - trigger completion
+                            let mut shell = self.shell.lock().await;
+                            let buffer = {
+                                let cmd_input = self.command_input_handle.borrow();
+                                cmd_input.buffer().to_string()
+                            };
+                            let cursor_pos = self.command_input_handle.borrow().cursor_pos();
+
+                            if let Ok(completions) = shell.complete(&buffer, cursor_pos).await {
+                                drop(shell); // Release lock
+
+                                if completions.candidates.is_empty() {
+                                    // No completions available
+                                } else if completions.candidates.len() == 1 {
+                                    // Auto-accept single completion
+                                    let completion =
+                                        completions.candidates.into_iter().next().unwrap();
+                                    self.command_input_handle.borrow_mut().apply_completion(
+                                        completion,
+                                        completions.insertion_index,
+                                        completions.delete_count,
+                                    );
+                                    // Render to show completion
+                                    self.render()?;
+                                } else {
+                                    // Multiple completions - show pane
+                                    // Store current focused region to restore later
+                                    self.pre_completion_active_region =
+                                        self.layout.focused_region_id();
+
+                                    // Show completion pane
+                                    self.completion_pane
+                                        .borrow_mut()
+                                        .set_completions(completions);
+                                    // Render to show completion pane
+                                    self.render()?;
+                                }
+                            } else {
+                                drop(shell);
+                                tracing::debug!("Completion failed");
+                            }
+                        }
+                        UIEventResult::Continue => {
+                            // Input handled, render to show changes
+                            self.render()?;
+                        }
+                        UIEventResult::RequestExit => {
+                            // User requested exit (Ctrl+Q)
+                            break Ok(());
+                        }
+                    }
+                }
+
+                UIEvent::Tick | UIEvent::CommandStarted(_) => {
+                    // Periodic update or other event that needs render
+                    self.render()?;
                 }
             }
-        }
+        };
 
-        Ok(())
+        // Close the receiver to signal the input task to exit
+        self.ui_event_rx.close();
+
+        // Wait a moment for the input polling task to notice and exit
+        // It will exit within 100ms (the poll timeout)
+        let _ = tokio::time::timeout(Duration::from_millis(200), input_poll_task).await;
+
+        exit_result
     }
 }
 
