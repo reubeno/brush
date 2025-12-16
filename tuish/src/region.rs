@@ -2,7 +2,6 @@
 //!
 //! A Region represents a visual area containing one or more panes arranged as tabs.
 
-
 /// Unique identifier for a region
 pub type RegionId = usize;
 
@@ -65,7 +64,7 @@ impl Region {
 
     /// Checks if this region is focusable (has at least one enabled pane).
     #[must_use]
-    pub fn is_focusable<F>(&self, mut pane_lookup: F) -> bool 
+    pub fn is_focusable<F>(&self, mut pane_lookup: F) -> bool
     where
         F: FnMut(PaneId) -> bool,
     {

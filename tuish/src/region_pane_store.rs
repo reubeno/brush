@@ -38,13 +38,18 @@ impl RegionPaneStore {
     /// Creates a new region with the given panes.
     ///
     /// Returns the ID of the newly created region.
-    pub fn create_region(&mut self, panes: Vec<PaneId>, splittable: bool, closeable: bool) -> RegionId {
+    pub fn create_region(
+        &mut self,
+        panes: Vec<PaneId>,
+        splittable: bool,
+        closeable: bool,
+    ) -> RegionId {
         let region_id = self.next_region_id;
         self.next_region_id += 1;
-        
+
         let region = Region::new(region_id, panes, splittable, closeable);
         self.regions.insert(region_id, region);
-        
+
         region_id
     }
 
@@ -54,9 +59,9 @@ impl RegionPaneStore {
     pub fn add_pane(&mut self, pane: Box<dyn ContentPane>) -> PaneId {
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
-        
+
         self.panes.insert(pane_id, pane);
-        
+
         pane_id
     }
 

@@ -62,7 +62,13 @@ async fn main() -> Result<()> {
         .saturating_sub(2); // Content border
     let pty_cols = terminal_size.width.saturating_sub(2); // Content left + right borders
 
-    let pty = Arc::new(Pty::new(pty_rows, pty_cols)?);
+    // Create channel for PTY output notifications
+    let (pty_output_tx, pty_output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let pty = Arc::new(Pty::new_with_notify(
+        pty_rows,
+        pty_cols,
+        Some(pty_output_tx),
+    )?);
 
     // Update shell with PTY fds
     let fds = HashMap::from([
@@ -82,7 +88,11 @@ async fn main() -> Result<()> {
     shell.lock().await.replace_open_files(fds.into_iter());
 
     // Create special panes (terminal and completion)
-    let terminal_pane = Box::new(TerminalPane::new(pty.parser(), pty.writer(), Arc::clone(&pty)));
+    let terminal_pane = Box::new(TerminalPane::new(
+        pty.parser(),
+        pty.writer(),
+        Arc::clone(&pty),
+    ));
     let completion_pane = Box::new(CompletionPane::new(&shell));
 
     // Create the UI with special panes
@@ -96,5 +106,27 @@ async fn main() -> Result<()> {
     ui.add_pane(Box::new(CallStackPane::new(&shell)));
 
     // Run the main event loop
-    ui.run().await
+    let result = ui.run(pty_output_rx).await;
+
+    // Manually restore terminal before exit (since std::process::exit bypasses Drop)
+    ratatui::restore();
+
+    // Explicitly drop the PTY to close file descriptors and unblock threads
+    drop(pty);
+
+    // Explicitly drop the shell to release any resources
+    drop(shell);
+
+    // Drop UI to release resources (but ratatui::restore already called above)
+    drop(ui);
+
+    // Force exit to ensure tokio runtime shuts down
+    // This is necessary because background tasks may keep the runtime alive
+    match result {
+        Ok(()) => std::process::exit(0),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1)
+        }
+    }
 }

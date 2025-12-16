@@ -63,6 +63,7 @@ impl CommandInput {
     }
 
     /// Updates the cached prompt from the shell.
+    #[allow(dead_code)]
     pub async fn try_update_prompt_async(&mut self) {
         if let Ok(mut shell) = self.shell.try_lock() {
             if let Ok(prompt) = shell.compose_prompt().await {
@@ -73,12 +74,18 @@ impl CommandInput {
         }
     }
 
+    /// Sets the cached prompt directly (used by event-driven prompt updates).
+    pub fn set_cached_prompt(&mut self, prompt: String) {
+        self.cached_prompt = prompt;
+    }
+
     /// Sets the focus state of this widget.
     pub const fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
     }
 
     /// Refreshes the command input state, updating the prompt.
+    #[allow(dead_code)]
     pub async fn try_refresh(&mut self) {
         if !self.enabled {
             return;
@@ -262,8 +269,7 @@ impl CommandInput {
         };
 
         // No border - region handles that
-        let input_paragraph = Paragraph::new(input_line)
-            .style(para_style);
+        let input_paragraph = Paragraph::new(input_line).style(para_style);
         frame.render_widget(input_paragraph, area);
 
         // Return cursor position if focused
@@ -317,7 +323,7 @@ impl CommandInput {
                 .add_modifier(Modifier::ITALIC),
             HighlightKind::Arithmetic => Style::default().fg(Color::Rgb(165, 243, 252)), // Cyan
             HighlightKind::Parameter => Style::default().fg(Color::Rgb(244, 114, 182)),  // Pink
-            HighlightKind::CommandSubstitution => Style::default().fg(Color::Rgb(165, 243, 252)), // Cyan
+            HighlightKind::CommandSubstitution => Style::default().fg(Color::Rgb(165, 243, 252)), /* Cyan */
             HighlightKind::Quoted => Style::default().fg(Color::Rgb(253, 224, 71)), // Yellow
             HighlightKind::Operator => Style::default()
                 .fg(Color::Rgb(196, 181, 253)) // Light purple
@@ -368,9 +374,12 @@ impl crate::content_pane::ContentPane for CommandInput {
         let _ = self.render_with_cursor(frame, area);
     }
 
-    fn handle_event(&mut self, event: crate::content_pane::PaneEvent) -> crate::content_pane::PaneEventResult {
+    fn handle_event(
+        &mut self,
+        event: crate::content_pane::PaneEvent,
+    ) -> crate::content_pane::PaneEventResult {
         use crate::content_pane::{PaneEvent, PaneEventResult};
-        
+
         match event {
             PaneEvent::Focused => {
                 self.set_focused(true);
@@ -383,7 +392,7 @@ impl crate::content_pane::ContentPane for CommandInput {
             PaneEvent::KeyPress(code, modifiers) => {
                 match self.handle_key(code, modifiers) {
                     CommandKeyResult::NoAction => PaneEventResult::Handled,
-                    CommandKeyResult::RequestExit => PaneEventResult::RequestClose, // Signal exit to AppUI
+                    CommandKeyResult::RequestExit => PaneEventResult::RequestClose, /* Signal exit to AppUI */
                     CommandKeyResult::CommandEntered(cmd) => PaneEventResult::RequestExecute(cmd),
                     CommandKeyResult::RequestCompletion => PaneEventResult::RequestCompletion,
                 }

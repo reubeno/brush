@@ -14,10 +14,7 @@ pub type LayoutId = usize;
 #[derive(Debug, Clone)]
 pub enum LayoutNode {
     /// A region (rendered as tabs if it has multiple panes)
-    Region {
-        id: LayoutId,
-        region_id: RegionId,
-    },
+    Region { id: LayoutId, region_id: RegionId },
     /// Horizontal split (left | right)
     #[allow(dead_code)]
     HSplit {
@@ -53,14 +50,12 @@ impl LayoutNode {
 
         match self {
             Self::Region { .. } => None,
-            Self::HSplit { left, right, .. } => {
-                left.find_node_mut(target_id)
-                    .or_else(|| right.find_node_mut(target_id))
-            }
-            Self::VSplit { top, bottom, .. } => {
-                top.find_node_mut(target_id)
-                    .or_else(|| bottom.find_node_mut(target_id))
-            }
+            Self::HSplit { left, right, .. } => left
+                .find_node_mut(target_id)
+                .or_else(|| right.find_node_mut(target_id)),
+            Self::VSplit { top, bottom, .. } => top
+                .find_node_mut(target_id)
+                .or_else(|| bottom.find_node_mut(target_id)),
         }
     }
 
@@ -195,11 +190,7 @@ impl LayoutManager {
 
         if let Some(current) = self.focused_region_id {
             if let Some(idx) = regions.iter().position(|&r| r == current) {
-                let prev_idx = if idx == 0 {
-                    regions.len() - 1
-                } else {
-                    idx - 1
-                };
+                let prev_idx = if idx == 0 { regions.len() - 1 } else { idx - 1 };
                 self.focused_region_id = Some(regions[prev_idx]);
                 return;
             }
@@ -215,8 +206,6 @@ impl LayoutManager {
         self.root.render(area)
     }
 
-
-
     /// Splits the current focused region vertically (left | right).
     ///
     /// Creates an HSplit with the current region on the left and a new region on the right.
@@ -226,16 +215,26 @@ impl LayoutManager {
         };
 
         // We need to recursively find and replace the region node
-        let success = Self::split_vertical_recursive(&mut self.root, focused_id, new_region_id, &mut self.next_layout_id);
-        
+        let success = Self::split_vertical_recursive(
+            &mut self.root,
+            focused_id,
+            new_region_id,
+            &mut self.next_layout_id,
+        );
+
         if success {
             self.focused_region_id = Some(new_region_id);
         }
-        
+
         success
     }
 
-    fn split_vertical_recursive(node: &mut LayoutNode, target_region_id: RegionId, new_region_id: RegionId, next_id: &mut LayoutId) -> bool {
+    fn split_vertical_recursive(
+        node: &mut LayoutNode,
+        target_region_id: RegionId,
+        new_region_id: RegionId,
+        next_id: &mut LayoutId,
+    ) -> bool {
         match node {
             LayoutNode::Region { region_id, id } if *region_id == target_region_id => {
                 // Found the target - replace it with an HSplit
@@ -262,12 +261,22 @@ impl LayoutManager {
                 true
             }
             LayoutNode::HSplit { left, right, .. } => {
-                Self::split_vertical_recursive(left, target_region_id, new_region_id, next_id) ||
-                Self::split_vertical_recursive(right, target_region_id, new_region_id, next_id)
+                Self::split_vertical_recursive(left, target_region_id, new_region_id, next_id)
+                    || Self::split_vertical_recursive(
+                        right,
+                        target_region_id,
+                        new_region_id,
+                        next_id,
+                    )
             }
             LayoutNode::VSplit { top, bottom, .. } => {
-                Self::split_vertical_recursive(top, target_region_id, new_region_id, next_id) ||
-                Self::split_vertical_recursive(bottom, target_region_id, new_region_id, next_id)
+                Self::split_vertical_recursive(top, target_region_id, new_region_id, next_id)
+                    || Self::split_vertical_recursive(
+                        bottom,
+                        target_region_id,
+                        new_region_id,
+                        next_id,
+                    )
             }
             _ => false,
         }
@@ -282,16 +291,26 @@ impl LayoutManager {
         };
 
         // We need to recursively find and replace the region node
-        let success = Self::split_horizontal_recursive(&mut self.root, focused_id, new_region_id, &mut self.next_layout_id);
-        
+        let success = Self::split_horizontal_recursive(
+            &mut self.root,
+            focused_id,
+            new_region_id,
+            &mut self.next_layout_id,
+        );
+
         if success {
             self.focused_region_id = Some(new_region_id);
         }
-        
+
         success
     }
 
-    fn split_horizontal_recursive(node: &mut LayoutNode, target_region_id: RegionId, new_region_id: RegionId, next_id: &mut LayoutId) -> bool {
+    fn split_horizontal_recursive(
+        node: &mut LayoutNode,
+        target_region_id: RegionId,
+        new_region_id: RegionId,
+        next_id: &mut LayoutId,
+    ) -> bool {
         match node {
             LayoutNode::Region { region_id, id } if *region_id == target_region_id => {
                 // Found the target - replace it with a VSplit
@@ -318,12 +337,22 @@ impl LayoutManager {
                 true
             }
             LayoutNode::HSplit { left, right, .. } => {
-                Self::split_horizontal_recursive(left, target_region_id, new_region_id, next_id) ||
-                Self::split_horizontal_recursive(right, target_region_id, new_region_id, next_id)
+                Self::split_horizontal_recursive(left, target_region_id, new_region_id, next_id)
+                    || Self::split_horizontal_recursive(
+                        right,
+                        target_region_id,
+                        new_region_id,
+                        next_id,
+                    )
             }
             LayoutNode::VSplit { top, bottom, .. } => {
-                Self::split_horizontal_recursive(top, target_region_id, new_region_id, next_id) ||
-                Self::split_horizontal_recursive(bottom, target_region_id, new_region_id, next_id)
+                Self::split_horizontal_recursive(top, target_region_id, new_region_id, next_id)
+                    || Self::split_horizontal_recursive(
+                        bottom,
+                        target_region_id,
+                        new_region_id,
+                        next_id,
+                    )
             }
             _ => false,
         }
@@ -357,7 +386,7 @@ impl LayoutManager {
                         return true;
                     }
                 }
-                
+
                 // Check if right child is the target region
                 if let LayoutNode::Region { region_id, .. } = **right {
                     if region_id == target_region_id {
@@ -366,7 +395,7 @@ impl LayoutManager {
                         return true;
                     }
                 }
-                
+
                 // Recurse into children
                 Self::remove_region_recursive(left, target_region_id)
                     || Self::remove_region_recursive(right, target_region_id)
@@ -380,7 +409,7 @@ impl LayoutManager {
                         return true;
                     }
                 }
-                
+
                 // Check if bottom child is the target region
                 if let LayoutNode::Region { region_id, .. } = **bottom {
                     if region_id == target_region_id {
@@ -389,7 +418,7 @@ impl LayoutManager {
                         return true;
                     }
                 }
-                
+
                 // Recurse into children
                 Self::remove_region_recursive(top, target_region_id)
                     || Self::remove_region_recursive(bottom, target_region_id)

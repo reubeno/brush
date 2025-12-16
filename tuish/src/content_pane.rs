@@ -3,7 +3,6 @@
 //! This module defines the `ContentPane` trait that allows different types of content
 //! to be displayed in tabbed panes without knowledge of screen positioning.
 
-
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::prelude::*;
 

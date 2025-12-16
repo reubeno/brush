@@ -1,6 +1,5 @@
 //! Shell functions content pane.
 
-
 use std::sync::Arc;
 
 use crossterm::event::KeyCode;

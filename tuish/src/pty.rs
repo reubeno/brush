@@ -27,6 +27,9 @@ pub struct Pty {
     pub stdout: std::fs::File,
     /// PTY slave file for stderr
     pub stderr: std::fs::File,
+    /// Optional sender for notifying on PTY output
+    #[allow(dead_code)]
+    output_notify: Option<tokio::sync::mpsc::UnboundedSender<()>>,
 }
 
 impl Pty {
@@ -38,7 +41,25 @@ impl Pty {
     ///
     /// # Errors
     /// Returns an error if PTY creation fails or if file descriptor operations fail.
+    #[allow(dead_code)]
     pub fn new(rows: u16, cols: u16) -> Result<Self, std::io::Error> {
+        Self::new_with_notify(rows, cols, None)
+    }
+
+    /// Creates a new PTY with the specified dimensions and optional output notification.
+    ///
+    /// # Arguments
+    /// * `rows` - Number of rows for the PTY
+    /// * `cols` - Number of columns for the PTY
+    /// * `output_notify` - Optional channel to notify when PTY has output
+    ///
+    /// # Errors
+    /// Returns an error if PTY creation fails or if file descriptor operations fail.
+    pub fn new_with_notify(
+        rows: u16,
+        cols: u16,
+        output_notify: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+    ) -> Result<Self, std::io::Error> {
         // Create a PTY using libc directly so we can keep both master and slave fds
         let mut master_fd: libc::c_int = -1;
         let mut slave_fd: libc::c_int = -1;
@@ -81,6 +102,7 @@ impl Pty {
         // Spawn a thread to read from PTY master and update the parser
         {
             let parser = Arc::clone(&parser);
+            let notify = output_notify.clone();
             // SAFETY: Duplicate master fd for reading
             let reader_fd = unsafe { libc::dup(master_fd) };
             if reader_fd < 0 {
@@ -97,6 +119,12 @@ impl Pty {
                         Ok(size) => {
                             let mut parser = parser.write().unwrap();
                             parser.process(&buf[..size]);
+                            drop(parser);
+
+                            // Notify that we have new output
+                            if let Some(ref tx) = notify {
+                                let _ = tx.send(());
+                            }
                         }
                         Err(_) => break,
                     }
@@ -145,6 +173,7 @@ impl Pty {
             stdin: slave_stdin,
             stdout: slave_stdout,
             stderr: slave_stderr,
+            output_notify,
         })
     }
 
@@ -196,5 +225,15 @@ impl Pty {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for Pty {
+    fn drop(&mut self) {
+        // Close the master fd to unblock the reader thread
+        // SAFETY: We own master_fd and this is called exactly once during drop
+        unsafe {
+            libc::close(self.master_fd);
+        }
     }
 }
