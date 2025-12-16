@@ -77,17 +77,21 @@ pub enum TildeExpr {
     WorkingDir,
     /// ~-
     OldWorkingDir,
-    /// Represents a tilde expansion of the form `~N` or `~+N`, referring to the Nth directory in the shell's directory stack.
-    ///
-    /// - The `usize` parameter is the index into the directory stack (zero-based: `0` is the top of the stack, as in `~0` or `~+0`).
-    /// - The `bool` parameter indicates whether the `+` prefix was explicitly used (`true` if `+` was present, `false` if not).
-    ///
-    /// For example:
-    /// - `~2` or `~+2` expands to the 2nd directory from the top of the stack (index 2).
-    /// - `~+0` is equivalent to `~+`, referring to the current directory.
-    NthDirInDirStack(usize, bool),
-    /// ~-N
-    NthDirFromEndOfDirStack(usize),
+    /// Represents a tilde expansion of the form `~+N`, referring to the Nth directory in
+    /// the shell's directory stack, starting at the top of the stack. Note that the directory
+    /// stack is expected to contains the current working directory as its topmost entry.
+    NthDirFromTopOfDirStack {
+        /// Index into the directory stack (zero-based: 0 is the top of the stack).
+        n: usize,
+        /// Whether the '+' prefix was explicitly used.
+        plus_used: bool,
+    },
+    /// Represents a tilde expansion of the form `~-N`, referring to the Nth directory in
+    /// the shell's directory stack, starting at the bottom of the stack.
+    NthDirFromBottomOfDirStack {
+        /// Index into the directory stack (zero-based: 0 is the bottom of the stack).
+        n: usize,
+    },
 }
 
 /// Type of a parameter test.
@@ -817,9 +821,9 @@ peg::parser! {
         rule tilde_expression() -> TildeExpr =
             &tilde_terminator() { TildeExpr::Home } /
             "+" &tilde_terminator() { TildeExpr::WorkingDir } /
-            plus:("+"?) n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirInDirStack(n.parse().unwrap(), plus.is_some()) } /
+            plus:("+"?) n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirFromTopOfDirStack { n: n.parse().unwrap(), plus_used: plus.is_some() } } /
             "-" &tilde_terminator() { TildeExpr::OldWorkingDir } /
-            "-" n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirFromEndOfDirStack(n.parse().unwrap()) } /
+            "-" n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirFromBottomOfDirStack { n: n.parse().unwrap() } } /
             user:$(portable_filename_char()*) &tilde_terminator() { TildeExpr::UserHome(user.to_owned()) }
 
         rule tilde_terminator() = ['/' | ':' | ';' | '}'] / ![_]

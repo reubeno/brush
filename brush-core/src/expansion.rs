@@ -799,38 +799,31 @@ impl<'a> WordExpander<'a> {
                     Ok(String::from("~-"))
                 }
             }
-            brush_parser::word::TildeExpr::NthDirInDirStack(n, plus_used) => {
+            brush_parser::word::TildeExpr::NthDirFromBottomOfDirStack { n } => {
+                let dir_stack_count = self.shell.directory_stack.len();
+
+                if let Some(dir) = self.shell.directory_stack.get(*n) {
+                    Ok(dir.to_string_lossy().to_string())
+                } else if *n == dir_stack_count {
+                    Ok(self.shell.working_dir().to_string_lossy().to_string())
+                } else {
+                    Ok(std::format!("~-{n}"))
+                }
+            }
+            brush_parser::word::TildeExpr::NthDirFromTopOfDirStack { n, plus_used } => {
                 if *n == 0 {
                     return Ok(self.shell.working_dir().to_string_lossy().to_string());
                 }
 
                 let dir_stack_count = self.shell.directory_stack.len();
-                if *n - 1 < dir_stack_count {
-                    if let Some(dir) = self
-                        .shell
-                        .directory_stack
-                        .get(dir_stack_count - 1 - (*n - 1))
-                    {
+                if dir_stack_count >= *n {
+                    if let Some(dir) = self.shell.directory_stack.get(dir_stack_count - *n) {
                         return Ok(dir.to_string_lossy().to_string());
                     }
                 }
 
                 let plus_or_nothing = if *plus_used { "+" } else { "" };
                 Ok(std::format!("~{plus_or_nothing}{n}"))
-            }
-            brush_parser::word::TildeExpr::NthDirFromEndOfDirStack(n) => {
-                if *n == self.shell.directory_stack.len() - 1 {
-                    return Ok(self.shell.working_dir().to_string_lossy().to_string());
-                }
-
-                let dir_stack_count = self.shell.directory_stack.len();
-                if *n < dir_stack_count {
-                    if let Some(dir) = self.shell.directory_stack.get(*n) {
-                        return Ok(dir.to_string_lossy().to_string());
-                    }
-                }
-
-                Ok(std::format!("~-{n}"))
             }
         }
     }
