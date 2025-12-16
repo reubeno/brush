@@ -558,7 +558,7 @@ peg::parser! {
         pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = traced(<word(<![_]>)>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
-            tilde:tilde_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>, false /*in_command*/)* {
+            tilde:tilde_expr_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>, false /*in_command*/)* {
                 let mut all_pieces = Vec::new();
                 if let Some(tilde) = tilde {
                     all_pieces.push(tilde);
@@ -681,6 +681,9 @@ peg::parser! {
             dollar_sign_word_piece() /
             // Rules that match unquoted text that doesn't start with an unescaped dollar sign.
             normal_escape_sequence() /
+            // Allow tilde expression to be matched as a word piece (for tilde-after-colon expansion)
+            enabled_tilde_expr_after_colon() /
+            // Finally, match unquoted literal text.
             unquoted_literal_text(<stop_condition()>, in_command)
 
         rule dollar_sign_word_piece() -> WordPiece =
@@ -723,7 +726,24 @@ peg::parser! {
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
-            !stop_condition() !normal_escape_sequence() [^'\'' | '\"' | '$' | '`'] {}
+            !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
+
+        rule enabled_tilde_expr_after_colon() -> WordPiece =
+            tilde_exprs_after_colon_enabled() last_char_is_colon() expr:tilde_expression() { expr }
+
+        rule last_char_is_colon() = #{|input, pos| {
+            if pos == 0 {
+                // No preceding character - can't be preceded by ':'
+                peg::RuleResult::Failed
+            } else {
+                // Check the byte directly (`:` is ASCII, single byte)
+                if input.as_bytes()[pos - 1] == b':' {
+                    peg::RuleResult::Matched(pos, ())
+                } else {
+                    peg::RuleResult::Failed
+                }
+            }
+        }}
 
         rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
 
@@ -748,8 +768,8 @@ peg::parser! {
         rule double_quoted_escape_sequence() -> WordPiece =
             s:$("\\" ['$' | '`' | '\"' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
 
-        rule tilde_prefix_with_source() -> WordPieceWithSource =
-            start_index:position!() piece:tilde_prefix() end_index:position!() {
+        rule tilde_expr_prefix_with_source() -> WordPieceWithSource =
+            start_index:position!() piece:tilde_expr_prefix() end_index:position!() {
                 WordPieceWithSource {
                     piece,
                     start_index,
@@ -757,9 +777,14 @@ peg::parser! {
                 }
             }
 
-        // TODO(tilde): Handle colon syntax
-        rule tilde_prefix() -> WordPiece =
-            tilde_parsing_enabled() "~" cs:$((!['/' | ':' | ';'] [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
+        rule tilde_expr_prefix() -> WordPiece =
+            tilde_exprs_at_word_start_enabled() wp:tilde_expression() { wp }
+
+        rule tilde_expr_after_colon() -> WordPiece =
+            tilde_exprs_after_colon_enabled() wp:tilde_expression() { wp }
+
+        rule tilde_expression() -> WordPiece =
+            "~" cs:$((!['/' | ':' | ';'] [c])*) { WordPiece::TildePrefix(cs.to_owned()) }
 
         // TODO(parser): Deal with fact that there may be a quoted word or escaped closing brace chars.
         // TODO(parser): Improve on how we handle a '$' not followed by a valid variable name or parameter.
@@ -955,16 +980,24 @@ peg::parser! {
         rule non_posix_extensions_enabled() -> () =
             &[_] {? if !parser_options.sh_mode { Ok(()) } else { Err("posix") } }
 
-        rule tilde_parsing_enabled() -> () =
-            &[_] {? if parser_options.tilde_expansion { Ok(()) } else { Err("no tilde expansion") } }
+        rule tilde_exprs_at_word_start_enabled() -> () =
+            &[_] {? if parser_options.tilde_expansion_at_word_start { Ok(()) } else { Err("no tilde expansion at word start") } }
+
+        rule tilde_exprs_after_colon_enabled() -> () =
+            &[_] {? if parser_options.tilde_expansion_after_colon { Ok(()) } else { Err("no tilde expansion after colon") } }
+
+        rule tilde_exprs_after_colon_not_enabled() -> () =
+            &[_] {? if !parser_options.tilde_expansion_after_colon { Ok(()) } else { Err("tilde expansion after colon is enabled") } }
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;
     use insta::assert_ron_snapshot;
+    use pretty_assertions::assert_matches;
 
     #[derive(serde::Serialize, serde::Deserialize)]
     struct ParseTestResults<'a> {
@@ -983,6 +1016,21 @@ mod tests {
     #[test]
     fn parse_ansi_c_quoted_text() -> Result<()> {
         assert_ron_snapshot!(test_parse(r"$'hi\nthere\t'")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_tilde_after_colon() -> Result<()> {
+        let mut opts = ParserOptions::default();
+        opts.tilde_expansion_after_colon = true;
+
+        let parsed = super::parse("a:~", &opts)?;
+
+        // Should have: Text("a:"), TildePrefix("")
+        assert_eq!(parsed.len(), 2);
+        assert_matches!(parsed[0].piece, WordPiece::Text(_));
+        assert_matches!(parsed[1].piece, WordPiece::TildePrefix(_));
+
         Ok(())
     }
 

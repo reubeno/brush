@@ -340,7 +340,7 @@ pub(crate) async fn basic_expand_str_without_tilde(
     s: &str,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
-    expander.parser_options.tilde_expansion = false;
+    expander.parser_options.tilde_expansion_at_word_start = false;
     expander.basic_expand_to_str(s).await
 }
 
@@ -359,6 +359,23 @@ pub(crate) async fn full_expand_and_split_str(
 ) -> Result<Vec<String>, error::Error> {
     let mut expander = WordExpander::new(shell, params);
     expander.full_expand_with_splitting(s).await
+}
+
+/// Expands a word in assignment context (enables tilde-after-colon expansion).
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word` - The word to expand.
+pub(crate) async fn basic_expand_assignment_word(
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+    word: &ast::Word,
+) -> Result<String, error::Error> {
+    let mut expander = WordExpander::new(shell, params);
+    expander.parser_options.tilde_expansion_after_colon = true;
+    expander.basic_expand_to_str(word.flatten().as_str()).await
 }
 
 /// Assigns a value to a named parameter.
@@ -515,8 +532,8 @@ impl<'a> WordExpander<'a> {
     /// (except those escaped in ways valid in double-quotes) but still expand parameters,
     /// command substitutions, and arithmetic.
     async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        // When inside double-quotes, we need to parse the word with double-quote semantics.
         if self.in_double_quotes {
+            // When inside double-quotes, we need to parse the word with double-quote semantics.
             // If the word already starts with a double-quote, we need to remove those quotes
             // and expand what's inside with normal (non-double-quote) semantics.
             if let Some(stripped) = word.strip_prefix('"') {
@@ -532,12 +549,18 @@ impl<'a> WordExpander<'a> {
                     let result = self.basic_expand(inner).await;
                     self.in_double_quotes = previously_in_double_quotes;
 
-                    return result;
+                    result
+                } else {
+                    // Not double-quoted - wrap in double-quotes to get double-quote parsing
+                    // semantics
+                    let wrapped = std::format!("\"{word}\"");
+                    self.basic_expand(&wrapped).await
                 }
+            } else {
+                // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
+                let wrapped = std::format!("\"{word}\"");
+                self.basic_expand(&wrapped).await
             }
-            // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
-            let wrapped = std::format!("\"{word}\"");
-            self.basic_expand(&wrapped).await
         } else {
             // When not inside double-quotes, perform normal expansion with quote removal
             self.basic_expand(word).await

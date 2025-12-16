@@ -1066,3 +1066,47 @@ cases:
       for i in ${array[@]%a}; do
           echo "Element: '$i'"
       done
+
+  - name: "Tilde expansion - colon context sensitivity"
+    stdin: |
+      HOME=/testhome
+
+      # Tilde at word start always expands (in both contexts)
+      echo "echo tilde: $(echo ~)"
+      var=~
+      echo "assignment tilde: ${var}"
+
+      # Tilde after colon: should NOT expand in non-assignment context
+      echo "echo with colon: $(echo ~:~/bin)"
+      echo ~:~/bin
+
+      # But SHOULD expand in assignment context
+      var=~:~/bin
+      echo "assignment with colon: ${var}"
+
+      # Complex PATH-like example
+      PATH=/usr/bin:~:/bin:~/local
+      echo "PATH: ${PATH}"
+
+  - name: "Tilde in parameter expansion defaults"
+    stdin: |
+      HOME=/testhome
+
+      echo "Use default value with tilde"      
+      unset myvar
+      echo "Default: ${myvar:-~}"
+      echo "myvar after :-: ${myvar}"
+
+      echo "Assign default value with tilde"
+      unset myvar
+      echo "Assign default: ${myvar:=~}"
+      echo "myvar after :=: ${myvar}"
+
+      echo "Use default with colon-tilde"
+      unset myvar2
+      echo "Default colon-tilde: ${myvar2:-~:~/bin}"
+
+      echo "Assign default with colon-tilde"
+      unset myvar3
+      echo "Assign colon-tilde: ${myvar3:=~:~/bin}"
+      echo "myvar3 after := ${myvar3}"

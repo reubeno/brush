@@ -178,7 +178,6 @@ cases:
       echo "y is now $y"
 
   - name: "Assignments in logical boolean expressions"
-    known_failure: false
     stdin: |
       x=0
       echo "0 && x+=1 => $(( 0 && (x+=1) ))"
