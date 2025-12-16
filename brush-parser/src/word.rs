@@ -77,7 +77,14 @@ pub enum TildeExpr {
     WorkingDir,
     /// ~-
     OldWorkingDir,
-    /// ~N or ~+N
+    /// Represents a tilde expansion of the form `~N` or `~+N`, referring to the Nth directory in the shell's directory stack.
+    ///
+    /// - The `usize` parameter is the index into the directory stack (zero-based: `0` is the top of the stack, as in `~0` or `~+0`).
+    /// - The `bool` parameter indicates whether the `+` prefix was explicitly used (`true` if `+` was present, `false` if not).
+    ///
+    /// For example:
+    /// - `~2` or `~+2` expands to the 2nd directory from the top of the stack (index 2).
+    /// - `~+0` is equivalent to `~+`, referring to the current directory.
     NthDirInDirStack(usize, bool),
     /// ~-N
     NthDirFromEndOfDirStack(usize),
@@ -1019,8 +1026,7 @@ peg::parser! {
         rule tilde_exprs_after_colon_enabled() -> () =
             &[_] {? if parser_options.tilde_expansion_after_colon { Ok(()) } else { Err("no tilde expansion after colon") } }
 
-        rule tilde_exprs_after_colon_not_enabled() -> () =
-            &[_] {? if !parser_options.tilde_expansion_after_colon { Ok(()) } else { Err("tilde expansion after colon is enabled") } }
+
     }
 }
 
