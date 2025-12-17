@@ -435,6 +435,7 @@ fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {
     }
     #[cfg(not(any(unix, windows)))]
     {
+        let _args = args;
         InputBackendType::Minimal
     }
 }
