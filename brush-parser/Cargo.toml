@@ -18,7 +18,7 @@ workspace = true
 bench = false
 
 [features]
-fuzz-testing = ["dep:arbitrary"]
+arbitrary = ["dep:arbitrary"]
 debug-tracing = ["peg/trace"]
 diagnostics = ["dep:miette"]
 serde = ["dep:serde"]

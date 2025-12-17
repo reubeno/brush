@@ -33,7 +33,7 @@ pub type TokenLocation = SourceSpan;
 
 /// Represents a token extracted from a shell script.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)

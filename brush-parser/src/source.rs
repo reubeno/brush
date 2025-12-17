@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 /// Represents a position in source text.
 #[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
@@ -52,7 +52,7 @@ impl From<&SourcePosition> for miette::SourceOffset {
 
 /// Represents an offset in source text.
 #[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
@@ -68,7 +68,7 @@ pub struct SourcePositionOffset {
 
 /// Represents a span within source text.
 #[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "fuzz-testing", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
