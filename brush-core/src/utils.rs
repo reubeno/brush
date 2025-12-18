@@ -74,7 +74,7 @@ pub fn parse_str_as_u32(s: &str, radix: u32) -> Result<u32, error::Error> {
     })
 }
 
-/// Parse the given string as a u32 integer in the specified radix.
+/// Parse the given string as a usize integer in the specified radix.
 ///
 /// # Arguments
 ///

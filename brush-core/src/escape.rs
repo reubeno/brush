@@ -123,7 +123,7 @@ pub fn expand_backslash_escapes(
                 result.push(value);
             }
             'x' => {
-                // Consume 1-2 valid hex chars
+                // Consume 1-2 valid hex chars (or unlimited with braces in ANSI-C mode)
                 let mut hex_chars = String::new();
                 let mut invalid_prefix = false;
                 let mut hexits_consumed = 0;
