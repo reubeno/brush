@@ -583,8 +583,8 @@ impl CallStack {
         self.func_call_depth
     }
 
-    /// Returns the current depth of script calls in the call stack.
-    pub const fn script_call_depth(&self) -> usize {
+    /// Returns the current depth of sourced script calls in the call stack.
+    pub const fn script_source_depth(&self) -> usize {
         self.script_source_depth
     }
 
