@@ -64,7 +64,6 @@ cases:
       echo "After function call"
 
   - name: "command line"
-    known_failure: true
     args: ["-x", "script.sh"]
     test_files:
       - path: script.sh

@@ -1710,7 +1710,7 @@ impl Shell {
         let mut prefix = ps4;
 
         // Add additional depth-based prefixes using the first character of PS4.
-        let additional_depth = self.call_stack.script_call_depth() + self.depth;
+        let additional_depth = self.call_stack.script_source_depth() + self.depth;
         if let Some(c) = prefix.chars().next() {
             for _ in 0..additional_depth {
                 prefix.insert(0, c);

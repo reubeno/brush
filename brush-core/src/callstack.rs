@@ -23,7 +23,7 @@ impl ScriptCall {
 }
 
 /// The type of script call.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ScriptCallType {
     /// A script was sourced.
@@ -282,7 +282,7 @@ impl std::fmt::Display for FormatCallStack<'_> {
 pub struct CallStack {
     frames: VecDeque<Frame>,
     func_call_depth: usize,
-    script_call_depth: usize,
+    script_source_depth: usize,
     trap_handler_depth: usize,
 }
 
@@ -389,8 +389,8 @@ impl CallStack {
             self.func_call_depth = self.func_call_depth.saturating_sub(1);
         }
 
-        if frame.frame_type.is_script() {
-            self.script_call_depth = self.script_call_depth.saturating_sub(1);
+        if frame.frame_type.is_sourced_script() {
+            self.script_source_depth = self.script_source_depth.saturating_sub(1);
         }
 
         if frame.frame_type.is_trap_handler() {
@@ -463,7 +463,9 @@ impl CallStack {
             entry: None,   // TODO(source-info): fill this out
         });
 
-        self.script_call_depth += 1;
+        if matches!(call_type, ScriptCallType::Source) {
+            self.script_source_depth += 1;
+        }
     }
 
     /// Pushes a new trap handler frame onto the stack.
@@ -581,9 +583,9 @@ impl CallStack {
         self.func_call_depth
     }
 
-    /// Returns the current depth of script calls in the call stack.
-    pub const fn script_call_depth(&self) -> usize {
-        self.script_call_depth
+    /// Returns the current depth of sourced script calls in the call stack.
+    pub const fn script_source_depth(&self) -> usize {
+        self.script_source_depth
     }
 
     /// Returns the current depth of trap handlers in the call stack.
