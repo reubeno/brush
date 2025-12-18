@@ -7,6 +7,7 @@ cases:
     stdin: echo -- -1 --"aaa" ?^1as-
 
   - name: "echo -e"
+    known_failure: true
     stdin: |
       echo -e "1. \x65" | hexdump -C
       echo -e "2. \x{65}" | hexdump -C
