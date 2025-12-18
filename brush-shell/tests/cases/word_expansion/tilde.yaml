@@ -121,7 +121,7 @@ cases:
     env:
       HOME: /testhome
     stdin: |
-      echo "Use default value with tilde"      
+      echo "Use default value with tilde"
       unset myvar
       echo "Default: ${myvar:-~}"
       echo "myvar after :-: ${myvar}"

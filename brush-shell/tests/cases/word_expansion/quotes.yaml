@@ -44,7 +44,7 @@ cases:
       echo -n "12. "$'\10' | hexdump -C
       echo -n "13. "$'\1' | hexdump -C
       echo -n "14. "$'\0' | hexdump -C
-      echo -n "15. "$'\001' | hexdump -C 
+      echo -n "15. "$'\001' | hexdump -C
       echo -n "16. "$'abc \0 def' | hexdump -C
       echo -n "17. "$'\ca' | hexdump -C
       echo -n "18. "$'\cz' | hexdump -C
