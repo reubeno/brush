@@ -1,0 +1,141 @@
+name: "Tilde expansion"
+cases:
+  - name: "Tilde expansion: basic"
+    home_dir: .
+    stdin: |
+      test_root=$(realpath $(pwd))
+
+      mkdir subdir
+      cd subdir
+
+      D=~
+      D=$(realpath $D)
+      echo "~: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: explicit user"
+    home_dir: .
+    stdin: |
+      test_root=$(pwd)
+
+      D=~root
+      echo "~root: $D"
+
+      D=~nonexistentuserwhodoesnotexist
+      echo "~<non-existent-username>: $D"
+
+  - name: "Tilde expansion: working dirs"
+    home_dir: .
+    stdin: |
+      test_root=$(pwd)
+
+      mkdir subdir
+      cd subdir
+
+      D=~+
+      echo "~+: ${D//${test_root}/TEST_ROOT}"
+
+      D=~-
+      echo "~-: ${D//${test_root}/TEST_ROOT}"
+
+      unset OLDPWD
+      D=~-
+      echo "~- (without OLDPWD): ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: dir stack"
+    stdin: |
+      test_root=$(pwd)
+
+      for name in a b c d e f g; do
+        mkdir $name
+        pushd $name >/dev/null 2>&1
+      done
+
+      D=~2
+      echo "~2: ${D//${test_root}/TEST_ROOT}"
+
+      D=~9
+      echo "~9: ${D//${test_root}/TEST_ROOT}"
+
+      D=~+2
+      echo "~+2: ${D//${test_root}/TEST_ROOT}"
+
+      D=~+9
+      echo "~+9: ${D//${test_root}/TEST_ROOT}"
+
+      D=~-2
+      echo "~-2: ${D//${test_root}/TEST_ROOT}"
+
+      D=~-9
+      echo "~-9: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: after colons"
+    home_dir: .
+    stdin: |
+      test_root=~
+
+      D=something:~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=something":"~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=something:"~"
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=something:~:another:~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: unexpanded tildes"
+    home_dir: .
+    stdin: |
+      test_root=$(pwd)
+
+      D="~"
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+      D=x~
+      echo "D: ${D//${test_root}/TEST_ROOT}"
+
+  - name: "Tilde expansion: colon context sensitivity"
+    env:
+      HOME: /testhome
+    stdin: |
+      # Tilde at word start always expands (in both contexts)
+      echo "echo tilde: $(echo ~)"
+      var=~
+      echo "assignment tilde: ${var}"
+
+      # Tilde after colon: should NOT expand in non-assignment context
+      echo "echo with colon: $(echo ~:~/bin)"
+      echo ~:~/bin
+
+      # But SHOULD expand in assignment context
+      var=~:~/bin
+      echo "assignment with colon: ${var}"
+
+      # Complex PATH-like example
+      PATH=/usr/bin:~:/bin:~/local
+      echo "PATH: ${PATH}"
+
+  - name: "Tilde expansion: parameter defaults"
+    env:
+      HOME: /testhome
+    stdin: |
+      echo "Use default value with tilde"      
+      unset myvar
+      echo "Default: ${myvar:-~}"
+      echo "myvar after :-: ${myvar}"
+
+      echo "Assign default value with tilde"
+      unset myvar
+      echo "Assign default: ${myvar:=~}"
+      echo "myvar after :=: ${myvar}"
+
+      echo "Use default with colon-tilde"
+      unset myvar2
+      echo "Default colon-tilde: ${myvar2:-~:~/bin}"
+
+      echo "Assign default with colon-tilde"
+      unset myvar3
+      echo "Assign colon-tilde: ${myvar3:=~:~/bin}"
+      echo "myvar3 after := ${myvar3}"
