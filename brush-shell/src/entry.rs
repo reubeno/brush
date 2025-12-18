@@ -160,7 +160,7 @@ async fn run_async(
 
     // Run with the selected input backend. Each branch instantiates the concrete
     // backend type and calls `run_in_shell`, preserving static dispatch.
-    let default_backend = get_default_input_backend_type();
+    let default_backend = get_default_input_backend_type(&args);
     let selected_backend = args.input_backend.unwrap_or(default_backend);
 
     let highlighting = args
@@ -217,6 +217,17 @@ async fn run_async(
     };
 
     Ok(exit_code)
+}
+
+/// Determines whether `run_in_shell` will run the shell interactively. Must be sync'd with it.
+const fn will_run_interactively(args: &CommandLineArgs) -> bool {
+    if args.command.is_some() {
+        false
+    } else if args.read_commands_from_stdin {
+        true
+    } else {
+        args.script_args.is_empty()
+    }
 }
 
 async fn run_in_shell(
@@ -410,13 +421,13 @@ fn new_error_formatter(
     Arc::new(Mutex::new(formatter))
 }
 
-fn get_default_input_backend_type() -> InputBackendType {
+fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {
     #[cfg(any(unix, windows))]
     {
         // If stdin isn't a terminal, then `reedline` doesn't do the right thing
         // (reference: https://github.com/nushell/reedline/issues/509). Switch to
         // the minimal input backend instead for that scenario.
-        if std::io::stdin().is_terminal() {
+        if std::io::stdin().is_terminal() && will_run_interactively(args) {
             InputBackendType::Reedline
         } else {
             InputBackendType::Minimal
@@ -424,6 +435,7 @@ fn get_default_input_backend_type() -> InputBackendType {
     }
     #[cfg(not(any(unix, windows)))]
     {
+        let _args = args;
         InputBackendType::Minimal
     }
 }

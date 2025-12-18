@@ -5,6 +5,36 @@ cases:
       - "-c"
       - "echo hi"
 
+  - name: "Basic -c usage: output"
+    stdin: |
+      # Capture raw output of command
+      raw_output=$($0 -c 'echo hi')
+
+      # Dump raw output as characters
+      echo "[Character output]"
+      for ((i = 0; i < ${#raw_output}; i++)); do
+        char="${raw_output:i:1}"
+        printf '%c' "$char"
+      done
+      printf '\n\n'
+
+      # Dump raw output as hex
+      echo "[Hex output]"
+      for ((i = 0; i < ${#raw_output}; i++)); do
+        if (( i % 16 == 0 )); then
+          printf '%04x: ' "$i"
+        fi
+
+        char="${raw_output:i:1}"
+        printf '%02x ' "'$char"
+
+        if (( (i + 1) % 16 == 0 )); then
+          printf '\n'
+        fi
+      done
+
+      printf '\n'
+
   - name: "Basic stdin usage"
     stdin: |
       echo hi
