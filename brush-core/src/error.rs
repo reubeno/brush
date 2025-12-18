@@ -132,11 +132,20 @@ pub enum ErrorKind {
     EvalError(#[from] crate::arithmetic::EvalError),
 
     /// The given string could not be parsed as an integer.
-    #[error("failed to parse integer")]
-    IntParseError(#[from] std::num::ParseIntError),
+    #[error("failed to parse '{s}' as a {int_type_name}, base-{radix} integer: {inner}")]
+    IntParseError {
+        /// The string that failed to parse.
+        s: String,
+        /// The integer type being parsed.
+        int_type_name: &'static str,
+        /// The radix (base) used for parsing.
+        radix: u32,
+        /// The underlying parse error.
+        inner: std::num::ParseIntError,
+    },
 
-    /// The given string could not be parsed as an integer.
-    #[error("failed to parse integer")]
+    /// The given integer could not be converted to the target type.
+    #[error("integer conversion error")]
     TryIntParseError(#[from] std::num::TryFromIntError),
 
     /// A byte sequence could not be decoded as a valid UTF-8 string.
@@ -286,6 +295,10 @@ pub enum ErrorKind {
     /// Attempted to perform an operation that requires command-string mode.
     #[error("operation requires command-string mode")]
     NotExecutingCommandString,
+
+    /// Too much data was provided to an operation.
+    #[error("too much data")]
+    TooMuchData,
 }
 
 impl BuiltinError for Error {}

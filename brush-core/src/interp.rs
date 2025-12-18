@@ -1721,7 +1721,8 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     {
         use std::os::fd::AsFd as _;
 
-        let len = i32::try_from(bytes.len())?;
+        let len = i32::try_from(bytes.len())
+            .map_err(|_err| error::Error::from(error::ErrorKind::TooMuchData))?;
         nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
     }
 

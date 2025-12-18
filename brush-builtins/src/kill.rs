@@ -119,7 +119,7 @@ impl builtins::Command for KillCommand {
                     return Ok(ExecutionResult::general_error());
                 }
             } else {
-                let pid = pid_or_job_spec.parse::<i32>()?;
+                let pid = brush_core::int_utils::parse(pid_or_job_spec.as_str(), 10)?;
 
                 // It's a pid.
                 sys::signal::kill_process(pid, trap_signal)?;
