@@ -586,7 +586,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `result` - The execution result to potentially modify.
-    pub fn apply_errexit_if_enabled(&self, result: &mut ExecutionResult) {
+    pub const fn apply_errexit_if_enabled(&self, result: &mut ExecutionResult) {
         if self.options.exit_on_nonzero_command_exit
             && !result.is_success()
             && result.is_normal_flow()

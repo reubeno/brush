@@ -32,7 +32,8 @@ pub struct ExecutionParameters {
     open_files: openfiles::OpenFiles,
     /// Policy for how to manage spawned external processes.
     pub process_group_policy: ProcessGroupPolicy,
-    /// Whether errexit should be suppressed in this execution context.
+    /// Whether `errexit` (exit on error) behavior should be
+    /// suppressed in this execution context. Defaults to `false`.
     pub suppress_errexit: bool,
 }
 
@@ -192,7 +193,7 @@ impl Execute for ast::Program {
                 }
             }
 
-            // Update status (errexit applied at CompoundList level)
+            // Update status (errexit behavior applied at CompoundList level)
             shell.set_last_exit_status(result.exit_code.into());
 
             // Check if we should stop executing subsequent commands
@@ -232,7 +233,7 @@ impl Execute for ast::CompoundList {
             } else {
                 result = ao_list.execute(shell, params).await?;
 
-                // Update status (errexit applied at Pipeline level)
+                // Update status (errexit behavior applied at Pipeline level)
                 shell.set_last_exit_status(result.exit_code.into());
             }
 
@@ -314,16 +315,14 @@ impl Execute for ast::AndOrList {
 
             // For the last command in the chain, use original params (errexit not suppressed)
             // For earlier commands, suppress errexit
-            let is_last = index == self.additional.len() - 1;
-            let pipeline_params = if is_last {
-                params.clone()
-            } else {
-                let mut p = params.clone();
-                p.suppress_errexit = true;
-                p
-            };
+            let mut params = params.clone();
 
-            result = pipeline.execute(shell, &pipeline_params).await?;
+            let is_last = index == self.additional.len() - 1;
+            if !is_last {
+                params.suppress_errexit = true;
+            }
+
+            result = pipeline.execute(shell, &params).await?;
         }
 
         Ok(result)
@@ -344,22 +343,20 @@ impl Execute for ast::Pipeline {
             .then(timing::start_timing)
             .transpose()?;
 
+        let mut params = params.clone();
+
         // If this pipeline is negated, suppress errexit for commands within it
-        let pipeline_params = if self.bang {
-            let mut p = params.clone();
-            p.suppress_errexit = true;
-            p
-        } else {
-            params.clone()
-        };
+        if self.bang {
+            params.suppress_errexit = true;
+        }
 
         // Spawn all the processes required for the pipeline, connecting outputs/inputs with pipes
         // as needed.
-        let spawn_results = spawn_pipeline_processes(self, shell, &pipeline_params).await?;
+        let spawn_results = spawn_pipeline_processes(self, shell, &params).await?;
 
         // Wait for the processes. This also has a side effect of updating pipeline status.
         let mut result =
-            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell, &pipeline_params)
+            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell, &params)
                 .await?;
 
         // Invert the exit code if requested.
@@ -806,9 +803,6 @@ impl Execute for ast::IfClauseCommand {
         condition_params.suppress_errexit = true;
         let condition = self.condition.execute(shell, &condition_params).await?;
 
-        // Update status for condition (no errexit - conditions don't trigger errexit)
-        shell.set_last_exit_status(condition.exit_code.into());
-
         // Check if the condition itself resulted in non-normal control flow.
         if !condition.is_normal_flow() {
             return Ok(condition);
@@ -822,9 +816,8 @@ impl Execute for ast::IfClauseCommand {
             for else_clause in elses {
                 match &else_clause.condition {
                     Some(else_condition) => {
-                        let else_condition_result = else_condition.execute(shell, &condition_params).await?;
-                        // Update status for elif condition (no errexit)
-                        shell.set_last_exit_status(else_condition_result.exit_code.into());
+                        let else_condition_result =
+                            else_condition.execute(shell, &condition_params).await?;
 
                         // Check if the elif condition caused non-normal control flow.
                         if !else_condition_result.is_normal_flow() {
@@ -842,7 +835,8 @@ impl Execute for ast::IfClauseCommand {
             }
         }
 
-        // No branch was taken, return success
+        // If we got down here, then no branch was taken; we make sure to
+        // reset the last exit status to success and then return success.
         let result = ExecutionResult::success();
         shell.set_last_exit_status(result.exit_code.into());
 
