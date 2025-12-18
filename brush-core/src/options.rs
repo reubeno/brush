@@ -67,10 +67,14 @@ pub struct RuntimeOptions {
 
     //
     // Options set through shopt.
+    /// `array_expand_once`
+    pub array_expand_once: bool,
     /// `assoc_expand_once`
     pub assoc_expand_once: bool,
     /// 'autocd'
     pub auto_cd: bool,
+    /// `bash_source_full_path`
+    pub bash_source_full_path: bool,
     /// `cdable_vars`
     pub cdable_vars: bool,
     /// 'cdspell'
@@ -121,6 +125,8 @@ pub struct RuntimeOptions {
     pub force_fignore: bool,
     /// 'globasciiranges'
     pub glob_ranges_use_c_locale: bool,
+    /// 'globskipdots'
+    pub glob_skip_dots: bool,
     /// 'globstar'
     pub enable_star_star_glob: bool,
     /// `gnu_errfmt`
@@ -157,8 +163,12 @@ pub struct RuntimeOptions {
     pub case_insensitive_pathname_expansion: bool,
     /// 'nocasematch'
     pub case_insensitive_conditionals: bool,
+    /// `noexpand_translation`
+    pub no_expand_translation: bool,
     /// 'nullglob'
     pub expand_non_matching_patterns_to_null: bool,
+    /// `patsub_replacement`
+    pub patsub_replacement: bool,
     /// 'progcomp'
     pub programmable_completion: bool,
     /// `progcomp_alias`
@@ -171,6 +181,8 @@ pub struct RuntimeOptions {
     pub shift_verbose: bool,
     /// `sourcepath`
     pub source_builtin_searches_path: bool,
+    /// `varredir_close`
+    pub var_redir_close: bool,
     /// `xpg_echo`
     pub echo_builtin_expands_escape_sequences: bool,
 
@@ -224,6 +236,8 @@ impl RuntimeOptions {
             quote_all_metachars_in_completion: true,
             programmable_completion: true,
             glob_ranges_use_c_locale: true,
+            glob_skip_dots: true,
+            patsub_replacement: true,
             max_function_call_depth: create_options.max_function_call_depth,
             ..Self::default()
         };
