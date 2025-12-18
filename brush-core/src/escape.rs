@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use itertools::Itertools;
 
-use crate::{error, utils};
+use crate::{error, int_utils};
 
 /// Escape expansion mode.
 #[derive(Clone, Copy)]
@@ -119,7 +119,7 @@ pub fn expand_backslash_escapes(
                     octal_chars.push('0');
                 }
 
-                let value = utils::parse_str_as_u8(octal_chars.as_str(), 8)?;
+                let value = int_utils::parse::<u8>(octal_chars.as_str(), 8)?;
                 result.push(value);
             }
             'x' => {
@@ -167,7 +167,7 @@ pub fn expand_backslash_escapes(
                         result.append(escape_cmd.to_string().into_bytes().as_mut());
                     }
                 } else {
-                    let value32 = utils::parse_str_as_u32(hex_chars.as_str(), 16)?;
+                    let value32 = int_utils::parse::<u32>(hex_chars.as_str(), 16)?;
                     let value8: u8 = (value32 & 0xFF) as u8;
                     result.push(value8);
                 }
@@ -190,7 +190,7 @@ pub fn expand_backslash_escapes(
                     result.push(b'\\');
                     result.append(escape_cmd.to_string().into_bytes().as_mut());
                 } else {
-                    let value = utils::parse_str_as_u16(hex_chars.as_str(), 16)?;
+                    let value = int_utils::parse::<u16>(hex_chars.as_str(), 16)?;
                     if let Some(decoded) = char::from_u32(u32::from(value)) {
                         result.append(decoded.to_string().into_bytes().as_mut());
                     } else {
@@ -217,7 +217,7 @@ pub fn expand_backslash_escapes(
                     result.push(b'\\');
                     result.append(escape_cmd.to_string().into_bytes().as_mut());
                 } else {
-                    let value = utils::parse_str_as_u32(hex_chars.as_str(), 16)?;
+                    let value = int_utils::parse::<u32>(hex_chars.as_str(), 16)?;
                     if let Some(decoded) = char::from_u32(value) {
                         result.append(decoded.to_string().into_bytes().as_mut());
                     } else {
@@ -244,7 +244,7 @@ pub fn expand_backslash_escapes(
                     octal_chars.push(next_c);
                 }
 
-                let value = utils::parse_str_as_u8(octal_chars.as_str(), 8)?;
+                let value = int_utils::parse::<u8>(octal_chars.as_str(), 8)?;
                 result.push(value);
             }
             unknown => {

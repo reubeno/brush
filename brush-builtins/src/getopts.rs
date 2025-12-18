@@ -71,7 +71,7 @@ impl builtins::Command for GetOptsCommand {
             .shell
             .env_str("OPTIND")
             .unwrap_or(Cow::Borrowed("1"));
-        let mut next_index = brush_core::utils::parse_str_as_usize(next_index_str.as_ref(), 10)?;
+        let mut next_index = brush_core::int_utils::parse::<usize>(next_index_str.as_ref(), 10)?;
 
         if next_index < 1 {
             return Ok(ExecutionExitCode::InvalidUsage.into());
