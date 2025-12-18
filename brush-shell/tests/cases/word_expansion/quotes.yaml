@@ -1,0 +1,85 @@
+name: "Quotes"
+cases:
+  - name: "Single quotes"
+    stdin: |
+      var=xyz
+      echo 'Quoted string'
+      echo 'abc ${var} def'
+
+  - name: "Double quotes"
+    stdin: |
+      echo "\""
+
+  - name: "Double quotes: escaping"
+    stdin: |
+      echo "1. \'" | hexdump -C
+      echo "2. \x" | hexdump -C
+      echo "\n"
+
+  - name: "ANSI-C quotes"
+    stdin: |
+      single_quoted='\n'
+      echo "Single quoted len: ${#single_quoted}"
+      echo -n '\n' | hexdump -C
+
+      ansi_c_quoted=$'\n'
+      echo "ANSI-C quoted len: ${#ansi_c_quoted}"
+      echo -n $'\n' | hexdump -C
+
+  - name: "ANSI-C quotes with escape sequences"
+    known_failure: true
+    stdin: |
+      echo -n "0.  "$'\x' | hexdump -C
+      echo -n "1.  "$'\x65' | hexdump -C
+      echo -n "2.  "$'\xgg' | hexdump -C
+      echo -n "3.  "$'\x{65}' | hexdump -C
+      echo -n "4.  "$'\x{65' | hexdump -C
+      echo -n "5.  "$'\x{65R}' | hexdump -C
+      echo -n "6.  "$'\x{}R' | hexdump -C
+      echo -n "7.  "$'\x{ }' | hexdump -C
+      echo -n "8.  "$'\x{965}' | hexdump -C
+      echo -n "9.  "$'\'\"' | hexdump -C
+      echo -n "10. "$'🐢' | hexdump -C
+      echo -n "11. "$'\101' | hexdump -C
+      echo -n "12. "$'\10' | hexdump -C
+      echo -n "13. "$'\1' | hexdump -C
+      echo -n "14. "$'\0' | hexdump -C
+      echo -n "15. "$'\001' | hexdump -C
+      echo -n "16. "$'abc \0 def' | hexdump -C
+      echo -n "17. "$'\ca' | hexdump -C
+      echo -n "18. "$'\cz' | hexdump -C
+      echo -n "19. "$'\cA' | hexdump -C
+      echo -n "20. "$'\cZ' | hexdump -C
+      echo -n "21. "$'\c ' | hexdump -C
+      echo -n "22. "$'\c!' | hexdump -C
+      echo -n "23. "$'\c/' | hexdump -C
+      echo -n "24. "$'\c0' | hexdump -C
+      echo -n "25. "$'\c9' | hexdump -C
+      echo -n "26. "$'\c:' | hexdump -C
+      echo -n "27. "$'\c@' | hexdump -C
+      echo -n "28. "$'\c[' | hexdump -C
+      echo -n "29. "$'\c]' | hexdump -C
+      echo -n "30. "$'\c`' | hexdump -C
+      echo -n "31. "$'\c{' | hexdump -C
+      echo -n "32. "$'\c?' | hexdump -C
+      echo -n "33. "$'\c*' | hexdump -C
+      echo -n "34. "$'\c^' | hexdump -C
+      echo -n "35. "$'\c_' | hexdump -C
+      echo -n "36. "$'\c' | hexdump -C
+      echo -n "37. "$'\c\\' | hexdump -C
+      echo -n "38. "$'\c\n' | hexdump -C
+      echo -n "39. "$'\\' | hexdump -C
+
+  - name: "ANSI-C quote syntax inside double quotes (literal, not processed)"
+    stdin: |
+      # When $'...' appears inside double quotes, it should be treated as literal text
+      echo "$'\t'"
+      echo "$'\'abcd\''"
+      x="$'\n'"
+      echo "len: ${#x}"
+      echo "$x"
+
+  - name: "gettext style quotes"
+    stdin: |
+      quoted=$"Hello, world"
+      echo "Content: [${quoted}]"

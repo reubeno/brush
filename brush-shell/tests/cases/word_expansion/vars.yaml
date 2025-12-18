@@ -1,0 +1,24 @@
+name: "Variable expansion"
+cases:
+  - name: "Undefined variables"
+    stdin: |
+      echo "Undefined: ${undefined}"
+      echo "Undefined: $undefined"
+
+  - name: "Defined variables"
+    stdin: |
+      var=xyz
+      echo "Defined: ${var}"
+      echo "Defined: var"
+      echo "Defined: prefix${var}suffix"
+      echo "Defined: prefix$var"
+
+  - name: "Undefined positional params"
+    stdin: |
+      echo "Param: $9"
+      echo "Param: ${9}"
+
+  - name: "High-numbered positional params"
+    stdin: |
+      echo "Param: $99"
+      echo "Param: ${99}"

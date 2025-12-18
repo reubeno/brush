@@ -38,7 +38,7 @@ cases:
     args: ["-i", "-c", "shopt -o monitor"]
 
   - name: "shopt toggle"
-    min_oracle_version: 5.3 # Spacing changed in bash 5.3
+    ignore_whitespace: true # Spacing changes across versions
     stdin: |
       echo "Setting checkwinsize"
       shopt -s checkwinsize
@@ -55,7 +55,7 @@ cases:
       shopt -p checkwinsize
 
   - name: "shopt -o usage"
-    min_oracle_version: 5.3 # Spacing changed in bash 5.3
+    ignore_whitespace: true # Spacing changes across versions
     stdin: |
       echo "Setting emacs"
       shopt -o -s emacs
