@@ -1063,7 +1063,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_ansi_c_quoted_escape_seqt() -> Result<()> {
+    fn parse_ansi_c_quoted_escape_seq() -> Result<()> {
         assert_ron_snapshot!(test_parse(r"$'\\'")?);
         Ok(())
     }
