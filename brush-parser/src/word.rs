@@ -749,7 +749,7 @@ peg::parser! {
             "\'" inner:$([^'\'']*) "\'" { inner }
 
         rule ansi_c_quoted_text() -> &'input str =
-            "$\'" inner:$(("\\'" / [^'\''])*) "\'" { inner }
+            r"$'" inner:$((r"\\" / r"\'" / [^'\''])*) r"'" { inner }
 
         rule unquoted_literal_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
             s:$(unquoted_literal_text_piece(<stop_condition()>, in_command)+) { WordPiece::Text(s.to_owned()) }
@@ -1059,6 +1059,12 @@ mod tests {
     #[test]
     fn parse_ansi_c_quoted_text() -> Result<()> {
         assert_ron_snapshot!(test_parse(r"$'hi\nthere\t'")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_ansi_c_quoted_escape_seqt() -> Result<()> {
+        assert_ron_snapshot!(test_parse(r"$'\\'")?);
         Ok(())
     }
 
