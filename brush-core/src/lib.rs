@@ -36,6 +36,7 @@ pub mod tests;
 pub mod timing;
 pub mod trace_categories;
 pub mod traps;
+pub mod utils;
 pub mod variables;
 mod wellknownvars;
 

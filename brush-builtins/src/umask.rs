@@ -29,7 +29,7 @@ impl builtins::Command for UmaskCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
-                let parsed = nix::sys::stat::mode_t::from_str_radix(mode.as_str(), 8)?;
+                let parsed = brush_core::utils::parse_str_as_u32(mode.as_str(), 8)?;
                 set_umask(parsed)?;
             } else {
                 return brush_core::error::unimp("umask setting mode from symbolic value");

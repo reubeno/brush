@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use itertools::Itertools;
 
-use crate::error;
+use crate::{error, utils};
 
 /// Escape expansion mode.
 #[derive(Clone, Copy)]
@@ -35,18 +35,55 @@ pub fn expand_backslash_escapes(
             continue;
         }
 
-        match it.next() {
-            Some('a') => result.push(b'\x07'),
-            Some('b') => result.push(b'\x08'),
-            Some('c') => {
+        let Some(escape_cmd) = it.next() else {
+            // Trailing backslash.
+            result.push(b'\\');
+            continue;
+        };
+
+        match escape_cmd {
+            'a' => result.push(b'\x07'),
+            'b' => result.push(b'\x08'),
+            'c' => {
                 match mode {
                     EscapeExpansionMode::EchoBuiltin => {
                         // Stop all additional output!
                         return Ok((result, false));
                     }
                     EscapeExpansionMode::AnsiCQuotes => {
-                        if let Some(_next_next) = it.next() {
-                            return error::unimp("control character in ANSI C quotes");
+                        if let Some(char_value) = it.next() {
+                            // Special case backslash. If it's immediately followed by another
+                            // backslash, then we consume both; if not, we still will use the
+                            // backslash character as the one to apply the control transformation
+                            // to.
+                            if char_value == '\\' {
+                                let orig_it = it.clone();
+                                if !matches!(it.next(), Some('\\')) {
+                                    // Didn't find another backslash; restore iterator.
+                                    it = orig_it;
+                                }
+                            }
+
+                            let mut bytes: Vec<u8> = if char_value.is_ascii_lowercase() {
+                                char_value
+                                    .to_ascii_uppercase()
+                                    .to_string()
+                                    .bytes()
+                                    .collect()
+                            } else {
+                                char_value.to_string().bytes().collect()
+                            };
+
+                            if !bytes.is_empty() {
+                                if bytes[0] == b'?' {
+                                    // We can't explain why this is the case, but it is.
+                                    bytes[0] = 0x7f;
+                                } else {
+                                    bytes[0] &= 0x1f;
+                                }
+                            }
+
+                            result.append(bytes.as_mut());
                         } else {
                             result.push(b'\\');
                             result.push(b'c');
@@ -54,17 +91,17 @@ pub fn expand_backslash_escapes(
                     }
                 }
             }
-            Some('e' | 'E') => result.push(b'\x1b'),
-            Some('f') => result.push(b'\x0c'),
-            Some('n') => result.push(b'\n'),
-            Some('r') => result.push(b'\r'),
-            Some('t') => result.push(b'\t'),
-            Some('v') => result.push(b'\x0b'),
-            Some('\\') => result.push(b'\\'),
-            Some('\'') if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'\''),
-            Some('\"') if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'\"'),
-            Some('?') if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'?'),
-            Some('0') => {
+            'e' | 'E' => result.push(b'\x1b'),
+            'f' => result.push(b'\x0c'),
+            'n' => result.push(b'\n'),
+            'r' => result.push(b'\r'),
+            't' => result.push(b'\t'),
+            'v' => result.push(b'\x0b'),
+            '\\' => result.push(b'\\'),
+            '\'' if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'\''),
+            '\"' if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'\"'),
+            '?' if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => result.push(b'?'),
+            '0' => {
                 // Consume 0-3 valid octal chars
                 let mut taken_so_far = 0;
                 let mut octal_chars: String = it
@@ -82,37 +119,65 @@ pub fn expand_backslash_escapes(
                     octal_chars.push('0');
                 }
 
-                let value = u8::from_str_radix(octal_chars.as_str(), 8)?;
+                let value = utils::parse_str_as_u8(octal_chars.as_str(), 8)?;
                 result.push(value);
             }
-            Some('x') => {
+            'x' => {
                 // Consume 1-2 valid hex chars
-                let mut taken_so_far = 0;
-                let hex_chars: String = it
-                    .take_while_ref(|c| {
-                        if taken_so_far < 2 && c.is_ascii_hexdigit() {
-                            taken_so_far += 1;
-                            true
-                        } else {
-                            false
-                        }
-                    })
-                    .collect();
+                let mut hex_chars = String::new();
+                let mut invalid_prefix = false;
+                let mut hexits_consumed = 0;
+                let mut start_brace_consumed = false;
+
+                loop {
+                    // Save the original in case we go too far and need to restore.
+                    let orig_it = it.clone();
+
+                    let Some(next_c) = it.next() else {
+                        break;
+                    };
+
+                    if matches!(mode, EscapeExpansionMode::AnsiCQuotes)
+                        && !start_brace_consumed
+                        && next_c == '{'
+                    {
+                        start_brace_consumed = true;
+                    } else if start_brace_consumed && next_c == '}' {
+                        break;
+                    } else if ((start_brace_consumed && !invalid_prefix)
+                        || (!start_brace_consumed && hexits_consumed < 2))
+                        && next_c.is_ascii_hexdigit()
+                    {
+                        hex_chars.push(next_c);
+                        hexits_consumed += 1;
+                    } else if start_brace_consumed && hexits_consumed == 0 {
+                        invalid_prefix = true;
+                    } else {
+                        // Went too far; restore iterator and break.
+                        it = orig_it;
+                        break;
+                    }
+                }
 
                 if hex_chars.is_empty() {
-                    result.push(b'\\');
-                    result.append(c.to_string().into_bytes().as_mut());
+                    if start_brace_consumed {
+                        result.push(0);
+                    } else {
+                        result.push(b'\\');
+                        result.append(escape_cmd.to_string().into_bytes().as_mut());
+                    }
                 } else {
-                    let value = u8::from_str_radix(hex_chars.as_str(), 16)?;
-                    result.push(value);
+                    let value32 = utils::parse_str_as_u32(hex_chars.as_str(), 16)?;
+                    let value8: u8 = (value32 & 0xFF) as u8;
+                    result.push(value8);
                 }
             }
-            Some('u') => {
+            'u' => {
                 // Consume 1-4 hex digits
                 let mut taken_so_far = 0;
                 let hex_chars: String = it
-                    .take_while_ref(|c| {
-                        if taken_so_far < 4 && c.is_ascii_hexdigit() {
+                    .take_while_ref(|next_c| {
+                        if taken_so_far < 4 && next_c.is_ascii_hexdigit() {
                             taken_so_far += 1;
                             true
                         } else {
@@ -123,24 +188,23 @@ pub fn expand_backslash_escapes(
 
                 if hex_chars.is_empty() {
                     result.push(b'\\');
-                    result.append(c.to_string().into_bytes().as_mut());
+                    result.append(escape_cmd.to_string().into_bytes().as_mut());
                 } else {
-                    let value = u16::from_str_radix(hex_chars.as_str(), 16)?;
-
+                    let value = utils::parse_str_as_u16(hex_chars.as_str(), 16)?;
                     if let Some(decoded) = char::from_u32(u32::from(value)) {
                         result.append(decoded.to_string().into_bytes().as_mut());
                     } else {
                         result.push(b'\\');
-                        result.append(c.to_string().into_bytes().as_mut());
+                        result.append(escape_cmd.to_string().into_bytes().as_mut());
                     }
                 }
             }
-            Some('U') => {
+            'U' => {
                 // Consume 1-8 hex digits
                 let mut taken_so_far = 0;
                 let hex_chars: String = it
-                    .take_while_ref(|c| {
-                        if taken_so_far < 8 && c.is_ascii_hexdigit() {
+                    .take_while_ref(|next_c| {
+                        if taken_so_far < 8 && next_c.is_ascii_hexdigit() {
                             taken_so_far += 1;
                             true
                         } else {
@@ -151,27 +215,50 @@ pub fn expand_backslash_escapes(
 
                 if hex_chars.is_empty() {
                     result.push(b'\\');
-                    result.append(c.to_string().into_bytes().as_mut());
+                    result.append(escape_cmd.to_string().into_bytes().as_mut());
                 } else {
-                    let value = u32::from_str_radix(hex_chars.as_str(), 16)?;
-
+                    let value = utils::parse_str_as_u32(hex_chars.as_str(), 16)?;
                     if let Some(decoded) = char::from_u32(value) {
                         result.append(decoded.to_string().into_bytes().as_mut());
                     } else {
                         result.push(b'\\');
-                        result.append(c.to_string().into_bytes().as_mut());
+                        result.append(escape_cmd.to_string().into_bytes().as_mut());
                     }
                 }
             }
-            Some(c) => {
+            first_octal @ '1'..='7' if matches!(mode, EscapeExpansionMode::AnsiCQuotes) => {
+                // We've already consumed the first octal digit.
+                let mut octal_chars = String::new();
+                octal_chars.push(first_octal);
+
+                // Consume up to 2 more valid octal chars
+                let mut taken_so_far = 1;
+                for next_c in it.take_while_ref(|next_c| {
+                    if taken_so_far < 3 && matches!(next_c, '0'..='7') {
+                        taken_so_far += 1;
+                        true
+                    } else {
+                        false
+                    }
+                }) {
+                    octal_chars.push(next_c);
+                }
+
+                let value = utils::parse_str_as_u8(octal_chars.as_str(), 8)?;
+                result.push(value);
+            }
+            unknown => {
                 // Not a valid escape sequence.
                 result.push(b'\\');
-                result.append(c.to_string().into_bytes().as_mut());
+                result.append(unknown.to_string().into_bytes().as_mut());
             }
-            None => {
-                // Trailing backslash.
-                result.push(b'\\');
-            }
+        }
+    }
+
+    // In ANSI-C quotes, we crop the result at the first NUL.
+    if matches!(mode, EscapeExpansionMode::AnsiCQuotes) {
+        if let Some(nul_index) = result.iter().position(|&b| b == 0) {
+            result.truncate(nul_index);
         }
     }
 
