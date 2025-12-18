@@ -27,7 +27,6 @@ cases:
       echo -n $'\n' | hexdump -C
 
   - name: "ANSI-C quotes with escape sequences"
-    known_failure: true
     stdin: |
       echo -n "0.  "$'\x' | hexdump -C
       echo -n "1.  "$'\x65' | hexdump -C
