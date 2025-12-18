@@ -1,24 +1,26 @@
 name: "Builtins: shopt"
 cases:
   - name: "shopt defaults"
-    min_oracle_version: 5.2
-    known_failure: true # TODO(shopt): new options from newer version of bash?
+    ignore_whitespace: true # Spacing changes across versions
+    min_oracle_version: 5.3 # Options changed in bash 5.3
     stdin: |
       shopt | sort | grep -v extglob
 
   - name: "shopt interactive defaults"
-    min_oracle_version: 5.2
-    known_failure: true # TODO(shopt): new options from newer version of bash?
+    ignore_whitespace: true # Spacing changes across versions
+    min_oracle_version: 5.3 # Options changed in bash 5.3
     pty: true
     args: ["-i", "-c", "shopt | sort | grep -v extglob"]
 
   - name: "shopt -o defaults"
-    min_oracle_version: 5.3 # Spacing changed in bash 5.3
+    ignore_whitespace: true # Spacing changes across versions
+    min_oracle_version: 5.3 # Options changed in bash 5.3
     stdin: |
       shopt -o | sort
 
   - name: "shopt -o interactive defaults"
-    min_oracle_version: 5.3 # Spacing changed in bash 5.3
+    ignore_whitespace: true # Spacing changes across versions
+    min_oracle_version: 5.3 # Options changed in bash 5.3
     pty: true
     args: ["-i", "-c", "shopt -o | sort | grep -v monitor"]
 
@@ -33,7 +35,8 @@ cases:
     known_failure: true
 
   - name: "shopt -o interactive monitor default"
-    min_oracle_version: 5.3 # Spacing changed in bash 5.3
+    ignore_whitespace: true # Spacing changes across versions
+    min_oracle_version: 5.3 # Options changed in bash 5.3
     pty: true
     args: ["-i", "-c", "shopt -o monitor"]
 
