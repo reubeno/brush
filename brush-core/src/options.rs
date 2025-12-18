@@ -59,7 +59,7 @@ pub struct RuntimeOptions {
     /// 'ignoreeof'
     pub ignore_eof: bool,
     /// 'pipefail'
-    pub return_first_failure_from_pipeline: bool,
+    pub return_last_failure_from_pipeline: bool,
     /// 'posix'
     pub posix_mode: bool,
     /// 'vi'

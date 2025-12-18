@@ -168,7 +168,6 @@ cases:
       echo "after pipeline"
 
   - name: "Error in first command of pipeline (with pipefail)"
-    known_failure: true # TODO(pipefail): implement pipefail semantics
     stdin: |
       set -e -o pipefail
       false | true
@@ -193,7 +192,6 @@ cases:
       echo "after pipeline"
 
   - name: "Error in middle of pipeline (with pipefail)"
-    known_failure: true # TODO(pipefail): implement pipefail semantics
     stdin: |
       set -e -o pipefail
       true | false | true
