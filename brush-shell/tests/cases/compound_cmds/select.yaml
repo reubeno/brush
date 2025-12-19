@@ -1,0 +1,10 @@
+name: "Select statement"
+cases:
+  - name: "basic"
+    known_failure: true # TODO(select): select statement not implemented
+    stdin: |
+      echo "1" | select opt in a b c; do
+        echo "selected: $opt"
+        break
+      done
+      echo "after select"

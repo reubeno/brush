@@ -1,5 +1,16 @@
 name: "Options: set -e"
 cases:
+  - name: "errexit with set -o errexit"
+    stdin: |
+      set -o errexit
+      false
+      echo "should not print"
+
+  - name: "errexit status check"
+    stdin: |
+      set -e
+      set -o | grep errexit
+
   # Basic behavior
   - name: "Basic non-error case"
     stdin: |
@@ -38,6 +49,49 @@ cases:
       fi
       echo "after if"
 
+  - name: "Error in elif condition"
+    stdin: |
+      set -e
+      if false; then
+        echo "then branch"
+      elif false; then
+        echo "elif branch"
+      else
+        echo "else branch"
+      fi
+      echo "after if"
+
+  - name: "Error in if body"
+    stdin: |
+      set -e
+      if true; then
+        false
+        echo "should not print"
+      fi
+      echo "after if"
+
+  - name: "Error in elif body"
+    stdin: |
+      set -e
+      if false; then
+        echo "then branch"
+      elif true; then
+        false
+        echo "should not print"
+      fi
+      echo "after if"
+
+  - name: "Error in else body"
+    stdin: |
+      set -e
+      if false; then
+        echo "then"
+      else
+        false
+        echo "should not print"
+      fi
+      echo "after if"
+
   - name: "Error in if condition with compound test"
     stdin: |
       set -e
@@ -57,36 +111,7 @@ cases:
       done
       echo "after while"
 
-  - name: "Error in until condition"
-    stdin: |
-      set -e
-      count=0
-      until true; do
-        echo "loop body"
-      done
-      echo "after until"
-
-  - name: "Error in if body DOES exit"
-    stdin: |
-      set -e
-      if true; then
-        false
-        echo "should not print"
-      fi
-      echo "after if"
-
-  - name: "Error in else body DOES exit"
-    stdin: |
-      set -e
-      if false; then
-        echo "then"
-      else
-        false
-        echo "should not print"
-      fi
-      echo "after if"
-
-  - name: "Error in while body DOES exit"
+  - name: "Error in while body"
     stdin: |
       set -e
       count=0
@@ -96,6 +121,25 @@ cases:
         echo "should not print"
       done
       echo "after while"
+
+  - name: "Error in until condition"
+    stdin: |
+      set -e
+      count=0
+      until true; do
+        echo "loop body"
+      done
+      echo "after until"
+
+  - name: "Error in until body"
+    stdin: |
+      set -e
+      until false; do
+        false
+        echo "loop body"
+        break
+      done
+      echo "after until"
 
   # Boolean operators - set -e should NOT exit with && and ||
   - name: "Error on right side of &&"
@@ -110,7 +154,7 @@ cases:
       false && true
       echo "after &&"
 
-  - name: "Error on right side of ||"
+  - name: "Error on both sides of ||"
     stdin: |
       set -e
       false || false
@@ -119,10 +163,16 @@ cases:
   - name: "Error on left side of ||"
     stdin: |
       set -e
+      false || true
+      echo "after ||"
+
+  - name: "Error on right side of ||"
+    stdin: |
+      set -e
       true || false
       echo "after ||"
 
-  - name: "Error after && chain DOES exit"
+  - name: "Error after && chain"
     stdin: |
       set -e
       true && true
@@ -360,6 +410,7 @@ cases:
   - name: "Error in subshell exits subshell but not parent"
     stdin: |
       set -e
+      echo "before subshell"
       (
         echo "in subshell"
         false
@@ -369,6 +420,7 @@ cases:
 
   - name: "Subshell with set -e exits on error"
     stdin: |
+      false
       (
         set -e
         echo "before"
@@ -504,6 +556,16 @@ cases:
       fi
       echo "after outer if"
 
+  - name: "Error in case branch"
+    stdin: |
+      set -e
+      case "x" in
+        $(false))
+          echo "matched"
+          ;;
+      esac
+      echo "after case"
+
   - name: "Error in case statement body"
     stdin: |
       set -e
@@ -526,7 +588,7 @@ cases:
       echo "after case"
 
   # List constructs
-  - name: "Error in ; list DOES exit"
+  - name: "Error in ; list"
     stdin: |
       set -e
       true ; false ; echo "should not print"
@@ -569,7 +631,7 @@ cases:
       fi
       echo "after"
 
-  - name: "test builtin false result standalone DOES exit"
+  - name: "test builtin false result standalone"
     stdin: |
       set -e
       test 1 -eq 2
@@ -585,7 +647,7 @@ cases:
       fi
       echo "after"
 
-  - name: "[ builtin false result standalone DOES exit"
+  - name: "[ builtin false result standalone"
     stdin: |
       set -e
       [ 1 -eq 2 ]
@@ -639,7 +701,7 @@ cases:
       myfunc | true
       echo "after"
 
-  - name: "Error after function in boolean context DOES exit"
+  - name: "Error after function in boolean context"
     stdin: |
       set -e
       myfunc() {
@@ -672,13 +734,13 @@ cases:
       fi
       echo "after"
 
-  - name: "Arithmetic command (( )) with && does not trigger errexit"
+  - name: "Arithmetic command (( )) with &&"
     stdin: |
       set -e
       (( 0 )) && echo "matched"
       echo "after"
 
-  - name: "Arithmetic for loop condition false does not trigger errexit"
+  - name: "Arithmetic for loop condition false"
     stdin: |
       set -e
       count=0
@@ -720,13 +782,13 @@ cases:
       fi
       echo "after"
 
-  - name: "Extended test [[ ]] with && does not trigger errexit"
+  - name: "Extended test [[ ]] with &&"
     stdin: |
       set -e
       [[ 1 -eq 2 ]] && echo "matched"
       echo "after"
 
-  - name: "Extended test [[ ]] with || does not trigger errexit"
+  - name: "Extended test [[ ]] with ||"
     stdin: |
       set -e
       [[ 1 -eq 2 ]] || echo "not matched"
@@ -960,7 +1022,7 @@ cases:
 
   # BASH_COMMAND with errexit
   - name: "BASH_COMMAND set during errexit"
-    known_failure: true # TODO(variables): BASH_COMMAND not implemented
+    known_failure: true # TODO(well-known-vars): BASH_COMMAND not implemented
     stdin: |
       set -e
       trap 'echo "failed: $BASH_COMMAND"' EXIT
@@ -968,7 +1030,7 @@ cases:
       echo "should not print"
 
   - name: "BASH_COMMAND in function with errexit"
-    known_failure: true # TODO(variables): BASH_COMMAND not implemented
+    known_failure: true # TODO(well-known-vars): BASH_COMMAND not implemented
     stdin: |
       set -e
       trap 'echo "failed: $BASH_COMMAND"' EXIT
@@ -1115,7 +1177,7 @@ cases:
 
   # Coproc with errexit
   - name: "coproc with failing command"
-    known_failure: true # TODO(features): coproc not implemented
+    known_failure: true # TODO(coproc): coproc not implemented
     stdin: |
       set -e
       coproc { exit 5; }
@@ -1123,7 +1185,7 @@ cases:
       echo "after coproc wait, status: $?"
 
   - name: "coproc with successful command"
-    known_failure: true # TODO(features): coproc not implemented
+    known_failure: true # TODO(coproc): coproc not implemented
     stdin: |
       set -e
       coproc { echo "from coproc"; }
@@ -1132,7 +1194,7 @@ cases:
       echo "after coproc"
 
   - name: "coproc in conditional"
-    known_failure: true # TODO(features): coproc not implemented
+    known_failure: true # TODO(coproc): coproc not implemented
     stdin: |
       set -e
       coproc { exit 1; }
@@ -1203,17 +1265,6 @@ cases:
       done
       echo "after loop"
 
-  - name: "errexit with set -o errexit"
-    stdin: |
-      set -o errexit
-      false
-      echo "should not print"
-
-  - name: "errexit status check"
-    stdin: |
-      set -e
-      set -o | grep errexit
-
   - name: "Complex nested structure"
     stdin: |
       set -e
@@ -1233,20 +1284,10 @@ cases:
       outer
       echo "should not print"
 
-  - name: "Arithmetic for with errexit in updater"
+  - name: "with -u"
+    ignore_stderr: true
     stdin: |
-      set -e
-      for ((i=0; i<3; i++)); do
-        echo "i=$i"
-      done
+      set -eu
+      echo "before"
+      x=$unset
       echo "after"
-
-  - name: "Select statement with errexit"
-    known_failure: true # TODO(features): select statement not implemented
-    stdin: |
-      set -e
-      echo "1" | select opt in a b c; do
-        echo "selected: $opt"
-        break
-      done
-      echo "after select"
