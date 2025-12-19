@@ -1,0 +1,102 @@
+name: "Options: errtrace (-E)"
+cases:
+  - name: "errtrace disabled by default"
+    stdin: |
+      set +E 2>/dev/null || true
+      echo "errtrace test"
+
+  - name: "errtrace disabled - functions don't inherit ERR trap"
+    known_failure: true # TODO(traps): ERR trap support
+    stdin: |
+      set +E
+      trap 'echo "ERR trapped"' ERR
+      myfunc() { false; }
+      myfunc
+      echo "after"
+
+  - name: "errtrace enabled - functions inherit ERR trap"
+    known_failure: true # TODO(traps): ERR trap support
+    stdin: |
+      set -E
+      trap 'echo "ERR trapped"' ERR
+      myfunc() { false; }
+      myfunc
+      echo "after"
+
+  - name: "errtrace with nested functions"
+    known_failure: true # TODO(traps): ERR trap support
+    stdin: |
+      set -E
+      trap 'echo "ERR trapped"' ERR
+      inner() { false; }
+      outer() { inner; }
+      outer
+      echo "after"
+
+  - name: "errtrace toggling"
+    known_failure: true # TODO(traps): ERR trap support
+    stdin: |
+      trap 'echo "ERR trapped"' ERR
+      set -E
+      myfunc1() { false; }
+      myfunc1
+      echo "after first call"
+      set +E
+      myfunc2() { false; }
+      myfunc2
+      echo "after second call"
+
+  - name: "errtrace with subshell"
+    known_failure: true # TODO(traps): ERR trap support
+    stdin: |
+      set -E
+      trap 'echo "ERR trapped"' ERR
+      (
+        false
+      )
+      echo "after subshell"
+
+  - name: "ERR trap basic invocation without errtrace"
+    known_failure: true # TODO(traps): ERR trap support
+    stdin: |
+      trap 'echo "ERR: $?"' ERR
+      false
+      echo "continues"
+      false
+      echo "continues again"
+
+  - name: "ERR trap not triggered in conditional"
+    stdin: |
+      trap 'echo "ERR trapped"' ERR
+      if false; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "ERR trap not triggered with && short-circuit"
+    stdin: |
+      trap 'echo "ERR trapped"' ERR
+      false && echo "not printed"
+      echo "after"
+
+  - name: "ERR trap not triggered with ||"
+    stdin: |
+      trap 'echo "ERR trapped"' ERR
+      false || echo "fallback"
+      echo "after"
+
+  - name: "ERR trap not triggered with negation"
+    stdin: |
+      trap 'echo "ERR trapped"' ERR
+      ! false
+      echo "after"
+
+  - name: "ERR trap triggered after && chain completes"
+    known_failure: true # TODO(traps): ERR trap support
+    stdin: |
+      trap 'echo "ERR trapped"' ERR
+      true && true
+      false
+      echo "after"

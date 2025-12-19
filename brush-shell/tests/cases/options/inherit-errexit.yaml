@@ -1,0 +1,76 @@
+name: "Options: inherit_errexit"
+cases:
+  - name: "inherit_errexit disabled by default"
+    stdin: |
+      shopt -q inherit_errexit && echo "enabled" || echo "disabled"
+
+  - name: "inherit_errexit disabled - command substitution ignores errexit"
+    stdin: |
+      set -e
+      shopt -u inherit_errexit
+      result=$(false; echo "still running")
+      echo "result: $result"
+      echo "after"
+
+  - name: "inherit_errexit enabled - command substitution inherits errexit"
+    stdin: |
+      set -e
+      shopt -s inherit_errexit
+      result=$(false; echo "should not print")
+      echo "should not print"
+
+  - name: "inherit_errexit with nested command substitution"
+    stdin: |
+      set -e
+      shopt -s inherit_errexit
+      result=$(echo "outer: $(false; echo inner)")
+      echo "should not print"
+
+  - name: "inherit_errexit disabled - nested substitution continues"
+    stdin: |
+      set -e
+      shopt -u inherit_errexit
+      result=$(echo "outer: $(false; echo inner)")
+      echo "result: $result"
+      echo "after"
+
+  - name: "inherit_errexit with backtick substitution"
+    stdin: |
+      set -e
+      shopt -s inherit_errexit
+      result=`false; echo "should not print"`
+      echo "should not print"
+
+  - name: "inherit_errexit with assignment"
+    stdin: |
+      set -e
+      shopt -s inherit_errexit
+      var=$(false)
+      echo "should not print"
+
+  - name: "inherit_errexit in function"
+    stdin: |
+      set -e
+      shopt -s inherit_errexit
+      myfunc() {
+        local result=$(false; echo "should not print")
+        echo "after local"
+      }
+      myfunc
+      echo "should not print"
+
+  - name: "inherit_errexit toggling"
+    stdin: |
+      set -e
+      shopt -s inherit_errexit
+      result1=$(false; echo "should not print in first")
+      echo "should not print 1"
+    ignore_stderr: true
+
+  - name: "inherit_errexit with multiple commands in substitution"
+    stdin: |
+      set -e
+      shopt -u inherit_errexit
+      result=$(echo "start"; false; echo "after false")
+      echo "result: $result"
+      echo "after"
