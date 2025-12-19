@@ -495,7 +495,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 ) -> Result<ExecutionResult, error::Error> {
     let mut result = ExecutionResult::success();
     let mut stopped_children = vec![];
-    let mut first_failure_exit_code: Option<ExecutionExitCode> = None;
+    let mut last_failure_exit_code: Option<ExecutionExitCode> = None;
 
     // Clear our the pipeline status so we can start filling it out.
     shell.last_pipeline_statuses.clear();
@@ -513,9 +513,9 @@ async fn wait_for_pipeline_processes_and_update_status(
                 shell.set_last_exit_status(result.exit_code.into());
                 shell.last_pipeline_statuses.push(result.exit_code.into());
 
-                // Track the first failure for pipefail option
-                if !result.is_success() && first_failure_exit_code.is_none() {
-                    first_failure_exit_code = Some(result.exit_code);
+                // Track the last failure for pipefail option
+                if !result.is_success() {
+                    last_failure_exit_code = Some(result.exit_code);
                 }
             }
             ExecutionWaitResult::Stopped(child) => {
@@ -530,7 +530,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 
     // Apply pipefail semantics if enabled
     if shell.options.return_last_failure_from_pipeline {
-        if let Some(failure_exit_code) = first_failure_exit_code {
+        if let Some(failure_exit_code) = last_failure_exit_code {
             result.exit_code = failure_exit_code;
         }
     }

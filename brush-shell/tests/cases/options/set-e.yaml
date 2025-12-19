@@ -227,6 +227,46 @@ cases:
       ! true | false
       echo "after pipeline"
 
+  - name: "Errors in multiple commands of pipeline (without pipefail)"
+    stdin: |
+      set -e
+
+      function ret() {
+        return $1
+      }
+
+      ret 1 | ret 2 | ret 3
+
+  - name: "Errors in multiple commands of pipeline (without pipefail, negated)"
+    stdin: |
+      set -e
+
+      function ret() {
+        return $1
+      }
+
+      ! ret 1 | ret 2 | ret 3
+
+  - name: "Errors in multiple commands of pipeline (with pipefail)"
+    stdin: |
+      set -e -o pipefail
+
+      function ret() {
+        return $1
+      }
+
+      ret 1 | ret 2 | ret 3
+
+  - name: "Errors in multiple commands of pipeline (with pipefail, negated)"
+    stdin: |
+      set -e -o pipefail
+
+      function ret() {
+        return $1
+      }
+
+      ! ret 1 | ret 2 | ret 3
+
   - name: "Pipeline in conditional"
     stdin: |
       set -e
