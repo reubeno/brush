@@ -722,7 +722,8 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     // Instantiate a subshell to run the command in.
     let mut subshell = shell.clone();
 
-    // Update options for the subshell.
+    // Command substitutions don't inherit errexit by default. Only inherit it when
+    // command_subst_inherits_errexit is enabled, otherwise disable errexit in the subshell.
     if !shell.options.command_subst_inherits_errexit {
         subshell.options.exit_on_nonzero_command_exit = false;
     }

@@ -59,3 +59,35 @@ cases:
 
       x=$(f 42) y=0 z=$? w=$?
       echo "x: $x; y: $y; z: $z; w: $w"
+
+  - name: "Status in for loop"
+    stdin: |
+      function ret() {
+        return $1
+      }
+
+      for f in a b; do
+        echo "Loop entry: $?"
+        ret 1
+        echo "Loop 1: $?"
+        ret 2
+        echo "Loop 2: $?"
+      done
+
+      echo "After loop: $?"
+
+  - name: "Status in arithmetic for loop"
+    stdin: |
+      function ret() {
+        return $1
+      }
+
+      for ((i = 0; i < 2; i++)); do
+        echo "Loop entry: $?"
+        ret 1
+        echo "Loop 1: $?"
+        ret 2
+        echo "Loop 2: $?"
+      done
+
+      echo "After loop: $?"

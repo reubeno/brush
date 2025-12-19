@@ -193,7 +193,7 @@ impl Execute for ast::Program {
                 }
             }
 
-            // Update status (errexit behavior applied at CompoundList level)
+            // Update status
             shell.set_last_exit_status(result.exit_code.into());
 
             // Check if we should stop executing subsequent commands
@@ -233,7 +233,7 @@ impl Execute for ast::CompoundList {
             } else {
                 result = ao_list.execute(shell, params).await?;
 
-                // Update status (errexit behavior applied at Pipeline level)
+                // Update status
                 shell.set_last_exit_status(result.exit_code.into());
             }
 
@@ -279,7 +279,6 @@ impl Execute for ast::AndOrList {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        // If this list has && or || operators, suppress errexit for non-final commands
         let has_operators = !self.additional.is_empty();
 
         // For the first command, suppress errexit if there are more commands after it
@@ -879,7 +878,8 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
 
         loop {
             let condition_result = test_condition.execute(shell, &condition_params).await?;
-            // Update status for condition (no errexit - conditions don't trigger errexit)
+
+            // Update status for condition
             shell.set_last_exit_status(condition_result.exit_code.into());
 
             if !condition_result.is_normal_flow() {

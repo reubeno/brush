@@ -1291,3 +1291,11 @@ cases:
       echo "before"
       x=$unset
       echo "after"
+
+  - name: "syntax error"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      echo "before"
+      if false; then echo hi; done
+      echo "after"
