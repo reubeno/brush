@@ -417,8 +417,8 @@ static SET_O_OPTIONS: LazyLock<HashMap<&'static str, ShellOptionDef>> = LazyLock
         (
             "pipefail",
             ShellOptionDef::new(
-                |options| options.return_first_failure_from_pipeline,
-                |options, value| options.return_first_failure_from_pipeline = value,
+                |options| options.return_last_failure_from_pipeline,
+                |options, value| options.return_last_failure_from_pipeline = value,
             ),
         ),
         (

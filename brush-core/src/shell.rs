@@ -360,6 +360,9 @@ pub struct CreateOptions {
     /// Whether to treat expansion of unset variables as an error.
     #[builder(default)]
     pub treat_unset_variables_as_error: bool,
+    /// Whether to enable error-on-exit behavior.
+    #[builder(default)]
+    pub exit_on_nonzero_command_exit: bool,
     /// Whether to print verbose output.
     #[builder(default)]
     pub verbose: bool,
@@ -578,6 +581,21 @@ impl Shell {
     pub const fn set_last_exit_status(&mut self, status: u8) {
         self.last_exit_status = status;
         self.last_exit_status_change_count += 1;
+    }
+
+    /// Applies errexit semantics to a result if enabled and appropriate.
+    /// This should be called at "statement boundaries" where errexit should be checked.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - The execution result to potentially modify.
+    pub const fn apply_errexit_if_enabled(&self, result: &mut ExecutionResult) {
+        if self.options.exit_on_nonzero_command_exit
+            && !result.is_success()
+            && result.is_normal_flow()
+        {
+            result.next_control_flow = ExecutionControlFlow::ExitShell;
+        }
     }
 
     /// Returns the key bindings helper for the shell.

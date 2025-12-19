@@ -346,3 +346,26 @@ cases:
       echo "before closing stdin"
       exec 0<&-
       echo "after closing stdin"
+
+  - name: "errexit with failing command (non-interactive)"
+    stdin: |
+      set -e
+      false
+      echo "after false"
+
+  - name: "errexit with failing command (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      set -e
+      echo "before false"
+      false
+      echo "after false"
+
+  - name: "errexit with unbound variable access (interactive)"
+    args: ["-i", "-e", "-u", "-o", "pipefail"]
+    ignore_stderr: true
+    stdin: |
+      echo "before false"
+      false
+      echo "after false"

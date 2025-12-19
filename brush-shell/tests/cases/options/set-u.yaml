@@ -14,6 +14,13 @@ cases:
       echo "$unset_var"
       echo "should not print"
 
+  - name: "Command line -u"
+    args: ["-u"]
+    ignore_stderr: true
+    stdin: |
+      echo "$unset_var"
+      echo "should not print"
+
   # Special parameters - should NOT error even when unset
   - name: "Special parameter $@ does not error"
     stdin: |

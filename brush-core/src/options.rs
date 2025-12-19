@@ -59,7 +59,7 @@ pub struct RuntimeOptions {
     /// 'ignoreeof'
     pub ignore_eof: bool,
     /// 'pipefail'
-    pub return_first_failure_from_pipeline: bool,
+    pub return_last_failure_from_pipeline: bool,
     /// 'posix'
     pub posix_mode: bool,
     /// 'vi'
@@ -223,6 +223,7 @@ impl RuntimeOptions {
             print_commands_and_arguments: create_options.print_commands_and_arguments,
             print_shell_input_lines: create_options.verbose,
             treat_unset_variables_as_error: create_options.treat_unset_variables_as_error,
+            exit_on_nonzero_command_exit: create_options.exit_on_nonzero_command_exit,
             remember_command_locations: true,
             check_window_size_after_external_commands: true,
             save_multiline_cmds_in_history: true,
