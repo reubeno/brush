@@ -24,6 +24,12 @@ cases:
       false
       echo "Text after call"
 
+  - name: "Command line -e"
+    args: ["-e"]
+    stdin: |
+      false
+      echo "should not print"
+
   - name: "Multiple commands before error"
     stdin: |
       set -e

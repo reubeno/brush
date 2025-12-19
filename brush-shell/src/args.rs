@@ -70,6 +70,10 @@ pub struct CommandLineArgs {
     #[arg(short = 'c', value_name = "COMMAND", help_heading = HEADING_STANDARD_OPTIONS)]
     pub command: Option<String>,
 
+    /// Enable error-on-exit behavior.
+    #[clap(short = 'e', help_heading = HEADING_STANDARD_OPTIONS)]
+    pub exit_on_nonzero_command_exit: bool,
+
     /// Run in interactive mode.
     #[clap(short = 'i', help_heading = HEADING_STANDARD_OPTIONS)]
     pub interactive: bool,

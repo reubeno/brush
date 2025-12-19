@@ -394,6 +394,7 @@ async fn instantiate_shell_from_args(
         .shell_product_display_str(productinfo::get_product_display_str())
         .sh_mode(args.sh_mode)
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
+        .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
         .error_formatter(new_error_formatter(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
