@@ -173,7 +173,7 @@ jobs:
 
       - name: "Install musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b09c2117b6fbe31a139e9d1f75c6ce169e771cbb # v2.62.53
         with:
           tool: cross
 
@@ -181,7 +181,7 @@ jobs:
         run: cargo clean
 
       - name: "Install cargo-about"
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b09c2117b6fbe31a139e9d1f75c6ce169e771cbb # v2.62.53
         with:
           tool: cargo-about
 
