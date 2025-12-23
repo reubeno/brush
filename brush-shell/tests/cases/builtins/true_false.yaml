@@ -1,0 +1,7 @@
+name: "true and false"
+cases:
+  - name: "true and false ignore all args"
+    stdin: |
+      builtin false --help; echo "builtin false --help => $?"
+      builtin true --help; echo "builtin true --help => $?"
+      builtin true s87tien5; echo "builtin true s87tien5 => $?"
