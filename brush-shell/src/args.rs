@@ -171,6 +171,10 @@ pub struct CommandLineArgs {
     #[clap(long = "enable-terminal-integration", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub terminal_shell_integration: bool,
 
+    /// Enable zsh-style preexec/precmd hooks (**experimental**).
+    #[clap(long = "enable-zsh-hooks", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    pub zsh_style_hooks: bool,
+
     /// Input backend.
     #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
     pub input_backend: Option<InputBackendType>,

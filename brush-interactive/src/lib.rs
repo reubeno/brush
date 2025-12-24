@@ -4,7 +4,7 @@ mod error;
 pub use error::ShellError;
 
 mod interactive_shell;
-pub use interactive_shell::{InteractiveExecutionResult, InteractiveShell};
+pub use interactive_shell::{InteractiveExecutionResult, InteractiveOptions, InteractiveShell};
 
 mod input_backend;
 pub use input_backend::{InputBackend, InteractivePrompt, ReadResult};
