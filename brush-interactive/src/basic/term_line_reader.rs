@@ -82,6 +82,7 @@ impl<'a> ReadLineState<'a> {
             eprint!("{prompt}");
             std::io::stderr().flush()?;
         }
+
         Ok(())
     }
 

@@ -2,7 +2,7 @@ use nu_ansi_term::Color;
 use reedline::MenuBuilder;
 
 use super::{completer, edit_mode, highlighter, history, validator};
-use crate::{InputBackend, ReadResult, ShellError, interactive_shell::InteractivePrompt, refs};
+use crate::{InputBackend, ReadResult, ShellError, input_backend::InteractivePrompt, refs};
 
 /// Represents an interactive shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.

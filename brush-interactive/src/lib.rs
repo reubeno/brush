@@ -4,12 +4,24 @@ mod error;
 pub use error::ShellError;
 
 mod interactive_shell;
-pub use interactive_shell::{
-    InputBackend, InteractiveExecutionResult, InteractivePrompt, InteractiveShellExt, ReadResult,
-};
+pub use interactive_shell::{InteractiveExecutionResult, InteractiveShell};
+
+mod input_backend;
+pub use input_backend::{InputBackend, InteractivePrompt, ReadResult};
 
 mod options;
 pub use options::UIOptions;
+
+mod refs;
+pub use refs::ShellRef;
+
+mod term;
+pub use term::{KnownTerminal, TerminalInfo};
+
+mod term_integration;
+pub use term_integration::TerminalIntegration;
+
+mod trace_categories;
 
 #[cfg(feature = "completion")]
 mod completion;
@@ -31,8 +43,3 @@ pub use basic::BasicInputBackend;
 mod minimal;
 #[cfg(feature = "minimal")]
 pub use minimal::MinimalInputBackend;
-
-mod refs;
-mod trace_categories;
-
-pub use refs::ShellRef;

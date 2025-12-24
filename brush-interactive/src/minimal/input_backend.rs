@@ -2,7 +2,7 @@ use std::io::{IsTerminal, Write};
 
 use crate::{
     InputBackend, ShellError,
-    interactive_shell::{InteractivePrompt, ReadResult},
+    input_backend::{InteractivePrompt, ReadResult},
 };
 
 /// Represents a minimal shell input backend, capable of taking commands from standard input.
