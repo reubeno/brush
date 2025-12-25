@@ -310,6 +310,8 @@ pub(crate) fn get_terminal_info(env: &impl TerminalEnvironment) -> TerminalInfo 
                 info.osc_support_unknown = true;
             }
         }
+    } else {
+        info.osc_support_unknown = true;
     }
 
     info
@@ -371,6 +373,24 @@ mod tests {
     }
 
     #[test]
+    fn no_term_program() {
+        let test_env = HashMap::new();
+
+        let term_info = get_terminal_info(&test_env);
+        assert_matches!(term_info.terminal, None);
+        assert!(term_info.osc_support_unknown);
+    }
+
+    #[test]
+    fn unknown_term_program() {
+        let test_env = HashMap::from([("TERM_PROGRAM", "unknown_terminal")]);
+
+        let term_info = get_terminal_info(&test_env);
+        assert_matches!(term_info.terminal, None);
+        assert!(term_info.osc_support_unknown);
+    }
+
+    #[test]
     fn vscode_recognition() {
         let test_env = HashMap::from([("TERM_PROGRAM", "vscode"), ("VSCODE_NONCE", "test_nonce")]);
 
@@ -378,5 +398,14 @@ mod tests {
         assert_matches!(term_info.terminal, Some(KnownTerminal::VSCode));
         assert!(term_info.supports_osc_633);
         assert_eq!(term_info.session_nonce, Some("test_nonce".to_string()));
+    }
+
+    #[test]
+    fn windows_terminal_recognition() {
+        let test_env = HashMap::from([("WT_SESSION", "some_value")]);
+
+        let term_info = get_terminal_info(&test_env);
+        assert_matches!(term_info.terminal, Some(KnownTerminal::WindowsTerminal));
+        assert!(term_info.supports_osc_9001);
     }
 }

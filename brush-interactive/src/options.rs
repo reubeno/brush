@@ -1,5 +1,5 @@
 /// Options for a shell user interface.
-#[derive(Clone, Default, bon::Builder)]
+#[derive(Default, bon::Builder)]
 pub struct UIOptions {
     /// Whether to disable bracketed paste mode.
     #[builder(default)]

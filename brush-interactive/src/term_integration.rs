@@ -188,9 +188,6 @@ mod tests {
         assert_eq!(escape_command_for_osc_633("\r"), r"\x0d"); // carriage return
         assert_eq!(escape_command_for_osc_633("\x1e"), r"\x1e"); // last control char (30)
 
-        // 0x1e (30) *should* be escaped as a control char
-        assert_eq!(escape_command_for_osc_633("\x1e"), r"\x1e");
-
         // 0x1f (31) should NOT be escaped as a control char (not < 31)
         assert_eq!(escape_command_for_osc_633("\x1f"), "\x1f");
 

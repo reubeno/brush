@@ -60,9 +60,8 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
 
         // Set up terminal integration if enabled *and* if stdin is a terminal.
         let terminal_integration = if options.terminal_shell_integration && stdin_is_terminal {
-            let terminal_integration = crate::term_integration::TerminalIntegration::new(
-                crate::term_detection::get_terminal_info(&HostEnvironment),
-            );
+            let terminfo = crate::term_detection::get_terminal_info(&HostEnvironment);
+            let terminal_integration = crate::term_integration::TerminalIntegration::new(terminfo);
 
             print!("{}", terminal_integration.initialize().as_ref());
             std::io::stdout().flush()?;
