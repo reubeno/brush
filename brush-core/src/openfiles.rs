@@ -177,18 +177,21 @@ impl OpenFile {
 }
 
 impl From<std::io::Stdin> for OpenFile {
+    /// Creates an `OpenFile` from standard input.
     fn from(stdin: std::io::Stdin) -> Self {
         Self::Stdin(stdin)
     }
 }
 
 impl From<std::io::Stdout> for OpenFile {
+    /// Creates an `OpenFile` from standard output.
     fn from(stdout: std::io::Stdout) -> Self {
         Self::Stdout(stdout)
     }
 }
 
 impl From<std::io::Stderr> for OpenFile {
+    /// Creates an `OpenFile` from standard error.
     fn from(stderr: std::io::Stderr) -> Self {
         Self::Stderr(stderr)
     }

@@ -27,12 +27,16 @@ impl CommandFdInjectionExt for std::process::Command {
         &mut self,
         open_files: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
     ) -> Result<(), error::Error> {
-        let fd_mappings = open_files
-            .map(|(child_fd, open_file)| FdMapping {
-                child_fd,
-                parent_fd: open_file.try_clone_to_owned().unwrap(),
+        let fd_mappings: Vec<FdMapping> = open_files
+            .map(|(child_fd, open_file)| -> Result<FdMapping, error::Error> {
+                let parent_fd = open_file.try_clone_to_owned()?;
+                Ok(FdMapping {
+                    child_fd,
+                    parent_fd,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
+
         self.fd_mappings(fd_mappings)
             .map_err(|_e| error::ErrorKind::ChildCreationFailure)?;
 

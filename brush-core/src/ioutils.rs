@@ -2,12 +2,16 @@
 
 use crate::openfiles;
 
+/// Error type for `FailingReaderWriter`.
 #[derive(Clone, Debug, thiserror::Error)]
-pub enum ReaderWriterError {
+enum ReaderWriterError {
+    /// I/O read error.
     #[error("I/O read error: {0}")]
     Read(&'static str),
+    /// I/O write error.
     #[error("I/O write error: {0}")]
     Write(&'static str),
+    /// I/O flush error.
     #[error("I/O flush error: {0}")]
     Flush(&'static str),
 }

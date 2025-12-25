@@ -1,6 +1,6 @@
 //! Terminal utilities.
 
-use crate::{error, sys, terminal};
+use crate::{error, openfiles, sys, terminal};
 
 /// Terminal configuration.
 #[derive(Clone, Debug)]
