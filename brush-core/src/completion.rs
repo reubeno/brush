@@ -15,6 +15,7 @@ use crate::{
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
 };
+use brush_parser::unquote_str;
 
 /// Type of action to take to generate completion candidates.
 #[derive(Clone, Debug, ValueEnum)]
@@ -1134,7 +1135,7 @@ async fn get_file_completions(
     let mut throwaway_shell = shell.clone();
     let params = throwaway_shell.default_exec_params();
     let expanded_token = throwaway_shell
-        .basic_expand_string(&params, token_to_complete)
+        .basic_expand_string(&params, &unquote_str(token_to_complete))
         .await
         .unwrap_or_else(|_err| token_to_complete.to_owned());
 
