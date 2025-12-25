@@ -169,7 +169,7 @@ pub enum KnownTerminal {
     /// GNOME Terminal
     GnomeTerminal,
     /// iTerm2
-    Iterm2,
+    ITerm2,
     /// Kitty
     Kitty,
     /// Konsole
@@ -239,7 +239,7 @@ pub(crate) fn get_terminal_info(env: &impl TerminalEnvironment) -> TerminalInfo 
                 info.supports_osc_111 = true;
                 info.supports_osc_112 = true;
             }
-            KnownTerminal::Iterm2 => {
+            KnownTerminal::ITerm2 => {
                 // https://iterm2.com/documentation-escape-codes.html
                 info.supports_osc_4 = true;
                 info.supports_osc_6 = true;
@@ -350,7 +350,7 @@ fn try_detect_terminal_from_prog_var(env: &impl TerminalEnvironment) -> Option<K
         "appleterminal" => Some(KnownTerminal::AppleTerminal),
         "ghostty" => Some(KnownTerminal::Ghostty),
         "gnometerminal" => Some(KnownTerminal::GnomeTerminal),
-        "iterm" | "iterm2" | "itermapp" => Some(KnownTerminal::Iterm2),
+        "iterm" | "iterm2" | "itermapp" => Some(KnownTerminal::ITerm2),
         "kitty" => Some(KnownTerminal::Kitty),
         "konsole" => Some(KnownTerminal::Konsole),
         "vscode" => Some(KnownTerminal::VSCode),
