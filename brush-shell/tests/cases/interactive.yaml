@@ -29,3 +29,18 @@ cases:
       #expect:Hello, world.
       #expect-prompt
       #send:Ctrl+D
+
+  - name: "PROMPT_COMMAND"
+    ignore_stderr: true
+    args: ["-i"]
+    stdin: |
+      declare -a calls=()
+      command=0
+
+      PROMPT_COMMAND='calls+=("$command")'
+
+      command=first
+      command=second
+      command=third
+
+      unset PROMPT_COMMAND
