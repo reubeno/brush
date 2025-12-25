@@ -1,5 +1,6 @@
 /// Holds information about the hosting terminal.
 #[derive(Clone, Debug, Default)]
+#[allow(dead_code)]
 pub struct TerminalInfo {
     /// The detected terminal, if any.
     pub terminal: Option<KnownTerminal>,

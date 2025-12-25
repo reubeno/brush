@@ -15,9 +15,7 @@ pub use options::UIOptions;
 mod refs;
 pub use refs::ShellRef;
 
-mod term;
-pub use term::{KnownTerminal, TerminalInfo};
-
+mod term_detection;
 mod term_integration;
 mod trace_categories;
 

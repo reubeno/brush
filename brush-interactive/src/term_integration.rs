@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use crate::term;
+use crate::term_detection;
 
 /// Utility for integrating with terminal emulators.
 #[derive(Default)]
 pub(crate) struct TerminalIntegration {
     /// Info about the hosting terminal.
-    term: term::TerminalInfo,
+    term: term_detection::TerminalInfo,
 }
 
 #[allow(dead_code)]
@@ -17,7 +17,7 @@ impl TerminalIntegration {
     /// # Arguments
     ///
     /// * `term_info` - Information about the terminal capabilities.
-    pub const fn new(term_info: term::TerminalInfo) -> Self {
+    pub const fn new(term_info: term_detection::TerminalInfo) -> Self {
         Self { term: term_info }
     }
 

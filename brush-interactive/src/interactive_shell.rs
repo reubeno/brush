@@ -59,7 +59,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         // Set up terminal integration if enabled.
         let terminal_integration = if options.terminal_shell_integration {
             let terminal_integration = crate::term_integration::TerminalIntegration::new(
-                crate::term::get_terminal_info(&HostEnvironment),
+                crate::term_detection::get_terminal_info(&HostEnvironment),
             );
 
             print!("{}", terminal_integration.initialize().as_ref());
@@ -340,7 +340,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
 }
 struct HostEnvironment;
 
-impl crate::term::TerminalEnvironment for HostEnvironment {
+impl crate::term_detection::TerminalEnvironment for HostEnvironment {
     fn get_env_var(&self, name: &str) -> Option<String> {
         std::env::var(name).ok()
     }
