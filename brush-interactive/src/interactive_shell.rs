@@ -51,19 +51,21 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         input: &'a mut IB,
         options: &UIOptions,
     ) -> Result<Self, ShellError> {
+        let stdin_is_terminal = std::io::stdin().is_terminal();
+
         // Acquire terminal control if stdin is a terminal.
-        if std::io::stdin().is_terminal() {
+        if stdin_is_terminal {
             brush_core::terminal::TerminalControl::acquire()?;
         }
 
-        // Set up terminal integration if enabled.
-        let terminal_integration = if options.terminal_shell_integration {
+        // Set up terminal integration if enabled *and* if stdin is a terminal.
+        let terminal_integration = if options.terminal_shell_integration && stdin_is_terminal {
             let terminal_integration = crate::term_integration::TerminalIntegration::new(
                 crate::term_detection::get_terminal_info(&HostEnvironment),
             );
 
             print!("{}", terminal_integration.initialize().as_ref());
-            let _ = std::io::stdout().flush();
+            std::io::stdout().flush()?;
 
             Some(terminal_integration)
         } else {
