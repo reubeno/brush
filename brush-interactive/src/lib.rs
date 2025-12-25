@@ -19,8 +19,6 @@ mod term;
 pub use term::{KnownTerminal, TerminalInfo};
 
 mod term_integration;
-pub use term_integration::TerminalIntegration;
-
 mod trace_categories;
 
 #[cfg(feature = "completion")]

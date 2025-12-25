@@ -1,10 +1,5 @@
-//
-// The code
-//
-
 /// Holds information about the hosting terminal.
-#[derive(Clone, Default)]
-#[allow(unused)]
+#[derive(Clone, Debug, Default)]
 pub struct TerminalInfo {
     /// The detected terminal, if any.
     pub terminal: Option<KnownTerminal>,
@@ -108,16 +103,16 @@ pub struct TerminalInfo {
     /// Whether the terminal supports OSC 112 sequences: resetting cursor color.
     pub supports_osc_112: bool,
 
-    /// Whether the terminal supports OSC 13 sequences: resetting pointer foreground color.
+    /// Whether the terminal supports OSC 113 sequences: resetting pointer foreground color.
     pub supports_osc_113: bool,
 
-    /// Whether the terminal supports OSC 14 sequences: resetting pointer background color.
+    /// Whether the terminal supports OSC 114 sequences: resetting pointer background color.
     pub supports_osc_114: bool,
 
-    /// Whether the terminal supports OSC 15 sequences: resetting Tektronix foreground color.
+    /// Whether the terminal supports OSC 115 sequences: resetting Tektronix foreground color.
     pub supports_osc_115: bool,
 
-    /// Whether the terminal supports OSC 16 sequences: resetting Tektronix background color.
+    /// Whether the terminal supports OSC 116 sequences: resetting Tektronix background color.
     pub supports_osc_116: bool,
 
     /// Whether the terminal supports OSC 117 sequences: resetting highlight background color
@@ -158,7 +153,7 @@ pub struct TerminalInfo {
 }
 
 /// Identifies a known terminal emulator hosting this process.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KnownTerminal {
     /// Alacritty
     Alacritty,
@@ -359,5 +354,28 @@ fn try_detect_terminal_from_prog_var(env: &impl TerminalEnvironment) -> Option<K
         "wezterm" => Some(KnownTerminal::WezTerm),
         "windowsterminal" => Some(KnownTerminal::WindowsTerminal),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_matches;
+    use std::collections::HashMap;
+
+    impl TerminalEnvironment for HashMap<&str, &str> {
+        fn get_env_var(&self, key: &str) -> Option<String> {
+            self.get(key).map(|v| (*v).to_string())
+        }
+    }
+
+    #[test]
+    fn vscode_recognition() {
+        let test_env = HashMap::from([("TERM_PROGRAM", "vscode"), ("VSCODE_NONCE", "test_nonce")]);
+
+        let term_info = get_terminal_info(&test_env);
+        assert_matches!(term_info.terminal, Some(KnownTerminal::VSCode));
+        assert!(term_info.supports_osc_633);
+        assert_eq!(term_info.session_nonce, Some("test_nonce".to_string()));
     }
 }

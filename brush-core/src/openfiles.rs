@@ -313,7 +313,6 @@ impl OpenFiles {
 
     /// Creates a new `OpenFiles` instance populated with stdin, stdout, and stderr
     /// from the host environment.
-    #[allow(unused)]
     pub(crate) fn new() -> Self {
         Self {
             files: HashMap::from([

@@ -5,11 +5,12 @@ use crate::term;
 
 /// Utility for integrating with terminal emulators.
 #[derive(Default)]
-pub struct TerminalIntegration {
+pub(crate) struct TerminalIntegration {
     /// Info about the hosting terminal.
     term: term::TerminalInfo,
 }
 
+#[allow(dead_code)]
 impl TerminalIntegration {
     /// Creates a new terminal integration utility.
     ///
