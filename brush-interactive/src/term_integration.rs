@@ -42,7 +42,8 @@ impl TerminalIntegration {
     /// Returns the terminal escape sequence to report the current working directory.
     pub fn report_cwd(&self, cwd: &std::path::Path) -> Cow<'_, str> {
         if self.term.supports_osc_633 {
-            format!("\x1b]633;P;Cwd={}\x1b\\", cwd.to_string_lossy()).into()
+            let escaped_cwd_str = osc_633_escape(cwd.to_string_lossy().as_ref());
+            format!("\x1b]633;P;Cwd={escaped_cwd_str}\x1b\\").into()
         } else {
             "".into()
         }
@@ -56,7 +57,7 @@ impl TerminalIntegration {
     /// * `command` - The command that is about to be executed.
     pub fn pre_exec_command(&self, command: &str) -> Cow<'_, str> {
         if self.term.supports_osc_633 {
-            let mut escaped_command = escape_command_for_osc_633(command);
+            let mut escaped_command = osc_633_escape(command);
             escaped_command.insert_str(0, "\x1b]633;E;");
 
             if let Some(session_nonce) = &self.term.session_nonce {
@@ -127,7 +128,9 @@ impl TerminalIntegration {
     }
 }
 
-fn escape_command_for_osc_633(command: &str) -> String {
+/// Escapes a string for safe inclusion in an OSC 633 escape sequence.
+/// Reference: <https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh>
+fn osc_633_escape(command: &str) -> String {
     let mut result = String::new();
 
     for c in command.chars() {
@@ -153,81 +156,75 @@ mod tests {
     use super::*;
 
     #[test]
-    fn osc_633_escaping_basic() {
+    fn osc_633_escape_basic() {
         // Test simple alphanumeric string
-        assert_eq!(escape_command_for_osc_633("echo hello"), "echo hello");
-        assert_eq!(escape_command_for_osc_633("ls -la"), "ls -la");
+        assert_eq!(osc_633_escape("echo hello"), "echo hello");
+        assert_eq!(osc_633_escape("ls -la"), "ls -la");
     }
 
     #[test]
-    fn osc_633_escaping_semicolon() {
+    fn osc_633_escape_semicolon() {
         // Semicolons should be escaped
-        assert_eq!(escape_command_for_osc_633("cmd1; cmd2"), r"cmd1\x3b cmd2");
-        assert_eq!(escape_command_for_osc_633(";"), r"\x3b");
-        assert_eq!(escape_command_for_osc_633("a;b;c"), r"a\x3bb\x3bc");
+        assert_eq!(osc_633_escape("cmd1; cmd2"), r"cmd1\x3b cmd2");
+        assert_eq!(osc_633_escape(";"), r"\x3b");
+        assert_eq!(osc_633_escape("a;b;c"), r"a\x3bb\x3bc");
     }
 
     #[test]
-    fn osc_633_escaping_backslash() {
+    fn osc_633_escape_backslash() {
         // Backslashes should be escaped
-        assert_eq!(escape_command_for_osc_633(r"echo \n"), r"echo \\n");
-        assert_eq!(escape_command_for_osc_633(r"\"), r"\\");
-        assert_eq!(
-            escape_command_for_osc_633(r"C:\path\to\file"),
-            r"C:\\path\\to\\file"
-        );
+        assert_eq!(osc_633_escape(r"echo \n"), r"echo \\n");
+        assert_eq!(osc_633_escape(r"\"), r"\\");
+        assert_eq!(osc_633_escape(r"C:\path\to\file"), r"C:\\path\\to\\file");
     }
 
     #[test]
-    fn osc_633_escaping_control_chars() {
+    fn osc_633_escape_control_chars() {
         // ASCII control characters (0x00-0x1e, i.e., 0-30) should be escaped
-        assert_eq!(escape_command_for_osc_633("\x00"), r"\x00");
-        assert_eq!(escape_command_for_osc_633("\x01"), r"\x01");
-        assert_eq!(escape_command_for_osc_633("\t"), r"\x09"); // tab
-        assert_eq!(escape_command_for_osc_633("\n"), r"\x0a"); // newline
-        assert_eq!(escape_command_for_osc_633("\r"), r"\x0d"); // carriage return
-        assert_eq!(escape_command_for_osc_633("\x1e"), r"\x1e"); // last control char (30)
+        assert_eq!(osc_633_escape("\x00"), r"\x00");
+        assert_eq!(osc_633_escape("\x01"), r"\x01");
+        assert_eq!(osc_633_escape("\t"), r"\x09"); // tab
+        assert_eq!(osc_633_escape("\n"), r"\x0a"); // newline
+        assert_eq!(osc_633_escape("\r"), r"\x0d"); // carriage return
+        assert_eq!(osc_633_escape("\x1e"), r"\x1e"); // last control char (30)
 
         // 0x1f (31) should NOT be escaped as a control char (not < 31)
-        assert_eq!(escape_command_for_osc_633("\x1f"), "\x1f");
+        assert_eq!(osc_633_escape("\x1f"), "\x1f");
 
         // Space (0x20, 32) should NOT be escaped
-        assert_eq!(escape_command_for_osc_633(" "), " ");
+        assert_eq!(osc_633_escape(" "), " ");
     }
 
     #[test]
-    fn osc_633_escaping_mixed() {
+    fn osc_633_escape_mixed() {
         // Test combinations of different escape scenarios
         assert_eq!(
-            escape_command_for_osc_633("echo\nhello; world\\n"),
+            osc_633_escape("echo\nhello; world\\n"),
             r"echo\x0ahello\x3b world\\n"
         );
 
-        assert_eq!(
-            escape_command_for_osc_633("cmd\t\t; \\path"),
-            r"cmd\x09\x09\x3b \\path"
-        );
+        assert_eq!(osc_633_escape("cmd\t\t; \\path"), r"cmd\x09\x09\x3b \\path");
 
         // Test with null bytes
-        assert_eq!(escape_command_for_osc_633("a\x00b\x01c"), r"a\x00b\x01c");
+        assert_eq!(osc_633_escape("a\x00b\x01c"), r"a\x00b\x01c");
 
         // Test all three special cases together
-        assert_eq!(escape_command_for_osc_633("\\;\n"), r"\\\x3b\x0a");
+        assert_eq!(osc_633_escape("\\;\n"), r"\\\x3b\x0a");
     }
 
     #[test]
-    fn osc_633_escaping_empty() {
-        assert_eq!(escape_command_for_osc_633(""), "");
+    fn osc_633_escape_empty() {
+        assert_eq!(osc_633_escape(""), "");
     }
 
     #[test]
-    fn osc_633_escaping_unicode() {
+    fn osc_633_escape_unicode() {
         // Unicode characters should pass through unchanged
-        assert_eq!(escape_command_for_osc_633("echo 你好"), "echo 你好");
-        assert_eq!(escape_command_for_osc_633("café"), "café");
-        assert_eq!(escape_command_for_osc_633("🦀"), "🦀");
+        assert_eq!(osc_633_escape("echo 你好"), "echo 你好");
+        assert_eq!(osc_633_escape("café"), "café");
+        assert_eq!(osc_633_escape("🦀"), "🦀");
 
         // But should still escape special chars
-        assert_eq!(escape_command_for_osc_633("你好;世界"), r"你好\x3b世界");
+        assert_eq!(osc_633_escape("你好;世界"), r"你好\x3b世界");
     }
 }

@@ -339,9 +339,18 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         Ok(())
     }
 }
+
+/// Represents the host environment; used for terminal detection in conjunction
+/// with the `TerminalEnvironment` trait.
 struct HostEnvironment;
 
 impl crate::term_detection::TerminalEnvironment for HostEnvironment {
+    /// Gets the value of the given environment variable from the host process's
+    /// OS environment variables. Returns `None` if the variable is not set.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the environment variable to get.
     fn get_env_var(&self, name: &str) -> Option<String> {
         std::env::var(name).ok()
     }
