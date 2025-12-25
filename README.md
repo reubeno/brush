@@ -143,18 +143,9 @@ brew install brush
 
 `brush` has a community Discord server, available [here](https://discord.gg/kPRgC9j3Tj).
 
-## 🔍 Known limitations
-
-There are some known gaps in compatibility. Most notably:
-
-* **Some `set` and `shopt` options.**
-  The `set` builtin is implemented, as is `set -x` and many frequently used `set`/`shopt` options, but a number aren't fully implemented. For example, `set -e` will execute but its semantics aren't applied across execution.
-
-If you're interested, we'd love contributions to improve compatibility, broaden test coverage, or really any other opportunities you can find to help us make this project better.
-
 ## 🧪 Testing strategy
 
-This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [850+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
+This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [900+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
 
 For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
 

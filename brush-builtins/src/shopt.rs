@@ -82,7 +82,7 @@ impl builtins::Command for ShoptCommand {
                     }
                 } else {
                     let option_value_str = if option_value { "on" } else { "off" };
-                    writeln!(context.stdout(), "{:15}\t{option_value_str}", option.name)?;
+                    writeln!(context.stdout(), "{:20}\t{option_value_str}", option.name)?;
                 }
             }
 

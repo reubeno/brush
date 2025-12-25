@@ -91,7 +91,7 @@ impl builtins::Command for TypeCommand {
                 } else {
                     match resolved_type {
                         ResolvedType::Alias(target) => {
-                            writeln!(context.stdout(), "{name} is aliased to '{target}'")?;
+                            writeln!(context.stdout(), "{name} is aliased to `{target}'")?;
                         }
                         ResolvedType::Keyword => {
                             writeln!(context.stdout(), "{name} is a shell keyword")?;

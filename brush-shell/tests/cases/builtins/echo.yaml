@@ -5,3 +5,8 @@ cases:
 
   - name: "echo with -- and args"
     stdin: echo -- -1 --"aaa" ?^1as-
+
+  - name: "echo -e"
+    stdin: |
+      echo -e "1. \x65" | hexdump -C
+      echo -e "2. \x{65}" | hexdump -C

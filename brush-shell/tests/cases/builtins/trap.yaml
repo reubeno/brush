@@ -48,3 +48,14 @@ cases:
     stdin: |
       trap "echo [err]" ERR
       trap -p ERR
+
+  - name: "return in EXIT trap within function"
+    known_failure: true # TODO(traps): return in trap handler behavior differs
+    stdin: |
+      myfunc() {
+        trap 'return 0' EXIT
+        false
+        echo "should not print in func"
+      }
+      myfunc
+      echo "after func"

@@ -1,18 +1,26 @@
-use clap::Parser;
+use brush_core::{ExecutionResult, builtins, error};
 
-use brush_core::{ExecutionResult, builtins};
-
-/// Return a non-zero exit code.
-#[derive(Parser)]
+/// Return exit code 1.
 pub(crate) struct FalseCommand {}
 
-impl builtins::Command for FalseCommand {
-    type Error = brush_core::Error;
+impl builtins::SimpleCommand for FalseCommand {
+    fn get_content(
+        _name: &str,
+        content_type: builtins::ContentType,
+        _options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        match content_type {
+            builtins::ContentType::DetailedHelp => Ok("Returns a failure exit status.".into()),
+            builtins::ContentType::ShortUsage => Ok("false".into()),
+            builtins::ContentType::ShortDescription => Ok("false - fail".into()),
+            builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
+        }
+    }
 
-    async fn execute(
-        &self,
+    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
         _context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        _args: I,
+    ) -> Result<ExecutionResult, brush_core::Error> {
         Ok(ExecutionResult::general_error())
     }
 }

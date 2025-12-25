@@ -1,5 +1,16 @@
 name: "Options: set -e"
 cases:
+  - name: "errexit with set -o errexit"
+    stdin: |
+      set -o errexit
+      false
+      echo "should not print"
+
+  - name: "errexit status check"
+    stdin: |
+      set -e
+      set -o | grep errexit
+
   # Basic behavior
   - name: "Basic non-error case"
     stdin: |
@@ -8,14 +19,18 @@ cases:
       echo "Text after call"
 
   - name: "Basic error case"
-    known_failure: true
     stdin: |
       set -e
       false
       echo "Text after call"
 
+  - name: "Command line -e"
+    args: ["-e"]
+    stdin: |
+      false
+      echo "should not print"
+
   - name: "Multiple commands before error"
-    known_failure: true
     stdin: |
       set -e
       echo "first"
@@ -24,21 +39,62 @@ cases:
       echo "should not print"
 
   - name: "Error in middle of script"
-    known_failure: true
     stdin: |
       set -e
       echo "before"
       false
       echo "after"
 
-  # Conditional contexts - set -e should NOT exit in test conditions
-  - name: "Error in if condition does not exit"
+  - name: "Error in if condition"
     stdin: |
       set -e
       if false; then
         echo "then branch"
       else
         echo "else branch"
+      fi
+      echo "after if"
+
+  - name: "Error in elif condition"
+    stdin: |
+      set -e
+      if false; then
+        echo "then branch"
+      elif false; then
+        echo "elif branch"
+      else
+        echo "else branch"
+      fi
+      echo "after if"
+
+  - name: "Error in if body"
+    stdin: |
+      set -e
+      if true; then
+        false
+        echo "should not print"
+      fi
+      echo "after if"
+
+  - name: "Error in elif body"
+    stdin: |
+      set -e
+      if false; then
+        echo "then branch"
+      elif true; then
+        false
+        echo "should not print"
+      fi
+      echo "after if"
+
+  - name: "Error in else body"
+    stdin: |
+      set -e
+      if false; then
+        echo "then"
+      else
+        false
+        echo "should not print"
       fi
       echo "after if"
 
@@ -52,7 +108,7 @@ cases:
       fi
       echo "after"
 
-  - name: "Error in while condition does not exit"
+  - name: "Error in while condition"
     stdin: |
       set -e
       count=0
@@ -61,39 +117,7 @@ cases:
       done
       echo "after while"
 
-  - name: "Error in until condition does not exit"
-    stdin: |
-      set -e
-      count=0
-      until true; do
-        echo "loop body"
-      done
-      echo "after until"
-
-  - name: "Error in if body DOES exit"
-    known_failure: true
-    stdin: |
-      set -e
-      if true; then
-        false
-        echo "should not print"
-      fi
-      echo "after if"
-
-  - name: "Error in else body DOES exit"
-    known_failure: true
-    stdin: |
-      set -e
-      if false; then
-        echo "then"
-      else
-        false
-        echo "should not print"
-      fi
-      echo "after if"
-
-  - name: "Error in while body DOES exit"
-    known_failure: true
+  - name: "Error in while body"
     stdin: |
       set -e
       count=0
@@ -104,35 +128,57 @@ cases:
       done
       echo "after while"
 
+  - name: "Error in until condition"
+    stdin: |
+      set -e
+      count=0
+      until true; do
+        echo "loop body"
+      done
+      echo "after until"
+
+  - name: "Error in until body"
+    stdin: |
+      set -e
+      until false; do
+        false
+        echo "loop body"
+        break
+      done
+      echo "after until"
+
   # Boolean operators - set -e should NOT exit with && and ||
-  - name: "Error on right side of && does not exit"
-    known_failure: true
+  - name: "Error on right side of &&"
     stdin: |
       set -e
       true && false
       echo "after &&"
 
-  - name: "Error on left side of && does not exit"
+  - name: "Error on left side of &&"
     stdin: |
       set -e
       false && true
       echo "after &&"
 
-  - name: "Error on right side of || does not exit"
-    known_failure: true
+  - name: "Error on both sides of ||"
     stdin: |
       set -e
       false || false
       echo "after ||"
 
-  - name: "Error on left side of || does not exit (success short-circuits)"
+  - name: "Error on left side of ||"
+    stdin: |
+      set -e
+      false || true
+      echo "after ||"
+
+  - name: "Error on right side of ||"
     stdin: |
       set -e
       true || false
       echo "after ||"
 
-  - name: "Error after && chain DOES exit"
-    known_failure: true
+  - name: "Error after && chain"
     stdin: |
       set -e
       true && true
@@ -145,21 +191,19 @@ cases:
       false || true && false || true
       echo "after complex expression"
 
-  # Negated commands - set -e should NOT exit
-  - name: "Negated command with failure does not exit"
+  - name: "Negated command with failure"
     stdin: |
       set -e
       ! false
       echo "after negation"
 
-  - name: "Negated command with success does not exit"
+  - name: "Negated command with success"
     stdin: |
       set -e
       ! true
       echo "after negation"
 
-  - name: "Error after negated command DOES exit"
-    known_failure: true
+  - name: "Error after negated command"
     stdin: |
       set -e
       ! false
@@ -167,26 +211,119 @@ cases:
       echo "should not print"
 
   # Pipelines
-  - name: "Error in first command of pipeline exits (without pipefail)"
+  - name: "Error in first command of pipeline (without pipefail)"
     stdin: |
       set -e
       false | true
       echo "after pipeline"
 
-  - name: "Error in middle of pipeline does not exit (without pipefail)"
+  - name: "Error in first command of pipeline (without pipefail, negated)"
+    stdin: |
+      set -e
+      ! false | true
+      echo "after pipeline"
+
+  - name: "Error in first command of pipeline (with pipefail)"
+    stdin: |
+      set -e -o pipefail
+      false | true
+      echo "after pipeline"
+
+  - name: "Error in first command of pipeline (with pipefail, negated)"
+    stdin: |
+      set -e -o pipefail
+      ! false | true
+      echo "after pipeline"
+
+  - name: "Error in middle of pipeline (without pipefail)"
     stdin: |
       set -e
       true | false | true
       echo "after pipeline"
 
-  - name: "Error in last command of pipeline exits"
-    known_failure: true
+  - name: "Error in middle of pipeline (without pipefail, negated)"
+    stdin: |
+      set -e
+      ! true | false | true
+      echo "after pipeline"
+
+  - name: "Error in middle of pipeline (with pipefail)"
+    stdin: |
+      set -e -o pipefail
+      true | false | true
+      echo "after pipeline"
+
+  - name: "Error in middle of pipeline (with pipefail, negated)"
+    stdin: |
+      set -e -o pipefail
+      ! true | false | true
+      echo "after pipeline"
+
+  - name: "Error in last command of pipeline (without pipefail)"
     stdin: |
       set -e
       true | false
       echo "after pipeline"
 
-  - name: "Pipeline in conditional does not exit"
+  - name: "Error in last command of pipeline (without pipefail, negated)"
+    stdin: |
+      set -e
+      ! true | false
+      echo "after pipeline"
+
+  - name: "Error in last command of pipeline (with pipefail)"
+    stdin: |
+      set -e -o pipefail
+      true | false
+      echo "after pipeline"
+
+  - name: "Error in last command of pipeline (with pipefail, negated)"
+    stdin: |
+      set -e -o pipefail
+      ! true | false
+      echo "after pipeline"
+
+  - name: "Errors in multiple commands of pipeline (without pipefail)"
+    stdin: |
+      set -e
+
+      function ret() {
+        return $1
+      }
+
+      ret 1 | ret 2 | ret 3
+
+  - name: "Errors in multiple commands of pipeline (without pipefail, negated)"
+    stdin: |
+      set -e
+
+      function ret() {
+        return $1
+      }
+
+      ! ret 1 | ret 2 | ret 3
+
+  - name: "Errors in multiple commands of pipeline (with pipefail)"
+    stdin: |
+      set -e -o pipefail
+
+      function ret() {
+        return $1
+      }
+
+      ret 1 | ret 2 | ret 3
+
+  - name: "Errors in multiple commands of pipeline (with pipefail, negated)"
+    stdin: |
+      set -e -o pipefail
+
+      function ret() {
+        return $1
+      }
+
+      ! ret 1 | ret 2 | ret 3
+
+  - name: "Pipeline in conditional"
     stdin: |
       set -e
       if true | false; then
@@ -196,7 +333,7 @@ cases:
       fi
       echo "after"
 
-  - name: "Negated pipeline does not exit"
+  - name: "Negated pipeline"
     stdin: |
       set -e
       ! false | false
@@ -204,7 +341,6 @@ cases:
 
   # Functions
   - name: "Error in function body exits function and script"
-    known_failure: true
     stdin: |
       set -e
       myfunc() {
@@ -215,7 +351,7 @@ cases:
       myfunc
       echo "should not print after function"
 
-  - name: "Function returning error in conditional does not exit"
+  - name: "Function returning error in conditional"
     stdin: |
       set -e
       myfunc() {
@@ -228,8 +364,7 @@ cases:
       fi
       echo "after"
 
-  - name: "Function called with && does not exit"
-    known_failure: true
+  - name: "Function called with &&"
     stdin: |
       set -e
       myfunc() {
@@ -238,8 +373,7 @@ cases:
       true && myfunc
       echo "after"
 
-  - name: "Function called with || does not exit"
-    known_failure: true
+  - name: "Function called with ||"
     stdin: |
       set -e
       myfunc() {
@@ -248,7 +382,7 @@ cases:
       false || myfunc
       echo "after"
 
-  - name: "Function called with negation does not exit"
+  - name: "Function called with negation"
     stdin: |
       set -e
       myfunc() {
@@ -258,7 +392,6 @@ cases:
       echo "after"
 
   - name: "Error in function body with set -e inside function"
-    known_failure: true
     stdin: |
       myfunc() {
         set -e
@@ -270,7 +403,6 @@ cases:
       echo "after function call"
 
   - name: "Function with explicit return still respects set -e"
-    known_failure: true
     stdin: |
       set -e
       myfunc() {
@@ -282,9 +414,9 @@ cases:
 
   # Subshells
   - name: "Error in subshell exits subshell but not parent"
-    known_failure: true
     stdin: |
       set -e
+      echo "before subshell"
       (
         echo "in subshell"
         false
@@ -293,8 +425,8 @@ cases:
       echo "after subshell"
 
   - name: "Subshell with set -e exits on error"
-    known_failure: true
     stdin: |
+      false
       (
         set -e
         echo "before"
@@ -303,7 +435,7 @@ cases:
       )
       echo "after subshell"
 
-  - name: "Subshell failure in conditional does not exit parent"
+  - name: "Subshell failure in conditional"
     stdin: |
       set -e
       if (false); then
@@ -313,29 +445,27 @@ cases:
       fi
       echo "after"
 
-  - name: "Subshell with && does not exit"
-    known_failure: true
+  - name: "Subshell with &&"
     stdin: |
       set -e
       true && (false)
       echo "after"
 
   # Command substitution
-  - name: "Error in command substitution does not exit"
-    known_failure: true
+  - name: "Error in command substitution"
     stdin: |
       set -e
       result=$(false)
       echo "after command substitution"
 
-  - name: "Error in command substitution with assignment does not exit"
+  - name: "Error in command substitution with assignment"
     stdin: |
       set -e
       var=$(false; echo "value")
       echo "var is: $var"
       echo "after"
 
-  - name: "Command substitution in conditional does not exit"
+  - name: "Command substitution in conditional"
     stdin: |
       set -e
       if [ "$(false; echo no)" = "no" ]; then
@@ -352,7 +482,6 @@ cases:
       echo "after false with +e"
 
   - name: "set -e can be re-enabled"
-    known_failure: true
     stdin: |
       set -e
       set +e
@@ -362,7 +491,7 @@ cases:
       false
       echo "should not print"
 
-  - name: "set +e in function does not affect parent scope"
+  - name: "set +e in function"
     stdin: |
       set -e
       myfunc() {
@@ -376,27 +505,25 @@ cases:
 
   # Exit status handling
   - name: "Non-zero exit status triggers exit"
-    known_failure: true
     stdin: |
       set -e
       (exit 1)
       echo "should not print"
 
   - name: "Specific non-zero exit status"
-    known_failure: true
     stdin: |
       set -e
       (exit 42)
       echo "should not print"
 
-  - name: "Zero exit status does not trigger exit"
+  - name: "Zero exit status"
     stdin: |
       set -e
       (exit 0)
       echo "after exit 0"
 
   # Assignment with command substitution
-  - name: "Assignment from failing command does not exit"
+  - name: "Assignment from failing command"
     stdin: |
       set -e
       var=$(false) || true
@@ -414,7 +541,6 @@ cases:
 
   # Complex scenarios
   - name: "Error after successful conditional"
-    known_failure: true
     stdin: |
       set -e
       if true; then
@@ -436,8 +562,17 @@ cases:
       fi
       echo "after outer if"
 
+  - name: "Error in case branch"
+    stdin: |
+      set -e
+      case "x" in
+        $(false))
+          echo "matched"
+          ;;
+      esac
+      echo "after case"
+
   - name: "Error in case statement body"
-    known_failure: true
     stdin: |
       set -e
       case "x" in
@@ -449,7 +584,7 @@ cases:
       esac
       echo "after case"
 
-  - name: "case pattern matching does not exit on non-match"
+  - name: "case pattern matching on non-match"
     stdin: |
       set -e
       case "x" in
@@ -459,20 +594,18 @@ cases:
       echo "after case"
 
   # List constructs
-  - name: "Error in ; list DOES exit"
-    known_failure: true
+  - name: "Error in ; list"
     stdin: |
       set -e
       true ; false ; echo "should not print"
 
   - name: "Semicolon separated commands respect set -e"
-    known_failure: true
     stdin: |
       set -e
       echo "first" ; echo "second" ; false ; echo "should not print"
 
   # Background jobs
-  - name: "Error in background job does not exit parent"
+  - name: "Error in background job"
     stdin: |
       set -e
       false &
@@ -481,7 +614,6 @@ cases:
 
   # Interaction with other options
   - name: "set -e with set -o pipefail"
-    known_failure: true
     stdin: |
       set -e
       set -o pipefail
@@ -505,8 +637,7 @@ cases:
       fi
       echo "after"
 
-  - name: "test builtin false result standalone DOES exit"
-    known_failure: true
+  - name: "test builtin false result standalone"
     stdin: |
       set -e
       test 1 -eq 2
@@ -522,24 +653,21 @@ cases:
       fi
       echo "after"
 
-  - name: "[ builtin false result standalone DOES exit"
-    known_failure: true
+  - name: "[ builtin false result standalone"
     stdin: |
       set -e
       [ 1 -eq 2 ]
       echo "should not print"
 
-  # errexit with trap
-  - name: "trap ERR does not prevent set -e exit"
-    known_failure: true
+  - name: "trap ERR"
+    known_failure: true # TODO(traps): trap ERR support
     stdin: |
       set -e
       trap 'echo "error trapped"' ERR
       false
       echo "should not print"
 
-  - name: "trap EXIT runs even with set -e"
-    known_failure: true
+  - name: "trap EXIT"
     stdin: |
       set -e
       trap 'echo "exit trapped"' EXIT
@@ -547,7 +675,7 @@ cases:
       echo "should not print"
 
   # Combination of contexts
-  - name: "Error in function in conditional does not exit"
+  - name: "Error in function in conditional"
     stdin: |
       set -e
       myfunc() {
@@ -560,7 +688,7 @@ cases:
       fi
       echo "after"
 
-  - name: "Negated function call does not exit"
+  - name: "Negated function call"
     stdin: |
       set -e
       myfunc() {
@@ -570,7 +698,7 @@ cases:
       ! myfunc
       echo "after"
 
-  - name: "Function in pipeline does not exit on internal error"
+  - name: "Function in pipeline on internal error"
     stdin: |
       set -e
       myfunc() {
@@ -579,8 +707,7 @@ cases:
       myfunc | true
       echo "after"
 
-  - name: "Error after function in boolean context DOES exit"
-    known_failure: true
+  - name: "Error after function in boolean context"
     stdin: |
       set -e
       myfunc() {
@@ -589,3 +716,592 @@ cases:
       myfunc || true
       false
       echo "should not print"
+
+  # Arithmetic constructs with errexit
+  - name: "Arithmetic command (( )) standalone with false result"
+    stdin: |
+      set -e
+      (( 0 ))
+      echo "should not print"
+
+  - name: "Arithmetic command (( )) standalone with true result"
+    stdin: |
+      set -e
+      (( 1 ))
+      echo "after arithmetic"
+
+  - name: "Arithmetic command (( )) in if condition"
+    stdin: |
+      set -e
+      if (( 0 )); then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Arithmetic command (( )) with &&"
+    stdin: |
+      set -e
+      (( 0 )) && echo "matched"
+      echo "after"
+
+  - name: "Arithmetic for loop condition false"
+    stdin: |
+      set -e
+      count=0
+      for ((; count > 0 ;)); do
+        echo "body"
+      done
+      echo "after for loop"
+
+  - name: "Arithmetic for loop with errexit in body"
+    stdin: |
+      set -e
+      for ((i=0; i<2; i++)); do
+        echo "iteration $i"
+        false
+        echo "should not print"
+      done
+      echo "should not print after loop"
+
+  # Extended test [[ ]] with errexit
+  - name: "Extended test [[ ]] standalone with false result"
+    stdin: |
+      set -e
+      [[ 1 -eq 2 ]]
+      echo "should not print"
+
+  - name: "Extended test [[ ]] standalone with true result"
+    stdin: |
+      set -e
+      [[ 1 -eq 1 ]]
+      echo "after test"
+
+  - name: "Extended test [[ ]] in if condition"
+    stdin: |
+      set -e
+      if [[ 1 -eq 2 ]]; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Extended test [[ ]] with &&"
+    stdin: |
+      set -e
+      [[ 1 -eq 2 ]] && echo "matched"
+      echo "after"
+
+  - name: "Extended test [[ ]] with ||"
+    stdin: |
+      set -e
+      [[ 1 -eq 2 ]] || echo "not matched"
+      echo "after"
+
+  # Brace groups with errexit
+  - name: "Brace group in pipeline with errexit"
+    stdin: |
+      set -e
+      { false; } | true
+      echo "after pipeline"
+
+  - name: "Brace group in pipeline with pipefail"
+    stdin: |
+      set -e -o pipefail
+      true | { false; }
+      echo "should not print"
+
+  - name: "Brace group with internal error and errexit"
+    stdin: |
+      set -e
+      {
+        echo "in brace"
+        false
+        echo "should not print in brace"
+      }
+      echo "should not print after brace"
+
+  # Nested subshells with errexit
+  - name: "Nested subshells with errexit"
+    stdin: |
+      set -e
+      (
+        (
+          false
+          echo "inner should not print"
+        )
+        echo "outer should print - inner exited but does not affect parent"
+      )
+      echo "after subshells"
+
+  - name: "Deeply nested subshells with errexit"
+    stdin: |
+      set -e
+      (
+        (
+          (
+            false
+            echo "level 3 should not print"
+          )
+          echo "level 2 should print"
+        )
+        echo "level 1 should print"
+      )
+      echo "after"
+
+  # Functions calling functions with errexit
+  - name: "Functions calling functions with errexit"
+    stdin: |
+      set -e
+      inner() { false; echo "inner should not print"; }
+      outer() { inner; echo "outer should not print"; }
+      outer
+      echo "should not print"
+
+  - name: "Nested function call in conditional"
+    stdin: |
+      set -e
+      inner() { false; }
+      outer() { if inner; then echo "then"; else echo "else"; fi; echo "after inner call"; }
+      outer
+      echo "after"
+
+  # Complex combinations
+  - name: "if with && and pipeline"
+    stdin: |
+      set -e
+      if true && false | true; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "if with || and pipeline failure"
+    stdin: |
+      set -e
+      if false || true | false; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Negated pipeline in conditional"
+    stdin: |
+      set -e
+      if ! false | false; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "Command substitution in argument with errexit"
+    stdin: |
+      set -e
+      echo "value: $(false; echo result)"
+      echo "after echo"
+
+  # PIPESTATUS with pipefail
+  - name: "PIPESTATUS with pipefail and multiple failures"
+    stdin: |
+      set -o pipefail
+      (exit 2) | (exit 3) | (exit 0)
+      echo "Exit: $?; PIPESTATUS: ${PIPESTATUS[@]}"
+
+  - name: "PIPESTATUS preserved correctly with pipefail"
+    stdin: |
+      set -o pipefail
+      (exit 0) | (exit 5) | (exit 0)
+      echo "Exit: $?; PIPESTATUS: ${PIPESTATUS[@]}"
+
+  - name: "pipefail in conditional"
+    stdin: |
+      set -o pipefail
+      if false | true; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "Exit: $?"
+
+  # eval with errexit
+  - name: "eval with failing command"
+    stdin: |
+      set -e
+      eval "false"
+      echo "should not print"
+
+  - name: "eval with successful command"
+    stdin: |
+      set -e
+      eval "true"
+      echo "after eval"
+
+  - name: "eval with && chain"
+    stdin: |
+      set -e
+      eval "false && true"
+      echo "after eval"
+
+  - name: "eval with || chain"
+    stdin: |
+      set -e
+      eval "false || true"
+      echo "after eval"
+
+  - name: "eval in conditional"
+    stdin: |
+      set -e
+      if eval "false"; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "eval with multiple commands"
+    stdin: |
+      set -e
+      eval "echo first; false; echo should not print"
+      echo "should not print after eval"
+
+  # source/dot with errexit
+  - name: "source script with failing command"
+    stdin: |
+      set -e
+      echo 'echo "in sourced"; false; echo "should not print"' > /tmp/test_source_$$.sh
+      source /tmp/test_source_$$.sh
+      echo "should not print after source"
+      rm -f /tmp/test_source_$$.sh
+
+  - name: "source script with successful commands"
+    stdin: |
+      set -e
+      echo 'echo "in sourced"; true' > /tmp/test_source_$$.sh
+      source /tmp/test_source_$$.sh
+      echo "after source"
+      rm -f /tmp/test_source_$$.sh
+
+  - name: "dot operator with failing command"
+    stdin: |
+      set -e
+      echo 'false' > /tmp/test_dot_$$.sh
+      . /tmp/test_dot_$$.sh
+      echo "should not print"
+      rm -f /tmp/test_dot_$$.sh
+
+  - name: "source in conditional"
+    stdin: |
+      set -e
+      echo 'false' > /tmp/test_source_$$.sh
+      if source /tmp/test_source_$$.sh; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+      rm -f /tmp/test_source_$$.sh
+
+  # trap DEBUG interaction
+  - name: "trap DEBUG with errexit"
+    stdin: |
+      set -e
+      trap 'echo "DEBUG"' DEBUG
+      echo "first"
+      false
+      echo "should not print"
+
+  - name: "trap DEBUG in conditional with errexit"
+    stdin: |
+      set -e
+      trap 'echo "DEBUG"' DEBUG
+      if false; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  # BASH_COMMAND with errexit
+  - name: "BASH_COMMAND set during errexit"
+    known_failure: true # TODO(well-known-vars): BASH_COMMAND not implemented
+    stdin: |
+      set -e
+      trap 'echo "failed: $BASH_COMMAND"' EXIT
+      false
+      echo "should not print"
+
+  - name: "BASH_COMMAND in function with errexit"
+    known_failure: true # TODO(well-known-vars): BASH_COMMAND not implemented
+    stdin: |
+      set -e
+      trap 'echo "failed: $BASH_COMMAND"' EXIT
+      myfunc() { false; }
+      myfunc
+      echo "should not print"
+
+  # Arithmetic expansion failures
+  - name: "Division by zero in arithmetic expansion"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      echo "before"
+      result=$((1/0))
+      echo "should not print"
+
+  - name: "Division by zero in (( ))"
+    ignore_stderr: true
+    known_failure: true # TODO(arithmetic): Division by zero should trigger errexit
+    stdin: |
+      set -e
+      echo "before"
+      (( 1/0 ))
+      echo "should not print"
+
+  - name: "Division by variable zero"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      x=0
+      result=$((1/x))
+      echo "should not print"
+
+  # Multiple assignments with one failure
+  - name: "Multiple assignments with middle failure"
+    stdin: |
+      set -e
+      a=$(echo "a") b=$(false) c=$(echo "c")
+      echo "a=$a b=$b c=$c"
+      echo "after"
+
+  - name: "Multiple assignments all succeed"
+    stdin: |
+      set -e
+      a=$(echo "a") b=$(echo "b") c=$(echo "c")
+      echo "a=$a b=$b c=$c"
+      echo "after"
+
+  - name: "Multiple assignments first fails"
+    stdin: |
+      set -e
+      a=$(false) b=$(echo "b") c=$(echo "c")
+      echo "a=$a b=$b c=$c"
+      echo "after"
+
+  # time keyword with errexit
+  - name: "time with failing command"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      time false
+      echo "should not print"
+
+  - name: "time with successful command"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      time true
+      echo "after time"
+
+  - name: "time in conditional"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      if time false; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  - name: "time with pipeline"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      time true | false
+      echo "after"
+
+  # Pattern matching failures
+  - name: "Extended test with valid regex"
+    stdin: |
+      set -e
+      var="hello"
+      if [[ $var =~ ^h ]]; then
+        echo "matched"
+      else
+        echo "no match"
+      fi
+      echo "after"
+
+  - name: "Extended test regex no match"
+    stdin: |
+      set -e
+      var="hello"
+      [[ $var =~ ^x ]] || echo "no match"
+      echo "after"
+
+  # Extglob in case patterns
+  - name: "case with extglob pattern"
+    stdin: |
+      set -e
+      shopt -s extglob
+      case "abc" in
+        a*(b)c) echo "matched" ;;
+        *) echo "no match" ;;
+      esac
+      echo "after"
+
+  - name: "case with extglob no match"
+    stdin: |
+      set -e
+      shopt -s extglob
+      case "xyz" in
+        a*(b)c) echo "matched" ;;
+      esac
+      echo "after"
+
+  # Signal handler during errexit (limited - can't easily test INT)
+  - name: "EXIT trap runs before errexit terminates"
+    stdin: |
+      set -e
+      trap 'echo "EXIT trap: $?"' EXIT
+      false
+      echo "should not print"
+
+  - name: "Multiple traps with errexit"
+    stdin: |
+      set -e
+      trap 'echo "EXIT: $?"' EXIT
+      trap 'echo "ERR: $?"' ERR
+      false
+      echo "should not print"
+    known_failure: true # TODO(traps): ERR trap support
+
+  # Coproc with errexit
+  - name: "coproc with failing command"
+    known_failure: true # TODO(coproc): coproc not implemented
+    stdin: |
+      set -e
+      coproc { exit 5; }
+      wait $COPROC_PID
+      echo "after coproc wait, status: $?"
+
+  - name: "coproc with successful command"
+    known_failure: true # TODO(coproc): coproc not implemented
+    stdin: |
+      set -e
+      coproc { echo "from coproc"; }
+      cat <&${COPROC[0]}
+      wait $COPROC_PID
+      echo "after coproc"
+
+  - name: "coproc in conditional"
+    known_failure: true # TODO(coproc): coproc not implemented
+    stdin: |
+      set -e
+      coproc { exit 1; }
+      if wait $COPROC_PID; then
+        echo "then"
+      else
+        echo "else"
+      fi
+      echo "after"
+
+  # Additional edge cases
+  - name: "Subshell in assignment with errexit"
+    known_failure: true # TODO(arithmetic): $(( exit 5 )) is parsed differently from bash
+    stdin: |
+      set -e
+      var=$(( exit 5 ))
+      echo "should not print"
+
+  - name: "Arithmetic in condition of && chain"
+    stdin: |
+      set -e
+      (( 0 )) && echo "matched" || echo "not matched"
+      echo "after"
+
+  - name: "Nested eval with errexit"
+    stdin: |
+      set -e
+      eval 'eval "false"'
+      echo "should not print"
+
+  - name: "Command group with errexit"
+    stdin: |
+      set -e
+      { echo "first"; false; echo "should not print"; }
+      echo "should not print after group"
+
+  - name: "Empty command with errexit"
+    stdin: |
+      set -e
+      :
+      echo "after colon"
+
+  - name: "true command with errexit"
+    stdin: |
+      set -e
+      true
+      echo "after true"
+
+  - name: "break in errexit context"
+    stdin: |
+      set -e
+      for i in 1 2 3; do
+        if [ $i -eq 2 ]; then
+          break
+        fi
+        echo "i=$i"
+      done
+      echo "after loop"
+
+  - name: "continue in errexit context"
+    stdin: |
+      set -e
+      for i in 1 2 3; do
+        if [ $i -eq 2 ]; then
+          continue
+        fi
+        echo "i=$i"
+      done
+      echo "after loop"
+
+  - name: "Complex nested structure"
+    stdin: |
+      set -e
+      outer() {
+        inner() {
+          if false; then
+            echo "inner then"
+          else
+            echo "inner else"
+          fi
+          false
+          echo "should not print in inner"
+        }
+        inner
+        echo "should not print in outer"
+      }
+      outer
+      echo "should not print"
+
+  - name: "with -u"
+    ignore_stderr: true
+    stdin: |
+      set -eu
+      echo "before"
+      x=$unset
+      echo "after"
+
+  - name: "syntax error"
+    ignore_stderr: true
+    stdin: |
+      set -e
+      echo "before"
+      if false; then echo hi; done
+      echo "after"

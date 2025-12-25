@@ -1,6 +1,6 @@
 //! Terminal utilities.
 
-use crate::{error, sys, terminal};
+use crate::{error, openfiles, sys, terminal};
 use std::{io::IsTerminal, os::fd::AsFd};
 
 /// Terminal configuration.
@@ -15,8 +15,9 @@ impl Config {
     ///
     /// # Arguments
     ///
-    /// * `fd` - The file descriptor of the terminal.
-    pub fn from_term(fd: impl AsFd) -> Result<Self, error::Error> {
+    /// * `file` - A reference to the open terminal.
+    pub fn from_term(file: &openfiles::OpenFile) -> Result<Self, error::Error> {
+        let fd = file.try_borrow_as_fd()?;
         let termios = nix::sys::termios::tcgetattr(fd)?;
         Ok(Self { termios })
     }
@@ -25,8 +26,9 @@ impl Config {
     ///
     /// # Arguments
     ///
-    /// * `fd` - The file descriptor of the terminal.
-    pub fn apply_to_term(&self, fd: impl AsFd) -> Result<(), error::Error> {
+    /// * `file` - A reference to the open terminal.
+    pub fn apply_to_term(&self, file: &openfiles::OpenFile) -> Result<(), error::Error> {
+        let fd = file.try_borrow_as_fd()?;
         nix::sys::termios::tcsetattr(fd, nix::sys::termios::SetArg::TCSANOW, &self.termios)?;
         Ok(())
     }

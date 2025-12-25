@@ -35,3 +35,47 @@ cases:
       ((x = 3)) || ((x = 4))
 
       override=value echo some_output
+
+  - name: "sourced script"
+    test_files:
+      - path: script.sh
+        contents: |
+          echo "Entered script"
+          for f in a b c; do echo $f; done
+          echo "Exiting script"
+    stdin: |
+      set -x
+
+      echo "About to source script"
+      source script.sh
+      echo "Back from script"
+
+  - name: "functions"
+    stdin: |
+      set -x
+
+      myfunc() {
+        echo "In myfunc"
+        for i in 1 2; do echo "i is $i"; done
+      }
+
+      echo "Before function call"
+      myfunc
+      echo "After function call"
+
+  - name: "command line"
+    args: ["-x", "script.sh"]
+    test_files:
+      - path: script.sh
+        contents: |
+          echo "In command line script"
+          for n in x y z; do echo $n; done
+
+  - name: "trap"
+    known_failure: true # TODO(traps): review this
+    stdin: |
+      set -x
+
+      trap 'echo "In trap"' DEBUG
+
+      echo "Doing something"

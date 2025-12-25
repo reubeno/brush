@@ -29,7 +29,7 @@ path = "../brush-core"
 
 [dependencies.brush-parser]
 path = "../brush-parser"
-features = ["fuzz-testing"]
+features = ["arbitrary"]
 
 [[bin]]
 name = "fuzz_parse"

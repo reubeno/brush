@@ -113,7 +113,7 @@ jobs:
 
       - name: "Upload documentation artifact (dry-run)"
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: brush-docs
           path: |
@@ -173,7 +173,7 @@ jobs:
 
       - name: "Install musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cross
 
@@ -181,7 +181,7 @@ jobs:
         run: cargo clean
 
       - name: "Install cargo-about"
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-about
 
@@ -214,7 +214,7 @@ jobs:
 
       - name: "Upload artifacts (dry-run)"
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: brush-${{ matrix.target }}
           path: "${{ steps.upload-release.outputs.archive }}.*"

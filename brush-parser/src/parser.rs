@@ -13,8 +13,10 @@ pub struct ParserOptions {
     pub posix_mode: bool,
     /// Whether or not to enable maximal compatibility with the `sh` shell.
     pub sh_mode: bool,
-    /// Whether or not to perform tilde expansion.
-    pub tilde_expansion: bool,
+    /// Whether or not to perform tilde expansion for tildes at the start of words.
+    pub tilde_expansion_at_word_start: bool,
+    /// Whether or not to perform tilde expansion for tildes after colons.
+    pub tilde_expansion_after_colon: bool,
 }
 
 impl Default for ParserOptions {
@@ -23,7 +25,8 @@ impl Default for ParserOptions {
             enable_extended_globbing: true,
             posix_mode: false,
             sh_mode: false,
-            tilde_expansion: true,
+            tilde_expansion_at_word_start: true,
+            tilde_expansion_after_colon: false,
         }
     }
 }

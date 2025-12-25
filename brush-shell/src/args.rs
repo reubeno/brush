@@ -28,8 +28,7 @@ const HEADING_STANDARD_OPTIONS: &str = "Standard shell options";
 
 const HEADING_UI_OPTIONS: &str = "User interface options";
 
-#[cfg(feature = "experimental")]
-const HEADING_EXPERIMENTAL_OPTIONS: &str = "Experimental options";
+const HEADING_EXPERIMENTAL_OPTIONS: &str = "*Experimental* options (unstable)";
 
 /// Identifies the input backend to use for the shell.
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -69,6 +68,10 @@ pub struct CommandLineArgs {
     /// Execute the provided command and then exit.
     #[arg(short = 'c', value_name = "COMMAND", help_heading = HEADING_STANDARD_OPTIONS)]
     pub command: Option<String>,
+
+    /// Enable error-on-exit behavior.
+    #[clap(short = 'e', help_heading = HEADING_STANDARD_OPTIONS)]
+    pub exit_on_nonzero_command_exit: bool,
 
     /// Run in interactive mode.
     #[clap(short = 'i', help_heading = HEADING_STANDARD_OPTIONS)]
@@ -160,9 +163,13 @@ pub struct CommandLineArgs {
     #[clap(long = "disable-color", help_heading = HEADING_UI_OPTIONS)]
     pub disable_color: bool,
 
-    /// Enable syntax highlighting (experimental).
-    #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS)]
-    pub enable_highlighting: Option<bool>,
+    /// Enable syntax highlighting in input.
+    #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS, default_value_t = crate::entry::DEFAULT_ENABLE_HIGHLIGHTING)]
+    pub enable_highlighting: bool,
+
+    /// Enable terminal integration (**experimental**).
+    #[clap(long = "enable-terminal-integration", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    pub terminal_shell_integration: bool,
 
     /// Input backend.
     #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]

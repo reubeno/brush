@@ -10,4 +10,7 @@ pub struct UIOptions {
     /// Whether to disable syntax highlighting.
     #[builder(default)]
     pub disable_highlighting: bool,
+    /// Whether to enable terminal integration.
+    #[builder(default)]
+    pub terminal_shell_integration: bool,
 }

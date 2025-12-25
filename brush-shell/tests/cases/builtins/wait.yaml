@@ -1,0 +1,52 @@
+name: "Builtins: wait"
+cases:
+  - name: "wait for specific failed PID"
+    known_failure: true # TODO(jobs): wait should return job's exit status
+    stdin: |
+      (exit 5) &
+      pid=$!
+      wait $pid
+      echo "status: $?"
+
+  - name: "wait for successful PID"
+    stdin: |
+      (exit 0) &
+      pid=$!
+      wait $pid
+      echo "status: $?"
+
+  - name: "wait in conditional for failed PID"
+    known_failure: true # TODO(jobs): wait should return job's exit status
+    stdin: |
+      (exit 5) &
+      pid=$!
+      if wait $pid; then
+        echo "then"
+      else
+        echo "else"
+      fi
+
+  - name: "wait with no arguments"
+    stdin: |
+      (exit 0) &
+      (exit 0) &
+      wait
+      echo "after wait all"
+
+  - name: "wait -n not implemented"
+    known_failure: true # TODO(builtins): wait -n not implemented
+    stdin: |
+      (exit 0) &
+      (exit 5) &
+      wait -n
+      echo "first done, status: $?"
+      wait -n
+      echo "second done, status: $?"
+
+  - name: "Background job failure with wait"
+    known_failure: true # TODO(jobs): wait should return job's exit status
+    stdin: |
+      { sleep 0.01; exit 3; } &
+      pid=$!
+      wait $pid
+      echo "status: $?"

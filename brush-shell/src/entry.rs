@@ -9,7 +9,6 @@ use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
 #[cfg(feature = "experimental-builtins")]
 use brush_experimental_builtins::ShellBuilderExt as _;
-use brush_interactive::InteractiveShellExt as _;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
@@ -131,9 +130,9 @@ fn install_panic_handlers() {
 }
 
 #[cfg(feature = "experimental")]
-const DEFAULT_ENABLE_HIGHLIGHTING: bool = true;
+pub(crate) const DEFAULT_ENABLE_HIGHLIGHTING: bool = true;
 #[cfg(not(feature = "experimental"))]
-const DEFAULT_ENABLE_HIGHLIGHTING: bool = false;
+pub(crate) const DEFAULT_ENABLE_HIGHLIGHTING: bool = false;
 
 /// Run the brush shell. Returns the exit code.
 ///
@@ -160,41 +159,39 @@ async fn run_async(
 
     // Run with the selected input backend. Each branch instantiates the concrete
     // backend type and calls `run_in_shell`, preserving static dispatch.
-    let default_backend = get_default_input_backend_type();
+    let default_backend = get_default_input_backend_type(&args);
     let selected_backend = args.input_backend.unwrap_or(default_backend);
-
-    let highlighting = args
-        .enable_highlighting
-        .unwrap_or(DEFAULT_ENABLE_HIGHLIGHTING);
 
     #[allow(unused_variables, reason = "not used when no backend features enabled")]
     let ui_options = brush_interactive::UIOptions::builder()
         .disable_bracketed_paste(args.disable_bracketed_paste)
         .disable_color(args.disable_color)
-        .disable_highlighting(!highlighting)
+        .disable_highlighting(!args.enable_highlighting)
+        .terminal_shell_integration(args.terminal_shell_integration)
         .build();
 
     let result = match selected_backend {
         #[cfg(all(feature = "reedline", any(unix, windows)))]
         InputBackendType::Reedline => {
-            let mut ui = brush_interactive::ReedlineInputBackend::new(&ui_options, &shell)?;
-            run_in_shell(&shell, args.clone(), &mut ui).await
+            let mut input_backend =
+                brush_interactive::ReedlineInputBackend::new(&ui_options, &shell)?;
+            run_in_shell(&shell, args.clone(), &mut input_backend, &ui_options).await
         }
         #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
         InputBackendType::Reedline => Err(brush_interactive::ShellError::InputBackendNotSupported),
 
         #[cfg(feature = "basic")]
         InputBackendType::Basic => {
-            let mut ui = brush_interactive::BasicInputBackend;
-            run_in_shell(&shell, args.clone(), &mut ui).await
+            let mut input_backend = brush_interactive::BasicInputBackend;
+            run_in_shell(&shell, args.clone(), &mut input_backend, &ui_options).await
         }
         #[cfg(not(feature = "basic"))]
         InputBackendType::Basic => Err(brush_interactive::ShellError::InputBackendNotSupported),
 
         #[cfg(feature = "minimal")]
         InputBackendType::Minimal => {
-            let mut ui = brush_interactive::MinimalInputBackend;
-            run_in_shell(&shell, args.clone(), &mut ui).await
+            let mut input_backend = brush_interactive::MinimalInputBackend;
+            run_in_shell(&shell, args.clone(), &mut input_backend, &ui_options).await
         }
         #[cfg(not(feature = "minimal"))]
         InputBackendType::Minimal => Err(brush_interactive::ShellError::InputBackendNotSupported),
@@ -219,10 +216,22 @@ async fn run_async(
     Ok(exit_code)
 }
 
+/// Determines whether `run_in_shell` will run the shell interactively. Must be sync'd with it.
+const fn will_run_interactively(args: &CommandLineArgs) -> bool {
+    if args.command.is_some() {
+        false
+    } else if args.read_commands_from_stdin {
+        true
+    } else {
+        args.script_args.is_empty()
+    }
+}
+
 async fn run_in_shell(
     shell_ref: &brush_interactive::ShellRef,
     args: CommandLineArgs,
-    ui: &mut impl brush_interactive::InputBackend,
+    input_backend: &mut impl brush_interactive::InputBackend,
+    ui_options: &brush_interactive::UIOptions,
 ) -> Result<u8, brush_interactive::ShellError> {
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
@@ -241,7 +250,9 @@ async fn run_in_shell(
     // args) passed on the command line via positional arguments, then we copy over the
     // parameters but do *not* execute it.
     } else if args.read_commands_from_stdin {
-        shell_ref.run_interactively(ui).await?;
+        brush_interactive::InteractiveShell::new(shell_ref, input_backend, ui_options)?
+            .run_interactively()
+            .await?;
 
     // If a script path was provided, then run the script.
     } else if !args.script_args.is_empty() {
@@ -258,7 +269,9 @@ async fn run_in_shell(
     // If we got down here, then we don't have any commands to run. We'll be reading
     // them in from stdin one way or the other.
     } else {
-        shell_ref.run_interactively(ui).await?;
+        brush_interactive::InteractiveShell::new(shell_ref, input_backend, ui_options)?
+            .run_interactively()
+            .await?;
     }
 
     // Make sure to return the last result observed in the shell.
@@ -383,6 +396,7 @@ async fn instantiate_shell_from_args(
         .shell_product_display_str(productinfo::get_product_display_str())
         .sh_mode(args.sh_mode)
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
+        .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
         .extensions(new_shell_extensions(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
@@ -423,13 +437,13 @@ fn new_shell_extensions(
     })
 }
 
-fn get_default_input_backend_type() -> InputBackendType {
+fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {
     #[cfg(any(unix, windows))]
     {
         // If stdin isn't a terminal, then `reedline` doesn't do the right thing
         // (reference: https://github.com/nushell/reedline/issues/509). Switch to
         // the minimal input backend instead for that scenario.
-        if std::io::stdin().is_terminal() {
+        if std::io::stdin().is_terminal() && will_run_interactively(args) {
             InputBackendType::Reedline
         } else {
             InputBackendType::Minimal
@@ -437,6 +451,7 @@ fn get_default_input_backend_type() -> InputBackendType {
     }
     #[cfg(not(any(unix, windows)))]
     {
+        let _args = args;
         InputBackendType::Minimal
     }
 }

@@ -1,0 +1,134 @@
+name: "Array expansion"
+cases:
+  - name: "Array access"
+    stdin: |
+      y=(a b c)
+
+      echo ${y[@]}
+      echo ${y[*]}
+
+      echo "\${y[@]}: ${y[@]}"
+      echo "\${y[*]}: ${y[*]}"
+
+      var1="${y[@]}"
+      echo "var1: ${var1}"
+      echo $var1
+
+      var2=${y[@]}
+      echo "var2: ${var2}"
+      echo $var2
+
+      var3="${y[*]}"
+      echo "var3: ${var3}"
+      echo $var3
+
+      var4=${y[*]}
+      echo "var4: ${var4}"
+      echo $var4
+
+      for f in "${y[@]}"; do
+          echo "quoted-@ => Element: $f"
+      done
+
+      for f in ${y[@]}; do
+          echo "@ => Element: $f"
+      done
+
+      for f in "${y[*]}"; do
+          echo "quoted-* => Element: $f"
+      done
+
+      for f in ${y[*]}; do
+          echo "* => Element: $f"
+      done
+
+  - name: "Empty arrays"
+    stdin: |
+      myarray=()
+
+      for f in "${myarray[@]}"; do
+        echo "Quoted at-sign element: |$f|"
+      done
+
+      for f in ${myarray[@]}; do
+        echo "Unquoted at-sign element: |$f|"
+      done
+
+      for f in "${myarray[*]}"; do
+        echo "Quoted at-sign element: |$f|"
+      done
+
+      for f in ${myarray[*]}; do
+        echo "Unquoted at-sign element: |$f|"
+      done
+
+  - name: "Mixing array elements and other words"
+    stdin: |
+      myarray=(a b c)
+
+      for f in "${myarray[@]} d e f"; do
+        echo "ELEMENT: $f"
+      done
+
+      for f in ${myarray[@]} d e f; do
+        echo "ELEMENT: $f"
+      done
+
+  - name: "Passing array elements to func"
+    stdin: |
+      myfunc() {
+        echo "In function"
+        for arg in $@; do
+          echo "ARG: |${arg}|"
+        done
+      }
+
+      arr=(a b c "" "e f")
+      myfunc ${arr[@]}
+      myfunc "${arr[@]}"
+
+  - name: "Array length"
+    stdin: |
+      y=(a b c)
+      echo "len(y)    = ${#y}"
+      echo "len(y[*]) = ${#y[*]}"
+      echo "len(y[@]) = ${#y[@]}"
+
+  - name: "Array length: single item"
+    stdin: |
+      z=("something here")
+      echo "len(z)    = ${#z}"
+      echo "len(z[*]) = ${#z[*]}"
+      echo "len(z[@]) = ${#z[@]}"
+
+  - name: "Array keys: indexed array"
+    stdin: |
+      arr=("element1" "element2" "element3")
+      echo "@: ${!arr[@]}"
+      echo "*: ${!arr[*]}"
+
+      echo "Dumping [@]"
+      for i in "${!arr[@]}"; do
+          echo "@i: $i"
+      done
+
+      echo "Dumping [*]"
+      for i in "${!arr[*]}"; do
+          echo "*i: $i"
+      done
+
+  - name: "Array keys: empty array"
+    stdin: |
+      arr=()
+      echo "@: ${!arr[@]}"
+      echo "*: ${!arr[*]}"
+
+      echo "Dumping [@]"
+      for i in "${!arr[@]}"; do
+          echo "@i: $i"
+      done
+
+      echo "Dumping [*]"
+      for i in "${!arr[*]}"; do
+          echo "*i: $i"
+      done

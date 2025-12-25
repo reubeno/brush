@@ -121,6 +121,12 @@ cases:
       echo hi >file.txt
       cat <>file.txt
 
+  - name: "Close stdout"
+    ignore_stderr: true
+    stdin: |
+      echo "This should not appear" 1>&-
+      echo "This should appear"
+
   - name: "Close output file descriptor"
     ignore_stderr: true
     stdin: |

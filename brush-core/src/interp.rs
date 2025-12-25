@@ -15,7 +15,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{ShellFd, error, expansion, extendedtests, jobs, openfiles, sys, timing};
+use crate::{ShellFd, error, expansion, extendedtests, ioutils, jobs, openfiles, sys, timing};
 
 /// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
@@ -32,6 +32,9 @@ pub struct ExecutionParameters {
     open_files: openfiles::OpenFiles,
     /// Policy for how to manage spawned external processes.
     pub process_group_policy: ProcessGroupPolicy,
+    /// Whether `errexit` (exit on error) behavior should be
+    /// suppressed in this execution context. Defaults to `false`.
+    pub suppress_errexit: bool,
 }
 
 impl ExecutionParameters {
@@ -59,7 +62,9 @@ impl ExecutionParameters {
     ///
     /// * `shell` - The shell context.
     pub fn stdout(&self, shell: &Shell) -> impl std::io::Write + 'static {
-        self.try_stdout(shell).unwrap()
+        self.try_stdout(shell).unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard output not available").into()
+        })
     }
 
     /// Tries to retrieve the standard output file. Returns `None` if not set.
@@ -190,6 +195,7 @@ impl Execute for ast::Program {
                 }
             }
 
+            // Update status
             shell.set_last_exit_status(result.exit_code.into());
 
             // Check if we should stop executing subsequent commands
@@ -198,7 +204,6 @@ impl Execute for ast::Program {
             }
         }
 
-        shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
 }
@@ -229,6 +234,9 @@ impl Execute for ast::CompoundList {
                 result = ExecutionResult::success();
             } else {
                 result = ao_list.execute(shell, params).await?;
+
+                // Update status
+                shell.set_last_exit_status(result.exit_code.into());
             }
 
             if !result.is_normal_flow() {
@@ -236,7 +244,6 @@ impl Execute for ast::CompoundList {
             }
         }
 
-        shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
 }
@@ -274,9 +281,17 @@ impl Execute for ast::AndOrList {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let mut result = self.first.execute(shell, params).await?;
+        let has_operators = !self.additional.is_empty();
 
-        for next_ao in &self.additional {
+        // For the first command, suppress errexit if there are more commands after it
+        let mut first_params = params.clone();
+        if has_operators {
+            first_params.suppress_errexit = true;
+        }
+
+        let mut result = self.first.execute(shell, &first_params).await?;
+
+        for (index, next_ao) in self.additional.iter().enumerate() {
             // Check for non-normal control flow.
             if !result.is_normal_flow() {
                 break;
@@ -299,7 +314,16 @@ impl Execute for ast::AndOrList {
                 continue;
             }
 
-            result = pipeline.execute(shell, params).await?;
+            // For the last command in the chain, use original params (errexit not suppressed)
+            // For earlier commands, suppress errexit
+            let mut params = params.clone();
+
+            let is_last = index == self.additional.len() - 1;
+            if !is_last {
+                params.suppress_errexit = true;
+            }
+
+            result = pipeline.execute(shell, &params).await?;
         }
 
         Ok(result)
@@ -320,13 +344,20 @@ impl Execute for ast::Pipeline {
             .then(timing::start_timing)
             .transpose()?;
 
+        let mut params = params.clone();
+
+        // If this pipeline is negated, suppress errexit for commands within it
+        if self.bang {
+            params.suppress_errexit = true;
+        }
+
         // Spawn all the processes required for the pipeline, connecting outputs/inputs with pipes
         // as needed.
-        let spawn_results = spawn_pipeline_processes(self, shell, params).await?;
+        let spawn_results = spawn_pipeline_processes(self, shell, &params).await?;
 
         // Wait for the processes. This also has a side effect of updating pipeline status.
         let mut result =
-            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell, params)
+            wait_for_pipeline_processes_and_update_status(self, spawn_results, shell, &params)
                 .await?;
 
         // Invert the exit code if requested.
@@ -334,8 +365,13 @@ impl Execute for ast::Pipeline {
             result.exit_code = ExecutionExitCode::from(if result.is_success() { 1 } else { 0 });
         }
 
-        // Update statuses.
+        // Update exit status.
         shell.set_last_exit_status(result.exit_code.into());
+
+        // Apply errexit if not suppressed (and not negated)
+        if !params.suppress_errexit && !self.bang {
+            shell.apply_errexit_if_enabled(&mut result);
+        }
 
         // If requested, report timing.
         if let Some(timed) = &self.timed {
@@ -460,6 +496,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 ) -> Result<ExecutionResult, error::Error> {
     let mut result = ExecutionResult::success();
     let mut stopped_children = vec![];
+    let mut last_failure_exit_code: Option<ExecutionExitCode> = None;
 
     // Clear our the pipeline status so we can start filling it out.
     shell.last_pipeline_statuses.clear();
@@ -476,6 +513,11 @@ async fn wait_for_pipeline_processes_and_update_status(
                 result = current_result;
                 shell.set_last_exit_status(result.exit_code.into());
                 shell.last_pipeline_statuses.push(result.exit_code.into());
+
+                // Track the last failure for pipefail option
+                if !result.is_success() {
+                    last_failure_exit_code = Some(result.exit_code);
+                }
             }
             ExecutionWaitResult::Stopped(child) => {
                 result = ExecutionResult::stopped();
@@ -484,6 +526,13 @@ async fn wait_for_pipeline_processes_and_update_status(
 
                 stopped_children.push(jobs::JobTask::External(child));
             }
+        }
+    }
+
+    // Apply pipefail semantics if enabled
+    if shell.options.return_last_failure_from_pipeline {
+        if let Some(failure_exit_code) = last_failure_exit_code {
+            result.exit_code = failure_exit_code;
         }
     }
 
@@ -763,7 +812,10 @@ impl Execute for ast::IfClauseCommand {
         shell: &mut Shell,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let condition = self.condition.execute(shell, params).await?;
+        // Execute condition with errexit suppressed
+        let mut condition_params = params.clone();
+        condition_params.suppress_errexit = true;
+        let condition = self.condition.execute(shell, &condition_params).await?;
 
         // Check if the condition itself resulted in non-normal control flow.
         if !condition.is_normal_flow() {
@@ -778,7 +830,8 @@ impl Execute for ast::IfClauseCommand {
             for else_clause in elses {
                 match &else_clause.condition {
                     Some(else_condition) => {
-                        let else_condition_result = else_condition.execute(shell, params).await?;
+                        let else_condition_result =
+                            else_condition.execute(shell, &condition_params).await?;
 
                         // Check if the elif condition caused non-normal control flow.
                         if !else_condition_result.is_normal_flow() {
@@ -796,6 +849,8 @@ impl Execute for ast::IfClauseCommand {
             }
         }
 
+        // If we got down here, then no branch was taken; we make sure to
+        // reset the last exit status to success and then return success.
         let result = ExecutionResult::success();
         shell.set_last_exit_status(result.exit_code.into());
 
@@ -819,8 +874,16 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
 
         let mut result = ExecutionResult::success();
 
+        // Execute loop condition with errexit suppressed
+        let mut condition_params = params.clone();
+        condition_params.suppress_errexit = true;
+
         loop {
-            let condition_result = test_condition.execute(shell, params).await?;
+            let condition_result = test_condition.execute(shell, &condition_params).await?;
+
+            // Update status for condition
+            shell.set_last_exit_status(condition_result.exit_code.into());
+
             if !condition_result.is_normal_flow() {
                 result = condition_result;
 
@@ -848,6 +911,7 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             }
         }
 
+        shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
 }
@@ -1217,19 +1281,23 @@ async fn expand_assignment_value(
 ) -> Result<ast::AssignmentValue, error::Error> {
     let expanded = match value {
         ast::AssignmentValue::Scalar(s) => {
-            let expanded_word = expansion::basic_expand_word(shell, params, s).await?;
+            let expanded_word = expansion::basic_expand_assignment_word(shell, params, s).await?;
             ast::AssignmentValue::Scalar(ast::Word::from(expanded_word))
         }
         ast::AssignmentValue::Array(arr) => {
             let mut expanded_values = vec![];
             for (key, value) in arr {
                 if let Some(k) = key {
-                    let expanded_key = expansion::basic_expand_word(shell, params, k).await?.into();
-                    let expanded_value = expansion::basic_expand_word(shell, params, value)
+                    let expanded_key = expansion::basic_expand_assignment_word(shell, params, k)
                         .await?
                         .into();
+                    let expanded_value =
+                        expansion::basic_expand_assignment_word(shell, params, value)
+                            .await?
+                            .into();
                     expanded_values.push((Some(expanded_key), expanded_value));
                 } else {
+                    // Array elements are treated as regular words, not assignments
                     let split_expanded_value =
                         expansion::full_expand_and_split_word(shell, params, value).await?;
                     for expanded_value in split_expanded_value {
@@ -1272,24 +1340,28 @@ async fn apply_assignment(
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
-            let value = expansion::basic_expand_word(shell, params, unexpanded_value).await?;
+            let value =
+                expansion::basic_expand_assignment_word(shell, params, unexpanded_value).await?;
             ShellValueLiteral::Scalar(value)
         }
         ast::AssignmentValue::Array(unexpanded_values) => {
             let mut elements = vec![];
             for (unexpanded_key, unexpanded_value) in unexpanded_values {
                 let key = match unexpanded_key {
-                    Some(unexpanded_key) => {
-                        Some(expansion::basic_expand_word(shell, params, unexpanded_key).await?)
-                    }
+                    Some(unexpanded_key) => Some(
+                        expansion::basic_expand_assignment_word(shell, params, unexpanded_key)
+                            .await?,
+                    ),
                     None => None,
                 };
 
                 if key.is_some() {
                     let value =
-                        expansion::basic_expand_word(shell, params, unexpanded_value).await?;
+                        expansion::basic_expand_assignment_word(shell, params, unexpanded_value)
+                            .await?;
                     elements.push((key, value));
                 } else {
+                    // Array elements are treated as regular words, not assignments
                     let values =
                         expansion::full_expand_and_split_word(shell, params, unexpanded_value)
                             .await?;
@@ -1713,7 +1785,8 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     {
         use std::os::fd::AsFd as _;
 
-        let len = i32::try_from(bytes.len())?;
+        let len = i32::try_from(bytes.len())
+            .map_err(|_err| error::Error::from(error::ErrorKind::TooMuchData))?;
         nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
     }
 

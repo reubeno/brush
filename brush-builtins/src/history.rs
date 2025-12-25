@@ -166,7 +166,7 @@ impl HistoryCommand {
         }
 
         let max_entries: Option<usize> = if let Some(arg) = self.args.first() {
-            Some(arg.parse()?)
+            Some(brush_core::int_utils::parse(arg.as_str(), 10)?)
         } else {
             None
         };

@@ -366,6 +366,9 @@ pub struct CreateOptions {
     /// Whether to treat expansion of unset variables as an error.
     #[builder(default)]
     pub treat_unset_variables_as_error: bool,
+    /// Whether to enable error-on-exit behavior.
+    #[builder(default)]
+    pub exit_on_nonzero_command_exit: bool,
     /// Whether to print verbose output.
     #[builder(default)]
     pub verbose: bool,
@@ -587,6 +590,21 @@ impl Shell {
     pub const fn set_last_exit_status(&mut self, status: u8) {
         self.last_exit_status = status;
         self.last_exit_status_change_count += 1;
+    }
+
+    /// Applies errexit semantics to a result if enabled and appropriate.
+    /// This should be called at "statement boundaries" where errexit should be checked.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - The execution result to potentially modify.
+    pub const fn apply_errexit_if_enabled(&self, result: &mut ExecutionResult) {
+        if self.options.exit_on_nonzero_command_exit
+            && !result.is_success()
+            && result.is_normal_flow()
+        {
+            result.next_control_flow = ExecutionControlFlow::ExitShell;
+        }
     }
 
     /// Returns the key bindings helper for the shell.
@@ -1248,7 +1266,8 @@ impl Shell {
             enable_extended_globbing: self.options.extended_globbing,
             posix_mode: self.options.posix_mode,
             sh_mode: self.options.sh_mode,
-            tilde_expansion: true,
+            tilde_expansion_at_word_start: true,
+            tilde_expansion_after_colon: false,
         }
     }
 
@@ -1743,7 +1762,7 @@ impl Shell {
         let mut prefix = ps4;
 
         // Add additional depth-based prefixes using the first character of PS4.
-        let additional_depth = self.call_stack.script_call_depth() + self.depth;
+        let additional_depth = self.call_stack.script_source_depth() + self.depth;
         if let Some(c) = prefix.chars().next() {
             for _ in 0..additional_depth {
                 prefix.insert(0, c);

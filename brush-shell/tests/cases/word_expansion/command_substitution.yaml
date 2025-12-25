@@ -1,5 +1,57 @@
 name: "Command substitution"
 cases:
+  - name: "Command substitution"
+    stdin: |
+      var="value"
+
+      echo "1:"
+      echo $(echo hi)
+      echo "2:"
+      echo "$(echo hi)"
+      echo "3:"
+      echo "$(echo "hi")"
+      echo "4:"
+      echo "$(var="updated"; echo ${var})"
+      echo "var=${var}"
+
+  - name: "Command substitution with embedded parens"
+    stdin: |
+      x=$(echo foo | (wc -l; echo hi))
+      echo "\$x: $x"
+
+  - name: "Command substitution with subshell"
+    stdin: |
+      x=$( (echo hi) )
+      echo "\$x: $x"
+
+  - name: "Command substitution exit code"
+    stdin: |
+      x=$(false) && echo "1. Made it past false"
+      y=$(true) && echo "2. Made it past true"
+
+  - name: "Command substitution with exec"
+    stdin: |
+      x=$(exec echo hi)
+      echo "x: $x"
+
+  - name: "Backtick command substitution"
+    stdin: |
+      echo `echo hi`
+
+  - name: "Backtick command substitution with escaping"
+    stdin: |
+      echo `echo \`echo hi\``
+
+  - name: "Backtick command substitution with backslashes"
+    stdin: |
+      echo `echo \\`
+
+  - name: "Backtick command substitution in double quotes"
+    stdin: |
+      echo "`echo First line`"
+      echo " `echo Second line` "
+      echo "Third`echo line`here"
+
   - name: "Ignore single quote in comment in command substitution"
     stdin: |
       var=$(

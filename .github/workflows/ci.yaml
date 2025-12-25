@@ -122,7 +122,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cross
 
@@ -140,14 +140,14 @@ jobs:
         run: cross build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
       - name: "Upload integration test binaries"
         if: ${{ matrix.target == '' }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: integration-tests-${{ matrix.arch }}-${{ matrix.os }}
           path: |
@@ -199,12 +199,12 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-llvm-cov
 
@@ -270,7 +270,7 @@ jobs:
           exit ${result}
 
       - name: "Upload test results"
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: test-reports${{ matrix.artifact_suffix }}
@@ -291,7 +291,7 @@ jobs:
           negative_difference_threshold: 5
 
       - name: "Upload code coverage report"
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: codecov-reports${{ matrix.artifact_suffix }}
@@ -334,7 +334,7 @@ jobs:
         run: cargo check --all-features --all-targets
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-deny
 
@@ -361,7 +361,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-udeps
 
@@ -385,7 +385,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-public-api
-        uses: taiki-e/install-action@c5b1b6f479c32f356cc6f4ba672a47f63853b13b # v2.62.38
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-public-api
 
@@ -417,7 +417,7 @@ jobs:
           done
 
       - name: Upload test report
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: test-reports-public-api
           path: reports/*.md
@@ -470,7 +470,7 @@ jobs:
           ./pr/scripts/compare-benchmark-results.py -b main/benchmarks.txt -t pr/benchmarks.txt >benchmark-results.md
 
       - name: Upload performance results
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: perf-reports
           path: |
@@ -499,7 +499,7 @@ jobs:
           path: "bash-completion"
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: "binaries-x86_64-linux"
           path: "binaries"
@@ -539,7 +539,7 @@ jobs:
             >$GITHUB_WORKSPACE/test-results-bash-completion.md
 
       - name: Upload test report
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: test-reports-bash-completion
           path: |
@@ -621,13 +621,13 @@ jobs:
           path: sources
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: binaries-x86_64-linux
           path: binaries
 
       - name: Download integration test binaries
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: integration-tests-x86_64-linux
           path: binaries

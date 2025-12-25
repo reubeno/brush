@@ -87,13 +87,12 @@ cases:
       compgen -W yes no && echo "1. Result"
 
   - name: "compgen -f with tilde"
-    skip: true # Started failing with 5.3 on macOS
+    home_dir: testhome # relative to default working dir
     stdin: |
       mkdir testhome && cd testhome
 
-      HOME=$(pwd)
-      echo "Updated HOME base: $(basename $HOME)"
-      echo "Updated ~ base:" $(basename ~)
+      echo "HOME base: $(basename $HOME)"
+      echo "~ base:" $(basename ~)
 
       touch item1
 

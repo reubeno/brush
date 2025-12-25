@@ -1,4 +1,4 @@
-use crate::interactive_shell::InteractivePrompt;
+use crate::input_backend::InteractivePrompt;
 
 impl reedline::Prompt for InteractivePrompt {
     fn render_prompt_left(&self) -> std::borrow::Cow<'_, str> {

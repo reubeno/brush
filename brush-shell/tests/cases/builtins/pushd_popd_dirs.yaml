@@ -45,12 +45,14 @@ cases:
       dirs
 
   - name: "dirs with tilde replacement"
-    skip: true # Started failing with 5.3 on macOS
+    env:
+      HOME: /usr
     stdin: |
-      HOME=/usr
-      echo "Updated HOME: $HOME"
+      echo "HOME: $HOME"
+
       cd ~
-      echo "PWD: $PWD"
+      echo "New PWD: $PWD"
+
       dirs
       dirs -l
 
