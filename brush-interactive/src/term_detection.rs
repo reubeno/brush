@@ -170,7 +170,7 @@ pub enum KnownTerminal {
     Kitty,
     /// Konsole
     Konsole,
-    /// `VSCode` Terminal    
+    /// `VSCode` Terminal
     VSCode,
     /// Other VTE-based terminal
     Vte,
