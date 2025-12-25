@@ -111,7 +111,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
                     // Report the error, but continue to execute.
                     let shell = self.shell.lock().await;
                     let mut stderr = shell.stderr();
-                    let _ = shell.display_error(&mut stderr, &err).await;
+                    let _ = shell.display_error(&mut stderr, &err);
 
                     drop(shell);
                 }

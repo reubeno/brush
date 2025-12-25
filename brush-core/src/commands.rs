@@ -22,6 +22,9 @@ use crate::{
     sys, trace_categories, traps, variables,
 };
 
+#[cfg(feature = "experimental-filters")]
+use crate::{filter, results};
+
 /// Encapsulates the result of waiting for a command to complete.
 pub enum CommandWaitResult {
     /// The command completed.
@@ -373,12 +376,27 @@ impl<'a> SimpleCommand<'a> {
         }
     }
 
+    /// Executes the simple command, applying any registered filters.
+    #[allow(
+        unused_mut,
+        reason = "mut needed when experimental-filters feature is enabled"
+    )]
+    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+        crate::with_filter!(
+            self.shell,
+            pre_exec_simple_command,
+            post_exec_simple_command,
+            self,
+            |cmd| cmd.execute_impl().await
+        )
+    }
+
     /// Executes the simple command.
     ///
     /// The command may be a builtin, a shell function, or an externally
     /// executed command. This function's implementation is responsible for
     /// dispatching it appropriately according to the context provided.
-    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+    async fn execute_impl(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 
@@ -424,7 +442,7 @@ impl<'a> SimpleCommand<'a> {
             };
 
             if let Some(path) = path {
-                self.execute_via_external(&path)
+                self.execute_via_external(&path).await
             } else {
                 if let Some(post_execute) = self.post_execute {
                     let _ = post_execute(&mut self.shell);
@@ -434,7 +452,7 @@ impl<'a> SimpleCommand<'a> {
             }
         } else {
             let command_name = PathBuf::from(self.command_name.clone());
-            self.execute_via_external(command_name.as_path())
+            self.execute_via_external(command_name.as_path()).await
         }
     }
 
@@ -524,7 +542,7 @@ impl<'a> SimpleCommand<'a> {
         result
     }
 
-    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
+    async fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
 
         let cmd_context = ExecutionContext {
@@ -539,7 +557,8 @@ impl<'a> SimpleCommand<'a> {
             resolved_path.as_ref(),
             self.process_group_id,
             &self.args[1..],
-        );
+        )
+        .await;
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
@@ -549,7 +568,17 @@ impl<'a> SimpleCommand<'a> {
     }
 }
 
-pub(crate) fn execute_external_command(
+#[cfg(feature = "experimental-filters")]
+impl filter::FilterableOp for commands::SimpleCommand<'_> {
+    type Input = Self;
+    type Output = Result<results::ExecutionSpawnResult, error::Error>;
+}
+
+#[expect(
+    clippy::unused_async,
+    reason = "Async needed when experimental-filters feature is enabled"
+)]
+pub(crate) async fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
     process_group_id: Option<i32>,
@@ -609,7 +638,15 @@ pub(crate) fn execute_external_command(
             .join(" ")
     );
 
-    match sys::process::spawn(cmd) {
+    let spawn_result = crate::with_filter!(
+        context.shell,
+        pre_exec_external_command,
+        post_exec_external_command,
+        cmd,
+        |cmd| sys::process::spawn(cmd)
+    );
+
+    match spawn_result {
         Ok(child) => {
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
@@ -649,6 +686,20 @@ pub(crate) fn execute_external_command(
             }
         }
     }
+}
+
+/// Marker type for external command execution filtering.
+///
+/// This type defines the input/output signature for filtering external
+/// command spawns. It does not contain execution logic; that is provided
+/// at the call site.
+#[cfg(feature = "experimental-filters")]
+pub struct ExecuteExternalCommand;
+
+#[cfg(feature = "experimental-filters")]
+impl filter::FilterableOp for ExecuteExternalCommand {
+    type Input = std::process::Command;
+    type Output = Result<sys::process::Child, std::io::Error>;
 }
 
 async fn execute_builtin_command(

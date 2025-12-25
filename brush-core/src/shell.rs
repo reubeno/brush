@@ -19,18 +19,24 @@ use crate::{
     pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
-    builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
-    prompt, sys::users, traps,
+    builtins, commands, completion, env, error, expansion, extensions, functions, jobs, keywords,
+    openfiles, prompt, sys::users, traps,
 };
 
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 
-/// Type for storing an error formatter.
-pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
-
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
+
+/// Input for the source script operation.
+#[derive(Clone, Debug)]
+pub struct ScriptArgs<'a> {
+    /// The path to the script to source.
+    pub path: &'a Path,
+    /// The arguments to pass to the script as positional parameters.
+    pub args: Vec<&'a str>,
+}
 
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -114,9 +120,9 @@ pub struct Shell {
     /// History of commands executed in the shell.
     history: Option<history::History>,
 
-    /// Error formatter for customizing error display.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
-    error_formatter: ErrorFormatterHelper,
+    /// Shell extensions for filtering and customization.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_shell_extensions"))]
+    extensions: Box<dyn extensions::ShellExtensions>,
 }
 
 impl Clone for Shell {
@@ -146,7 +152,7 @@ impl Clone for Shell {
             last_stopwatch_offset: self.last_stopwatch_offset,
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
-            error_formatter: self.error_formatter.clone(),
+            extensions: self.extensions.clone_for_subshell(),
             depth: self.depth + 1,
         }
     }
@@ -373,8 +379,8 @@ pub struct CreateOptions {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
-    /// Error formatter helper for the shell to use.
-    pub error_formatter: Option<ErrorFormatterHelper>,
+    /// Shell extensions for filtering and customization.
+    pub extensions: Option<Box<dyn extensions::ShellExtensions>>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
 }
@@ -407,7 +413,7 @@ impl Default for Shell {
             last_stopwatch_offset: 0,
             key_bindings: None,
             history: None,
-            error_formatter: default_error_formatter(),
+            extensions: default_shell_extensions(),
         }
     }
 }
@@ -436,9 +442,7 @@ impl Shell {
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
             builtins: options.builtins,
             key_bindings: options.key_bindings,
-            error_formatter: options
-                .error_formatter
-                .unwrap_or_else(default_error_formatter),
+            extensions: options.extensions.unwrap_or_else(default_shell_extensions),
             ..Self::default()
         };
 
@@ -493,6 +497,11 @@ impl Shell {
     /// Returns the call stack for the shell.
     pub const fn call_stack(&self) -> &callstack::CallStack {
         &self.call_stack
+    }
+
+    /// Returns the extensions registered with this shell instance.
+    pub fn extensions(&self) -> &dyn extensions::ShellExtensions {
+        self.extensions.as_ref()
     }
 
     /// Increments the interactive line offset in the shell by the indicated number
@@ -840,13 +849,38 @@ impl Shell {
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(
-            path.as_ref(),
-            args,
-            params,
-            callstack::ScriptCallType::Source,
+        self.source_script_impl(path.as_ref(), args, params).await
+    }
+
+    async fn source_script_impl<S: AsRef<str>, I: Iterator<Item = S>>(
+        &mut self,
+        path: &Path,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        // Collect iterator items first so we can borrow from them.
+        let args: Vec<_> = args.collect();
+
+        let script_args = ScriptArgs {
+            path,
+            args: args.iter().map(AsRef::as_ref).collect(),
+        };
+
+        crate::with_filter!(
+            self,
+            pre_source_script,
+            post_source_script,
+            script_args,
+            |args| {
+                self.parse_and_execute_script_file(
+                    args.path,
+                    args.args.iter(),
+                    params,
+                    callstack::ScriptCallType::Source,
+                )
+                .await
+            }
         )
-        .await
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.
@@ -1137,7 +1171,7 @@ impl Shell {
         match result {
             Ok(result) => Ok(result),
             Err(err) => {
-                let _ = self.display_error(&mut params.stderr(self), &err).await;
+                let _ = self.display_error(&mut params.stderr(self), &err);
 
                 let result = err.into_result(self);
                 self.set_last_exit_status(result.exit_code.into());
@@ -1863,12 +1897,12 @@ impl Shell {
     ///
     /// * `file_table` - The open file table to use for any file descriptor references.
     /// * `err` - The error to display.
-    pub async fn display_error(
+    pub fn display_error(
         &self,
         file: &mut impl std::io::Write,
         err: &error::Error,
     ) -> Result<(), error::Error> {
-        let str = self.error_formatter.lock().await.format_error(err, self);
+        let str = self.extensions.format_error(err, self);
         write!(file, "{str}")?;
 
         Ok(())
@@ -1898,6 +1932,6 @@ fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
 }
 
-fn default_error_formatter() -> ErrorFormatterHelper {
-    Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))
+fn default_shell_extensions() -> Box<dyn extensions::ShellExtensions> {
+    Box::new(extensions::DefaultExtensions)
 }
