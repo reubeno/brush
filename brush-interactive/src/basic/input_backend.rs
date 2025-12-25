@@ -4,7 +4,7 @@ use brush_core::Shell;
 
 use crate::{
     InputBackend, ShellError, completion,
-    interactive_shell::{InteractivePrompt, ReadResult},
+    input_backend::{InteractivePrompt, ReadResult},
 };
 
 use super::{non_term_line_reader, term_line_reader};

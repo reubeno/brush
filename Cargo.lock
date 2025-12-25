@@ -409,6 +409,7 @@ dependencies = [
  "crossterm",
  "indexmap",
  "nu-ansi-term",
+ "pretty_assertions",
  "reedline",
  "thiserror",
  "tokio",

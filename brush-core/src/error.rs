@@ -449,7 +449,6 @@ pub fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 ///
 /// * `msg` - The message to include in the error
 /// * `project_issue_id` - The GitHub issue ID where the implementation is tracked.
-#[allow(unused)]
 pub fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
     Err(ErrorKind::UnimplementedAndTracked(msg, project_issue_id).into())
 }

@@ -100,6 +100,9 @@ extend-ignore-re = [
 "hel" = "hel"
 "ba" = "ba"
 
+# This is a specific technical name.
+"iterm" = "iterm"
+
 [profile.release]
 strip = true
 lto = "fat"

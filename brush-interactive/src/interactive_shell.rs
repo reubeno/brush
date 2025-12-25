@@ -1,21 +1,11 @@
 use std::io::IsTerminal as _;
 use std::io::Write as _;
 
-use brush_core::Shell;
-
+use crate::InputBackend;
+use crate::InteractivePrompt;
+use crate::ReadResult;
 use crate::ShellError;
-
-/// Result of a read operation.
-pub enum ReadResult {
-    /// The user entered a line of input.
-    Input(String),
-    /// A bound key sequence yielded a registered command.
-    BoundCommand(String),
-    /// End of input was reached.
-    Eof,
-    /// The user interrupted the input operation.
-    Interrupted,
-}
+use crate::UIOptions;
 
 /// Result of an interactive execution.
 pub enum InteractiveExecutionResult {
@@ -27,41 +17,72 @@ pub enum InteractiveExecutionResult {
     Eof,
 }
 
-/// Represents an interactive prompt.
-pub struct InteractivePrompt {
-    /// Prompt to display.
-    pub prompt: String,
-    /// Alternate-side prompt (typically right) to display.
-    pub alt_side_prompt: String,
-    /// Prompt to display on a continuation line of input.
-    pub continuation_prompt: String,
+impl From<&InteractiveExecutionResult> for i32 {
+    /// Converts an `InteractiveExecutionResult` into a signed, 32-bit exit code.
+    fn from(value: &InteractiveExecutionResult) -> Self {
+        match value {
+            InteractiveExecutionResult::Executed(result) => u8::from(result.exit_code).into(),
+            InteractiveExecutionResult::Failed(_) => 1,
+            InteractiveExecutionResult::Eof => 0,
+        }
+    }
 }
 
-/// Extension trait providing interactive shell capabilities for a [`Shell`].
-#[allow(async_fn_in_trait)]
-pub trait InteractiveShellExt {
-    /// Runs the interactive shell loop, reading commands from standard input and writing
-    /// results to standard output and standard error. Continues until the shell
-    /// normally exits or until a fatal error occurs.
-    // NOTE: we use desugared async here because [async_fn_in_trait] "warning: use of `async fn` in
-    // public traits is discouraged as auto trait bounds cannot be specified"
-    async fn run_interactively(&self, input: &mut impl InputBackend) -> Result<(), ShellError>;
-
-    /// Runs the interactive shell loop once, reading a single command from standard input.
-    async fn run_interactively_once(
-        &self,
-        input: &mut impl InputBackend,
-    ) -> Result<InteractiveExecutionResult, ShellError>;
+/// Represents an interactive shell that displays prompts, interactively reads user input, etc.
+pub struct InteractiveShell<'a, IB: InputBackend> {
+    /// The underlying shell instance.
+    shell: crate::ShellRef,
+    /// The input backend to use.
+    input: &'a mut IB,
+    /// Terminal integration utility, if any.
+    terminal_integration: Option<crate::term_integration::TerminalIntegration>,
 }
 
-impl InteractiveShellExt for crate::ShellRef {
-    async fn run_interactively(&self, input: &mut impl InputBackend) -> Result<(), ShellError> {
+impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
+    /// Creates a new `InteractiveShell` wrapping the given shell instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell instance to wrap.
+    /// * `input` - The input backend to use.
+    /// * `options` - The user interface options to use.
+    pub fn new(
+        shell: &crate::ShellRef,
+        input: &'a mut IB,
+        options: &UIOptions,
+    ) -> Result<Self, ShellError> {
+        let stdin_is_terminal = std::io::stdin().is_terminal();
+
         // Acquire terminal control if stdin is a terminal.
-        if std::io::stdin().is_terminal() {
+        if stdin_is_terminal {
             brush_core::terminal::TerminalControl::acquire()?;
         }
 
-        let mut shell = self.lock().await;
+        // Set up terminal integration if enabled *and* if stdin is a terminal.
+        let terminal_integration = if options.terminal_shell_integration && stdin_is_terminal {
+            let terminfo = crate::term_detection::get_terminal_info(&HostEnvironment);
+            let terminal_integration = crate::term_integration::TerminalIntegration::new(terminfo);
+
+            print!("{}", terminal_integration.initialize().as_ref());
+            std::io::stdout().flush()?;
+
+            Some(terminal_integration)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            shell: shell.clone(),
+            input,
+            terminal_integration,
+        })
+    }
+
+    /// Runs the interactive shell loop, reading commands from standard input and writing
+    /// results to standard output and standard error. Continues until the shell
+    /// normally exits or until a fatal error occurs.
+    pub async fn run_interactively(&mut self) -> Result<(), ShellError> {
+        let mut shell = self.shell.lock().await;
 
         let mut announce_exit = shell.options.interactive;
 
@@ -70,7 +91,7 @@ impl InteractiveShellExt for crate::ShellRef {
         drop(shell);
 
         loop {
-            let result = self.run_interactively_once(input).await?;
+            let result = self.run_interactively_once().await?;
             match result {
                 InteractiveExecutionResult::Executed(brush_core::ExecutionResult {
                     next_control_flow: brush_core::results::ExecutionControlFlow::ExitShell,
@@ -88,7 +109,7 @@ impl InteractiveShellExt for crate::ShellRef {
                 InteractiveExecutionResult::Executed(_) => {}
                 InteractiveExecutionResult::Failed(err) => {
                     // Report the error, but continue to execute.
-                    let shell = self.lock().await;
+                    let shell = self.shell.lock().await;
                     let mut stderr = shell.stderr();
                     let _ = shell.display_error(&mut stderr, &err).await;
 
@@ -99,13 +120,13 @@ impl InteractiveShellExt for crate::ShellRef {
                 }
             }
 
-            if self.lock().await.options.exit_after_one_command {
+            if self.shell.lock().await.options.exit_after_one_command {
                 announce_exit = false;
                 break;
             }
         }
 
-        let mut shell = self.lock().await;
+        let mut shell = self.shell.lock().await;
 
         shell.end_interactive_session()?;
 
@@ -127,182 +148,210 @@ impl InteractiveShellExt for crate::ShellRef {
         Ok(())
     }
 
-    async fn run_interactively_once(
-        &self,
-        input: &mut impl InputBackend,
-    ) -> Result<InteractiveExecutionResult, ShellError> {
-        let mut shell = self.lock().await;
+    /// Runs the interactive shell loop once, reading a single command from standard input.
+    async fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult, ShellError> {
+        let mut shell = self.shell.lock().await;
 
         // Check for any completed jobs.
         shell.check_for_completed_jobs()?;
 
         // Run any pre-prompt commands.
-        run_pre_prompt_commands(&mut shell).await?;
+        Self::run_pre_prompt_commands(&mut shell).await?;
 
         // Now that we've done that, compose the prompt.
-        let prompt = InteractivePrompt {
+        let mut prompt = InteractivePrompt {
             prompt: shell.compose_prompt().await?,
             alt_side_prompt: shell.compose_alt_side_prompt().await?,
             continuation_prompt: shell.compose_continuation_prompt().await?,
         };
 
+        if let Some(terminal_integration) = &self.terminal_integration {
+            let pre_prompt = terminal_integration.pre_prompt();
+            let working_dir = terminal_integration.report_cwd(shell.working_dir());
+            let post_prompt = terminal_integration.post_prompt();
+
+            prompt.prompt = [
+                pre_prompt.as_ref(),
+                working_dir.as_ref(),
+                prompt.prompt.as_str(),
+                post_prompt.as_ref(),
+            ]
+            .concat();
+        }
+
         drop(shell);
 
-        match input.read_line(self, prompt)? {
+        match self.input.read_line(&self.shell, prompt)? {
             ReadResult::Input(read_result) => {
-                let mut shell = self.lock().await;
-                execute_line(&mut shell, input, read_result, true /* user input */).await
+                self.execute_line(read_result, true /* user input */).await
             }
             ReadResult::BoundCommand(read_result) => {
-                let mut shell = self.lock().await;
-                execute_line(&mut shell, input, read_result, false /* user input */).await
+                self.execute_line(read_result, false /* user input */).await
             }
             ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
             ReadResult::Interrupted => {
                 let result: brush_core::ExecutionResult =
                     brush_core::ExecutionExitCode::Interrupted.into();
-                self.lock()
+                self.shell
+                    .lock()
                     .await
                     .set_last_exit_status(result.exit_code.into());
                 Ok(InteractiveExecutionResult::Executed(result))
             }
         }
     }
-}
 
-/// Executes the given line of input.
-async fn execute_line(
-    shell: &mut Shell,
-    input: &mut impl InputBackend,
-    read_result: String,
-    user_input: bool,
-) -> Result<InteractiveExecutionResult, ShellError> {
-    // See if the the user interface has a non-empty read buffer.
-    let buffer_info = input.get_read_buffer();
-
-    // If the user interface did, in fact, have a non-empty read buffer,
-    // then reflect it to the shell in case any shell code wants to
-    // process and/or transform the buffer.
-    let nonempty_buffer = if let Some((buffer, cursor)) = buffer_info {
-        if !buffer.is_empty() {
-            shell.set_edit_buffer(buffer, cursor)?;
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    // If the line came from direct user input (as opposed to a key binding, say), then we
-    // need to do a few more things before executing it.
-    if user_input {
-        // Display the pre-command prompt (if there is one).
-        let precmd_prompt = shell.compose_precmd_prompt().await?;
-        if !precmd_prompt.is_empty() {
-            print!("{precmd_prompt}");
-        }
-
-        // Update history (if applicable).
-        shell.add_to_history(read_result.trim_end_matches('\n'))?;
-    }
-
-    // Count the command's lines.
-    let line_count = read_result.lines().count().max(1);
-
-    // Execute the command.
-    let params = shell.default_exec_params();
-    let source_info = brush_core::SourceInfo::from("main");
-    let result = match shell.run_string(read_result, &source_info, &params).await {
-        Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
-        Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
-    };
-
-    // Update cumulative line counter based on actual lines in the command.
-    shell.increment_interactive_line_offset(line_count);
-
-    // See if the shell has input buffer state that we need to reflect back to
-    // the user interface. It may be state that originally came from the user
-    // interface, or it may be state that was programmatically generated by
-    // the command we just executed.
-    let mut buffer_and_cursor = shell.pop_edit_buffer()?;
-
-    if buffer_and_cursor.is_none() && nonempty_buffer {
-        buffer_and_cursor = Some((String::new(), 0));
-    }
-
-    if let Some((updated_buffer, updated_cursor)) = buffer_and_cursor {
-        input.set_read_buffer(updated_buffer, updated_cursor);
-    }
-
-    result
-}
-
-/// Represents an input backend for reading lines of input.
-pub trait InputBackend: Send {
-    /// Reads a line of input, using the given prompt.
+    /// Executes the given line of input.
     ///
     /// # Arguments
     ///
-    /// * `shell` - The shell instance for which input is being read.
-    /// * `prompt` - The prompt to display to the user.
-    fn read_line(
+    /// * `read_result` - The line of input to execute.
+    /// * `user_input` - Whether the line came from direct user input (as opposed to a key binding, say).
+    async fn execute_line(
         &mut self,
-        shell: &crate::ShellRef,
-        prompt: InteractivePrompt,
-    ) -> Result<ReadResult, ShellError>;
+        read_result: String,
+        user_input: bool,
+    ) -> Result<InteractiveExecutionResult, ShellError> {
+        let mut shell = self.shell.lock().await;
 
-    /// Returns the current contents of the read buffer and the current cursor
-    /// position within the buffer; None is returned if the read buffer is
-    /// empty or cannot be read by this implementation.
-    fn get_read_buffer(&self) -> Option<(String, usize)> {
-        None
-    }
+        // See if the the user interface has a non-empty read buffer.
+        let buffer_info = self.input.get_read_buffer();
 
-    /// Updates the read buffer with the given string and cursor. Considered a
-    /// no-op if the implementation does not support updating read buffers.
-    fn set_read_buffer(&mut self, _buffer: String, _cursor: usize) {
-        // No-op by default.
-    }
-}
-
-async fn run_pre_prompt_commands(shell: &mut brush_core::Shell) -> Result<(), ShellError> {
-    // If there's a variable called PROMPT_COMMAND, then run it first.
-    if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
-        match prompt_cmd_var.value() {
-            brush_core::ShellValue::String(cmd_str) => {
-                run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
+        // If the user interface did, in fact, have a non-empty read buffer,
+        // then reflect it to the shell in case any shell code wants to
+        // process and/or transform the buffer.
+        let nonempty_buffer = if let Some((buffer, cursor)) = buffer_info {
+            if !buffer.is_empty() {
+                shell.set_edit_buffer(buffer, cursor)?;
+                true
+            } else {
+                false
             }
-            brush_core::ShellValue::IndexedArray(values) => {
-                let owned_values: Vec<_> = values.values().cloned().collect();
-                for cmd_str in owned_values {
-                    run_pre_prompt_command(shell, cmd_str).await?;
-                }
+        } else {
+            false
+        };
+
+        // If the line came from direct user input (as opposed to a key binding, say), then we
+        // need to do a few more things before executing it.
+        if user_input {
+            // Display the pre-command prompt (if there is one).
+            let precmd_prompt = shell.compose_precmd_prompt().await?;
+            if !precmd_prompt.is_empty() {
+                print!("{precmd_prompt}");
             }
-            // Other types are ignored.
-            _ => (),
+
+            // Update history (if applicable).
+            shell.add_to_history(read_result.trim_end_matches('\n'))?;
+
+            // Invoke terminal integration.
+            if let Some(terminal_integration) = &self.terminal_integration {
+                print!(
+                    "{}",
+                    terminal_integration
+                        .pre_exec_command(read_result.as_str())
+                        .as_ref()
+                );
+                std::io::stdout().flush()?;
+            }
         }
+
+        // Count the command's lines.
+        let line_count = read_result.lines().count().max(1);
+
+        // Execute the command.
+        let params = shell.default_exec_params();
+        let source_info = brush_core::SourceInfo::from("main");
+        let result = match shell.run_string(read_result, &source_info, &params).await {
+            Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
+            Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
+        };
+
+        // Update cumulative line counter based on actual lines in the command.
+        shell.increment_interactive_line_offset(line_count);
+
+        // See if the shell has input buffer state that we need to reflect back to
+        // the user interface. It may be state that originally came from the user
+        // interface, or it may be state that was programmatically generated by
+        // the command we just executed.
+        let mut buffer_and_cursor = shell.pop_edit_buffer()?;
+
+        drop(shell);
+
+        if buffer_and_cursor.is_none() && nonempty_buffer {
+            buffer_and_cursor = Some((String::new(), 0));
+        }
+
+        if let Some((updated_buffer, updated_cursor)) = buffer_and_cursor {
+            self.input.set_read_buffer(updated_buffer, updated_cursor);
+        }
+
+        // Invoke terminal integration.
+        if let Some(terminal_integration) = &self.terminal_integration {
+            let exit_code = result.as_ref().map_or(1, i32::from);
+            print!(
+                "{}",
+                terminal_integration.post_exec_command(exit_code).as_ref()
+            );
+            std::io::stdout().flush()?;
+        }
+
+        result
     }
 
-    Ok(())
+    async fn run_pre_prompt_commands(shell: &mut brush_core::Shell) -> Result<(), ShellError> {
+        // If there's a variable called PROMPT_COMMAND, then run it first.
+        if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
+            match prompt_cmd_var.value() {
+                brush_core::ShellValue::String(cmd_str) => {
+                    Self::run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
+                }
+                brush_core::ShellValue::IndexedArray(values) => {
+                    let owned_values: Vec<_> = values.values().cloned().collect();
+                    for cmd_str in owned_values {
+                        Self::run_pre_prompt_command(shell, cmd_str).await?;
+                    }
+                }
+                // Other types are ignored.
+                _ => (),
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn run_pre_prompt_command(
+        shell: &mut brush_core::Shell,
+        prompt_cmd: String,
+    ) -> Result<(), ShellError> {
+        // Save (and later restore) the last exit status.
+        let prev_last_result = shell.last_exit_status();
+        let prev_last_pipeline_statuses = shell.last_pipeline_statuses.clone();
+
+        // Run the command.
+        let params = shell.default_exec_params();
+        let source_info = brush_core::SourceInfo::from("PROMPT_COMMAND");
+        shell.run_string(prompt_cmd, &source_info, &params).await?;
+
+        // Restore the last exit status.
+        shell.last_pipeline_statuses = prev_last_pipeline_statuses;
+        shell.set_last_exit_status(prev_last_result);
+
+        Ok(())
+    }
 }
 
-async fn run_pre_prompt_command(
-    shell: &mut brush_core::Shell,
-    prompt_cmd: impl Into<String>,
-) -> Result<(), ShellError> {
-    // Save (and later restore) the last exit status.
-    let prev_last_result = shell.last_exit_status();
-    let prev_last_pipeline_statuses = shell.last_pipeline_statuses.clone();
+/// Represents the host environment; used for terminal detection in conjunction
+/// with the `TerminalEnvironment` trait.
+struct HostEnvironment;
 
-    // Run the command.
-    let params = shell.default_exec_params();
-    let source_info = brush_core::SourceInfo::from("PROMPT_COMMAND");
-    shell.run_string(prompt_cmd, &source_info, &params).await?;
-
-    // Restore the last exit status.
-    shell.last_pipeline_statuses = prev_last_pipeline_statuses;
-    shell.set_last_exit_status(prev_last_result);
-
-    Ok(())
+impl crate::term_detection::TerminalEnvironment for HostEnvironment {
+    /// Gets the value of the given environment variable from the host process's
+    /// OS environment variables. Returns `None` if the variable is not set.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the environment variable to get.
+    fn get_env_var(&self, name: &str) -> Option<String> {
+        std::env::var(name).ok()
+    }
 }
