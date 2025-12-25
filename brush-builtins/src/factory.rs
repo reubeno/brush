@@ -91,7 +91,7 @@ pub fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registrati
     #[cfg(feature = "builtin.command")]
     m.insert("command".into(), builtin::<command::CommandCommand>());
     #[cfg(feature = "builtin.false")]
-    m.insert("false".into(), builtin::<false_::FalseCommand>());
+    m.insert("false".into(), simple_builtin::<false_::FalseCommand>());
     #[cfg(feature = "builtin.fg")]
     m.insert("fg".into(), builtin::<fg::FgCommand>());
     #[cfg(feature = "builtin.getopts")]
@@ -111,7 +111,7 @@ pub fn default_builtins(set: BuiltinSet) -> HashMap<String, builtins::Registrati
     #[cfg(feature = "builtin.read")]
     m.insert("read".into(), builtin::<read::ReadCommand>());
     #[cfg(feature = "builtin.true")]
-    m.insert("true".into(), builtin::<true_::TrueCommand>());
+    m.insert("true".into(), simple_builtin::<true_::TrueCommand>());
     #[cfg(feature = "builtin.type")]
     m.insert("type".into(), builtin::<type_::TypeCommand>());
     #[cfg(all(feature = "builtin.ulimit", unix))]
