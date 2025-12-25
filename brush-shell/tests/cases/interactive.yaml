@@ -44,3 +44,5 @@ cases:
       command=third
 
       unset PROMPT_COMMAND
+
+      declare -p calls
