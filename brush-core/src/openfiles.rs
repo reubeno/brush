@@ -10,6 +10,9 @@ use crate::sys;
 
 /// A trait representing a stream that can be read from and written to.
 /// This is used for custom stream implementations in `OpenFile`.
+///
+/// Types that implement this trait are expected to be cloneable via the
+/// `clone_box` function.
 pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
     /// Clones the stream into a boxed trait object.
     fn clone_box(&self) -> Box<dyn Stream>;
