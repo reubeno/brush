@@ -30,7 +30,7 @@ impl CommandFdInjectionExt for std::process::Command {
         let fd_mappings = open_files
             .map(|(child_fd, open_file)| FdMapping {
                 child_fd,
-                parent_fd: open_file.into_owned_fd().unwrap(),
+                parent_fd: open_file.try_clone_to_owned().unwrap(),
             })
             .collect();
         self.fd_mappings(fd_mappings)
