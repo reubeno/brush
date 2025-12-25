@@ -67,8 +67,7 @@ impl AutoModeGuard {
     ///
     /// * `file` - The file representing the terminal to control.
     pub fn new(file: openfiles::OpenFile) -> Result<Self, error::Error> {
-        let terminal_fd = file.try_borrow_as_fd()?;
-        let initial = sys::terminal::Config::from_term(terminal_fd)?;
+        let initial = sys::terminal::Config::from_term(&file)?;
         Ok(Self { initial, file })
     }
 
@@ -78,11 +77,9 @@ impl AutoModeGuard {
     ///
     /// * `settings` - The terminal settings to apply.
     pub fn apply_settings(&self, settings: &Settings) -> Result<(), error::Error> {
-        let terminal_fd = self.file.try_borrow_as_fd()?;
-
-        let mut config = sys::terminal::Config::from_term(terminal_fd)?;
+        let mut config = sys::terminal::Config::from_term(&self.file)?;
         config.update(settings);
-        config.apply_to_term(terminal_fd)?;
+        config.apply_to_term(&self.file)?;
 
         Ok(())
     }
@@ -90,8 +87,6 @@ impl AutoModeGuard {
 
 impl Drop for AutoModeGuard {
     fn drop(&mut self) {
-        if let Ok(terminal_fd) = self.file.try_borrow_as_fd() {
-            let _ = self.initial.apply_to_term(terminal_fd);
-        }
+        let _ = self.initial.apply_to_term(&self.file);
     }
 }

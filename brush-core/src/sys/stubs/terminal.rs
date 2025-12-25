@@ -13,8 +13,8 @@ impl Config {
     ///
     /// # Arguments
     ///
-    /// * `_fd` - The file descriptor of the terminal.
-    pub fn from_term<Fd>(_fd: Fd) -> Result<Self, error::Error> {
+    /// * `_file` - A reference to the open terminal.
+    pub fn from_term(_file: &openfiles::OpenFile) -> Result<Self, error::Error> {
         Ok(Self)
     }
 
@@ -22,8 +22,8 @@ impl Config {
     ///
     /// # Arguments
     ///
-    /// * `_fd` - The file descriptor of the terminal.
-    pub fn apply_to_term<Fd>(&self, _fd: Fd) -> Result<(), error::Error> {
+    /// * `_file` - A reference to the open terminal.
+    pub fn apply_to_term(&self, _file: &openfiles::OpenFile) -> Result<(), error::Error> {
         Ok(())
     }
 
