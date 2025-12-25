@@ -299,6 +299,10 @@ pub enum ErrorKind {
     /// Too much data was provided to an operation.
     #[error("too much data")]
     TooMuchData,
+
+    /// Cannot convert open file to native file descriptor.
+    #[error("cannot convert open file to native file descriptor")]
+    CannotConvertToNativeFd,
 }
 
 impl BuiltinError for Error {}

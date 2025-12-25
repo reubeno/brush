@@ -15,7 +15,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{ShellFd, error, expansion, extendedtests, jobs, openfiles, sys, timing};
+use crate::{ShellFd, error, expansion, extendedtests, ioutils, jobs, openfiles, sys, timing};
 
 /// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a> {
@@ -62,7 +62,9 @@ impl ExecutionParameters {
     ///
     /// * `shell` - The shell context.
     pub fn stdout(&self, shell: &Shell) -> impl std::io::Write + 'static {
-        self.try_stdout(shell).unwrap()
+        self.try_stdout(shell).unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard output not available").into()
+        })
     }
 
     /// Tries to retrieve the standard output file. Returns `None` if not set.

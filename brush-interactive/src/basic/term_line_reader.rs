@@ -18,9 +18,7 @@ pub(crate) struct TermLineReader {
 impl TermLineReader {
     pub fn new() -> Result<Self, ShellError> {
         let reader = Self {
-            term_mode: brush_core::terminal::AutoModeGuard::new(
-                brush_core::openfiles::OpenFile::Stdin(std::io::stdin()),
-            )?,
+            term_mode: brush_core::terminal::AutoModeGuard::new(std::io::stdin().into())?,
         };
 
         let settings = brush_core::terminal::Settings::builder()
