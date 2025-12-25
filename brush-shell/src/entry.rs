@@ -168,6 +168,7 @@ async fn run_async(
         .disable_color(args.disable_color)
         .disable_highlighting(!args.enable_highlighting)
         .terminal_shell_integration(args.terminal_shell_integration)
+        .zsh_style_hooks(args.zsh_style_hooks)
         .build();
 
     let result = match selected_backend {
@@ -250,7 +251,8 @@ async fn run_in_shell(
     // args) passed on the command line via positional arguments, then we copy over the
     // parameters but do *not* execute it.
     } else if args.read_commands_from_stdin {
-        brush_interactive::InteractiveShell::new(shell_ref, input_backend, ui_options)?
+        let interactive_options = ui_options.into();
+        brush_interactive::InteractiveShell::new(shell_ref, input_backend, &interactive_options)?
             .run_interactively()
             .await?;
 
@@ -269,7 +271,8 @@ async fn run_in_shell(
     // If we got down here, then we don't have any commands to run. We'll be reading
     // them in from stdin one way or the other.
     } else {
-        brush_interactive::InteractiveShell::new(shell_ref, input_backend, ui_options)?
+        let interactive_options = ui_options.into();
+        brush_interactive::InteractiveShell::new(shell_ref, input_backend, &interactive_options)?
             .run_interactively()
             .await?;
     }

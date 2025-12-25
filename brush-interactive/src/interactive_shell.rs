@@ -5,7 +5,6 @@ use crate::InputBackend;
 use crate::InteractivePrompt;
 use crate::ReadResult;
 use crate::ShellError;
-use crate::UIOptions;
 
 /// Result of an interactive execution.
 pub enum InteractiveExecutionResult {
@@ -28,6 +27,27 @@ impl From<&InteractiveExecutionResult> for i32 {
     }
 }
 
+/// Options for interactive shells.
+#[derive(Clone)]
+pub struct InteractiveOptions {
+    /// Whether terminal shell integration is enabled.
+    pub terminal_shell_integration: bool,
+    /// Whether or not to run `PROMPT_COMMAND` before each prompt.
+    pub run_prompt_command: bool,
+    /// Whether or not to run zsh-style exec/cmd functions (e.g., `preexec_functions`, `precmd_functions`).
+    pub run_cmd_exec_funcs: bool,
+}
+
+impl Default for InteractiveOptions {
+    fn default() -> Self {
+        Self {
+            terminal_shell_integration: false,
+            run_prompt_command: true,
+            run_cmd_exec_funcs: false,
+        }
+    }
+}
+
 /// Represents an interactive shell that displays prompts, interactively reads user input, etc.
 pub struct InteractiveShell<'a, IB: InputBackend> {
     /// The underlying shell instance.
@@ -36,6 +56,8 @@ pub struct InteractiveShell<'a, IB: InputBackend> {
     input: &'a mut IB,
     /// Terminal integration utility, if any.
     terminal_integration: Option<crate::term_integration::TerminalIntegration>,
+    /// Options.
+    options: InteractiveOptions,
 }
 
 impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
@@ -49,7 +71,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     pub fn new(
         shell: &crate::ShellRef,
         input: &'a mut IB,
-        options: &UIOptions,
+        options: &InteractiveOptions,
     ) -> Result<Self, ShellError> {
         let stdin_is_terminal = std::io::stdin().is_terminal();
 
@@ -75,6 +97,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
             shell: shell.clone(),
             input,
             terminal_integration,
+            options: options.clone(),
         })
     }
 
@@ -152,12 +175,45 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     async fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult, ShellError> {
         let mut shell = self.shell.lock().await;
 
-        // Check for any completed jobs.
-        shell.check_for_completed_jobs()?;
+        // Run any pre-prompt actions.
+        Self::run_pre_prompt_actions(&mut shell, &self.options).await?;
 
-        // Run any pre-prompt commands.
-        Self::run_pre_prompt_commands(&mut shell).await?;
+        // Compose the prompt.
+        let prompt = Self::compose_prompt(&mut shell, self.terminal_integration.as_ref()).await?;
 
+        drop(shell);
+
+        // Read input.
+        match self.input.read_line(&self.shell, prompt)? {
+            ReadResult::Input(read_result) => {
+                // We got a line of input -- execute it.
+                self.execute_line(read_result, true /* user input */).await
+            }
+            ReadResult::BoundCommand(read_result) => {
+                // We got a line that was bound to keybindings; execute it.
+                self.execute_line(read_result, false /* user input */).await
+            }
+            ReadResult::Eof => {
+                // We're done!
+                Ok(InteractiveExecutionResult::Eof)
+            }
+            ReadResult::Interrupted => {
+                // We were interrupted; report that appropriately.
+                let result: brush_core::ExecutionResult =
+                    brush_core::ExecutionExitCode::Interrupted.into();
+                self.shell
+                    .lock()
+                    .await
+                    .set_last_exit_status(result.exit_code.into());
+                Ok(InteractiveExecutionResult::Executed(result))
+            }
+        }
+    }
+
+    async fn compose_prompt(
+        shell: &mut brush_core::Shell,
+        terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
+    ) -> Result<InteractivePrompt, ShellError> {
         // Now that we've done that, compose the prompt.
         let mut prompt = InteractivePrompt {
             prompt: shell.compose_prompt().await?,
@@ -165,7 +221,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
             continuation_prompt: shell.compose_continuation_prompt().await?,
         };
 
-        if let Some(terminal_integration) = &self.terminal_integration {
+        if let Some(terminal_integration) = terminal_integration {
             let pre_prompt = terminal_integration.pre_prompt();
             let working_dir = terminal_integration.report_cwd(shell.working_dir());
             let post_prompt = terminal_integration.post_prompt();
@@ -179,26 +235,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
             .concat();
         }
 
-        drop(shell);
-
-        match self.input.read_line(&self.shell, prompt)? {
-            ReadResult::Input(read_result) => {
-                self.execute_line(read_result, true /* user input */).await
-            }
-            ReadResult::BoundCommand(read_result) => {
-                self.execute_line(read_result, false /* user input */).await
-            }
-            ReadResult::Eof => Ok(InteractiveExecutionResult::Eof),
-            ReadResult::Interrupted => {
-                let result: brush_core::ExecutionResult =
-                    brush_core::ExecutionExitCode::Interrupted.into();
-                self.shell
-                    .lock()
-                    .await
-                    .set_last_exit_status(result.exit_code.into());
-                Ok(InteractiveExecutionResult::Executed(result))
-            }
-        }
+        Ok(prompt)
     }
 
     /// Executes the given line of input.
@@ -234,25 +271,13 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         // If the line came from direct user input (as opposed to a key binding, say), then we
         // need to do a few more things before executing it.
         if user_input {
-            // Display the pre-command prompt (if there is one).
-            let precmd_prompt = shell.compose_precmd_prompt().await?;
-            if !precmd_prompt.is_empty() {
-                print!("{precmd_prompt}");
-            }
-
-            // Update history (if applicable).
-            shell.add_to_history(read_result.trim_end_matches('\n'))?;
-
-            // Invoke terminal integration.
-            if let Some(terminal_integration) = &self.terminal_integration {
-                print!(
-                    "{}",
-                    terminal_integration
-                        .pre_exec_command(read_result.as_str())
-                        .as_ref()
-                );
-                std::io::stdout().flush()?;
-            }
+            Self::run_pre_exec_actions(
+                &mut shell,
+                read_result.as_str(),
+                &self.options,
+                self.terminal_integration.as_ref(),
+            )
+            .await?;
         }
 
         // Count the command's lines.
@@ -298,22 +323,95 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         result
     }
 
-    async fn run_pre_prompt_commands(shell: &mut brush_core::Shell) -> Result<(), ShellError> {
+    async fn run_pre_prompt_actions(
+        shell: &mut brush_core::Shell,
+        options: &InteractiveOptions,
+    ) -> Result<(), ShellError> {
+        // Check for any completed jobs.
+        shell.check_for_completed_jobs()?;
+
         // If there's a variable called PROMPT_COMMAND, then run it first.
-        if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
-            match prompt_cmd_var.value() {
-                brush_core::ShellValue::String(cmd_str) => {
-                    Self::run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
-                }
-                brush_core::ShellValue::IndexedArray(values) => {
-                    let owned_values: Vec<_> = values.values().cloned().collect();
-                    for cmd_str in owned_values {
-                        Self::run_pre_prompt_command(shell, cmd_str).await?;
+        if options.run_prompt_command {
+            if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
+                match prompt_cmd_var.value() {
+                    brush_core::ShellValue::String(cmd_str) => {
+                        Self::run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
                     }
+                    brush_core::ShellValue::IndexedArray(values) => {
+                        let owned_values: Vec<_> = values.values().cloned().collect();
+                        for cmd_str in owned_values {
+                            Self::run_pre_prompt_command(shell, cmd_str).await?;
+                        }
+                    }
+                    // Other types are ignored.
+                    _ => (),
                 }
-                // Other types are ignored.
-                _ => (),
             }
+        }
+
+        // Next, run any zsh-style `precmd_functions`.
+        // TODO(precmd_functions): verify if we need to save/restore exit results.
+        if options.run_cmd_exec_funcs {
+            // If there's a variable called precmd_functions, then call them.
+            if let Some(brush_core::ShellValue::IndexedArray(precmd_funcs)) = shell
+                .env_var("precmd_functions")
+                .map(|var| var.value())
+                .cloned()
+            {
+                for func_name in precmd_funcs.values() {
+                    let _ = shell
+                        .invoke_function(
+                            func_name,
+                            std::iter::empty::<&str>(),
+                            &shell.default_exec_params(),
+                        )
+                        .await;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn run_pre_exec_actions(
+        shell: &mut brush_core::Shell,
+        command_line: &str,
+        options: &InteractiveOptions,
+        terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
+    ) -> Result<(), ShellError> {
+        // Display the pre-command prompt (if there is one).
+        let precmd_prompt = shell.compose_precmd_prompt().await?;
+        if !precmd_prompt.is_empty() {
+            print!("{precmd_prompt}");
+        }
+
+        // Update history (if applicable).
+        shell.add_to_history(command_line.trim_end_matches('\n'))?;
+
+        // Next, run any zsh-style `preexec_functions`.
+        // TODO(preexec_functions): verify if we need to save/restore exit results.
+        if options.run_cmd_exec_funcs {
+            // If there's a variable called preexec_functions, then call them.
+            if let Some(brush_core::ShellValue::IndexedArray(preexec_funcs)) = shell
+                .env_var("preexec_functions")
+                .map(|var| var.value())
+                .cloned()
+            {
+                for func_name in preexec_funcs.values() {
+                    let _ = shell
+                        .invoke_function(func_name, &[command_line], &shell.default_exec_params())
+                        .await;
+                }
+            }
+        }
+
+        // Invoke terminal integration.
+        if let Some(terminal_integration) = terminal_integration {
+            print!(
+                "{}",
+                terminal_integration.pre_exec_command(command_line).as_ref()
+            );
+            std::io::stdout().flush()?;
         }
 
         Ok(())
