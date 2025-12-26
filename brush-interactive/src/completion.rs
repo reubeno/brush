@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexSet;
 
-use crate::trace_categories;
 use brush_core::escape;
 
 #[allow(dead_code)]
@@ -34,7 +33,7 @@ pub(crate) async fn complete_async(
         options: brush_core::completion::ProcessingOptions::default(),
     });
 
-    // Look at the line upto 'pos' to check if we're in an unterminated
+    // Look at the line up to 'pos' to check if we're in an unterminated
     // single or double quote string.
     let mut quote_char: Option<char> = None;
     let mut escaped = false;
@@ -103,21 +102,13 @@ fn postprocess_completion_candidate(
 
         if !options.no_autoquote_filenames {
             let quote_mode = match quote_char {
-                Some(q) => {
-                    if q == '\'' {
-                        escape::QuoteMode::SingleQuote
-                    } else {
-                        escape::QuoteMode::DoubleQuote
-                    }
-                }
-                None => escape::QuoteMode::BackslashEscape,
+                Some('\'') => escape::QuoteMode::SingleQuote,
+                Some('\"') => escape::QuoteMode::DoubleQuote,
+                _ => escape::QuoteMode::BackslashEscape,
             };
 
             candidate = escape::quote_if_needed(&candidate, quote_mode).to_string();
         }
-    }
-    if options.no_autoquote_filenames {
-        tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: don't autoquote filenames");
     }
     if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
         if !options.treat_as_filenames || !candidate.ends_with(std::path::MAIN_SEPARATOR) {

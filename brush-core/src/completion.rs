@@ -10,7 +10,7 @@ use std::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    Shell, commands, env, error, escape, interfaces, jobs, namedoptions, patterns,
+    Shell, commands, env, error, escape, expansion, interfaces, jobs, namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
@@ -1134,10 +1134,18 @@ async fn get_file_completions(
     // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
     let mut throwaway_shell = shell.clone();
     let params = throwaway_shell.default_exec_params();
-    let expanded_token = throwaway_shell
-        .basic_expand_string(&params, &unquote_str(token_to_complete))
-        .await
-        .unwrap_or_else(|_err| token_to_complete.to_owned());
+    let options = expansion::ExpanderOptions {
+        execute_command_substitutions: false,
+        ..Default::default()
+    };
+    let expanded_token = expansion::basic_expand_word_with_options(
+        &mut throwaway_shell,
+        &params,
+        &unquote_str(token_to_complete),
+        &options,
+    )
+    .await
+    .unwrap_or_else(|_err| token_to_complete.to_owned());
 
     let glob = std::format!("{expanded_token}*");
 
@@ -1263,7 +1271,7 @@ fn simple_tokenize_by_delimiters<'a>(
         } else {
             if c == '\\' {
                 escaped = true;
-            } else if c == '\'' || c == '\"' {
+            } else if word_start.is_none() && (c == '\'' || c == '\"') {
                 // start a new quote.
                 quote_char = Some(c);
             } else {
@@ -1481,6 +1489,24 @@ mod tests {
                     text: "three",
                     start: 8,
                 }
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one'two", &['\'']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "'",
+                    start: 3,
+                },
+                CompletionToken {
+                    text: "two",
+                    start: 4,
+                },
             ]
         );
 
