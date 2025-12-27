@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexSet;
 
 use crate::trace_categories;
+use brush_core::escape;
 
 #[allow(dead_code)]
 pub(crate) async fn complete_async(
@@ -33,6 +34,31 @@ pub(crate) async fn complete_async(
         options: brush_core::completion::ProcessingOptions::default(),
     });
 
+    // Look at the line upto 'pos' to check if we're in an unterminated
+    // single or double quote string.
+    let mut quote_char: Option<char> = None;
+    let mut escaped = false;
+    for (i, c) in line.char_indices() {
+        if i >= pos {
+            break;
+        }
+
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        if let Some(q) = quote_char {
+            if c == q {
+                quote_char = None;
+            }
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == '\'' || c == '\"' {
+            quote_char = Some(c);
+        }
+    }
+
     // TODO(completion): Consider optimizing this out when not needed?
     let completing_end_of_line = pos == line.len();
     completions.candidates = completions
@@ -44,6 +70,7 @@ pub(crate) async fn complete_async(
                 &completions.options,
                 working_dir.as_ref(),
                 completing_end_of_line,
+                quote_char,
             )
         })
         .collect();
@@ -57,6 +84,7 @@ fn postprocess_completion_candidate(
     options: &brush_core::completion::ProcessingOptions,
     working_dir: &Path,
     completing_end_of_line: bool,
+    quote_char: Option<char>,
 ) -> String {
     if options.treat_as_filenames {
         // Check if it's a directory.
@@ -71,6 +99,21 @@ fn postprocess_completion_candidate(
             if abs_candidate_path.is_dir() {
                 candidate.push(std::path::MAIN_SEPARATOR);
             }
+        }
+
+        if !options.no_autoquote_filenames {
+            let quote_mode = match quote_char {
+                Some(q) => {
+                    if q == '\'' {
+                        escape::QuoteMode::SingleQuote
+                    } else {
+                        escape::QuoteMode::DoubleQuote
+                    }
+                }
+                None => escape::QuoteMode::BackslashEscape,
+            };
+
+            candidate = escape::quote_if_needed(&candidate, quote_mode).to_string();
         }
     }
     if options.no_autoquote_filenames {

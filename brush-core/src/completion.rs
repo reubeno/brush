@@ -15,6 +15,7 @@ use crate::{
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
 };
+use brush_parser::unquote_str;
 
 /// Type of action to take to generate completion candidates.
 #[derive(Clone, Debug, ValueEnum)]
@@ -1134,7 +1135,7 @@ async fn get_file_completions(
     let mut throwaway_shell = shell.clone();
     let params = throwaway_shell.default_exec_params();
     let expanded_token = throwaway_shell
-        .basic_expand_string(&params, token_to_complete)
+        .basic_expand_string(&params, &unquote_str(token_to_complete))
         .await
         .unwrap_or_else(|_err| token_to_complete.to_owned());
 
@@ -1244,9 +1245,33 @@ fn simple_tokenize_by_delimiters<'a>(
     let mut tokens = vec![];
     let mut word_start = None;
     let mut word_is_delimiters = false;
+    let mut quote_char: Option<char> = None;
+    let mut escaped = false;
 
     for (i, c) in input.char_indices() {
-        if delimiters.contains(&c) {
+        let mut is_active_delimiter = false;
+        if escaped {
+            escaped = false;
+        } else if let Some(q) = quote_char {
+            if c == '\\' && q == '"' {
+                // an escape in double-quoted string works as an escape.
+                escaped = true;
+            } else if c == q {
+                // end of quote.
+                quote_char = None;
+            }
+        } else {
+            if c == '\\' {
+                escaped = true;
+            } else if c == '\'' || c == '\"' {
+                // start a new quote.
+                quote_char = Some(c);
+            } else {
+                is_active_delimiter = delimiters.contains(&c);
+            }
+        }
+
+        if is_active_delimiter {
             // If we were building a regular word and this is a delimiter, then finish it.
             // Similarly, if this is a whitespace delimiter, finish any delimiter sequence.
             if let Some(start) = word_start {
@@ -1456,6 +1481,38 @@ mod tests {
                     text: "three",
                     start: 8,
                 }
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one 'two:three'", &[':', ' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "'two:three'",
+                    start: 4,
+                },
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one \\'two \"two four\"", &[':', ' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "\\'two",
+                    start: 4,
+                },
+                CompletionToken {
+                    text: "\"two four\"",
+                    start: 10,
+                },
             ]
         );
     }
