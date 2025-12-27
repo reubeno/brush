@@ -37,13 +37,19 @@ impl History {
 
         let mut next_timestamp = None;
         for line_result in buf_reader.lines() {
-            // If we couldn't decode the line (perhaps it wasn't valid UTF8?), skip it and make
-            // a best-effort attempt to proceed on. We'll later warn the user.
             let line = match line_result {
                 Ok(line) => line,
-                Err(err) => {
+                // If we couldn't decode the line due to invalid data (perhaps it wasn't
+                // valid UTF8?), skip it and make a best-effort attempt to proceed on.
+                // We'll later warn the user.
+                Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
                     tracing::warn!("unreadable history line; {err}");
                     continue;
+                }
+                // In the event of other kinds of errors, return an error result. We don't
+                // want to get stuck in a failing I/O loop.
+                Err(err) => {
+                    return Err(err.into());
                 }
             };
 

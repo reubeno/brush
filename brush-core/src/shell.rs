@@ -464,25 +464,49 @@ impl Shell {
             shell.env.set_global(var_name, var_value)?;
         }
 
-        // Set up history, if relevant.
+        // Set up history, if relevant. Do NOT fail if we can't load history.
         if shell.options.enable_command_history {
-            if let Some(history_path) = shell.history_file_path() {
-                let mut options = std::fs::File::options();
-                options.read(true);
-
-                if let Ok(history_file) =
-                    shell.open_file(&options, history_path, &shell.default_exec_params())
-                {
-                    shell.history = Some(history::History::import(history_file)?);
-                }
-            }
-
-            if shell.history.is_none() {
-                shell.history = Some(history::History::default());
-            }
+            shell.history = shell
+                .load_history()
+                .unwrap_or_default()
+                .or_else(|| Some(history::History::default()));
         }
 
         Ok(shell)
+    }
+
+    fn load_history(&self) -> Result<Option<history::History>, error::Error> {
+        const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
+
+        let Some(history_path) = self.history_file_path() else {
+            return Ok(None);
+        };
+
+        let mut options = std::fs::File::options();
+        options.read(true);
+
+        let mut history_file =
+            self.open_file(&options, history_path, &self.default_exec_params())?;
+
+        // Check on the file's size.
+        if let openfiles::OpenFile::File(file) = &mut history_file {
+            let file_metadata = file.metadata()?;
+            let file_size = file_metadata.len();
+
+            // If the file is empty, no reason to try reading it. Note that this will also
+            // end up excluding non-regular files that report a 0 file size but appear
+            // to have contents when read.
+            if file_size == 0 {
+                return Ok(None);
+            }
+
+            // Bail if the file is unrealistically large. For now we just refuse to import it.
+            if file_size > MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
+                return Err(error::ErrorKind::HistoryFileTooLargeToImport.into());
+            }
+        }
+
+        Ok(Some(history::History::import(history_file)?))
     }
 
     /// Returns the shell's official version string (if available).

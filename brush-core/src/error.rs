@@ -303,6 +303,10 @@ pub enum ErrorKind {
     /// Cannot convert open file to native file descriptor.
     #[error("cannot convert open file to native file descriptor")]
     CannotConvertToNativeFd,
+
+    /// History file is too large to import.
+    #[error("history file is too large to import")]
+    HistoryFileTooLargeToImport,
 }
 
 impl BuiltinError for Error {}
