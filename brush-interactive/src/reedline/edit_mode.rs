@@ -1,4 +1,6 @@
-use brush_core::interfaces::{self, InputFunction, Key, KeyAction, KeySequence, KeyStroke};
+use brush_core::interfaces::{
+    self, InputFunction, Key, KeyAction, KeyBindings as _, KeySequence, KeyStroke,
+};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -50,6 +52,11 @@ impl reedline::EditMode for MutableEditMode {
 pub(crate) struct UpdatableBindings {
     bindings: reedline::Keybindings,
     edit_mode: Box<dyn reedline::EditMode>,
+    /// Tracks mapped raw byte sequences; this map maps from a simple formatted
+    /// version of the bytes.
+    raw_mappings: HashMap<String, interfaces::KeyAction>,
+    /// Tracks defined macros.
+    macros: HashMap<interfaces::KeySequence, interfaces::KeySequence>,
 }
 
 impl UpdatableBindings {
@@ -60,11 +67,14 @@ impl UpdatableBindings {
         Self {
             bindings,
             edit_mode,
+            raw_mappings: HashMap::new(),
+            macros: HashMap::new(),
         }
     }
 
     pub fn update(&mut self, f: impl Fn(&mut reedline::Keybindings)) {
         f(&mut self.bindings);
+        self.try_update_bindings_for_all_macros();
         self.edit_mode = Self::rebuild_edit_mode(&self.bindings);
     }
 
@@ -121,34 +131,152 @@ impl interfaces::KeyBindings for UpdatableBindings {
         results
     }
 
-    fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error> {
-        let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) else {
-            return Err(std::io::Error::other(KeyError::UnsupportedKeySequence(seq)));
-        };
+    fn get_untranslated(&self, bytes: &[u8]) -> Option<&KeyAction> {
+        let bytes = bytes.to_vec();
+        self.raw_mappings.get(&format_raw_key_bytes(&[bytes]))
+    }
 
+    fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error> {
+        self.do_bind(seq, action, true)
+    }
+
+    fn try_unbind(&mut self, seq: KeySequence) -> bool {
+        match seq {
+            interfaces::KeySequence::Strokes(_) => {
+                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) {
+                    let found = self.bindings.find_binding(modifiers, key_code).is_some();
+
+                    if found {
+                        self.update(|bindings| {
+                            let _ = bindings.remove_binding(modifiers, key_code);
+                        });
+                    }
+
+                    found
+                } else {
+                    false
+                }
+            }
+            interfaces::KeySequence::Bytes(bytes) => {
+                let key_str = format_raw_key_bytes(&bytes);
+                self.raw_mappings.remove(&key_str).is_some()
+            }
+        }
+    }
+
+    fn define_macro(
+        &mut self,
+        seq: KeySequence,
+        target: KeySequence,
+    ) -> Result<(), std::io::Error> {
+        self.macros.insert(seq, target);
+        self.update(|_| {});
+
+        Ok(())
+    }
+}
+
+impl UpdatableBindings {
+    fn do_bind(
+        &mut self,
+        seq: KeySequence,
+        action: KeyAction,
+        rebuild_for_reedline: bool,
+    ) -> Result<(), std::io::Error> {
         let Some(event) = translate_action_to_reedline_event(&action) else {
             return Err(std::io::Error::other(KeyError::UnsupportedKeyAction(
                 action,
             )));
         };
 
-        self.update(|bindings| {
-            bindings.add_binding(modifiers, key_code, event.clone());
-        });
+        match seq {
+            interfaces::KeySequence::Strokes(_) => {
+                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) {
+                    if rebuild_for_reedline {
+                        self.update(|bindings| {
+                            bindings.add_binding(modifiers, key_code, event.clone());
+                        });
+                    } else {
+                        self.bindings
+                            .add_binding(modifiers, key_code, event.clone());
+                    }
+
+                    Ok(())
+                } else {
+                    Err(std::io::Error::other(KeyError::UnsupportedKeySequence(seq)))
+                }
+            }
+            interfaces::KeySequence::Bytes(bytes) => {
+                let key_str = format_raw_key_bytes(&bytes);
+                self.raw_mappings.insert(key_str, action);
+                Ok(())
+            }
+        }
+    }
+
+    fn try_update_bindings_for_all_macros(&mut self) {
+        let macros = self.macros.clone();
+        for (seq, target) in macros {
+            let _ = self.update_bindings_for_macro(seq, target);
+        }
+    }
+
+    fn update_bindings_for_macro(
+        &mut self,
+        seq: KeySequence,
+        target: KeySequence,
+    ) -> Result<(), std::io::Error> {
+        match target {
+            // TODO(input): We acknowledge that this implementation eagerly resolves the macro
+            // and what it will do. Subsequent changes to other key binding might invalidate
+            // this. We also are *extremely* limited in what we support here.
+            interfaces::KeySequence::Strokes(key_strokes) => {
+                if !key_strokes.is_empty() {
+                    return Err(std::io::Error::other(
+                        "binding key sequence to readline macro with strokes",
+                    ));
+                }
+            }
+            interfaces::KeySequence::Bytes(items) => {
+                let actions: Vec<_> = items
+                    .iter()
+                    .filter_map(|item| self.get_untranslated(item))
+                    .collect();
+
+                if actions.len() > 1 {
+                    return Err(std::io::Error::other(
+                        "readline macro with multiple actions",
+                    ));
+                }
+
+                if let Some(action) = actions.first() {
+                    self.do_bind(seq, (*action).clone(), false)?;
+                }
+            }
+        }
 
         Ok(())
     }
 }
 
+fn format_raw_key_bytes(bytes: &[Vec<u8>]) -> String {
+    #[allow(clippy::format_collect)]
+    let key_str: String = bytes.iter().flatten().map(|b| format!("{b:02X}")).collect();
+    key_str
+}
+
 fn translate_key_sequence_to_reedline(
     seq: &KeySequence,
 ) -> Option<(reedline::KeyModifiers, reedline::KeyCode)> {
-    if seq.strokes.len() != 1 {
+    let KeySequence::Strokes(strokes) = seq else {
+        // TODO(input): handle other kinds of key sequences
+        return None;
+    };
+
+    let [stroke] = &strokes.as_slice() else {
         // TODO(input): handle multiple strokes
         return None;
-    }
-
-    let stroke = &seq.strokes[0];
+    };
 
     let mut modifiers = reedline::KeyModifiers::empty();
     modifiers.set(reedline::KeyModifiers::ALT, stroke.alt);

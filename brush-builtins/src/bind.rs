@@ -234,16 +234,16 @@ fn parse_key_sequence_and_shell_command(
     // This should be something of the form:
     //     "KEY-SEQUENCE": SHELL-COMMAND
     let binding = brush_parser::readline_binding::parse_key_sequence_shell_cmd_binding(input)?;
-    let strokes = key_sequence_to_abstract_strokes(&binding.seq)?;
+    let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
-    Ok((interfaces::KeySequence { strokes }, binding.shell_cmd))
+    Ok((abstract_seq, binding.shell_cmd))
 }
 
 #[derive(Debug)]
 #[allow(dead_code, reason = "not all variants implemented yet")]
 enum BindableReadlineTarget {
-    Function(brush_core::interfaces::InputFunction),
-    Command(String),
+    Function(interfaces::InputFunction),
+    Macro(interfaces::KeySequence),
 }
 
 fn parse_key_sequence_and_readline_target(
@@ -260,20 +260,19 @@ fn parse_key_sequence_and_readline_target(
     //     "KEY-SEQUENCE":function-name
     //     "KEY-SEQUENCE":readline-command
     let binding = brush_parser::readline_binding::parse_key_sequence_readline_binding(input)?;
-    let strokes = key_sequence_to_abstract_strokes(&binding.seq)?;
+    let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
     match binding.target {
         brush_parser::readline_binding::ReadlineTarget::Function(func_name) => {
             let func = parse_readline_function(func_name.as_str())?;
-            Ok((
-                interfaces::KeySequence { strokes },
-                BindableReadlineTarget::Function(func),
-            ))
+            Ok((abstract_seq, BindableReadlineTarget::Function(func)))
         }
-        brush_parser::readline_binding::ReadlineTarget::Command(cmd) => Ok((
-            interfaces::KeySequence { strokes },
-            BindableReadlineTarget::Command(cmd),
-        )),
+        brush_parser::readline_binding::ReadlineTarget::Macro(target_seq_str) => {
+            let parsed_target =
+                brush_parser::readline_binding::parse_key_sequence(&target_seq_str)?;
+            let abstract_target = key_sequence_to_abstract_strokes(&parsed_target)?;
+            Ok((abstract_seq, BindableReadlineTarget::Macro(abstract_target)))
+        }
     }
 }
 
@@ -310,23 +309,26 @@ fn bind_key_sequence_to_readline_target(
             bindings.bind(key_sequence, interfaces::KeyAction::DoInputFunction(func))?;
             Ok(())
         }
-        BindableReadlineTarget::Command(cmd_macro) => {
+        BindableReadlineTarget::Macro(cmd_macro) => {
             tracing::debug!(target: trace_categories::INPUT,
                 "binding key sequence: '{key_sequence}' => readline macro '{cmd_macro}'"
             );
 
-            error::unimp("binding key sequence to readline macro")
+            bindings.define_macro(key_sequence, cmd_macro)?;
+            Ok(())
         }
     }
 }
 
 fn key_sequence_to_abstract_strokes(
     seq: &brush_parser::readline_binding::KeySequence,
-) -> Result<Vec<interfaces::KeyStroke>, brush_core::Error> {
+) -> Result<interfaces::KeySequence, brush_core::Error> {
     let phys_strokes = brush_parser::readline_binding::key_sequence_to_strokes(seq)?;
 
     // Lift from key codes to abstract keys.
     let mut abstract_strokes = vec![];
+    let mut key_code_bytes = vec![];
+    let mut uninterpretable = false;
     for mut phys_stroke in phys_strokes {
         let mut key = sys::input::try_get_key_from_key_code(phys_stroke.key_code.as_slice());
 
@@ -339,19 +341,25 @@ fn key_sequence_to_abstract_strokes(
             }
         }
 
-        let Some(key) = key else {
-            return Err(error::ErrorKind::UnhandledKeyCode(phys_stroke.key_code).into());
-        };
+        key_code_bytes.push(phys_stroke.key_code);
 
-        abstract_strokes.push(interfaces::KeyStroke {
-            alt: phys_stroke.meta,
-            control: phys_stroke.control,
-            shift: false,
-            key,
-        });
+        if let Some(key) = key {
+            abstract_strokes.push(interfaces::KeyStroke {
+                alt: phys_stroke.meta,
+                control: phys_stroke.control,
+                shift: false,
+                key,
+            });
+        } else {
+            uninterpretable = true;
+        }
     }
 
-    Ok(abstract_strokes)
+    if uninterpretable {
+        Ok(interfaces::KeySequence::Bytes(key_code_bytes))
+    } else {
+        Ok(interfaces::KeySequence::Strokes(abstract_strokes))
+    }
 }
 
 fn parse_readline_function(
@@ -378,14 +386,12 @@ mod tests {
 
         assert_eq!(
             key_seq,
-            interfaces::KeySequence {
-                strokes: vec![interfaces::KeyStroke {
-                    alt: false,
-                    control: true,
-                    shift: false,
-                    key: interfaces::Key::Character('a'),
-                }],
-            }
+            interfaces::KeySequence::Strokes(vec![interfaces::KeyStroke {
+                alt: false,
+                control: true,
+                shift: false,
+                key: interfaces::Key::Character('a'),
+            }])
         );
 
         assert_matches!(
@@ -401,14 +407,12 @@ mod tests {
 
         assert_eq!(
             key_seq,
-            interfaces::KeySequence {
-                strokes: vec![interfaces::KeyStroke {
-                    alt: true,
-                    control: false,
-                    shift: false,
-                    key: interfaces::Key::Character('r'),
-                }],
-            }
+            interfaces::KeySequence::Strokes(vec![interfaces::KeyStroke {
+                alt: true,
+                control: false,
+                shift: false,
+                key: interfaces::Key::Character('r'),
+            }])
         );
 
         assert_matches!(

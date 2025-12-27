@@ -4,7 +4,7 @@ use std::{
 };
 
 /// Represents an action that can be taken in response to a key sequence.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum KeyAction {
     /// Execute a shell command.
     ShellCommand(String),
@@ -24,6 +24,7 @@ impl Display for KeyAction {
 /// Defines all input functions. Based on standard `readline` functions,
 /// augmented with some `brush`-specific extensions.
 #[derive(
+    Clone,
     Debug,
     strum_macros::EnumString,
     strum_macros::Display,
@@ -207,17 +208,29 @@ pub enum InputFunction {
 }
 
 /// Represents a sequence of keys.
-#[derive(Debug, Eq, Hash, PartialEq)]
-pub struct KeySequence {
-    /// The strokes in the sequence.
-    pub strokes: Vec<KeyStroke>,
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum KeySequence {
+    /// Strokes that make up the sequence.
+    Strokes(Vec<KeyStroke>),
+    /// Raw bytes that were used to generate this sequence.
+    Bytes(Vec<Vec<u8>>),
 }
 
 impl Display for KeySequence {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for stroke in &self.strokes {
-            stroke.fmt(f)?;
+        match self {
+            Self::Strokes(strokes) => {
+                for stroke in strokes {
+                    stroke.fmt(f)?;
+                }
+            }
+            Self::Bytes(bytes) => {
+                for byte in bytes.iter().flatten() {
+                    write!(f, "{byte:02x}")?;
+                }
+            }
         }
+
         Ok(())
     }
 }
@@ -225,13 +238,11 @@ impl Display for KeySequence {
 impl From<KeyStroke> for KeySequence {
     /// Creates a new key sequence with a single stroke.
     fn from(value: KeyStroke) -> Self {
-        Self {
-            strokes: vec![value],
-        }
+        Self::Strokes(vec![value])
     }
 }
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 /// Represents a single key press.
 pub struct KeyStroke {
     /// Alt key was pressed.
@@ -341,6 +352,31 @@ impl Display for Key {
 pub trait KeyBindings: Send {
     /// Retrieves current bindings.
     fn get_current(&self) -> HashMap<KeySequence, KeyAction>;
-    /// Updates a binding.
+
+    /// Tries to find a binding for an untranslated byte sequence.
+    fn get_untranslated(&self, bytes: &[u8]) -> Option<&KeyAction>;
+
+    /// Sets or updates a binding.
+    ///
+    /// # Arguments
+    ///
+    /// * `seq` - The key sequence to bind.
+    /// * `action` - The action to bind to the sequence.
     fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error>;
+
+    /// Unbinds a key sequence. Returns true if a binding was removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `seq` - The key sequence to unbind.
+    fn try_unbind(&mut self, seq: KeySequence) -> bool;
+
+    /// Defines a macro that remaps a key sequence to another key sequence.
+    ///
+    /// # Arguments
+    ///
+    /// * `seq` - The key sequence to bind the macro to.
+    /// * `target` - The sequence that makes up the macro.
+    fn define_macro(&mut self, seq: KeySequence, target: KeySequence)
+    -> Result<(), std::io::Error>;
 }
