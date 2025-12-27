@@ -1134,8 +1134,6 @@ impl TestCase {
 
         test_cmd.current_dir(working_dir.to_string_lossy().to_string());
 
-        eprintln!("Running command: {:?}", test_cmd);
-
         test_cmd
     }
 

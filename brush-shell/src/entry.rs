@@ -307,8 +307,6 @@ async fn initialize_shell(
     shell_ref: &brush_interactive::ShellRef,
     args: &CommandLineArgs,
 ) -> Result<(), brush_interactive::ShellError> {
-    let mut shell = shell_ref.lock().await;
-
     // Compute desired profile-loading behavior.
     let profile = if args.no_profile {
         brush_core::ProfileLoadBehavior::Skip
@@ -325,7 +323,7 @@ async fn initialize_shell(
         brush_core::RcLoadBehavior::LoadDefault
     };
 
-    shell.load_config(&profile, &rc).await?;
+    shell_ref.lock().await.load_config(&profile, &rc).await?;
 
     Ok(())
 }
