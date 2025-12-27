@@ -9,6 +9,9 @@ pub mod peg;
 #[cfg(feature = "use-winnow-parser")]
 pub mod winnow;
 
+#[cfg(feature = "use-winnow-parser")]
+pub mod winnow_str;
+
 /// Options used to control the behavior of the parser.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ParserOptions {
