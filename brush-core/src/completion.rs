@@ -273,7 +273,7 @@ impl Spec {
         if let Some(word_list) = &self.word_list {
             let params = shell.default_exec_params();
             let words =
-                crate::expansion::full_expand_and_split_str(shell, &params, word_list).await?;
+                crate::expansion::full_expand_and_split_word(shell, &params, word_list).await?;
             for word in words {
                 if word.starts_with(context.token_to_complete) {
                     candidates.insert(word);

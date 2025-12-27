@@ -1035,7 +1035,7 @@ impl Shell {
         params: &ExecutionParameters,
         s: S,
     ) -> Result<String, error::Error> {
-        let result = expansion::basic_expand_str(self, params, s.as_ref()).await?;
+        let result = expansion::basic_expand_word(self, params, s.as_ref()).await?;
         Ok(result)
     }
 
@@ -1050,7 +1050,7 @@ impl Shell {
         params: &ExecutionParameters,
         s: S,
     ) -> Result<Vec<String>, error::Error> {
-        let result = expansion::full_expand_and_split_str(self, params, s.as_ref()).await?;
+        let result = expansion::full_expand_and_split_word(self, params, s.as_ref()).await?;
         Ok(result)
     }
 
