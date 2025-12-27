@@ -56,7 +56,10 @@ impl ExecutionParameters {
         self.try_fd(shell, openfiles::OpenFiles::STDIN_FD)
     }
 
-    /// Returns the standard output file; usable with `write!` et al.
+    /// Returns the standard output file; usable with `write!` et al. In the event that
+    /// no such file is available, returns a valid implementation of `std::io::Write`
+    /// that fails all I/O requests.
+    ///
     ///
     /// # Arguments
     ///
@@ -76,13 +79,17 @@ impl ExecutionParameters {
         self.try_fd(shell, openfiles::OpenFiles::STDOUT_FD)
     }
 
-    /// Returns the standard error file; usable with `write!` et al.
+    /// Returns the standard error file; usable with `write!` et al. In the event that
+    /// no such file is available, returns a valid implementation of `std::io::Write`
+    /// that fails all I/O requests.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell context.
     pub fn stderr(&self, shell: &Shell) -> impl std::io::Write + 'static {
-        self.try_stderr(shell).unwrap()
+        self.try_stderr(shell).unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard error not available").into()
+        })
     }
 
     /// Tries to retrieve the standard error file. Returns `None` if not set.
