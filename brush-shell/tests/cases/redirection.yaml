@@ -127,6 +127,11 @@ cases:
       echo "This should not appear" 1>&-
       echo "This should appear"
 
+  - name: "Close stderr"
+    stdin: |
+      non-existent-command 2>&-
+      echo "This should appear"
+
   - name: "Close output file descriptor"
     ignore_stderr: true
     stdin: |
