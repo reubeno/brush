@@ -394,6 +394,9 @@ struct TestCase {
     /// Command-line arguments to the shell
     #[serde(default)]
     pub args: Vec<String>,
+    /// Default command-line shell arguments that should be *removed*.
+    #[serde(default)]
+    pub removed_default_args: HashSet<String>,
     /// Environment for the shell
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -1091,7 +1094,9 @@ impl TestCase {
         };
 
         for arg in &shell_config.default_args {
-            test_cmd.arg(arg);
+            if !self.removed_default_args.contains(arg) {
+                test_cmd.arg(arg);
+            }
         }
 
         // Clear all environment vars for consistency.
@@ -1128,6 +1133,8 @@ impl TestCase {
         }
 
         test_cmd.current_dir(working_dir.to_string_lossy().to_string());
+
+        eprintln!("Running command: {:?}", test_cmd);
 
         test_cmd
     }

@@ -84,3 +84,32 @@ cases:
 
   - name: "Ensure ~ is resolvable"
     stdin: "test ~"
+
+  - name: "Rc file loading (interactive)"
+    ignore_stderr: true
+    removed_default_args: ["--norc"] # Need to cancel this out so we can override
+    args: ["--rcfile", "testrc", "-i"]
+    test_files:
+      - path: "testrc"
+        contents: |
+          echo "Executing in rc file"
+    stdin: |
+      echo "Executing in main script body"
+
+  - name: "Rc file loading (non-interactive)"
+    ignore_stderr: true
+    removed_default_args: ["--norc"] # Need to cancel this out so we can override
+    args: ["--rcfile", "testrc"]
+    test_files:
+      - path: "testrc"
+        contents: |
+          echo "Executing in rc file"
+    stdin: |
+      echo "Executing in main script body"
+
+  - name: "Missing rc file"
+    ignore_stderr: true
+    removed_default_args: ["--norc"] # Need to cancel this out so we can override
+    args: ["--rcfile", "non-existent-file", "-i"]
+    stdin: |
+      echo "Executing in main script body"

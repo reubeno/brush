@@ -54,6 +54,9 @@ pub use error::{BuiltinError, Error, ErrorKind};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
-pub use shell::{CreateOptions, Shell, ShellBuilder, ShellBuilderState, ShellFd};
+pub use shell::{
+    CreateOptions, ProfileLoadBehavior, RcLoadBehavior, Shell, ShellBuilder, ShellBuilderState,
+    ShellFd,
+};
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};

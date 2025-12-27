@@ -19,8 +19,8 @@ const DEFAULT_BASH_COMPLETION_SCRIPT: &str = "/usr/share/bash-completion/bash_co
 impl TestShellWithBashCompletion {
     async fn new() -> Result<Self> {
         let mut shell = brush_core::Shell::builder()
-            .no_profile(true)
-            .no_rc(true)
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await?;
