@@ -1,7 +1,7 @@
 //! Test that winnow parser produces same results as PEG parser
 
 #[cfg(feature = "use-winnow-parser")]
-use brush_parser::{parse_tokens, tokenize_str, ParserOptions};
+use brush_parser::{ParserOptions, parse_tokens, tokenize_str};
 
 #[cfg(feature = "use-winnow-parser")]
 #[test]
