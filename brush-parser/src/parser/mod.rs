@@ -1,9 +1,13 @@
-use crate::ast;
-use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
+use std::path::PathBuf;
 
 use bon::bon;
 
+use crate::ast;
+use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
+
 pub mod peg;
+#[cfg(feature = "use-winnow-parser")]
+pub mod winnow;
 
 /// Parser implementation to use
 #[derive(Clone, Eq, Hash, PartialEq, Default)]
@@ -50,6 +54,22 @@ impl ParserOptions {
             enable_extended_globbing: self.enable_extended_globbing,
             posix_mode: self.posix_mode,
             sh_mode: self.sh_mode,
+        }
+    }
+}
+
+/// Information about the source of tokens.
+#[derive(Clone, Debug, Default)]
+#[allow(dead_code)]
+pub struct SourceInfo {
+    /// The source of the tokens.
+    pub source: String,
+}
+
+impl From<PathBuf> for SourceInfo {
+    fn from(path: PathBuf) -> Self {
+        Self {
+            source: path.to_string_lossy().to_string(),
         }
     }
 }
@@ -183,12 +203,27 @@ impl<R: std::io::BufRead> Parser<R> {
 ///
 /// * `tokens` - The tokens to parse.
 /// * `options` - The options to use when parsing.
+#[cfg(not(feature = "use-winnow-parser"))]
 pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
 ) -> Result<ast::Program, crate::error::ParseError> {
     let parse_result = peg::token_parser::program(&Tokens { tokens }, options);
     parse_result_to_error(parse_result, tokens)
+}
+
+/// Parses a sequence of tokens into the abstract syntax tree (AST) of a shell program.
+///
+/// # Arguments
+///
+/// * `tokens` - The tokens to parse.
+/// * `options` - The options to use when parsing.
+#[cfg(feature = "use-winnow-parser")]
+pub fn parse_tokens(
+    tokens: &Vec<Token>,
+    options: &ParserOptions,
+) -> Result<ast::Program, crate::error::ParseError> {
+    winnow::parse_program(tokens, options, &SourceInfo::default())
 }
 
 fn parse_result_to_error<R>(
