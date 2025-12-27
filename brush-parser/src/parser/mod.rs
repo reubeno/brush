@@ -8,6 +8,8 @@ use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Token
 pub mod peg;
 #[cfg(feature = "use-winnow-parser")]
 pub mod winnow;
+#[cfg(feature = "use-winnow-parser")]
+pub mod winnow_str;
 
 /// Parser implementation to use
 #[derive(Clone, Eq, Hash, PartialEq, Default)]
