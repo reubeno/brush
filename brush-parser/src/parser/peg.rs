@@ -1,229 +1,13 @@
-use crate::ast::{self, SeparatorOperator, SourceLocation, maybe_location};
-use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
-use crate::{SourceSpan, error};
+//! PEG-based parser implementation for shell scripts.
 
-use bon::Builder;
+use crate::ast::{self, SourceLocation, SeparatorOperator, maybe_location};
+use crate::tokenizer::Token;
+use crate::SourceSpan;
 
-/// Options used to control the behavior of the parser.
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct ParserOptions {
-    /// Whether or not to enable extended globbing (a.k.a. `extglob`).
-    pub enable_extended_globbing: bool,
-    /// Whether or not to enable POSIX compliance mode.
-    pub posix_mode: bool,
-    /// Whether or not to enable maximal compatibility with the `sh` shell.
-    pub sh_mode: bool,
-    /// Whether or not to perform tilde expansion for tildes at the start of words.
-    pub tilde_expansion_at_word_start: bool,
-    /// Whether or not to perform tilde expansion for tildes after colons.
-    pub tilde_expansion_after_colon: bool,
-}
-
-impl Default for ParserOptions {
-    fn default() -> Self {
-        Self {
-            enable_extended_globbing: true,
-            posix_mode: false,
-            sh_mode: false,
-            tilde_expansion_at_word_start: true,
-            tilde_expansion_after_colon: false,
-        }
-    }
-}
-
-impl ParserOptions {
-    /// Returns the tokenizer options implied by these parser options.
-    pub const fn tokenizer_options(&self) -> TokenizerOptions {
-        TokenizerOptions {
-            enable_extended_globbing: self.enable_extended_globbing,
-            posix_mode: self.posix_mode,
-            sh_mode: self.sh_mode,
-        }
-    }
-}
-
-/// Implements parsing for shell programs.
-#[derive(Builder)]
-pub struct Parser<R: std::io::BufRead> {
-    /// The reader to use for input
-    reader: R,
-    /// Parsing options
-    #[builder(default)]
-    options: ParserOptions,
-}
-
-impl<R: std::io::BufRead> Parser<R> {
-    /// Returns a new parser instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `reader` - The reader to use for input.
-    /// * `options` - The options to use when parsing.
-    pub fn new(reader: R, options: &ParserOptions) -> Self {
-        Self {
-            reader,
-            options: options.clone(),
-        }
-    }
-
-    /// Parses the input into an abstract syntax tree (AST) of a shell program.
-    pub fn parse_program(&mut self) -> Result<ast::Program, error::ParseError> {
-        //
-        // References:
-        //   * https://www.gnu.org/software/bash/manual/bash.html#Shell-Syntax
-        //   * https://mywiki.wooledge.org/BashParser
-        //   * https://aosabook.org/en/v1/bash.html
-        //   * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
-        //
-
-        let tokens = self.tokenize()?;
-        parse_tokens(&tokens, &self.options)
-    }
-
-    /// Parses a function definition body from the input. The body is expected to be
-    /// preceded by "()", but no function name.
-    pub fn parse_function_parens_and_body(
-        &mut self,
-    ) -> Result<ast::FunctionBody, error::ParseError> {
-        let tokens = self.tokenize()?;
-        let parse_result =
-            token_parser::function_parens_and_body(&Tokens { tokens: &tokens }, &self.options);
-        parse_result_to_error(parse_result, &tokens)
-    }
-
-    fn tokenize(&mut self) -> Result<Vec<Token>, error::ParseError> {
-        // First we tokenize the input, according to the policy implied by provided options.
-        let mut tokenizer = Tokenizer::new(&mut self.reader, &self.options.tokenizer_options());
-
-        tracing::debug!(target: "tokenize", "Tokenizing...");
-
-        let mut tokens = vec![];
-        loop {
-            let result = match tokenizer.next_token() {
-                Ok(result) => result,
-                Err(e) => {
-                    return Err(error::ParseError::Tokenizing {
-                        inner: e,
-                        position: tokenizer.current_location(),
-                    });
-                }
-            };
-
-            let reason = result.reason;
-            if let Some(token) = result.token {
-                tracing::debug!(target: "tokenize", "TOKEN {}: {:?} {reason:?}", tokens.len(), token);
-                tokens.push(token);
-            }
-
-            if matches!(reason, TokenEndReason::EndOfInput) {
-                break;
-            }
-        }
-
-        tracing::debug!(target: "tokenize", "  => {} token(s)", tokens.len());
-
-        Ok(tokens)
-    }
-}
-
-/// Parses a sequence of tokens into the abstract syntax tree (AST) of a shell program.
-///
-/// # Arguments
-///
-/// * `tokens` - The tokens to parse.
-/// * `options` - The options to use when parsing.
-pub fn parse_tokens(
-    tokens: &Vec<Token>,
-    options: &ParserOptions,
-) -> Result<ast::Program, error::ParseError> {
-    let parse_result = token_parser::program(&Tokens { tokens }, options);
-    parse_result_to_error(parse_result, tokens)
-}
-
-fn parse_result_to_error<R>(
-    parse_result: Result<R, peg::error::ParseError<usize>>,
-    tokens: &Vec<Token>,
-) -> Result<R, error::ParseError>
-where
-    R: std::fmt::Debug,
-{
-    match parse_result {
-        Ok(program) => {
-            tracing::debug!(target: "parse", "PROG: {:?}", program);
-            Ok(program)
-        }
-        Err(parse_error) => {
-            tracing::debug!(target: "parse", "Parse error: {:?}", parse_error);
-            Err(error::convert_peg_parse_error(
-                &parse_error,
-                tokens.as_slice(),
-            ))
-        }
-    }
-}
-
-impl peg::Parse for Tokens<'_> {
-    type PositionRepr = usize;
-
-    #[inline]
-    fn start(&self) -> usize {
-        0
-    }
-
-    #[inline]
-    fn is_eof(&self, p: usize) -> bool {
-        p >= self.tokens.len()
-    }
-
-    #[inline]
-    fn position_repr(&self, p: usize) -> Self::PositionRepr {
-        p
-    }
-}
-
-impl<'a> peg::ParseElem<'a> for Tokens<'a> {
-    type Element = &'a Token;
-
-    #[inline]
-    fn parse_elem(&'a self, pos: usize) -> peg::RuleResult<Self::Element> {
-        match self.tokens.get(pos) {
-            Some(c) => peg::RuleResult::Matched(pos + 1, c),
-            None => peg::RuleResult::Failed,
-        }
-    }
-}
-
-impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
-    type Slice = String;
-
-    fn parse_slice(&'a self, start: usize, end: usize) -> Self::Slice {
-        let mut result = String::new();
-        let mut last_token_was_word = false;
-
-        for token in &self.tokens[start..end] {
-            match token {
-                Token::Operator(s, _) => {
-                    result.push_str(s);
-                    last_token_was_word = false;
-                }
-                Token::Word(s, _) => {
-                    // Place spaces between adjacent words.
-                    if last_token_was_word {
-                        result.push(' ');
-                    }
-
-                    result.push_str(s);
-                    last_token_was_word = true;
-                }
-            }
-        }
-
-        result
-    }
-}
+use super::{ParserOptions, Tokens};
 
 peg::parser! {
-    grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
+    pub grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
         pub(crate) rule program() -> ast::Program =
             linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
             linebreak() { ast::Program { complete_commands: vec![] } }
@@ -899,7 +683,7 @@ peg::parser! {
 }
 
 peg::parser! {
-    grammar assignments() for str {
+    pub grammar assignments() for str {
         pub(crate) rule name_and_scalar_value() -> ast::Assignment =
             nae:name_and_equals() value:scalar_value() {
                 let (name, append) = nae;
@@ -1202,3 +986,64 @@ for f in A B C; do
         Ok(())
     }
 }
+
+impl peg::Parse for Tokens<'_> {
+    type PositionRepr = usize;
+
+    #[inline]
+    fn start(&self) -> usize {
+        0
+    }
+
+    #[inline]
+    fn is_eof(&self, p: usize) -> bool {
+        p >= self.tokens.len()
+    }
+
+    #[inline]
+    fn position_repr(&self, p: usize) -> Self::PositionRepr {
+        p
+    }
+}
+
+impl<'a> peg::ParseElem<'a> for Tokens<'a> {
+    type Element = &'a Token;
+
+    #[inline]
+    fn parse_elem(&'a self, pos: usize) -> peg::RuleResult<Self::Element> {
+        match self.tokens.get(pos) {
+            Some(c) => peg::RuleResult::Matched(pos + 1, c),
+            None => peg::RuleResult::Failed,
+        }
+    }
+}
+
+impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
+    type Slice = String;
+
+    fn parse_slice(&'a self, start: usize, end: usize) -> Self::Slice {
+        let mut result = String::new();
+        let mut last_token_was_word = false;
+
+        for token in &self.tokens[start..end] {
+            match token {
+                Token::Operator(s, _) => {
+                    result.push_str(s);
+                    last_token_was_word = false;
+                }
+                Token::Word(s, _) => {
+                    // Place spaces between adjacent words.
+                    if last_token_was_word {
+                        result.push(' ');
+                    }
+
+                    result.push_str(s);
+                    last_token_was_word = true;
+                }
+            }
+        }
+
+        result
+    }
+}
+
