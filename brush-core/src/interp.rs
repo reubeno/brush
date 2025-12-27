@@ -1267,12 +1267,12 @@ async fn basic_expand_assignment_name(
 ) -> Result<ast::AssignmentName, error::Error> {
     match name {
         ast::AssignmentName::VariableName(name) => {
-            let expanded = expansion::basic_expand_str(shell, params, name).await?;
+            let expanded = expansion::basic_expand_word(shell, params, name).await?;
             Ok(ast::AssignmentName::VariableName(expanded))
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded_name = expansion::basic_expand_str(shell, params, name).await?;
-            let expanded_index = expansion::basic_expand_str(shell, params, index).await?;
+            let expanded_name = expansion::basic_expand_word(shell, params, name).await?;
+            let expanded_index = expansion::basic_expand_word(shell, params, index).await?;
             Ok(ast::AssignmentName::ArrayElementName(
                 expanded_name,
                 expanded_index,
@@ -1338,7 +1338,7 @@ async fn apply_assignment(
             name
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded = expansion::basic_expand_str(shell, params, index).await?;
+            let expanded = expansion::basic_expand_word(shell, params, index).await?;
             array_index = Some(expanded);
             name
         }

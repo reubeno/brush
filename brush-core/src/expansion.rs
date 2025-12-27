@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 use std::cmp::min;
 
-use brush_parser::ast;
 use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
 use itertools::Itertools;
 
@@ -23,6 +22,27 @@ use crate::trace_categories;
 use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
+
+/// Options to customize the behavior of the word expander.
+pub(crate) struct ExpanderOptions {
+    /// Whether to perform tilde-expansion.
+    pub tilde_expand: bool,
+    /// Whether to perform brace-expansion.
+    pub brace_expand: bool,
+    /// Whether to perform command substitutions. If disabled, command substitutions
+    /// are replaced with an empty string.
+    pub execute_command_substitutions: bool,
+}
+
+impl Default for ExpanderOptions {
+    fn default() -> Self {
+        Self {
+            tilde_expand: true,
+            brace_expand: true,
+            execute_command_substitutions: true,
+        }
+    }
+}
 
 #[derive(Debug)]
 struct Expansion {
@@ -295,70 +315,111 @@ enum ParameterState {
     NonZeroLength,
 }
 
+/// Applies all basic expansion to the given word, yielding a pattern.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_pattern(
     shell: &mut Shell,
     params: &ExecutionParameters,
-    word: &ast::Word,
+    word_str: impl AsRef<str>,
 ) -> Result<patterns::Pattern, error::Error> {
     let mut expander = WordExpander::new(shell, params);
-    expander.basic_expand_pattern(&word.flatten()).await
+    expander.basic_expand_pattern(word_str.as_ref()).await
 }
 
+/// Applies all basic expansion to the given word, yielding a regex.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_regex(
     shell: &mut Shell,
     params: &ExecutionParameters,
-    word: &ast::Word,
+    word_str: impl AsRef<str>,
 ) -> Result<crate::regex::Regex, error::Error> {
     let mut expander = WordExpander::new(shell, params);
 
     // Brace expansion does not appear to be used in regexes.
     expander.force_disable_brace_expansion = true;
 
-    expander.basic_expand_regex(&word.flatten()).await
+    expander.basic_expand_regex(word_str.as_ref()).await
 }
 
+/// Applies all basic expansion to the given word (represented as a string).
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_word(
     shell: &mut Shell,
     params: &ExecutionParameters,
-    word: &ast::Word,
-) -> Result<String, error::Error> {
-    basic_expand_str(shell, params, word.flatten().as_str()).await
-}
-
-pub(crate) async fn basic_expand_str(
-    shell: &mut Shell,
-    params: &ExecutionParameters,
-    s: &str,
+    word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
-    expander.basic_expand_to_str(s).await
+    expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
-pub(crate) async fn basic_expand_str_without_tilde(
+/// Applies all basic expansion to the given word (represented as a string),
+/// with custom expander options.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word_str` - The word to expand, as a string.
+pub(crate) async fn basic_expand_word_with_options(
     shell: &mut Shell,
     params: &ExecutionParameters,
-    s: &str,
+    word_str: impl AsRef<str>,
+    options: &ExpanderOptions,
 ) -> Result<String, error::Error> {
-    let mut expander = WordExpander::new(shell, params);
-    expander.parser_options.tilde_expansion_at_word_start = false;
-    expander.basic_expand_to_str(s).await
+    let mut expander = WordExpander::new_from_options(shell, params, options);
+    expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
+/// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
+/// then perform field splitting and pathname expansion on the result.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word_str` - The word to expand, as a string.
 pub(crate) async fn full_expand_and_split_word(
     shell: &mut Shell,
     params: &ExecutionParameters,
-    word: &ast::Word,
-) -> Result<Vec<String>, error::Error> {
-    full_expand_and_split_str(shell, params, word.flatten().as_str()).await
-}
-
-pub(crate) async fn full_expand_and_split_str(
-    shell: &mut Shell,
-    params: &ExecutionParameters,
-    s: &str,
+    word_str: impl AsRef<str>,
 ) -> Result<Vec<String>, error::Error> {
     let mut expander = WordExpander::new(shell, params);
-    expander.full_expand_with_splitting(s).await
+    expander.full_expand_with_splitting(word_str.as_ref()).await
+}
+
+/// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
+/// then perform field splitting and pathname expansion on the result.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word_str` - The word to expand, as a string.
+/// * `options` - Options to customize the behavior of the expander.
+#[allow(dead_code, reason = "intended future use")]
+pub(crate) async fn full_expand_and_split_word_with_options(
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+    word_str: impl AsRef<str>,
+    options: &ExpanderOptions,
+) -> Result<Vec<String>, error::Error> {
+    let mut expander = WordExpander::new_from_options(shell, params, options);
+    expander.full_expand_with_splitting(word_str.as_ref()).await
 }
 
 /// Expands a word in assignment context (enables tilde-after-colon expansion).
@@ -367,15 +428,15 @@ pub(crate) async fn full_expand_and_split_str(
 ///
 /// * `shell` - The shell in which to perform expansion.
 /// * `params` - The execution parameters to use during expansion.
-/// * `word` - The word to expand.
+/// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_assignment_word(
     shell: &mut Shell,
     params: &ExecutionParameters,
-    word: &ast::Word,
+    word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
     expander.parser_options.tilde_expansion_after_colon = true;
-    expander.basic_expand_to_str(word.flatten().as_str()).await
+    expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
 /// Assigns a value to a named parameter.
@@ -404,6 +465,7 @@ struct WordExpander<'a> {
     params: &'a ExecutionParameters,
     parser_options: brush_parser::ParserOptions,
     force_disable_brace_expansion: bool,
+    disable_command_substitutions: bool,
     in_double_quotes: bool,
 }
 
@@ -415,6 +477,29 @@ impl<'a> WordExpander<'a> {
             params,
             parser_options,
             force_disable_brace_expansion: false,
+            disable_command_substitutions: false,
+            in_double_quotes: false,
+        }
+    }
+
+    pub const fn new_from_options(
+        shell: &'a mut Shell,
+        params: &'a ExecutionParameters,
+        options: &ExpanderOptions,
+    ) -> Self {
+        let mut parser_options = shell.parser_options();
+
+        if !options.tilde_expand {
+            parser_options.tilde_expansion_at_word_start = false;
+            parser_options.tilde_expansion_after_colon = false;
+        }
+
+        Self {
+            shell,
+            params,
+            parser_options,
+            force_disable_brace_expansion: !options.brace_expand,
+            disable_command_substitutions: !options.execute_command_substitutions,
             in_double_quotes: false,
         }
     }
@@ -750,9 +835,12 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::WordPiece::BackquotedCommandSubstitution(s)
             | brush_parser::word::WordPiece::CommandSubstitution(s) => {
-                let output_str =
+                let output_str = if !self.disable_command_substitutions {
                     commands::invoke_command_in_subshell_and_get_output(self.shell, self.params, s)
-                        .await?;
+                        .await?
+                } else {
+                    String::new()
+                };
 
                 // We trim trailing newlines, per spec.
                 let trimmed = output_str.trim_end_matches('\n');
@@ -1918,31 +2006,31 @@ mod tests {
         let params = shell.default_exec_params();
 
         assert_eq!(
-            full_expand_and_split_str(&mut shell, &params, "\"\"").await?,
+            full_expand_and_split_word(&mut shell, &params, "\"\"").await?,
             vec![""]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, &params, "a b").await?,
+            full_expand_and_split_word(&mut shell, &params, "a b").await?,
             vec!["a", "b"]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, &params, "ab").await?,
+            full_expand_and_split_word(&mut shell, &params, "ab").await?,
             vec!["ab"]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, &params, r#""a b""#).await?,
+            full_expand_and_split_word(&mut shell, &params, r#""a b""#).await?,
             vec!["a b"]
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, &params, "").await?,
+            full_expand_and_split_word(&mut shell, &params, "").await?,
             Vec::<String>::new()
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, &params, "$@").await?,
+            full_expand_and_split_word(&mut shell, &params, "$@").await?,
             Vec::<String>::new()
         );
         assert_eq!(
-            full_expand_and_split_str(&mut shell, &params, "$*").await?,
+            full_expand_and_split_word(&mut shell, &params, "$*").await?,
             Vec::<String>::new()
         );
 

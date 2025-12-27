@@ -86,7 +86,11 @@ pub(crate) async fn expand_and_eval(
     trace_if_needed: bool,
 ) -> Result<i64, EvalError> {
     // Per documentation, first shell-expand it.
-    let expanded_self = expansion::basic_expand_str_without_tilde(shell, params, expr)
+    let options = expansion::ExpanderOptions {
+        tilde_expand: false,
+        ..Default::default()
+    };
+    let expanded_self = expansion::basic_expand_word_with_options(shell, params, expr, &options)
         .await
         .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
 
