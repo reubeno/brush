@@ -32,6 +32,42 @@ pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
 
+/// Behavior for loading profile files.
+#[derive(Default)]
+pub enum ProfileLoadBehavior {
+    /// Load the default profile files.
+    #[default]
+    LoadDefault,
+    /// Skip loading profile files.
+    Skip,
+}
+
+impl ProfileLoadBehavior {
+    /// Returns whether profile loading should be skipped.
+    pub const fn skip(&self) -> bool {
+        matches!(self, Self::Skip)
+    }
+}
+
+/// Behavior for loading rc files.
+#[derive(Default)]
+pub enum RcLoadBehavior {
+    /// Load the default rc files.
+    #[default]
+    LoadDefault,
+    /// Load a custom rc file; do not load defaults.
+    LoadCustom(PathBuf),
+    /// Skip loading rc files.
+    Skip,
+}
+
+impl RcLoadBehavior {
+    /// Returns whether rc loading should be skipped.
+    pub const fn skip(&self) -> bool {
+        matches!(self, Self::Skip)
+    }
+}
+
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell {
@@ -172,18 +208,15 @@ impl<S: shell_builder::IsComplete> ShellBuilder<S> {
     pub async fn build(self) -> Result<Shell, error::Error> {
         let mut options = self.build_settings();
 
-        let no_profile = options.no_profile;
-        let no_rc = options.no_rc;
-        let rc_file = std::mem::take(&mut options.rc_file);
+        let profile = std::mem::take(&mut options.profile);
+        let rc = std::mem::take(&mut options.rc);
 
         // Construct the shell.
         let mut shell = Shell::new(options)?;
 
         // Load profiles/configuration, unless skipped.
-        if !no_profile || !no_rc {
-            shell
-                .load_config(no_profile, no_rc, rc_file.as_deref())
-                .await?;
+        if !profile.skip() || !rc.skip() {
+            shell.load_config(&profile, &rc).await?;
         }
 
         Ok(shell)
@@ -319,14 +352,12 @@ pub struct CreateOptions {
     /// Whether to skip using a readline-like interface for input.
     #[builder(default)]
     pub no_editing: bool,
-    /// Whether to skip sourcing the system profile.
+    /// System profile loading behavior.
     #[builder(default)]
-    pub no_profile: bool,
-    /// Whether to skip sourcing the user's rc file.
+    pub profile: ProfileLoadBehavior,
+    /// Rc file loading behavior.
     #[builder(default)]
-    pub no_rc: bool,
-    /// Explicit override of rc file to load in interactive mode.
-    pub rc_file: Option<PathBuf>,
+    pub rc: RcLoadBehavior,
     /// Whether to skip inheriting environment variables from the calling process.
     #[builder(default)]
     pub do_not_inherit_env: bool,
@@ -739,21 +770,19 @@ impl Shell {
     ///
     /// # Arguments
     ///
-    /// * `skip_profile` - Whether to skip loading profile files.
-    /// * `skip_rc` - Whether to skip loading rc files.
-    /// * `rc_file` - Optionally provides non-default path to rc file to load.
+    /// * `profile_behavior` - Behavior for loading profile files.
+    /// * `rc_behavior` - Behavior for loading rc files.
     pub async fn load_config(
         &mut self,
-        skip_profile: bool,
-        skip_rc: bool,
-        rc_file: Option<&Path>,
+        profile_behavior: &ProfileLoadBehavior,
+        rc_behavior: &RcLoadBehavior,
     ) -> Result<(), error::Error> {
         let mut params = self.default_exec_params();
         params.process_group_policy = interp::ProcessGroupPolicy::SameProcessGroup;
 
         if self.options.login_shell {
             // --noprofile means skip this.
-            if skip_profile {
+            if matches!(profile_behavior, ProfileLoadBehavior::Skip) {
                 return Ok(());
             }
 
@@ -788,29 +817,28 @@ impl Shell {
             }
         } else {
             if self.options.interactive {
-                // --norc means skip this. Also skip in sh mode.
-                if skip_rc || self.options.sh_mode {
-                    return Ok(());
-                }
-
-                // If an rc file was specified, then source it.
-                if let Some(rc_file) = rc_file {
-                    // If an explicit rc file is provided, source it.
-                    self.source_if_exists(rc_file, &params).await?;
-                } else {
-                    //
-                    // Otherwise, for non-login interactive shells, load in this order:
-                    //
-                    //     /etc/bash.bashrc
-                    //     ~/.bashrc
-                    //
-                    self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
-                        .await?;
-                    if let Some(home_path) = self.home_dir() {
-                        self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
+                match rc_behavior {
+                    _ if self.options.sh_mode => (),
+                    RcLoadBehavior::Skip => (),
+                    RcLoadBehavior::LoadCustom(rc_file) => {
+                        // If an explicit rc file is provided, source it.
+                        self.source_if_exists(rc_file, &params).await?;
+                    }
+                    RcLoadBehavior::LoadDefault => {
+                        //
+                        // Otherwise, for non-login interactive shells, load in this order:
+                        //
+                        //     /etc/bash.bashrc
+                        //     ~/.bashrc
+                        //
+                        self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
                             .await?;
-                        self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
-                            .await?;
+                        if let Some(home_path) = self.home_dir() {
+                            self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
+                                .await?;
+                            self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
+                                .await?;
+                        }
                     }
                 }
             } else {

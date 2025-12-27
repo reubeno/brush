@@ -153,7 +153,9 @@ async fn run_async(
     ));
     drop(event_config);
 
-    // Instantiate an appropriately configured shell and wrap it in an `Arc`.
+    // Instantiate an appropriately configured shell and wrap it in an `Arc`. Note that we do
+    // *not* run any code in the shell yet. We'll delay loading profiles and such until after
+    // we've set up everything else (in `run_in_shell`).
     let shell = instantiate_shell(&args, cli_args).await?;
     let shell = Arc::new(Mutex::new(shell));
 
@@ -228,12 +230,24 @@ const fn will_run_interactively(args: &CommandLineArgs) -> bool {
     }
 }
 
+/// Runs the shell according to the provided command-line arguments.
+/// Also responsible for loading profiles and rc files as appropriate.
+///
+/// # Arguments
+///
+/// * `shell_ref` - A reference to the shell to run.
+/// * `args` - The parsed command-line arguments.
+/// * `input_backend` - The input backend to use.
+/// * `ui_options` - The user interface options to use.
 async fn run_in_shell(
     shell_ref: &brush_interactive::ShellRef,
     args: CommandLineArgs,
     input_backend: &mut impl brush_interactive::InputBackend,
     ui_options: &brush_interactive::UIOptions,
 ) -> Result<u8, brush_interactive::ShellError> {
+    // First load profile and rc files as appropriate.
+    initialize_shell(shell_ref, &args).await?;
+
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
         let mut shell = shell_ref.lock().await;
@@ -283,6 +297,43 @@ async fn run_in_shell(
     Ok(result)
 }
 
+/// Initializes a shell by loading profile and rc files as appropriate.
+///
+/// # Arguments
+///
+/// * `shell_ref` - A reference to the shell to initialize.
+/// * `args` - The parsed command-line arguments.
+async fn initialize_shell(
+    shell_ref: &brush_interactive::ShellRef,
+    args: &CommandLineArgs,
+) -> Result<(), brush_interactive::ShellError> {
+    // Compute desired profile-loading behavior.
+    let profile = if args.no_profile {
+        brush_core::ProfileLoadBehavior::Skip
+    } else {
+        brush_core::ProfileLoadBehavior::LoadDefault
+    };
+
+    // Compute desired rc-loading behavior.
+    let rc = if args.no_rc {
+        brush_core::RcLoadBehavior::Skip
+    } else if let Some(rc_file) = &args.rc_file {
+        brush_core::RcLoadBehavior::LoadCustom(rc_file.clone())
+    } else {
+        brush_core::RcLoadBehavior::LoadDefault
+    };
+
+    shell_ref.lock().await.load_config(&profile, &rc).await?;
+
+    Ok(())
+}
+
+/// Instantiates a shell from command-line arguments. Does *not* run any code in the shell.
+///
+/// # Arguments
+///
+/// * `args` - The parsed command-line arguments.
+/// * `cli_args` - The raw command-line arguments.
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
@@ -325,6 +376,12 @@ fn instantiate_shell_from_file(
     Ok(shell)
 }
 
+/// Instantiates a shell from command-line arguments. Does *not* run any code in the shell.
+///
+/// # Arguments
+///
+/// * `args` - The parsed command-line arguments.
+/// * `cli_args` - The raw command-line arguments.
 async fn instantiate_shell_from_args(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
@@ -372,6 +429,8 @@ async fn instantiate_shell_from_args(
         .collect();
 
     // Set up the shell builder with the requested options.
+    // NOTE: We skip loading profile and rc files here; that will be handled later after we've
+    // fully instantiated everything we want set before running any code.
     let shell = brush_core::Shell::builder()
         .disable_options(args.disabled_options.clone())
         .disable_shopt_options(args.disabled_shopt_options.clone())
@@ -386,9 +445,8 @@ async fn instantiate_shell_from_args(
         .interactive(args.is_interactive())
         .command_string_mode(args.command.is_some())
         .no_editing(args.no_editing)
-        .no_profile(args.no_profile)
-        .no_rc(args.no_rc)
-        .maybe_rc_file(args.rc_file.clone())
+        .profile(brush_core::ProfileLoadBehavior::Skip)
+        .rc(brush_core::RcLoadBehavior::Skip)
         .do_not_inherit_env(args.do_not_inherit_env)
         .fds(fds)
         .maybe_shell_args(shell_args)
