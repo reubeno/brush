@@ -360,3 +360,29 @@ async fn complete_find_command() -> Result<()> {
 
     Ok(())
 }
+
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
+#[tokio::test(flavor = "multi_thread")]
+async fn complete_quoted_filenames() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    test_shell.temp_dir.child("item1 item2").touch()?;
+    test_shell.temp_dir.child("item1'item2").touch()?;
+
+    let mut results = test_shell.complete_end_of_line("ls item1\\ ").await?;
+    assert_eq!(results, ["item1 item2"]);
+
+    results = test_shell.complete_end_of_line("ls item1'").await?;
+    assert_eq!(results, ["item1 item2", "item1'item2"]);
+
+    results = test_shell.complete_end_of_line("ls item1").await?;
+    assert_eq!(results, ["item1 item2", "item1'item2"]);
+
+    results = test_shell.complete_end_of_line("ls 'item1 ").await?;
+    assert_eq!(results, ["item1 item2"]);
+
+    results = test_shell.complete_end_of_line("ls \"item1 ").await?;
+    assert_eq!(results, ["item1 item2"]);
+
+    Ok(())
+}
