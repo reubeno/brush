@@ -28,7 +28,7 @@ pub struct KeySequenceReadlineBinding {
 pub enum ReadlineTarget {
     /// A named readline function.
     Function(String),
-    /// A readline command.
+    /// A readline command macro.
     Macro(String),
 }
 

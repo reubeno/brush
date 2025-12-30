@@ -394,6 +394,9 @@ struct TestCase {
     /// Command-line arguments to the shell
     #[serde(default)]
     pub args: Vec<String>,
+    /// Command-line arguments to append for the shell-under-test only.
+    #[serde(default)]
+    pub additional_test_args: Vec<String>,
     /// Default command-line shell arguments that should be *removed*.
     #[serde(default)]
     pub removed_default_args: HashSet<String>,
@@ -1092,6 +1095,12 @@ impl TestCase {
             },
             ShellInvocation::ExecScript(_) => unimplemented!("exec script test"),
         };
+
+        if matches!(shell_config.which, WhichShell::ShellUnderTest(_)) {
+            for arg in &self.additional_test_args {
+                test_cmd.arg(arg);
+            }
+        }
 
         for arg in &shell_config.default_args {
             if !self.removed_default_args.contains(arg) {

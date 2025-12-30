@@ -4,7 +4,7 @@ use std::{
 };
 
 /// Represents an action that can be taken in response to a key sequence.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyAction {
     /// Execute a shell command.
     ShellCommand(String),
@@ -26,6 +26,9 @@ impl Display for KeyAction {
 #[derive(
     Clone,
     Debug,
+    Eq,
+    Hash,
+    PartialEq,
     strum_macros::EnumString,
     strum_macros::Display,
     strum_macros::EnumIter,
@@ -154,6 +157,7 @@ pub enum InputFunction {
     ViAppendEol,
     ViAppendMode,
     ViArgDigit,
+    #[strum(serialize = "vi-bWord")]
     ViBWord,
     ViBackToIndent,
     ViBackwardBigword,
@@ -167,12 +171,14 @@ pub enum InputFunction {
     ViComplete,
     ViDelete,
     ViDeleteTo,
+    #[strum(serialize = "vi-eWord")]
     ViEWord,
     ViEditingMode,
     ViEndBigword,
     ViEndWord,
     ViEofMaybe,
     ViEword,
+    #[strum(serialize = "vi-fWord")]
     ViFWord,
     ViFetchHistory,
     ViFirstPrint,
@@ -226,7 +232,13 @@ impl Display for KeySequence {
             }
             Self::Bytes(bytes) => {
                 for byte in bytes.iter().flatten() {
-                    write!(f, "{byte:02x}")?;
+                    if !byte.is_ascii_control() {
+                        write!(f, "{}", *byte as char)?;
+                    } else if *byte == b'\x1b' {
+                        write!(f, r"\e")?;
+                    } else {
+                        write!(f, r"\x{byte:02x}")?;
+                    }
                 }
             }
         }
@@ -379,4 +391,7 @@ pub trait KeyBindings: Send {
     /// * `target` - The sequence that makes up the macro.
     fn define_macro(&mut self, seq: KeySequence, target: KeySequence)
     -> Result<(), std::io::Error>;
+
+    /// Retrieves all defined macros.
+    fn get_macros(&self) -> HashMap<KeySequence, KeySequence>;
 }

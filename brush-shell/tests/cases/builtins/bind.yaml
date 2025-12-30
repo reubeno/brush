@@ -1,0 +1,113 @@
+name: "Builtins: bind"
+cases:
+  - name: "bind -l"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # List bindable actions but ignore brush custom entries
+          echo "[bind -l]"
+          bind -l | grep -v brush-
+
+  - name: "bind -q/-P/-p"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Basic-check some known bindings
+          well_known_func="clear-screen"
+          echo "[bind -q]"
+          bind -q ${well_known_func}
+          echo "bind -q result: $?"
+          echo "[bind -P]"
+          bind -P | grep ${well_known_func}
+          echo "[bind -p]"
+          bind -p | grep ${well_known_func}
+
+  - name: "bind -x/-X/-r/-u"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Bind a key and check it
+          echo "[bind -x]"
+          bind -x '"\C-t":echo hi'
+          echo "bind -x result: $?"
+          bind -X
+          echo "bind -X result: $?"
+
+          # Unbind it via -r
+          echo "[bind -r]"
+          bind -r '\C-t'
+          echo "bind -r result: $?"
+          bind -X
+          echo "bind -X result: $?"
+          echo "[bind -r (again)]"
+          bind -r '\C-t'
+          echo "bind -r (again) result: $?"
+
+          # Unbind via -u
+          well_known_func="clear-screen"
+          echo "[bind -u]"
+          bind -u ${well_known_func}
+          echo "bind -u result: $?"
+          echo "[bind -q (after -u)]"
+          bind -q ${well_known_func}
+          echo "bind -q (after -u) result: $?"
+
+  - name: "bind keyseq"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          well_known_func="clear-screen"
+          bind -u ${well_known_func} # Ensure it's unbound first
+
+          # Bind a keyseq
+          echo "[bind keyseq]"
+          bind '"\C-t":clear-screen'
+          echo "bind keyseq result: $?"
+
+          # List current bindings
+          bind -q ${well_known_func}
+          echo "bind -q result: $?"
+
+  - name: "bind macro"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          echo "[bind -S (pre)]"
+          bind -S
+          echo "bind -S result: $?"
+
+          echo "[bind -s (pre)]"
+          bind -s
+          echo "bind -s result: $?"
+
+          echo "[bind macro]"
+          bind '"\C-r": "\e[0;1A\e[0;0A"'
+          echo "bind macro result: $?"
+
+          bind "[bind -S]"
+          bind -S
+          echo "bind -S result: $?"
+
+          bind "[bind -s]"
+          bind -s
+          echo "bind -s result: $?"
