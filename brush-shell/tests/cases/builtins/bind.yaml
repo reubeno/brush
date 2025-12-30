@@ -5,6 +5,7 @@ cases:
     removed_default_args: ["--input-backend=basic"]
     additional_test_args: ["--input-backend=reedline"]
     ignore_stderr: true
+    min_oracle_version: "5.3" # Added functions in 5.3
     test_files:
       - path: "run.sh"
         contents: |
@@ -34,6 +35,7 @@ cases:
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]
     additional_test_args: ["--input-backend=reedline"]
+    min_oracle_version: "5.3" # -X output changed in 5.3
     ignore_stderr: true
     test_files:
       - path: "run.sh"
@@ -42,6 +44,7 @@ cases:
           echo "[bind -x]"
           bind -x '"\C-t":echo hi'
           echo "bind -x result: $?"
+          echo "[bind -X]"
           bind -X
           echo "bind -X result: $?"
 

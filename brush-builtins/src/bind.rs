@@ -240,7 +240,7 @@ impl BindCommand {
                     continue;
                 };
 
-                writeln!(context.stdout(), "\"{seq}\": \"{cmd}\"")?;
+                writeln!(context.stdout(), "\"{seq}\" \"{cmd}\"")?;
             }
         }
 
