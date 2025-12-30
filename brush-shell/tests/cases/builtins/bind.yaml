@@ -11,7 +11,8 @@ cases:
         contents: |
           # List bindable actions but ignore brush custom entries
           echo "[bind -l]"
-          bind -l | grep -v brush-
+          bind -l | grep -v brush- | sort
+          echo "bind -l result: ${PIPESTATUS[@]}"
 
   - name: "bind -q/-P/-p"
     args: ["run.sh"]
@@ -23,13 +24,18 @@ cases:
         contents: |
           # Basic-check some known bindings
           well_known_func="clear-screen"
+
           echo "[bind -q]"
           bind -q ${well_known_func}
-          echo "bind -q result: $?"
+          echo "bind -q result: ${PIPESTATUS[@]}"
+
           echo "[bind -P]"
           bind -P | grep ${well_known_func}
+          echo "bind -P result: ${PIPESTATUS[@]}"
+
           echo "[bind -p]"
           bind -p | grep ${well_known_func}
+          echo "bind -p result: ${PIPESTATUS[@]}"
 
   - name: "bind -x/-X/-r/-u"
     args: ["run.sh"]
@@ -44,6 +50,7 @@ cases:
           echo "[bind -x]"
           bind -x '"\C-t":echo hi'
           echo "bind -x result: $?"
+
           echo "[bind -X]"
           bind -X
           echo "bind -X result: $?"
@@ -95,37 +102,39 @@ cases:
     test_files:
       - path: "run.sh"
         contents: |
+          key_to_bind='\C-r'
+
           echo "[bind -S (pre)]"
-          bind -S
-          echo "bind -S result: $?"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S result: ${PIPESTATUS[@]}"
 
           echo "[bind -s (pre)]"
-          bind -s
-          echo "bind -s result: $?"
+          bind -s | grep "${key_to_bind}"
+          echo "bind -s result: ${PIPESTATUS[@]}"
 
           echo "[bind macro]"
           bind '"\C-r": "\e[0;1A\e[0;0A"'
           echo "bind macro result: $?"
 
           bind "[bind -S]"
-          bind -S
-          echo "bind -S result: $?"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S result: ${PIPESTATUS[@]}"
 
           bind "[bind -s]"
-          bind -s
-          echo "bind -s result: $?"
+          bind -s | grep "${key_to_bind}"
+          echo "bind -s result: ${PIPESTATUS[@]}"
 
           bind "[bind -r]"
-          bind -r '\C-r'
-          echo "bind -r result: $?"
+          bind -r "${key_to_bind}"
+          echo "bind -r result: ${PIPESTATUS[@]}"
 
           bind "[bind -s (after -r)]"
-          bind -s
-          echo "bind -s (after -r) result: $?"
+          bind -s | grep "${key_to_bind}"
+          echo "bind -s (after -r) result: ${PIPESTATUS[@]}"
 
           echo "[bind -S (after -r)]"
-          bind -S
-          echo "bind -S (after -r) result: $?"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S (after -r) result: ${PIPESTATUS[@]}"
 
   - name: "bind macro 2"
     args: ["run.sh"]
