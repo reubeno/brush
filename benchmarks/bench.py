@@ -61,14 +61,65 @@ class ComparisonResult:
 # =============================================================================
 
 BENCHMARK_CASES: dict[str, BenchmarkCase] = {
+    "assignment": BenchmarkCase(
+        name="assignment",
+        loop_body="x=42",
+    ),
     "colon": BenchmarkCase(
         name="colon",
         loop_body=":",
+    ),
+    "echo_builtin": BenchmarkCase(
+        name="echo_builtin",
+        loop_body="echo >/dev/null",
+    ),
+    "echo_cmd": BenchmarkCase(
+        name="echo_cmd",
+        loop_body="/usr/bin/echo >/dev/null",
     ),
     "increment": BenchmarkCase(
         name="increment",
         setup="x=0",
         loop_body="((x++))",
+    ),
+    "subshell": BenchmarkCase(
+        name="subshell",
+        loop_body="(:)",
+    ),
+    "cmdsubst": BenchmarkCase(
+        name="cmdsubst",
+        loop_body=': $(:)',
+    ),
+    "var_expand": BenchmarkCase(
+        name="var_expand",
+        setup='myvar="hello world"',
+        loop_body=': "$myvar"',
+    ),
+    "func_call": BenchmarkCase(
+        name="func_call",
+        setup="myfunc() { :; }",
+        loop_body="myfunc",
+    ),
+    "array_access": BenchmarkCase(
+        name="array_access",
+        setup='myarr=(a b c d e f g h i j)',
+        loop_body=': "${myarr[5]}"',
+    ),
+    "pattern_match": BenchmarkCase(
+        name="pattern_match",
+        loop_body='[[ "hello world" == hello* ]]',
+    ),
+    "regex_match": BenchmarkCase(
+        name="regex_match",
+        loop_body='[[ "hello world" =~ ^hello.* ]]',
+    ),
+    "if_taken": BenchmarkCase(
+        name="if_taken",
+        loop_body="if [[ 1 -eq 1 ]]; then :; fi",
+    ),
+    "if_not_taken": BenchmarkCase(
+        name="if_not_taken",
+        loop_body="if [[ 0 -eq 1 ]]; then :; fi",
     ),
 }
 
@@ -392,8 +443,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Available benchmark tests:
-  colon      - Invoke the ':' builtin with no args
-  increment  - Increment an integer variable
+  colon         - Invoke the ':' builtin with no args
+  echo          - Echo to /dev/null
+  increment     - Increment an integer variable
+  subshell      - Fork a subshell
+  cmdsubst      - Command substitution
+  var_expand    - Variable expansion
+  func_call     - Function call
+  array_access  - Array index access
+  pattern_match - Glob pattern match in [[ ]]
+  regex_match   - Regex match in [[ =~ ]]
+  if_taken      - If conditional (branch taken)
+  if_not_taken  - If conditional (branch not taken)
 
 Examples:
   %(prog)s --shell ./target/release/brush
