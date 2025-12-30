@@ -121,7 +121,15 @@ pub fn key_sequence_to_strokes(
         match item {
             KeySequenceItem::Control => current_stroke.control = true,
             KeySequenceItem::Meta => current_stroke.meta = true,
-            KeySequenceItem::Byte(b) => current_stroke.key_code.push(*b),
+            KeySequenceItem::Byte(b) => {
+                current_stroke.key_code.push(*b);
+                // If this is a control or meta stroke, the modifier only applies to this one byte,
+                // so we need to push the stroke and start fresh for subsequent bytes.
+                if current_stroke.control || current_stroke.meta {
+                    strokes.push(current_stroke);
+                    current_stroke = KeyStroke::default();
+                }
+            }
         }
     }
 

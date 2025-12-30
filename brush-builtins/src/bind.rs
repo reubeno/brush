@@ -402,7 +402,15 @@ fn key_sequence_to_abstract_strokes(
             }
         }
 
-        key_code_bytes.push(phys_stroke.key_code);
+        // When storing as bytes, apply control modifier to the key code.
+        let mut raw_bytes = phys_stroke.key_code.clone();
+        if phys_stroke.control {
+            for byte in &mut raw_bytes {
+                // Control characters are computed by ANDing with 0x1F
+                *byte &= 0x1F;
+            }
+        }
+        key_code_bytes.push(raw_bytes);
 
         if let Some(key) = key {
             abstract_strokes.push(interfaces::KeyStroke {

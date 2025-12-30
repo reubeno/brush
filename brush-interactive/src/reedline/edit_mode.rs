@@ -142,6 +142,9 @@ impl interfaces::KeyBindings for UpdatableBindings {
     }
 
     fn try_unbind(&mut self, seq: KeySequence) -> bool {
+        // Also remove from macros.
+        let removed_macro = self.macros.remove(&seq).is_some();
+
         match seq {
             interfaces::KeySequence::Strokes(_) => {
                 if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) {
@@ -153,14 +156,14 @@ impl interfaces::KeyBindings for UpdatableBindings {
                         });
                     }
 
-                    found
+                    found || removed_macro
                 } else {
-                    false
+                    removed_macro
                 }
             }
             interfaces::KeySequence::Bytes(bytes) => {
                 let key_str = format_raw_key_bytes(&bytes);
-                self.raw_mappings.remove(&key_str).is_some()
+                self.raw_mappings.remove(&key_str).is_some() || removed_macro
             }
         }
     }

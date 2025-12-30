@@ -236,6 +236,10 @@ impl Display for KeySequence {
                         write!(f, "{}", *byte as char)?;
                     } else if *byte == b'\x1b' {
                         write!(f, r"\e")?;
+                    } else if *byte >= 0x01 && *byte <= 0x1A {
+                        // Control characters: display as \C-<letter>
+                        let letter = (b'a' + (*byte - 1)) as char;
+                        write!(f, r"\C-{letter}")?;
                     } else {
                         write!(f, r"\x{byte:02x}")?;
                     }
