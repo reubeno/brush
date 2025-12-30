@@ -1,10 +1,13 @@
 use clap::{Parser, ValueEnum};
-use std::{io::Write, str::FromStr as _, sync::Arc};
+use itertools::Itertools as _;
+use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
 use strum::IntoEnumIterator;
 use tokio::sync::Mutex;
 
 use brush_core::{
-    ExecutionExitCode, ExecutionResult, builtins, error, interfaces, sys, trace_categories,
+    ExecutionExitCode, ExecutionResult, builtins,
+    interfaces::{self, InputFunction, KeyAction, KeySequence},
+    sys, trace_categories,
 };
 
 /// Identifier for a keymap
@@ -85,10 +88,39 @@ pub(crate) struct BindCommand {
     key_sequence: Option<String>,
 }
 
-const BIND_FEATURE_ISSUE_ID: u32 = 380;
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BindError {
+    /// Unknown function specified.
+    #[error("unknown function: {0}")]
+    UnknownFunction(String),
+
+    /// Unknown key binding function.
+    #[error("unknown key binding function: {0}")]
+    UnknownKeyBindingFunction(String),
+
+    /// Unimplemented functionality.
+    #[error("unimplemented: {0}")]
+    Unimplemented(&'static str),
+
+    /// An I/O error occurred.
+    #[error("I/O error occurred")]
+    IoError(#[from] std::io::Error),
+
+    /// A binding parse error occurred.
+    #[error(transparent)]
+    BindingParseError(#[from] brush_parser::BindingParseError),
+}
+
+impl brush_core::BuiltinError for BindError {}
+
+impl From<&BindError> for brush_core::ExecutionExitCode {
+    fn from(_err: &BindError) -> Self {
+        Self::GeneralError
+    }
+}
 
 impl builtins::Command for BindCommand {
-    type Error = brush_core::Error;
+    type Error = BindError;
 
     async fn execute(
         &self,
@@ -108,11 +140,12 @@ impl builtins::Command for BindCommand {
 }
 
 impl BindCommand {
+    #[allow(clippy::too_many_lines)]
     async fn execute_impl(
         &self,
         bindings: &Arc<Mutex<dyn interfaces::KeyBindings>>,
         context: &brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, BindError> {
         let mut bindings = bindings.lock().await;
 
         if self.list_funcs {
@@ -122,23 +155,19 @@ impl BindCommand {
         }
 
         if self.list_funcs_and_bindings {
-            for (seq, action) in &bindings.get_current() {
-                writeln!(context.stdout(), "{action} can be found on {seq}")?;
-            }
-
-            return error::unimp_with_issue("bind -P", BIND_FEATURE_ISSUE_ID);
+            display_funcs_and_bindings(&*bindings, context, false /* reusable? */)?;
         }
 
         if self.list_funcs_and_bindings_reusable {
-            return error::unimp_with_issue("bind -p", BIND_FEATURE_ISSUE_ID);
+            display_funcs_and_bindings(&*bindings, context, true /* reusable? */)?;
         }
 
         if self.list_key_seqs_that_invoke_macros {
-            return error::unimp_with_issue("bind -S", BIND_FEATURE_ISSUE_ID);
+            display_macros(&*bindings, context, false /* reusable? */)?;
         }
 
         if self.list_key_seqs_that_invoke_macros_reusable {
-            return error::unimp_with_issue("bind -s", BIND_FEATURE_ISSUE_ID);
+            display_macros(&*bindings, context, true /* reusable? */)?;
         }
 
         if self.list_vars {
@@ -173,24 +202,46 @@ impl BindCommand {
             )?;
         }
 
-        if self.query_func_bindings.is_some() {
-            return error::unimp_with_issue("bind -q", BIND_FEATURE_ISSUE_ID);
+        if let Some(func_str) = &self.query_func_bindings {
+            let seqs = find_key_seqs_bound_to_function(&*bindings, func_str)?;
+
+            if !seqs.is_empty() {
+                writeln!(
+                    context.stdout(),
+                    "{func_str} can be invoked via {}.",
+                    seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
+                )?;
+            } else {
+                writeln!(context.stdout(), "{func_str} is not bound to any keys.")?;
+                return Ok(ExecutionResult::general_error());
+            }
         }
 
-        if self.remove_func_bindings.is_some() {
-            return error::unimp_with_issue("bind -u", BIND_FEATURE_ISSUE_ID);
+        if let Some(func_str) = &self.remove_func_bindings {
+            let found_seqs = find_key_seqs_bound_to_function(&*bindings, func_str)?;
+
+            for seq in found_seqs {
+                let _ = bindings.try_unbind(seq);
+            }
         }
 
-        if self.remove_key_seq_binding.is_some() {
-            return error::unimp_with_issue("bind -r", BIND_FEATURE_ISSUE_ID);
+        if let Some(key_seq_str) = &self.remove_key_seq_binding {
+            let key_seq = parse_key_sequence(key_seq_str)?;
+            let _ = bindings.try_unbind(key_seq);
         }
 
         if self.bindings_file.is_some() {
-            return error::unimp_with_issue("bind -f", BIND_FEATURE_ISSUE_ID);
+            return Err(BindError::Unimplemented("bind -f"));
         }
 
         if self.list_key_seq_bindings {
-            return error::unimp_with_issue("bind -X", BIND_FEATURE_ISSUE_ID);
+            for (seq, action) in &bindings.get_current() {
+                let KeyAction::ShellCommand(cmd) = action else {
+                    continue;
+                };
+
+                writeln!(context.stdout(), "\"{seq}\" \"{cmd}\"")?;
+            }
         }
 
         if !self.key_seq_bindings.is_empty() {
@@ -221,9 +272,19 @@ impl BindCommand {
     }
 }
 
+fn parse_key_sequence(input: &str) -> Result<interfaces::KeySequence, BindError> {
+    // First trim any whitespace.
+    let input = input.trim();
+
+    let parsed = brush_parser::readline_binding::parse_key_sequence(input)?;
+    let abstract_seq = key_sequence_to_abstract_strokes(&parsed)?;
+
+    Ok(abstract_seq)
+}
+
 fn parse_key_sequence_and_shell_command(
     input: &str,
-) -> Result<(interfaces::KeySequence, String), brush_core::Error> {
+) -> Result<(interfaces::KeySequence, String), BindError> {
     tracing::debug!(target: trace_categories::INPUT,
         "parsing key binding entry: '{input}'"
     );
@@ -234,21 +295,21 @@ fn parse_key_sequence_and_shell_command(
     // This should be something of the form:
     //     "KEY-SEQUENCE": SHELL-COMMAND
     let binding = brush_parser::readline_binding::parse_key_sequence_shell_cmd_binding(input)?;
-    let strokes = key_sequence_to_abstract_strokes(&binding.seq)?;
+    let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
-    Ok((interfaces::KeySequence { strokes }, binding.shell_cmd))
+    Ok((abstract_seq, binding.shell_cmd))
 }
 
 #[derive(Debug)]
 #[allow(dead_code, reason = "not all variants implemented yet")]
 enum BindableReadlineTarget {
-    Function(brush_core::interfaces::InputFunction),
-    Command(String),
+    Function(interfaces::InputFunction),
+    Macro(interfaces::KeySequence),
 }
 
 fn parse_key_sequence_and_readline_target(
     input: &str,
-) -> Result<(interfaces::KeySequence, BindableReadlineTarget), brush_core::Error> {
+) -> Result<(interfaces::KeySequence, BindableReadlineTarget), BindError> {
     tracing::debug!(target: trace_categories::INPUT,
         "parsing key binding entry: '{input}'"
     );
@@ -260,20 +321,19 @@ fn parse_key_sequence_and_readline_target(
     //     "KEY-SEQUENCE":function-name
     //     "KEY-SEQUENCE":readline-command
     let binding = brush_parser::readline_binding::parse_key_sequence_readline_binding(input)?;
-    let strokes = key_sequence_to_abstract_strokes(&binding.seq)?;
+    let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
     match binding.target {
         brush_parser::readline_binding::ReadlineTarget::Function(func_name) => {
             let func = parse_readline_function(func_name.as_str())?;
-            Ok((
-                interfaces::KeySequence { strokes },
-                BindableReadlineTarget::Function(func),
-            ))
+            Ok((abstract_seq, BindableReadlineTarget::Function(func)))
         }
-        brush_parser::readline_binding::ReadlineTarget::Command(cmd) => Ok((
-            interfaces::KeySequence { strokes },
-            BindableReadlineTarget::Command(cmd),
-        )),
+        brush_parser::readline_binding::ReadlineTarget::Macro(target_seq_str) => {
+            let parsed_target =
+                brush_parser::readline_binding::parse_key_sequence(&target_seq_str)?;
+            let abstract_target = key_sequence_to_abstract_strokes(&parsed_target)?;
+            Ok((abstract_seq, BindableReadlineTarget::Macro(abstract_target)))
+        }
     }
 }
 
@@ -281,7 +341,7 @@ fn bind_key_sequence_to_shell_cmd(
     bindings: &mut dyn interfaces::KeyBindings,
     key_sequence: interfaces::KeySequence,
     command: String,
-) -> Result<(), brush_core::Error> {
+) -> Result<(), BindError> {
     tracing::debug!(target: trace_categories::INPUT,
         "binding key sequence: '{key_sequence}' => command '{command}'"
     );
@@ -295,7 +355,7 @@ fn bind_key_sequence_to_readline_target(
     bindings: &mut dyn interfaces::KeyBindings,
     key_sequence: interfaces::KeySequence,
     target: BindableReadlineTarget,
-) -> Result<(), brush_core::Error> {
+) -> Result<(), BindError> {
     match target {
         BindableReadlineTarget::Function(func) => {
             tracing::debug!(target: trace_categories::INPUT,
@@ -310,23 +370,26 @@ fn bind_key_sequence_to_readline_target(
             bindings.bind(key_sequence, interfaces::KeyAction::DoInputFunction(func))?;
             Ok(())
         }
-        BindableReadlineTarget::Command(cmd_macro) => {
+        BindableReadlineTarget::Macro(cmd_macro) => {
             tracing::debug!(target: trace_categories::INPUT,
                 "binding key sequence: '{key_sequence}' => readline macro '{cmd_macro}'"
             );
 
-            error::unimp("binding key sequence to readline macro")
+            bindings.define_macro(key_sequence, cmd_macro)?;
+            Ok(())
         }
     }
 }
 
 fn key_sequence_to_abstract_strokes(
     seq: &brush_parser::readline_binding::KeySequence,
-) -> Result<Vec<interfaces::KeyStroke>, brush_core::Error> {
+) -> Result<interfaces::KeySequence, BindError> {
     let phys_strokes = brush_parser::readline_binding::key_sequence_to_strokes(seq)?;
 
     // Lift from key codes to abstract keys.
     let mut abstract_strokes = vec![];
+    let mut key_code_bytes = vec![];
+    let mut uninterpretable = false;
     for mut phys_stroke in phys_strokes {
         let mut key = sys::input::try_get_key_from_key_code(phys_stroke.key_code.as_slice());
 
@@ -339,31 +402,123 @@ fn key_sequence_to_abstract_strokes(
             }
         }
 
-        let Some(key) = key else {
-            return Err(error::ErrorKind::UnhandledKeyCode(phys_stroke.key_code).into());
-        };
+        // When storing as bytes, apply control modifier to the key code.
+        let mut raw_bytes = phys_stroke.key_code.clone();
+        if phys_stroke.control {
+            for byte in &mut raw_bytes {
+                // Control characters are computed by ANDing with 0x1F
+                *byte &= 0x1F;
+            }
+        }
+        key_code_bytes.push(raw_bytes);
 
-        abstract_strokes.push(interfaces::KeyStroke {
-            alt: phys_stroke.meta,
-            control: phys_stroke.control,
-            shift: false,
-            key,
-        });
+        if let Some(key) = key {
+            abstract_strokes.push(interfaces::KeyStroke {
+                alt: phys_stroke.meta,
+                control: phys_stroke.control,
+                shift: false,
+                key,
+            });
+        } else {
+            uninterpretable = true;
+        }
     }
 
-    Ok(abstract_strokes)
+    if uninterpretable {
+        Ok(interfaces::KeySequence::Bytes(key_code_bytes))
+    } else {
+        Ok(interfaces::KeySequence::Strokes(abstract_strokes))
+    }
 }
 
-fn parse_readline_function(
-    func_name: &str,
-) -> Result<interfaces::InputFunction, brush_core::Error> {
-    interfaces::InputFunction::from_str(func_name).map_err(|_err| {
-        brush_core::ErrorKind::UnknownKeyBindingFunction(func_name.to_owned()).into()
-    })
+fn parse_readline_function(func_name: &str) -> Result<interfaces::InputFunction, BindError> {
+    interfaces::InputFunction::from_str(func_name)
+        .map_err(|_err| BindError::UnknownKeyBindingFunction(func_name.to_owned()))
 }
 
 const fn to_onoff(value: bool) -> &'static str {
     if value { "on" } else { "off" }
+}
+
+fn display_funcs_and_bindings(
+    bindings: &dyn interfaces::KeyBindings,
+    context: &brush_core::ExecutionContext<'_>,
+    reusable: bool,
+) -> Result<(), BindError> {
+    let mut sequences_by_func: HashMap<InputFunction, Vec<KeySequence>> = HashMap::new();
+    for (seq, action) in &bindings.get_current() {
+        let KeyAction::DoInputFunction(func) = action else {
+            continue;
+        };
+
+        sequences_by_func
+            .entry(func.clone())
+            .or_default()
+            .push(seq.clone());
+    }
+
+    let sorted_funcs = interfaces::InputFunction::iter().sorted_by_key(|f| f.to_string());
+
+    for func in sorted_funcs {
+        if let Some(seqs) = sequences_by_func.get(&func) {
+            if reusable {
+                for seq in seqs {
+                    writeln!(context.stdout(), "\"{seq}\": {func}")?;
+                }
+            } else {
+                writeln!(
+                    context.stdout(),
+                    "{func} can be found on {}.",
+                    seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
+                )?;
+            }
+        } else {
+            if reusable {
+                writeln!(context.stdout(), "# {func} (not bound)")?;
+            } else {
+                writeln!(context.stdout(), "{func} is not bound to any keys")?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn display_macros(
+    bindings: &dyn interfaces::KeyBindings,
+    context: &brush_core::ExecutionContext<'_>,
+    reusable: bool,
+) -> Result<(), BindError> {
+    for (left, right) in bindings.get_macros() {
+        if reusable {
+            writeln!(context.stdout(), "\"{left}\": \"{right}\"")?;
+        } else {
+            writeln!(context.stdout(), "{left} outputs {right}")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn find_key_seqs_bound_to_function(
+    bindings: &dyn interfaces::KeyBindings,
+    func_str: &str,
+) -> Result<Vec<interfaces::KeySequence>, BindError> {
+    let Ok(func_to_find) = InputFunction::from_str(func_str) else {
+        return Err(BindError::UnknownFunction(func_str.to_owned()));
+    };
+
+    let mut found_seqs = vec![];
+
+    for (seq, action) in &bindings.get_current() {
+        if let KeyAction::DoInputFunction(func) = action {
+            if *func == func_to_find {
+                found_seqs.push(seq.clone());
+            }
+        }
+    }
+
+    Ok(found_seqs)
 }
 
 #[cfg(test)]
@@ -378,14 +533,12 @@ mod tests {
 
         assert_eq!(
             key_seq,
-            interfaces::KeySequence {
-                strokes: vec![interfaces::KeyStroke {
-                    alt: false,
-                    control: true,
-                    shift: false,
-                    key: interfaces::Key::Character('a'),
-                }],
-            }
+            interfaces::KeySequence::Strokes(vec![interfaces::KeyStroke {
+                alt: false,
+                control: true,
+                shift: false,
+                key: interfaces::Key::Character('a'),
+            }])
         );
 
         assert_matches!(
@@ -401,14 +554,12 @@ mod tests {
 
         assert_eq!(
             key_seq,
-            interfaces::KeySequence {
-                strokes: vec![interfaces::KeyStroke {
-                    alt: true,
-                    control: false,
-                    shift: false,
-                    key: interfaces::Key::Character('r'),
-                }],
-            }
+            interfaces::KeySequence::Strokes(vec![interfaces::KeyStroke {
+                alt: true,
+                control: false,
+                shift: false,
+                key: interfaces::Key::Character('r'),
+            }])
         );
 
         assert_matches!(

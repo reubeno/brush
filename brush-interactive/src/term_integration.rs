@@ -21,7 +21,8 @@ impl TerminalIntegration {
         Self { term: term_info }
     }
 
-    /// Returns the terminal escape sequence that should be emitted to initialize terminal integration.
+    /// Returns the terminal escape sequence that should be emitted to initialize terminal
+    /// integration.
     pub fn initialize(&self) -> Cow<'_, str> {
         if self.term.supports_osc_633 {
             "\x1b]633;P;HasRichCommandDetection=True\x1b\\".into()
@@ -100,7 +101,8 @@ impl TerminalIntegration {
         }
     }
 
-    /// Returns the terminal escape sequence that should be emitted after the input line continuation.
+    /// Returns the terminal escape sequence that should be emitted after the input line
+    /// continuation.
     pub fn post_input_line_continuation(&self) -> Cow<'_, str> {
         if self.term.supports_osc_633 {
             "\x1b]633;G\x1b\\".into()

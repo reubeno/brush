@@ -34,7 +34,8 @@ pub struct InteractiveOptions {
     pub terminal_shell_integration: bool,
     /// Whether or not to run `PROMPT_COMMAND` before each prompt.
     pub run_prompt_command: bool,
-    /// Whether or not to run zsh-style exec/cmd functions (e.g., `preexec_functions`, `precmd_functions`).
+    /// Whether or not to run zsh-style exec/cmd functions (e.g., `preexec_functions`,
+    /// `precmd_functions`).
     pub run_cmd_exec_funcs: bool,
 }
 
@@ -243,7 +244,8 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     /// # Arguments
     ///
     /// * `read_result` - The line of input to execute.
-    /// * `user_input` - Whether the line came from direct user input (as opposed to a key binding, say).
+    /// * `user_input` - Whether the line came from direct user input (as opposed to a key binding,
+    ///   say).
     async fn execute_line(
         &mut self,
         read_result: String,

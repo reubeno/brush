@@ -89,6 +89,8 @@ cases:
     ignore_stderr: true
     removed_default_args: ["--norc"] # Need to cancel this out so we can override
     args: ["--rcfile", "testrc", "-i"]
+    env:
+      PS1: ""
     test_files:
       - path: "testrc"
         contents: |
@@ -100,6 +102,8 @@ cases:
     ignore_stderr: true
     removed_default_args: ["--norc"] # Need to cancel this out so we can override
     args: ["--rcfile", "testrc"]
+    env:
+      PS1: ""
     test_files:
       - path: "testrc"
         contents: |
@@ -111,5 +115,7 @@ cases:
     ignore_stderr: true
     removed_default_args: ["--norc"] # Need to cancel this out so we can override
     args: ["--rcfile", "non-existent-file", "-i"]
+    env:
+      PS1: ""
     stdin: |
       echo "Executing in main script body"
