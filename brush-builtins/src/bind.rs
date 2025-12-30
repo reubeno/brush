@@ -203,7 +203,7 @@ impl BindCommand {
         }
 
         if let Some(func_str) = &self.query_func_bindings {
-            let seqs = find_keq_seqs_bound_to_function(&*bindings, func_str)?;
+            let seqs = find_key_seqs_bound_to_function(&*bindings, func_str)?;
 
             if !seqs.is_empty() {
                 writeln!(
@@ -218,7 +218,7 @@ impl BindCommand {
         }
 
         if let Some(func_str) = &self.remove_func_bindings {
-            let found_seqs = find_keq_seqs_bound_to_function(&*bindings, func_str)?;
+            let found_seqs = find_key_seqs_bound_to_function(&*bindings, func_str)?;
 
             for seq in found_seqs {
                 let _ = bindings.try_unbind(seq);
@@ -500,7 +500,7 @@ fn display_macros(
     Ok(())
 }
 
-fn find_keq_seqs_bound_to_function(
+fn find_key_seqs_bound_to_function(
     bindings: &dyn interfaces::KeyBindings,
     func_str: &str,
 ) -> Result<Vec<interfaces::KeySequence>, BindError> {

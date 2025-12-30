@@ -116,19 +116,19 @@ cases:
           bind '"\C-r": "\e[0;1A\e[0;0A"'
           echo "bind macro result: $?"
 
-          bind "[bind -S]"
+          echo "[bind -S]"
           bind -S | grep "${key_to_bind}"
           echo "bind -S result: ${PIPESTATUS[@]}"
 
-          bind "[bind -s]"
+          echo "[bind -s]"
           bind -s | grep "${key_to_bind}"
           echo "bind -s result: ${PIPESTATUS[@]}"
 
-          bind "[bind -r]"
+          echo "[bind -r]"
           bind -r "${key_to_bind}"
           echo "bind -r result: ${PIPESTATUS[@]}"
 
-          bind "[bind -s (after -r)]"
+          echo "[bind -s (after -r)]"
           bind -s | grep "${key_to_bind}"
           echo "bind -s (after -r) result: ${PIPESTATUS[@]}"
 
@@ -150,6 +150,6 @@ cases:
           bind '"\ec": " \C-b\C-k`something`\e\C-e"'
           echo "bind macro result: $?"
 
-          bind "[bind -S]"
+          echo "[bind -S]"
           bind -S | grep "${key_to_bind}"
           echo "bind -S result: ${PIPESTATUS[@]}"
