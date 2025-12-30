@@ -144,10 +144,12 @@ cases:
     test_files:
       - path: "run.sh"
         contents: |
+          key_to_bind='\ec'
+
           echo "[bind macro]"
           bind '"\ec": " \C-b\C-k`something`\e\C-e"'
           echo "bind macro result: $?"
 
           bind "[bind -S]"
-          bind -S
-          echo "bind -S result: $?"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S result: ${PIPESTATUS[@]}"
