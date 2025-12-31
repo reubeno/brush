@@ -36,7 +36,13 @@ impl builtins::Command for BuiltinCommand {
         if let Some(builtin) = context.shell.builtins().get(&builtin_name) {
             if !builtin.disabled {
                 context.command_name = builtin_name;
-                (builtin.execute_func)(context, args).await
+
+                match &builtin.execute_func {
+                    builtins::CommandExecuteFunc::Async(async_func) => {
+                        async_func(context, args).await
+                    }
+                    builtins::CommandExecuteFunc::Sync(sync_func) => sync_func(context, args),
+                }
             } else {
                 Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
             }

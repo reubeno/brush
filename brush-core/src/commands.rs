@@ -656,7 +656,10 @@ async fn execute_builtin_command(
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
-    (builtin.execute_func)(context, args).await
+    match &builtin.execute_func {
+        builtins::CommandExecuteFunc::Async(async_func) => async_func(context, args).await,
+        builtins::CommandExecuteFunc::Sync(sync_func) => sync_func(context, args),
+    }
 }
 
 pub(crate) async fn invoke_shell_function(
