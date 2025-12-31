@@ -834,7 +834,7 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::WordPiece::BackquotedCommandSubstitution(s)
             | brush_parser::word::WordPiece::CommandSubstitution(s) => {
-                let output_str = if !self.disable_command_substitutions {
+                let mut cmd_output = if !self.disable_command_substitutions {
                     commands::invoke_command_in_subshell_and_get_output(self.shell, self.params, s)
                         .await?
                 } else {
@@ -842,9 +842,10 @@ impl<'a> WordExpander<'a> {
                 };
 
                 // We trim trailing newlines, per spec.
-                let trimmed = output_str.trim_end_matches('\n');
+                let trimmed_len = cmd_output.trim_end_matches('\n').len();
+                cmd_output.truncate(trimmed_len);
 
-                Expansion::from(ExpansionPiece::Splittable(trimmed.to_owned()))
+                Expansion::from(ExpansionPiece::Splittable(cmd_output))
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
                 let expanded = s.strip_prefix('\\').unwrap();
