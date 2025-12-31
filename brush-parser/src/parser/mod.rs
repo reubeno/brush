@@ -1,7 +1,7 @@
 use crate::ast;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 
-use bon::Builder;
+use bon::bon;
 
 pub mod peg;
 
@@ -44,17 +44,15 @@ impl ParserOptions {
 }
 
 /// Implements parsing for shell programs.
-#[derive(Builder)]
 pub struct Parser<R: std::io::BufRead> {
     /// The reader to use for input
     reader: R,
     /// Parsing options
-    #[builder(default)]
     options: ParserOptions,
 }
 
+#[bon]
 impl<R: std::io::BufRead> Parser<R> {
-    /// Returns a new parser instance.
     ///
     /// # Arguments
     ///
@@ -65,6 +63,43 @@ impl<R: std::io::BufRead> Parser<R> {
             reader,
             options: options.clone(),
         }
+    }
+
+    /// Create a new parser instance through a builder
+    #[builder(
+        finish_fn(doc {
+            /// Instantiate a parser with the provided reader as input
+        })
+    )]
+    pub fn builder(
+        /// The reader to use for input
+        #[builder(finish_fn)]
+        reader: R,
+
+        #[builder(default = true)]
+        /// Whether or not to enable extended globbing (a.k.a. `extglob`).
+        enable_extended_globbing: bool,
+        #[builder(default = false)]
+        /// Whether or not to enable POSIX compliance mode.
+        posix_mode: bool,
+        #[builder(default = false)]
+        /// Whether or not to enable maximal compatibility with the `sh` shell.
+        sh_mode: bool,
+        #[builder(default = true)]
+        /// Whether or not to perform tilde expansion for tildes at the start of words.
+        tilde_expansion_at_word_start: bool,
+        #[builder(default = false)]
+        /// Whether or not to perform tilde expansion for tildes after colons.
+        tilde_expansion_after_colon: bool,
+    ) -> Self {
+        let options = ParserOptions {
+            enable_extended_globbing,
+            posix_mode,
+            sh_mode,
+            tilde_expansion_at_word_start,
+            tilde_expansion_after_colon,
+        };
+        Self { reader, options }
     }
 
     /// Parses the input into an abstract syntax tree (AST) of a shell program.
@@ -162,4 +197,3 @@ where
         }
     }
 }
-
