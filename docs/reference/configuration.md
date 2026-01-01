@@ -7,7 +7,6 @@ brush supports an optional TOML configuration file that allows you to customize 
 brush looks for the configuration file at:
 
 - **Linux/macOS**: `~/.config/brush/config.toml`
-- **Windows**: `%APPDATA%\brush\config.toml`
 
 You can override this location with the `--config` flag:
 
@@ -52,9 +51,7 @@ User interface settings.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `syntax-highlighting` | boolean | `false`* | Enable syntax highlighting in the input line |
-
-\* Default is `true` when built with the `experimental` feature.
+| `syntax-highlighting` | boolean | `false` | Enable syntax highlighting in the input line |
 
 ### `[experimental]` Section
 
