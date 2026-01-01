@@ -34,7 +34,7 @@
 <a href="https://repology.org/project/brush/versions">
 </a>
 
-</p> 
+</p>
 
 <hr/>
 
@@ -86,6 +86,7 @@ After downloading the archive for your platform, you may verify its authenticity
 ```bash
 gh attestation verify brush-x86_64-unknown-linux-gnu.tar.gz --repo reubeno/brush
 ```
+
 </details>
 
 <details open>
@@ -107,6 +108,7 @@ To build from sources, first install a working (and recent) `rust` toolchain; we
 ```bash
 cargo install --locked brush-shell
 ```
+
 </details>
 
 <details>
@@ -117,6 +119,7 @@ If you are a Nix user, you can use the registered version:
 ```bash
 nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 ```
+
 </details>
 
 <details>
@@ -127,6 +130,7 @@ Arch Linux users can install `brush` from the official [extra repository](https:
 ```bash
 pacman -S brush
 ```
+
 </details>
 
 <details>
@@ -137,6 +141,7 @@ Homebrew users can install using [the `brush` formula](https://formulae.brew.sh/
 ```bash
 brew install brush
 ```
+
 </details>
 
 ## 👥 Community
@@ -161,7 +166,6 @@ There's a long list of OSS crates whose shoulders this project rests on. Notably
 
 For testing, performance benchmarking, and other important engineering support, we use and love:
 
-* [`pprof-rs`](https://github.com/tikv/pprof-rs) - for sampling-based CPU profiling
 * [`criterion.rs`](https://github.com/bheisler/criterion.rs) - for statistics-based benchmarking
 * [`bash-completion`](https://github.com/scop/bash-completion) - for its completion test suite and general completion support!
 
