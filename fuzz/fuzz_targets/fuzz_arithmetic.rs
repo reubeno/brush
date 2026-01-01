@@ -46,6 +46,7 @@ fn eval_arithmetic(mut shell: brush_core::Shell, input: &ast::ArithmeticExpr) ->
     oracle_cmd
         .arg("--noprofile")
         .arg("--norc")
+        .arg("--no-config")
         .arg("-O")
         .arg("extglob")
         .arg("-t");

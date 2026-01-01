@@ -552,7 +552,7 @@ jobs:
 
       - name: "Run test suite (brush)"
         env:
-          BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
+          BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --no-config --input-backend=basic
         working-directory: bash-completion/test
         run: |
           pytest -n 128 \

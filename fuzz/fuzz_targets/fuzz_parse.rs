@@ -35,6 +35,7 @@ async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
     oracle_cmd
         .arg("--noprofile")
         .arg("--norc")
+        .arg("--no-config")
         .arg("-O")
         .arg("extglob")
         .arg("-n")

@@ -51,6 +51,7 @@ fn get_variable(shell_path: &std::path::Path, var: &str) -> anyhow::Result<Strin
     let output = std::process::Command::new(shell_path)
         .arg("--norc")
         .arg("--noprofile")
+        .arg("--no-config")
         .arg("-c")
         .arg(format!("echo -n ${{{var}}}"))
         .output()

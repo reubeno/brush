@@ -161,6 +161,7 @@ fn start_shell_session() -> anyhow::Result<ShellSession> {
     cmd.args([
         "--norc",
         "--noprofile",
+        "--no-config",
         "--disable-bracketed-paste",
         "--disable-color",
         "--input-backend=basic",
