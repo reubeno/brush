@@ -51,3 +51,11 @@ cases:
       [ foo -ot bar ] && echo "-ot correctly identified older file"
       [ foo -ot foo ] && echo "-ot incorrectly identified file as older than itself"
       [ file_no_exists -ot foo ] && echo "-ot correctly identified when file1 does not exist"
+
+  - name: "test: -- string"
+    stdin: |
+      test --
+      echo "Result(test): $?"
+
+      [ -- ]
+      echo "Result([): $?"
