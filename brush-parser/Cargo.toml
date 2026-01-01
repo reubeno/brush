@@ -39,12 +39,12 @@ utf8-chars = "3.0.6"
 
 [dev-dependencies]
 anyhow = "1.0.100"
-criterion = { version = "0.5.1", features = ["html_reports"] }
-insta = { version = "1.45.0", features = ["glob", "ron", "yaml"] }
+criterion = { version = "0.8.1", features = ["html_reports"] }
+insta = { version = "1.45.1", features = ["glob", "ron", "yaml"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = "1.0.145"
+serde_json = "1.0.148"
 serde_yaml = "0.9.34"
 
 [[bench]]

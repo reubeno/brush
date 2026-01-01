@@ -6,7 +6,8 @@
 mod unix {
     use brush_builtins::ShellBuilderExt;
     use brush_parser::SourceSpan;
-    use criterion::{Criterion, black_box};
+    use criterion::Criterion;
+    use std::hint::black_box;
 
     async fn instantiate_shell() -> brush_core::Shell {
         brush_core::Shell::builder()
