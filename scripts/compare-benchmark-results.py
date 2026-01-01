@@ -21,12 +21,12 @@ def parse_benchmarks_results(file_path: str) -> Dict[str, Benchmark]:
 
     with open(file_path, "r") as file:
         for line in file.readlines():
-            match = re.match(r"test (.*) \.\.\. bench: +(\d+) ns/iter \(\+/- (\d+)\)", line.strip())
+            match = re.match(r"test (.*) \.\.\. bench: +([\d,]+) ns/iter \(\+/- ([\d,]+)\)", line.strip())
             if match:
                 benchmark = Benchmark(
                     test_name=match.group(1),
-                    duration_in_ns=int(match.group(2)),
-                    plus_or_minus_in_ns=int(match.group(3))
+                    duration_in_ns=int(match.group(2).replace(',', '')),
+                    plus_or_minus_in_ns=int(match.group(3).replace(',', ''))
                 )
 
                 benchmarks[benchmark.test_name] = benchmark
