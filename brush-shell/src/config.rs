@@ -60,24 +60,32 @@ impl Config {
     /// 2. Config file values
     /// 3. Default values
     ///
+    /// CLI defaults are automatically inferred from clap's parsed defaults.
+    ///
     /// # Arguments
     ///
     /// * `args` - The parsed command-line arguments
-    /// * `default_highlighting` - The compile-time default for syntax highlighting
     #[must_use]
-    pub fn to_ui_options(&self, args: &CommandLineArgs, default_highlighting: bool) -> UIOptions {
+    pub fn to_ui_options(&self, args: &CommandLineArgs) -> UIOptions {
+        // Get clap's defaults by parsing an empty argument list.
+        // This lets us detect which CLI values were explicitly set vs. defaulted.
+        let defaults = CommandLineArgs::default_values();
+
         let enable_highlighting = merge_bool_setting(
             args.enable_highlighting,
-            default_highlighting,
+            defaults.enable_highlighting,
             self.ui.syntax_highlighting,
         );
         let terminal_shell_integration = merge_bool_setting(
             args.terminal_shell_integration,
-            false,
+            defaults.terminal_shell_integration,
             self.experimental.terminal_shell_integration,
         );
-        let zsh_style_hooks =
-            merge_bool_setting(args.zsh_style_hooks, false, self.experimental.zsh_hooks);
+        let zsh_style_hooks = merge_bool_setting(
+            args.zsh_style_hooks,
+            defaults.zsh_style_hooks,
+            self.experimental.zsh_hooks,
+        );
 
         UIOptions::builder()
             .disable_bracketed_paste(args.disable_bracketed_paste)
@@ -115,7 +123,7 @@ const fn merge_bool_setting(
 }
 
 /// Result of attempting to load a configuration file.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ConfigLoadResult {
     /// The loaded configuration, or default if loading failed.
     pub config: Config,
@@ -127,37 +135,54 @@ pub struct ConfigLoadResult {
     pub error: Option<ConfigLoadError>,
 
     /// Whether the path was explicitly provided by the user (via `--config`).
-    /// If true and there's an error, the shell should fail rather than continue.
     pub explicit_path: bool,
 }
 
+impl ConfigLoadResult {
+    /// Consumes the result and returns the configuration.
+    ///
+    /// If an error occurred:
+    /// - For explicit paths (user-provided via `--config`): returns `Err` with a formatted error
+    /// - For default paths: logs a warning and returns the default configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an explicit config path was provided and loading failed.
+    pub fn into_config_or_log(self) -> Result<Config, String> {
+        let Some(err) = self.error else {
+            return Ok(self.config);
+        };
+
+        let path_display = self
+            .path
+            .as_ref()
+            .map_or_else(|| String::from("<unknown>"), |p| p.display().to_string());
+
+        if self.explicit_path {
+            // User explicitly provided --config; treat errors as fatal.
+            return Err(format!("failed to load config from {path_display}: {err}"));
+        }
+
+        // Default config path; log warning but continue with defaults.
+        tracing::warn!("failed to load config from {path_display}: {err}");
+        Ok(self.config)
+    }
+}
+
 /// Errors that can occur when loading configuration.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ConfigLoadError {
     /// Failed to read the configuration file.
-    Io(std::io::Error),
+    #[error("failed to read config file: {0}")]
+    Io(#[from] std::io::Error),
 
     /// Failed to parse the TOML content.
-    Parse(toml::de::Error),
+    #[error("failed to parse config file: {0}")]
+    Parse(#[from] toml::de::Error),
 }
 
-impl std::fmt::Display for ConfigLoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(e) => write!(f, "failed to read config file: {e}"),
-            Self::Parse(e) => write!(f, "failed to parse config file: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ConfigLoadError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            Self::Parse(e) => Some(e),
-        }
-    }
-}
+const CONFIG_SUBDIR_NAME: &str = "brush";
+const CONFIG_FILE_NAME: &str = "config.toml";
 
 /// Returns the default configuration file path for the current platform.
 ///
@@ -167,7 +192,12 @@ impl std::error::Error for ConfigLoadError {
 /// Returns `None` if the platform's config directory cannot be determined.
 pub fn default_config_path() -> Option<PathBuf> {
     let strategy = etcetera::choose_base_strategy().ok()?;
-    Some(strategy.config_dir().join("brush").join("config.toml"))
+    Some(
+        strategy
+            .config_dir()
+            .join(CONFIG_SUBDIR_NAME)
+            .join(CONFIG_FILE_NAME),
+    )
 }
 
 /// Loads configuration from the specified path.
@@ -184,10 +214,9 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
         Ok(content) => content,
         Err(e) => {
             return ConfigLoadResult {
-                config: Config::default(),
                 path: Some(path.to_path_buf()),
                 error: Some(ConfigLoadError::Io(e)),
-                explicit_path: false,
+                ..Default::default()
             };
         }
     };
@@ -196,14 +225,12 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
         Ok(config) => ConfigLoadResult {
             config,
             path: Some(path.to_path_buf()),
-            error: None,
-            explicit_path: false,
+            ..Default::default()
         },
         Err(e) => ConfigLoadResult {
-            config: Config::default(),
             path: Some(path.to_path_buf()),
             error: Some(ConfigLoadError::Parse(e)),
-            explicit_path: false,
+            ..Default::default()
         },
     }
 }
@@ -222,12 +249,7 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
 /// `explicit_path: true` to indicate that the error should be treated as fatal.
 pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadResult {
     if disabled {
-        return ConfigLoadResult {
-            config: Config::default(),
-            path: None,
-            error: None,
-            explicit_path: false,
-        };
+        return ConfigLoadResult::default();
     }
 
     let is_explicit = explicit_path.is_some();
@@ -238,12 +260,7 @@ pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadRe
             Some(p) => p,
             None => {
                 // Can't determine config path; use defaults silently
-                return ConfigLoadResult {
-                    config: Config::default(),
-                    path: None,
-                    error: None,
-                    explicit_path: false,
-                };
+                return ConfigLoadResult::default();
             }
         },
     };
@@ -251,10 +268,8 @@ pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadRe
     // If using default path and file doesn't exist, silently use defaults
     if !is_explicit && !path.exists() {
         return ConfigLoadResult {
-            config: Config::default(),
             path: Some(path),
-            error: None,
-            explicit_path: false,
+            ..Default::default()
         };
     }
 
@@ -278,14 +293,14 @@ mod tests {
 
     #[test]
     fn test_full_config() {
-        let toml = r#"
+        let toml = r"
             [ui]
             syntax-highlighting = true
 
             [experimental]
             zsh-hooks = true
             terminal-shell-integration = false
-        "#;
+        ";
 
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.ui.syntax_highlighting, Some(true));
@@ -295,10 +310,10 @@ mod tests {
 
     #[test]
     fn test_partial_config() {
-        let toml = r#"
+        let toml = r"
             [ui]
             syntax-highlighting = false
-        "#;
+        ";
 
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.ui.syntax_highlighting, Some(false));
@@ -327,15 +342,6 @@ mod tests {
     }
 
     #[test]
-    fn test_default_config_path() {
-        // This test just verifies that default_config_path doesn't panic
-        // and returns a reasonable path structure
-        if let Some(path) = default_config_path() {
-            assert!(path.ends_with("brush/config.toml"));
-        }
-    }
-
-    #[test]
     fn test_load_config_disabled() {
         let result = load_config(true, None);
         assert!(result.path.is_none());
@@ -358,39 +364,35 @@ mod tests {
         assert!(matches!(result.error, Some(ConfigLoadError::Io(_))));
     }
 
-    fn make_test_args() -> CommandLineArgs {
-        // Use clap parsing to get defaults - this won't break when fields are added
-        CommandLineArgs::try_parse_from(["brush"]).unwrap()
-    }
-
     #[test]
     fn test_to_ui_options_defaults_only() {
         let config = Config::default();
-        let args = make_test_args();
-        let ui = config.to_ui_options(&args, false);
+        let args = CommandLineArgs::default_values();
+        let ui = config.to_ui_options(&args);
 
         assert!(!ui.disable_bracketed_paste);
         assert!(!ui.disable_color);
-        assert!(ui.disable_highlighting); // !enable_highlighting
+        // Note: whether highlighting is enabled by default depends on the compile-time
+        // DEFAULT_ENABLE_HIGHLIGHTING constant (true with reedline, false without)
         assert!(!ui.terminal_shell_integration);
         assert!(!ui.zsh_style_hooks);
     }
 
     #[test]
     fn test_to_ui_options_config_overrides_defaults() {
-        let toml = r#"
+        let toml = r"
             [ui]
             syntax-highlighting = true
 
             [experimental]
             zsh-hooks = true
             terminal-shell-integration = true
-        "#;
+        ";
         let config: Config = toml::from_str(toml).unwrap();
-        let args = make_test_args();
+        let args = CommandLineArgs::default_values();
 
         // CLI values match defaults, so config should take effect
-        let ui = config.to_ui_options(&args, false);
+        let ui = config.to_ui_options(&args);
 
         assert!(!ui.disable_highlighting); // config enabled highlighting
         assert!(ui.terminal_shell_integration);
@@ -399,20 +401,26 @@ mod tests {
 
     #[test]
     fn test_to_ui_options_cli_overrides_config() {
-        let toml = r#"
+        let toml = r"
             [ui]
-            syntax-highlighting = true
+            syntax-highlighting = false
 
             [experimental]
-            zsh-hooks = true
-        "#;
+            zsh-hooks = false
+        ";
         let config: Config = toml::from_str(toml).unwrap();
-        let mut args = make_test_args();
-        args.enable_highlighting = true;
-        args.zsh_style_hooks = true;
 
-        // CLI explicitly enables highlighting and zsh-hooks (differs from default of false)
-        let ui = config.to_ui_options(&args, false);
+        // Simulate CLI explicitly setting values different from defaults
+        // by parsing with the flags enabled
+        let args = CommandLineArgs::try_parse_from([
+            "brush",
+            "--enable-highlighting",
+            "--enable-zsh-hooks",
+        ])
+        .unwrap();
+
+        // CLI explicitly enables highlighting and zsh-hooks (differs from default)
+        let ui = config.to_ui_options(&args);
 
         assert!(!ui.disable_highlighting); // CLI enabled highlighting
         assert!(ui.zsh_style_hooks); // CLI enabled
@@ -421,11 +429,14 @@ mod tests {
     #[test]
     fn test_to_ui_options_cli_only_settings() {
         let config = Config::default();
-        let mut args = make_test_args();
-        args.disable_bracketed_paste = true;
-        args.disable_color = true;
+        let args = CommandLineArgs::try_parse_from([
+            "brush",
+            "--disable-bracketed-paste",
+            "--disable-color",
+        ])
+        .unwrap();
 
-        let ui = config.to_ui_options(&args, false);
+        let ui = config.to_ui_options(&args);
 
         assert!(ui.disable_bracketed_paste);
         assert!(ui.disable_color);

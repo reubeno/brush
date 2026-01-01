@@ -86,13 +86,13 @@ fn explicit_config_file_valid() -> anyhow::Result<()> {
     let config_path = temp_dir.path().join("config.toml");
     std::fs::write(
         &config_path,
-        r#"
+        r"
 [ui]
 syntax-highlighting = false
 
 [experimental]
 zsh-hooks = false
-"#,
+",
     )?;
 
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");

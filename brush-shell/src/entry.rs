@@ -155,24 +155,9 @@ async fn run_async(
     drop(event_config);
 
     // Load configuration file.
-    let config_result = config::load_config(args.no_config, args.config_file.as_deref());
-    if let Some(err) = &config_result.error {
-        let path_display = config_result
-            .path
-            .as_ref()
-            .map_or_else(|| String::from("<unknown>"), |p| p.display().to_string());
-
-        if config_result.explicit_path {
-            // User explicitly provided --config; treat errors as fatal.
-            return Err(brush_interactive::ShellError::IoError(
-                std::io::Error::other(format!("failed to load config from {path_display}: {err}")),
-            ));
-        }
-
-        // Default config path; log warning but continue.
-        tracing::warn!("failed to load config from {path_display}: {err}");
-    }
-    let file_config = config_result.config;
+    let file_config = config::load_config(args.no_config, args.config_file.as_deref())
+        .into_config_or_log()
+        .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
 
     // Instantiate an appropriately configured shell and wrap it in an `Arc`. Note that we do
     // *not* run any code in the shell yet. We'll delay loading profiles and such until after
@@ -187,7 +172,7 @@ async fn run_async(
 
     // Build UI options by merging config file with CLI args.
     #[allow(unused_variables, reason = "not used when no backend features enabled")]
-    let ui_options = file_config.to_ui_options(&args, DEFAULT_ENABLE_HIGHLIGHTING);
+    let ui_options = file_config.to_ui_options(&args);
 
     let result = match selected_backend {
         #[cfg(all(feature = "reedline", any(unix, windows)))]
