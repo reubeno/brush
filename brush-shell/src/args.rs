@@ -1,7 +1,8 @@
 //! Types for brush command-line parsing.
 
 use clap::{Parser, builder::styling};
-use std::{io::IsTerminal, path::PathBuf};
+use std::io::IsTerminal;
+use std::path::PathBuf;
 
 use crate::{events, productinfo};
 
@@ -25,6 +26,8 @@ const VERSION: &str = const_format::concatcp!(
 );
 
 const HEADING_STANDARD_OPTIONS: &str = "Standard shell options";
+
+const HEADING_CONFIG_OPTIONS: &str = "Configuration options";
 
 const HEADING_UI_OPTIONS: &str = "User interface options";
 
@@ -60,6 +63,14 @@ pub struct CommandLineArgs {
     /// Display shell version.
     #[clap(long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
+
+    /// Path to configuration file (overrides default location).
+    #[clap(long = "config", value_name = "FILE", help_heading = HEADING_CONFIG_OPTIONS)]
+    pub config_file: Option<PathBuf>,
+
+    /// Disable loading of configuration file.
+    #[clap(long = "no-config", help_heading = HEADING_CONFIG_OPTIONS)]
+    pub no_config: bool,
 
     /// Enable `noclobber` shell option.
     #[arg(short = 'C', help_heading = HEADING_STANDARD_OPTIONS)]

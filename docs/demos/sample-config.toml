@@ -1,0 +1,13 @@
+# Sample brush configuration file
+# Copy to ~/.config/brush/config.toml to use
+
+[ui]
+# Enable syntax highlighting in the input line
+syntax-highlighting = true
+
+[experimental]
+# Enable zsh-style preexec/precmd hooks
+zsh-hooks = false
+
+# Enable terminal shell integration
+terminal-shell-integration = false

@@ -21,8 +21,10 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.100"
-brush-shell = { version = "^0.3.0", path = "../brush-shell" }
+brush-shell = { version = "^0.3.0", path = "../brush-shell", features = ["schema"] }
 clap = { version = "4.5.53", features = ["derive"] }
 clap_complete = "4.5.64"
 clap_mangen = "0.2.31"
 clap-markdown = "0.1.5"
+schemars = "0.8"
+serde_json = "1.0"

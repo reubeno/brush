@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Config",
+  "description": "Root configuration structure for the brush shell.\n\nAll fields are optional to support forward compatibility and partial configuration. Unknown fields in the TOML file are silently ignored.",
+  "type": "object",
+  "properties": {
+    "experimental": {
+      "description": "Experimental features configuration.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ExperimentalConfig"
+        }
+      ]
+    },
+    "ui": {
+      "description": "User interface configuration options.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/UiConfig"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "ExperimentalConfig": {
+      "description": "Experimental features configuration.\n\nThese options control unstable features that may change or be removed in future versions.",
+      "type": "object",
+      "properties": {
+        "terminal-shell-integration": {
+          "description": "Enable terminal shell integration.",
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "zsh-hooks": {
+          "description": "Enable zsh-style preexec/precmd hooks.",
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "UiConfig": {
+      "description": "User interface configuration options.",
+      "type": "object",
+      "properties": {
+        "syntax-highlighting": {
+          "description": "Enable syntax highlighting in the input line.",
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

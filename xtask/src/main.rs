@@ -19,6 +19,9 @@ enum Command {
     /// Generate completion scripts.
     #[clap(subcommand)]
     Completion(CompletionCommand),
+    /// Generate JSON schemas.
+    #[clap(subcommand)]
+    Schema(SchemaCommand),
 }
 
 #[derive(Parser)]
@@ -57,6 +60,19 @@ struct GenerateMarkdownArgs {
     output_path: PathBuf,
 }
 
+#[derive(Parser)]
+enum SchemaCommand {
+    /// Generate JSON schema for the configuration file.
+    Config(GenerateSchemaArgs),
+}
+
+#[derive(Parser)]
+struct GenerateSchemaArgs {
+    /// Output file path.
+    #[clap(long = "out", short = 'o')]
+    output_path: PathBuf,
+}
+
 fn main() -> Result<()> {
     let args = CommandLineArgs::parse();
 
@@ -78,6 +94,9 @@ fn main() -> Result<()> {
 
             Ok(())
         }
+        Command::Schema(cmd) => match cmd {
+            SchemaCommand::Config(gen_args) => gen_config_schema(gen_args),
+        },
     }
 }
 
@@ -111,4 +130,13 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs) -> Result<()> {
 fn gen_completion_script(shell: clap_complete::Shell) {
     let mut cmd = brush_shell::args::CommandLineArgs::command();
     clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
+}
+
+fn gen_config_schema(args: &GenerateSchemaArgs) -> Result<()> {
+    // Generate JSON schema for the configuration file.
+    let schema = schemars::schema_for!(brush_shell::config::Config);
+    let json = serde_json::to_string_pretty(&schema)?;
+    std::fs::write(&args.output_path, json)?;
+
+    Ok(())
 }
