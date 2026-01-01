@@ -4,9 +4,13 @@ brush supports an optional TOML configuration file that allows you to customize 
 
 ## File Location
 
-brush looks for the configuration file at:
+`brush` looks for the configuration file at:
 
-- **Linux/macOS**: `~/.config/brush/config.toml`
+- **Linux/macOS**: `${XDG_CONFIG_HOME}/brush/config.toml`*
+- **Windows**: `%APPDATA%\brush\config.toml`
+
+> [!NOTE]
+> On Linux/macOS falls back to `~/.config/brush/config.toml` if `XDG_CONFIG_HOME` is undefined.
 
 You can override this location with the `--config` flag:
 
@@ -49,18 +53,18 @@ terminal-shell-integration = true
 
 User interface settings.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
+| Setting               | Type    | Default | Description                                  |
+|-----------------------|---------|---------|----------------------------------------------|
 | `syntax-highlighting` | boolean | `false` | Enable syntax highlighting in the input line |
 
 ### `[experimental]` Section
 
 Experimental features that may change or be removed in future versions.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `zsh-hooks` | boolean | `false` | Enable zsh-style preexec/precmd hooks |
-| `terminal-shell-integration` | boolean | `false` | Enable terminal shell integration |
+| Setting                      | Type    | Default | Description                           |
+|------------------------------|---------|---------|---------------------------------------|
+| `zsh-hooks`                  | boolean | `false` | Enable zsh-style preexec/precmd hooks |
+| `terminal-shell-integration` | boolean | `false` | Enable terminal shell integration     |
 
 ## JSON Schema
 

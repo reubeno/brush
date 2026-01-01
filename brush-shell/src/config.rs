@@ -284,7 +284,7 @@ mod tests {
     use clap::Parser;
 
     #[test]
-    fn test_empty_config() {
+    fn empty_config() {
         let config: Config = toml::from_str("").unwrap();
         assert!(config.ui.syntax_highlighting.is_none());
         assert!(config.experimental.zsh_hooks.is_none());
@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn test_full_config() {
+    fn full_config() {
         let toml = r"
             [ui]
             syntax-highlighting = true
@@ -309,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn test_partial_config() {
+    fn partial_config() {
         let toml = r"
             [ui]
             syntax-highlighting = false
@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_fields_ignored() {
+    fn unknown_fields_ignored() {
         let toml = r#"
             [ui]
             syntax-highlighting = true
@@ -342,14 +342,14 @@ mod tests {
     }
 
     #[test]
-    fn test_load_config_disabled() {
+    fn load_config_disabled() {
         let result = load_config(true, None);
         assert!(result.path.is_none());
         assert!(result.error.is_none());
     }
 
     #[test]
-    fn test_load_config_nonexistent_default() {
+    fn load_config_nonexistent_default() {
         // When using default path and file doesn't exist, should return defaults without error
         let result = load_config(false, None);
         // We may or may not get a path depending on platform, but shouldn't error
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_config_nonexistent_explicit() {
+    fn load_config_nonexistent_explicit() {
         let path = Path::new("/nonexistent/path/to/config.toml");
         let result = load_config(false, Some(path));
         assert!(result.error.is_some());
@@ -365,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn test_to_ui_options_defaults_only() {
+    fn to_ui_options_defaults_only() {
         let config = Config::default();
         let args = CommandLineArgs::default_values();
         let ui = config.to_ui_options(&args);
@@ -379,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn test_to_ui_options_config_overrides_defaults() {
+    fn to_ui_options_config_overrides_defaults() {
         let toml = r"
             [ui]
             syntax-highlighting = true
@@ -400,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn test_to_ui_options_cli_overrides_config() {
+    fn to_ui_options_cli_overrides_config() {
         let toml = r"
             [ui]
             syntax-highlighting = false
@@ -427,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn test_to_ui_options_cli_only_settings() {
+    fn to_ui_options_cli_only_settings() {
         let config = Config::default();
         let args = CommandLineArgs::try_parse_from([
             "brush",
