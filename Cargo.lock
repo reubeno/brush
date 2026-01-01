@@ -466,6 +466,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "strip-ansi-escapes",
+ "tempfile",
  "test-with",
  "tokio",
  "toml 0.8.23",

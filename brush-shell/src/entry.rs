@@ -157,11 +157,20 @@ async fn run_async(
     // Load configuration file.
     let config_result = config::load_config(args.no_config, args.config_file.as_deref());
     if let Some(err) = &config_result.error {
-        if let Some(path) = &config_result.path {
-            tracing::error!("failed to load config from {}: {err}", path.display());
-        } else {
-            tracing::error!("failed to load config: {err}");
+        let path_display = config_result
+            .path
+            .as_ref()
+            .map_or_else(|| String::from("<unknown>"), |p| p.display().to_string());
+
+        if config_result.explicit_path {
+            // User explicitly provided --config; treat errors as fatal.
+            return Err(brush_interactive::ShellError::IoError(
+                std::io::Error::other(format!("failed to load config from {path_display}: {err}")),
+            ));
         }
+
+        // Default config path; log warning but continue.
+        tracing::warn!("failed to load config from {path_display}: {err}");
     }
     let file_config = config_result.config;
 

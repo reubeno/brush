@@ -67,7 +67,37 @@ Experimental features that may change or be removed in future versions.
 
 ## JSON Schema
 
-A JSON Schema for the configuration file is available at [`schemas/brush-config.schema.json`](../../schemas/brush-config.schema.json). This can be used with editors that support schema-based validation and autocompletion for TOML files.
+A JSON Schema for the configuration file is available at [`schemas/config.schema.json`](../../schemas/config.schema.json). This can be used with editors that support schema-based validation and autocompletion for TOML files.
+
+### Using the Schema with VS Code
+
+To enable schema validation in VS Code with the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension, add this to your `config.toml`:
+
+```toml
+#:schema https://raw.githubusercontent.com/reubeno/brush/main/schemas/config.schema.json
+
+[ui]
+syntax-highlighting = true
+```
+
+The `#:schema` directive tells the editor where to find the schema for validation and autocompletion.
+
+### Using the Schema with Other Editors
+
+Many editors support JSON Schema for TOML files. Consult your editor's documentation for how to associate a schema with a file. You can reference the schema via:
+
+- **URL**: `https://raw.githubusercontent.com/reubeno/brush/main/schemas/config.schema.json`
+- **Local path**: Point to `schemas/config.schema.json` in your brush source checkout
+
+## Sample Configuration
+
+A sample configuration file is available at [`samples/config.toml`](../../samples/config.toml) in the brush repository. You can copy this file to get started:
+
+```bash
+# Linux/macOS
+mkdir -p ~/.config/brush
+cp samples/config.toml ~/.config/brush/config.toml
+```
 
 ## Forward Compatibility
 

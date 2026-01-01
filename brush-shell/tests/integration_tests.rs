@@ -58,3 +58,82 @@ fn get_variable(shell_path: &std::path::Path, var: &str) -> anyhow::Result<Strin
         .stdout;
     Ok(String::from_utf8(output)?)
 }
+
+// Config file tests
+
+#[test]
+fn no_config_flag_works() {
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
+    let assert = cmd.arg("--no-config").arg("-c").arg("echo ok").assert();
+    assert.success().stdout(predicates::str::contains("ok"));
+}
+
+#[test]
+fn explicit_config_file_not_found_fails() {
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
+    let assert = cmd
+        .arg("--config")
+        .arg("/nonexistent/path/to/config.toml")
+        .arg("-c")
+        .arg("echo should_not_run")
+        .assert();
+    assert.failure().stderr(predicates::str::contains("config"));
+}
+
+#[test]
+fn explicit_config_file_valid() -> anyhow::Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let config_path = temp_dir.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"
+[ui]
+syntax-highlighting = false
+
+[experimental]
+zsh-hooks = false
+"#,
+    )?;
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
+    let assert = cmd
+        .arg("--config")
+        .arg(&config_path)
+        .arg("-c")
+        .arg("echo config_loaded")
+        .assert();
+    assert
+        .success()
+        .stdout(predicates::str::contains("config_loaded"));
+    Ok(())
+}
+
+#[test]
+fn explicit_config_file_with_unknown_fields() -> anyhow::Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let config_path = temp_dir.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"
+[ui]
+syntax-highlighting = true
+future-setting = "ignored"
+
+[unknown-section]
+foo = "bar"
+"#,
+    )?;
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
+    let assert = cmd
+        .arg("--config")
+        .arg(&config_path)
+        .arg("-c")
+        .arg("echo forward_compat")
+        .assert();
+    // Should succeed despite unknown fields
+    assert
+        .success()
+        .stdout(predicates::str::contains("forward_compat"));
+    Ok(())
+}

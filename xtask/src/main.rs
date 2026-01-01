@@ -136,7 +136,7 @@ fn gen_config_schema(args: &GenerateSchemaArgs) -> Result<()> {
     // Generate JSON schema for the configuration file.
     let schema = schemars::schema_for!(brush_shell::config::Config);
     let json = serde_json::to_string_pretty(&schema)?;
-    std::fs::write(&args.output_path, json)?;
+    std::fs::write(&args.output_path, format!("{json}\n"))?;
 
     Ok(())
 }

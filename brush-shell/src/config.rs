@@ -64,6 +64,7 @@ impl Config {
     ///
     /// * `args` - The parsed command-line arguments
     /// * `default_highlighting` - The compile-time default for syntax highlighting
+    #[must_use]
     pub fn to_ui_options(&self, args: &CommandLineArgs, default_highlighting: bool) -> UIOptions {
         let enable_highlighting = merge_bool_setting(
             args.enable_highlighting,
@@ -96,7 +97,11 @@ impl Config {
 /// "not provided" (both result in `false`), we use a heuristic:
 /// - If the CLI value differs from the default, the user explicitly provided it
 /// - Otherwise, use the config value if present, or fall back to the default
-const fn merge_bool_setting(cli_value: bool, cli_default: bool, config_value: Option<bool>) -> bool {
+const fn merge_bool_setting(
+    cli_value: bool,
+    cli_default: bool,
+    config_value: Option<bool>,
+) -> bool {
     if cli_value != cli_default {
         // CLI was explicitly set to a non-default value
         cli_value
@@ -120,6 +125,10 @@ pub struct ConfigLoadResult {
 
     /// Any error that occurred during loading.
     pub error: Option<ConfigLoadError>,
+
+    /// Whether the path was explicitly provided by the user (via `--config`).
+    /// If true and there's an error, the shell should fail rather than continue.
+    pub explicit_path: bool,
 }
 
 /// Errors that can occur when loading configuration.
@@ -167,6 +176,9 @@ pub fn default_config_path() -> Option<PathBuf> {
 /// - The parsed configuration (or default on error)
 /// - The path that was used
 /// - Any error that occurred
+///
+/// Note: This function sets `explicit_path` to `false`. Use `load_config` for
+/// proper handling of explicit vs. default paths.
 pub fn load_from_path(path: &Path) -> ConfigLoadResult {
     let content = match std::fs::read_to_string(path) {
         Ok(content) => content,
@@ -175,6 +187,7 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
                 config: Config::default(),
                 path: Some(path.to_path_buf()),
                 error: Some(ConfigLoadError::Io(e)),
+                explicit_path: false,
             };
         }
     };
@@ -184,11 +197,13 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
             config,
             path: Some(path.to_path_buf()),
             error: None,
+            explicit_path: false,
         },
         Err(e) => ConfigLoadResult {
             config: Config::default(),
             path: Some(path.to_path_buf()),
             error: Some(ConfigLoadError::Parse(e)),
+            explicit_path: false,
         },
     }
 }
@@ -203,14 +218,19 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
 /// # Returns
 ///
 /// A `ConfigLoadResult` containing the configuration and any errors encountered.
+/// If `explicit_path` is provided and loading fails, the result will have
+/// `explicit_path: true` to indicate that the error should be treated as fatal.
 pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadResult {
     if disabled {
         return ConfigLoadResult {
             config: Config::default(),
             path: None,
             error: None,
+            explicit_path: false,
         };
     }
+
+    let is_explicit = explicit_path.is_some();
 
     let path = match explicit_path {
         Some(p) => p.to_path_buf(),
@@ -222,26 +242,31 @@ pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadRe
                     config: Config::default(),
                     path: None,
                     error: None,
+                    explicit_path: false,
                 };
             }
         },
     };
 
     // If using default path and file doesn't exist, silently use defaults
-    if explicit_path.is_none() && !path.exists() {
+    if !is_explicit && !path.exists() {
         return ConfigLoadResult {
             config: Config::default(),
             path: Some(path),
             error: None,
+            explicit_path: false,
         };
     }
 
-    load_from_path(&path)
+    let mut result = load_from_path(&path);
+    result.explicit_path = is_explicit;
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
 
     #[test]
     fn test_empty_config() {
@@ -334,44 +359,8 @@ mod tests {
     }
 
     fn make_test_args() -> CommandLineArgs {
-        CommandLineArgs {
-            help: None,
-            version: None,
-            config_file: None,
-            no_config: false,
-            disallow_overwriting_regular_files_via_output_redirection: false,
-            command: None,
-            exit_on_nonzero_command_exit: false,
-            interactive: false,
-            inherited_fds: vec![],
-            login: false,
-            do_not_execute_commands: false,
-            no_editing: false,
-            no_profile: false,
-            no_rc: false,
-            do_not_inherit_env: false,
-            enabled_options: vec![],
-            disabled_options: vec![],
-            enabled_shopt_options: vec![],
-            disabled_shopt_options: vec![],
-            posix: false,
-            rc_file: None,
-            read_commands_from_stdin: false,
-            sh_mode: false,
-            exit_after_one_command: false,
-            treat_unset_variables_as_error: false,
-            verbose: false,
-            print_commands_and_arguments: false,
-            disable_bracketed_paste: false,
-            disable_color: false,
-            enable_highlighting: false,
-            terminal_shell_integration: false,
-            zsh_style_hooks: false,
-            input_backend: None,
-            enabled_debug_events: vec![],
-            disabled_events: vec![],
-            script_args: vec![],
-        }
+        // Use clap parsing to get defaults - this won't break when fields are added
+        CommandLineArgs::try_parse_from(["brush"]).unwrap()
     }
 
     #[test]
