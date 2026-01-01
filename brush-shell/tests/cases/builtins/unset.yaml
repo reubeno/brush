@@ -161,3 +161,23 @@ cases:
       echo "[After unset]"
       echo "ref: ${ref}"
       echo "var: ${var}"
+
+  - name: "Unset odd function names"
+    stdin: |
+      echo "[Checking existing]"
+      type [
+
+      echo "[Defining function]"
+      function [() {
+        :
+      }
+
+      echo "[Checking defined]"
+      type [
+
+      echo "[Unsetting function]"
+      unset [
+      echo "unset result: $?"
+
+      echo "[Checking after unset]"
+      type [
