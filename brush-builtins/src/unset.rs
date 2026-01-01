@@ -55,26 +55,29 @@ impl builtins::Command for UnsetCommand {
         #[expect(clippy::needless_continue)]
         for name in &self.names {
             if unspecified || self.name_interpretation.shell_variables {
-                let parameter =
-                    brush_parser::word::parse_parameter(name, &context.shell.parser_options())?;
+                // Try to parse the name as a parameter. If we can't, don't bail; it may not be a
+                // valid variable name/parameter but could still be a function name.
+                if let Ok(parameter) =
+                    brush_parser::word::parse_parameter(name, &context.shell.parser_options())
+                {
+                    let result = match parameter {
+                        brush_parser::word::Parameter::Positional(_) => continue,
+                        brush_parser::word::Parameter::Special(_) => continue,
+                        brush_parser::word::Parameter::Named(name) => {
+                            context.shell.env.unset(name.as_str())?.is_some()
+                        }
+                        brush_parser::word::Parameter::NamedWithIndex { name, index } => {
+                            unset_array_index(context.shell, name.as_str(), index.as_str())?
+                        }
+                        brush_parser::word::Parameter::NamedWithAllIndices {
+                            name: _,
+                            concatenate: _,
+                        } => continue,
+                    };
 
-                let result = match parameter {
-                    brush_parser::word::Parameter::Positional(_) => continue,
-                    brush_parser::word::Parameter::Special(_) => continue,
-                    brush_parser::word::Parameter::Named(name) => {
-                        context.shell.env.unset(name.as_str())?.is_some()
+                    if result {
+                        continue;
                     }
-                    brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                        unset_array_index(context.shell, name.as_str(), index.as_str())?
-                    }
-                    brush_parser::word::Parameter::NamedWithAllIndices {
-                        name: _,
-                        concatenate: _,
-                    } => continue,
-                };
-
-                if result {
-                    continue;
                 }
             }
 
