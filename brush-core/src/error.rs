@@ -201,7 +201,7 @@ pub enum ErrorKind {
     WordParseError(#[from] crate::parser::WordParseError),
 
     /// Unable to parse a test command.
-    #[error(transparent)]
+    #[error("invalid test command")]
     TestCommandParseError(#[from] crate::parser::TestCommandParseError),
 
     /// Unable to parse a key binding specification.
@@ -334,6 +334,7 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             }
             ErrorKind::ParseError(..) => Self::InvalidUsage,
             ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
+            ErrorKind::TestCommandParseError(..) => Self::InvalidUsage,
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
             ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
             _ => Self::GeneralError,

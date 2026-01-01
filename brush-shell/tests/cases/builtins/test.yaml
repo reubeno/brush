@@ -51,3 +51,263 @@ cases:
       [ foo -ot bar ] && echo "-ot correctly identified older file"
       [ foo -ot foo ] && echo "-ot incorrectly identified file as older than itself"
       [ file_no_exists -ot foo ] && echo "-ot correctly identified when file1 does not exist"
+
+  - name: "test: parens"
+    stdin: |
+      test \( "a" = "a" \) && echo "Parens work"
+
+  - name: "test: -- string"
+    stdin: |
+      test --
+      echo "Result(test): $?"
+
+      [ -- ]
+      echo "Result([): $?"
+
+  - name: "test: invalid operators"
+    ignore_stderr: true
+    stdin: |
+      test - -
+      echo "Result: $?"
+
+  # String operators
+  - name: "test: != operator"
+    stdin: |
+      test "ab" != "cd" && echo "ab != cd"
+      test "ab" != "ab" && echo "ab != ab"
+      test "" != "x" && echo "empty != x"
+
+  - name: "test: -z operator (zero length)"
+    stdin: |
+      test -z "" && echo "-z empty"
+      test -z "x" && echo "-z x"
+      unset VAR
+      test -z "$VAR" && echo "-z unset"
+
+  - name: "test: -n operator (non-zero length)"
+    stdin: |
+      test -n "x" && echo "-n x"
+      test -n "" && echo "-n empty"
+      VAR="hello"
+      test -n "$VAR" && echo "-n set"
+
+  - name: "test: < operator (string sort before)"
+    stdin: |
+      test "a" \< "b" && echo "a < b"
+      test "b" \< "a" && echo "b < a"
+      test "abc" \< "abd" && echo "abc < abd"
+      test "a" \< "a" && echo "a < a"
+
+  - name: "test: > operator (string sort after)"
+    stdin: |
+      test "b" \> "a" && echo "b > a"
+      test "a" \> "b" && echo "a > b"
+      test "abd" \> "abc" && echo "abd > abc"
+      test "a" \> "a" && echo "a > a"
+
+  # Arithmetic comparison operators
+  - name: "test: -eq operator"
+    stdin: |
+      test 5 -eq 5 && echo "5 -eq 5"
+      test 5 -eq 6 && echo "5 -eq 6"
+      test -1 -eq -1 && echo "-1 -eq -1"
+      test 0 -eq 0 && echo "0 -eq 0"
+
+  - name: "test: -ne operator"
+    stdin: |
+      test 5 -ne 6 && echo "5 -ne 6"
+      test 5 -ne 5 && echo "5 -ne 5"
+      test -1 -ne 1 && echo "-1 -ne 1"
+
+  - name: "test: -lt operator"
+    stdin: |
+      test 3 -lt 5 && echo "3 -lt 5"
+      test 5 -lt 3 && echo "5 -lt 3"
+      test 5 -lt 5 && echo "5 -lt 5"
+      test -2 -lt -1 && echo "-2 -lt -1"
+
+  - name: "test: -le operator"
+    stdin: |
+      test 3 -le 5 && echo "3 -le 5"
+      test 5 -le 5 && echo "5 -le 5"
+      test 6 -le 5 && echo "6 -le 5"
+      test -2 -le -2 && echo "-2 -le -2"
+
+  - name: "test: -gt operator"
+    stdin: |
+      test 5 -gt 3 && echo "5 -gt 3"
+      test 3 -gt 5 && echo "3 -gt 5"
+      test 5 -gt 5 && echo "5 -gt 5"
+      test -1 -gt -2 && echo "-1 -gt -2"
+
+  - name: "test: -ge operator"
+    stdin: |
+      test 5 -ge 3 && echo "5 -ge 3"
+      test 5 -ge 5 && echo "5 -ge 5"
+      test 3 -ge 5 && echo "3 -ge 5"
+      test -1 -ge -1 && echo "-1 -ge -1"
+
+  # File existence and type operators
+  - name: "test: -e operator (file exists)"
+    stdin: |
+      touch testfile
+      test -e testfile && echo "-e existing file"
+      test -e nonexistent && echo "-e nonexistent"
+      mkdir testdir
+      test -e testdir && echo "-e existing dir"
+
+  - name: "test: -a operator (file exists, deprecated)"
+    stdin: |
+      touch testfile
+      test -a testfile && echo "-a existing file"
+      test -a nonexistent && echo "-a nonexistent"
+
+  - name: "test: -f operator (regular file)"
+    stdin: |
+      touch testfile
+      test -f testfile && echo "-f regular file"
+      mkdir testdir
+      test -f testdir && echo "-f directory"
+      test -f nonexistent && echo "-f nonexistent"
+
+  - name: "test: -d operator (directory)"
+    stdin: |
+      mkdir testdir
+      test -d testdir && echo "-d directory"
+      touch testfile
+      test -d testfile && echo "-d regular file"
+      test -d nonexistent && echo "-d nonexistent"
+
+  - name: "test: -h and -L operators (symbolic link)"
+    stdin: |
+      touch target
+      ln -s target symlink
+      test -h symlink && echo "-h symlink"
+      test -L symlink && echo "-L symlink"
+      test -h target && echo "-h regular file"
+      test -L target && echo "-L regular file"
+      test -h nonexistent && echo "-h nonexistent"
+
+  - name: "test: -p operator (named pipe/FIFO)"
+    stdin: |
+      touch testfile
+      test -p testfile && echo "-p regular file"
+      test -p nonexistent && echo "-p nonexistent"
+
+  - name: "test: -S operator (socket)"
+    stdin: |
+      touch testfile
+      test -S testfile && echo "-S regular file"
+      test -S nonexistent && echo "-S nonexistent"
+
+  - name: "test: -b operator (block device)"
+    stdin: |
+      touch testfile
+      test -b testfile && echo "-b regular file"
+      test -b nonexistent && echo "-b nonexistent"
+      # Block devices exist in /dev but may vary by system
+
+  - name: "test: -c operator (character device)"
+    stdin: |
+      touch testfile
+      test -c testfile && echo "-c regular file"
+      test -c nonexistent && echo "-c nonexistent"
+
+  # File permission operators
+  - name: "test: -r operator (readable)"
+    stdin: |
+      touch testfile
+      test -r testfile && echo "-r readable"
+      test -r nonexistent && echo "-r nonexistent"
+
+  - name: "test: -w operator (writable)"
+    stdin: |
+      touch testfile
+      test -w testfile && echo "-w writable"
+      test -w nonexistent && echo "-w nonexistent"
+
+  - name: "test: -x operator (executable)"
+    stdin: |
+      touch testfile
+      test -x testfile && echo "-x executable"
+
+  - name: "test: -s operator (size greater than zero)"
+    stdin: |
+      echo "content" > nonempty
+      test -s nonempty && echo "-s nonempty"
+      touch empty
+      test -s empty && echo "-s empty"
+      test -s nonexistent && echo "-s nonexistent"
+
+  # Variable and option operators
+  - name: "test: -v operator (variable is set)"
+    stdin: |
+      VAR="hello"
+      test -v VAR && echo "-v set variable"
+      unset VAR
+      test -v VAR && echo "-v unset variable"
+      VAR=""
+      test -v VAR && echo "-v empty variable"
+
+  - name: "test: -R operator (nameref variable)"
+    stdin: |
+      VAR="value"
+      declare -n REF=VAR
+      test -R REF && echo "-R nameref"
+      test -R VAR && echo "-R regular var"
+      unset REF VAR
+
+  - name: "test: -o operator (shell option)"
+    stdin: |
+      set -e
+      test -o errexit && echo "-o errexit enabled"
+      set +e
+      test -o errexit && echo "-o errexit disabled"
+      test -o nonexistentoption && echo "-o nonexistent"
+
+  # Logical operators
+  - name: "test: ! operator (negation)"
+    stdin: |
+      test ! "a" = "b" && echo "! a=b"
+      test ! "a" = "a" && echo "! a=a"
+      test ! -e nonexistent && echo "! -e nonexistent"
+      test ! -e / && echo "! -e /"
+
+  - name: "test: -a operator (logical AND)"
+    stdin: |
+      test "a" = "a" -a "b" = "b" && echo "true -a true"
+      test "a" = "a" -a "b" = "c" && echo "true -a false"
+      test "a" = "b" -a "c" = "c" && echo "false -a true"
+      test "a" = "b" -a "c" = "d" && echo "false -a false"
+
+  - name: "test: -o operator (logical OR)"
+    stdin: |
+      test "a" = "a" -o "b" = "b" && echo "true -o true"
+      test "a" = "a" -o "b" = "c" && echo "true -o false"
+      test "a" = "b" -o "c" = "c" && echo "false -o true"
+      test "a" = "b" -o "c" = "d" && echo "false -o false"
+
+  - name: "test: complex logical expressions"
+    stdin: |
+      test \( "a" = "a" -o "b" = "c" \) -a "d" = "d" && echo "complex 1"
+      test ! \( "a" = "b" \) && echo "complex 2"
+      test "a" = "a" -a \( "b" = "b" -o "c" = "d" \) && echo "complex 3"
+
+  # Edge cases
+  - name: "test: single argument (non-empty string is true)"
+    stdin: |
+      test "hello" && echo "non-empty is true"
+      test "" && echo "empty is true"
+      test "0" && echo "zero string is true"
+
+  - name: "test: no arguments"
+    stdin: |
+      test
+      echo "no args: $?"
+
+  - name: "test: special characters in strings"
+    stdin: |
+      test "hello world" = "hello world" && echo "spaces match"
+      test "a	b" = "a	b" && echo "tabs match"
+      test 'a"b' = 'a"b' && echo "quotes match"
+      test "a'b" = "a'b" && echo "single quotes match"
