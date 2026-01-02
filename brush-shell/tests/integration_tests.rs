@@ -10,8 +10,8 @@ use predicates::prelude::PredicateBooleanExt;
 #[test]
 fn get_version_variables() -> anyhow::Result<()> {
     let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-    let brush_ver_str = get_variable(shell_path, "BRUSH_VERSION")?;
-    let bash_ver_str = get_variable(shell_path, "BASH_VERSION")?;
+    let brush_ver_str = get_variable(shell_path, /*shell_is_brush*/ true, "BRUSH_VERSION")?;
+    let bash_ver_str = get_variable(shell_path, /*shell_is_brush*/ false, "BASH_VERSION")?;
 
     assert_eq!(brush_ver_str, env!("CARGO_PKG_VERSION"));
     assert_ne!(
@@ -47,11 +47,20 @@ fn invalid_option_exit_code() {
         .stderr(predicates::str::contains("unexpected argument"));
 }
 
-fn get_variable(shell_path: &std::path::Path, var: &str) -> anyhow::Result<String> {
-    let output = std::process::Command::new(shell_path)
+fn get_variable(
+    shell_path: &std::path::Path,
+    shell_is_brush: bool,
+    var: &str,
+) -> anyhow::Result<String> {
+    let mut cmd = std::process::Command::new(shell_path);
+
+    if shell_is_brush {
+        cmd.arg("--no-config");
+    }
+
+    let output = cmd
         .arg("--norc")
         .arg("--noprofile")
-        .arg("--no-config")
         .arg("-c")
         .arg(format!("echo -n ${{{var}}}"))
         .output()

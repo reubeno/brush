@@ -64,11 +64,11 @@ pub struct CommandLineArgs {
     #[clap(long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
 
-    /// Path to configuration file (overrides default location).
+    /// Path to TOML-based `brush` config file (overrides default location).
     #[clap(long = "config", value_name = "FILE", help_heading = HEADING_CONFIG_OPTIONS)]
     pub config_file: Option<PathBuf>,
 
-    /// Disable loading of configuration file.
+    /// Disable loading of TOML-based `brush` config file.
     #[clap(long = "no-config", help_heading = HEADING_CONFIG_OPTIONS)]
     pub no_config: bool,
 
