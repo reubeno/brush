@@ -368,6 +368,35 @@ jobs:
       - name: Check for unused dependencies
         run: cargo udeps --workspace --all-targets --all-features
 
+  # Check that generated schemas are up-to-date
+  check-schemas:
+    name: "Check generated schemas"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Enable cargo cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+
+      - name: Regenerate schemas
+        run: |
+          cargo run --package xtask -- schema config --out schemas/config.schema.json
+
+      - name: Check for schema drift
+        run: |
+          if ! git diff --exit-code schemas/; then
+            echo "::error::Generated schemas are out of date. Please run 'cargo xtask schema config --out schemas/config.schema.json' and commit the changes."
+            exit 1
+          fi
+
   # Analyze public API surface
   analyze-public-api:
     if: github.event_name == 'pull_request'
@@ -523,7 +552,7 @@ jobs:
 
       - name: "Run test suite (brush)"
         env:
-          BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
+          BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --no-config --input-backend=basic
         working-directory: bash-completion/test
         run: |
           pytest -n 128 \

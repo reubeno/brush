@@ -110,6 +110,7 @@ impl TestConfig {
                 default_args: vec![
                     "--norc".into(),
                     "--noprofile".into(),
+                    "--no-config".into(),
                     "--input-backend=basic".into(),
                     "--disable-bracketed-paste".into(),
                     "--disable-color".into(),
@@ -143,10 +144,13 @@ impl TestConfig {
                 which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
                 // Disable a few fancy UI options for shells under test.
                 default_args: vec![
-                    String::from("--sh"),
-                    String::from("--norc"),
-                    String::from("--noprofile"),
-                    String::from("--disable-bracketed-paste"),
+                    "--sh".into(),
+                    "--norc".into(),
+                    "--noprofile".into(),
+                    "--no-config".into(),
+                    "--input-backend=basic".into(),
+                    "--disable-bracketed-paste".into(),
+                    "--disable-color".into(),
                 ],
                 default_path_var: options.test_path_var.clone(),
             },

@@ -3,6 +3,7 @@
 use crate::args::CommandLineArgs;
 use crate::args::InputBackendType;
 use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
+use crate::config;
 use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
@@ -153,6 +154,11 @@ async fn run_async(
     ));
     drop(event_config);
 
+    // Load configuration file.
+    let file_config = config::load_config(args.no_config, args.config_file.as_deref())
+        .into_config_or_log()
+        .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
+
     // Instantiate an appropriately configured shell and wrap it in an `Arc`. Note that we do
     // *not* run any code in the shell yet. We'll delay loading profiles and such until after
     // we've set up everything else (in `run_in_shell`).
@@ -164,14 +170,9 @@ async fn run_async(
     let default_backend = get_default_input_backend_type(&args);
     let selected_backend = args.input_backend.unwrap_or(default_backend);
 
+    // Build UI options by merging config file with CLI args.
     #[allow(unused_variables, reason = "not used when no backend features enabled")]
-    let ui_options = brush_interactive::UIOptions::builder()
-        .disable_bracketed_paste(args.disable_bracketed_paste)
-        .disable_color(args.disable_color)
-        .disable_highlighting(!args.enable_highlighting)
-        .terminal_shell_integration(args.terminal_shell_integration)
-        .zsh_style_hooks(args.zsh_style_hooks)
-        .build();
+    let ui_options = file_config.to_ui_options(&args);
 
     let result = match selected_backend {
         #[cfg(all(feature = "reedline", any(unix, windows)))]
