@@ -4,6 +4,9 @@ Shell benchmarking harness for brush.
 
 Runs shell script snippets against test and reference shells using
 warmup, calibration, and timed execution phases.
+
+NOTE: This script was authored by an AI coding agent in conjunction
+      with human guidance.
 """
 
 import argparse
@@ -609,11 +612,11 @@ def compute_geometric_mean_change(comparisons: list[ComparisonResult]) -> float:
         return 1.0
 
     # Filter out any non-positive values (shouldn't happen, but guard against it)
-    valid_changes = [c.change for c in comparisons if c.change > 0]
+    valid_changes = [comp.change for comp in comparisons if comp.change > 0]
     if not valid_changes:
         return 1.0
 
-    log_sum = sum(math.log(c) for c in valid_changes)
+    log_sum = sum(math.log(change) for change in valid_changes)
     return math.exp(log_sum / len(valid_changes))
 
 
