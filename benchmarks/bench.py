@@ -8,8 +8,10 @@ warmup, calibration, and timed execution phases.
 
 import argparse
 import json
+import math
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -18,7 +20,12 @@ from typing import Optional
 
 @dataclass
 class BenchmarkCase:
-    """Definition of a benchmark test case."""
+    """
+    A benchmark case measuring a specific shell operation.
+
+    The benchmark runs `loop_body` in a tight loop, with optional `setup`
+    executed once before timing and `cleanup` after.
+    """
 
     name: str
     loop_body: str
@@ -28,7 +35,11 @@ class BenchmarkCase:
 
 @dataclass
 class TimingResult:
-    """Parsed timing result from shell's time builtin."""
+    """
+    Timing data parsed from shell's `time` builtin output.
+
+    Captures wall-clock time (real), user CPU time, and system CPU time.
+    """
 
     real_seconds: float
     user_seconds: float
@@ -37,23 +48,36 @@ class TimingResult:
 
 @dataclass
 class BenchmarkResult:
-    """Result of running a benchmark."""
+    """
+    Aggregated results from running a benchmark across multiple samples.
+
+    Contains per-iteration timing statistics (mean, stddev, min, max) computed
+    from `sample_count` independent timed runs.
+    """
 
     case_name: str
-    iterations: int
-    total_time: TimingResult
-    per_iteration_ns: float
+    iterations_per_sample: int
+    sample_count: int
+    per_iteration_ns: float  # mean across samples
+    per_iteration_ns_stddev: float
+    per_iteration_ns_min: float
+    per_iteration_ns_max: float
     shell_path: str
 
 
 @dataclass
 class ComparisonResult:
-    """Comparison between test and reference shell results."""
+    """
+    Performance comparison between test shell and reference shell.
+
+    The `speedup` ratio is reference_time / test_time, so values > 1.0
+    indicate the test shell is faster than the reference.
+    """
 
     case_name: str
     test_result: BenchmarkResult
     reference_result: BenchmarkResult
-    speedup: float  # > 1 means test is faster
+    speedup: float
 
 
 # =============================================================================
@@ -137,6 +161,11 @@ def parse_time_output(stderr: str) -> TimingResult:
         real    0m0.123s
         user    0m0.045s
         sys     0m0.012s
+
+    WARNING: This parser is fragile and shell-dependent. It relies on bash's
+    `time` keyword output format (not /usr/bin/time). Other shells (zsh, dash,
+    ksh) or non-default TIMEFORMAT settings may produce incompatible output.
+    Locale settings (LC_NUMERIC) could also affect decimal separators.
     """
     # Pattern matches: real/user/sys followed by XmY.ZZZs format
     pattern = r"(real|user|sys)\s+(\d+)m([\d.]+)s"
@@ -224,6 +253,11 @@ WARMUP_ITERATIONS = 10
 CALIBRATION_MIN_ITERATIONS = 100
 CALIBRATION_MIN_TIME = 0.1  # Minimum seconds for reliable calibration
 CALIBRATION_MAX_ITERATIONS = 100_000_000  # Safety cap
+MAX_TARGET_ITERATIONS = 1_000_000_000  # Prevent runaway iteration counts
+
+# Constants for statistical sampling
+DEFAULT_SAMPLES = 5
+MIN_SAMPLE_DURATION = 0.5  # Minimum seconds per sample for reliable measurement
 
 
 def run_benchmark_phase(
@@ -247,20 +281,36 @@ def run_benchmark(
     shell_path: str,
     case: BenchmarkCase,
     target_duration: float,
+    num_samples: int = DEFAULT_SAMPLES,
     verbose: bool = False,
 ) -> BenchmarkResult:
     """
-    Run a complete benchmark with warmup, calibration, and main phases.
+    Run a complete benchmark with warmup, calibration, and multiple sample phases.
 
     Args:
         shell_path: Path to shell executable
         case: Benchmark case to run
-        target_duration: Target duration in seconds for main run
+        target_duration: Total time budget in seconds (divided among samples)
+        num_samples: Number of independent samples to collect
         verbose: Print progress information
 
     Returns:
-        BenchmarkResult with timing data
+        BenchmarkResult with timing statistics across all samples
     """
+    # Determine actual sample count based on duration constraints
+    sample_duration = target_duration / num_samples
+    actual_samples = num_samples
+
+    if sample_duration < MIN_SAMPLE_DURATION:
+        actual_samples = max(1, int(target_duration / MIN_SAMPLE_DURATION))
+        sample_duration = target_duration / actual_samples
+        # Always warn when we reduce samples (even in non-verbose mode)
+        print(
+            f"  ⚠️  Duration too short for {num_samples} samples; "
+            f"using {actual_samples} sample(s) of {sample_duration:.1f}s instead",
+            file=sys.stderr,
+        )
+
     if verbose:
         print("  🔥 Warming up...", file=sys.stderr)
 
@@ -299,31 +349,50 @@ def run_benchmark(
                 file=sys.stderr,
             )
 
-    # Calculate iterations needed for target duration
+    # Calculate iterations needed for each sample
     per_iteration_seconds = calibration_timing.real_seconds / calibration_iterations
     if per_iteration_seconds <= 0:
         # Fallback if calibration was too fast
         per_iteration_seconds = 1e-9
 
-    target_iterations = max(1, int(target_duration / per_iteration_seconds))
+    iterations_per_sample = max(1, int(sample_duration / per_iteration_seconds))
+    iterations_per_sample = min(iterations_per_sample, MAX_TARGET_ITERATIONS)
 
     if verbose:
         print(
-            f"  ⏱️  Running {target_iterations} iterations (est. {target_duration:.1f}s)...",
+            f"  ⏱️  Running {actual_samples} samples of {iterations_per_sample} iterations "
+            f"(est. {sample_duration:.1f}s each)...",
             file=sys.stderr,
         )
 
-    # Phase 3: Main run
-    main_timing = run_benchmark_phase(shell_path, case, target_iterations)
+    # Phase 3: Collect multiple samples
+    sample_ns_values: list[float] = []
+    for sample_idx in range(actual_samples):
+        sample_timing = run_benchmark_phase(shell_path, case, iterations_per_sample)
+        per_iter_ns = (sample_timing.real_seconds / iterations_per_sample) * 1e9
+        sample_ns_values.append(per_iter_ns)
 
-    # Calculate per-iteration time in nanoseconds
-    per_iteration_ns = (main_timing.real_seconds / target_iterations) * 1e9
+        if verbose:
+            print(
+                f"     Sample {sample_idx + 1}/{actual_samples}: "
+                f"{format_duration_ns(per_iter_ns)}/iter",
+                file=sys.stderr,
+            )
+
+    # Compute statistics
+    mean_ns = statistics.mean(sample_ns_values)
+    stddev_ns = statistics.stdev(sample_ns_values) if len(sample_ns_values) > 1 else 0.0
+    min_ns = min(sample_ns_values)
+    max_ns = max(sample_ns_values)
 
     return BenchmarkResult(
         case_name=case.name,
-        iterations=target_iterations,
-        total_time=main_timing,
-        per_iteration_ns=per_iteration_ns,
+        iterations_per_sample=iterations_per_sample,
+        sample_count=actual_samples,
+        per_iteration_ns=mean_ns,
+        per_iteration_ns_stddev=stddev_ns,
+        per_iteration_ns_min=min_ns,
+        per_iteration_ns_max=max_ns,
         shell_path=shell_path,
     )
 
@@ -345,6 +414,23 @@ def format_duration_ns(ns: float) -> str:
         return f"{ns:.3f} ns"
 
 
+def format_result_with_variance(result: BenchmarkResult) -> str:
+    """Format a benchmark result with variance indicator."""
+    mean_str = format_duration_ns(result.per_iteration_ns)
+
+    if result.sample_count <= 1 or result.per_iteration_ns == 0:
+        return f"{mean_str}/iter"
+
+    # Coefficient of variation (relative standard deviation)
+    cv_pct = (result.per_iteration_ns_stddev / result.per_iteration_ns) * 100
+
+    # Flag high variance with warning indicator
+    if cv_pct > 10:
+        return f"{mean_str}/iter (±{cv_pct:.1f}% ⚠️)"
+    else:
+        return f"{mean_str}/iter (±{cv_pct:.1f}%)"
+
+
 def format_speedup(speedup: float) -> str:
     """Format speedup with emoji indicator and percentage change."""
     # Calculate percentage change (negative = faster, positive = slower)
@@ -363,8 +449,27 @@ def format_speedup(speedup: float) -> str:
     return f"{emoji} {text}"
 
 
-def print_human_results(comparisons: list[ComparisonResult], test_shell: str, ref_shell: str):
-    """Print results in human-readable format with emoji."""
+def print_human_single_shell_results(results: list[BenchmarkResult], shell: str):
+    """Print results for a single shell (no comparison)."""
+    print()
+    print("=" * 70)
+    print("📊 Shell Benchmark Results")
+    print("=" * 70)
+    print(f"  Shell: {shell}")
+    print("=" * 70)
+    print()
+
+    for result in results:
+        print(f"🧪 {result.case_name}")
+        print(f"   {format_result_with_variance(result)}")
+        print(f"   ({result.sample_count} samples, {result.iterations_per_sample} iters/sample)")
+        print()
+
+
+def print_human_results(
+    comparisons: list[ComparisonResult], test_shell: str, ref_shell: str
+):
+    """Print comparison results in human-readable format with emoji."""
     print()
     print("=" * 70)
     print("📊 Shell Benchmark Results")
@@ -376,40 +481,59 @@ def print_human_results(comparisons: list[ComparisonResult], test_shell: str, re
 
     for comp in comparisons:
         print(f"🧪 {comp.case_name}")
-        print(f"   Test:      {format_duration_ns(comp.test_result.per_iteration_ns)}/iter")
-        print(f"   Reference: {format_duration_ns(comp.reference_result.per_iteration_ns)}/iter")
+        print(f"   Test:      {format_result_with_variance(comp.test_result)}")
+        print(f"   Reference: {format_result_with_variance(comp.reference_result)}")
         print(f"   Result:    {format_speedup(comp.speedup)}")
         print()
 
     # Summary
     print("-" * 70)
-    avg_speedup = sum(c.speedup for c in comparisons) / len(comparisons) if comparisons else 1.0
+    avg_speedup = (
+        sum(c.speedup for c in comparisons) / len(comparisons) if comparisons else 1.0
+    )
     print(f"📈 Average speedup: {format_speedup(avg_speedup)}")
     print()
 
 
-def print_json_results(comparisons: list[ComparisonResult], test_shell: str, ref_shell: str):
-    """Print results in JSON format."""
+def _result_to_json(result: BenchmarkResult) -> dict:
+    """Convert a BenchmarkResult to a JSON-serializable dict."""
+    return {
+        "iterations_per_sample": result.iterations_per_sample,
+        "sample_count": result.sample_count,
+        "per_iteration_ns": result.per_iteration_ns,
+        "per_iteration_ns_stddev": result.per_iteration_ns_stddev,
+        "per_iteration_ns_min": result.per_iteration_ns_min,
+        "per_iteration_ns_max": result.per_iteration_ns_max,
+    }
+
+
+def print_json_single_shell_results(results: list[BenchmarkResult], shell: str):
+    """Print results for a single shell in JSON format."""
+    output = {
+        "shell": shell,
+        "results": [
+            {
+                "name": result.case_name,
+                **_result_to_json(result),
+            }
+            for result in results
+        ],
+    }
+    print(json.dumps(output, indent=2))
+
+
+def print_json_results(
+    comparisons: list[ComparisonResult], test_shell: str, ref_shell: str
+):
+    """Print comparison results in JSON format."""
     output = {
         "test_shell": test_shell,
         "reference_shell": ref_shell,
         "results": [
             {
                 "name": comp.case_name,
-                "test": {
-                    "iterations": comp.test_result.iterations,
-                    "total_real_seconds": comp.test_result.total_time.real_seconds,
-                    "total_user_seconds": comp.test_result.total_time.user_seconds,
-                    "total_sys_seconds": comp.test_result.total_time.sys_seconds,
-                    "per_iteration_ns": comp.test_result.per_iteration_ns,
-                },
-                "reference": {
-                    "iterations": comp.reference_result.iterations,
-                    "total_real_seconds": comp.reference_result.total_time.real_seconds,
-                    "total_user_seconds": comp.reference_result.total_time.user_seconds,
-                    "total_sys_seconds": comp.reference_result.total_time.sys_seconds,
-                    "per_iteration_ns": comp.reference_result.per_iteration_ns,
-                },
+                "test": _result_to_json(comp.test_result),
+                "reference": _result_to_json(comp.reference_result),
                 "speedup": comp.speedup,
             }
             for comp in comparisons
@@ -442,15 +566,17 @@ def main():
         description="Shell benchmarking harness for brush",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Available benchmark tests:
-  colon         - Invoke the ':' builtin with no args
-  echo          - Echo to /dev/null
-  increment     - Increment an integer variable
-  subshell      - Fork a subshell
-  cmdsubst      - Command substitution
-  var_expand    - Variable expansion
-  func_call     - Function call
-  array_access  - Array index access
+Available benchmarks:
+  assignment    - Variable assignment (x=42)
+  colon         - No-op builtin (:)
+  echo_builtin  - Echo builtin to /dev/null
+  echo_cmd      - External /usr/bin/echo to /dev/null
+  increment     - Arithmetic increment ((x++))
+  subshell      - Subshell fork ((:))
+  cmdsubst      - Command substitution ($(...))
+  var_expand    - Variable expansion ("$var")
+  func_call     - Function invocation
+  array_access  - Array element access (${arr[i]})
   pattern_match - Glob pattern match in [[ ]]
   regex_match   - Regex match in [[ =~ ]]
   if_taken      - If conditional (branch taken)
@@ -458,7 +584,7 @@ Available benchmark tests:
 
 Examples:
   %(prog)s --shell ./target/release/brush
-  %(prog)s --shell brush --reference-shell bash --tests colon increment
+  %(prog)s --shell brush --reference-shell bash --benchmarks colon increment
   %(prog)s --shell brush --duration 5 --json
 """,
     )
@@ -477,19 +603,27 @@ Examples:
         "--reference-shell",
         dest="reference_shell",
         type=str,
-        default="bash",
-        help="Path to reference shell binary (default: bash)",
+        default=None,
+        help="Path to reference shell for comparison (optional; if omitted, only test shell is benchmarked)",
     )
 
     parser.add_argument(
-        "-t",
-        "--tests",
-        dest="tests",
+        "-b",
+        "--benchmarks",
+        dest="benchmarks",
         type=str,
         nargs="+",
         default=list(BENCHMARK_CASES.keys()),
         choices=list(BENCHMARK_CASES.keys()),
-        help="Name(s) of test(s) to run (default: all)",
+        help="Name(s) of benchmark(s) to run (default: all)",
+    )
+
+    parser.add_argument(
+        "--samples",
+        dest="samples",
+        type=int,
+        default=DEFAULT_SAMPLES,
+        help=f"Number of samples to collect per benchmark (default: {DEFAULT_SAMPLES})",
     )
 
     parser.add_argument(
@@ -521,36 +655,63 @@ Examples:
 
     # Resolve shell paths
     test_shell = resolve_shell_path(args.shell)
-    ref_shell = resolve_shell_path(args.reference_shell)
+    ref_shell = resolve_shell_path(args.reference_shell) if args.reference_shell else None
 
     if not args.json_output:
         print("🐚 Shell Benchmark Harness", file=sys.stderr)
         print(f"   Test shell:      {test_shell}", file=sys.stderr)
-        print(f"   Reference shell: {ref_shell}", file=sys.stderr)
-        print(f"   Duration:        {args.duration}s per test", file=sys.stderr)
-        print(f"   Tests:           {', '.join(args.tests)}", file=sys.stderr)
+        if ref_shell:
+            print(f"   Reference shell: {ref_shell}", file=sys.stderr)
+        print(f"   Duration:        {args.duration}s per benchmark", file=sys.stderr)
+        print(f"   Samples:         {args.samples}", file=sys.stderr)
+        print(f"   Benchmarks:      {', '.join(args.benchmarks)}", file=sys.stderr)
         print(file=sys.stderr)
 
+    # Single-shell mode (no reference)
+    if ref_shell is None:
+        results = []
+        for bench_name in args.benchmarks:
+            case = BENCHMARK_CASES[bench_name]
+
+            if not args.json_output:
+                print(f"▶️  Running benchmark: {bench_name}", file=sys.stderr)
+                print(f"   Testing: {test_shell}", file=sys.stderr)
+
+            result = run_benchmark(
+                test_shell, case, args.duration, args.samples, verbose=args.verbose
+            )
+            results.append(result)
+
+            if not args.json_output:
+                print(file=sys.stderr)
+
+        if args.json_output:
+            print_json_single_shell_results(results, test_shell)
+        else:
+            print_human_single_shell_results(results, test_shell)
+        return
+
+    # Comparison mode (test vs reference)
     comparisons = []
 
-    for test_name in args.tests:
-        case = BENCHMARK_CASES[test_name]
+    for bench_name in args.benchmarks:
+        case = BENCHMARK_CASES[bench_name]
 
         if not args.json_output:
-            print(f"▶️  Running benchmark: {test_name}", file=sys.stderr)
+            print(f"▶️  Running benchmark: {bench_name}", file=sys.stderr)
 
         # Run on test shell
         if not args.json_output:
             print(f"   Testing: {test_shell}", file=sys.stderr)
         test_result = run_benchmark(
-            test_shell, case, args.duration, verbose=args.verbose
+            test_shell, case, args.duration, args.samples, verbose=args.verbose
         )
 
         # Run on reference shell
         if not args.json_output:
             print(f"   Testing: {ref_shell}", file=sys.stderr)
         ref_result = run_benchmark(
-            ref_shell, case, args.duration, verbose=args.verbose
+            ref_shell, case, args.duration, args.samples, verbose=args.verbose
         )
 
         # Calculate speedup (reference time / test time)
