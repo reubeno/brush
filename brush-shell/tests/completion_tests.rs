@@ -88,11 +88,19 @@ async fn complete_relative_file_path() -> Result<()> {
     // Create file and dir.
     test_shell.temp_dir.child("item1").touch()?;
     test_shell.temp_dir.child("item2").create_dir_all()?;
+    test_shell.temp_dir.child(".dot_item1").touch()?;
+    test_shell.temp_dir.child("..dot_item2").touch()?;
 
     // Complete; expect to see the two files.
-    let results = test_shell.complete_end_of_line("ls item").await?;
+    let mut results = test_shell.complete_end_of_line("ls item").await?;
 
     assert_eq!(results, ["item1", "item2"]);
+
+    results = test_shell.complete_end_of_line("ls .").await?;
+    assert_eq!(results, [".", "..", "..dot_item2", ".dot_item1"]);
+
+    results = test_shell.complete_end_of_line("ls ..").await?;
+    assert_eq!(results, ["..", "..dot_item2"]);
 
     Ok(())
 }

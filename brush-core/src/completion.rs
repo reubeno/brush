@@ -1155,7 +1155,7 @@ async fn get_file_completions(
         .set_extended_globbing(shell.options.extended_globbing)
         .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
 
-    pattern
+    let mut completions: IndexSet<_> = pattern
         .expand(
             shell.working_dir(),
             Some(&path_filter),
@@ -1163,7 +1163,17 @@ async fn get_file_completions(
         )
         .unwrap_or_default()
         .into_iter()
-        .collect()
+        .collect();
+
+    match token_to_complete {
+        "." => completions.extend([".", ".."].map(String::from)),
+        ".." => {
+            completions.insert("..".into());
+        }
+        _ => {}
+    }
+
+    completions
 }
 
 fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<String> {
