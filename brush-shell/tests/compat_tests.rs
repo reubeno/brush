@@ -1699,7 +1699,6 @@ fn get_bash_version_str(bash_path: &Path) -> Result<String> {
     let output = std::process::Command::new(bash_path)
         .arg("--norc")
         .arg("--noprofile")
-        .arg("--no-config")
         .arg("-c")
         .arg("echo -n ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}.${BASH_VERSINFO[2]}")
         .output()
