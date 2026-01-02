@@ -55,7 +55,6 @@ cases:
       command -v -p cat
 
   - name: "command -v with full paths"
-    skip: true # TODO(command): investigate why this fails on arch linux
     stdin: |
       echo "[cat]"
       command -v cat

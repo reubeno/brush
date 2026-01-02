@@ -57,7 +57,7 @@ cases:
       echo "Final BASH_ALIASES: " ${BASH_ALIASES[@]}
 
   - name: "BASHOPTS"
-    skip: true # Need to normalize which options are enabled in oracle
+    min_oracle_version: "5.3" # Changed in bash 5.3
     stdin: |
       # Workaround for brush forcing on extglob
       shopt -u extglob
