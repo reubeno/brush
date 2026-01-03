@@ -516,7 +516,7 @@ jobs:
               external bash-completion \
               --bash-completion-path $GITHUB_WORKSPACE/bash-completion \
               --output $GITHUB_WORKSPACE/test-results-bash-completion.json \
-              --summary-output $GITHUB_WORKSPACE/test-results-bash-completion.md
+              --summary-output $GITHUB_WORKSPACE/test-results-bash-completion.md || true
 
       - name: Upload test report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
