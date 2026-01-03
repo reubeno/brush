@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins};
 
 /// Suspend the shell.
 #[derive(Parser)]

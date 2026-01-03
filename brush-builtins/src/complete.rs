@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use std::io::Write;
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
+use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins, error, escape};
 
 #[derive(Parser)]
 struct CommonCompleteCommandArgs {

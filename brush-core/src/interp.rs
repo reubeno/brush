@@ -11,7 +11,7 @@ use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
-use crate::shell::Shell;
+use crate::shell::{Shell, ShellRuntime as _};
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };

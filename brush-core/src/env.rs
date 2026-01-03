@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::collections::hash_map;
 
 use crate::error;
-use crate::shell;
+use crate::shell::{self, ShellRuntime as _};
 use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
 
 /// Represents the policy for looking up variables in a shell environment.

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, jobs, sys};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins, jobs, sys};
 
 /// Move a specified job to the foreground.
 #[derive(Parser)]

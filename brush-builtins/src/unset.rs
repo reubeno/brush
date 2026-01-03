@@ -2,7 +2,9 @@ use std::borrow::Cow;
 
 use clap::Parser;
 
-use brush_core::{ExecutionResult, Shell, ShellValue, builtins, variables::ShellValueUnsetType};
+use brush_core::{
+    ExecutionResult, Shell, ShellRuntime as _, ShellValue, builtins, variables::ShellValueUnsetType,
+};
 
 /// Unset a variable.
 #[derive(Parser)]

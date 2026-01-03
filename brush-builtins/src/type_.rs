@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 
 use brush_core::sys::fs::PathExt;
-use brush_core::{ExecutionResult, Shell, builtins, parser::ast};
+use brush_core::{ExecutionResult, Shell, ShellRuntime as _, builtins, parser::ast};
 
 /// Inspect the type of a named shell item.
 #[derive(Parser)]

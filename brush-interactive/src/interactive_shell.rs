@@ -1,6 +1,8 @@
 use std::io::IsTerminal as _;
 use std::io::Write as _;
 
+use brush_core::ShellRuntime as _;
+
 use crate::InputBackend;
 use crate::InteractivePrompt;
 use crate::ReadResult;

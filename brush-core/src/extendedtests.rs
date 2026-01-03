@@ -2,8 +2,8 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    ExecutionParameters, Shell, ShellFd, arithmetic, env, error, escape, expansion, namedoptions,
-    patterns,
+    ExecutionParameters, Shell, ShellFd, ShellRuntime as _, arithmetic, env, error, escape,
+    expansion, namedoptions, patterns,
     sys::{
         fs::{MetadataExt, PathExt},
         users,

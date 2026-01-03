@@ -1,4 +1,5 @@
 use crate::refs;
+use brush_core::ShellRuntime as _;
 
 pub(crate) struct ReedlineHistory {
     pub shell: refs::ShellRef,

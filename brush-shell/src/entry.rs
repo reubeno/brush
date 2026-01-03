@@ -8,6 +8,7 @@ use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
+use brush_core::ShellRuntime as _;
 #[cfg(feature = "experimental-builtins")]
 use brush_experimental_builtins::ShellBuilderExt as _;
 use std::sync::LazyLock;

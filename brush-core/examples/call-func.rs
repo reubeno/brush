@@ -1,6 +1,7 @@
 //! Example of instantiating a shell and calling a shell function in it.
 
 use anyhow::Result;
+use brush_core::ShellRuntime as _;
 
 async fn instantiate_shell() -> Result<brush_core::Shell> {
     let shell = brush_core::Shell::builder().build().await?;

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, error, jobs};
+use brush_core::{ExecutionResult, ShellRuntime as _,builtins, error, jobs};
 
 /// Manage jobs.
 #[derive(Parser)]

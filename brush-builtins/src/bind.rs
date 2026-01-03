@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use tokio::sync::Mutex;
 
 use brush_core::{
-    ExecutionExitCode, ExecutionResult, builtins,
+    ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins,
     interfaces::{self, InputFunction, KeyAction, KeySequence},
     sys, trace_categories,
 };

@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
-    ExecutionResult, builtins, commands, pathsearch,
+    ExecutionResult, ShellRuntime as _, builtins, commands, pathsearch,
     sys::{self, fs::PathExt},
 };
 

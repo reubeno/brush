@@ -1,6 +1,6 @@
 use crate::{
     ExecutionParameters, error, expansion,
-    shell::Shell,
+    shell::{Shell, ShellRuntime as _},
     sys::{self, users},
 };
 use std::path::Path;

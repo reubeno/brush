@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, builtins, error, history};
+use brush_core::{ExecutionResult, ShellRuntime as _,builtins, error, history};
 use clap::Parser;
 use std::io::Write;
 

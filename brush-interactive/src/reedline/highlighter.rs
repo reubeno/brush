@@ -1,6 +1,7 @@
 use std::str::Chars;
 
 use crate::refs;
+use brush_core::ShellRuntime as _;
 use nu_ansi_term::{Color, Style};
 
 mod styles {

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use brush_core::ShellRuntime as _;
 use indexmap::IndexSet;
 
 use brush_core::escape;
