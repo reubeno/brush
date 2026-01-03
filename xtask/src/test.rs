@@ -65,15 +65,15 @@ pub struct TestCommand {
 pub enum TestSubcommand {
     /// Run all tests (unit + compat).
     All,
-    /// Run compatibility tests against bash.
+    /// Run compatibility tests (only) against bash.
     Compat,
     /// Run tests with code coverage collection.
     Coverage(CoverageArgs),
     /// Run external test suites.
     #[clap(subcommand)]
     External(ExternalTestCommand),
-    /// Run unit tests with cargo-nextest.
-    Unit,
+    /// Run cargo tests with cargo-nextest.
+    Cargo,
 }
 
 /// Arguments for coverage collection.
@@ -125,7 +125,7 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
         TestSubcommand::Compat => run_compat_tests(&sh, &cmd.binary_args, verbose),
         TestSubcommand::Coverage(args) => run_coverage(&sh, &cmd.binary_args, args, verbose),
         TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh, verbose),
-        TestSubcommand::Unit => run_unit_tests(&sh, &cmd.binary_args, verbose),
+        TestSubcommand::Cargo => run_cargo_tests(&sh, &cmd.binary_args, verbose),
     }
 }
 
@@ -142,7 +142,7 @@ fn run_external(
     }
 }
 
-fn run_unit_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
+fn run_cargo_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
     let profile = binary_args.effective_profile();
     eprintln!("Running unit tests ({profile:?} profile)...");
 
@@ -166,7 +166,13 @@ fn run_compat_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Resu
     let profile = binary_args.effective_profile();
     eprintln!("Running compatibility tests ({profile:?} profile)...");
 
-    let mut args = vec!["test", "--test", "brush-compat-tests"];
+    let mut args = vec![
+        "nextest",
+        "run",
+        "--test",
+        "brush-compat-tests",
+        "--no-fail-fast",
+    ];
     if profile == BuildProfile::Release {
         args.push("--release");
     }
@@ -185,11 +191,7 @@ fn run_compat_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Resu
 fn run_all_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
     eprintln!("Running all tests...");
 
-    // Run unit tests first
-    run_unit_tests(sh, binary_args, verbose)?;
-
-    // Then run compatibility tests
-    run_compat_tests(sh, binary_args, verbose)?;
+    run_cargo_tests(sh, binary_args, verbose)?;
 
     eprintln!("All tests passed.");
     Ok(())
@@ -330,12 +332,22 @@ fn run_bash_completion_tests(
         eprintln!("Running: pytest {}", pytest_args.join(" "));
     }
 
-    // Run pytest - capture exit status to report failure but continue to generate summary
+    // Run pytest - capture exit status to report failure but continue to generate summary.
+    // We need to capture the exit code while still showing output to the user.
+    // Use output() to capture everything, then print it, then check the status.
     let pytest_output = cmd!(sh, "pytest")
         .args(&pytest_args)
         .ignore_status()
         .output()
         .context("Failed to execute pytest")?;
+
+    // Print stdout/stderr so the user can see the test results
+    if !pytest_output.stdout.is_empty() {
+        std::io::Write::write_all(&mut std::io::stdout(), &pytest_output.stdout)?;
+    }
+    if !pytest_output.stderr.is_empty() {
+        std::io::Write::write_all(&mut std::io::stderr(), &pytest_output.stderr)?;
+    }
 
     let pytest_failed = !pytest_output.status.success();
     if pytest_failed {

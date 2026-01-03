@@ -2,8 +2,9 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser};
+use xshell::{Shell, cmd};
 
 /// Generate various artifacts.
 #[derive(Parser)]
@@ -26,6 +27,8 @@ pub enum DocsCommand {
     Man(GenerateManArgs),
     /// Generate help content in markdown format.
     Markdown(GenerateMarkdownArgs),
+    /// Generate a reproducible documentation distribution archive with checksums.
+    Dist(GenerateDistArgs),
 }
 
 /// Completion script generation commands.
@@ -59,6 +62,22 @@ pub struct GenerateMarkdownArgs {
     output_path: PathBuf,
 }
 
+/// Arguments for documentation distribution generation.
+#[derive(Parser)]
+pub struct GenerateDistArgs {
+    /// Output file path for the distribution archive (defaults to brush-docs.tar.gz).
+    #[clap(long = "out", short = 'o', default_value = "brush-docs.tar.gz")]
+    output_path: PathBuf,
+
+    /// Generate SHA-256 checksum file alongside the distribution archive.
+    #[clap(long, default_value_t = true)]
+    sha256: bool,
+
+    /// Generate SHA-512 checksum file alongside the distribution archive.
+    #[clap(long, default_value_t = true)]
+    sha512: bool,
+}
+
 /// Schema generation commands.
 #[derive(Parser)]
 pub enum SchemaCommand {
@@ -80,6 +99,7 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
         GenCommand::Docs(docs_cmd) => match docs_cmd {
             DocsCommand::Man(args) => gen_man(args, verbose),
             DocsCommand::Markdown(args) => gen_markdown_docs(args, verbose),
+            DocsCommand::Dist(args) => gen_docs_dist(args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
             match completion_cmd {
@@ -154,6 +174,96 @@ fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
     let schema = schemars::schema_for!(brush_shell::config::Config);
     let json = serde_json::to_string_pretty(&schema)?;
     std::fs::write(&args.output_path, format!("{json}\n"))?;
+
+    Ok(())
+}
+
+fn gen_docs_dist(args: &GenerateDistArgs, verbose: bool) -> Result<()> {
+    let sh = Shell::new()?;
+
+    // Create a temporary directory for staging the documentation
+    let temp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
+    let staging_dir = temp_dir.path();
+    let md_dir = staging_dir.join("md");
+    let man_dir = staging_dir.join("man");
+
+    std::fs::create_dir_all(&md_dir)?;
+    std::fs::create_dir_all(&man_dir)?;
+
+    if verbose {
+        eprintln!("Staging documentation in: {}", staging_dir.display());
+    }
+
+    // Generate markdown documentation
+    let md_args = GenerateMarkdownArgs {
+        output_path: md_dir.join("brush.md"),
+    };
+    gen_markdown_docs(&md_args, verbose)?;
+
+    // Generate man pages
+    let man_args = GenerateManArgs {
+        output_dir: man_dir,
+    };
+    gen_man(&man_args, verbose)?;
+
+    // Get absolute path for output
+    let output_path = if args.output_path.is_absolute() {
+        args.output_path.clone()
+    } else {
+        std::env::current_dir()?.join(&args.output_path)
+    };
+
+    if verbose {
+        eprintln!(
+            "Creating reproducible distribution archive: {}",
+            output_path.display()
+        );
+    }
+
+    // Create reproducible distribution archive using tar with options for reproducibility:
+    // - --sort=name: Sort files by name for consistent ordering
+    // - --mtime: Set modification time to epoch for reproducibility
+    // - --owner=0 --group=0: Remove user/group ownership info
+    // - --numeric-owner: Use numeric IDs
+    // - --pax-option: Remove atime/ctime from PAX headers
+    let output_path_str = output_path.display().to_string();
+
+    // Change to staging directory and create archive
+    let dir_guard = sh.push_dir(staging_dir);
+
+    cmd!(
+        sh,
+        "tar --sort=name --mtime=1970-01-01T00:00:00Z --owner=0 --group=0 --numeric-owner --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -czf {output_path_str} ."
+    )
+    .run()
+    .context("Failed to create distribution archive")?;
+
+    eprintln!("Created: {}", output_path.display());
+
+    // Generate checksums
+    drop(dir_guard);
+
+    if args.sha256 {
+        let checksum_path = format!("{}.sha256", output_path.display());
+        let checksum = cmd!(sh, "sha256sum {output_path_str}")
+            .read()
+            .context("Failed to generate SHA-256 checksum")?;
+        std::fs::write(&checksum_path, format!("{checksum}\n"))?;
+        if verbose {
+            eprintln!("Created: {checksum_path}");
+        }
+    }
+
+    if args.sha512 {
+        let checksum_path = format!("{}.sha512", output_path.display());
+        let checksum = cmd!(sh, "sha512sum {output_path_str}")
+            .read()
+            .context("Failed to generate SHA-512 checksum")?;
+        std::fs::write(&checksum_path, format!("{checksum}\n"))?;
+        if verbose {
+            eprintln!("Created: {checksum_path}");
+        }
+    }
 
     Ok(())
 }

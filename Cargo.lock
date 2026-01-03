@@ -3882,6 +3882,7 @@ dependencies = [
  "clap_mangen",
  "schemars",
  "serde_json",
+ "tempfile",
  "xshell",
 ]
 
