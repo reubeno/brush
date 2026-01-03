@@ -166,12 +166,12 @@ impl builtins::Command for GetOptsCommand {
                     // We're done with this argument, so unset the internal char index variable
                     // and request an update to OPTIND.
                     new_optind = next_index + 1;
-                    context.shell.env.unset(VAR_GETOPTS_NEXT_CHAR_INDEX)?;
+                    context.shell.env_mut().unset(VAR_GETOPTS_NEXT_CHAR_INDEX)?;
                 } else {
                     // We have more to go in this argument, so update the internal char index
                     // and request that OPTIND not be updated.
                     new_optind = next_index;
-                    context.shell.env.update_or_add(
+                    context.shell.env_mut().update_or_add(
                         VAR_GETOPTS_NEXT_CHAR_INDEX,
                         variables::ShellValueLiteral::Scalar((next_char_index + 1).to_string()),
                         |_| Ok(()),
@@ -203,7 +203,7 @@ impl builtins::Command for GetOptsCommand {
         }
 
         // Update variable value.
-        context.shell.env.update_or_add(
+        context.shell.env_mut().update_or_add(
             self.variable_name.as_str(),
             variables::ShellValueLiteral::Scalar(variable_value),
             |_| Ok(()),
@@ -213,7 +213,7 @@ impl builtins::Command for GetOptsCommand {
 
         // Update OPTARG
         if let Some(new_optarg) = new_optarg {
-            context.shell.env.update_or_add(
+            context.shell.env_mut().update_or_add(
                 "OPTARG",
                 variables::ShellValueLiteral::Scalar(new_optarg),
                 |_| Ok(()),
@@ -221,11 +221,11 @@ impl builtins::Command for GetOptsCommand {
                 brush_core::env::EnvironmentScope::Global,
             )?;
         } else {
-            let _ = context.shell.env.unset("OPTARG")?;
+            let _ = context.shell.env_mut().unset("OPTARG")?;
         }
 
         // Update OPTIND
-        context.shell.env.update_or_add(
+        context.shell.env_mut().update_or_add(
             "OPTIND",
             variables::ShellValueLiteral::Scalar(new_optind.to_string()),
             |_| Ok(()),

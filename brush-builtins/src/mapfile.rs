@@ -68,7 +68,7 @@ impl builtins::Command for MapFileCommand {
         let results = self.read_entries(input_file)?;
 
         // Assign!
-        context.shell.env.update_or_add(
+        context.shell.env_mut().update_or_add(
             &self.array_var_name,
             variables::ShellValueLiteral::Array(results),
             |_| Ok(()),

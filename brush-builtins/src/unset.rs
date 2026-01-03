@@ -64,7 +64,7 @@ impl builtins::Command for UnsetCommand {
                         brush_parser::word::Parameter::Positional(_) => continue,
                         brush_parser::word::Parameter::Special(_) => continue,
                         brush_parser::word::Parameter::Named(name) => {
-                            context.shell.env.unset(name.as_str())?.is_some()
+                            context.shell.env_mut().unset(name.as_str())?.is_some()
                         }
                         brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                             unset_array_index(context.shell, name.as_str(), index.as_str())?
@@ -99,7 +99,7 @@ fn unset_array_index(
     index: &str,
 ) -> Result<bool, brush_core::Error> {
     // First check to see if it's an associative array.
-    let is_assoc_array = if let Some((_, var)) = shell.env.get(name) {
+    let is_assoc_array = if let Some((_, var)) = shell.env().get(name) {
         matches!(
             var.value(),
             ShellValue::AssociativeArray(_)
@@ -121,5 +121,5 @@ fn unset_array_index(
     };
 
     // Now we can try to unset, and return the result.
-    shell.env.unset_index(name, index_to_use.as_ref())
+    shell.env_mut().unset_index(name, index_to_use.as_ref())
 }

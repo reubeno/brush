@@ -267,7 +267,7 @@ impl Spec {
         // Store the current options in the shell; this is needed since the compopt
         // built-in has the ability of modifying the options for an in-flight
         // completion process.
-        shell.completion_config.current_completion_options = Some(self.options.clone());
+        shell.completion_config_mut().current_completion_options = Some(self.options.clone());
 
         // Generate completions based on any provided actions (and on words).
         let mut candidates = self.generate_action_completions(shell, context).await?;
@@ -284,8 +284,8 @@ impl Spec {
 
         if let Some(glob_pattern) = &self.glob_pattern {
             let pattern = patterns::Pattern::from(glob_pattern.as_str())
-                .set_extended_globbing(shell.options.extended_globbing)
-                .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
+                .set_extended_globbing(shell.options().extended_globbing)
+                .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
             let expansions = pattern.expand(
                 shell.working_dir(),
@@ -356,7 +356,7 @@ impl Spec {
         // Now apply options
         //
 
-        let options = if let Some(options) = &shell.completion_config.current_completion_options {
+        let options = if let Some(options) = &shell.completion_config().current_completion_options {
             options
         } else {
             &self.options
@@ -399,7 +399,7 @@ impl Spec {
                 get_file_completions(shell, context.token_to_complete, must_be_dir).await;
             candidates.append(&mut default_candidates);
 
-            if shell.completion_config.fallback_options.mark_directories {
+            if shell.completion_config().fallback_options.mark_directories {
                 processing_options.treat_as_filenames = true;
             }
         }
@@ -425,14 +425,14 @@ impl Spec {
         for action in &self.actions {
             match action {
                 CompleteAction::Alias => {
-                    for name in shell.aliases.keys() {
+                    for name in shell.aliases().keys() {
                         if name.starts_with(token) {
                             candidates.insert(name.clone());
                         }
                     }
                 }
                 CompleteAction::ArrayVar => {
-                    for (name, var) in shell.env.iter() {
+                    for (name, var) in shell.env().iter() {
                         if var.value().is_array() && name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
@@ -477,7 +477,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Export => {
-                    for (key, value) in shell.env.iter() {
+                    for (key, value) in shell.env().iter() {
                         if value.is_exported() && key.starts_with(token) {
                             candidates.insert(key.to_owned());
                         }
@@ -518,7 +518,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Job => {
-                    for job in &shell.jobs.jobs {
+                    for job in &shell.jobs().jobs {
                         let command_name = job.command_name();
                         if command_name.starts_with(token) {
                             candidates.insert(command_name.to_owned());
@@ -533,7 +533,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Running => {
-                    for job in &shell.jobs.jobs {
+                    for job in &shell.jobs().jobs {
                         if matches!(job.state, jobs::JobState::Running) {
                             let command_name = job.command_name();
                             if command_name.starts_with(token) {
@@ -569,7 +569,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Stopped => {
-                    for job in &shell.jobs.jobs {
+                    for job in &shell.jobs().jobs {
                         if matches!(job.state, jobs::JobState::Stopped) {
                             let command_name = job.command_name();
                             if command_name.starts_with(token) {
@@ -586,7 +586,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Variable => {
-                    for (key, _) in shell.env.iter() {
+                    for (key, _) in shell.env().iter() {
                         if key.starts_with(token) {
                             candidates.insert(key.to_owned());
                         }
@@ -616,7 +616,7 @@ impl Spec {
 
         // Fill out variables.
         for (var, value) in vars_and_values {
-            shell.env.update_or_add(
+            shell.env_mut().update_or_add(
                 var,
                 value,
                 |v| {
@@ -690,7 +690,7 @@ impl Spec {
 
         let mut vars_to_remove = vec![];
         for (var, value) in vars_and_values {
-            shell.env.update_or_add(
+            shell.env_mut().update_or_add(
                 var,
                 value,
                 |_| Ok(()),
@@ -723,7 +723,7 @@ impl Spec {
 
         // Make a best-effort attempt to unset the temporary variables.
         for var_name in vars_to_remove {
-            let _ = shell.env.unset(var_name);
+            let _ = shell.env_mut().unset(var_name);
         }
 
         let result = invoke_result.unwrap_or_else(|e| {
@@ -736,7 +736,7 @@ impl Spec {
         if result == 124 {
             Ok(Answer::RestartCompletionProcess)
         } else {
-            if let Some(reply) = shell.env.unset("COMPREPLY")? {
+            if let Some(reply) = shell.env_mut().unset("COMPREPLY")? {
                 tracing::debug!(target: trace_categories::COMPLETION, "[completion function yielded: {reply:?}]");
 
                 match reply.value() {
@@ -1087,11 +1087,11 @@ impl Config {
                     found_spec = Some(spec);
                 }
             } else {
-                if let Some(spec) = shell.completion_config.commands.get(command_name) {
+                if let Some(spec) = shell.completion_config().commands.get(command_name) {
                     found_spec = Some(spec);
                 } else if let Some(file_name) = PathBuf::from(command_name).file_name() {
                     if let Some(spec) = shell
-                        .completion_config
+                        .completion_config()
                         .commands
                         .get(&file_name.to_string_lossy().to_string())
                     {
@@ -1152,8 +1152,8 @@ async fn get_file_completions(
     let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
 
     let pattern = patterns::Pattern::from(glob)
-        .set_extended_globbing(shell.options.extended_globbing)
-        .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
+        .set_extended_globbing(shell.options().extended_globbing)
+        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
     pattern
         .expand(
@@ -1172,7 +1172,7 @@ fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<Str
     // Look for external commands.
     for path in shell.find_executables_in_path_with_prefix(
         context.token_to_complete,
-        shell.options.case_insensitive_pathname_expansion,
+        shell.options().case_insensitive_pathname_expansion,
     ) {
         if let Some(file_name) = path.file_name() {
             candidates.insert(file_name.to_string_lossy().to_string());
@@ -1214,7 +1214,7 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
         }
 
         // Add aliases.
-        for name in shell.aliases.keys() {
+        for name in shell.aliases().keys() {
             if name.starts_with(context.token_to_complete) {
                 candidates.insert(name.to_owned());
             }
@@ -1349,8 +1349,8 @@ fn completion_filter_pattern_matches(
     //
 
     let pattern = patterns::Pattern::from(pattern.as_ref())
-        .set_extended_globbing(shell.options.extended_globbing)
-        .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
+        .set_extended_globbing(shell.options().extended_globbing)
+        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
     let matches = pattern.exactly_matches(candidate)?;
 

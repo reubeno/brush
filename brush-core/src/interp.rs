@@ -234,7 +234,7 @@ impl Execute for ast::CompoundList {
                 let job = spawn_ao_list_in_task(ao_list, shell, params);
                 let job_formatted = job.to_pid_style_string();
 
-                if shell.options.interactive && !shell.is_subshell() {
+                if shell.options().interactive && !shell.is_subshell() {
                     writeln!(params.stderr(shell), "{job_formatted}")?;
                 }
 
@@ -266,7 +266,7 @@ fn spawn_ao_list_in_task<'a>(
     let cloned_ao_list = ao_list.clone();
 
     // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
-    cloned_shell.options.interactive = false;
+    cloned_shell.options_mut().interactive = false;
 
     let join_handle = tokio::spawn(async move {
         cloned_ao_list
@@ -274,7 +274,7 @@ fn spawn_ao_list_in_task<'a>(
             .await
     });
 
-    shell.jobs.add_as_current(jobs::Job::new(
+    shell.jobs_mut().add_as_current(jobs::Job::new(
         [jobs::JobTask::Internal(join_handle)],
         ao_list.to_string(),
         jobs::JobState::Running,
@@ -444,8 +444,8 @@ async fn spawn_pipeline_processes(
 
         let run_in_current_shell = pipeline_len == 1
             || (current_pipeline_index == pipeline_len - 1
-                && shell.options.run_last_pipeline_cmd_in_current_shell
-                && !shell.options.enable_job_control);
+                && shell.options().run_last_pipeline_cmd_in_current_shell
+                && !shell.options().enable_job_control);
 
         // Set up parameters appropriate for this command.
         let mut cmd_params = params.clone();
@@ -506,7 +506,7 @@ async fn wait_for_pipeline_processes_and_update_status(
     let mut last_failure_exit_code: Option<ExecutionExitCode> = None;
 
     // Clear our the pipeline status so we can start filling it out.
-    shell.last_pipeline_statuses.clear();
+    shell.last_pipeline_statuses_mut().clear();
 
     while let Some(child) = process_spawn_results.pop_front() {
         let wait_result = if !stopped_children.is_empty() {
@@ -519,7 +519,9 @@ async fn wait_for_pipeline_processes_and_update_status(
             ExecutionWaitResult::Completed(current_result) => {
                 result = current_result;
                 shell.set_last_exit_status(result.exit_code.into());
-                shell.last_pipeline_statuses.push(result.exit_code.into());
+                shell
+                    .last_pipeline_statuses_mut()
+                    .push(result.exit_code.into());
 
                 // Track the last failure for pipefail option
                 if !result.is_success() {
@@ -529,7 +531,9 @@ async fn wait_for_pipeline_processes_and_update_status(
             ExecutionWaitResult::Stopped(child) => {
                 result = ExecutionResult::stopped();
                 shell.set_last_exit_status(result.exit_code.into());
-                shell.last_pipeline_statuses.push(result.exit_code.into());
+                shell
+                    .last_pipeline_statuses_mut()
+                    .push(result.exit_code.into());
 
                 stopped_children.push(jobs::JobTask::External(child));
             }
@@ -537,20 +541,20 @@ async fn wait_for_pipeline_processes_and_update_status(
     }
 
     // Apply pipefail semantics if enabled
-    if shell.options.return_last_failure_from_pipeline {
+    if shell.options().return_last_failure_from_pipeline {
         if let Some(failure_exit_code) = last_failure_exit_code {
             result.exit_code = failure_exit_code;
         }
     }
 
-    if shell.options.interactive {
+    if shell.options().interactive {
         sys::terminal::move_self_to_foreground()?;
     }
 
     // If there were stopped jobs, then encapsulate the pipeline as a managed job and hand it
     // off to the job manager.
     if !stopped_children.is_empty() {
-        let job = shell.jobs.add_as_current(jobs::Job::new(
+        let job = shell.jobs_mut().add_as_current(jobs::Job::new(
             stopped_children,
             pipeline.to_string(),
             jobs::JobState::Stopped,
@@ -572,7 +576,7 @@ impl ExecuteInPipeline for ast::Command {
         mut pipeline_context: PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
-        if pipeline_context.shell.options.do_not_execute_commands {
+        if pipeline_context.shell.options().do_not_execute_commands {
             return Ok(ExecutionSpawnResult::Completed(ExecutionResult::success()));
         }
 
@@ -698,7 +702,7 @@ impl Execute for ast::ForClauseCommand {
         }
 
         for value in expanded_values {
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 if let Some(unexpanded_values) = &self.values {
                     shell
                         .trace_command(
@@ -718,7 +722,7 @@ impl Execute for ast::ForClauseCommand {
             }
 
             // Update the variable.
-            shell.env.update_or_add(
+            shell.env_mut().update_or_add(
                 &self.variable_name,
                 ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
@@ -754,7 +758,7 @@ impl Execute for ast::CaseClauseCommand {
     ) -> Result<ExecutionResult, error::Error> {
         // N.B. One would think it makes sense to trace the expanded value being switched
         // on, but that's not it.
-        if shell.options.print_commands_and_arguments {
+        if shell.options().print_commands_and_arguments {
             shell
                 .trace_command(params, std::format!("case {} in", &self.value))
                 .await?;
@@ -772,8 +776,8 @@ impl Execute for ast::CaseClauseCommand {
                 for pattern in &case.patterns {
                     let expanded_pattern = expansion::basic_expand_pattern(shell, params, pattern)
                         .await?
-                        .set_extended_globbing(shell.options.extended_globbing)
-                        .set_case_insensitive(shell.options.case_insensitive_conditionals);
+                        .set_extended_globbing(shell.options().extended_globbing)
+                        .set_case_insensitive(shell.options().case_insensitive_conditionals);
 
                     if expanded_pattern.exactly_matches(expanded_value.as_str())? {
                         matches = true;
@@ -1090,7 +1094,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                     if args.is_empty() {
                         if let Some(cmd_name) = next_args.first() {
-                            if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
+                            if let Some(alias_value) =
+                                context.shell.aliases().get(cmd_name.as_str())
                             {
                                 //
                                 // TODO(#57): This is a total hack; aliases are supposed to be
@@ -1218,7 +1223,7 @@ async fn execute_command(
         .await?;
     }
 
-    if guard.shell().options.print_commands_and_arguments {
+    if guard.shell().options().print_commands_and_arguments {
         guard
             .shell()
             .trace_command(
@@ -1236,7 +1241,7 @@ async fn execute_command(
     cmd.process_group_id = context.process_group_id;
 
     // Arrange to pop off that ephemeral environment scope.
-    cmd.post_execute = Some(|shell| shell.env.pop_scope(EnvironmentScope::Command));
+    cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
 
     // Run through any pre-execution hooks as best effort.
     let _ = commands::on_preexecute(&mut cmd).await;
@@ -1381,7 +1386,7 @@ async fn apply_assignment(
         }
     };
 
-    if shell.options.print_commands_and_arguments {
+    if shell.options().print_commands_and_arguments {
         let op = if assignment.append { "+=" } else { "=" };
         shell
             .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
@@ -1390,7 +1395,8 @@ async fn apply_assignment(
 
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
-        let will_be_indexed_array = if let Some((_, existing_value)) = shell.env.get(variable_name)
+        let will_be_indexed_array = if let Some((_, existing_value)) =
+            shell.env().get(variable_name)
         {
             matches!(
                 existing_value.value(),
@@ -1409,8 +1415,12 @@ async fn apply_assignment(
         }
     }
 
+    // Read option before taking mutable borrow on env.
+    let export_variables_on_modification = shell.options().export_variables_on_modification;
+
     // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) = shell.env.get_mut(variable_name.as_str())
+    if let Some((existing_value_scope, existing_value)) =
+        shell.env_mut().get_mut(variable_name.as_str())
     {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {
@@ -1424,7 +1434,7 @@ async fn apply_assignment(
                 }
             } else {
                 if !export
-                    && shell.options.export_variables_on_modification
+                    && export_variables_on_modification
                     && !matches!(new_value, ShellValueLiteral::Array(_))
                 {
                     export = true;
@@ -1455,7 +1465,7 @@ async fn apply_assignment(
     } else {
         match new_value {
             ShellValueLiteral::Scalar(s) => {
-                export = export || shell.options.export_variables_on_modification;
+                export = export || shell.options().export_variables_on_modification;
                 ShellValue::String(s)
             }
             ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values),
@@ -1468,7 +1478,7 @@ async fn apply_assignment(
         new_var.export();
     }
 
-    shell.env.add(variable_name, new_var, creation_scope)
+    shell.env_mut().add(variable_name, new_var, creation_scope)
 }
 
 #[expect(clippy::too_many_lines)]
@@ -1532,7 +1542,7 @@ pub(crate) async fn setup_redirect(
                         }
                         ast::IoFileRedirectKind::Write => {
                             if shell
-                                .options
+                                .options()
                                 .disallow_overwriting_regular_files_via_output_redirection
                             {
                                 // First check to see if the path points to an existing regular

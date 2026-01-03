@@ -74,7 +74,7 @@ impl TestShellWithBashCompletion {
 
     pub fn set_var(&mut self, name: &str, value: &str) -> Result<()> {
         self.shell
-            .env
+            .env_mut()
             .set_global(name, brush_core::ShellVariable::new(value))?;
         Ok(())
     }
@@ -101,7 +101,10 @@ async fn complete_relative_file_path() -> Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn complete_relative_file_path_ignoring_case() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
-    test_shell.shell.options.case_insensitive_pathname_expansion = true;
+    test_shell
+        .shell
+        .options_mut()
+        .case_insensitive_pathname_expansion = true;
 
     // Create file and dir.
     test_shell.temp_dir.child("ITEM1").touch()?;

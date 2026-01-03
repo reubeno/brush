@@ -251,17 +251,20 @@ impl CompleteCommand {
         &self,
         context: &mut brush_core::ExecutionContext<'_>,
     ) -> Result<(), brush_core::Error> {
+        // Read options before taking mutable borrow on completion_config
+        let extended_globbing = context.shell.options().extended_globbing;
+
         // These are processed in an intentional order.
         let special_option_name;
         let target_spec = if self.use_as_default {
             special_option_name = "-D";
-            Some(&mut context.shell.completion_config.default)
+            Some(&mut context.shell.completion_config_mut().default)
         } else if self.use_for_empty_line {
             special_option_name = "-E";
-            Some(&mut context.shell.completion_config.empty_line)
+            Some(&mut context.shell.completion_config_mut().empty_line)
         } else if self.use_for_initial_word {
             special_option_name = "-I";
-            Some(&mut context.shell.completion_config.initial_word)
+            Some(&mut context.shell.completion_config_mut().initial_word)
         } else {
             special_option_name = "";
             None
@@ -277,7 +280,7 @@ impl CompleteCommand {
                     return error::unimp("special spec not found");
                 }
             } else {
-                for (command_name, spec) in context.shell.completion_config.iter() {
+                for (command_name, spec) in context.shell.completion_config().iter() {
                     Self::display_spec(context, None, Some(command_name.as_str()), spec)?;
                 }
             }
@@ -286,14 +289,11 @@ impl CompleteCommand {
                 let mut new_spec = None;
                 std::mem::swap(&mut new_spec, target_spec);
             } else {
-                context.shell.completion_config.clear();
+                context.shell.completion_config_mut().clear();
             }
         } else {
             if let Some(target_spec) = target_spec {
-                let mut new_spec = Some(
-                    self.common_args
-                        .create_spec(context.shell.options.extended_globbing),
-                );
+                let mut new_spec = Some(self.common_args.create_spec(extended_globbing));
                 std::mem::swap(&mut new_spec, target_spec);
             } else {
                 return error::unimp("set unspecified spec");
@@ -307,7 +307,7 @@ impl CompleteCommand {
         context: &brush_core::ExecutionContext<'_>,
         name: &str,
     ) -> Result<bool, brush_core::Error> {
-        if let Some(spec) = context.shell.completion_config.get(name) {
+        if let Some(spec) = context.shell.completion_config().get(name) {
             Self::display_spec(context, None, Some(name), spec)?;
             Ok(true)
         } else {
@@ -452,10 +452,10 @@ impl CompleteCommand {
         if self.print {
             return Self::try_display_spec_for_command(context, name);
         } else if self.remove {
-            let mut result = context.shell.completion_config.remove(name);
+            let mut result = context.shell.completion_config_mut().remove(name);
 
             if !result {
-                if context.shell.options.interactive {
+                if context.shell.options().interactive {
                     writeln!(context.stderr(), "complete: {name}: not found")?;
                 } else {
                     // For some reason, this is not supposed to be treated as a failure
@@ -469,9 +469,9 @@ impl CompleteCommand {
 
         let config = self
             .common_args
-            .create_spec(context.shell.options.extended_globbing);
+            .create_spec(context.shell.options().extended_globbing);
 
-        context.shell.completion_config.set(name, config);
+        context.shell.completion_config_mut().set(name, config);
 
         Ok(true)
     }
@@ -496,7 +496,7 @@ impl builtins::Command for CompGenCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut spec = self
             .common_args
-            .create_spec(context.shell.options.extended_globbing);
+            .create_spec(context.shell.options().extended_globbing);
         spec.options.no_sort = true;
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();
@@ -592,38 +592,38 @@ impl builtins::Command for CompOptCommand {
             }
 
             for name in &self.names {
-                let spec = context.shell.completion_config.get_or_add_mut(name);
+                let spec = context.shell.completion_config_mut().get_or_add_mut(name);
                 Self::set_options_for_spec(spec, &options);
             }
         } else if self.update_default {
-            if let Some(spec) = &mut context.shell.completion_config.default {
+            if let Some(spec) = &mut context.shell.completion_config_mut().default {
                 Self::set_options_for_spec(spec, &options);
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config.default = Some(spec);
+                context.shell.completion_config_mut().default = Some(spec);
             }
         } else if self.update_empty {
-            if let Some(spec) = &mut context.shell.completion_config.empty_line {
+            if let Some(spec) = &mut context.shell.completion_config_mut().empty_line {
                 Self::set_options_for_spec(spec, &options);
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config.empty_line = Some(spec);
+                context.shell.completion_config_mut().empty_line = Some(spec);
             }
         } else if self.update_initial_word {
-            if let Some(spec) = &mut context.shell.completion_config.initial_word {
+            if let Some(spec) = &mut context.shell.completion_config_mut().initial_word {
                 Self::set_options_for_spec(spec, &options);
             } else {
                 let mut spec = Spec::default();
                 Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config.initial_word = Some(spec);
+                context.shell.completion_config_mut().initial_word = Some(spec);
             }
         } else {
             // If we got here, then we need to apply to any completion actively in-flight.
             if let Some(in_flight_options) = context
                 .shell
-                .completion_config
+                .completion_config_mut()
                 .current_completion_options
                 .as_mut()
             {

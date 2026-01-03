@@ -211,7 +211,7 @@ impl DeclareCommand {
                 // For some reason, bash does not print an error message in this case.
                 Ok(false)
             }
-        } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
+        } else if let Some(variable) = context.shell.env().get_using_policy(name, lookup) {
             let mut cs = variable.attribute_flags(context.shell);
             if cs.is_empty() {
                 cs.push('-');
@@ -282,7 +282,7 @@ impl DeclareCommand {
         // Look up the variable.
         if let Some(var) = context
             .shell
-            .env
+            .env_mut()
             .get_mut_using_policy(name.as_str(), lookup)
         {
             if self.make_associative_array.is_some() {
@@ -319,7 +319,7 @@ impl DeclareCommand {
                 var.assign(initial_value, false)?;
             }
 
-            if context.shell.options.export_variables_on_modification && !var.value().is_array() {
+            if context.shell.options().export_variables_on_modification && !var.value().is_array() {
                 var.export();
             }
 
@@ -331,7 +331,7 @@ impl DeclareCommand {
                 EnvironmentScope::Global
             };
 
-            context.shell.env.add(name, var, scope)?;
+            context.shell.env_mut().add(name, var, scope)?;
         }
 
         Ok(true)
@@ -490,7 +490,7 @@ impl DeclareCommand {
         // environment.
         for (name, variable) in context
             .shell
-            .env
+            .env()
             .iter_using_policy(iter_policy)
             .filter(|pair| filters.iter().all(|f| f(*pair)))
             .sorted_by_key(|v| v.0)

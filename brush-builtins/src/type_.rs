@@ -145,7 +145,7 @@ impl TypeCommand {
 
         if !self.force_path_search {
             // Check for aliases.
-            if let Some(a) = shell.aliases.get(name) {
+            if let Some(a) = shell.aliases().get(name) {
                 types.push(ResolvedType::Alias(a.clone()));
                 if !self.all_locations {
                     return types;
@@ -192,7 +192,7 @@ impl TypeCommand {
                 }
             }
         } else {
-            if let Some(path) = shell.program_location_cache.get(name) {
+            if let Some(path) = shell.program_location_cache().get(name) {
                 types.push(ResolvedType::File { path, hashed: true });
                 if !self.all_locations {
                     return types;

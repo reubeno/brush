@@ -303,7 +303,7 @@ impl<'a> StyledInputLine<'a> {
     ) -> CommandType {
         if self.shell.is_keyword(name) {
             return CommandType::Keyword;
-        } else if self.shell.aliases.contains_key(name) {
+        } else if self.shell.aliases().contains_key(name) {
             return CommandType::Alias;
         } else if self.shell.funcs().get(name).is_some() {
             return CommandType::Function;

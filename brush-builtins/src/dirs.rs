@@ -55,14 +55,14 @@ impl builtins::Command for DirsCommand {
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.clear {
-            context.shell.directory_stack.clear();
+            context.shell.directory_stack_mut().clear();
         } else {
             let dirs = vec![context.shell.working_dir()]
                 .into_iter()
                 .chain(
                     context
                         .shell
-                        .directory_stack
+                        .directory_stack()
                         .iter()
                         .rev()
                         .map(|p| p.as_path()),

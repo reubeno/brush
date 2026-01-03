@@ -79,8 +79,8 @@ impl HelpCommand {
         topic_pattern: &str,
     ) -> Result<(), brush_core::Error> {
         let pattern = brush_core::patterns::Pattern::from(topic_pattern)
-            .set_extended_globbing(context.shell.options.extended_globbing)
-            .set_case_insensitive(context.shell.options.case_insensitive_pathname_expansion);
+            .set_extended_globbing(context.shell.options().extended_globbing)
+            .set_case_insensitive(context.shell.options().case_insensitive_pathname_expansion);
 
         let mut found_count = 0;
         for (builtin_name, builtin_registration) in get_builtins_sorted_by_name(context) {
