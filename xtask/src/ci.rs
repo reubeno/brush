@@ -7,6 +7,9 @@ use xshell::Shell;
 use crate::check::{self, CheckCommand};
 use crate::test::{self, BinaryArgs, TestCommand, TestSubcommand};
 
+/// Type alias for a named step in a CI workflow.
+type Step<'a> = (&'a str, Box<dyn Fn() -> Result<()> + 'a>);
+
 /// Run CI workflows.
 #[derive(Parser)]
 pub enum CiCommand {
@@ -26,21 +29,18 @@ pub struct PreCommitArgs {
 }
 
 /// Run a CI workflow command.
-pub fn run(cmd: &CiCommand) -> Result<()> {
+pub fn run(cmd: &CiCommand, verbose: bool) -> Result<()> {
     match cmd {
-        CiCommand::PreCommit(args) => run_pre_commit(args),
+        CiCommand::PreCommit(args) => run_pre_commit(args, verbose),
     }
 }
-
-/// Type alias for a named step in a CI workflow.
-type Step = (&'static str, fn() -> Result<()>);
 
 /// Create a `TestCommand` with default `BinaryArgs` and the given subcommand.
 const fn make_test_command(subcommand: TestSubcommand) -> TestCommand {
     TestCommand {
         binary_args: BinaryArgs {
             brush_path: None,
-            profile: crate::common::BuildProfile::Release,
+            profile: crate::common::BuildProfile::Debug,
             debug: false,
             release: false,
         },
@@ -48,25 +48,41 @@ const fn make_test_command(subcommand: TestSubcommand) -> TestCommand {
     }
 }
 
-fn run_pre_commit(args: &PreCommitArgs) -> Result<()> {
+fn run_pre_commit(args: &PreCommitArgs, verbose: bool) -> Result<()> {
     let _sh = Shell::new()?;
 
     eprintln!("Running pre-commit checks...\n");
 
-    let steps: &[Step] = &[
-        ("Format check", || check::run(&CheckCommand::Fmt)),
-        ("Lint check", || check::run(&CheckCommand::Lint)),
-        ("Dependency check", || check::run(&CheckCommand::Deps)),
-        ("Build check", || check::run(&CheckCommand::Build)),
-        ("Schema check", || check::run(&CheckCommand::Schemas)),
-        ("All tests", || {
-            test::run(&make_test_command(TestSubcommand::All))
-        }),
+    let steps: Vec<Step<'_>> = vec![
+        (
+            "Format check",
+            Box::new(|| check::run(&CheckCommand::Fmt, verbose)),
+        ),
+        (
+            "Lint check",
+            Box::new(|| check::run(&CheckCommand::Lint, verbose)),
+        ),
+        (
+            "Dependency check",
+            Box::new(|| check::run(&CheckCommand::Deps, verbose)),
+        ),
+        (
+            "Build check",
+            Box::new(|| check::run(&CheckCommand::Build, verbose)),
+        ),
+        (
+            "Schema check",
+            Box::new(|| check::run(&CheckCommand::Schemas, verbose)),
+        ),
+        (
+            "All tests",
+            Box::new(|| test::run(&make_test_command(TestSubcommand::All), verbose)),
+        ),
     ];
 
     let mut failures: Vec<&str> = Vec::new();
 
-    for (name, step) in steps {
+    for (name, step) in &steps {
         eprintln!("\n{}", "=".repeat(60));
         eprintln!("Running: {name}");
         eprintln!("{}\n", "=".repeat(60));

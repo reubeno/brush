@@ -47,7 +47,63 @@ brush/
 
 ## Build & Validation Commands
 
-### Quick Development Cycle (Use These Frequently)
+### Using xtask (Recommended)
+
+The project provides a `cargo xtask` command that centralizes common development tasks. This is the recommended approach for running checks and tests.
+
+#### Quick Development Cycle
+
+```bash
+# Run all pre-commit checks (fmt, lint, deps, build, schemas, tests)
+cargo xtask ci pre-commit
+
+# Run with --continue-on-error to see all failures at once
+cargo xtask ci pre-commit -k
+
+# Add -v for verbose output showing exact commands being run
+cargo xtask -v ci pre-commit
+```
+
+#### Individual Checks
+
+```bash
+# Format check
+cargo xtask check fmt
+
+# Lint check (clippy)
+cargo xtask check lint
+
+# Dependency check (cargo-deny)
+cargo xtask check deps
+
+# Build check
+cargo xtask check build
+
+# Schema check (regenerates and diffs)
+cargo xtask check schemas
+```
+
+#### Running Tests
+
+```bash
+# Run all tests (unit + compat)
+cargo xtask test all
+
+# Run unit tests only
+cargo xtask test unit
+
+# Run compatibility tests only
+cargo xtask test compat
+
+# Run tests with coverage
+cargo xtask test coverage --output codecov.xml
+```
+
+### Manual Approach (Alternate)
+
+For finer-grained control or when xtask isn't available:
+
+#### Quick Development Cycle (Use These Frequently)
 
 ```bash
 # Fast syntax/type checking (< 5 seconds)
@@ -96,7 +152,13 @@ Follow this **exact order** for efficient testing:
 
 ### Pre-Commit Validation (Before Every Commit)
 
-Run these before every commit:
+**Recommended:** Run the xtask pre-commit workflow:
+
+```bash
+cargo xtask ci pre-commit
+```
+
+**Manual approach:** Run these before every commit:
 
 ```bash
 cargo fmt --check --all
@@ -105,13 +167,27 @@ cargo clippy --workspace --all-features --all-targets
 
 ### Pre-PR Validation (Before Opening Pull Request)
 
-In addition to pre-commit checks, also run:
+**Recommended:** Run pre-commit checks which includes full test suite:
+
+```bash
+cargo xtask ci pre-commit
+```
+
+**Manual approach:** In addition to pre-commit checks, also run:
 
 ```bash
 cargo test --workspace
 ```
 
 ### Pre-Finish Quality Gates (Run Before Completing Task)
+
+**Recommended:** Run the xtask pre-commit workflow which covers all essential checks:
+
+```bash
+cargo xtask ci pre-commit
+```
+
+**Manual approach:**
 
 ```bash
 cargo test --test brush-compat-tests
@@ -247,7 +323,13 @@ GitHub Actions runs these checks (from `.github/workflows/ci.yaml`):
 ## Performance & Benchmarking
 
 ```bash
-# Run benchmarks
+# Run benchmarks (using xtask)
+cargo xtask analyze bench
+
+# Run benchmarks with output file
+cargo xtask analyze bench --output benchmarks.txt
+
+# Run benchmarks (manual)
 cargo bench --workspace --benches
 
 # Collect flamegraphs (10 second profiling)
@@ -292,13 +374,15 @@ Assisted-by: GitHub Copilot
 
 | Command | When | Time |
 |---------|------|------|
+| `cargo xtask ci pre-commit` | Before commit (comprehensive) | 2-5min |
+| `cargo xtask ci pre-commit -k` | See all failures at once | 2-5min |
 | `cargo check` | Constantly during dev | ~3-5s |
 | `cargo test --package X` | After each change | 3-20s |
-| `cargo test --test brush-compat-tests` | Before commit | ~18s |
-| `cargo fmt --all` | Before every commit | <1s |
-| `cargo clippy --workspace --all-features --all-targets` | Before commit | ~5-10s |
-| `cargo test --workspace` | Before PR/finish | 2-5min |
-| `cargo deny check all` | Final validation only | ~1-5s |
+| `cargo xtask test compat` | Before commit | ~18s |
+| `cargo xtask check fmt` | Before every commit | <1s |
+| `cargo xtask check lint` | Before commit | ~5-10s |
+| `cargo xtask test all` | Before PR/finish | 2-5min |
+| `cargo xtask check deps` | Final validation only | ~1-5s |
 
 ## Trust These Instructions
 

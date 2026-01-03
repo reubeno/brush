@@ -75,11 +75,11 @@ pub struct GenerateSchemaArgs {
 }
 
 /// Run a generation command.
-pub fn run(cmd: &GenCommand) -> Result<()> {
+pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
     match cmd {
         GenCommand::Docs(docs_cmd) => match docs_cmd {
-            DocsCommand::Man(args) => gen_man(args),
-            DocsCommand::Markdown(args) => gen_markdown_docs(args),
+            DocsCommand::Man(args) => gen_man(args, verbose),
+            DocsCommand::Markdown(args) => gen_markdown_docs(args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
             match completion_cmd {
@@ -94,12 +94,16 @@ pub fn run(cmd: &GenCommand) -> Result<()> {
             Ok(())
         }
         GenCommand::Schema(schema_cmd) => match schema_cmd {
-            SchemaCommand::Config(args) => gen_config_schema(args),
+            SchemaCommand::Config(args) => gen_config_schema(args, verbose),
         },
     }
 }
 
-fn gen_man(args: &GenerateManArgs) -> Result<()> {
+fn gen_man(args: &GenerateManArgs, verbose: bool) -> Result<()> {
+    if verbose {
+        eprintln!("Generating man pages to: {}", args.output_dir.display());
+    }
+
     // Create the output dir if it doesn't exist. If it already does, we proceed
     // onward and hope for the best.
     if !args.output_dir.exists() {
@@ -113,7 +117,14 @@ fn gen_man(args: &GenerateManArgs) -> Result<()> {
     Ok(())
 }
 
-fn gen_markdown_docs(args: &GenerateMarkdownArgs) -> Result<()> {
+fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
+    if verbose {
+        eprintln!(
+            "Generating markdown docs to: {}",
+            args.output_path.display()
+        );
+    }
+
     let options = clap_markdown::MarkdownOptions::new()
         .show_footer(false)
         .show_table_of_contents(true);
@@ -131,7 +142,14 @@ fn gen_completion_script(shell: clap_complete::Shell) {
     clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
 }
 
-fn gen_config_schema(args: &GenerateSchemaArgs) -> Result<()> {
+fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
+    if verbose {
+        eprintln!(
+            "Generating config schema to: {}",
+            args.output_path.display()
+        );
+    }
+
     // Generate JSON schema for the configuration file.
     let schema = schemars::schema_for!(brush_shell::config::Config);
     let json = serde_json::to_string_pretty(&schema)?;

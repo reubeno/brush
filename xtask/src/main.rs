@@ -48,12 +48,13 @@ enum Command {
 
 fn main() -> Result<()> {
     let args = CommandLineArgs::parse();
+    let verbose = args.global.verbose;
 
     match &args.command {
-        Command::Analyze(cmd) => analyze::run(cmd),
-        Command::Gen(cmd) => generate::run(cmd),
-        Command::Check(cmd) => check::run(cmd),
-        Command::Test(cmd) => test::run(cmd),
-        Command::Ci(cmd) => ci::run(cmd),
+        Command::Analyze(cmd) => analyze::run(cmd, verbose),
+        Command::Gen(cmd) => generate::run(cmd, verbose),
+        Command::Check(cmd) => check::run(cmd, verbose),
+        Command::Test(cmd) => test::run(cmd, verbose),
+        Command::Ci(cmd) => ci::run(cmd, verbose),
     }
 }

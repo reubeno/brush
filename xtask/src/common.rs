@@ -9,9 +9,9 @@ use clap::ValueEnum;
 #[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, Eq)]
 pub enum BuildProfile {
     /// Debug build (target/debug/).
+    #[default]
     Debug,
     /// Release build (target/release/).
-    #[default]
     Release,
 }
 

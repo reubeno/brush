@@ -36,20 +36,23 @@ pub struct PublicApiArgs {
 }
 
 /// Run an analysis command.
-pub fn run(cmd: &AnalyzeCommand) -> Result<()> {
+pub fn run(cmd: &AnalyzeCommand, verbose: bool) -> Result<()> {
     let sh = Shell::new()?;
 
     match cmd {
-        AnalyzeCommand::Bench(args) => run_bench(&sh, args),
-        AnalyzeCommand::PublicApi(args) => run_public_api(&sh, args),
+        AnalyzeCommand::Bench(args) => run_bench(&sh, args, verbose),
+        AnalyzeCommand::PublicApi(args) => run_public_api(&sh, args, verbose),
     }
 }
 
-fn run_bench(sh: &Shell, args: &BenchArgs) -> Result<()> {
+fn run_bench(sh: &Shell, args: &BenchArgs, verbose: bool) -> Result<()> {
     eprintln!("Running benchmarks...");
 
     if let Some(output) = &args.output {
         // Run with output capture to file using tee
+        if verbose {
+            eprintln!("Running: cargo bench --workspace --benches -- --output-format bencher");
+        }
         let bench_output = cmd!(
             sh,
             "cargo bench --workspace --benches -- --output-format bencher"
@@ -63,6 +66,9 @@ fn run_bench(sh: &Shell, args: &BenchArgs) -> Result<()> {
         println!("{bench_output}");
     } else {
         // Run without file output
+        if verbose {
+            eprintln!("Running: cargo bench --workspace --benches");
+        }
         cmd!(sh, "cargo bench --workspace --benches")
             .run()
             .context("Benchmarks failed")?;
@@ -72,10 +78,13 @@ fn run_bench(sh: &Shell, args: &BenchArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_public_api(sh: &Shell, args: &PublicApiArgs) -> Result<()> {
+fn run_public_api(sh: &Shell, args: &PublicApiArgs, verbose: bool) -> Result<()> {
     eprintln!("Analyzing public API against {}...", args.base);
 
     // Ensure cargo-public-api is available
+    if verbose {
+        eprintln!("Running: cargo +nightly public-api --version");
+    }
     cmd!(sh, "cargo +nightly public-api --version")
         .run()
         .context("cargo-public-api not installed. Install with: cargo install cargo-public-api")?;
@@ -88,6 +97,9 @@ fn run_public_api(sh: &Shell, args: &PublicApiArgs) -> Result<()> {
     sh.create_dir(&reports_dir)?;
 
     // Get list of library crates
+    if verbose {
+        eprintln!("Running: ./scripts/enum-lib-crates.sh");
+    }
     let crates_output = cmd!(sh, "./scripts/enum-lib-crates.sh")
         .read()
         .context("Failed to enumerate library crates")?;
@@ -101,7 +113,10 @@ fn run_public_api(sh: &Shell, args: &PublicApiArgs) -> Result<()> {
 
     let base = &args.base;
 
-    for crate_name in crates {
+    // Track failures to report at the end
+    let mut failed_crates: Vec<String> = Vec::new();
+
+    for crate_name in &crates {
         eprintln!("Analyzing crate: {crate_name}");
 
         let diff_file = diffs_dir.join(format!("{crate_name}.txt"));
@@ -112,6 +127,9 @@ fn run_public_api(sh: &Shell, args: &PublicApiArgs) -> Result<()> {
 
         // Run public-api diff
         // Use unchecked because diff returns non-zero if there are differences
+        if verbose {
+            eprintln!("Running: cargo +nightly public-api diff -sss -p {crate_name} {base}..HEAD");
+        }
         let diff_result = cmd!(
             sh,
             "cargo +nightly public-api diff -sss -p {crate_name} {base}..HEAD"
@@ -124,6 +142,11 @@ fn run_public_api(sh: &Shell, args: &PublicApiArgs) -> Result<()> {
                 sh.write_file(&diff_file, &diff_output)?;
 
                 // Format the report using the Python script
+                if verbose {
+                    eprintln!(
+                        "Running: ./scripts/format-api-diff-report.py {diff_path} -p {crate_name}"
+                    );
+                }
                 let format_result = cmd!(
                     sh,
                     "./scripts/format-api-diff-report.py {diff_path} -p {crate_name}"
@@ -140,12 +163,14 @@ fn run_public_api(sh: &Shell, args: &PublicApiArgs) -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        eprintln!("  Warning: Failed to format report for {crate_name}: {e}");
+                        eprintln!("  Error: Failed to format report for {crate_name}: {e}");
+                        failed_crates.push((*crate_name).to_string());
                     }
                 }
             }
             Err(e) => {
-                eprintln!("  Warning: Failed to analyze {crate_name}: {e}");
+                eprintln!("  Error: Failed to analyze {crate_name}: {e}");
+                failed_crates.push((*crate_name).to_string());
             }
         }
     }
@@ -154,5 +179,14 @@ fn run_public_api(sh: &Shell, args: &PublicApiArgs) -> Result<()> {
         "Public API analysis complete. Reports in: {}",
         reports_dir.display()
     );
+
+    // Return error if any crates failed
+    if !failed_crates.is_empty() {
+        anyhow::bail!(
+            "Public API analysis failed for: {}",
+            failed_crates.join(", ")
+        );
+    }
+
     Ok(())
 }

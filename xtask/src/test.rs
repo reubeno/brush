@@ -117,33 +117,42 @@ pub struct BashCompletionArgs {
 }
 
 /// Run a test command.
-pub fn run(cmd: &TestCommand) -> Result<()> {
+pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
     let sh = Shell::new()?;
 
     match &cmd.subcommand {
-        TestSubcommand::All => run_all_tests(&sh, &cmd.binary_args),
-        TestSubcommand::Compat => run_compat_tests(&sh, &cmd.binary_args),
-        TestSubcommand::Coverage(args) => run_coverage(&sh, &cmd.binary_args, args),
-        TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh),
-        TestSubcommand::Unit => run_unit_tests(&sh, &cmd.binary_args),
+        TestSubcommand::All => run_all_tests(&sh, &cmd.binary_args, verbose),
+        TestSubcommand::Compat => run_compat_tests(&sh, &cmd.binary_args, verbose),
+        TestSubcommand::Coverage(args) => run_coverage(&sh, &cmd.binary_args, args, verbose),
+        TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh, verbose),
+        TestSubcommand::Unit => run_unit_tests(&sh, &cmd.binary_args, verbose),
     }
 }
 
-fn run_external(cmd: &ExternalTestCommand, binary_args: &BinaryArgs, sh: &Shell) -> Result<()> {
+fn run_external(
+    cmd: &ExternalTestCommand,
+    binary_args: &BinaryArgs,
+    sh: &Shell,
+    verbose: bool,
+) -> Result<()> {
     match cmd {
         ExternalTestCommand::BashCompletion(args) => {
-            run_bash_completion_tests(sh, args, binary_args)
+            run_bash_completion_tests(sh, args, binary_args, verbose)
         }
     }
 }
 
-fn run_unit_tests(sh: &Shell, binary_args: &BinaryArgs) -> Result<()> {
+fn run_unit_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
     let profile = binary_args.effective_profile();
     eprintln!("Running unit tests ({profile:?} profile)...");
 
     let mut args = vec!["nextest", "run", "--workspace", "--no-fail-fast"];
     if profile == BuildProfile::Release {
         args.push("--release");
+    }
+
+    if verbose {
+        eprintln!("Running: cargo {}", args.join(" "));
     }
 
     cmd!(sh, "cargo {args...}")
@@ -153,13 +162,17 @@ fn run_unit_tests(sh: &Shell, binary_args: &BinaryArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_compat_tests(sh: &Shell, binary_args: &BinaryArgs) -> Result<()> {
+fn run_compat_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
     let profile = binary_args.effective_profile();
     eprintln!("Running compatibility tests ({profile:?} profile)...");
 
     let mut args = vec!["test", "--test", "brush-compat-tests"];
     if profile == BuildProfile::Release {
         args.push("--release");
+    }
+
+    if verbose {
+        eprintln!("Running: cargo {}", args.join(" "));
     }
 
     cmd!(sh, "cargo {args...}")
@@ -169,20 +182,25 @@ fn run_compat_tests(sh: &Shell, binary_args: &BinaryArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_all_tests(sh: &Shell, binary_args: &BinaryArgs) -> Result<()> {
+fn run_all_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
     eprintln!("Running all tests...");
 
     // Run unit tests first
-    run_unit_tests(sh, binary_args)?;
+    run_unit_tests(sh, binary_args, verbose)?;
 
     // Then run compatibility tests
-    run_compat_tests(sh, binary_args)?;
+    run_compat_tests(sh, binary_args, verbose)?;
 
     eprintln!("All tests passed.");
     Ok(())
 }
 
-fn run_coverage(sh: &Shell, binary_args: &BinaryArgs, args: &CoverageArgs) -> Result<()> {
+fn run_coverage(
+    sh: &Shell,
+    binary_args: &BinaryArgs,
+    args: &CoverageArgs,
+    verbose: bool,
+) -> Result<()> {
     let profile = binary_args.effective_profile();
     let output_path = args.output.display().to_string();
 
@@ -191,6 +209,9 @@ fn run_coverage(sh: &Shell, binary_args: &BinaryArgs, args: &CoverageArgs) -> Re
 
     // Set up llvm-cov environment
     eprintln!("Setting up llvm-cov environment...");
+    if verbose {
+        eprintln!("Running: cargo llvm-cov show-env --export-prefix");
+    }
     let env_output = cmd!(sh, "cargo llvm-cov show-env --export-prefix")
         .read()
         .context("Failed to get llvm-cov environment. Is cargo-llvm-cov installed?")?;
@@ -207,6 +228,9 @@ fn run_coverage(sh: &Shell, binary_args: &BinaryArgs, args: &CoverageArgs) -> Re
     }
 
     // Clean previous coverage data
+    if verbose {
+        eprintln!("Running: cargo llvm-cov clean --workspace");
+    }
     cmd!(sh, "cargo llvm-cov clean --workspace")
         .run()
         .context("Failed to clean coverage data")?;
@@ -217,15 +241,26 @@ fn run_coverage(sh: &Shell, binary_args: &BinaryArgs, args: &CoverageArgs) -> Re
         test_args.push("--release");
     }
 
-    // Run tests (allow failures, we still want to generate coverage report)
-    let test_result = cmd!(sh, "cargo {test_args...}").ignore_status().run();
-
-    if let Err(e) = &test_result {
-        eprintln!("Warning: Test execution had issues: {e}");
+    if verbose {
+        eprintln!("Running: cargo {}", test_args.join(" "));
     }
 
-    // Generate coverage report
+    // Run tests - capture exit status but don't fail yet (we want to generate coverage report)
+    let test_output = cmd!(sh, "cargo {test_args...}").ignore_status().output();
+    let test_failed = match &test_output {
+        Ok(output) => !output.status.success(),
+        Err(_) => true,
+    };
+
+    if test_failed {
+        eprintln!("Tests failed, but continuing to generate coverage report...");
+    }
+
+    // Generate coverage report (always attempt this)
     eprintln!("Generating coverage report...");
+    if verbose {
+        eprintln!("Running: cargo llvm-cov report --cobertura --output-path {output_path}");
+    }
     cmd!(
         sh,
         "cargo llvm-cov report --cobertura --output-path {output_path}"
@@ -235,8 +270,11 @@ fn run_coverage(sh: &Shell, binary_args: &BinaryArgs, args: &CoverageArgs) -> Re
 
     eprintln!("Coverage report written to: {output_path}");
 
-    // Return the test result (so we fail if tests failed)
-    test_result.context("Tests failed")?;
+    // Now propagate test failure if tests failed
+    if test_failed {
+        anyhow::bail!("Tests failed (coverage report was still generated)");
+    }
+
     eprintln!("Tests with coverage completed successfully.");
     Ok(())
 }
@@ -245,6 +283,7 @@ fn run_bash_completion_tests(
     sh: &Shell,
     args: &BashCompletionArgs,
     binary_args: &BinaryArgs,
+    verbose: bool,
 ) -> Result<()> {
     eprintln!("Running bash-completion test suite...");
 
@@ -259,6 +298,9 @@ fn run_bash_completion_tests(
             test_dir.display()
         );
     }
+
+    // Get workspace root for script path resolution (fail hard if not found)
+    let workspace_root = find_workspace_root()?;
 
     let brush_path_str = brush_path.display().to_string();
     let jobs = args.jobs.to_string();
@@ -281,32 +323,34 @@ fn run_bash_completion_tests(
     // Build the json report file argument
     let json_report_arg = format!("--json-report-file={json_output}");
 
-    // Run pytest - we use ignore_status because some tests may fail
-    // and that's expected (we're testing compatibility)
-    let result = cmd!(sh, "pytest")
-        .args(["-n", &jobs, "--json-report", &json_report_arg, "./t"])
-        .ignore_status()
-        .run();
+    // Build pytest args
+    let mut pytest_args = vec!["-n", &jobs, "--json-report", &json_report_arg, "./t"];
+    if verbose {
+        pytest_args.insert(0, "-v");
+        eprintln!("Running: pytest {}", pytest_args.join(" "));
+    }
 
-    if let Err(e) = result {
-        eprintln!("Warning: pytest execution had issues: {e}");
+    // Run pytest - capture exit status to report failure but continue to generate summary
+    let pytest_output = cmd!(sh, "pytest")
+        .args(&pytest_args)
+        .ignore_status()
+        .output()
+        .context("Failed to execute pytest")?;
+
+    let pytest_failed = !pytest_output.status.success();
+    if pytest_failed {
+        eprintln!("Some tests failed, but continuing to generate reports...");
     }
 
     // Generate summary report if requested
     if let Some(summary_path) = &args.summary_output {
         let summary_path_str = summary_path.display().to_string();
 
-        // Determine the script path - use provided path or default to
-        // ./scripts/summarize-pytest-results.py relative to workspace root
-        let script_path = args.summary_script.as_ref().map_or_else(
-            || {
-                find_workspace_root().map_or_else(
-                    |_| PathBuf::from("./scripts/summarize-pytest-results.py"),
-                    |root| root.join("scripts/summarize-pytest-results.py"),
-                )
-            },
-            |p| p.clone(),
-        );
+        // Determine the script path - use provided path or default to workspace root
+        let script_path = args
+            .summary_script
+            .clone()
+            .unwrap_or_else(|| workspace_root.join("scripts/summarize-pytest-results.py"));
 
         let script_path_str = script_path.display().to_string();
 
@@ -314,6 +358,9 @@ fn run_bash_completion_tests(
         drop(dir_guard);
 
         let title = "Test Summary: bash-completion test suite";
+        if verbose {
+            eprintln!("Running: python3 {script_path_str} -r {json_output} --title \"{title}\"");
+        }
         let summary_result = cmd!(sh, "python3 {script_path_str}")
             .args(["-r", &json_output, "--title", title])
             .read();
@@ -331,5 +378,11 @@ fn run_bash_completion_tests(
 
     eprintln!("bash-completion test suite completed.");
     eprintln!("Results written to: {json_output}");
+
+    // Propagate test failure after reports are generated
+    if pytest_failed {
+        anyhow::bail!("bash-completion tests failed (reports were still generated)");
+    }
+
     Ok(())
 }
