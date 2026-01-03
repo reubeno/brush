@@ -454,7 +454,7 @@ jobs:
         working-directory: pr
 
       - name: Performance analysis on main
-        run: cargo xtask analyze bench --output benchmarks.txt
+        run: cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: main
 
       - name: Compare benchmark results
