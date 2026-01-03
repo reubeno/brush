@@ -70,7 +70,7 @@ impl builtins::Command for CdCommand {
         if self.use_physical_dir
             || context
                 .shell
-                .options
+                .options()
                 .do_not_resolve_symlinks_when_changing_dir
         {
             // -e is only relevant in physical mode.

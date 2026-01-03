@@ -356,7 +356,7 @@ fn instantiate_shell_from_file(
 
     // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
     // TODO(serde): we should consider whether we could/should at least track *which* are enabled.
-    let builtin_set = if shell.options.sh_mode {
+    let builtin_set = if shell.options().sh_mode {
         brush_builtins::BuiltinSet::ShMode
     } else {
         brush_builtins::BuiltinSet::BashMode

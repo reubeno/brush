@@ -52,7 +52,7 @@ async fn apply_unary_predicate(
 ) -> Result<bool, error::Error> {
     let expanded_operand = expansion::basic_expand_word(shell, params, operand).await?;
 
-    if shell.options.print_commands_and_arguments {
+    if shell.options().print_commands_and_arguments {
         shell
             .trace_command(
                 params,
@@ -178,13 +178,13 @@ pub(crate) fn apply_unary_predicate_to_str(
             if let Some(option) =
                 namedoptions::options(namedoptions::ShellOptionKind::SetO).get(shopt_name)
             {
-                Ok(option.get(&shell.options))
+                Ok(option.get(shell.options()))
             } else {
                 Ok(false)
             }
         }
-        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env.is_set(operand)),
-        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => match shell.env.get(operand) {
+        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env().is_set(operand)),
+        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => match shell.env().get(operand) {
             Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
             None => Ok(false),
         },
@@ -206,7 +206,7 @@ async fn apply_binary_predicate(
                 .await?
                 .set_multiline(true);
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {s} {op} {right} ]]"))
                     .await?;
@@ -231,7 +231,7 @@ async fn apply_binary_predicate(
                     .collect(),
             ));
 
-            shell.env.update_or_add(
+            shell.env_mut().update_or_add(
                 "BASH_REMATCH",
                 captures_value,
                 |_| Ok(()),
@@ -245,7 +245,7 @@ async fn apply_binary_predicate(
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -257,7 +257,7 @@ async fn apply_binary_predicate(
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -269,7 +269,7 @@ async fn apply_binary_predicate(
             let s = expansion::basic_expand_word(shell, params, left).await?;
             let substring = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {s} {op} {substring} ]]"))
                     .await?;
@@ -281,7 +281,7 @@ async fn apply_binary_predicate(
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -293,7 +293,7 @@ async fn apply_binary_predicate(
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -305,7 +305,7 @@ async fn apply_binary_predicate(
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -317,7 +317,7 @@ async fn apply_binary_predicate(
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -330,7 +330,7 @@ async fn apply_binary_predicate(
             let left = expansion::basic_expand_word(shell, params, left).await?;
             let right = expansion::basic_expand_word(shell, params, right).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -345,7 +345,7 @@ async fn apply_binary_predicate(
             let right =
                 arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -359,7 +359,7 @@ async fn apply_binary_predicate(
             let right =
                 arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -373,7 +373,7 @@ async fn apply_binary_predicate(
             let right =
                 arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -387,7 +387,7 @@ async fn apply_binary_predicate(
             let right =
                 arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -401,7 +401,7 @@ async fn apply_binary_predicate(
             let right =
                 arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -415,7 +415,7 @@ async fn apply_binary_predicate(
             let right =
                 arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 shell
                     .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
@@ -432,10 +432,10 @@ async fn apply_binary_predicate(
             let s = expansion::basic_expand_word(shell, params, left).await?;
             let pattern = expansion::basic_expand_pattern(shell, params, right)
                 .await?
-                .set_extended_globbing(shell.options.extended_globbing)
-                .set_case_insensitive(shell.options.case_insensitive_conditionals);
+                .set_extended_globbing(shell.options().extended_globbing)
+                .set_case_insensitive(shell.options().case_insensitive_conditionals);
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, params, right).await?;
                 let escaped_right = escape::quote_if_needed(
                     expanded_right.as_str(),
@@ -452,10 +452,10 @@ async fn apply_binary_predicate(
             let s = expansion::basic_expand_word(shell, params, left).await?;
             let pattern = expansion::basic_expand_pattern(shell, params, right)
                 .await?
-                .set_extended_globbing(shell.options.extended_globbing)
-                .set_case_insensitive(shell.options.case_insensitive_conditionals);
+                .set_extended_globbing(shell.options().extended_globbing)
+                .set_case_insensitive(shell.options().case_insensitive_conditionals);
 
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, params, right).await?;
                 let escaped_right = escape::quote_if_needed(
                     expanded_right.as_str(),
@@ -524,15 +524,15 @@ pub(crate) fn apply_binary_predicate_to_strs(
         ),
         ast::BinaryPredicate::StringExactlyMatchesPattern => {
             let pattern = patterns::Pattern::from(right)
-                .set_extended_globbing(shell.options.extended_globbing)
-                .set_case_insensitive(shell.options.case_insensitive_conditionals);
+                .set_extended_globbing(shell.options().extended_globbing)
+                .set_case_insensitive(shell.options().case_insensitive_conditionals);
 
             pattern.exactly_matches(left)
         }
         ast::BinaryPredicate::StringDoesNotExactlyMatchPattern => {
             let pattern = patterns::Pattern::from(right)
-                .set_extended_globbing(shell.options.extended_globbing)
-                .set_case_insensitive(shell.options.case_insensitive_conditionals);
+                .set_extended_globbing(shell.options().extended_globbing)
+                .set_case_insensitive(shell.options().case_insensitive_conditionals);
 
             let eq = pattern.exactly_matches(left)?;
             Ok(!eq)

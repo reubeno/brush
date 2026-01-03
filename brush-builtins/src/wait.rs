@@ -43,9 +43,9 @@ impl builtins::Command for WaitCommand {
             return error::unimp("wait with job specs");
         }
 
-        let jobs = context.shell.jobs.wait_all().await?;
+        let jobs = context.shell.jobs_mut().wait_all().await?;
 
-        if context.shell.options.enable_job_control {
+        if context.shell.options().enable_job_control {
             for job in jobs {
                 writeln!(context.stdout(), "{job}")?;
             }

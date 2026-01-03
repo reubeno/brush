@@ -117,7 +117,7 @@ impl builtins::Command for ReadCommand {
                 vec![]
             };
 
-            context.shell.env.update_or_add(
+            context.shell.env_mut().update_or_add(
                 array_variable,
                 variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
                 |_| Ok(()),
@@ -138,7 +138,7 @@ impl builtins::Command for ReadCommand {
             for (i, name) in self.variable_names.iter().enumerate() {
                 if fields.is_empty() {
                     // Ensure the var is empty.
-                    context.shell.env.update_or_add(
+                    context.shell.env_mut().update_or_add(
                         name,
                         variables::ShellValueLiteral::Scalar(String::new()),
                         |_| Ok(()),
@@ -151,7 +151,7 @@ impl builtins::Command for ReadCommand {
                 let last = i == self.variable_names.len() - 1;
                 if !last {
                     let next_field = fields.pop_front().unwrap();
-                    context.shell.env.update_or_add(
+                    context.shell.env_mut().update_or_add(
                         name,
                         variables::ShellValueLiteral::Scalar(next_field),
                         |_| Ok(()),
@@ -160,7 +160,7 @@ impl builtins::Command for ReadCommand {
                     )?;
                 } else {
                     let remaining_fields = fields.into_iter().join(" ");
-                    context.shell.env.update_or_add(
+                    context.shell.env_mut().update_or_add(
                         name,
                         variables::ShellValueLiteral::Scalar(remaining_fields),
                         |_| Ok(()),
@@ -175,7 +175,7 @@ impl builtins::Command for ReadCommand {
 
             // If no variable names were specified, then place everything into the
             // REPLY variable.
-            context.shell.env.update_or_add(
+            context.shell.env_mut().update_or_add(
                 "REPLY",
                 variables::ShellValueLiteral::Scalar(input_line),
                 |_| Ok(()),

@@ -26,7 +26,7 @@ impl builtins::Command for PwdCommand {
         let should_canonicalize = self.physical
             || context
                 .shell
-                .options
+                .options()
                 .do_not_resolve_symlinks_when_changing_dir;
 
         if should_canonicalize {

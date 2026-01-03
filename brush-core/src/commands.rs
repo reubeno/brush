@@ -72,7 +72,7 @@ impl ExecutionContext<'_> {
     }
 
     pub(crate) const fn should_cmd_lead_own_process_group(&self) -> bool {
-        self.shell.options.interactive
+        self.shell.options().interactive
             && matches!(
                 self.params.process_group_policy,
                 ProcessGroupPolicy::NewProcessGroup
@@ -200,7 +200,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
 
     // Add in exported variables.
     if !empty_env {
-        for (k, v) in context.shell.env.iter_exported() {
+        for (k, v) in context.shell.env().iter_exported() {
             // NOTE: To match bash behavior, we only include exported variables
             // that are set (i.e., have a value). This means a variable that
             // shows up in `declare -p` but has no *set* value will be omitted.
@@ -276,7 +276,7 @@ async fn invoke_debug_trap_handler_if_registered(
         return Ok(());
     }
 
-    let Some(debug_trap_handler) = shell.traps.get_handler(traps::TrapSignal::Debug).cloned()
+    let Some(debug_trap_handler) = shell.traps().get_handler(traps::TrapSignal::Debug).cloned()
     else {
         return Ok(());
     };
@@ -289,7 +289,7 @@ async fn invoke_debug_trap_handler_if_registered(
     let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
 
     // TODO(well-known-vars): This shouldn't *just* be set in a trap situation.
-    shell.env.update_or_add(
+    shell.env_mut().update_or_add(
         "BASH_COMMAND",
         variables::ShellValueLiteral::Scalar(full_cmd),
         |_| Ok(()),
@@ -628,7 +628,7 @@ pub(crate) fn execute_external_command(
             ))
         }
         Err(spawn_err) => {
-            if context.shell.options.interactive {
+            if context.shell.options().interactive {
                 sys::terminal::move_self_to_foreground()?;
             }
 
@@ -724,8 +724,8 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     // Command substitutions don't inherit errexit by default. Only inherit it when
     // command_subst_inherits_errexit is enabled, otherwise disable errexit in the subshell.
-    if !shell.options.command_subst_inherits_errexit {
-        subshell.options.exit_on_nonzero_command_exit = false;
+    if !shell.options().command_subst_inherits_errexit {
+        subshell.options_mut().exit_on_nonzero_command_exit = false;
     }
 
     // Get our own set of parameters we can customize and use.

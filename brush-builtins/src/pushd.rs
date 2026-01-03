@@ -25,7 +25,7 @@ impl builtins::Command for PushdCommand {
         if self.no_directory_change {
             context
                 .shell
-                .directory_stack
+                .directory_stack_mut()
                 .push(std::path::PathBuf::from(&self.dir));
         } else {
             let prev_working_dir = context.shell.working_dir().to_path_buf();
@@ -33,7 +33,7 @@ impl builtins::Command for PushdCommand {
             let dir = std::path::Path::new(&self.dir);
             context.shell.set_working_dir(dir)?;
 
-            context.shell.directory_stack.push(prev_working_dir);
+            context.shell.directory_stack_mut().push(prev_working_dir);
         }
 
         // Display dirs.

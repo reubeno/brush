@@ -108,7 +108,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     pub async fn run_interactively(&mut self) -> Result<(), ShellError> {
         let mut shell = self.shell.lock().await;
 
-        let mut announce_exit = shell.options.interactive;
+        let mut announce_exit = shell.options().interactive;
 
         shell.start_interactive_session()?;
 
@@ -144,7 +144,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
                 }
             }
 
-            if self.shell.lock().await.options.exit_after_one_command {
+            if self.shell.lock().await.options().exit_after_one_command {
                 announce_exit = false;
                 break;
             }
@@ -425,7 +425,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     ) -> Result<(), ShellError> {
         // Save (and later restore) the last exit status.
         let prev_last_result = shell.last_exit_status();
-        let prev_last_pipeline_statuses = shell.last_pipeline_statuses.clone();
+        let prev_last_pipeline_statuses = shell.last_pipeline_statuses().to_vec();
 
         // Run the command.
         let params = shell.default_exec_params();
@@ -433,7 +433,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         shell.run_string(prompt_cmd, &source_info, &params).await?;
 
         // Restore the last exit status.
-        shell.last_pipeline_statuses = prev_last_pipeline_statuses;
+        *shell.last_pipeline_statuses_mut() = prev_last_pipeline_statuses;
         shell.set_last_exit_status(prev_last_result);
 
         Ok(())

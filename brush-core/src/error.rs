@@ -385,7 +385,7 @@ impl Error {
     ///
     /// * `shell` - The shell instance, used to check interactive mode and script call stack.
     pub const fn to_control_flow(&self, shell: &Shell) -> results::ExecutionControlFlow {
-        if self.is_fatal() && !shell.options.interactive {
+        if self.is_fatal() && !shell.options().interactive {
             results::ExecutionControlFlow::ExitShell
         } else {
             results::ExecutionControlFlow::Normal

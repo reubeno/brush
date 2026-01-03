@@ -28,14 +28,14 @@ pub(crate) async fn expand_prompt(
 
         let formatted_piece = format_prompt_piece(shell, piece)?;
 
-        if shell.options.expand_prompt_strings && needs_escaping {
+        if shell.options().expand_prompt_strings && needs_escaping {
             formatted_prompt.push('\\');
         }
 
         formatted_prompt.push_str(&formatted_piece);
     }
 
-    if shell.options.expand_prompt_strings {
+    if shell.options().expand_prompt_strings {
         // Now expand any remaining escape sequences, but without tilde-expansion.
         let options = expansion::ExpanderOptions {
             tilde_expand: false,
@@ -107,7 +107,9 @@ fn format_prompt_piece(
             hn
         }
         brush_parser::prompt::PromptPiece::Newline => "\n".to_owned(),
-        brush_parser::prompt::PromptPiece::NumberOfManagedJobs => shell.jobs.jobs.len().to_string(),
+        brush_parser::prompt::PromptPiece::NumberOfManagedJobs => {
+            shell.jobs().jobs.len().to_string()
+        }
         brush_parser::prompt::PromptPiece::ShellBaseName => {
             if let Some(shell_name) = shell.current_shell_name() {
                 Path::new(shell_name.as_ref())

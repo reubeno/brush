@@ -72,7 +72,7 @@ impl RcLoadBehavior {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell {
     /// Trap handler configuration for the shell.
-    pub traps: traps::TrapHandlerConfig,
+    traps: traps::TrapHandlerConfig,
 
     /// Manages files opened and accessible via redirection operators.
     open_files: openfiles::OpenFiles,
@@ -81,21 +81,21 @@ pub struct Shell {
     working_dir: PathBuf,
 
     /// The shell environment, containing shell variables.
-    pub env: ShellEnvironment,
+    env: ShellEnvironment,
 
     /// Shell function definitions.
     funcs: functions::FunctionEnv,
 
     /// Runtime shell options.
-    pub options: RuntimeOptions,
+    options: RuntimeOptions,
 
     /// State of managed jobs.
     /// TODO(serde): Need to warn somehow that jobs cannot be serialized.
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub jobs: jobs::JobManager,
+    jobs: jobs::JobManager,
 
     /// Shell aliases.
-    pub aliases: HashMap<String, String>,
+    aliases: HashMap<String, String>,
 
     /// The status of the last completed command.
     last_exit_status: u8,
@@ -104,7 +104,7 @@ pub struct Shell {
     last_exit_status_change_count: usize,
 
     /// The status of each of the commands in the last pipeline.
-    pub last_pipeline_statuses: Vec<u8>,
+    last_pipeline_statuses: Vec<u8>,
 
     /// Clone depth from the original ancestor shell.
     depth: usize,
@@ -125,17 +125,17 @@ pub struct Shell {
     call_stack: callstack::CallStack,
 
     /// Directory stack used by pushd et al.
-    pub directory_stack: Vec<PathBuf>,
+    directory_stack: Vec<PathBuf>,
 
     /// Completion configuration.
-    pub completion_config: completion::Config,
+    completion_config: completion::Config,
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
     builtins: HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
-    pub program_location_cache: pathcache::PathCache,
+    program_location_cache: pathcache::PathCache,
 
     /// Last "SECONDS" captured time.
     last_stopwatch_time: std::time::SystemTime,
@@ -689,6 +689,11 @@ impl Shell {
         &self.funcs
     }
 
+    /// Returns a mutable reference to the function definition environment for this shell.
+    pub const fn funcs_mut(&mut self) -> &mut functions::FunctionEnv {
+        &mut self.funcs
+    }
+
     /// Tries to undefine a function in the shell's environment. Returns whether or
     /// not a definition was removed.
     ///
@@ -697,6 +702,106 @@ impl Shell {
     /// * `name` - The name of the function to undefine.
     pub fn undefine_func(&mut self, name: &str) -> bool {
         self.funcs.remove(name).is_some()
+    }
+
+    /// Returns the shell environment containing variables.
+    pub const fn env(&self) -> &ShellEnvironment {
+        &self.env
+    }
+
+    /// Returns a mutable reference to the shell environment.
+    pub const fn env_mut(&mut self) -> &mut ShellEnvironment {
+        &mut self.env
+    }
+
+    /// Returns the shell's runtime options.
+    pub const fn options(&self) -> &RuntimeOptions {
+        &self.options
+    }
+
+    /// Returns a mutable reference to the shell's runtime options.
+    pub const fn options_mut(&mut self) -> &mut RuntimeOptions {
+        &mut self.options
+    }
+
+    /// Returns the shell's aliases.
+    pub const fn aliases(&self) -> &HashMap<String, String> {
+        &self.aliases
+    }
+
+    /// Returns a mutable reference to the shell's aliases.
+    pub const fn aliases_mut(&mut self) -> &mut HashMap<String, String> {
+        &mut self.aliases
+    }
+
+    /// Returns the shell's job manager.
+    pub const fn jobs(&self) -> &jobs::JobManager {
+        &self.jobs
+    }
+
+    /// Returns a mutable reference to the shell's job manager.
+    pub const fn jobs_mut(&mut self) -> &mut jobs::JobManager {
+        &mut self.jobs
+    }
+
+    /// Returns the shell's trap handler configuration.
+    pub const fn traps(&self) -> &traps::TrapHandlerConfig {
+        &self.traps
+    }
+
+    /// Returns a mutable reference to the shell's trap handler configuration.
+    pub const fn traps_mut(&mut self) -> &mut traps::TrapHandlerConfig {
+        &mut self.traps
+    }
+
+    /// Returns the shell's directory stack.
+    pub fn directory_stack(&self) -> &[PathBuf] {
+        &self.directory_stack
+    }
+
+    /// Returns a mutable reference to the shell's directory stack.
+    pub const fn directory_stack_mut(&mut self) -> &mut Vec<PathBuf> {
+        &mut self.directory_stack
+    }
+
+    /// Returns the statuses of commands in the last pipeline.
+    pub fn last_pipeline_statuses(&self) -> &[u8] {
+        &self.last_pipeline_statuses
+    }
+
+    /// Returns a mutable reference to the statuses of commands in the last pipeline.
+    pub const fn last_pipeline_statuses_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.last_pipeline_statuses
+    }
+
+    /// Returns the shell's program location cache.
+    pub const fn program_location_cache(&self) -> &pathcache::PathCache {
+        &self.program_location_cache
+    }
+
+    /// Returns a mutable reference to the shell's program location cache.
+    pub const fn program_location_cache_mut(&mut self) -> &mut pathcache::PathCache {
+        &mut self.program_location_cache
+    }
+
+    /// Returns the shell's completion configuration.
+    pub const fn completion_config(&self) -> &completion::Config {
+        &self.completion_config
+    }
+
+    /// Returns a mutable reference to the shell's completion configuration.
+    pub const fn completion_config_mut(&mut self) -> &mut completion::Config {
+        &mut self.completion_config
+    }
+
+    /// Returns the shell's open files.
+    pub const fn open_files(&self) -> &openfiles::OpenFiles {
+        &self.open_files
+    }
+
+    /// Returns a mutable reference to the shell's open files.
+    pub const fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles {
+        &mut self.open_files
     }
 
     /// Defines a function in the shell's environment. If a function already exists

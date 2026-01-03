@@ -576,7 +576,7 @@ impl<'a> WordExpander<'a> {
             .collect();
 
         Ok(crate::regex::Regex::from(regex_pieces)
-            .set_case_insensitive(self.shell.options.case_insensitive_conditionals))
+            .set_case_insensitive(self.shell.options().case_insensitive_conditionals))
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -656,7 +656,7 @@ impl<'a> WordExpander<'a> {
         // We perform a non-authoritative check to see if the string *may* contain braces
         // to expand. There may be false positives, but must be no false negatives.
         if self.force_disable_brace_expansion
-            || !self.shell.options.perform_brace_expansion
+            || !self.shell.options().perform_brace_expansion
             || !may_contain_braces_to_expand(word)
         {
             return Ok(word.into());
@@ -699,7 +699,7 @@ impl<'a> WordExpander<'a> {
         let result = fields
             .into_iter()
             .flat_map(|field| {
-                if self.shell.options.disable_filename_globbing {
+                if self.shell.options().disable_filename_globbing {
                     vec![String::from(field)]
                 } else {
                     self.expand_pathnames_in_field(field)
@@ -753,10 +753,10 @@ impl<'a> WordExpander<'a> {
     fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
         let pattern = patterns::Pattern::from(field.clone())
             .set_extended_globbing(self.parser_options.enable_extended_globbing)
-            .set_case_insensitive(self.shell.options.case_insensitive_pathname_expansion);
+            .set_case_insensitive(self.shell.options().case_insensitive_pathname_expansion);
 
         let options = patterns::FilenameExpansionOptions {
-            require_dot_in_pattern_to_match_dot_files: !self.shell.options.glob_matches_dotfiles,
+            require_dot_in_pattern_to_match_dot_files: !self.shell.options().glob_matches_dotfiles,
         };
 
         let expansions = pattern
@@ -767,7 +767,7 @@ impl<'a> WordExpander<'a> {
             )
             .unwrap_or_default();
 
-        if expansions.is_empty() && !self.shell.options.expand_non_matching_patterns_to_null {
+        if expansions.is_empty() && !self.shell.options().expand_non_matching_patterns_to_null {
             vec![String::from(field)]
         } else {
             expansions
@@ -888,9 +888,9 @@ impl<'a> WordExpander<'a> {
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromBottomOfDirStack { n } => {
-                let dir_stack_count = self.shell.directory_stack.len();
+                let dir_stack_count = self.shell.directory_stack().len();
 
-                if let Some(dir) = self.shell.directory_stack.get(*n) {
+                if let Some(dir) = self.shell.directory_stack().get(*n) {
                     Ok(dir.to_string_lossy().to_string())
                 } else if *n == dir_stack_count {
                     Ok(self.shell.working_dir().to_string_lossy().to_string())
@@ -903,9 +903,9 @@ impl<'a> WordExpander<'a> {
                     return Ok(self.shell.working_dir().to_string_lossy().to_string());
                 }
 
-                let dir_stack_count = self.shell.directory_stack.len();
+                let dir_stack_count = self.shell.directory_stack().len();
                 if dir_stack_count >= *n {
-                    if let Some(dir) = self.shell.directory_stack.get(dir_stack_count - *n) {
+                    if let Some(dir) = self.shell.directory_stack().get(dir_stack_count - *n) {
                         return Ok(dir.to_string_lossy().to_string());
                     }
                 }
@@ -1358,7 +1358,7 @@ impl<'a> WordExpander<'a> {
                     .basic_expand_pattern(pattern.as_str())
                     .await?
                     .set_extended_globbing(self.parser_options.enable_extended_globbing)
-                    .set_case_insensitive(self.shell.options.case_insensitive_conditionals);
+                    .set_case_insensitive(self.shell.options().case_insensitive_conditionals);
 
                 // If no replacement was provided, then we replace with an empty string.
                 let replacement = replacement.unwrap_or(String::new());
@@ -1388,7 +1388,7 @@ impl<'a> WordExpander<'a> {
                 } else {
                     let matching_names = self
                         .shell
-                        .env
+                        .env()
                         .iter()
                         .filter_map(|(name, _)| {
                             if name.starts_with(prefix.as_str()) {
@@ -1414,7 +1414,7 @@ impl<'a> WordExpander<'a> {
                 variable_name,
                 concatenate,
             } => {
-                let keys = if let Some((_, var)) = self.shell.env.get(variable_name) {
+                let keys = if let Some((_, var)) = self.shell.env().get(variable_name) {
                     var.value().element_keys(self.shell)
                 } else {
                     vec![]
@@ -1441,7 +1441,7 @@ impl<'a> WordExpander<'a> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name) {
+                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
                     matches!(
                         var.value(),
                         ShellValue::AssociativeArray(_)
@@ -1467,7 +1467,7 @@ impl<'a> WordExpander<'a> {
         };
 
         if let Some(index) = index {
-            self.shell.env.update_or_add_array_element(
+            self.shell.env_mut().update_or_add_array_element(
                 variable_name,
                 index,
                 value,
@@ -1476,7 +1476,7 @@ impl<'a> WordExpander<'a> {
                 env::EnvironmentScope::Global,
             )
         } else {
-            self.shell.env.update_or_add(
+            self.shell.env_mut().update_or_add(
                 variable_name,
                 variables::ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
@@ -1521,7 +1521,7 @@ impl<'a> WordExpander<'a> {
 
         let var = name
             .as_ref()
-            .and_then(|name| self.shell.env.get(name).map(|(_, var)| var.clone()));
+            .and_then(|name| self.shell.env().get(name).map(|(_, var)| var.clone()));
 
         (name, index, var)
     }
@@ -1531,7 +1531,7 @@ impl<'a> WordExpander<'a> {
         parameter: &brush_parser::word::Parameter,
         allow_unset_vars: bool,
     ) -> Result<Expansion, error::Error> {
-        if allow_unset_vars || !self.shell.options.treat_unset_variables_as_error {
+        if allow_unset_vars || !self.shell.options().treat_unset_variables_as_error {
             Ok(Expansion::undefined())
         } else {
             let err: error::Error =
@@ -1601,7 +1601,7 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::Parameter::Named(n) => {
                 if !env::valid_variable_name(n.as_str()) {
                     Err(error::ErrorKind::BadSubstitution(n.clone()).into())
-                } else if let Some((_, var)) = self.shell.env.get(n) {
+                } else if let Some((_, var)) = self.shell.env().get(n) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         self.undefined_expansion(parameter, allow_unset_vars)
                     } else {
@@ -1618,7 +1618,7 @@ impl<'a> WordExpander<'a> {
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                 // First check to see if it's an associative array.
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env.get(name) {
+                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
                     matches!(
                         var.value(),
                         ShellValue::AssociativeArray(_)
@@ -1634,7 +1634,7 @@ impl<'a> WordExpander<'a> {
                     .await?;
 
                 // Index into the array.
-                if let Some((_, var)) = self.shell.env.get(name) {
+                if let Some((_, var)) = self.shell.env().get(name) {
                     if let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell) {
                         Ok(Expansion::from(value.to_string()))
                     } else {
@@ -1645,7 +1645,7 @@ impl<'a> WordExpander<'a> {
                 }
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
-                if let Some((_, var)) = self.shell.env.get(name) {
+                if let Some((_, var)) = self.shell.env().get(name) {
                     let values = var.value().element_values(self.shell);
 
                     Ok(Expansion {
@@ -1710,13 +1710,13 @@ impl<'a> WordExpander<'a> {
                 Expansion::from(self.shell.last_exit_status().to_string())
             }
             brush_parser::word::SpecialParameter::CurrentOptionFlags => {
-                Expansion::from(self.shell.options.option_flags())
+                Expansion::from(self.shell.options().option_flags())
             }
             brush_parser::word::SpecialParameter::ProcessId => {
                 Expansion::from(std::process::id().to_string())
             }
             brush_parser::word::SpecialParameter::LastBackgroundProcessId => {
-                if let Some(job) = self.shell.jobs.current_job() {
+                if let Some(job) = self.shell.jobs().current_job() {
                     if let Some(pid) = job.representative_pid() {
                         return Expansion::from(pid.to_string());
                     }

@@ -107,7 +107,7 @@ impl builtins::Command for KillCommand {
             let pid_or_job_spec = pid_or_job_spec.unwrap();
             if pid_or_job_spec.starts_with('%') {
                 // It's a job spec.
-                if let Some(job) = context.shell.jobs.resolve_job_spec(pid_or_job_spec) {
+                if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
                     job.kill(trap_signal)?;
                 } else {
                     writeln!(

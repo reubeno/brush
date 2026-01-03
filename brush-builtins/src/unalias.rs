@@ -24,10 +24,10 @@ impl builtins::Command for UnaliasCommand {
         let mut exit_code = ExecutionResult::success();
 
         if self.remove_all {
-            context.shell.aliases.clear();
+            context.shell.aliases_mut().clear();
         } else {
             for alias in &self.aliases {
-                if context.shell.aliases.remove(alias).is_none() {
+                if context.shell.aliases_mut().remove(alias).is_none() {
                     writeln!(
                         context.stderr(),
                         "{}: {}: not found",
