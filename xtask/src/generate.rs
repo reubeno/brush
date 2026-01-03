@@ -1,4 +1,10 @@
 //! Generation commands for documentation, completions, and schemas.
+//!
+//! This module provides commands for generating various artifacts:
+//! - **Documentation**: Man pages and markdown help text from clap definitions
+//! - **Completions**: Shell completion scripts for bash, zsh, fish, etc.
+//! - **Schemas**: JSON schemas for configuration files
+//! - **Distribution archives**: Reproducible documentation bundles with checksums
 
 use std::path::PathBuf;
 
@@ -102,15 +108,14 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
             DocsCommand::Dist(args) => gen_docs_dist(args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
-            match completion_cmd {
-                CompletionCommand::Bash => gen_completion_script(clap_complete::Shell::Bash),
-                CompletionCommand::Elvish => gen_completion_script(clap_complete::Shell::Elvish),
-                CompletionCommand::Fish => gen_completion_script(clap_complete::Shell::Fish),
-                CompletionCommand::PowerShell => {
-                    gen_completion_script(clap_complete::Shell::PowerShell);
-                }
-                CompletionCommand::Zsh => gen_completion_script(clap_complete::Shell::Zsh),
-            }
+            let shell = match completion_cmd {
+                CompletionCommand::Bash => clap_complete::Shell::Bash,
+                CompletionCommand::Elvish => clap_complete::Shell::Elvish,
+                CompletionCommand::Fish => clap_complete::Shell::Fish,
+                CompletionCommand::PowerShell => clap_complete::Shell::PowerShell,
+                CompletionCommand::Zsh => clap_complete::Shell::Zsh,
+            };
+            gen_completion_script(shell, verbose);
             Ok(())
         }
         GenCommand::Schema(schema_cmd) => match schema_cmd {
@@ -157,7 +162,14 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-fn gen_completion_script(shell: clap_complete::Shell) {
+/// Generate a shell completion script to stdout.
+///
+/// The completion script is written directly to stdout so it can be piped
+/// to a file or sourced directly by the shell.
+fn gen_completion_script(shell: clap_complete::Shell, verbose: bool) {
+    if verbose {
+        eprintln!("Generating {shell} completion script...");
+    }
     let mut cmd = brush_shell::args::CommandLineArgs::command();
     clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
 }

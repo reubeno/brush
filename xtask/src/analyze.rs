@@ -1,4 +1,8 @@
 //! Analysis commands for benchmarks and API diffing.
+//!
+//! This module provides tools for:
+//! - Running performance benchmarks with optional output capture
+//! - Comparing public API changes between branches using `cargo-public-api`
 
 use std::path::PathBuf;
 
@@ -45,6 +49,10 @@ pub fn run(cmd: &AnalyzeCommand, verbose: bool) -> Result<()> {
     }
 }
 
+/// Run benchmarks using `cargo bench`.
+///
+/// When an output file is specified, benchmarks are run with `--output-format bencher`
+/// to produce machine-readable output suitable for CI comparison tools.
 fn run_bench(sh: &Shell, args: &BenchArgs, verbose: bool) -> Result<()> {
     eprintln!("Running benchmarks...");
 
@@ -78,6 +86,11 @@ fn run_bench(sh: &Shell, args: &BenchArgs, verbose: bool) -> Result<()> {
     Ok(())
 }
 
+/// Analyze public API changes between the current branch and a base branch.
+///
+/// This uses `cargo-public-api` to generate diffs for each library crate,
+/// then formats them into markdown reports using a Python script.
+/// Requires nightly Rust and `cargo-public-api` to be installed.
 fn run_public_api(sh: &Shell, args: &PublicApiArgs, verbose: bool) -> Result<()> {
     eprintln!("Analyzing public API against {}...", args.base);
 
@@ -125,8 +138,11 @@ fn run_public_api(sh: &Shell, args: &PublicApiArgs, verbose: bool) -> Result<()>
         let diff_path = diff_file.display().to_string();
         let report_path = report_file.display().to_string();
 
-        // Run public-api diff
-        // Use unchecked because diff returns non-zero if there are differences
+        // Run public-api diff.
+        // The -sss flags are shorthand for three levels of --simplified output,
+        // which suppresses less relevant API details (blanket impls, auto traits, etc.)
+        // to focus on the most important public API changes.
+        // We use ignore_status() because diff returns non-zero if there are differences.
         if verbose {
             eprintln!("Running: cargo +nightly public-api diff -sss -p {crate_name} {base}..HEAD");
         }

@@ -1,8 +1,20 @@
 //! CI workflow commands that aggregate multiple checks and tests.
+//!
+//! This module provides composite workflows that run multiple checks in sequence.
+//! The pre-commit workflow is designed to catch common issues before committing:
+//!
+//! 1. **Format check** - Fast, catches formatting issues early
+//! 2. **Lint check** - Clippy warnings that should be addressed
+//! 3. **Dependency check** - Security vulnerabilities and license compliance
+//! 4. **Build check** - Ensures code compiles with all features
+//! 5. **Schema check** - Verifies generated schemas are up-to-date
+//! 6. **All tests** - Unit and compatibility tests
+//!
+//! The ordering is intentional: fast checks run first to provide quick feedback,
+//! with slower comprehensive tests running last.
 
 use anyhow::Result;
 use clap::Parser;
-use xshell::Shell;
 
 use crate::check::{self, CheckCommand};
 use crate::test::{self, BinaryArgs, TestCommand, TestSubcommand};
@@ -49,8 +61,6 @@ const fn make_test_command(subcommand: TestSubcommand) -> TestCommand {
 }
 
 fn run_pre_commit(args: &PreCommitArgs, verbose: bool) -> Result<()> {
-    let _sh = Shell::new()?;
-
     eprintln!("Running pre-commit checks...\n");
 
     let steps: Vec<Step<'_>> = vec![

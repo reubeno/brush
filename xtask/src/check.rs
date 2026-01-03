@@ -1,4 +1,16 @@
 //! Check commands for code quality validation.
+//!
+//! This module provides various code quality checks that can be run individually
+//! or as part of a CI workflow. Each check wraps an external tool and provides
+//! consistent error handling and verbose output.
+//!
+//! Some checks require additional tools to be installed:
+//! - `cargo-deny`: Security/license auditing (`cargo install cargo-deny`)
+//! - `cargo-udeps`: Unused dependency detection (`cargo install cargo-udeps`, requires nightly)
+//! - `cargo-public-api`: Public API analysis (`cargo install cargo-public-api`, requires nightly)
+//! - `typos`: Spelling checker (`cargo install typos-cli`)
+//! - `zizmor`: GitHub workflow security scanner (`pip install zizmor`)
+//! - `lychee`: Link checker (`cargo install lychee`)
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -117,7 +129,7 @@ fn check_build(sh: &Shell, verbose: bool) -> Result<()> {
 fn check_schemas(sh: &Shell, verbose: bool) -> Result<()> {
     eprintln!("Checking generated schemas...");
 
-    // Regenerate schemas
+    // Regenerate schemas to a temporary state to compare against committed versions.
     if verbose {
         eprintln!(
             "Running: cargo run --package xtask -- gen schema config --out schemas/config.schema.json"
@@ -130,13 +142,20 @@ fn check_schemas(sh: &Shell, verbose: bool) -> Result<()> {
     .run()
     .context("Failed to regenerate schemas")?;
 
-    // Check for drift
+    // Check for drift by capturing the diff output.
+    // We don't use --exit-code here because we want to capture and display the
+    // actual differences to help the user understand what changed.
     if verbose {
-        eprintln!("Running: git diff --exit-code schemas/");
+        eprintln!("Running: git diff schemas/");
     }
-    let diff_output = cmd!(sh, "git diff --exit-code schemas/").run();
+    let diff_output = cmd!(sh, "git diff schemas/")
+        .read()
+        .context("Failed to run git diff on schemas directory")?;
 
-    if diff_output.is_err() {
+    if !diff_output.is_empty() {
+        // Show the user exactly what changed so they can understand the drift.
+        eprintln!("\nSchema drift detected. The following changes were found:\n");
+        eprintln!("{diff_output}");
         anyhow::bail!(
             "Generated schemas are out of date. Please run 'cargo xtask gen schema config --out schemas/config.schema.json' and commit the changes."
         );

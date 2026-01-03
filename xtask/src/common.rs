@@ -1,4 +1,9 @@
 //! Common utilities shared across xtask commands.
+//!
+//! This module provides shared functionality for:
+//! - Build profile selection (debug vs release)
+//! - Workspace root discovery
+//! - Brush binary location for test commands
 
 use std::path::PathBuf;
 

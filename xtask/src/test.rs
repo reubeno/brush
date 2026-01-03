@@ -1,4 +1,13 @@
 //! Test commands for running various test suites.
+//!
+//! This module provides commands for running different types of tests:
+//! - **Cargo tests**: Standard Rust tests via `cargo nextest`
+//! - **Compatibility tests**: YAML-based tests comparing brush behavior against bash
+//! - **Coverage**: Tests with code coverage collection via `cargo-llvm-cov`
+//! - **External suites**: Third-party test suites like bash-completion
+//!
+//! Most test commands support profile selection (debug/release) and can auto-detect
+//! the brush binary location from the workspace's target directory.
 
 use std::path::PathBuf;
 
@@ -197,6 +206,15 @@ fn run_all_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<
     Ok(())
 }
 
+/// Run tests with code coverage collection using `cargo-llvm-cov`.
+///
+/// The coverage workflow:
+/// 1. Source environment variables from `cargo llvm-cov show-env`
+/// 2. Clean previous coverage data
+/// 3. Run tests (continuing even if tests fail to still generate report)
+/// 4. Generate Cobertura XML report for CI integration
+///
+/// Requires `cargo-llvm-cov` to be installed: `cargo install cargo-llvm-cov`
 fn run_coverage(
     sh: &Shell,
     binary_args: &BinaryArgs,
@@ -281,6 +299,15 @@ fn run_coverage(
     Ok(())
 }
 
+/// Run the bash-completion project's test suite against brush.
+///
+/// This runs pytest on the bash-completion test suite with brush as the shell,
+/// configured via the `BASH_COMPLETION_TEST_BASH` environment variable.
+/// Results are output as JSON and optionally summarized to markdown.
+///
+/// Requires:
+/// - A checkout of the bash-completion repository
+/// - Python with pytest, pytest-xdist, and pytest-json-report installed
 fn run_bash_completion_tests(
     sh: &Shell,
     args: &BashCompletionArgs,
