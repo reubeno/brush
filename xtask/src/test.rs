@@ -256,11 +256,10 @@ fn run_nextest(
     }
 
     // Add filter expression if provided
-    let filter_args: Vec<String>;
-    if let Some(expr) = filter_expr {
-        filter_args = vec!["-E".to_string(), expr.to_string()];
+    let filter_value = filter_expr.map(str::to_string);
+    if let Some(ref value) = filter_value {
         args.push("-E");
-        args.push(filter_args[1].as_str());
+        args.push(value);
     }
 
     if verbose {
@@ -327,11 +326,10 @@ fn run_tests_with_coverage(
     }
 
     // Add filter expression if provided
-    let filter_args: Vec<String>;
-    if let Some(expr) = filter_expr {
-        filter_args = vec!["-E".to_string(), expr.to_string()];
+    let filter_value = filter_expr.map(str::to_string);
+    if let Some(ref value) = filter_value {
         test_args.push("-E");
-        test_args.push(filter_args[1].as_str());
+        test_args.push(value);
     }
 
     if verbose {
