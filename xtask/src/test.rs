@@ -332,24 +332,9 @@ fn run_bash_completion_tests(
         eprintln!("Running: pytest {}", pytest_args.join(" "));
     }
 
-    // Run pytest - capture exit status to report failure but continue to generate summary.
-    // We need to capture the exit code while still showing output to the user.
-    // Use output() to capture everything, then print it, then check the status.
-    let pytest_output = cmd!(sh, "pytest")
-        .args(&pytest_args)
-        .ignore_status()
-        .output()
-        .context("Failed to execute pytest")?;
+    // Run pytest - pass stdout/stderr through directly, capture whether it failed.
+    let pytest_failed = cmd!(sh, "pytest").args(&pytest_args).run().is_err();
 
-    // Print stdout/stderr so the user can see the test results
-    if !pytest_output.stdout.is_empty() {
-        std::io::Write::write_all(&mut std::io::stdout(), &pytest_output.stdout)?;
-    }
-    if !pytest_output.stderr.is_empty() {
-        std::io::Write::write_all(&mut std::io::stderr(), &pytest_output.stderr)?;
-    }
-
-    let pytest_failed = !pytest_output.status.success();
     if pytest_failed {
         eprintln!("Some tests failed, but continuing to generate reports...");
     }
