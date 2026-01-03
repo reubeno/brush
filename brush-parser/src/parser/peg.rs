@@ -1,8 +1,8 @@
 //! PEG-based parser implementation for shell scripts.
 
-use crate::ast::{self, SourceLocation, SeparatorOperator, maybe_location};
-use crate::tokenizer::Token;
 use crate::SourceSpan;
+use crate::ast::{self, SeparatorOperator, SourceLocation, maybe_location};
+use crate::tokenizer::Token;
 
 use super::{ParserOptions, Tokens};
 
@@ -1046,4 +1046,3 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
         result
     }
 }
-

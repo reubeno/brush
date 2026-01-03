@@ -5,6 +5,14 @@ use bon::bon;
 
 pub mod peg;
 
+/// Parser implementation to use
+#[derive(Clone, Eq, Hash, PartialEq, Default)]
+pub enum ParserImpl {
+    /// PEG-based parser
+    #[default]
+    Peg,
+}
+
 /// Options used to control the behavior of the parser.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ParserOptions {
@@ -18,6 +26,8 @@ pub struct ParserOptions {
     pub tilde_expansion_at_word_start: bool,
     /// Whether or not to perform tilde expansion for tildes after colons.
     pub tilde_expansion_after_colon: bool,
+    /// Select the parser internal implementation
+    pub parser_impl: ParserImpl,
 }
 
 impl Default for ParserOptions {
@@ -28,6 +38,7 @@ impl Default for ParserOptions {
             sh_mode: false,
             tilde_expansion_at_word_start: true,
             tilde_expansion_after_colon: false,
+            parser_impl: ParserImpl::default(),
         }
     }
 }
@@ -91,6 +102,9 @@ impl<R: std::io::BufRead> Parser<R> {
         #[builder(default = false)]
         /// Whether or not to perform tilde expansion for tildes after colons.
         tilde_expansion_after_colon: bool,
+        #[builder(default)]
+        /// Select the parser internal implementation
+        parser_impl: ParserImpl,
     ) -> Self {
         let options = ParserOptions {
             enable_extended_globbing,
@@ -98,6 +112,7 @@ impl<R: std::io::BufRead> Parser<R> {
             sh_mode,
             tilde_expansion_at_word_start,
             tilde_expansion_after_colon,
+            parser_impl,
         };
         Self { reader, options }
     }
