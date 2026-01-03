@@ -81,8 +81,8 @@ pub enum TestSubcommand {
     /// Run external test suites.
     #[clap(subcommand)]
     External(ExternalTestCommand),
-    /// Run cargo tests with cargo-nextest.
-    Cargo,
+    /// Run unit tests with cargo-nextest.
+    Unit,
 }
 
 /// Arguments for coverage collection.
@@ -134,7 +134,7 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
         TestSubcommand::Compat => run_compat_tests(&sh, &cmd.binary_args, verbose),
         TestSubcommand::Coverage(args) => run_coverage(&sh, &cmd.binary_args, args, verbose),
         TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh, verbose),
-        TestSubcommand::Cargo => run_cargo_tests(&sh, &cmd.binary_args, verbose),
+        TestSubcommand::Unit => run_cargo_tests(&sh, &cmd.binary_args, verbose),
     }
 }
 
@@ -201,6 +201,7 @@ fn run_all_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<
     eprintln!("Running all tests...");
 
     run_cargo_tests(sh, binary_args, verbose)?;
+    run_compat_tests(sh, binary_args, verbose)?;
 
     eprintln!("All tests passed.");
     Ok(())

@@ -63,7 +63,7 @@ pub struct GenerateManArgs {
 /// Arguments for markdown documentation generation.
 #[derive(Parser)]
 pub struct GenerateMarkdownArgs {
-    /// Output directory.
+    /// Output file path.
     #[clap(long = "out", short = 'o')]
     output_path: PathBuf,
 }

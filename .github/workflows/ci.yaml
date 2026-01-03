@@ -406,7 +406,6 @@ jobs:
       - name: Set up branches
         run: |
           set -euo pipefail
-
           git fetch origin main
 
       - name: Compare public APIs with main
