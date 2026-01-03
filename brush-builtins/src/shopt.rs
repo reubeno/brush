@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins};
 
 /// Manage shopt-style options.
 #[derive(Parser)]

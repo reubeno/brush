@@ -4,7 +4,7 @@ use std::io::Write;
 use clap::Parser;
 use itertools::Itertools;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
+use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins, variables};
 
 crate::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,

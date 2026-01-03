@@ -14,7 +14,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, commands, env, error, escape, functions,
+    ShellRuntime, builtins, commands, env, error, escape, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -71,7 +71,7 @@ impl ExecutionContext<'_> {
         self.params.iter_fds(self.shell)
     }
 
-    pub(crate) const fn should_cmd_lead_own_process_group(&self) -> bool {
+    pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
         self.shell.options().interactive
             && matches!(
                 self.params.process_group_policy,

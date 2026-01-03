@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
+use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins, sys};
 
 /// Signal a job or process.
 #[derive(Parser)]

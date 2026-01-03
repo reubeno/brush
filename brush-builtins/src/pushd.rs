@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _,builtins};
 
 /// Push a path onto the current directory stack.
 #[derive(Parser)]

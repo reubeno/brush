@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::{Shell, ShellValue, ShellVariable, error, sys, variables};
+use crate::{Shell, ShellRuntime as _, ShellValue, ShellVariable, error, sys, variables};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;

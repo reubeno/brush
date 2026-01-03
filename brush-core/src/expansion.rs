@@ -16,7 +16,7 @@ use crate::error;
 use crate::escape;
 use crate::patterns;
 use crate::prompt;
-use crate::shell::Shell;
+use crate::shell::{Shell, ShellRuntime as _};
 use crate::sys;
 use crate::trace_categories;
 use crate::variables::ShellValueUnsetType;

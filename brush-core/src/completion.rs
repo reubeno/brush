@@ -10,7 +10,8 @@ use std::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    Shell, commands, env, error, escape, expansion, interfaces, jobs, namedoptions, patterns,
+    Shell, ShellRuntime as _, commands, env, error, escape, expansion, interfaces, jobs,
+    namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValueLiteral},

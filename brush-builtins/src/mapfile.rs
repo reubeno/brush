@@ -2,7 +2,7 @@ use std::io::Read;
 
 use clap::Parser;
 
-use brush_core::{ErrorKind, ExecutionResult, builtins, env, error, variables};
+use brush_core::{ErrorKind, ExecutionResult, ShellRuntime as _,builtins, env, error, variables};
 
 /// Inspect and modify key bindings and other input configuration.
 #[derive(Parser)]

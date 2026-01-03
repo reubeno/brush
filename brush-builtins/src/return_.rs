@@ -1,7 +1,9 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ShellRuntime as _,builtins,
+};
 
 /// Return from the current function.
 #[derive(Parser)]

@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
 
 /// Manage signal traps.
 #[derive(Parser)]

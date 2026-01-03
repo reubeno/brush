@@ -7,6 +7,7 @@
 use anyhow::Result;
 use assert_fs::prelude::*;
 use brush_builtins::ShellBuilderExt;
+use brush_core::ShellRuntime as _;
 use std::path::PathBuf;
 
 struct TestShellWithBashCompletion {

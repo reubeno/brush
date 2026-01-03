@@ -1,3 +1,4 @@
+use brush_core::ShellRuntime as _;
 use nu_ansi_term::Color;
 use reedline::MenuBuilder;
 

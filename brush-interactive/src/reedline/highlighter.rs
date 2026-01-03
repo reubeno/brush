@@ -1,5 +1,6 @@
-use crate::{highlighting, refs};
 use nu_ansi_term::{Color, Style};
+
+use crate::{highlighting, refs};
 
 mod styles {
     use super::{Color, Style};

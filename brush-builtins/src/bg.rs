@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
 
 /// Moves a job to run in the background.
 #[derive(Parser)]

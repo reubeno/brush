@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 
-use brush_core::{ErrorKind, builtins, env, error, variables};
+use brush_core::{ErrorKind, ShellRuntime as _, builtins, env, error, variables};
 
 use std::io::Read;
 

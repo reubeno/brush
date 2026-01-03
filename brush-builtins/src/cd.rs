@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use brush_core::{ExecutionResult, builtins, error};
+use brush_core::{ExecutionResult, ShellRuntime as _,builtins, error};
 
 /// Change the current shell working directory.
 #[derive(Parser)]

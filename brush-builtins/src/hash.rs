@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
 
 #[derive(Parser)]
 pub(crate) struct HashCommand {
