@@ -254,7 +254,7 @@ jobs:
 
           # Run tests with coverage collection
           result=0
-          cargo xtask test coverage --output ./codecov-${VARIANT}.xml || result=$?
+          cargo xtask test integration --coverage --coverage-output ./codecov-${VARIANT}.xml || result=$?
 
           # Rename test results for CI reporting
           mv target/nextest/default/test-results.xml ./test-results-${VARIANT}.xml

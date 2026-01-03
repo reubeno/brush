@@ -1,21 +1,31 @@
 //! Test commands for running various test suites.
 //!
 //! This module provides commands for running different types of tests:
-//! - **Cargo tests**: Standard Rust tests via `cargo nextest`
-//! - **Compatibility tests**: YAML-based tests comparing brush behavior against bash
-//! - **Coverage**: Tests with code coverage collection via `cargo-llvm-cov`
+//!
+//! - **Unit tests**: Fast tests that don't execute the brush binary (excludes integration test
+//!   binaries like brush-compat-tests, brush-interactive-tests, brush-completion-tests)
+//! - **Integration tests**: All workspace tests including unit tests and integration tests that
+//!   execute the brush binary
 //! - **External suites**: Third-party test suites like bash-completion
 //!
-//! Most test commands support profile selection (debug/release) and can auto-detect
-//! the brush binary location from the workspace's target directory.
+//! Both unit and integration tests support optional coverage collection via
+//! `cargo-llvm-cov`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use xshell::{Shell, cmd};
 
 use crate::common::{BuildProfile, find_brush_binary, find_workspace_root};
+
+/// Integration test binaries that are excluded from unit tests.
+/// These tests execute the brush binary and are slower.
+const INTEGRATION_TEST_BINARIES: &[&str] = &[
+    "brush-compat-tests",
+    "brush-interactive-tests",
+    "brush-completion-tests",
+];
 
 /// Shared arguments for test commands that need a brush binary.
 #[derive(Args, Debug, Clone)]
@@ -70,38 +80,63 @@ pub struct TestCommand {
 }
 
 /// Test subcommands.
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 pub enum TestSubcommand {
-    /// Run all tests (unit + compat).
-    All,
-    /// Run compatibility tests (only) against bash.
-    Compat,
-    /// Run tests with code coverage collection.
-    Coverage(CoverageArgs),
+    /// Run unit tests (fast tests that don't execute the brush binary).
+    ///
+    /// Excludes integration test binaries: brush-compat-tests, brush-interactive-tests,
+    /// brush-completion-tests.
+    Unit(UnitTestArgs),
+
+    /// Run all workspace tests (unit + integration tests).
+    ///
+    /// This includes all tests: unit tests plus integration tests that execute
+    /// the brush binary (compat tests, interactive tests, completion tests).
+    Integration(IntegrationTestArgs),
+
     /// Run external test suites.
     #[clap(subcommand)]
     External(ExternalTestCommand),
-    /// Run unit tests with cargo-nextest.
-    Unit,
+}
+
+/// Arguments for unit tests.
+#[derive(Args, Clone, Default)]
+pub struct UnitTestArgs {
+    /// Coverage options.
+    #[clap(flatten)]
+    pub coverage: CoverageArgs,
+}
+
+/// Arguments for integration tests.
+#[derive(Args, Clone, Default)]
+pub struct IntegrationTestArgs {
+    /// Coverage options.
+    #[clap(flatten)]
+    pub coverage: CoverageArgs,
 }
 
 /// Arguments for coverage collection.
-#[derive(Args)]
+#[derive(Args, Clone, Default)]
 pub struct CoverageArgs {
+    /// Collect code coverage during test run.
+    #[clap(long)]
+    pub coverage: bool,
+
     /// Output file for coverage report (Cobertura XML format).
+    /// Only used when --coverage is specified.
     #[clap(long, short = 'o', default_value = "codecov.xml")]
-    output: PathBuf,
+    pub coverage_output: PathBuf,
 }
 
 /// External test suite commands.
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 pub enum ExternalTestCommand {
     /// Run the bash-completion test suite against brush.
     BashCompletion(BashCompletionArgs),
 }
 
 /// Arguments for bash-completion test suite.
-#[derive(Args)]
+#[derive(Args, Clone)]
 pub struct BashCompletionArgs {
     /// Path to the bash-completion repository checkout.
     #[clap(long)]
@@ -130,11 +165,11 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
     let sh = Shell::new()?;
 
     match &cmd.subcommand {
-        TestSubcommand::All => run_all_tests(&sh, &cmd.binary_args, verbose),
-        TestSubcommand::Compat => run_compat_tests(&sh, &cmd.binary_args, verbose),
-        TestSubcommand::Coverage(args) => run_coverage(&sh, &cmd.binary_args, args, verbose),
+        TestSubcommand::Unit(args) => run_unit_tests(&sh, &cmd.binary_args, args, verbose),
+        TestSubcommand::Integration(args) => {
+            run_integration_tests(&sh, &cmd.binary_args, args, verbose)
+        }
         TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh, verbose),
-        TestSubcommand::Unit => run_cargo_tests(&sh, &cmd.binary_args, verbose),
     }
 }
 
@@ -151,59 +186,88 @@ fn run_external(
     }
 }
 
-fn run_cargo_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
+/// Run unit tests (excludes integration test binaries).
+///
+/// Unit tests are fast tests that don't execute the brush binary.
+pub fn run_unit_tests(
+    sh: &Shell,
+    binary_args: &BinaryArgs,
+    args: &UnitTestArgs,
+    verbose: bool,
+) -> Result<()> {
     let profile = binary_args.effective_profile();
     eprintln!("Running unit tests ({profile:?} profile)...");
 
-    let mut args = vec!["nextest", "run", "--workspace", "--no-fail-fast"];
-    if profile == BuildProfile::Release {
-        args.push("--release");
-    }
+    // Build the filter expression to exclude integration test binaries
+    let exclusions: Vec<String> = INTEGRATION_TEST_BINARIES
+        .iter()
+        .map(|name| format!("not binary({name})"))
+        .collect();
+    let filter_expr = exclusions.join(" and ");
 
-    if verbose {
-        eprintln!("Running: cargo {}", args.join(" "));
+    if args.coverage.coverage {
+        run_tests_with_coverage(
+            sh,
+            profile,
+            Some(&filter_expr),
+            &args.coverage.coverage_output,
+            verbose,
+        )
+    } else {
+        run_nextest(sh, profile, Some(&filter_expr), verbose)?;
+        eprintln!("Unit tests passed.");
+        Ok(())
     }
-
-    cmd!(sh, "cargo {args...}")
-        .run()
-        .context("Unit tests failed")?;
-    eprintln!("Unit tests passed.");
-    Ok(())
 }
 
-fn run_compat_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
+/// Run all workspace tests (unit + integration).
+///
+/// This runs all tests in the workspace, including integration tests
+/// that execute the brush binary.
+pub fn run_integration_tests(
+    sh: &Shell,
+    binary_args: &BinaryArgs,
+    args: &IntegrationTestArgs,
+    verbose: bool,
+) -> Result<()> {
     let profile = binary_args.effective_profile();
-    eprintln!("Running compatibility tests ({profile:?} profile)...");
+    eprintln!("Running integration tests ({profile:?} profile)...");
 
-    let mut args = vec![
-        "nextest",
-        "run",
-        "--test",
-        "brush-compat-tests",
-        "--no-fail-fast",
-    ];
+    if args.coverage.coverage {
+        run_tests_with_coverage(sh, profile, None, &args.coverage.coverage_output, verbose)
+    } else {
+        run_nextest(sh, profile, None, verbose)?;
+        eprintln!("Integration tests passed.");
+        Ok(())
+    }
+}
+
+/// Run cargo nextest with optional filter expression.
+fn run_nextest(
+    sh: &Shell,
+    profile: BuildProfile,
+    filter_expr: Option<&str>,
+    verbose: bool,
+) -> Result<()> {
+    let mut args = vec!["nextest", "run", "--workspace", "--no-fail-fast"];
+
     if profile == BuildProfile::Release {
         args.push("--release");
+    }
+
+    // Add filter expression if provided
+    let filter_args: Vec<String>;
+    if let Some(expr) = filter_expr {
+        filter_args = vec!["-E".to_string(), expr.to_string()];
+        args.push("-E");
+        args.push(filter_args[1].as_str());
     }
 
     if verbose {
         eprintln!("Running: cargo {}", args.join(" "));
     }
 
-    cmd!(sh, "cargo {args...}")
-        .run()
-        .context("Compatibility tests failed")?;
-    eprintln!("Compatibility tests passed.");
-    Ok(())
-}
-
-fn run_all_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
-    eprintln!("Running all tests...");
-
-    run_cargo_tests(sh, binary_args, verbose)?;
-    run_compat_tests(sh, binary_args, verbose)?;
-
-    eprintln!("All tests passed.");
+    cmd!(sh, "cargo {args...}").run().context("Tests failed")?;
     Ok(())
 }
 
@@ -216,14 +280,14 @@ fn run_all_tests(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<
 /// 4. Generate Cobertura XML report for CI integration
 ///
 /// Requires `cargo-llvm-cov` to be installed: `cargo install cargo-llvm-cov`
-fn run_coverage(
+fn run_tests_with_coverage(
     sh: &Shell,
-    binary_args: &BinaryArgs,
-    args: &CoverageArgs,
+    profile: BuildProfile,
+    filter_expr: Option<&str>,
+    output: &Path,
     verbose: bool,
 ) -> Result<()> {
-    let profile = binary_args.effective_profile();
-    let output_path = args.output.display().to_string();
+    let output_path = output.display().to_string();
 
     eprintln!("Running tests with coverage ({profile:?} profile)...");
     eprintln!("Coverage output: {output_path}");
@@ -260,6 +324,14 @@ fn run_coverage(
     let mut test_args = vec!["nextest", "run", "--workspace", "--no-fail-fast"];
     if profile == BuildProfile::Release {
         test_args.push("--release");
+    }
+
+    // Add filter expression if provided
+    let filter_args: Vec<String>;
+    if let Some(expr) = filter_expr {
+        filter_args = vec!["-E".to_string(), expr.to_string()];
+        test_args.push("-E");
+        test_args.push(filter_args[1].as_str());
     }
 
     if verbose {

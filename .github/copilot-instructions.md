@@ -54,7 +54,10 @@ The project provides a `cargo xtask` command that centralizes common development
 #### Quick Development Cycle
 
 ```bash
-# Run all pre-commit checks (fmt, lint, deps, build, schemas, tests)
+# Run quick inner-loop checks (~7s warm): fmt, build, lint, unit tests
+cargo xtask ci quick
+
+# Run full pre-commit checks (~45s warm): quick + deps, schemas, integration tests
 cargo xtask ci pre-commit
 
 # Run with --continue-on-error to see all failures at once
@@ -86,17 +89,14 @@ cargo xtask check schemas
 #### Running Tests
 
 ```bash
-# Run all tests (unit + compat)
-cargo xtask test all
-
-# Run unit tests only
+# Run unit tests (fast tests excluding integration binaries)
 cargo xtask test unit
 
-# Run compatibility tests only
-cargo xtask test compat
+# Run integration tests (all workspace tests including compat tests)
+cargo xtask test integration
 
 # Run tests with coverage
-cargo xtask test coverage --output codecov.xml
+cargo xtask test integration --coverage --coverage-output codecov.xml
 ```
 
 ### Manual Approach (Alternate)
@@ -374,14 +374,15 @@ Assisted-by: GitHub Copilot
 
 | Command | When | Time |
 |---------|------|------|
-| `cargo xtask ci pre-commit` | Before commit (comprehensive) | 2-5min |
-| `cargo xtask ci pre-commit -k` | See all failures at once | 2-5min |
+| `cargo xtask ci quick` | Rapid iteration (inner loop) | ~7s |
+| `cargo xtask ci pre-commit` | Before commit (comprehensive) | ~45s |
+| `cargo xtask ci pre-commit -k` | See all failures at once | ~45s |
 | `cargo check` | Constantly during dev | ~3-5s |
 | `cargo test --package X` | After each change | 3-20s |
-| `cargo xtask test compat` | Before commit | ~18s |
+| `cargo xtask test unit` | Fast unit tests | ~4.5s |
+| `cargo xtask test integration` | All workspace tests | ~36s |
 | `cargo xtask check fmt` | Before every commit | <1s |
 | `cargo xtask check lint` | Before commit | ~5-10s |
-| `cargo xtask test all` | Before PR/finish | 2-5min |
 | `cargo xtask check deps` | Final validation only | ~1-5s |
 
 ## Trust These Instructions

@@ -47,7 +47,10 @@ brush-shell → brush-interactive → brush-core → brush-parser
 The project provides a `cargo xtask` command that centralizes common development tasks:
 
 ```bash
-# Run all pre-commit checks (fmt, lint, deps, build, schemas, tests)
+# Run quick inner-loop checks (~7s warm): fmt, build, lint, unit tests
+cargo xtask ci quick
+
+# Run full pre-commit checks (~45s warm): quick + deps, schemas, integration tests
 cargo xtask ci pre-commit
 
 # Run with --continue-on-error to see all failures at once
@@ -60,17 +63,14 @@ cargo xtask -v ci pre-commit
 #### Individual Test Commands
 
 ```bash
-# Run all tests (unit + compat)
-cargo xtask test all
-
-# Run unit tests only
+# Run unit tests (fast tests excluding integration binaries)
 cargo xtask test unit
 
-# Run compatibility tests only
-cargo xtask test compat
+# Run integration tests (all workspace tests including compat tests)
+cargo xtask test integration
 
 # Run tests with coverage
-cargo xtask test coverage --output codecov.xml
+cargo xtask test integration --coverage --coverage-output codecov.xml
 ```
 
 #### Manual Approach (Alternate)
@@ -232,9 +232,8 @@ cargo xtask check build    # Compilation check
 cargo xtask check schemas  # Schema drift check
 
 # Tests
-cargo xtask test all       # Unit + compat tests
-cargo xtask test unit      # Unit tests only
-cargo xtask test compat    # Compatibility tests only
+cargo xtask test unit        # Fast unit tests (excludes integration binaries)
+cargo xtask test integration # All workspace tests (unit + compat)
 
 # Analysis
 cargo xtask analyze bench  # Run benchmarks
@@ -247,14 +246,15 @@ cargo xtask analyze bench  # Run benchmarks
 
 **Command frequency guidelines:**
 
-- **Frequent (inner loop)**: `cargo check`, `cargo test --package <pkg>`
+- **Frequent (inner loop)**: `cargo xtask ci quick`, `cargo check`, `cargo test --package <pkg>`
 - **Regular (before commits)**: `cargo xtask ci pre-commit` or `cargo fmt` + `cargo clippy`
-- **Occasional (outer loop)**: `cargo xtask test all` or `cargo test --workspace`
+- **Occasional (outer loop)**: `cargo xtask test integration` or `cargo test --workspace`
 - **Rare (pre-finish only)**: `cargo xtask check deps` or `cargo deny check`
 
 **Pre-commit validation:**
 
 - Recommended: `cargo xtask ci pre-commit`
+- Quick check: `cargo xtask ci quick` for fast feedback
 - Manual: Run `cargo fmt` and `cargo clippy` before committing
 
 **Outer loop validation:**
