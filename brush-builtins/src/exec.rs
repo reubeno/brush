@@ -1,7 +1,9 @@
 use clap::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, ShellRuntime as _,builtins, commands};
+use brush_core::{
+    ErrorKind, ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins, commands,
+};
 
 /// Exec the provided command.
 #[derive(Parser)]

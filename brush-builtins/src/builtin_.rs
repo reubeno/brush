@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::{ExecutionResult, ShellRuntime as _,builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
 #[derive(Default, Parser)]

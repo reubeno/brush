@@ -321,6 +321,117 @@ pub trait ShellRuntime: Send {
         params: &ExecutionParameters,
         command: &str,
     ) -> Result<(), error::Error>;
+
+    /// Returns the count of how many times the last exit status has changed.
+    fn last_exit_status_change_count(&self) -> usize;
+
+    /// Tries to define a function in the shell's environment using the given
+    /// string as its body.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function
+    /// * `body_text` - The body of the function, expected to start with "()".
+    fn define_func_from_str(
+        &mut self,
+        name: impl Into<String>,
+        body_text: &str,
+    ) -> Result<(), error::Error>
+    where
+        Self: Sized;
+
+    /// Invokes the named function, passing the given arguments, and returns the
+    /// exit status of the function.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to invoke.
+    /// * `args` - The arguments to pass to the function.
+    /// * `params` - Execution parameters to use for the invocation.
+    async fn invoke_function<N: AsRef<str>, I: IntoIterator<Item = A>, A: AsRef<str>>(
+        &mut self,
+        name: N,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<u8, error::Error>
+    where
+        Self: Sized;
+
+    /// Executes the given string as a shell program, returning the resulting exit status.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The command to execute.
+    /// * `source_info` - Information about the source of the command text.
+    /// * `params` - Execution parameters.
+    async fn run_string<S: Into<String>>(
+        &mut self,
+        command: S,
+        source_info: &crate::SourceInfo,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error>
+    where
+        Self: Sized;
+
+    /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
+    /// for the program.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to parse as a program.
+    fn parse_string<S: Into<String>>(
+        &self,
+        s: S,
+    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError>
+    where
+        Self: Sized;
+
+    /// Executes a parsed shell program result, handling parse errors appropriately.
+    ///
+    /// # Arguments
+    ///
+    /// * `parse_result` - The result of parsing a shell program.
+    /// * `source_info` - Information about the source of the command text.
+    /// * `params` - Execution parameters.
+    async fn run_parsed_result(
+        &mut self,
+        parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
+        source_info: &crate::SourceInfo,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error>;
+
+    /// Tilde-shortens the given string, replacing the user's home directory with a tilde.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to shorten.
+    fn tilde_shorten(&self, s: String) -> String;
+
+    /// Displays the given error to the user, using the shell's error display mechanisms.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The file to write the error to.
+    /// * `err` - The error to display.
+    async fn display_error(
+        &self,
+        file: &mut impl std::io::Write,
+        err: &error::Error,
+    ) -> Result<(), error::Error>
+    where
+        Self: Sized;
+
+    /// Finds executables in the shell's current default PATH, matching the given filename.
+    ///
+    /// # Arguments
+    ///
+    /// * `filename` - The filename to match against.
+    fn find_executables_in_path<'a>(
+        &'a self,
+        filename: &'a str,
+    ) -> impl Iterator<Item = PathBuf> + 'a
+    where
+        Self: Sized;
 }
 
 /// Represents an instance of a shell.
@@ -844,6 +955,147 @@ impl ShellRuntime for Shell {
 
         Ok(())
     }
+
+    fn last_exit_status_change_count(&self) -> usize {
+        self.last_exit_status_change_count
+    }
+
+    fn define_func_from_str(
+        &mut self,
+        name: impl Into<String>,
+        body_text: &str,
+    ) -> Result<(), error::Error> {
+        let name = name.into();
+
+        let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
+        let func_body = parser.parse_function_parens_and_body().map_err(|e| {
+            error::Error::from(error::ErrorKind::FunctionParseError(name.clone(), e))
+        })?;
+
+        let def = brush_parser::ast::FunctionDefinition {
+            fname: name.clone().into(),
+            body: func_body,
+        };
+
+        self.define_func(name, def, &crate::SourceInfo::default());
+
+        Ok(())
+    }
+
+    async fn invoke_function<N: AsRef<str>, I: IntoIterator<Item = A>, A: AsRef<str>>(
+        &mut self,
+        name: N,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<u8, error::Error> {
+        let name = name.as_ref();
+        let command_name = String::from(name);
+
+        let func_registration = self
+            .funcs
+            .get(name)
+            .ok_or_else(|| error::ErrorKind::FunctionNotFound(name.to_owned()))?
+            .to_owned();
+
+        let context = commands::ExecutionContext {
+            shell: self,
+            command_name,
+            params: params.clone(),
+        };
+
+        let command_args = args
+            .into_iter()
+            .map(|s| commands::CommandArg::String(String::from(s.as_ref())))
+            .collect::<Vec<_>>();
+
+        let result =
+            commands::invoke_shell_function(func_registration, context, &command_args).await?;
+
+        match result.wait().await? {
+            ExecutionWaitResult::Completed(result) => Ok(result.exit_code.into()),
+            ExecutionWaitResult::Stopped(..) => {
+                error::unimp("stopped child from function invocation")
+            }
+        }
+    }
+
+    async fn run_string<S: Into<String>>(
+        &mut self,
+        command: S,
+        source_info: &crate::SourceInfo,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let parse_result = self.parse_string(command);
+        self.run_parsed_result(parse_result, source_info, params)
+            .await
+    }
+
+    fn parse_string<S: Into<String>>(
+        &self,
+        s: S,
+    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+        parse_string_impl(s.into(), self.parser_options())
+    }
+
+    async fn run_parsed_result(
+        &mut self,
+        parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
+        source_info: &crate::SourceInfo,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
+        let result = match parse_result {
+            Ok(prog) => self.run_program(prog, params).await,
+            Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
+                parse_err,
+                source_info.clone(),
+            ))
+            .into_fatal()),
+        };
+
+        // Report any errors.
+        match result {
+            Ok(result) => Ok(result),
+            Err(err) => {
+                let _ = self.display_error(&mut params.stderr(self), &err).await;
+
+                let result = err.into_result(self);
+                self.set_last_exit_status(result.exit_code.into());
+
+                Ok(result)
+            }
+        }
+    }
+
+    fn tilde_shorten(&self, s: String) -> String {
+        if let Some(home_dir) = self.home_dir() {
+            if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
+                return format!("~{stripped}");
+            }
+        }
+        s
+    }
+
+    async fn display_error(
+        &self,
+        file: &mut impl std::io::Write,
+        err: &error::Error,
+    ) -> Result<(), error::Error> {
+        let str = self.error_formatter.lock().await.format_error(err);
+        write!(file, "{str}")?;
+
+        Ok(())
+    }
+
+    fn find_executables_in_path<'a>(
+        &'a self,
+        filename: &'a str,
+    ) -> impl Iterator<Item = PathBuf> + 'a {
+        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let paths = path_var.split(':').map(|s| s.to_owned());
+
+        pathsearch::search_for_executable(paths.into_iter(), filename)
+    }
 }
 
 pub use shell_builder::State as ShellBuilderState;
@@ -1221,10 +1473,6 @@ impl Shell {
         &mut self.args
     }
 
-    pub(crate) const fn last_exit_status_change_count(&self) -> usize {
-        self.last_exit_status_change_count
-    }
-
     /// Returns a mutable reference to the shell's current working directory.
     /// This is only accessible within the crate.
     pub(crate) const fn working_dir_mut(&mut self) -> &mut PathBuf {
@@ -1257,35 +1505,6 @@ impl Shell {
     ) {
         let reg = functions::Registration::new(definition, source_info);
         self.funcs.update(name.into(), reg);
-    }
-
-    /// Tries to define a function in the shell's environment using the given
-    /// string as its body.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the function
-    /// * `body_text` - The body of the function, expected to start with "()".
-    pub fn define_func_from_str(
-        &mut self,
-        name: impl Into<String>,
-        body_text: &str,
-    ) -> Result<(), error::Error> {
-        let name = name.into();
-
-        let mut parser = create_parser(body_text.as_bytes(), &self.parser_options());
-        let func_body = parser.parse_function_parens_and_body().map_err(|e| {
-            error::Error::from(error::ErrorKind::FunctionParseError(name.clone(), e))
-        })?;
-
-        let def = brush_parser::ast::FunctionDefinition {
-            fname: name.clone().into(),
-            body: func_body,
-        };
-
-        self.define_func(name, def, &crate::SourceInfo::default());
-
-        Ok(())
     }
 
     /// Loads and executes standard shell configuration files (i.e., rc and profile).
@@ -1514,68 +1733,6 @@ impl Shell {
         result
     }
 
-    /// Invokes a function defined in this shell, returning the resulting exit status.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the function to invoke.
-    /// * `args` - The arguments to pass to the function.
-    /// * `params` - Execution parameters to use for the invocation.
-    pub async fn invoke_function<N: AsRef<str>, I: IntoIterator<Item = A>, A: AsRef<str>>(
-        &mut self,
-        name: N,
-        args: I,
-        params: &ExecutionParameters,
-    ) -> Result<u8, error::Error> {
-        let name = name.as_ref();
-        let command_name = String::from(name);
-
-        let func_registration = self
-            .funcs
-            .get(name)
-            .ok_or_else(|| error::ErrorKind::FunctionNotFound(name.to_owned()))?
-            .to_owned();
-
-        let context = commands::ExecutionContext {
-            shell: self,
-            command_name,
-            params: params.clone(),
-        };
-
-        let command_args = args
-            .into_iter()
-            .map(|s| commands::CommandArg::String(String::from(s.as_ref())))
-            .collect::<Vec<_>>();
-
-        let result =
-            commands::invoke_shell_function(func_registration, context, &command_args).await?;
-
-        match result.wait().await? {
-            ExecutionWaitResult::Completed(result) => Ok(result.exit_code.into()),
-            ExecutionWaitResult::Stopped(..) => {
-                error::unimp("stopped child from function invocation")
-            }
-        }
-    }
-
-    /// Executes the given string as a shell program, returning the resulting exit status.
-    ///
-    /// # Arguments
-    ///
-    /// * `command` - The command to execute.
-    /// * `source_info` - Information about the source of the command text.
-    /// * `params` - Execution parameters.
-    pub async fn run_string<S: Into<String>>(
-        &mut self,
-        command: S,
-        source_info: &crate::SourceInfo,
-        params: &ExecutionParameters,
-    ) -> Result<ExecutionResult, error::Error> {
-        let parse_result = self.parse_string(command);
-        self.run_parsed_result(parse_result, source_info, params)
-            .await
-    }
-
     /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
     /// for the program.
     pub fn parse<R: Read>(
@@ -1586,19 +1743,6 @@ impl Shell {
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
         parser.parse_program()
-    }
-
-    /// Parses the given string as a shell program, returning the resulting Abstract Syntax Tree
-    /// for the program.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The string to parse as a program.
-    pub fn parse_string<S: Into<String>>(
-        &self,
-        s: S,
-    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        parse_string_impl(s.into(), self.parser_options())
     }
 
     /// Applies basic shell expansion to the provided string.
@@ -1688,36 +1832,6 @@ impl Shell {
         self.last_exit_status = orig_last_exit_status;
 
         result
-    }
-
-    pub(crate) async fn run_parsed_result(
-        &mut self,
-        parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
-        source_info: &crate::SourceInfo,
-        params: &ExecutionParameters,
-    ) -> Result<ExecutionResult, error::Error> {
-        // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
-        let result = match parse_result {
-            Ok(prog) => self.run_program(prog, params).await,
-            Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
-                parse_err,
-                source_info.clone(),
-            ))
-            .into_fatal()),
-        };
-
-        // Report any errors.
-        match result {
-            Ok(result) => Ok(result),
-            Err(err) => {
-                let _ = self.display_error(&mut params.stderr(self), &err).await;
-
-                let result = err.into_result(self);
-                self.set_last_exit_status(result.exit_code.into());
-
-                Ok(result)
-            }
-        }
     }
 
     /// Executes the given parsed shell program, returning the resulting exit status.
@@ -1959,21 +2073,6 @@ impl Shell {
             .await
     }
 
-    /// Finds executables in the shell's current default PATH, matching the given glob pattern.
-    ///
-    /// # Arguments
-    ///
-    /// * `required_glob_pattern` - The glob pattern to match against.
-    pub fn find_executables_in_path<'a>(
-        &'a self,
-        filename: &'a str,
-    ) -> impl Iterator<Item = PathBuf> + 'a {
-        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = path_var.split(':').map(|s| s.to_owned());
-
-        pathsearch::search_for_executable(paths.into_iter(), filename)
-    }
-
     /// Finds executables in the shell's current default PATH, with filenames matching the
     /// given prefix.
     ///
@@ -2056,20 +2155,6 @@ impl Shell {
         )?;
 
         Ok(())
-    }
-
-    /// Tilde-shortens the given string, replacing the user's home directory with a tilde.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The string to shorten.
-    pub fn tilde_shorten(&self, s: String) -> String {
-        if let Some(home_dir) = self.home_dir() {
-            if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
-                return format!("~{stripped}");
-            }
-        }
-        s
     }
 
     /// Replaces the shell's currently configured open files with the given set.
@@ -2170,23 +2255,6 @@ impl Shell {
         } else {
             Ok(None)
         }
-    }
-
-    /// Displays the given error to the user, using the shell's error display mechanisms.
-    ///
-    /// # Arguments
-    ///
-    /// * `file_table` - The open file table to use for any file descriptor references.
-    /// * `err` - The error to display.
-    pub async fn display_error(
-        &self,
-        file: &mut impl std::io::Write,
-        err: &error::Error,
-    ) -> Result<(), error::Error> {
-        let str = self.error_formatter.lock().await.format_error(err);
-        write!(file, "{str}")?;
-
-        Ok(())
     }
 }
 

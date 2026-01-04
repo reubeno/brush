@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, ShellRuntime as _,builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
 
 /// Unset a shell alias.
 #[derive(Parser)]

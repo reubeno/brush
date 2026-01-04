@@ -4,7 +4,6 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
 
-use crate::shell::Shell;
 use crate::{ShellRuntime, error, escape};
 
 /// A shell variable.

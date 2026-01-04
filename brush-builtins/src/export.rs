@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{
-    ExecutionExitCode, ExecutionResult, ShellRuntime as _,builtins,
+    ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
     parser::ast,
     variables,
