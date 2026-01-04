@@ -19,7 +19,8 @@ default = []
 basic = ["dep:crossterm", "completion"]
 completion = []
 minimal = []
-reedline = ["dep:reedline", "dep:nu-ansi-term", "completion"]
+reedline = ["dep:reedline", "dep:nu-ansi-term", "completion", "highlighting"]
+highlighting = []
 
 [lints]
 workspace = true

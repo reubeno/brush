@@ -19,8 +19,8 @@ mod term_detection;
 mod term_integration;
 mod trace_categories;
 
-mod highlighting;
-pub use highlighting::{HighlightKind, HighlightSpan, highlight_command};
+#[cfg(feature = "highlighting")]
+pub mod highlighting;
 
 #[cfg(feature = "completion")]
 mod completion;
