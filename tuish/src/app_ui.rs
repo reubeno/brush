@@ -389,9 +389,9 @@ impl AppUI {
                             let is_selected = pane_id == focused_pane_id;
 
                             if is_selected {
-                                // Selected tab: accent dot + name with content background
+                                // Selected tab: chevron indicator + bold name on content background
                                 tab_spans.push(Span::styled(
-                                    format!(" ● {t} "),
+                                    format!(" ❯ {t} "),
                                     Style::default()
                                         .fg(tab_accent)
                                         .bg(bg_base)
