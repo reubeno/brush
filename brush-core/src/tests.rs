@@ -1,6 +1,6 @@
 //! Shell test conditional expressions
 
-use crate::{ExecutionParameters, Shell, ShellRuntime, error, extendedtests};
+use crate::{ExecutionParameters, ShellRuntime, error, extendedtests};
 
 /// Evaluate the given test expression within the provided shell and
 /// execution context. Returns true if the expression evaluates to true,

@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::{Shell, ShellRuntime, ShellValue, ShellVariable, error, sys, variables};
+use crate::{ShellRuntime, ShellValue, ShellVariable, error, sys, variables};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -24,7 +24,7 @@ pub(crate) fn inherit_env_vars(shell: &mut impl ShellRuntime) -> Result<(), erro
                 // Intentionally best-effort; don't fail out of the shell if we can't
                 // parse an incoming function.
                 if shell.define_func_from_str(func_name, v.as_str()).is_ok() {
-                    shell.func_mut(func_name).unwrap().export();
+                    shell.funcs_mut().get_mut(func_name).unwrap().export();
                 }
 
                 continue;
@@ -387,7 +387,7 @@ pub(crate) fn init_well_known_vars(shell: &mut impl ShellRuntime) -> Result<(), 
 
     // RANDOM
     let mut random_var = ShellVariable::new(ShellValue::Dynamic {
-        getter: get_random_value,
+        getter: |_shell| get_random_value(),
         setter: |_| (),
     });
     random_var.treat_as_integer();
@@ -438,7 +438,7 @@ pub(crate) fn init_well_known_vars(shell: &mut impl ShellRuntime) -> Result<(), 
 
     // SRANDOM
     let mut random_var = ShellVariable::new(ShellValue::Dynamic {
-        getter: get_srandom_value,
+        getter: |_shell| get_srandom_value(),
         setter: |_| (),
     });
     random_var.treat_as_integer();
@@ -507,21 +507,21 @@ fn get_current_user_gids() -> Vec<u32> {
     groups
 }
 
-fn get_random_value(_shell: &impl ShellRuntime) -> ShellValue {
+fn get_random_value() -> ShellValue {
     let mut rng = rand::rng();
     let num = rng.random_range(0..32768);
     let str = num.to_string();
     str.into()
 }
 
-fn get_srandom_value(_shell: &impl ShellRuntime) -> ShellValue {
+fn get_srandom_value() -> ShellValue {
     let mut rng = rand::rng();
     let num: u32 = rng.random();
     let str = num.to_string();
     str.into()
 }
 
-fn get_funcname_value(shell: &impl ShellRuntime) -> variables::ShellValue {
+fn get_funcname_value(shell: &dyn ShellRuntime) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
@@ -550,7 +550,7 @@ fn get_funcname_value(shell: &impl ShellRuntime) -> variables::ShellValue {
     }
 }
 
-fn get_bash_lineno_value(shell: &impl ShellRuntime) -> variables::ShellValue {
+fn get_bash_lineno_value(shell: &dyn ShellRuntime) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     // BASH_LINENO[$i] contains the line number where FUNCNAME[$i] was called
@@ -587,7 +587,7 @@ fn get_bash_lineno_value(shell: &impl ShellRuntime) -> variables::ShellValue {
     }
 }
 
-fn get_bash_source_value(shell: &impl ShellRuntime) -> variables::ShellValue {
+fn get_bash_source_value(shell: &dyn ShellRuntime) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
@@ -623,7 +623,7 @@ fn get_bash_source_value(shell: &impl ShellRuntime) -> variables::ShellValue {
     }
 }
 
-fn get_lineno(shell: &impl ShellRuntime) -> usize {
+fn get_lineno(shell: &dyn ShellRuntime) -> usize {
     shell
         .call_stack()
         .current_frame()

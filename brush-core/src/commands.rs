@@ -13,8 +13,8 @@ use itertools::Itertools;
 use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
-    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    ShellRuntime, builtins, commands, env, error, escape, functions,
+    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, ShellFd, ShellRuntime,
+    builtins, commands, env, error, escape, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -343,7 +343,7 @@ pub struct SimpleCommand<'a, S: ShellRuntime> {
     /// that it is *not* invoked if the shell is discarded during the execution
     /// process.
     #[allow(clippy::type_complexity)]
-    pub post_execute: Option<fn(&mut Shell) -> Result<(), error::Error>>,
+    pub post_execute: Option<fn(&mut S) -> Result<(), error::Error>>,
 }
 
 impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
@@ -685,7 +685,7 @@ pub(crate) async fn invoke_shell_function<S: ShellRuntime>(
     context.shell.enter_function(
         context.command_name.as_str(),
         &function,
-        positional_args,
+        positional_args.collect(),
         &context.params,
     )?;
 
@@ -764,7 +764,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 }
 
 async fn run_substitution_command(
-    mut shell: Shell,
+    mut shell: impl ShellRuntime,
     mut params: ExecutionParameters,
     command: String,
 ) -> Result<ExecutionResult, error::Error> {

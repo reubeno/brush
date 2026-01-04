@@ -16,7 +16,7 @@ async fn define_func(shell: &mut brush_core::Shell) -> Result<()> {
         .run_string(
             script,
             &brush_core::SourceInfo::default(),
-            &shell.default_exec_params(),
+            &ExecutionParameters::default(),
         )
         .await?;
 
@@ -26,7 +26,7 @@ async fn define_func(shell: &mut brush_core::Shell) -> Result<()> {
 }
 
 async fn run_func(shell: &mut brush_core::Shell, suppress_stdout: bool) -> Result<()> {
-    let mut params = shell.default_exec_params();
+    let mut params = ExecutionParameters::default();
 
     if suppress_stdout {
         params.set_fd(

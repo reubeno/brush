@@ -75,6 +75,11 @@ impl RcLoadBehavior {
 /// options, builtins, jobs, traps, and other shell infrastructure.
 #[async_trait]
 pub trait ShellRuntime: Send {
+    /// Clones the shell runtime, yielding a subshell instance.
+    fn clone(&self) -> Self
+    where
+        Self: Sized;
+
     /// Returns the shell's official version string (if available).
     fn version(&self) -> &Option<String>;
 
@@ -220,6 +225,9 @@ pub trait ShellRuntime: Send {
     /// Returns the first character of the IFS variable, or a space if it is not set.
     fn get_ifs_first_char(&self) -> char;
 
+    /// Returns the keywords that are reserved by the shell.
+    fn get_keywords(&self) -> Vec<String>;
+
     /// Returns the shell's current home directory, if available.
     fn home_dir(&self) -> Option<PathBuf>;
 
@@ -269,7 +277,9 @@ pub trait ShellRuntime: Send {
     ) -> Option<PathBuf>;
 
     /// Updates the currently executing command in the shell.
-    fn set_current_cmd(&mut self, pos: Option<brush_parser::SourcePosition>);
+    fn set_current_cmd(&mut self, cmd: &impl brush_parser::ast::Node)
+    where
+        Self: Sized;
 
     /// Updates the shell's internal tracking state to reflect that a new shell
     /// function is being entered.
@@ -447,6 +457,10 @@ impl AsMut<Self> for Shell {
 
 #[async_trait]
 impl ShellRuntime for Shell {
+    fn clone(&self) -> Self {
+        <Self as Clone>::clone(self)
+    }
+
     fn version(&self) -> &Option<String> {
         &self.version
     }
@@ -647,6 +661,14 @@ impl ShellRuntime for Shell {
         self.ifs().chars().next().unwrap_or(' ')
     }
 
+    fn get_keywords(&self) -> Vec<String> {
+        if self.options.sh_mode {
+            keywords::SH_MODE_KEYWORDS.iter().cloned().collect()
+        } else {
+            keywords::KEYWORDS.iter().cloned().collect()
+        }
+    }
+
     fn home_dir(&self) -> Option<PathBuf> {
         if let Some(home) = self.env.get_str("HOME", self) {
             Some(PathBuf::from(home.to_string()))
@@ -725,9 +747,9 @@ impl ShellRuntime for Shell {
         }
     }
 
-    fn set_current_cmd(&mut self, pos: Option<brush_parser::SourcePosition>) {
+    fn set_current_cmd(&mut self, cmd: &impl brush_parser::ast::Node) {
         self.call_stack
-            .set_current_pos(pos.map(std::sync::Arc::new));
+            .set_current_pos(cmd.location().map(|span| span.start));
     }
 
     fn enter_function(
@@ -1144,7 +1166,7 @@ impl Shell {
         options.read(true);
 
         let mut history_file =
-            self.open_file(&options, history_path, &self.default_exec_params())?;
+            self.open_file(&options, &history_path, &ExecutionParameters::default())?;
 
         // Check on the file's size.
         if let openfiles::OpenFile::File(file) = &mut history_file {
@@ -1175,14 +1197,6 @@ impl Shell {
     /// * `delta` - The number of lines to increment the current line offset by.
     pub fn increment_interactive_line_offset(&mut self, delta: usize) {
         self.call_stack.increment_current_line_offset(delta);
-    }
-
-    /// Updates the currently executing command in the shell.
-    pub fn set_current_cmd(&mut self, cmd: &impl brush_parser::ast::Node) {
-        <Self as ShellRuntime>::set_current_cmd(
-            self,
-            cmd.location().map(|span| span.start.as_ref().clone()),
-        );
     }
 
     /// Returns a mutable reference to *current* positional parameters for the shell
@@ -1245,16 +1259,6 @@ impl Shell {
         self.funcs.update(name.into(), reg);
     }
 
-    /// Tries to return a mutable reference to the registration for a named function.
-    /// Returns `None` if no such function was found.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the function to lookup
-    pub fn func_mut(&mut self, name: &str) -> Option<&mut functions::Registration> {
-        self.funcs.get_mut(name)
-    }
-
     /// Tries to define a function in the shell's environment using the given
     /// string as its body.
     ///
@@ -1295,8 +1299,10 @@ impl Shell {
         profile_behavior: &ProfileLoadBehavior,
         rc_behavior: &RcLoadBehavior,
     ) -> Result<(), error::Error> {
-        let mut params = self.default_exec_params();
-        params.process_group_policy = interp::ProcessGroupPolicy::SameProcessGroup;
+        let params = ExecutionParameters {
+            process_group_policy: interp::ProcessGroupPolicy::SameProcessGroup,
+            ..ExecutionParameters::default()
+        };
 
         if self.options.login_shell {
             // --noprofile means skip this.
@@ -1624,11 +1630,6 @@ impl Shell {
         Ok(result)
     }
 
-    /// Returns the default execution parameters for this shell.
-    pub fn default_exec_params(&self) -> ExecutionParameters {
-        ExecutionParameters::default()
-    }
-
     /// Executes the given script file, returning the resulting exit status.
     ///
     /// # Arguments
@@ -1640,7 +1641,7 @@ impl Shell {
         script_path: P,
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
-        let params = self.default_exec_params();
+        let params = ExecutionParameters::default();
         let result = self
             .parse_and_execute_script_file(
                 script_path.as_ref(),
@@ -1670,8 +1671,10 @@ impl Shell {
         };
 
         // TODO(traps): Confirm whether trap handlers should be executed in the same process group.
-        let mut params = self.default_exec_params();
-        params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+        let params = ExecutionParameters {
+            process_group_policy: ProcessGroupPolicy::SameProcessGroup,
+            ..ExecutionParameters::default()
+        };
 
         let orig_last_exit_status = self.last_exit_status;
 
@@ -1781,7 +1784,7 @@ impl Shell {
         let prev_last_pipeline_statuses = self.last_pipeline_statuses.clone();
 
         // Expand it.
-        let params = self.default_exec_params();
+        let params = ExecutionParameters::default();
         let result = prompt::expand_prompt(self, &params, prompt_spec.into_owned()).await;
 
         // Restore the last exit status.
@@ -2011,31 +2014,6 @@ impl Shell {
         None
     }
 
-    /// Gets the absolute form of the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to get the absolute form of.
-    pub fn absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
-        <Self as ShellRuntime>::absolute_path(self, path.as_ref())
-    }
-
-    /// Opens the given file, using the context of this shell and the provided execution parameters.
-    ///
-    /// # Arguments
-    ///
-    /// * `options` - The options to use opening the file.
-    /// * `path` - The path to the file to open; may be relative to the shell's working directory.
-    /// * `params` - Execution parameters.
-    pub(crate) fn open_file(
-        &self,
-        options: &std::fs::OpenOptions,
-        path: impl AsRef<Path>,
-        params: &ExecutionParameters,
-    ) -> Result<openfiles::OpenFile, std::io::Error> {
-        <Self as ShellRuntime>::open_file(self, options, path.as_ref(), params)
-    }
-
     /// Sets the shell's current working directory to the given path.
     ///
     /// # Arguments
@@ -2123,15 +2101,6 @@ impl Shell {
         self.open_files.try_stderr().cloned().unwrap()
     }
 
-    /// Returns the keywords that are reserved by the shell.
-    pub(crate) fn get_keywords(&self) -> Vec<String> {
-        if self.options.sh_mode {
-            keywords::SH_MODE_KEYWORDS.iter().cloned().collect()
-        } else {
-            keywords::KEYWORDS.iter().cloned().collect()
-        }
-    }
-
     /// Checks if the given string is a keyword reserved in this shell.
     ///
     /// # Arguments
@@ -2214,7 +2183,7 @@ impl Shell {
         file: &mut impl std::io::Write,
         err: &error::Error,
     ) -> Result<(), error::Error> {
-        let str = self.error_formatter.lock().await.format_error(err, self);
+        let str = self.error_formatter.lock().await.format_error(err);
         write!(file, "{str}")?;
 
         Ok(())

@@ -2003,7 +2003,7 @@ mod tests {
     #[tokio::test]
     async fn test_full_expansion() -> Result<()> {
         let mut shell = crate::shell::Shell::builder().build().await?;
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
 
         assert_eq!(
             full_expand_and_split_word(&mut shell, &params, "\"\"").await?,
@@ -2040,7 +2040,7 @@ mod tests {
     #[tokio::test]
     async fn test_brace_expansion() -> Result<()> {
         let mut shell = crate::shell::Shell::builder().build().await?;
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let expander = WordExpander::new(&mut shell, &params);
 
         assert_eq!(expander.brace_expand_if_needed("abc")?, "abc");
@@ -2058,7 +2058,7 @@ mod tests {
     #[tokio::test]
     async fn test_field_splitting() -> Result<()> {
         let mut shell = crate::shell::Shell::builder().build().await?;
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let expander = WordExpander::new(&mut shell, &params);
 
         let expansion = Expansion {

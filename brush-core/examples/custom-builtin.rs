@@ -130,7 +130,7 @@ async fn run_example() -> Result<()> {
         .run_string(
             "greet -n 4",
             &brush_core::SourceInfo::default(),
-            &shell.default_exec_params(),
+            &ExecutionParameters::default(),
         )
         .await?;
     println!("Exit code: {}\n", u8::from(result.exit_code));
