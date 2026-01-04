@@ -80,7 +80,7 @@ impl HighlightSpan {
 /// A vector of highlighted spans covering the entire input string.
 #[must_use]
 pub fn highlight_command(
-    shell: &brush_core::Shell,
+    shell: &impl brush_core::ShellRuntime,
     line: &str,
     cursor: usize,
 ) -> Vec<HighlightSpan> {
@@ -99,8 +99,8 @@ enum CommandType {
     Unknown,
 }
 
-struct Highlighter<'a> {
-    shell: &'a brush_core::Shell,
+struct Highlighter<'a, S: brush_core::ShellRuntime> {
+    shell: &'a S,
     cursor: usize,
     spans: Vec<HighlightSpan>,
     remaining_chars: Chars<'a>,
@@ -108,8 +108,8 @@ struct Highlighter<'a> {
     next_missing_kind: Option<HighlightKind>,
 }
 
-impl<'a> Highlighter<'a> {
-    fn new(shell: &'a brush_core::Shell, input_line: &'a str, cursor: usize) -> Self {
+impl<'a, S: brush_core::ShellRuntime> Highlighter<'a, S> {
+    fn new(shell: &'a S, input_line: &'a str, cursor: usize) -> Self {
         Self {
             shell,
             cursor,

@@ -81,7 +81,7 @@ impl<S: brush_core::ShellRuntime> reedline::Highlighter for ReedlineHighlighter<
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
-        let spans = highlighting::highlight_command(shell.as_ref(), line, cursor);
+        let spans = highlighting::highlight_command(&*shell, line, cursor);
 
         let mut styled = reedline::StyledText::new();
         for span in spans {
