@@ -1,3 +1,5 @@
+use brush_core::ShellRuntime as _;
+
 use crate::refs;
 
 pub(crate) struct ReedlineValidator {

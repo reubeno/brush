@@ -406,7 +406,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
                     let _ = shell
                         .invoke_function(
                             func_name,
-                            &[command_line],
+                            [command_line],
                             &brush_core::ExecutionParameters::default(),
                         )
                         .await;

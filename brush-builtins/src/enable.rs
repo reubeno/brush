@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, ShellRuntime as _};
+use brush_core::ExecutionResult;
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
