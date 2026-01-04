@@ -45,7 +45,7 @@ impl ContentPane for EnvironmentPane {
         // Try to get shell variables without blocking
         let variables = if let Ok(shell) = self.shell.try_lock() {
             let mut vars: Vec<(String, String)> = shell
-                .env
+                .env()
                 .iter()
                 .map(|(name, var)| (name.clone(), var.value().to_cow_str(&shell).into_owned()))
                 .collect();

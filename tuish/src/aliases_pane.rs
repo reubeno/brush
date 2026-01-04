@@ -45,7 +45,7 @@ impl ContentPane for AliasesPane {
         // Try to get shell aliases without blocking
         let aliases = if let Ok(shell) = self.shell.try_lock() {
             let mut aliases: Vec<(String, String)> = shell
-                .aliases
+                .aliases()
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone()))
                 .collect();
