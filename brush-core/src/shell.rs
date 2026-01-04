@@ -432,6 +432,20 @@ pub trait ShellRuntime: Send {
     ) -> impl Iterator<Item = PathBuf> + 'a
     where
         Self: Sized;
+
+    /// Finds executables in the shell's current default PATH, with filenames matching the
+    /// given prefix.
+    ///
+    /// # Arguments
+    ///
+    /// * `filename_prefix` - The prefix to match against executable filenames.
+    fn find_executables_in_path_with_prefix(
+        &self,
+        filename_prefix: &str,
+        case_insensitive: bool,
+    ) -> impl Iterator<Item = PathBuf>
+    where
+        Self: Sized;
 }
 
 /// Represents an instance of a shell.
@@ -1095,6 +1109,21 @@ impl ShellRuntime for Shell {
         let paths = path_var.split(':').map(|s| s.to_owned());
 
         pathsearch::search_for_executable(paths.into_iter(), filename)
+    }
+
+    fn find_executables_in_path_with_prefix(
+        &self,
+        filename_prefix: &str,
+        case_insensitive: bool,
+    ) -> impl Iterator<Item = PathBuf> {
+        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let paths = path_var.split(':').map(|s| s.to_owned());
+
+        pathsearch::search_for_executable_with_prefix(
+            paths.into_iter(),
+            filename_prefix,
+            case_insensitive,
+        )
     }
 }
 
@@ -2071,27 +2100,6 @@ impl Shell {
         completion_config
             .get_completions(self, input, position)
             .await
-    }
-
-    /// Finds executables in the shell's current default PATH, with filenames matching the
-    /// given prefix.
-    ///
-    /// # Arguments
-    ///
-    /// * `filename_prefix` - The prefix to match against executable filenames.
-    pub fn find_executables_in_path_with_prefix(
-        &self,
-        filename_prefix: &str,
-        case_insensitive: bool,
-    ) -> impl Iterator<Item = PathBuf> {
-        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = path_var.split(':').map(|s| s.to_owned());
-
-        pathsearch::search_for_executable_with_prefix(
-            paths.into_iter(),
-            filename_prefix,
-            case_insensitive,
-        )
     }
 
     /// Determines whether the given filename is the name of an executable in one of the
