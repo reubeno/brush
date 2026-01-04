@@ -6,7 +6,6 @@ use std::collections::hash_map;
 
 use crate::ShellRuntime;
 use crate::error;
-use crate::shell;
 use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
 
 /// Represents the policy for looking up variables in a shell environment.
@@ -270,7 +269,11 @@ impl ShellEnvironment {
     ///
     /// * `name` - The name of the variable to retrieve.
     /// * `shell` - The shell owning the environment.
-    pub fn get_str<S: AsRef<str>>(&self, name: S, shell: &shell::Shell) -> Option<Cow<'_, str>> {
+    pub fn get_str<S: AsRef<str>>(
+        &self,
+        name: S,
+        shell: &impl ShellRuntime,
+    ) -> Option<Cow<'_, str>> {
         self.get(name.as_ref())
             .map(|(_, v)| v.value().to_cow_str(shell))
     }

@@ -11,7 +11,9 @@ pub trait ShellBuilderExt {
     fn default_builtins(self, set: BuiltinSet) -> Self;
 }
 
-impl<S: brush_core::ShellBuilderState> ShellBuilderExt for brush_core::ShellBuilder<S> {
+impl<SB: brush_core::ShellBehavior, S: brush_core::ShellBuilderState> ShellBuilderExt
+    for brush_core::ShellBuilder<SB, S>
+{
     fn default_builtins(self, set: BuiltinSet) -> Self {
         self.builtins(crate::default_builtins(set))
     }

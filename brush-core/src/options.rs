@@ -2,7 +2,7 @@
 
 use itertools::Itertools;
 
-use crate::{CreateOptions, namedoptions};
+use crate::{CreateOptions, namedoptions, shell::ShellBehavior};
 
 /// Runtime changeable options for a shell instance.
 #[derive(Clone, Default)]
@@ -208,7 +208,7 @@ impl RuntimeOptions {
     /// # Arguments
     ///
     /// * `create_options` - The options used to create the shell.
-    pub fn defaults_from(create_options: &CreateOptions) -> Self {
+    pub fn defaults_from<SB: ShellBehavior>(create_options: &CreateOptions<SB>) -> Self {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {
             interactive: create_options.interactive,

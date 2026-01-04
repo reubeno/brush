@@ -620,9 +620,22 @@ pub trait ShellRuntime: Send + Sync + 'static {
         Self: Sized;
 }
 
+/// Trait for defining shell behavior.
+pub trait ShellBehavior: Clone + Default + Send + Sync + 'static {}
+
+/// Default shell behavior implementation.
+#[derive(Clone, Default)]
+pub struct DefaultShellBehavior;
+
+impl ShellBehavior for DefaultShellBehavior {}
+
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Shell {
+pub struct Shell<SB: ShellBehavior = DefaultShellBehavior> {
+    /// Injected shell behavior.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_shell_behavior"))]
+    behavior: SB,
+
     /// Trap handler configuration for the shell.
     traps: traps::TrapHandlerConfig,
 
@@ -707,9 +720,10 @@ pub struct Shell {
     error_formatter: ErrorFormatterHelper,
 }
 
-impl Clone for Shell {
+impl<SB: ShellBehavior> Clone for Shell<SB> {
     fn clone(&self) -> Self {
         Self {
+            behavior: self.behavior.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -740,20 +754,20 @@ impl Clone for Shell {
     }
 }
 
-impl AsRef<Self> for Shell {
+impl<SB: ShellBehavior> AsRef<Self> for Shell<SB> {
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl AsMut<Self> for Shell {
+impl<SB: ShellBehavior> AsMut<Self> for Shell<SB> {
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
 #[async_trait]
-impl ShellRuntime for Shell {
+impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
     fn clone_subshell(&self) -> Self {
         <Self as Clone>::clone(self)
     }
@@ -1519,10 +1533,10 @@ impl ShellRuntime for Shell {
 
 pub use shell_builder::State as ShellBuilderState;
 
-impl<S: shell_builder::IsComplete> ShellBuilder<S> {
+impl<SB: ShellBehavior, S: shell_builder::IsComplete> ShellBuilder<SB, S> {
     /// Returns a new shell instance created with the options provided. Runs any
     /// configuration loading as well.
-    pub async fn build(self) -> Result<Shell, error::Error> {
+    pub async fn build(self) -> Result<Shell<SB>, error::Error> {
         let mut options = self.build_settings();
 
         let profile = std::mem::take(&mut options.profile);
@@ -1540,7 +1554,7 @@ impl<S: shell_builder::IsComplete> ShellBuilder<S> {
     }
 }
 
-impl<S: shell_builder::State> ShellBuilder<S> {
+impl<SB: ShellBehavior, S: shell_builder::State> ShellBuilder<SB, S> {
     /// Add a disabled option
     pub fn disable_option(mut self, option: impl Into<String>) -> Self {
         self.disabled_options.push(option.into());
@@ -1594,7 +1608,11 @@ impl<S: shell_builder::State> ShellBuilder<S> {
     }
 
     /// Add a single builtin registration
-    pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration<Shell>) -> Self {
+    pub fn builtin(
+        mut self,
+        name: impl Into<String>,
+        reg: builtins::Registration<Shell<SB>>,
+    ) -> Self {
         self.builtins.insert(name.into(), reg);
         self
     }
@@ -1602,7 +1620,7 @@ impl<S: shell_builder::State> ShellBuilder<S> {
     /// Add many builtin registrations
     pub fn builtins(
         mut self,
-        builtins: impl IntoIterator<Item = (String, builtins::Registration<Shell>)>,
+        builtins: impl IntoIterator<Item = (String, builtins::Registration<Shell<SB>>)>,
     ) -> Self {
         self.builtins.extend(builtins);
         self
@@ -1631,7 +1649,10 @@ impl<S: shell_builder::State> ShellBuilder<S> {
         vis = "pub(self)"
     )
 )]
-pub struct CreateOptions {
+pub struct CreateOptions<SB: ShellBehavior = DefaultShellBehavior> {
+    /// Behavior implementation for the shell.
+    #[builder(start_fn)]
+    pub behavior: SB,
     /// Disabled options.
     #[builder(field)]
     pub disabled_options: Vec<String>,
@@ -1646,7 +1667,7 @@ pub struct CreateOptions {
     pub enabled_shopt_options: Vec<String>,
     /// Registered builtins.
     #[builder(field)]
-    pub builtins: HashMap<String, builtins::Registration<Shell>>,
+    pub builtins: HashMap<String, builtins::Registration<Shell<SB>>>,
     /// Provides a set of variables to be initialized in the shell. If present, they
     /// are assigned *after* inherited or well-known variables are set (when applicable).
     #[builder(field)]
@@ -1730,9 +1751,10 @@ pub struct CreateOptions {
     pub shell_version: Option<String>,
 }
 
-impl Default for Shell {
+impl<SB: ShellBehavior> Default for Shell<SB> {
     fn default() -> Self {
         Self {
+            behavior: SB::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: PathBuf::default(),
@@ -1765,8 +1787,15 @@ impl Default for Shell {
 
 impl Shell {
     /// Create an instance of [Shell] using the builder syntax
-    pub fn builder() -> ShellBuilder<shell_builder::Empty> {
-        CreateOptions::builder()
+    pub fn builder() -> ShellBuilder<DefaultShellBehavior, shell_builder::Empty> {
+        CreateOptions::builder(DefaultShellBehavior)
+    }
+}
+
+impl<SB: ShellBehavior> Shell<SB> {
+    /// Create an instance of [Shell] using the builder syntax
+    pub fn builder_with_behavior(behavior: SB) -> ShellBuilder<SB, shell_builder::Empty> {
+        CreateOptions::builder(behavior)
     }
 
     /// Returns a new shell instance created with the given options.
@@ -1775,7 +1804,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub(crate) fn new(options: CreateOptions) -> Result<Self, error::Error> {
+    pub(crate) fn new(options: CreateOptions<SB>) -> Result<Self, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             open_files: openfiles::OpenFiles::new(),
@@ -2404,4 +2433,8 @@ fn repeated_char_str(c: char, count: usize) -> String {
 
 fn default_error_formatter() -> ErrorFormatterHelper {
     Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))
+}
+
+fn default_shell_behavior<SB: ShellBehavior>() -> SB {
+    SB::default()
 }
