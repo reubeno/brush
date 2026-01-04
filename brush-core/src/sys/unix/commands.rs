@@ -4,7 +4,6 @@ pub use std::os::unix::process::CommandExt;
 pub use std::os::unix::process::ExitStatusExt;
 
 use command_fds::{CommandFdExt, FdMapping};
-use nix::libc::NET_UNIX;
 
 use crate::ShellFd;
 use crate::error;
@@ -89,9 +88,14 @@ fn pre_exec_lead_session() -> Result<(), std::io::Error> {
         )));
     }
 
+    #[cfg(not(target_os = "macos"))]
+    let control = libc::TIOCSCTTY;
+    #[cfg(target_os = "macos")]
+    let control: u64 = libc::TIOCSCTTY.into();
+
     // SAFETY:
     // This is calling a libc function to set the controlling terminal.
-    let result = unsafe { libc::ioctl(0, libc::TIOCSCTTY, 0) };
+    let result = unsafe { libc::ioctl(0, control, 0) };
     if result != 0 {
         return Err(std::io::Error::other("failed to set controlling terminal"));
     }
