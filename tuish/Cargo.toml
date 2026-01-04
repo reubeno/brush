@@ -26,8 +26,10 @@ brush-builtins = { version = "^0.1.0", path = "../brush-builtins" }
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 brush-interactive = { version = "^0.3.0", path = "../brush-interactive" }
 chrono = "0.4.42"
-ratatui = "0.29.0"
-tui-term = { version = "0.2.0", features = ["vt100"] }
+ratatui = "0.30.0"
+tui-term = { git = "https://github.com/a-kenji/tui-term", branch = "development", features = [
+    "vt100",
+] }
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 libc = "0.2"
 vt100 = "0.15.2"
