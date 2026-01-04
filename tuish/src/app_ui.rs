@@ -292,16 +292,13 @@ impl AppUI {
         let layout = &self.layout;
 
         self.terminal.draw(|f| {
-            // Split for nav banner if needed
-            let (content_area, nav_area) = if navigation_mode {
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Min(10), Constraint::Length(1)])
-                    .split(f.area());
-                (chunks[0], Some(chunks[1]))
-            } else {
-                (f.area(), None)
-            };
+            // Always reserve space for hint bar at bottom
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(10), Constraint::Length(1)])
+                .split(f.area());
+            let content_area = chunks[0];
+            let hint_bar_area = chunks[1];
 
             // Track pane rects for cursor positioning
             let mut pane_rects: HashMap<PaneId, ratatui::layout::Rect> = HashMap::new();
@@ -511,43 +508,41 @@ impl AppUI {
                 }
             }
 
-            // Render navigation banner at bottom if in navigation mode
-            if let Some(nav_rect) = nav_area {
-                let nav_text = if self.marked_pane_for_move.is_some() {
-                    // Special message when a pane is marked
-                    " 󰃀 MARKED: Navigate to target region (n/p) then press Shift+M to MOVE pane here, or Esc to cancel "
-                } else {
-                    // Normal navigation help
-                    let num_regions = layout.get_all_region_ids().len();
-                    let region_nav = if num_regions > 1 {
-                        ", n/p=region"
-                    } else {
-                        ""
-                    };
-                    
-                    &format!(
-                        " ⚡ NAV: t/e/h/a/f/c=panes, i=input, Tab=cycle{region_nav}, v/s=split, m=mark, Esc=exit "
+            // Render hint bar at bottom (always visible, style changes based on mode)
+            let (hint_text, bg_color, fg_color) = if navigation_mode {
+                if self.marked_pane_for_move.is_some() {
+                    // Gold background when a pane is marked for moving
+                    (
+                        " 󰃀 MARKED: Navigate to target region (n/p) then press Shift+M to MOVE pane here, or Esc to cancel ".to_string(),
+                        Color::Rgb(255, 215, 0),  // Gold
+                        Color::Rgb(0, 0, 0),
                     )
-                };
-                
-                let (bg_color, fg_color) = if self.marked_pane_for_move.is_some() {
-                    // Gold background when marked (matches border)
-                    (Color::Rgb(255, 215, 0), Color::Rgb(0, 0, 0))
                 } else {
                     // Yellow background for normal nav mode
-                    (Color::Rgb(250, 204, 21), Color::Rgb(0, 0, 0))
-                };
-                
-                let nav_indicator = Paragraph::new(nav_text)
-                    .style(
-                        Style::default()
-                            .bg(bg_color)
-                            .fg(fg_color)
-                            .add_modifier(Modifier::BOLD)
+                    (
+                        " ⚡ NAV: t/e/h/a/f/c=panes, i=input, Tab=cycle, Ctrl+Space=region, v/s=split, m=mark, Esc=exit ".to_string(),
+                        Color::Rgb(250, 204, 21),  // Yellow
+                        Color::Rgb(0, 0, 0),
                     )
-                    .alignment(Alignment::Center);
-                f.render_widget(nav_indicator, nav_rect);
-            }
+                }
+            } else {
+                // Normal mode: muted hint bar
+                (
+                    " Ctrl+Space: switch panes │ Ctrl+B: navigation mode ".to_string(),
+                    Color::Rgb(60, 60, 70),   // Dark gray
+                    Color::Rgb(160, 160, 170), // Light gray text
+                )
+            };
+
+            let hint_bar = Paragraph::new(hint_text.as_str())
+                .style(
+                    Style::default()
+                        .bg(bg_color)
+                        .fg(fg_color)
+                        .add_modifier(if navigation_mode { Modifier::BOLD } else { Modifier::empty() })
+                )
+                .alignment(Alignment::Center);
+            f.render_widget(hint_bar, hint_bar_area);
         })?;
 
         Ok(())
@@ -820,54 +815,7 @@ impl AppUI {
                     self.set_focus_to_command_input();
                 }
 
-                // Navigation: Next region (stays in mode)
-                KeyCode::Char('n') if self.navigation_mode => {
-                    // Unfocus current pane in current region
-                    if let Some(region_id) = self.layout.focused_region_id() {
-                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                let _ =
-                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                            }
-                        }
-                    }
 
-                    // Move to next region
-                    self.layout.focus_next_region();
-
-                    // Focus the pane in new region
-                    if let Some(region_id) = self.layout.focused_region_id() {
-                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                            }
-                        }
-                    }
-                }
-                // Navigation: Previous region (stays in mode)
-                KeyCode::Char('p') if self.navigation_mode => {
-                    // Unfocus current pane in current region
-                    if let Some(region_id) = self.layout.focused_region_id() {
-                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                let _ =
-                                    pane.handle_event(crate::content_pane::PaneEvent::Unfocused);
-                            }
-                        }
-                    }
-
-                    // Move to previous region
-                    self.layout.focus_prev_region();
-
-                    // Focus the pane in new region
-                    if let Some(region_id) = self.layout.focused_region_id() {
-                        if let Some(pane_id) = self.store.get_region_focused_pane(region_id) {
-                            if let Some(pane) = self.store.get_pane_mut(pane_id) {
-                                let _ = pane.handle_event(crate::content_pane::PaneEvent::Focused);
-                            }
-                        }
-                    }
-                }
                 // Navigation mode: Tab to cycle tabs/panes in current region (forward)
                 KeyCode::Tab
                     if self.navigation_mode && !key.modifiers.contains(KeyModifiers::SHIFT) =>
@@ -920,11 +868,10 @@ impl AppUI {
                         }
                     }
                 }
-                // Navigation mode: Ctrl+Space exits nav mode and cycles regions
+                // Navigation mode: Ctrl+Space cycles regions (stays in nav mode)
                 KeyCode::Char(' ')
                     if self.navigation_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
                 {
-                    self.navigation_mode = false;
                     self.focus_next_region();
                 }
                 // Action: Split vertical (exits mode - new pane is ready to use)

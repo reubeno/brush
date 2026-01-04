@@ -182,6 +182,7 @@ impl LayoutManager {
     }
 
     /// Focuses the previous region in the layout.
+    #[allow(dead_code)]
     pub fn focus_prev_region(&mut self) {
         let regions = self.get_all_region_ids();
         if regions.is_empty() {
