@@ -288,7 +288,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         let line_count = read_result.lines().count().max(1);
 
         // Execute the command.
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let source_info = brush_core::SourceInfo::from("main");
         let result = match shell.run_string(read_result, &source_info, &params).await {
             Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
@@ -367,7 +367,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
                         .invoke_function(
                             func_name,
                             std::iter::empty::<&str>(),
-                            &shell.default_exec_params(),
+                            &ExecutionParameters::default(),
                         )
                         .await;
                 }
@@ -403,7 +403,11 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
             {
                 for func_name in preexec_funcs.values() {
                     let _ = shell
-                        .invoke_function(func_name, &[command_line], &shell.default_exec_params())
+                        .invoke_function(
+                            func_name,
+                            &[command_line],
+                            &ExecutionParameters::default(),
+                        )
                         .await;
                 }
             }
@@ -430,7 +434,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         let prev_last_pipeline_statuses = shell.last_pipeline_statuses().to_vec();
 
         // Run the command.
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let source_info = brush_core::SourceInfo::from("PROMPT_COMMAND");
         shell.run_string(prompt_cmd, &source_info, &params).await?;
 

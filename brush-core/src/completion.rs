@@ -10,8 +10,8 @@ use std::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    ShellRuntime, commands, env, error, escape, expansion, interfaces, jobs, namedoptions,
-    patterns,
+    ExecutionParameters, ShellRuntime, commands, env, error, escape, expansion, interfaces, jobs,
+    namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
@@ -273,7 +273,7 @@ impl Spec {
         // Generate completions based on any provided actions (and on words).
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
-            let params = shell.default_exec_params();
+            let params = ExecutionParameters::default();
             let words =
                 crate::expansion::full_expand_and_split_word(shell, &params, word_list).await?;
             for word in words {
@@ -648,7 +648,7 @@ impl Spec {
         }
 
         // Run the command.
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let output =
             commands::invoke_command_in_subshell_and_get_output(&mut shell, &params, command_line)
                 .await?;
@@ -714,7 +714,7 @@ impl Spec {
         // handler depth count to suppress any debug traps.
         shell.enter_trap_handler(None);
 
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let invoke_result = shell
             .invoke_function(function_name, args.iter(), &params)
             .await;
@@ -1138,14 +1138,13 @@ async fn get_file_completions(
 ) -> IndexSet<String> {
     // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
     let mut throwaway_shell = shell.clone();
-    let params = throwaway_shell.default_exec_params();
     let options = expansion::ExpanderOptions {
         execute_command_substitutions: false,
         ..Default::default()
     };
     let expanded_token = expansion::basic_expand_word_with_options(
         &mut throwaway_shell,
-        &params,
+        &ExecutionParameters::default(),
         &unquote_str(token_to_complete),
         &options,
     )

@@ -32,14 +32,14 @@ mod unix {
             .run_string(
                 command.to_owned(),
                 &brush_core::SourceInfo::default(),
-                &shell.default_exec_params(),
+                &ExecutionParameters::default(),
             )
             .await
             .unwrap();
     }
 
     async fn expand_string(shell: &mut brush_core::Shell, s: &str) {
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let _ = shell.basic_expand_string(&params, s).await.unwrap();
     }
 

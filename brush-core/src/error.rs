@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Shell, ShellFd, ShellRuntime, results, sys};
+use crate::{ShellFd, ShellRuntime, results, sys};
 
 /// Unified error type for this crate. Contains just a kind for now,
 /// but will be extended later with additional context.

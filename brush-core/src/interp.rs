@@ -598,7 +598,7 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::Command {
                 }
 
                 Ok(compound
-                    .execute(&mut pipeline_context.shell, &params)
+                    .execute(&mut *pipeline_context.shell, &params)
                     .await?
                     .into())
             }
@@ -711,7 +711,7 @@ impl<S: ShellRuntime> Execute<S> for ast::ForClauseCommand {
                     shell
                         .trace_command(
                             params,
-                            std::format!(
+                            &std::format!(
                                 "for {} in {}",
                                 self.variable_name,
                                 unexpanded_values.iter().join(" ")
@@ -1039,9 +1039,9 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::SimpleCommand {
         for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
+                    if let Err(e) = setup_redirect(&mut *context.shell, &mut params, redirect).await
                     {
-                        writeln!(params.stderr(&context.shell), "error: {e}")?;
+                        writeln!(params.stderr(&*context.shell), "error: {e}")?;
                         return Ok(ExecutionResult::general_error().into());
                     }
                 }
@@ -1780,7 +1780,7 @@ fn setup_process_substitution(
         // Intentionally ignore the result of the subshell command.
         let _ = subshell_cmd
             .list
-            .execute(&mut *subshell, &child_params)
+            .execute(&mut subshell, &child_params)
             .await;
     });
 
