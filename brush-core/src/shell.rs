@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
-use crate::interp::{self, Execute, ExecutionParameters};
+use crate::interp::{Execute, ExecutionParameters};
 use crate::options::RuntimeOptions;
 use crate::results::ExecutionWaitResult;
 use crate::sys::fs::PathExt;
@@ -74,8 +74,9 @@ impl RcLoadBehavior {
 /// This trait provides access to the core shell state including variables,
 /// options, builtins, jobs, traps, and other shell infrastructure.
 #[async_trait]
-pub trait ShellRuntime: Send {
+pub trait ShellRuntime: Send + Sync + 'static {
     /// Clones the shell runtime, yielding a subshell instance.
+    #[must_use]
     fn clone(&self) -> Self
     where
         Self: Sized;
@@ -340,6 +341,22 @@ pub trait ShellRuntime: Send {
     where
         Self: Sized;
 
+    /// Defines a function in the shell's environment. If a function already exists
+    /// with the given name, it is replaced with the new definition.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to define.
+    /// * `definition` - The function's definition.
+    /// * `source_info` - Source information for the function definition.
+    fn define_func(
+        &mut self,
+        name: impl Into<String>,
+        definition: brush_parser::ast::FunctionDefinition,
+        source_info: &crate::SourceInfo,
+    ) where
+        Self: Sized;
+
     /// Invokes the named function, passing the given arguments, and returns the
     /// exit status of the function.
     ///
@@ -348,7 +365,11 @@ pub trait ShellRuntime: Send {
     /// * `name` - The name of the function to invoke.
     /// * `args` - The arguments to pass to the function.
     /// * `params` - Execution parameters to use for the invocation.
-    async fn invoke_function<N: AsRef<str>, I: IntoIterator<Item = A>, A: AsRef<str>>(
+    async fn invoke_function<
+        N: AsRef<str> + Send,
+        I: IntoIterator<Item = A> + Send,
+        A: AsRef<str> + Send,
+    >(
         &mut self,
         name: N,
         args: I,
@@ -364,7 +385,7 @@ pub trait ShellRuntime: Send {
     /// * `command` - The command to execute.
     /// * `source_info` - Information about the source of the command text.
     /// * `params` - Execution parameters.
-    async fn run_string<S: Into<String>>(
+    async fn run_string<S: Into<String> + Send>(
         &mut self,
         command: S,
         source_info: &crate::SourceInfo,
@@ -379,7 +400,7 @@ pub trait ShellRuntime: Send {
     /// # Arguments
     ///
     /// * `s` - The string to parse as a program.
-    fn parse_string<S: Into<String>>(
+    fn parse_string<S: Into<String> + Send>(
         &self,
         s: S,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError>
@@ -415,7 +436,7 @@ pub trait ShellRuntime: Send {
     /// * `err` - The error to display.
     async fn display_error(
         &self,
-        file: &mut impl std::io::Write,
+        file: &mut (impl std::io::Write + Send),
         err: &error::Error,
     ) -> Result<(), error::Error>
     where
@@ -861,11 +882,11 @@ impl ShellRuntime for Shell {
         &mut self,
         candidate_name: &str,
     ) -> Option<PathBuf> {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+        if let Some(cached_path) = self.program_location_cache.get(candidate_name) {
             Some(cached_path)
         } else if let Some(found_path) = self.find_first_executable_in_path(candidate_name) {
             self.program_location_cache
-                .set(&candidate_name, found_path.clone());
+                .set(candidate_name, found_path.clone());
             Some(found_path)
         } else {
             None
@@ -996,7 +1017,21 @@ impl ShellRuntime for Shell {
         Ok(())
     }
 
-    async fn invoke_function<N: AsRef<str>, I: IntoIterator<Item = A>, A: AsRef<str>>(
+    fn define_func(
+        &mut self,
+        name: impl Into<String>,
+        definition: brush_parser::ast::FunctionDefinition,
+        source_info: &crate::SourceInfo,
+    ) {
+        let reg = functions::Registration::new(definition, source_info);
+        self.funcs.update(name.into(), reg);
+    }
+
+    async fn invoke_function<
+        N: AsRef<str> + Send,
+        I: IntoIterator<Item = A> + Send,
+        A: AsRef<str> + Send,
+    >(
         &mut self,
         name: N,
         args: I,
@@ -1033,7 +1068,7 @@ impl ShellRuntime for Shell {
         }
     }
 
-    async fn run_string<S: Into<String>>(
+    async fn run_string<S: Into<String> + Send>(
         &mut self,
         command: S,
         source_info: &crate::SourceInfo,
@@ -1044,7 +1079,7 @@ impl ShellRuntime for Shell {
             .await
     }
 
-    fn parse_string<S: Into<String>>(
+    fn parse_string<S: Into<String> + Send>(
         &self,
         s: S,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
@@ -1092,7 +1127,7 @@ impl ShellRuntime for Shell {
 
     async fn display_error(
         &self,
-        file: &mut impl std::io::Write,
+        file: &mut (impl std::io::Write + Send),
         err: &error::Error,
     ) -> Result<(), error::Error> {
         let str = self.error_formatter.lock().await.format_error(err);
@@ -1518,24 +1553,6 @@ impl Shell {
         self.funcs.remove(name).is_some()
     }
 
-    /// Defines a function in the shell's environment. If a function already exists
-    /// with the given name, it is replaced with the new definition.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the function to define.
-    /// * `definition` - The function's definition.
-    /// * `source_info` - Source information for the function definition.
-    pub fn define_func(
-        &mut self,
-        name: impl Into<String>,
-        definition: brush_parser::ast::FunctionDefinition,
-        source_info: &crate::SourceInfo,
-    ) {
-        let reg = functions::Registration::new(definition, source_info);
-        self.funcs.update(name.into(), reg);
-    }
-
     /// Loads and executes standard shell configuration files (i.e., rc and profile).
     ///
     /// # Arguments
@@ -1547,10 +1564,8 @@ impl Shell {
         profile_behavior: &ProfileLoadBehavior,
         rc_behavior: &RcLoadBehavior,
     ) -> Result<(), error::Error> {
-        let params = ExecutionParameters {
-            process_group_policy: interp::ProcessGroupPolicy::SameProcessGroup,
-            ..ExecutionParameters::default()
-        };
+        let mut params = ExecutionParameters::default();
+        params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
         if self.options.login_shell {
             // --noprofile means skip this.
@@ -1844,10 +1859,8 @@ impl Shell {
         };
 
         // TODO(traps): Confirm whether trap handlers should be executed in the same process group.
-        let params = ExecutionParameters {
-            process_group_policy: ProcessGroupPolicy::SameProcessGroup,
-            ..ExecutionParameters::default()
-        };
+        let mut params = ExecutionParameters::default();
+        params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
         let orig_last_exit_status = self.last_exit_status;
 
@@ -2176,10 +2189,6 @@ impl Shell {
         open_fds: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
     ) {
         self.open_files = openfiles::OpenFiles::from(open_fds);
-    }
-
-    pub(crate) const fn persistent_open_files(&self) -> &openfiles::OpenFiles {
-        &self.open_files
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
