@@ -1211,6 +1211,17 @@ impl AppUI {
             }
         });
 
+        // Initialize prompt before first render
+        if let Ok(mut shell_guard) = self.shell.try_lock() {
+            if let Ok(prompt) = shell_guard.compose_prompt().await {
+                let mut parser = vt100::Parser::new(1, 1000, 0);
+                parser.process(prompt.as_bytes());
+                self.command_input_handle
+                    .borrow_mut()
+                    .set_cached_prompt(parser.screen().contents());
+            }
+        }
+
         // Initial render
         self.render()?;
 
