@@ -1,8 +1,8 @@
 //! Terminal content pane with command-grouped history.
 //!
 //! This module provides a terminal pane that displays command output in discrete,
-//! navigable blocks. Completed commands appear as styled text blocks, stacked
-//! vertically with the live terminal at the bottom.
+//! navigable blocks. All output (completed and in-progress) is shown in a unified
+//! scrollable view.
 
 use std::sync::{Arc, RwLock};
 
@@ -21,9 +21,6 @@ const MAX_COMMAND_DISPLAY_LENGTH: usize = 50;
 
 /// Maximum number of command output blocks to keep in history.
 const MAX_HISTORY_BLOCKS: usize = 100;
-
-/// Minimum height allocated to the live terminal area.
-const MIN_LIVE_TERMINAL_HEIGHT: u16 = 4;
 
 /// A completed command's output, stored as styled text.
 #[derive(Clone)]
@@ -51,7 +48,6 @@ impl CommandOutputBlock {
 
     /// Returns the number of content lines (excluding empty trailing lines).
     fn content_line_count(&self) -> usize {
-        // Trim trailing empty lines
         let mut count = self.lines.len();
         for line in self.lines.iter().rev() {
             if line.spans.is_empty() || line.spans.iter().all(|s| s.content.trim().is_empty()) {
@@ -60,14 +56,11 @@ impl CommandOutputBlock {
                 break;
             }
         }
-        count.max(1) // At least 1 line
+        count.max(1)
     }
 }
 
 /// A content pane that displays PTY terminal output with command-grouped history.
-///
-/// Shows stacked command output blocks with the live terminal at the bottom.
-/// Supports scrolling through history while maintaining the live terminal visible.
 pub struct TerminalPane {
     /// History of completed command output blocks.
     history: Vec<CommandOutputBlock>,
@@ -82,11 +75,14 @@ pub struct TerminalPane {
     /// Whether the terminal pane is currently focused.
     is_focused: bool,
     /// Last known dimensions (rows, cols) for PTY resize.
-    last_dimensions: (u16, u16),
-    /// Scroll offset (in lines) for viewing history.
+    last_pty_dimensions: (u16, u16),
+    /// Scroll offset (in lines) for viewing history. 0 = viewing from top.
+    /// `usize::MAX` is a sentinel for "auto-scroll to bottom".
     scroll_offset: usize,
-    /// Total scrollable content height (cached).
-    total_content_height: usize,
+    /// Cached total line count from last render (used to normalize scroll offset).
+    last_total_lines: usize,
+    /// Cached visible height from last render.
+    last_visible_height: usize,
 }
 
 impl TerminalPane {
@@ -103,9 +99,10 @@ impl TerminalPane {
             pty_handle,
             running_command: None,
             is_focused: false,
-            last_dimensions: (0, 0),
-            scroll_offset: 0,
-            total_content_height: 0,
+            last_pty_dimensions: (0, 0),
+            scroll_offset: usize::MAX, // Start scrolled to bottom
+            last_total_lines: 0,
+            last_visible_height: 40, // Reasonable default
         }
     }
 
@@ -144,8 +141,7 @@ impl TerminalPane {
         }
 
         self.running_command = None;
-        self.recalculate_content_height();
-        // Auto-scroll to bottom to show new content
+        // Auto-scroll to bottom
         self.scroll_offset = usize::MAX;
     }
 
@@ -176,13 +172,29 @@ impl TerminalPane {
         }
     }
 
-    /// Recalculates the total scrollable content height.
-    fn recalculate_content_height(&mut self) {
-        self.total_content_height = self
-            .history
-            .iter()
-            .map(|b| b.content_line_count() + 2) // +2 for header and separator
-            .sum();
+    /// Captures the current live terminal output as styled lines.
+    #[allow(clippy::significant_drop_tightening)]
+    fn capture_live_output(&self) -> Vec<Line<'static>> {
+        let parser_guard = self.shared_parser.read().unwrap();
+        let screen = parser_guard.screen();
+        let formatted = screen.contents_formatted();
+        drop(parser_guard);
+
+        if let Ok(text) = formatted.into_text() {
+            text.lines
+                .into_iter()
+                .map(|line| {
+                    let owned_spans: Vec<Span<'static>> = line
+                        .spans
+                        .into_iter()
+                        .map(|span| Span::styled(span.content.into_owned(), span.style))
+                        .collect();
+                    Line::from(owned_spans)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Sends raw bytes to the PTY.
@@ -192,17 +204,35 @@ impl TerminalPane {
             .try_send(Bytes::copy_from_slice(bytes.as_ref()));
     }
 
+    /// Processes output from the PTY (for compatibility).
+    #[allow(dead_code)]
+    pub fn process_output(&self, data: &[u8]) {
+        let mut parser = self.shared_parser.write().unwrap();
+        parser.process(data);
+    }
+
     /// Returns whether we're in alternate screen mode.
     fn is_alternate_screen(&self) -> bool {
         let parser = self.shared_parser.read().unwrap();
         parser.screen().alternate_screen()
     }
 
-    /// Renders a command block header line.
+    /// Ensures PTY is sized to the given dimensions.
+    fn ensure_pty_size(&mut self, height: u16, width: u16) {
+        let new_dimensions = (height, width);
+        if new_dimensions != self.last_pty_dimensions && height > 0 && width > 0 {
+            if let Err(e) = self.pty_handle.resize(height, width) {
+                tracing::warn!("Failed to resize PTY: {}", e);
+            }
+            self.last_pty_dimensions = new_dimensions;
+        }
+    }
+
+    /// Renders a completed block header.
     fn render_block_header(block: &CommandOutputBlock, width: u16) -> Line<'static> {
         let exit_indicator = match block.exit_code {
             Some(0) => ("✓", Color::Green),
-            Some(_code) => ("✗", Color::Red),
+            Some(_) => ("✗", Color::Red),
             None => ("⚠", Color::Yellow),
         };
 
@@ -218,87 +248,111 @@ impl TerminalPane {
         };
 
         let timestamp = block.timestamp.format("%H:%M:%S").to_string();
+        let remaining_width =
+            (width as usize).saturating_sub(cmd_display.len() + timestamp.len() + 15);
 
         Line::from(vec![
             Span::styled(
-                format!("─── {}", exit_indicator.0),
+                format!("─── {} ", exit_indicator.0),
                 Style::default().fg(exit_indicator.1),
             ),
             Span::styled(
-                format!(" {cmd_display} "),
+                cmd_display,
                 Style::default()
                     .fg(Color::Rgb(180, 180, 200))
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("[{timestamp}] "),
+                format!(" [{timestamp}] "),
                 Style::default().fg(Color::DarkGray),
             ),
             Span::styled(
-                "─".repeat(
-                    (width as usize).saturating_sub(cmd_display.len() + timestamp.len() + 15),
-                ),
+                "─".repeat(remaining_width),
                 Style::default().fg(Color::Rgb(60, 60, 80)),
             ),
         ])
     }
 
-    /// Renders all history blocks and the live terminal.
-    #[allow(clippy::too_many_lines)]
-    fn render_stacked_view(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        if area.height < 2 {
-            return;
-        }
-
-        // Reserve space for live terminal at the bottom
-        let live_height = if self.running_command.is_some() {
-            // When a command is running, give it more space
-            (area.height / 2).max(MIN_LIVE_TERMINAL_HEIGHT)
+    /// Renders a "running" block header for the current command.
+    fn render_running_header(command: &str, width: u16) -> Line<'static> {
+        let cmd_display: String = if command.chars().count() > MAX_COMMAND_DISPLAY_LENGTH {
+            let truncated: String = command.chars().take(MAX_COMMAND_DISPLAY_LENGTH).collect();
+            format!("{truncated}...")
         } else {
-            // When idle, just show the prompt
-            MIN_LIVE_TERMINAL_HEIGHT
+            command.to_string()
         };
 
-        let history_height = area.height.saturating_sub(live_height);
+        let remaining_width = (width as usize).saturating_sub(cmd_display.len() + 15);
 
-        // Render history blocks in the top area
-        if history_height > 0 && !self.history.is_empty() {
-            let history_area = Rect::new(area.x, area.y, area.width, history_height);
-            self.render_history_blocks(frame, history_area);
-        }
-
-        // Render live terminal at the bottom
-        let live_area = Rect::new(area.x, area.y + history_height, area.width, live_height);
-        self.render_live_terminal(frame, live_area);
+        Line::from(vec![
+            Span::styled("─── ⟳ ", Style::default().fg(Color::Rgb(139, 92, 246))),
+            Span::styled(
+                cmd_display,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" [running] ", Style::default().fg(Color::Rgb(139, 92, 246))),
+            Span::styled(
+                "─".repeat(remaining_width),
+                Style::default().fg(Color::Rgb(80, 80, 120)),
+            ),
+        ])
     }
 
-    /// Renders the history blocks section.
-    fn render_history_blocks(&self, frame: &mut Frame<'_>, area: Rect) {
-        // Build all lines from history blocks
+    /// Builds all lines for the unified scrollable view.
+    fn build_all_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut all_lines: Vec<Line<'static>> = Vec::new();
 
+        // Add completed history blocks
         for block in &self.history {
-            // Add header
-            all_lines.push(Self::render_block_header(block, area.width));
-
-            // Add content lines (trimmed)
+            all_lines.push(Self::render_block_header(block, width));
             let content_count = block.content_line_count();
             for line in block.lines.iter().take(content_count) {
                 all_lines.push(line.clone());
             }
-
-            // Add subtle separator
-            all_lines.push(Line::raw(""));
+            all_lines.push(Line::raw("")); // Separator
         }
 
-        // Apply scroll offset
-        let visible_height = area.height as usize;
-        let total_lines = all_lines.len();
+        // Add running command output if any
+        if let Some(ref cmd) = self.running_command {
+            all_lines.push(Self::render_running_header(cmd, width));
+            let live_lines = self.capture_live_output();
+            // Trim trailing empty lines from live output
+            let mut live_count = live_lines.len();
+            for line in live_lines.iter().rev() {
+                if line.spans.is_empty() || line.spans.iter().all(|s| s.content.trim().is_empty()) {
+                    live_count = live_count.saturating_sub(1);
+                } else {
+                    break;
+                }
+            }
+            for line in live_lines.into_iter().take(live_count.max(1)) {
+                all_lines.push(line);
+            }
+        }
 
-        // Auto-scroll to bottom if at the end
+        all_lines
+    }
+
+    /// Renders the unified scrollable view of all blocks.
+    fn render_unified_view(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        // Always keep PTY sized to full area (for apps like nvim that may use alternate screen)
+        self.ensure_pty_size(area.height, area.width);
+
+        let all_lines = self.build_all_lines(area.width);
+        let total_lines = all_lines.len();
+        let visible_height = area.height as usize;
+
+        // Cache dimensions for scroll calculations
+        self.last_total_lines = total_lines;
+        self.last_visible_height = visible_height;
+
+        // Clamp scroll offset
         let max_scroll = total_lines.saturating_sub(visible_height);
         let effective_scroll = self.scroll_offset.min(max_scroll);
 
+        // Get visible slice
         let visible_lines: Vec<Line<'static>> = all_lines
             .into_iter()
             .skip(effective_scroll)
@@ -308,7 +362,7 @@ impl TerminalPane {
         let paragraph = Paragraph::new(visible_lines);
         frame.render_widget(paragraph, area);
 
-        // Render scrollbar if needed
+        // Render scrollbar if content overflows
         if total_lines > visible_height {
             let mut scrollbar_state = ScrollbarState::default()
                 .content_length(total_lines)
@@ -321,60 +375,37 @@ impl TerminalPane {
         }
     }
 
-    /// Renders the live terminal section.
+    /// Renders the terminal fullscreen for alternate screen mode (vim, nvim, etc.).
     #[allow(clippy::significant_drop_tightening)]
-    fn render_live_terminal(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        // Draw a subtle separator line at the top
-        if area.height > 1 {
-            let separator = Line::from(vec![
-                Span::styled(
-                    "─".repeat(area.width as usize / 3),
-                    Style::default().fg(Color::Rgb(80, 80, 100)),
-                ),
-                Span::styled(" live ", Style::default().fg(Color::Rgb(139, 92, 246))),
-                Span::styled(
-                    "─".repeat(area.width as usize / 3),
-                    Style::default().fg(Color::Rgb(80, 80, 100)),
-                ),
-            ]);
-            let sep_area = Rect::new(area.x, area.y, area.width, 1);
-            frame.render_widget(
-                Paragraph::new(separator).alignment(Alignment::Center),
-                sep_area,
-            );
-        }
-
-        // Terminal area below separator
-        let term_area = Rect::new(
-            area.x,
-            area.y + 1,
-            area.width,
-            area.height.saturating_sub(1),
-        );
-
-        // Resize PTY if needed
-        let new_dimensions = (term_area.height, term_area.width);
-        if new_dimensions != self.last_dimensions && term_area.height > 0 && term_area.width > 0 {
-            if let Err(e) = self.pty_handle.resize(term_area.height, term_area.width) {
-                tracing::warn!("Failed to resize PTY: {}", e);
-            }
-            self.last_dimensions = new_dimensions;
-        }
+    fn render_fullscreen_terminal(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        // Ensure PTY is sized to full area
+        self.ensure_pty_size(area.height, area.width);
 
         let parser = self.shared_parser.read().unwrap();
         let screen = parser.screen();
         let cursor = tui_term::widget::Cursor::default().visibility(self.is_focused);
         let pseudo_term = PseudoTerminal::new(screen).cursor(cursor);
-        frame.render_widget(pseudo_term, term_area);
+        frame.render_widget(pseudo_term, area);
     }
 
-    /// Scrolls history up (negative) or down (positive).
+    /// Scrolls up by the given number of lines.
     fn scroll_up(&mut self, lines: usize) {
+        // If at auto-scroll sentinel (usize::MAX), normalize to actual max first
+        if self.scroll_offset == usize::MAX {
+            // Compute actual max scroll position from cached values
+            self.scroll_offset = self
+                .last_total_lines
+                .saturating_sub(self.last_visible_height);
+        }
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
     }
 
-    /// Scrolls history down.
+    /// Scrolls down by the given number of lines.
     fn scroll_down(&mut self, lines: usize) {
+        // If at auto-scroll sentinel, scrolling down is a no-op (already at bottom)
+        if self.scroll_offset == usize::MAX {
+            return;
+        }
         self.scroll_offset = self.scroll_offset.saturating_add(lines);
     }
 
@@ -396,12 +427,21 @@ impl TerminalPane {
         if self.history.is_empty() {
             return;
         }
-        // Find which block we're currently in
+
+        // Normalize scroll_offset from sentinel value
+        let effective_scroll = if self.scroll_offset == usize::MAX {
+            self.last_total_lines
+                .saturating_sub(self.last_visible_height)
+        } else {
+            self.scroll_offset
+        };
+
+        // Find which block we're currently viewing
         let mut current_block = 0;
         let mut offset = 0;
         for (idx, block) in self.history.iter().enumerate() {
             let block_end = offset + 1 + block.content_line_count() + 1;
-            if self.scroll_offset < block_end {
+            if effective_scroll < block_end {
                 current_block = idx;
                 break;
             }
@@ -409,7 +449,7 @@ impl TerminalPane {
             current_block = idx;
         }
         // Jump to previous block (or start of current if not at start)
-        if self.scroll_offset > self.block_start_offset(current_block) {
+        if effective_scroll > self.block_start_offset(current_block) {
             self.scroll_offset = self.block_start_offset(current_block);
         } else if current_block > 0 {
             self.scroll_offset = self.block_start_offset(current_block - 1);
@@ -423,12 +463,21 @@ impl TerminalPane {
         if self.history.is_empty() {
             return;
         }
-        // Find which block we're currently in
+
+        // Normalize scroll_offset from sentinel value
+        let effective_scroll = if self.scroll_offset == usize::MAX {
+            self.last_total_lines
+                .saturating_sub(self.last_visible_height)
+        } else {
+            self.scroll_offset
+        };
+
+        // Find which block we're currently viewing
         let mut current_block = 0;
         let mut offset = 0;
         for (idx, block) in self.history.iter().enumerate() {
             let block_end = offset + 1 + block.content_line_count() + 1;
-            if self.scroll_offset < block_end {
+            if effective_scroll < block_end {
                 current_block = idx;
                 break;
             }
@@ -439,28 +488,9 @@ impl TerminalPane {
         if current_block + 1 < self.history.len() {
             self.scroll_offset = self.block_start_offset(current_block + 1);
         } else {
-            // Already at last block, scroll to end
+            // At last completed block - jump to running command or end
             self.scroll_offset = usize::MAX;
         }
-    }
-
-    /// Renders the terminal fullscreen (for alternate screen mode like vim/nvim).
-    #[allow(clippy::significant_drop_tightening)]
-    fn render_fullscreen_terminal(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        // Resize PTY to full area
-        let new_dimensions = (area.height, area.width);
-        if new_dimensions != self.last_dimensions && area.height > 0 && area.width > 0 {
-            if let Err(e) = self.pty_handle.resize(area.height, area.width) {
-                tracing::warn!("Failed to resize PTY: {}", e);
-            }
-            self.last_dimensions = new_dimensions;
-        }
-
-        let parser = self.shared_parser.read().unwrap();
-        let screen = parser.screen();
-        let cursor = tui_term::widget::Cursor::default().visibility(self.is_focused);
-        let pseudo_term = PseudoTerminal::new(screen).cursor(cursor);
-        frame.render_widget(pseudo_term, area);
     }
 
     /// Handles a key press to be forwarded to the PTY.
@@ -472,9 +502,7 @@ impl TerminalPane {
                     self.send_to_pty(vec![ctrl_code]);
                 }
             }
-            KeyCode::Char(c) => {
-                self.send_to_pty(c.to_string().into_bytes());
-            }
+            KeyCode::Char(c) => self.send_to_pty(c.to_string().into_bytes()),
             KeyCode::Enter => self.send_to_pty(vec![b'\r']),
             KeyCode::Backspace => self.send_to_pty(vec![0x7f]),
             KeyCode::Tab => self.send_to_pty(vec![b'\t']),
@@ -511,13 +539,6 @@ impl TerminalPane {
         }
         PaneEventResult::Handled
     }
-
-    /// Processes output from the PTY (for compatibility).
-    #[allow(dead_code)]
-    pub fn process_output(&self, data: &[u8]) {
-        let mut parser = self.shared_parser.write().unwrap();
-        parser.process(data);
-    }
 }
 
 impl ContentPane for TerminalPane {
@@ -547,14 +568,14 @@ impl ContentPane for TerminalPane {
             ratatui::widgets::Block::default().style(Style::default().bg(Color::Rgb(18, 18, 26)));
         frame.render_widget(bg, area);
 
-        // In alternate screen mode, show only the live terminal (full screen, no separator)
+        // In alternate screen mode (vim, nvim, etc.), render PTY directly fullscreen
         if self.is_alternate_screen() {
             self.render_fullscreen_terminal(frame, area);
             return;
         }
 
-        // Otherwise show stacked history + live terminal
-        self.render_stacked_view(frame, area);
+        // Otherwise, render unified scrollable view of all blocks
+        self.render_unified_view(frame, area);
     }
 
     fn handle_event(&mut self, event: PaneEvent) -> PaneEventResult {
@@ -568,8 +589,14 @@ impl ContentPane for TerminalPane {
                 PaneEventResult::Handled
             }
             PaneEvent::KeyPress(key, modifiers) => {
-                // Ctrl+Shift+Up/Down jumps between blocks
-                if modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT) {
+                // Ctrl+Shift+Up/Down OR Alt+Up/Down jumps between blocks
+                // (Alt variant provided since many terminals intercept Ctrl+Shift+arrows)
+                let has_ctrl_shift =
+                    modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+                let has_alt = modifiers.contains(KeyModifiers::ALT)
+                    && !modifiers.contains(KeyModifiers::SHIFT);
+
+                if has_ctrl_shift || has_alt {
                     match key {
                         KeyCode::Up => {
                             self.jump_to_previous_block();
@@ -583,7 +610,7 @@ impl ContentPane for TerminalPane {
                     }
                 }
 
-                // Shift+PageUp/PageDown scrolls history
+                // Shift+keys for scrolling - these ALWAYS work regardless of running command
                 if modifiers.contains(KeyModifiers::SHIFT) {
                     match key {
                         KeyCode::PageUp => {
@@ -607,15 +634,34 @@ impl ContentPane for TerminalPane {
                             return PaneEventResult::Handled;
                         }
                         KeyCode::End => {
-                            self.scroll_offset = usize::MAX; // Will be clamped
+                            self.scroll_offset = usize::MAX;
                             return PaneEventResult::Handled;
                         }
-                        _ => {}
+                        _ => {} // Other Shift+key combos fall through
                     }
                 }
 
-                // Forward other keys to PTY
-                self.handle_pty_key(key, modifiers)
+                // If a command is running, forward all other keys to PTY
+                if self.running_command.is_some() {
+                    return self.handle_pty_key(key, modifiers);
+                }
+
+                // No command running - only accept Ctrl+C, reject character input
+                // but let navigation keys through
+                match key {
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.send_to_pty(vec![3]); // Ctrl+C
+                        PaneEventResult::Handled
+                    }
+                    // Block character input when idle - let app handle it
+                    KeyCode::Char(_) => PaneEventResult::NotHandled,
+                    KeyCode::Enter | KeyCode::Backspace | KeyCode::Tab => {
+                        PaneEventResult::NotHandled
+                    }
+                    // Allow other keys (arrows, etc.) to be handled as "we got it but nothing to
+                    // do"
+                    _ => PaneEventResult::Handled,
+                }
             }
             PaneEvent::Resized { .. } => PaneEventResult::NotHandled,
         }
