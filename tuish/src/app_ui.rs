@@ -457,7 +457,7 @@ impl AppUI {
                     } else {
                         // Single pane in region - render with border
                         let pane_id = focused_pane_id;
-                        let accent = Color::Rgb(139, 92, 246); // Purple accent
+                        let accent = Color::Rgb(45, 212, 191); // Teal accent (distinct from purple terminal)
 
                         let border_color = if is_focused_region {
                             accent

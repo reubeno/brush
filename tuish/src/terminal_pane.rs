@@ -144,29 +144,39 @@ impl TerminalPane {
         self.scroll_offset = usize::MAX;
     }
 
+    /// Clears all command history blocks.
+    pub fn clear_history(&mut self) {
+        self.history.clear();
+        self.scroll_offset = usize::MAX;
+        // Also clear the terminal screen
+        let mut parser = self.shared_parser.write().unwrap();
+        parser.process(b"\x1b[2J\x1b[H");
+    }
+
     /// Captures styled output from the vt100 parser using cell-by-cell rendering.
+    /// Note: This only captures visible screen content. For complete command output
+    /// with many lines, the PTY should be sized large enough to hold all output.
     #[allow(clippy::significant_drop_tightening)]
     fn capture_styled_output(parser: &Arc<RwLock<vt100::Parser>>) -> Vec<Line<'static>> {
         let parser_guard = parser.read().unwrap();
         let screen = parser_guard.screen();
         let size = screen.size();
-        let (rows, cols) = (size.0 as usize, size.1 as usize);
+        let (visible_rows, cols) = (size.0 as usize, size.1 as usize);
 
         // Theme background - use this when cell has default/black background
         let theme_bg = Color::Rgb(22, 22, 30);
 
-        let mut lines = Vec::with_capacity(rows);
+        let mut lines = Vec::with_capacity(visible_rows);
 
-        for row in 0..rows {
+        for row in 0..visible_rows {
             let mut spans: Vec<Span<'static>> = Vec::new();
             let mut current_text = String::new();
             let mut current_style: Option<Style> = None;
 
+            #[allow(clippy::cast_possible_truncation)]
             for col in 0..cols {
-                let cell = screen.cell(row as u16, col as u16);
-                let cell = match cell {
-                    Some(c) => c,
-                    None => continue,
+                let Some(cell) = screen.cell(row as u16, col as u16) else {
+                    continue;
                 };
 
                 let ch = cell.contents();
@@ -252,11 +262,10 @@ impl TerminalPane {
             let mut current_text = String::new();
             let mut current_style: Option<Style> = None;
 
+            #[allow(clippy::cast_possible_truncation)]
             for col in 0..cols {
-                let cell = screen.cell(row as u16, col as u16);
-                let cell = match cell {
-                    Some(c) => c,
-                    None => continue,
+                let Some(cell) = screen.cell(row as u16, col as u16) else {
+                    continue;
                 };
 
                 let ch = cell.contents();
@@ -324,6 +333,7 @@ impl TerminalPane {
     }
 
     /// Converts a vt100 color to a ratatui color.
+    #[allow(clippy::missing_const_for_fn)]
     fn convert_vt100_color(color: vt100::Color) -> Color {
         match color {
             vt100::Color::Default => Color::Reset,
@@ -549,6 +559,7 @@ impl TerminalPane {
     }
 
     /// Scrolls up by the given number of lines.
+    #[allow(clippy::missing_const_for_fn)]
     fn scroll_up(&mut self, lines: usize) {
         // If at auto-scroll sentinel (usize::MAX), normalize to actual max first
         if self.scroll_offset == usize::MAX {
@@ -561,6 +572,7 @@ impl TerminalPane {
     }
 
     /// Scrolls down by the given number of lines.
+    #[allow(clippy::missing_const_for_fn)]
     fn scroll_down(&mut self, lines: usize) {
         // If at auto-scroll sentinel, scrolling down is a no-op (already at bottom)
         if self.scroll_offset == usize::MAX {
@@ -804,6 +816,12 @@ impl ContentPane for TerminalPane {
                 // If a command is running, forward all other keys to PTY
                 if self.running_command.is_some() {
                     return self.handle_pty_key(key, modifiers);
+                }
+
+                // Ctrl+L clears all history blocks (works always)
+                if key == KeyCode::Char('l') && modifiers.contains(KeyModifiers::CONTROL) {
+                    self.clear_history();
+                    return PaneEventResult::Handled;
                 }
 
                 // No command running - only accept Ctrl+C, reject character input
