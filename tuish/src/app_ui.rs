@@ -339,7 +339,6 @@ impl AppUI {
                     let bg_base = Color::Rgb(22, 22, 30);      // Main background
                     let bg_surface = Color::Rgb(30, 30, 40);   // Elevated surfaces
                     let bg_highlight = Color::Rgb(45, 45, 60); // Hover/selected
-                    let text_primary = Color::Rgb(230, 230, 245);
                     let text_muted = Color::Rgb(140, 140, 160);
                     let border_dim = Color::Rgb(55, 55, 75);
 
@@ -419,31 +418,39 @@ impl AppUI {
                         };
 
                         // Get title from selected pane
-                        let mut title = store.get_pane(focused_pane_id)
-                            .map_or_else(
-                                || "Pane".to_string(),
-                                |p| p.border_title().unwrap_or_else(|| p.name().to_string())
-                            );
-                        
-                        if is_marked {
-                            title = format!("󰃀 MARKED: {title}");
-                        }
+                        // For tabbed panes: only show border_title() if set (avoids redundancy with tab name)
+                        // Panes can set border_title() for dynamic status (e.g., "Running: cmd")
+                        let title = if is_marked {
+                            // When marked, include the pane name for context
+                            let pane_name = store.get_pane(focused_pane_id)
+                                .map_or("Pane", |p| p.name());
+                            format!("󰃀 MARKED: {pane_name}")
+                        } else {
+                            store.get_pane(focused_pane_id)
+                                .and_then(|p| p.border_title())
+                                .unwrap_or_default()
+                        };
 
                         let title_style = if is_marked {
                             Style::default().fg(Color::Rgb(255, 215, 0)).add_modifier(Modifier::BOLD)
                         } else if is_focused_region {
-                            Style::default().fg(text_primary).add_modifier(Modifier::BOLD)
+                            // Use accent color for title foreground
+                            Style::default().fg(accent).add_modifier(Modifier::BOLD)
                         } else {
                             Style::default().fg(text_muted)
                         };
 
                         // Clean, minimal border - no title icon clutter
-                        let block = Block::default()
+                        let mut block = Block::default()
                             .borders(Borders::ALL)
                             .border_type(if is_marked { BorderType::Double } else { BorderType::Rounded })
                             .border_style(Style::default().fg(border_color))
-                            .style(Style::default().bg(bg_base))
-                            .title(Line::from(format!(" {title} ")).style(title_style));
+                            .style(Style::default().bg(bg_base));
+                        
+                        // Only add title if non-empty (avoids gap in border)
+                        if !title.is_empty() {
+                            block = block.title(Line::from(format!(" {title} ")).style(title_style));
+                        }
 
                         let inner = block.inner(region_chunks[1]);
                         f.render_widget(block, region_chunks[1]);
@@ -465,6 +472,7 @@ impl AppUI {
                             border_dim
                         };
 
+                        // For single-pane regions (e.g., Command Input): always show name as title
                         let title = store.get_pane(pane_id)
                             .map_or_else(
                                 || "Pane".to_string(),
@@ -472,7 +480,8 @@ impl AppUI {
                             );
 
                         let title_style = if is_focused_region {
-                            Style::default().fg(text_primary).add_modifier(Modifier::BOLD)
+                            // Use accent color for title foreground
+                            Style::default().fg(accent).add_modifier(Modifier::BOLD)
                         } else {
                             Style::default().fg(text_muted)
                         };
