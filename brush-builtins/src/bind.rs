@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use tokio::sync::Mutex;
 
 use brush_core::{
-    ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins,
+    ExecutionExitCode, ExecutionResult, builtins,
     interfaces::{self, InputFunction, KeyAction, KeySequence},
     sys, trace_categories,
 };
@@ -122,9 +122,9 @@ impl From<&BindError> for brush_core::ExecutionExitCode {
 impl builtins::Command for BindCommand {
     type Error = BindError;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(key_bindings) = context.shell.key_bindings() {
             Ok(self.execute_impl(key_bindings, &context).await?)
@@ -141,10 +141,10 @@ impl builtins::Command for BindCommand {
 
 impl BindCommand {
     #[allow(clippy::too_many_lines)]
-    async fn execute_impl(
+    async fn execute_impl<S: brush_core::ShellRuntime>(
         &self,
         bindings: &Arc<Mutex<dyn interfaces::KeyBindings>>,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, S>,
     ) -> Result<ExecutionResult, BindError> {
         let mut bindings = bindings.lock().await;
 
@@ -440,9 +440,9 @@ const fn to_onoff(value: bool) -> &'static str {
     if value { "on" } else { "off" }
 }
 
-fn display_funcs_and_bindings(
+fn display_funcs_and_bindings<S: brush_core::ShellRuntime>(
     bindings: &dyn interfaces::KeyBindings,
-    context: &brush_core::ExecutionContext<'_>,
+    context: &brush_core::ExecutionContext<'_, S>,
     reusable: bool,
 ) -> Result<(), BindError> {
     let mut sequences_by_func: HashMap<InputFunction, Vec<KeySequence>> = HashMap::new();
@@ -484,9 +484,9 @@ fn display_funcs_and_bindings(
     Ok(())
 }
 
-fn display_macros(
+fn display_macros<S: brush_core::ShellRuntime>(
     bindings: &dyn interfaces::KeyBindings,
-    context: &brush_core::ExecutionContext<'_>,
+    context: &brush_core::ExecutionContext<'_, S>,
     reusable: bool,
 ) -> Result<(), BindError> {
     for (left, right) in bindings.get_macros() {

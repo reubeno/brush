@@ -17,8 +17,8 @@ impl builtins::SimpleCommand for TrueCommand {
         }
     }
 
-    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
-        _context: brush_core::ExecutionContext<'_>,
+    fn execute<I: Iterator<Item = S>, S: AsRef<str>, SR: brush_core::ShellRuntime>(
+        _context: brush_core::ExecutionContext<'_, SR>,
         _args: I,
     ) -> Result<ExecutionResult, brush_core::Error> {
         Ok(ExecutionResult::success())

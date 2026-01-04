@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
-    ExecutionResult, ShellRuntime as _, builtins, commands, pathsearch,
+    ExecutionResult, builtins, commands, pathsearch,
     sys::{self, fs::PathExt},
 };
 
@@ -35,10 +35,10 @@ impl CommandCommand {
 impl builtins::Command for CommandCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
             if self.print_description || self.print_verbose_description {
@@ -92,7 +92,7 @@ impl Display for FoundCommand {
 
 impl CommandCommand {
     fn try_find_command(
-        shell: &mut brush_core::Shell,
+        shell: &mut impl brush_core::ShellRuntime,
         command_name: &str,
         use_default_path: bool,
     ) -> Option<FoundCommand> {
@@ -127,9 +127,9 @@ impl CommandCommand {
         }
     }
 
-    async fn execute_command(
+    async fn execute_command<S: brush_core::ShellRuntime>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, S>,
         command_name: &str,
         use_default_path: bool,
     ) -> Result<ExecutionResult, brush_core::Error> {

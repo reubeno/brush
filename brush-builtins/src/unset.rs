@@ -2,9 +2,7 @@ use std::borrow::Cow;
 
 use clap::Parser;
 
-use brush_core::{
-    ExecutionResult, Shell, ShellRuntime as _, ShellValue, builtins, variables::ShellValueUnsetType,
-};
+use brush_core::{ExecutionResult, ShellValue, builtins, variables::ShellValueUnsetType};
 
 /// Unset a variable.
 #[derive(Parser)]
@@ -41,9 +39,9 @@ impl UnsetNameInterpretation {
 impl builtins::Command for UnsetCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         //
         // TODO(nameref): implement nameref
@@ -96,7 +94,7 @@ impl builtins::Command for UnsetCommand {
 }
 
 fn unset_array_index(
-    shell: &mut Shell,
+    shell: &mut impl brush_core::ShellRuntime,
     name: &str,
     index: &str,
 ) -> Result<bool, brush_core::Error> {

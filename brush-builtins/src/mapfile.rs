@@ -2,7 +2,7 @@ use std::io::Read;
 
 use clap::Parser;
 
-use brush_core::{ErrorKind, ExecutionResult, ShellRuntime as _, builtins, env, error, variables};
+use brush_core::{ErrorKind, ExecutionResult, builtins, env, error, variables};
 
 /// Inspect and modify key bindings and other input configuration.
 #[derive(Parser)]
@@ -47,9 +47,9 @@ pub(crate) struct MapFileCommand {
 impl builtins::Command for MapFileCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.origin != 0 {
             // This will require merging into a potentially already-existing array.

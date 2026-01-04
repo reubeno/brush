@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins, error, history};
+use brush_core::{ExecutionResult, builtins, error, history};
 use clap::Parser;
 use std::io::Write;
 
@@ -37,10 +37,10 @@ pub(crate) struct FcCommand {
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.substitute {
             return self.do_execute(context).await;
         }
@@ -54,9 +54,9 @@ impl builtins::Command for FcCommand {
 }
 
 impl FcCommand {
-    fn do_list(
+    fn do_list<S: brush_core::ShellRuntime>(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, S>,
     ) -> Result<ExecutionResult, brush_core::Error> {
         let history = context
             .shell
@@ -87,9 +87,9 @@ impl FcCommand {
         Ok(ExecutionResult::success())
     }
 
-    async fn do_execute(
+    async fn do_execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<ExecutionResult, brush_core::Error> {
         let history = context
             .shell

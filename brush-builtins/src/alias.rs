@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
+use brush_core::{ExecutionResult, builtins};
 
 /// Manage aliases within the shell.
 #[derive(Parser)]
@@ -18,9 +18,9 @@ pub(crate) struct AliasCommand {
 impl builtins::Command for AliasCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
 

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
+use brush_core::{ExecutionResult, builtins};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DirError {
@@ -50,9 +50,9 @@ pub(crate) struct DirsCommand {
 impl builtins::Command for DirsCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.clear {
             context.shell.directory_stack_mut().clear();

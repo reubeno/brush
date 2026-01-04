@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 
 use brush_core::sys::fs::PathExt;
-use brush_core::{ExecutionResult, Shell, ShellRuntime as _, builtins, parser::ast};
+use brush_core::{ExecutionResult, ShellRuntime, builtins, parser::ast};
 
 /// Inspect the type of a named shell item.
 #[derive(Parser)]
@@ -45,9 +45,9 @@ enum ResolvedType<'a> {
 impl builtins::Command for TypeCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
@@ -140,7 +140,7 @@ impl builtins::Command for TypeCommand {
 }
 
 impl TypeCommand {
-    fn resolve_types<'a>(&self, shell: &'a Shell, name: &str) -> Vec<ResolvedType<'a>> {
+    fn resolve_types<'a>(&self, shell: &'a impl ShellRuntime, name: &str) -> Vec<ResolvedType<'a>> {
         let mut types = vec![];
 
         if !self.force_path_search {

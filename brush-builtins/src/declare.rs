@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
 
 use brush_core::{
-    ErrorKind, ExecutionResult, ShellRuntime as _, builtins,
+    ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
     parser::ast,
@@ -124,9 +124,9 @@ impl builtins::Command for DeclareCommand {
 
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let verb = match context.command_name.as_str() {
             "local" => DeclareVerb::Local,
@@ -175,9 +175,9 @@ impl builtins::Command for DeclareCommand {
 }
 
 impl DeclareCommand {
-    fn try_display_declaration(
+    fn try_display_declaration<S: brush_core::ShellRuntime>(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, S>,
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
@@ -237,9 +237,9 @@ impl DeclareCommand {
         }
     }
 
-    fn process_declaration(
+    fn process_declaration<S: brush_core::ShellRuntime>(
         &self,
-        context: &mut brush_core::ExecutionContext<'_>,
+        context: &mut brush_core::ExecutionContext<'_, S>,
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
@@ -410,9 +410,9 @@ impl DeclareCommand {
         Ok((name, assigned_index, initial_value, name_is_array))
     }
 
-    fn display_matching_env_declarations(
+    fn display_matching_env_declarations<S: brush_core::ShellRuntime>(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, S>,
         verb: DeclareVerb,
     ) -> Result<(), brush_core::Error> {
         //
@@ -528,9 +528,9 @@ impl DeclareCommand {
         Ok(())
     }
 
-    fn display_matching_functions(
+    fn display_matching_functions<S: brush_core::ShellRuntime>(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, S>,
     ) -> Result<(), brush_core::Error> {
         for (name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {

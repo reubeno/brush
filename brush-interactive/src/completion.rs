@@ -1,13 +1,11 @@
-use std::path::{Path, PathBuf};
-
-use brush_core::ShellRuntime as _;
 use indexmap::IndexSet;
+use std::path::{Path, PathBuf};
 
 use brush_core::escape;
 
 #[allow(dead_code)]
 pub(crate) async fn complete_async(
-    shell: &mut brush_core::Shell,
+    shell: &mut impl brush_core::ShellRuntime,
     line: &str,
     pos: usize,
 ) -> brush_core::completion::Completions {

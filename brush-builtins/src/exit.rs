@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::{ExecutionControlFlow, ExecutionResult, ShellRuntime as _, builtins};
+use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Exit the shell.
 #[derive(Parser)]
@@ -12,9 +12,9 @@ pub(crate) struct ExitCommand {
 impl builtins::Command for ExitCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         #[expect(clippy::cast_sign_loss)]
         let code_8bit = if let Some(code_32bit) = &self.code {

@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use brush_core::{
-    ErrorKind, ExecutionExitCode, ExecutionParameters, ExecutionResult, Shell, builtins, tests,
+    ErrorKind, ExecutionExitCode, ExecutionParameters, ExecutionResult, builtins, tests,
 };
 
 /// Evaluate test expression.
@@ -30,9 +30,9 @@ impl builtins::Command for TestCommand {
         Ok(this)
     }
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut args = self.args.as_slice();
 
@@ -57,7 +57,7 @@ impl builtins::Command for TestCommand {
 }
 
 fn execute_test(
-    shell: &mut Shell,
+    shell: &mut impl brush_core::ShellRuntime,
     params: &ExecutionParameters,
     args: &[String],
 ) -> Result<bool, brush_core::Error> {

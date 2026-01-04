@@ -1,9 +1,7 @@
 use clap::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
-use brush_core::{
-    ErrorKind, ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins, commands,
-};
+use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
 
 /// Exec the provided command.
 #[derive(Parser)]
@@ -28,10 +26,10 @@ pub(crate) struct ExecCommand {
 impl builtins::Command for ExecCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.args.is_empty() {
             // When no arguments are present, then there's nothing for us to execute -- but we need
             // to ensure that any redirections setup for this builtin get applied to the calling

@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Manage shopt-style options.
 #[derive(Parser)]
@@ -35,9 +35,9 @@ impl builtins::Command for ShoptCommand {
     type Error = brush_core::Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.set && self.unset {
             writeln!(
