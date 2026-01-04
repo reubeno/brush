@@ -5,6 +5,7 @@
 #[cfg(unix)]
 mod unix {
     use brush_builtins::ShellBuilderExt;
+    use brush_core::ShellRuntime as _;
     use brush_parser::SourceSpan;
     use criterion::Criterion;
     use std::hint::black_box;
@@ -32,14 +33,14 @@ mod unix {
             .run_string(
                 command.to_owned(),
                 &brush_core::SourceInfo::default(),
-                &ExecutionParameters::default(),
+                &brush_core::ExecutionParameters::default(),
             )
             .await
             .unwrap();
     }
 
     async fn expand_string(shell: &mut impl brush_core::ShellRuntime, s: &str) {
-        let params = ExecutionParameters::default();
+        let params = brush_core::ExecutionParameters::default();
         let _ = shell.basic_expand_string(&params, s).await.unwrap();
     }
 

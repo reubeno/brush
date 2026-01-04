@@ -265,7 +265,7 @@ fn spawn_ao_list_in_task<'a, S: ShellRuntime>(
     params: &ExecutionParameters,
 ) -> &'a jobs::Job {
     // Clone the inputs.
-    let mut cloned_shell = shell.clone();
+    let mut cloned_shell = shell.clone_subshell();
     let cloned_params = params.clone();
     let cloned_ao_list = ao_list.clone();
 
@@ -470,7 +470,7 @@ async fn spawn_pipeline_processes(
 
             PipelineExecutionContext {
                 shell: commands::ShellForCommand::OwnedShell {
-                    target: Box::new(shell.clone()),
+                    target: Box::new(shell.clone_subshell()),
                     parent: shell,
                 },
                 process_group_id,
@@ -651,7 +651,7 @@ impl<S: ShellRuntime> Execute<S> for ast::CompoundCommand {
             Self::Subshell(ast::SubshellCommand { list, .. }) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 // TODO(source-info): Do we need to reset the line number?
-                let mut subshell = shell.clone();
+                let mut subshell = shell.clone_subshell();
 
                 // Handle errors within the subshell context to prevent fatal errors
                 // from propagating to the parent shell.
@@ -1752,7 +1752,7 @@ fn setup_process_substitution(
 ) -> Result<(ShellFd, OpenFile), error::Error> {
     // TODO(execute): Don't execute synchronously!
     // Execute in a subshell.
-    let mut subshell = shell.clone();
+    let mut subshell = shell.clone_subshell();
 
     // Set up execution parameters for the child execution.
     let mut child_params = params.clone();

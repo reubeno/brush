@@ -257,7 +257,7 @@ async fn run_in_shell(
         shell.start_command_string_mode();
 
         // Execute the command string.
-        let params = ExecutionParameters::default();
+        let params = brush_core::ExecutionParameters::default();
         let source_info = brush_core::SourceInfo::from("-c");
         let _ = shell.run_string(command, &source_info, &params).await?;
 

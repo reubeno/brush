@@ -29,7 +29,7 @@ impl TestShellWithBashCompletion {
         let temp_dir = assert_fs::TempDir::new()?;
         let bash_completion_script_path = Self::find_bash_completion_script()?;
 
-        let exec_params = ExecutionParameters::default();
+        let exec_params = brush_core::ExecutionParameters::default();
         let source_result = shell
             .source_script(
                 bash_completion_script_path.as_path(),

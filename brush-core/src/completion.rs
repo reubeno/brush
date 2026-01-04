@@ -606,7 +606,7 @@ impl Spec {
         context: &Context<'_>,
     ) -> Result<IndexSet<String>, error::Error> {
         // Move to a subshell so we can start filling out variables.
-        let mut shell = shell.clone();
+        let mut shell = shell.clone_subshell();
 
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
@@ -1137,7 +1137,7 @@ async fn get_file_completions(
     must_be_dir: bool,
 ) -> IndexSet<String> {
     // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
-    let mut throwaway_shell = shell.clone();
+    let mut throwaway_shell = shell.clone_subshell();
     let options = expansion::ExpanderOptions {
         execute_command_substitutions: false,
         ..Default::default()
