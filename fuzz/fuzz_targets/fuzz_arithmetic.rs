@@ -4,6 +4,7 @@
 use std::sync::LazyLock;
 
 use anyhow::Result;
+use brush_core::ShellRuntime;
 use brush_parser::ast;
 use libfuzzer_sys::fuzz_target;
 
@@ -34,7 +35,7 @@ fn eval_arithmetic(mut shell: brush_core::Shell, input: &ast::ArithmeticExpr) ->
     //
     let parsed_expr = brush_parser::arithmetic::parse(input_str.as_str()).ok();
     let our_eval_result = if let Some(parsed_expr) = parsed_expr {
-        shell.eval_arithmetic(&parsed_expr).ok()
+        ShellRuntime::eval_arithmetic(&mut shell, &parsed_expr).ok()
     } else {
         None
     };
@@ -91,6 +92,6 @@ fuzz_target!(|input: ast::ArithmeticExpr| {
         return;
     }
 
-    let shell = SHELL_TEMPLATE.clone();
+    let shell = Clone::clone(&*SHELL_TEMPLATE);
     eval_arithmetic(shell, &input).unwrap();
 });

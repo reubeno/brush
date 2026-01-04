@@ -57,6 +57,8 @@ impl BasicInputBackend {
                         break;
                     }
 
+                    drop(shell);
+
                     prompt_to_use = None;
                 }
                 ReadResult::BoundCommand(s) => {

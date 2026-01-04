@@ -467,6 +467,138 @@ pub trait ShellRuntime: Send + Sync + 'static {
     ) -> impl Iterator<Item = PathBuf>
     where
         Self: Sized;
+
+    /// Returns a mutable reference to *current* positional parameters for the shell
+    /// ($1 and beyond).
+    fn current_shell_args_mut(&mut self) -> &mut Vec<String>;
+
+    /// Tries to undefine a function in the shell's environment. Returns whether or
+    /// not a definition was removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to undefine.
+    fn undefine_func(&mut self, name: &str) -> bool;
+
+    /// Sources a script file, returning the execution result.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the file to source.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `params` - Execution parameters.
+    async fn source_script<S: AsRef<str>, P: AsRef<Path> + Send, I: Iterator<Item = S> + Send>(
+        &mut self,
+        path: P,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error>
+    where
+        Self: Sized;
+
+    /// Composes the shell's post-input, pre-command prompt, applying all appropriate expansions.
+    async fn compose_precmd_prompt(&mut self) -> Result<String, error::Error>
+    where
+        Self: Sized;
+
+    /// Composes the shell's prompt, applying all appropriate expansions.
+    async fn compose_prompt(&mut self) -> Result<String, error::Error>
+    where
+        Self: Sized;
+
+    /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
+    async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error>
+    where
+        Self: Sized;
+
+    /// Composes the shell's continuation prompt.
+    async fn compose_continuation_prompt(&mut self) -> Result<String, error::Error>
+    where
+        Self: Sized;
+
+    /// Returns whether or not the shell is actively executing in a sourced script.
+    fn in_sourced_script(&self) -> bool;
+
+    /// Returns whether or not the shell is actively executing in a shell function.
+    fn in_function(&self) -> bool;
+
+    /// Returns the path to the history file used by the shell, if one is set.
+    fn history_file_path(&self) -> Option<PathBuf>;
+
+    /// Returns the path to the history file used by the shell, if one is set.
+    fn history_time_format(&self) -> Option<String>;
+
+    /// Adds a command to history.
+    fn add_to_history(&mut self, command: &str) -> Result<(), error::Error>;
+
+    /// Tries to retrieve a mutable reference to an existing builtin registration.
+    /// Returns `None` if no such registration exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the builtin to lookup.
+    fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration<Self>>
+    where
+        Self: Sized;
+
+    /// Generates command completions for the shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input string to generate completions for.
+    /// * `position` - The position in the input string to generate completions at.
+    async fn complete(
+        &mut self,
+        input: &str,
+        position: usize,
+    ) -> Result<completion::Completions, error::Error>
+    where
+        Self: Sized;
+
+    /// Sets the shell's current working directory to the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `target_dir` - The path to set as the working directory.
+    fn set_working_dir(&mut self, target_dir: impl AsRef<Path>) -> Result<(), error::Error>
+    where
+        Self: Sized;
+
+    /// Replaces the shell's currently configured open files with the given set.
+    /// Typically only used by exec-like builtins.
+    ///
+    /// # Arguments
+    ///
+    /// * `open_files` - The new set of open files to use.
+    fn replace_open_files(
+        &mut self,
+        open_fds: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
+    ) where
+        Self: Sized;
+
+    /// Checks if the given string is a keyword reserved in this shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to check.
+    fn is_keyword(&self, s: &str) -> bool;
+
+    /// Checks for completed jobs in the shell, reporting any changes found.
+    fn check_for_completed_jobs(&mut self) -> Result<(), error::Error>;
+
+    /// Evaluate the given arithmetic expression, returning the result.
+    fn eval_arithmetic(
+        &mut self,
+        expr: &brush_parser::ast::ArithmeticExpr,
+    ) -> Result<i64, error::Error>;
+
+    /// Tries to retrieve a mutable reference to an existing function registration.
+    /// Returns `None` if no such registration exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to lookup.
+    fn func_mut(&mut self, name: &str) -> Option<&mut functions::Registration>;
 }
 
 /// Represents an instance of a shell.
@@ -1160,6 +1292,193 @@ impl ShellRuntime for Shell {
             case_insensitive,
         )
     }
+
+    fn current_shell_args_mut(&mut self) -> &mut Vec<String> {
+        for frame in self.call_stack.iter_mut() {
+            match frame.frame_type {
+                // Function calls always shadow positional parameters.
+                callstack::FrameType::Function(..) => return &mut frame.args,
+                // Executed scripts always shadow positional parameters.
+                _ if frame.frame_type.is_run_script() => return &mut frame.args,
+                // Sourced scripts shadow positional parameters if they have arguments.
+                _ if frame.frame_type.is_sourced_script() => {
+                    if !frame.args.is_empty() {
+                        return &mut frame.args;
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        &mut self.args
+    }
+
+    fn undefine_func(&mut self, name: &str) -> bool {
+        self.funcs.remove(name).is_some()
+    }
+
+    async fn source_script<S: AsRef<str>, P: AsRef<Path> + Send, I: Iterator<Item = S> + Send>(
+        &mut self,
+        path: P,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        self.parse_and_execute_script_file(
+            path.as_ref(),
+            args,
+            params,
+            callstack::ScriptCallType::Source,
+        )
+        .await
+    }
+
+    async fn compose_precmd_prompt(&mut self) -> Result<String, error::Error> {
+        self.expand_prompt_var("PS0", "").await
+    }
+
+    async fn compose_prompt(&mut self) -> Result<String, error::Error> {
+        self.expand_prompt_var("PS1", self.default_prompt()).await
+    }
+
+    async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
+        // This is a brush extension.
+        self.expand_prompt_var("BRUSH_PS_ALT", "").await
+    }
+
+    async fn compose_continuation_prompt(&mut self) -> Result<String, error::Error> {
+        self.expand_prompt_var("PS2", "> ").await
+    }
+
+    fn in_sourced_script(&self) -> bool {
+        self.call_stack.in_sourced_script()
+    }
+
+    fn in_function(&self) -> bool {
+        self.call_stack.in_function()
+    }
+
+    fn history_file_path(&self) -> Option<PathBuf> {
+        self.env_str("HISTFILE")
+            .map(|s| PathBuf::from(s.into_owned()))
+    }
+
+    fn history_time_format(&self) -> Option<String> {
+        self.env_str("HISTTIMEFORMAT").map(|s| s.into_owned())
+    }
+
+    fn add_to_history(&mut self, command: &str) -> Result<(), error::Error> {
+        if let Some(history) = &mut self.history {
+            // Trim.
+            let command = command.trim();
+
+            // For now, discard empty commands.
+            if command.is_empty() {
+                return Ok(());
+            }
+
+            // Add it to history.
+            history.add(history::Item {
+                id: 0,
+                command_line: command.to_owned(),
+                timestamp: Some(chrono::Utc::now()),
+                dirty: true,
+            })?;
+        }
+
+        Ok(())
+    }
+
+    fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration<Self>> {
+        self.builtins.get_mut(name)
+    }
+
+    async fn complete(
+        &mut self,
+        input: &str,
+        position: usize,
+    ) -> Result<completion::Completions, error::Error> {
+        let completion_config = self.completion_config.clone();
+        completion_config
+            .get_completions(self, input, position)
+            .await
+    }
+
+    fn set_working_dir(&mut self, target_dir: impl AsRef<Path>) -> Result<(), error::Error> {
+        let abs_path = self.absolute_path(target_dir.as_ref());
+
+        match std::fs::metadata(&abs_path) {
+            Ok(m) => {
+                if !m.is_dir() {
+                    return Err(error::ErrorKind::NotADirectory(abs_path).into());
+                }
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        }
+
+        // Normalize the path (but don't canonicalize it).
+        let cleaned_path = abs_path.normalize();
+
+        let pwd = cleaned_path.to_string_lossy().to_string();
+
+        self.env.update_or_add(
+            "PWD",
+            variables::ShellValueLiteral::Scalar(pwd),
+            |_| Ok(()),
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+        let oldpwd = std::mem::replace(self.working_dir_mut(), cleaned_path);
+
+        self.env.update_or_add(
+            "OLDPWD",
+            variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
+            |_| Ok(()),
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+
+        Ok(())
+    }
+
+    fn replace_open_files(
+        &mut self,
+        open_fds: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
+    ) {
+        self.open_files = openfiles::OpenFiles::from(open_fds);
+    }
+
+    fn is_keyword(&self, s: &str) -> bool {
+        if self.options.sh_mode {
+            keywords::SH_MODE_KEYWORDS.contains(s)
+        } else {
+            keywords::KEYWORDS.contains(s)
+        }
+    }
+
+    fn check_for_completed_jobs(&mut self) -> Result<(), error::Error> {
+        let results = self.jobs.poll()?;
+
+        if self.options.enable_job_control {
+            for (job, _result) in results {
+                writeln!(self.stderr(), "{job}")?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn eval_arithmetic(
+        &mut self,
+        expr: &brush_parser::ast::ArithmeticExpr,
+    ) -> Result<i64, error::Error> {
+        Ok(expr.eval(self)?)
+    }
+
+    fn func_mut(&mut self, name: &str) -> Option<&mut functions::Registration> {
+        self.funcs.get_mut(name)
+    }
 }
 
 pub use shell_builder::State as ShellBuilderState;
@@ -1515,42 +1834,10 @@ impl Shell {
         self.call_stack.increment_current_line_offset(delta);
     }
 
-    /// Returns a mutable reference to *current* positional parameters for the shell
-    /// ($1 and beyond).
-    pub fn current_shell_args_mut(&mut self) -> &mut Vec<String> {
-        for frame in self.call_stack.iter_mut() {
-            match frame.frame_type {
-                // Function calls always shadow positional parameters.
-                callstack::FrameType::Function(..) => return &mut frame.args,
-                // Executed scripts always shadow positional parameters.
-                _ if frame.frame_type.is_run_script() => return &mut frame.args,
-                // Sourced scripts shadow positional parameters if they have arguments.
-                _ if frame.frame_type.is_sourced_script() => {
-                    if !frame.args.is_empty() {
-                        return &mut frame.args;
-                    }
-                }
-                _ => (),
-            }
-        }
-
-        &mut self.args
-    }
-
     /// Returns a mutable reference to the shell's current working directory.
     /// This is only accessible within the crate.
     pub(crate) const fn working_dir_mut(&mut self) -> &mut PathBuf {
         &mut self.working_dir
-    }
-
-    /// Tries to undefine a function in the shell's environment. Returns whether or
-    /// not a definition was removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the function to undefine.
-    pub fn undefine_func(&mut self, name: &str) -> bool {
-        self.funcs.remove(name).is_some()
     }
 
     /// Loads and executes standard shell configuration files (i.e., rc and profile).
@@ -1664,28 +1951,6 @@ impl Shell {
             tracing::debug!("skipping non-existent file: {}", path.display());
             Ok(false)
         }
-    }
-
-    /// Source the given file as a shell script, returning the execution result.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to the file to source.
-    /// * `args` - The arguments to pass to the script as positional parameters.
-    /// * `params` - Execution parameters.
-    pub async fn source_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
-        &mut self,
-        path: P,
-        args: I,
-        params: &ExecutionParameters,
-    ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(
-            path.as_ref(),
-            args,
-            params,
-            callstack::ScriptCallType::Source,
-        )
-        .await
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.
@@ -1898,27 +2163,6 @@ impl Shell {
         }
     }
 
-    /// Composes the shell's post-input, pre-command prompt, applying all appropriate expansions.
-    pub async fn compose_precmd_prompt(&mut self) -> Result<String, error::Error> {
-        self.expand_prompt_var("PS0", "").await
-    }
-
-    /// Composes the shell's prompt, applying all appropriate expansions.
-    pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
-        self.expand_prompt_var("PS1", self.default_prompt()).await
-    }
-
-    /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
-    pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
-        // This is a brush extension.
-        self.expand_prompt_var("BRUSH_PS_ALT", "").await
-    }
-
-    /// Composes the shell's continuation prompt.
-    pub async fn compose_continuation_prompt(&mut self) -> Result<String, error::Error> {
-        self.expand_prompt_var("PS2", "> ").await
-    }
-
     async fn expand_prompt_var(
         &mut self,
         var_name: &str,
@@ -1952,16 +2196,6 @@ impl Shell {
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
         self.env_str(name).unwrap_or_else(|| default.into())
-    }
-
-    /// Returns whether or not the shell is actively executing in a sourced script.
-    pub fn in_sourced_script(&self) -> bool {
-        self.call_stack.in_sourced_script()
-    }
-
-    /// Returns whether or not the shell is actively executing in a shell function.
-    pub fn in_function(&self) -> bool {
-        self.call_stack.in_function()
     }
 
     /// Updates the shell's internal tracking state to reflect that a new interactive
@@ -2009,17 +2243,6 @@ impl Shell {
         Ok(())
     }
 
-    /// Returns the path to the history file used by the shell, if one is set.
-    pub fn history_file_path(&self) -> Option<PathBuf> {
-        self.env_str("HISTFILE")
-            .map(|s| PathBuf::from(s.into_owned()))
-    }
-
-    /// Returns the path to the history file used by the shell, if one is set.
-    pub fn history_time_format(&self) -> Option<String> {
-        self.env_str("HISTTIMEFORMAT").map(|s| s.into_owned())
-    }
-
     /// Saves history back to any backing storage.
     pub fn save_history(&mut self) -> Result<(), error::Error> {
         if let Some(history_file_path) = self.history_file_path() {
@@ -2036,29 +2259,6 @@ impl Shell {
                     write_timestamps,
                 )?;
             }
-        }
-
-        Ok(())
-    }
-
-    /// Adds a command to history.
-    pub fn add_to_history(&mut self, command: &str) -> Result<(), error::Error> {
-        if let Some(history) = &mut self.history {
-            // Trim.
-            let command = command.trim();
-
-            // For now, discard empty commands.
-            if command.is_empty() {
-                return Ok(());
-            }
-
-            // Add it to history.
-            history.add(history::Item {
-                id: 0,
-                command_line: command.to_owned(),
-                timestamp: Some(chrono::Utc::now()),
-                dirty: true,
-            })?;
         }
 
         Ok(())
@@ -2088,33 +2288,6 @@ impl Shell {
         self.builtins.insert(name.into(), registration);
     }
 
-    /// Tries to retrieve a mutable reference to an existing builtin registration.
-    /// Returns `None` if no such registration exists.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the builtin to lookup.
-    pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration<Self>> {
-        self.builtins.get_mut(name)
-    }
-
-    /// Generates command completions for the shell.
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - The input string to generate completions for.
-    /// * `position` - The position in the input string to generate completions at.
-    pub async fn complete(
-        &mut self,
-        input: &str,
-        position: usize,
-    ) -> Result<completion::Completions, error::Error> {
-        let completion_config = self.completion_config.clone();
-        completion_config
-            .get_completions(self, input, position)
-            .await
-    }
-
     /// Determines whether the given filename is the name of an executable in one of the
     /// directories in the shell's current PATH. If found, returns the path.
     ///
@@ -2134,63 +2307,6 @@ impl Shell {
         None
     }
 
-    /// Sets the shell's current working directory to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `target_dir` - The path to set as the working directory.
-    pub fn set_working_dir(&mut self, target_dir: impl AsRef<Path>) -> Result<(), error::Error> {
-        let abs_path = self.absolute_path(target_dir.as_ref());
-
-        match std::fs::metadata(&abs_path) {
-            Ok(m) => {
-                if !m.is_dir() {
-                    return Err(error::ErrorKind::NotADirectory(abs_path).into());
-                }
-            }
-            Err(e) => {
-                return Err(e.into());
-            }
-        }
-
-        // Normalize the path (but don't canonicalize it).
-        let cleaned_path = abs_path.normalize();
-
-        let pwd = cleaned_path.to_string_lossy().to_string();
-
-        self.env.update_or_add(
-            "PWD",
-            variables::ShellValueLiteral::Scalar(pwd),
-            |_| Ok(()),
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
-        let oldpwd = std::mem::replace(self.working_dir_mut(), cleaned_path);
-
-        self.env.update_or_add(
-            "OLDPWD",
-            variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
-            |_| Ok(()),
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
-
-        Ok(())
-    }
-
-    /// Replaces the shell's currently configured open files with the given set.
-    /// Typically only used by exec-like builtins.
-    ///
-    /// # Arguments
-    ///
-    /// * `open_files` - The new set of open files to use.
-    pub fn replace_open_files(
-        &mut self,
-        open_fds: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
-    ) {
-        self.open_files = openfiles::OpenFiles::from(open_fds);
-    }
-
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> impl std::io::Write + 'static {
@@ -2201,40 +2317,6 @@ impl Shell {
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write + 'static {
         self.open_files.try_stderr().cloned().unwrap()
-    }
-
-    /// Checks if the given string is a keyword reserved in this shell.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The string to check.
-    pub fn is_keyword(&self, s: &str) -> bool {
-        if self.options.sh_mode {
-            keywords::SH_MODE_KEYWORDS.contains(s)
-        } else {
-            keywords::KEYWORDS.contains(s)
-        }
-    }
-
-    /// Checks for completed jobs in the shell, reporting any changes found.
-    pub fn check_for_completed_jobs(&mut self) -> Result<(), error::Error> {
-        let results = self.jobs.poll()?;
-
-        if self.options.enable_job_control {
-            for (job, _result) in results {
-                writeln!(self.stderr(), "{job}")?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Evaluate the given arithmetic expression, returning the result.
-    pub fn eval_arithmetic(
-        &mut self,
-        expr: &brush_parser::ast::ArithmeticExpr,
-    ) -> Result<i64, error::Error> {
-        Ok(expr.eval(self)?)
     }
 
     /// Updates the shell state to reflect the given edit buffer contents.
