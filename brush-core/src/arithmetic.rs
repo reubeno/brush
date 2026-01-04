@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use crate::{ExecutionParameters, Shell, ShellRuntime, env, expansion, variables};
+use crate::{ExecutionParameters, ShellRuntime, env, expansion, variables};
 use brush_parser::ast;
 
 /// Represents an error that occurs during evaluation of an arithmetic expression.

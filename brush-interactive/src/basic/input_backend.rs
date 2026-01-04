@@ -81,7 +81,7 @@ impl BasicInputBackend {
         std::io::stdin().is_terminal()
     }
 
-    fn is_valid_input(shell: &Shell, input: &str) -> bool {
+    fn is_valid_input(shell: &impl ShellRuntime, input: &str) -> bool {
         match shell.parse_string(input.to_owned()) {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>

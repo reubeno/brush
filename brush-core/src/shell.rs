@@ -95,7 +95,9 @@ pub trait ShellRuntime: Send {
     fn set_key_bindings(&mut self, key_bindings: Option<KeyBindingsHelper>);
 
     /// Returns the registered builtins for the shell.
-    fn builtins(&self) -> &HashMap<String, builtins::Registration<impl ShellRuntime>>;
+    fn builtins(&self) -> &HashMap<String, builtins::Registration<Self>>
+    where
+        Self: Sized;
 
     /// Returns the shell's current working directory.
     fn working_dir(&self) -> &Path;
@@ -350,7 +352,7 @@ impl ShellRuntime for Shell {
         self.key_bindings = key_bindings;
     }
 
-    fn builtins(&self) -> &HashMap<String, builtins::Registration<impl ShellRuntime>> {
+    fn builtins(&self) -> &HashMap<String, builtins::Registration<Self>> {
         &self.builtins
     }
 

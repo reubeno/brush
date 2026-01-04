@@ -257,18 +257,18 @@ pub fn compose_std_command<S: AsRef<OsStr>, SR: ShellRuntime>(
     Ok(cmd)
 }
 
-pub(crate) async fn on_preexecute(
-    cmd: &mut commands::SimpleCommand<'_>,
+pub(crate) async fn on_preexecute<S: ShellRuntime>(
+    cmd: &mut commands::SimpleCommand<'_, S>,
 ) -> Result<(), error::Error> {
     // See if we have a DEBUG trap handler registered; call it if we do.
-    invoke_debug_trap_handler_if_registered(&mut cmd.shell, &cmd.params, cmd.args.as_slice())
+    invoke_debug_trap_handler_if_registered(&mut *cmd.shell, &cmd.params, cmd.args.as_slice())
         .await?;
 
     Ok(())
 }
 
 async fn invoke_debug_trap_handler_if_registered(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     args: &[CommandArg],
 ) -> Result<(), error::Error> {
@@ -427,7 +427,7 @@ impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
                 self.execute_via_external(&path)
             } else {
                 if let Some(post_execute) = self.post_execute {
-                    let _ = post_execute(&mut self.shell);
+                    let _ = post_execute(&mut *self.shell);
                 }
 
                 Err(ErrorKind::CommandNotFound(self.command_name).into())
@@ -459,9 +459,9 @@ impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
     }
 
     fn execute_via_builtin_in_owned_shell(
-        mut shell: Shell,
+        mut shell: S,
         params: ExecutionParameters,
-        builtin: builtins::Registration,
+        builtin: builtins::Registration<S>,
         command_name: String,
         args: Vec<CommandArg>,
     ) -> ExecutionSpawnResult {
@@ -486,7 +486,7 @@ impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
         let mut shell = self.shell;
 
         let cmd_context = ExecutionContext {
-            shell: &mut shell,
+            shell: &mut *shell,
             command_name: self.command_name,
             params: self.params,
         };
@@ -509,7 +509,7 @@ impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
         let mut shell = self.shell;
 
         let cmd_context = ExecutionContext {
-            shell: &mut shell,
+            shell: &mut *shell,
             command_name: self.command_name,
             params: self.params,
         };
@@ -518,7 +518,7 @@ impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
         let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await;
 
         if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
+            let _ = post_execute(&mut *shell);
         }
 
         result
@@ -528,7 +528,7 @@ impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
         let mut shell = self.shell;
 
         let cmd_context = ExecutionContext {
-            shell: &mut shell,
+            shell: &mut *shell,
             command_name: self.command_name,
             params: self.params,
         };
@@ -542,7 +542,7 @@ impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
         );
 
         if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
+            let _ = post_execute(&mut *shell);
         }
 
         result
@@ -717,7 +717,7 @@ pub(crate) async fn invoke_shell_function<S: ShellRuntime>(
 }
 
 pub(crate) async fn invoke_command_in_subshell_and_get_output(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     s: String,
 ) -> Result<String, error::Error> {
