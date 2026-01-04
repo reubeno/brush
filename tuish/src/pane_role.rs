@@ -45,7 +45,7 @@ impl std::fmt::Display for PaneRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Terminal(0) => write!(f, "Terminal"),
-            Self::Terminal(n) => write!(f, "Terminal {}", n),
+            Self::Terminal(n) => write!(f, "Terminal {n}"),
             Self::Completion => write!(f, "Completion"),
             Self::Environment => write!(f, "Environment"),
             Self::History => write!(f, "History"),

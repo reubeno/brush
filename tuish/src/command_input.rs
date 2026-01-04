@@ -95,12 +95,12 @@ impl CommandInput {
     }
 
     /// Disables the command input (e.g., when a command is running).
-    pub fn disable(&mut self) {
+    pub const fn disable(&mut self) {
         self.enabled = false;
     }
 
     /// Enables the command input (e.g., when no command is running).
-    pub fn enable(&mut self) {
+    pub const fn enable(&mut self) {
         self.enabled = true;
     }
 
@@ -119,13 +119,13 @@ impl CommandInput {
     /// This is called from the UI when a completion is accepted.
     pub fn apply_completion(
         &mut self,
-        completion: String,
+        completion: &str,
         insertion_index: usize,
         delete_count: usize,
     ) {
         // Remove the text that will be replaced
         let end = insertion_index + delete_count;
-        self.buffer.replace_range(insertion_index..end, &completion);
+        self.buffer.replace_range(insertion_index..end, completion);
 
         // Update cursor position
         self.cursor_pos = insertion_index + completion.len();

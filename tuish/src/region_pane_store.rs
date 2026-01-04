@@ -97,7 +97,7 @@ impl RegionPaneStore {
     /// Returns `false` if the pane doesn't exist.
     #[must_use]
     pub fn is_pane_enabled(&self, id: PaneId) -> bool {
-        self.panes.get(&id).map_or(false, |pane| pane.is_enabled())
+        self.panes.get(&id).is_some_and(|pane| pane.is_enabled())
     }
 
     /// Checks if a region is focusable (has at least one enabled pane).
@@ -105,9 +105,9 @@ impl RegionPaneStore {
     /// Returns `false` if the region doesn't exist.
     #[must_use]
     pub fn is_region_focusable(&self, id: RegionId) -> bool {
-        self.regions.get(&id).map_or(false, |region| {
-            region.is_focusable(|pane_id| self.is_pane_enabled(pane_id))
-        })
+        self.regions
+            .get(&id)
+            .is_some_and(|region| region.is_focusable(|pane_id| self.is_pane_enabled(pane_id)))
     }
 
     /// Gets the focused pane ID for a region.

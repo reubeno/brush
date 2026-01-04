@@ -199,7 +199,10 @@ impl Pty {
     /// Returns an error if the ioctl call fails.
     pub fn resize(&self, rows: u16, cols: u16) -> Result<(), std::io::Error> {
         // Update parser size
-        let mut parser = self.parser.write().unwrap();
+        let mut parser = self
+            .parser
+            .write()
+            .map_err(|_| std::io::Error::other("Failed to acquire parser lock"))?;
         parser.set_size(rows, cols);
         drop(parser); // Release lock
 

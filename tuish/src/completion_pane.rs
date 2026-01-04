@@ -113,7 +113,7 @@ impl CompletionPane {
     }
 
     /// Returns the insertion parameters for applying the completion.
-    pub fn insertion_params(&self) -> (usize, usize) {
+    pub const fn insertion_params(&self) -> (usize, usize) {
         (self.insertion_index, self.delete_count)
     }
 
@@ -126,12 +126,12 @@ impl CompletionPane {
     }
 
     /// Checks if the pane has active completions.
-    pub fn is_active(&self) -> bool {
+    pub const fn is_active(&self) -> bool {
         self.is_active && !self.candidates.is_empty()
     }
 
     /// Moves selection down.
-    fn select_next(&mut self) {
+    const fn select_next(&mut self) {
         if self.selected_index + 1 < self.candidates.len() {
             self.selected_index += 1;
             self.adjust_scroll();
@@ -139,7 +139,7 @@ impl CompletionPane {
     }
 
     /// Moves selection up.
-    fn select_previous(&mut self) {
+    const fn select_previous(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
             self.adjust_scroll();
@@ -147,7 +147,7 @@ impl CompletionPane {
     }
 
     /// Adjusts scroll offset to keep selected item visible.
-    fn adjust_scroll(&mut self) {
+    const fn adjust_scroll(&mut self) {
         // This will be adjusted based on visible height during render
         // For now, just ensure selected is in reasonable range
         if self.selected_index < self.scroll_offset {
@@ -169,7 +169,7 @@ impl CompletionPane {
     }
 
     /// Gets a symbol for a completion kind.
-    fn kind_symbol(kind: CompletionKind) -> &'static str {
+    const fn kind_symbol(kind: CompletionKind) -> &'static str {
         match kind {
             CompletionKind::Directory => "📁",
             CompletionKind::File => "📄",

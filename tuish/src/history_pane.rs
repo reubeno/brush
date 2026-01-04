@@ -110,6 +110,7 @@ impl ContentPane for HistoryPane {
         PaneKind::History
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         // Refresh cache if needed (only actually rebuilds if history changed)
         if !self.refresh_cache() {

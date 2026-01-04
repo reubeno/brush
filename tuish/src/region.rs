@@ -86,14 +86,14 @@ impl Region {
     }
 
     /// Selects the next pane in the region.
-    pub fn select_next_pane(&mut self) {
+    pub const fn select_next_pane(&mut self) {
         if !self.panes.is_empty() {
             self.selected_pane_index = (self.selected_pane_index + 1) % self.panes.len();
         }
     }
 
     /// Selects the previous pane in the region.
-    pub fn select_prev_pane(&mut self) {
+    pub const fn select_prev_pane(&mut self) {
         if !self.panes.is_empty() {
             self.selected_pane_index = if self.selected_pane_index == 0 {
                 self.panes.len() - 1

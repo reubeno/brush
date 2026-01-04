@@ -102,7 +102,7 @@ impl ContentPane for FunctionsPane {
                 let display_def = if definition.lines().count() > 1
                     || definition.lines().next().is_some_and(|l| l.len() > 60)
                 {
-                    format!("{}...", first_line)
+                    format!("{first_line}...")
                 } else {
                     first_line
                 };

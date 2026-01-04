@@ -52,7 +52,7 @@ impl ContentPane for CallStackPane {
                     .enumerate()
                     .map(|(index, f)| {
                         let source_info = f.current_pos_as_source_info();
-                        let source = source_info.source.to_string();
+                        let source = source_info.source.clone();
                         let location = if let Some(pos) = &source_info.start {
                             format!("{}:{}", pos.line, pos.column)
                         } else {

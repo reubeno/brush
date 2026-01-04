@@ -327,9 +327,8 @@ impl AppUI {
                     let is_focused_region = Some(region_id) == focused_region_id;
 
                     // Get region info from store
-                    let region = match store.get_region(region_id) {
-                        Some(r) => r,
-                        None => continue,
+                    let Some(region) = store.get_region(region_id) else {
+                        continue;
                     };
                     
                     let pane_ids = region.panes();
@@ -667,10 +666,7 @@ impl AppUI {
 
     /// Handles a single input event (keyboard, mouse, resize).
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    pub fn handle_input_event(
-        &mut self,
-        input_event: Event,
-    ) -> Result<UIEventResult, std::io::Error> {
+    pub fn handle_input_event(&mut self, input_event: &Event) -> UIEventResult {
         // Check if completion pane is active
         let completion_active = self.completion_pane.borrow().is_active();
 
@@ -692,7 +688,7 @@ impl AppUI {
                             self.completion_pane.borrow().insertion_params();
                         // Apply to command input
                         self.command_input_handle.borrow_mut().apply_completion(
-                            completion,
+                            &completion,
                             insertion_index,
                             delete_count,
                         );
@@ -747,7 +743,7 @@ impl AppUI {
                     {
                         crate::command_input::CommandKeyResult::NoAction => {
                             // Buffer was updated, re-trigger completion
-                            return Ok(UIEventResult::RequestCompletion);
+                            return UIEventResult::RequestCompletion;
                         }
                         crate::command_input::CommandKeyResult::CommandEntered(command) => {
                             // User pressed Enter with actual command text - cancel completion and
@@ -756,7 +752,7 @@ impl AppUI {
                             if let Some(prev_region) = self.pre_completion_active_region.take() {
                                 self.layout.set_focused_region(prev_region);
                             }
-                            return Ok(UIEventResult::ExecuteCommand(command));
+                            return UIEventResult::ExecuteCommand(command);
                         }
                         _ => {
                             // Cancel completion for other cases (e.g., Ctrl+D)
@@ -893,7 +889,7 @@ impl AppUI {
                         let can_split = self
                             .store
                             .get_region(focused_region_id)
-                            .map_or(false, |r| r.splittable());
+                            .is_some_and(|r| r.splittable());
 
                         if can_split {
                             // Get the currently focused pane to move it
@@ -940,7 +936,7 @@ impl AppUI {
                         let can_split = self
                             .store
                             .get_region(focused_region_id)
-                            .map_or(false, |r| r.splittable());
+                            .is_some_and(|r| r.splittable());
 
                         if can_split {
                             // Get the currently focused pane to move it
@@ -999,7 +995,7 @@ impl AppUI {
                                 self.layout.get_all_region_ids().into_iter().find(|&rid| {
                                     self.store
                                         .get_region(rid)
-                                        .map_or(false, |r| r.panes().contains(&marked_pane_id))
+                                        .is_some_and(|r| r.panes().contains(&marked_pane_id))
                                 });
 
                             if let Some(source_rid) = source_region_id {
@@ -1023,7 +1019,7 @@ impl AppUI {
                                     let source_is_empty = self
                                         .store
                                         .get_region(source_rid)
-                                        .map_or(true, |r| r.panes().is_empty());
+                                        .is_none_or(|r| r.panes().is_empty());
 
                                     if source_is_empty {
                                         // Don't remove special regions (content and command input)
@@ -1140,7 +1136,7 @@ impl AppUI {
                 }
                 // Ctrl+Q quits the application by returning None to signal shutdown
                 KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    return Ok(UIEventResult::RequestExit);
+                    return UIEventResult::RequestExit;
                 }
                 // Route all other keys to focused pane in focused region
                 _ => {
@@ -1155,13 +1151,13 @@ impl AppUI {
                                     PaneEventResult::NotHandled => {}
                                     PaneEventResult::RequestClose => {
                                         // Ctrl+D in command input - exit the shell
-                                        return Ok(UIEventResult::RequestExit);
+                                        return UIEventResult::RequestExit;
                                     }
                                     PaneEventResult::RequestExecute(cmd) => {
-                                        return Ok(UIEventResult::ExecuteCommand(cmd));
+                                        return UIEventResult::ExecuteCommand(cmd);
                                     }
                                     PaneEventResult::RequestCompletion => {
-                                        return Ok(UIEventResult::RequestCompletion);
+                                        return UIEventResult::RequestCompletion;
                                     }
                                 }
                             }
@@ -1176,7 +1172,7 @@ impl AppUI {
             _ => {}
         }
 
-        Ok(UIEventResult::Continue)
+        UIEventResult::Continue
     }
 
     /// Runs the main event loop, executing commands in the provided shell.
@@ -1185,7 +1181,7 @@ impl AppUI {
     ///
     /// # Errors
     /// Returns an error if rendering or event handling fails
-    #[allow(clippy::unused_async, clippy::future_not_send)]
+    #[allow(clippy::unused_async, clippy::future_not_send, clippy::too_many_lines)]
     pub async fn run(&mut self, mut pty_output_rx: mpsc::UnboundedReceiver<()>) -> Result<()> {
         let source_info = SourceInfo::default();
         let params = ExecutionParameters::default();
@@ -1200,7 +1196,7 @@ impl AppUI {
         let input_poll_task = tokio::task::spawn_blocking(move || {
             loop {
                 // Poll for input with a short timeout
-                if let Ok(true) = event::poll(Duration::from_millis(100)) {
+                if matches!(event::poll(Duration::from_millis(100)), Ok(true)) {
                     if let Ok(evt) = event::read() {
                         if ui_event_tx.send(UIEvent::Input(evt)).is_err() {
                             // Channel closed, main loop exited - we should exit too
@@ -1332,7 +1328,7 @@ impl AppUI {
 
                 UIEvent::Input(input_event) => {
                     // Handle user input and render if needed
-                    match self.handle_input_event(input_event)? {
+                    match self.handle_input_event(&input_event) {
                         UIEventResult::ExecuteCommand(command) => {
                             // User pressed Enter in command pane - execute the command
                             let shell = self.shell.clone();
@@ -1376,7 +1372,7 @@ impl AppUI {
                                     let completion =
                                         completions.candidates.into_iter().next().unwrap();
                                     self.command_input_handle.borrow_mut().apply_completion(
-                                        completion,
+                                        &completion,
                                         completions.insertion_index,
                                         completions.delete_count,
                                     );

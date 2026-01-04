@@ -86,7 +86,7 @@ pub struct TerminalPane {
 
 impl TerminalPane {
     /// Creates a new terminal pane with the given PTY resources.
-    pub fn new(
+    pub const fn new(
         parser: Arc<RwLock<vt100::Parser>>,
         pty_writer: Sender<Bytes>,
         pty_handle: Arc<crate::pty::Pty>,

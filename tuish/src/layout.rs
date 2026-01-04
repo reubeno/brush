@@ -1,7 +1,7 @@
 //! Layout system for spatial arrangement of regions.
 //!
 //! The layout tree defines WHERE regions are rendered, not WHAT they contain.
-//! It stores only RegionIds and handles splits and spatial calculations.
+//! It stores only `RegionId`s and handles splits and spatial calculations.
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
@@ -19,15 +19,15 @@ pub enum LayoutNode {
     #[allow(dead_code)]
     HSplit {
         id: LayoutId,
-        left: Box<LayoutNode>,
-        right: Box<LayoutNode>,
+        left: Box<Self>,
+        right: Box<Self>,
         split_percent: u16,
     },
     /// Vertical split (top / bottom)
     VSplit {
         id: LayoutId,
-        top: Box<LayoutNode>,
-        bottom: Box<LayoutNode>,
+        top: Box<Self>,
+        bottom: Box<Self>,
         split_percent: u16,
     },
 }
@@ -78,7 +78,7 @@ impl LayoutNode {
 
     /// Renders this layout node, returning region IDs with their rectangles.
     ///
-    /// Returns a vector of (RegionId, Rect) tuples.
+    /// Returns a vector of (`RegionId`, Rect) tuples.
     pub fn render(&self, area: Rect) -> Vec<(RegionId, Rect)> {
         match self {
             Self::Region { region_id, .. } => {
@@ -134,7 +134,7 @@ pub struct LayoutManager {
 impl LayoutManager {
     /// Creates a new layout manager with the given root node.
     #[must_use]
-    pub fn new(root: LayoutNode, initial_focused_region: RegionId) -> Self {
+    pub const fn new(root: LayoutNode, initial_focused_region: RegionId) -> Self {
         let next_layout_id = root.id() + 1;
         Self {
             root,
@@ -150,7 +150,7 @@ impl LayoutManager {
     }
 
     /// Sets the focused region ID.
-    pub fn set_focused_region(&mut self, region_id: RegionId) {
+    pub const fn set_focused_region(&mut self, region_id: RegionId) {
         self.focused_region_id = Some(region_id);
     }
 
@@ -209,7 +209,7 @@ impl LayoutManager {
 
     /// Splits the current focused region vertically (left | right).
     ///
-    /// Creates an HSplit with the current region on the left and a new region on the right.
+    /// Creates an `HSplit` with the current region on the left and a new region on the right.
     pub fn split_vertical(&mut self, new_region_id: RegionId) -> bool {
         let Some(focused_id) = self.focused_region_id else {
             return false;
@@ -279,13 +279,13 @@ impl LayoutManager {
                         next_id,
                     )
             }
-            _ => false,
+            LayoutNode::Region { .. } => false,
         }
     }
 
     /// Splits the current focused region horizontally (top / bottom).
     ///
-    /// Creates a VSplit with the current region on top and a new region on the bottom.
+    /// Creates a `VSplit` with the current region on top and a new region on the bottom.
     pub fn split_horizontal(&mut self, new_region_id: RegionId) -> bool {
         let Some(focused_id) = self.focused_region_id else {
             return false;
@@ -355,7 +355,7 @@ impl LayoutManager {
                         next_id,
                     )
             }
-            _ => false,
+            LayoutNode::Region { .. } => false,
         }
     }
 
