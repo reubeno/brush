@@ -1552,7 +1552,7 @@ impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
         )?;
-        let oldpwd = std::mem::replace(self.working_dir_mut(), cleaned_path);
+        let oldpwd = std::mem::replace(&mut self.working_dir, cleaned_path);
 
         self.env.update_or_add(
             "OLDPWD",
@@ -2192,12 +2192,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         }
 
         Ok(Some(history::History::import(history_file)?))
-    }
-
-    /// Returns a mutable reference to the shell's current working directory.
-    /// This is only accessible within the crate.
-    pub(crate) const fn working_dir_mut(&mut self) -> &mut PathBuf {
-        &mut self.working_dir
     }
 
     async fn source_if_exists(
