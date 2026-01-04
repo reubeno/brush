@@ -11,7 +11,6 @@ use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
-use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
@@ -721,7 +720,7 @@ impl<S: ShellRuntime> Execute<S> for ast::ForClauseCommand {
                         .await?;
                 } else {
                     shell
-                        .trace_command(params, std::format!("for {}", self.variable_name,))
+                        .trace_command(params, &std::format!("for {}", self.variable_name,))
                         .await?;
                 }
             }
@@ -765,7 +764,7 @@ impl<S: ShellRuntime> Execute<S> for ast::CaseClauseCommand {
         // on, but that's not it.
         if shell.options().print_commands_and_arguments {
             shell
-                .trace_command(params, std::format!("case {} in", &self.value))
+                .trace_command(params, &std::format!("case {} in", &self.value))
                 .await?;
         }
 
@@ -1233,7 +1232,7 @@ async fn execute_command<S: ShellRuntime>(
             .shell()
             .trace_command(
                 &params,
-                args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
+                &args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
             )
             .await?;
     }
@@ -1394,7 +1393,7 @@ async fn apply_assignment(
     if shell.options().print_commands_and_arguments {
         let op = if assignment.append { "+=" } else { "=" };
         shell
-            .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
+            .trace_command(params, &std::format!("{}{op}{new_value}", assignment.name))
             .await?;
     }
 

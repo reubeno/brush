@@ -470,7 +470,7 @@ struct WordExpander<'a, S: ShellRuntime> {
 }
 
 impl<'a, S: ShellRuntime> WordExpander<'a, S> {
-    pub const fn new(shell: &'a mut S, params: &'a ExecutionParameters) -> Self {
+    pub fn new(shell: &'a mut S, params: &'a ExecutionParameters) -> Self {
         let parser_options = shell.parser_options();
         Self {
             shell,
@@ -482,7 +482,7 @@ impl<'a, S: ShellRuntime> WordExpander<'a, S> {
         }
     }
 
-    pub const fn new_from_options(
+    pub fn new_from_options(
         shell: &'a mut S,
         params: &'a ExecutionParameters,
         options: &ExpanderOptions,

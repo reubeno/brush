@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use normalize_path::NormalizePath;
 use tokio::sync::Mutex;
 
@@ -72,6 +73,7 @@ impl RcLoadBehavior {
 ///
 /// This trait provides access to the core shell state including variables,
 /// options, builtins, jobs, traps, and other shell infrastructure.
+#[async_trait]
 pub trait ShellRuntime: Send {
     /// Returns the shell's official version string (if available).
     fn version(&self) -> &Option<String>;
@@ -188,6 +190,127 @@ pub trait ShellRuntime: Send {
 
     /// Returns the current subshell depth; 0 is returned if this shell is not a subshell.
     fn depth(&self) -> usize;
+
+    /// Tries to retrieve a variable from the shell's environment, converting it into its
+    /// string form.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable to retrieve.
+    fn env_str(&self, name: &str) -> Option<Cow<'_, str>>;
+
+    /// Tries to retrieve a variable from the shell's environment.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable to retrieve.
+    fn env_var(&self, name: &str) -> Option<&ShellVariable>;
+
+    /// Returns the *current* name of the shell ($0).
+    /// Influenced by the current call stack.
+    fn current_shell_name(&self) -> Option<Cow<'_, str>>;
+
+    /// Returns the *current* positional arguments for the shell ($1 and beyond).
+    /// Influenced by the current call stack.
+    fn current_shell_args(&self) -> &[String];
+
+    /// Returns the current value of the IFS variable, or the default value if it is not set.
+    fn ifs(&self) -> Cow<'_, str>;
+
+    /// Returns the first character of the IFS variable, or a space if it is not set.
+    fn get_ifs_first_char(&self) -> char;
+
+    /// Returns the shell's current home directory, if available.
+    fn home_dir(&self) -> Option<PathBuf>;
+
+    /// Returns the options that should be used for parsing shell programs; reflects
+    /// the current configuration state of the shell and may change over time.
+    fn parser_options(&self) -> brush_parser::ParserOptions;
+
+    /// Applies errexit semantics to a result if enabled and appropriate.
+    /// This should be called at "statement boundaries" where errexit should be checked.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - The execution result to potentially modify.
+    fn apply_errexit_if_enabled(&self, result: &mut ExecutionResult);
+
+    /// Gets the absolute form of the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to get the absolute form of.
+    fn absolute_path(&self, path: &Path) -> PathBuf;
+
+    /// Opens the given file, using the context of this shell and the provided execution parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The options to use opening the file.
+    /// * `path` - The path to the file to open; may be relative to the shell's working directory.
+    /// * `params` - Execution parameters.
+    fn open_file(
+        &self,
+        options: &std::fs::OpenOptions,
+        path: &Path,
+        params: &ExecutionParameters,
+    ) -> Result<openfiles::OpenFile, std::io::Error>;
+
+    /// Uses the shell's hash-based path cache to check whether the given filename is the name
+    /// of an executable in one of the directories in the shell's current PATH. If found,
+    /// ensures the path is in the cache and returns it.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidate_name` - The name of the file to look for.
+    fn find_first_executable_in_path_using_cache(
+        &mut self,
+        candidate_name: &str,
+    ) -> Option<PathBuf>;
+
+    /// Updates the currently executing command in the shell.
+    fn set_current_cmd(&mut self, pos: Option<brush_parser::SourcePosition>);
+
+    /// Updates the shell's internal tracking state to reflect that a new shell
+    /// function is being entered.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function being entered.
+    /// * `function` - The function being entered.
+    /// * `args` - The arguments being passed to the function.
+    /// * `params` - Current execution parameters.
+    fn enter_function(
+        &mut self,
+        name: &str,
+        function: &functions::Registration,
+        args: Vec<String>,
+        params: &ExecutionParameters,
+    ) -> Result<(), error::Error>;
+
+    /// Updates the shell's internal tracking state to reflect that the shell
+    /// has exited the top-most function on its call stack.
+    fn leave_function(&mut self) -> Result<(), error::Error>;
+
+    /// Updates the shell's internal tracking state to reflect that we're entering
+    /// a trap handler.
+    fn enter_trap_handler(&mut self, handler: Option<&traps::TrapHandler>);
+
+    /// Updates the shell's internal tracking state to reflect that we're leaving
+    /// a trap handler.
+    fn leave_trap_handler(&mut self);
+
+    /// Outputs `set -x` style trace output for a command.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - The execution parameters.
+    /// * `command` - The command to trace.
+    async fn trace_command(
+        &mut self,
+        params: &ExecutionParameters,
+        command: &str,
+    ) -> Result<(), error::Error>;
 }
 
 /// Represents an instance of a shell.
@@ -322,6 +445,7 @@ impl AsMut<Self> for Shell {
     }
 }
 
+#[async_trait]
 impl ShellRuntime for Shell {
     fn version(&self) -> &Option<String> {
         &self.version
@@ -474,6 +598,229 @@ impl ShellRuntime for Shell {
 
     fn depth(&self) -> usize {
         self.depth
+    }
+
+    fn env_str(&self, name: &str) -> Option<Cow<'_, str>> {
+        self.env.get_str(name, self)
+    }
+
+    fn env_var(&self, name: &str) -> Option<&ShellVariable> {
+        self.env.get(name).map(|(_, var)| var)
+    }
+
+    fn current_shell_name(&self) -> Option<Cow<'_, str>> {
+        for frame in self.call_stack.iter() {
+            // Executed scripts shadow the shell name.
+            if frame.frame_type.is_run_script() {
+                return Some(frame.frame_type.name());
+            }
+        }
+
+        self.name.as_deref().map(|name| name.into())
+    }
+
+    fn current_shell_args(&self) -> &[String] {
+        for frame in self.call_stack.iter() {
+            match frame.frame_type {
+                // Function calls always shadow positional parameters.
+                callstack::FrameType::Function(..) => return &frame.args,
+                // Executed scripts always shadow positional parameters.
+                _ if frame.frame_type.is_run_script() => return &frame.args,
+                // Sourced scripts shadow positional parameters if they have arguments.
+                _ if frame.frame_type.is_sourced_script() => {
+                    if !frame.args.is_empty() {
+                        return &frame.args;
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        self.args.as_slice()
+    }
+
+    fn ifs(&self) -> Cow<'_, str> {
+        self.env_str("IFS").unwrap_or_else(|| " \t\n".into())
+    }
+
+    fn get_ifs_first_char(&self) -> char {
+        self.ifs().chars().next().unwrap_or(' ')
+    }
+
+    fn home_dir(&self) -> Option<PathBuf> {
+        if let Some(home) = self.env.get_str("HOME", self) {
+            Some(PathBuf::from(home.to_string()))
+        } else {
+            // HOME isn't set, so let's sort it out ourselves.
+            users::get_current_user_home_dir()
+        }
+    }
+
+    fn parser_options(&self) -> brush_parser::ParserOptions {
+        brush_parser::ParserOptions {
+            enable_extended_globbing: self.options.extended_globbing,
+            posix_mode: self.options.posix_mode,
+            sh_mode: self.options.sh_mode,
+            tilde_expansion_at_word_start: true,
+            tilde_expansion_after_colon: false,
+            parser_impl: brush_parser::ParserImpl::Peg,
+        }
+    }
+
+    fn apply_errexit_if_enabled(&self, result: &mut ExecutionResult) {
+        if self.options.exit_on_nonzero_command_exit
+            && !result.is_success()
+            && result.is_normal_flow()
+        {
+            result.next_control_flow = ExecutionControlFlow::ExitShell;
+        }
+    }
+
+    fn absolute_path(&self, path: &Path) -> PathBuf {
+        if path.as_os_str().is_empty() || path.is_absolute() {
+            path.to_owned()
+        } else {
+            self.working_dir().join(path)
+        }
+    }
+
+    fn open_file(
+        &self,
+        options: &std::fs::OpenOptions,
+        path: &Path,
+        params: &ExecutionParameters,
+    ) -> Result<openfiles::OpenFile, std::io::Error> {
+        let path_to_open = self.absolute_path(path);
+
+        // See if this is a reference to a file descriptor, in which case the actual
+        // /dev/fd* file path for this process may not match with what's in the execution
+        // parameters.
+        if let Some(parent) = path_to_open.parent() {
+            if parent == Path::new("/dev/fd") {
+                if let Some(filename) = path_to_open.file_name() {
+                    if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<ShellFd>() {
+                        if let Some(open_file) = params.try_fd(self, fd_num) {
+                            return open_file.try_clone();
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(options.open(path_to_open)?.into())
+    }
+
+    fn find_first_executable_in_path_using_cache(
+        &mut self,
+        candidate_name: &str,
+    ) -> Option<PathBuf> {
+        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+            Some(cached_path)
+        } else if let Some(found_path) = self.find_first_executable_in_path(candidate_name) {
+            self.program_location_cache
+                .set(&candidate_name, found_path.clone());
+            Some(found_path)
+        } else {
+            None
+        }
+    }
+
+    fn set_current_cmd(&mut self, pos: Option<brush_parser::SourcePosition>) {
+        self.call_stack
+            .set_current_pos(pos.map(std::sync::Arc::new));
+    }
+
+    fn enter_function(
+        &mut self,
+        name: &str,
+        function: &functions::Registration,
+        args: Vec<String>,
+        _params: &ExecutionParameters,
+    ) -> Result<(), error::Error> {
+        if let Some(max_call_depth) = self.options.max_function_call_depth {
+            if self.call_stack.function_call_depth() >= max_call_depth {
+                return Err(error::ErrorKind::MaxFunctionCallDepthExceeded.into());
+            }
+        }
+
+        if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
+            let depth = self.call_stack.function_call_depth();
+            let prefix = repeated_char_str(' ', depth);
+            tracing::debug!(target: trace_categories::FUNCTIONS, "Entering func [depth={depth}]: {prefix}{name}");
+        }
+
+        self.call_stack.push_function(name, function, args);
+        self.env.push_scope(env::EnvironmentScope::Local);
+
+        Ok(())
+    }
+
+    fn leave_function(&mut self) -> Result<(), error::Error> {
+        self.env.pop_scope(env::EnvironmentScope::Local)?;
+
+        if let Some(exited_call) = self.call_stack.pop() {
+            if let callstack::FrameType::Function(func_call) = exited_call.frame_type {
+                if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
+                    let depth = self.call_stack.function_call_depth();
+                    let prefix = repeated_char_str(' ', depth);
+                    tracing::debug!(target: trace_categories::FUNCTIONS, "Exiting func  [depth={depth}]: {prefix}{}", func_call.function_name);
+                }
+            } else {
+                let err: error::Error =
+                    error::ErrorKind::InternalError("mismatched call stack state".to_owned())
+                        .into();
+                return Err(err.into_fatal());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn enter_trap_handler(&mut self, handler: Option<&traps::TrapHandler>) {
+        self.call_stack.push_trap_handler(handler);
+    }
+
+    fn leave_trap_handler(&mut self) {
+        self.call_stack.pop();
+    }
+
+    async fn trace_command(
+        &mut self,
+        params: &ExecutionParameters,
+        command: &str,
+    ) -> Result<(), error::Error> {
+        // Expand the PS4 prompt variable to get our prefix.
+        let ps4 = self.expand_prompt_var("PS4", "").await?;
+        let mut prefix = ps4;
+
+        // Add additional depth-based prefixes using the first character of PS4.
+        let additional_depth = self.call_stack.script_source_depth() + self.depth;
+        if let Some(c) = prefix.chars().next() {
+            for _ in 0..additional_depth {
+                prefix.insert(0, c);
+            }
+        }
+
+        // Resolve which file descriptor to use for tracing. We default to stderr.
+        let mut trace_file = params.try_stderr(self);
+
+        // If BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
+        if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD") {
+            let xtracefd_value = xtracefd_var.value().to_cow_str(self);
+            if let Ok(fd) = xtracefd_value.parse::<ShellFd>() {
+                if let Some(file) = self.open_files.try_fd(fd) {
+                    trace_file = Some(file.clone());
+                }
+            }
+        }
+
+        // If we have a valid trace file, write to it.
+        if let Some(trace_file) = trace_file {
+            let mut trace_file = trace_file.try_clone()?;
+            writeln!(trace_file, "{prefix}{command}")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -832,43 +1179,10 @@ impl Shell {
 
     /// Updates the currently executing command in the shell.
     pub fn set_current_cmd(&mut self, cmd: &impl brush_parser::ast::Node) {
-        self.call_stack
-            .set_current_pos(cmd.location().map(|span| span.start));
-    }
-
-    /// Returns the *current* name of the shell ($0).
-    /// Influenced by the current call stack.
-    pub fn current_shell_name(&self) -> Option<Cow<'_, str>> {
-        for frame in self.call_stack.iter() {
-            // Executed scripts shadow the shell name.
-            if frame.frame_type.is_run_script() {
-                return Some(frame.frame_type.name());
-            }
-        }
-
-        self.name.as_deref().map(|name| name.into())
-    }
-
-    /// Returns the *current* positional arguments for the shell ($1 and beyond).
-    /// Influenced by the current call stack.
-    pub fn current_shell_args(&self) -> &[String] {
-        for frame in self.call_stack.iter() {
-            match frame.frame_type {
-                // Function calls always shadow positional parameters.
-                callstack::FrameType::Function(..) => return &frame.args,
-                // Executed scripts always shadow positional parameters.
-                _ if frame.frame_type.is_run_script() => return &frame.args,
-                // Sourced scripts shadow positional parameters if they have arguments.
-                _ if frame.frame_type.is_sourced_script() => {
-                    if !frame.args.is_empty() {
-                        return &frame.args;
-                    }
-                }
-                _ => (),
-            }
-        }
-
-        self.args.as_slice()
+        <Self as ShellRuntime>::set_current_cmd(
+            self,
+            cmd.location().map(|span| span.start.as_ref().clone()),
+        );
     }
 
     /// Returns a mutable reference to *current* positional parameters for the shell
@@ -895,21 +1209,6 @@ impl Shell {
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
-    }
-
-    /// Applies errexit semantics to a result if enabled and appropriate.
-    /// This should be called at "statement boundaries" where errexit should be checked.
-    ///
-    /// # Arguments
-    ///
-    /// * `result` - The execution result to potentially modify.
-    pub const fn apply_errexit_if_enabled(&self, result: &mut ExecutionResult) {
-        if self.options.exit_on_nonzero_command_exit
-            && !result.is_success()
-            && result.is_normal_flow()
-        {
-            result.next_control_flow = ExecutionControlFlow::ExitShell;
-        }
     }
 
     /// Returns a mutable reference to the shell's current working directory.
@@ -1496,19 +1795,6 @@ impl Shell {
         self.env_str(name).unwrap_or_else(|| default.into())
     }
 
-    /// Returns the options that should be used for parsing shell programs; reflects
-    /// the current configuration state of the shell and may change over time.
-    pub const fn parser_options(&self) -> brush_parser::ParserOptions {
-        brush_parser::ParserOptions {
-            enable_extended_globbing: self.options.extended_globbing,
-            posix_mode: self.options.posix_mode,
-            sh_mode: self.options.sh_mode,
-            tilde_expansion_at_word_start: true,
-            tilde_expansion_after_colon: false,
-            parser_impl: brush_parser::ParserImpl::Peg,
-        }
-    }
-
     /// Returns whether or not the shell is actively executing in a sourced script.
     pub fn in_sourced_script(&self) -> bool {
         self.call_stack.in_sourced_script()
@@ -1560,71 +1846,6 @@ impl Shell {
         }
 
         self.call_stack.pop();
-
-        Ok(())
-    }
-
-    pub(crate) fn enter_trap_handler(&mut self, handler: Option<&traps::TrapHandler>) {
-        self.call_stack.push_trap_handler(handler);
-    }
-
-    pub(crate) fn leave_trap_handler(&mut self) {
-        self.call_stack.pop();
-    }
-
-    /// Updates the shell's internal tracking state to reflect that a new shell
-    /// function is being entered.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the function being entered.
-    /// * `function` - The function being entered.
-    /// * `args` - The arguments being passed to the function.
-    /// * `_params` - Current execution parameters.
-    pub(crate) fn enter_function(
-        &mut self,
-        name: &str,
-        function: &functions::Registration,
-        args: impl IntoIterator<Item = String>,
-        _params: &ExecutionParameters,
-    ) -> Result<(), error::Error> {
-        if let Some(max_call_depth) = self.options.max_function_call_depth {
-            if self.call_stack.function_call_depth() >= max_call_depth {
-                return Err(error::ErrorKind::MaxFunctionCallDepthExceeded.into());
-            }
-        }
-
-        if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
-            let depth = self.call_stack.function_call_depth();
-            let prefix = repeated_char_str(' ', depth);
-            tracing::debug!(target: trace_categories::FUNCTIONS, "Entering func [depth={depth}]: {prefix}{name}");
-        }
-
-        self.call_stack.push_function(name, function, args);
-        self.env.push_scope(env::EnvironmentScope::Local);
-
-        Ok(())
-    }
-
-    /// Updates the shell's internal tracking state to reflect that the shell
-    /// has exited the top-most function on its call stack.
-    pub(crate) fn leave_function(&mut self) -> Result<(), error::Error> {
-        self.env.pop_scope(env::EnvironmentScope::Local)?;
-
-        if let Some(exited_call) = self.call_stack.pop() {
-            if let callstack::FrameType::Function(func_call) = exited_call.frame_type {
-                if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
-                    let depth = self.call_stack.function_call_depth();
-                    let prefix = repeated_char_str(' ', depth);
-                    tracing::debug!(target: trace_categories::FUNCTIONS, "Exiting func  [depth={depth}]: {prefix}{}", func_call.function_name);
-                }
-            } else {
-                let err: error::Error =
-                    error::ErrorKind::InternalError("mismatched call stack state".to_owned())
-                        .into();
-                return Err(err.into_fatal());
-            }
-        }
 
         Ok(())
     }
@@ -1684,25 +1905,6 @@ impl Shell {
         Ok(())
     }
 
-    /// Tries to retrieve a variable from the shell's environment, converting it into its
-    /// string form.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable to retrieve.
-    pub fn env_str(&self, name: &str) -> Option<Cow<'_, str>> {
-        self.env.get_str(name, self)
-    }
-
-    /// Tries to retrieve a variable from the shell's environment.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable to retrieve.
-    pub fn env_var(&self, name: &str) -> Option<&ShellVariable> {
-        self.env.get(name).map(|(_, var)| var)
-    }
-
     /// Tries to set a global variable in the shell's environment.
     ///
     /// # Arguments
@@ -1735,16 +1937,6 @@ impl Shell {
     /// * `name` - The name of the builtin to lookup.
     pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration<Self>> {
         self.builtins.get_mut(name)
-    }
-
-    /// Returns the current value of the IFS variable, or the default value if it is not set.
-    pub fn ifs(&self) -> Cow<'_, str> {
-        self.env_str("IFS").unwrap_or_else(|| " \t\n".into())
-    }
-
-    /// Returns the first character of the IFS variable, or a space if it is not set.
-    pub(crate) fn get_ifs_first_char(&self) -> char {
-        self.ifs().chars().next().unwrap_or(' ')
     }
 
     /// Generates command completions for the shell.
@@ -1819,40 +2011,13 @@ impl Shell {
         None
     }
 
-    /// Uses the shell's hash-based path cache to check whether the given filename is the name
-    /// of an executable in one of the directories in the shell's current PATH. If found,
-    /// ensures the path is in the cache and returns it.
-    ///
-    /// # Arguments
-    ///
-    /// * `candidate_name` - The name of the file to look for.
-    pub fn find_first_executable_in_path_using_cache<S: AsRef<str>>(
-        &mut self,
-        candidate_name: S,
-    ) -> Option<PathBuf> {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
-            Some(cached_path)
-        } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
-            self.program_location_cache
-                .set(&candidate_name, found_path.clone());
-            Some(found_path)
-        } else {
-            None
-        }
-    }
-
     /// Gets the absolute form of the given path.
     ///
     /// # Arguments
     ///
     /// * `path` - The path to get the absolute form of.
     pub fn absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
-        let path = path.as_ref();
-        if path.as_os_str().is_empty() || path.is_absolute() {
-            path.to_owned()
-        } else {
-            self.working_dir().join(path)
-        }
+        <Self as ShellRuntime>::absolute_path(self, path.as_ref())
     }
 
     /// Opens the given file, using the context of this shell and the provided execution parameters.
@@ -1868,24 +2033,7 @@ impl Shell {
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, std::io::Error> {
-        let path_to_open = self.absolute_path(path.as_ref());
-
-        // See if this is a reference to a file descriptor, in which case the actual
-        // /dev/fd* file path for this process may not match with what's in the execution
-        // parameters.
-        if let Some(parent) = path_to_open.parent() {
-            if parent == Path::new("/dev/fd") {
-                if let Some(filename) = path_to_open.file_name() {
-                    if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<ShellFd>() {
-                        if let Some(open_file) = params.try_fd(self, fd_num) {
-                            return open_file.try_clone();
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(options.open(path_to_open)?.into())
+        <Self as ShellRuntime>::open_file(self, options, path.as_ref(), params)
     }
 
     /// Sets the shell's current working directory to the given path.
@@ -1946,16 +2094,6 @@ impl Shell {
         s
     }
 
-    /// Returns the shell's current home directory, if available.
-    pub(crate) fn home_dir(&self) -> Option<PathBuf> {
-        if let Some(home) = self.env.get_str("HOME", self) {
-            Some(PathBuf::from(home.to_string()))
-        } else {
-            // HOME isn't set, so let's sort it out ourselves.
-            users::get_current_user_home_dir()
-        }
-    }
-
     /// Replaces the shell's currently configured open files with the given set.
     /// Typically only used by exec-like builtins.
     ///
@@ -1983,50 +2121,6 @@ impl Shell {
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write + 'static {
         self.open_files.try_stderr().cloned().unwrap()
-    }
-
-    /// Outputs `set -x` style trace output for a command.
-    ///
-    /// # Arguments
-    ///
-    /// * `command` - The command to trace.
-    pub(crate) async fn trace_command<S: AsRef<str>>(
-        &mut self,
-        params: &ExecutionParameters,
-        command: S,
-    ) -> Result<(), error::Error> {
-        // Expand the PS4 prompt variable to get our prefix.
-        let ps4 = self.as_mut().expand_prompt_var("PS4", "").await?;
-        let mut prefix = ps4;
-
-        // Add additional depth-based prefixes using the first character of PS4.
-        let additional_depth = self.call_stack.script_source_depth() + self.depth;
-        if let Some(c) = prefix.chars().next() {
-            for _ in 0..additional_depth {
-                prefix.insert(0, c);
-            }
-        }
-
-        // Resolve which file descriptor to use for tracing. We default to stderr.
-        let mut trace_file = params.try_stderr(self);
-
-        // If BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
-        if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD") {
-            let xtracefd_value = xtracefd_var.value().to_cow_str(self);
-            if let Ok(fd) = xtracefd_value.parse::<ShellFd>() {
-                if let Some(file) = self.open_files.try_fd(fd) {
-                    trace_file = Some(file.clone());
-                }
-            }
-        }
-
-        // If we have a valid trace file, write to it.
-        if let Some(trace_file) = trace_file {
-            let mut trace_file = trace_file.try_clone()?;
-            writeln!(trace_file, "{prefix}{}", command.as_ref())?;
-        }
-
-        Ok(())
     }
 
     /// Returns the keywords that are reserved by the shell.
