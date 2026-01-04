@@ -4,7 +4,7 @@ use clap::builder::styling;
 use futures::future::BoxFuture;
 use std::io::Write;
 
-use crate::{BuiltinError, CommandArg, commands, error, results};
+use crate::{BuiltinError, CommandArg, ShellRuntime, commands, error, results};
 
 /// Type of a function implementing a built-in command.
 ///
@@ -12,10 +12,11 @@ use crate::{BuiltinError, CommandArg, commands, error, results};
 ///
 /// * The context in which the command is being executed.
 /// * The arguments to the command.
-pub type CommandExecuteFunc = fn(
-    commands::ExecutionContext<'_>,
-    Vec<commands::CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>;
+pub type CommandExecuteFunc<S: ShellRuntime> =
+    fn(
+        commands::ExecutionContext<'_, S>,
+        Vec<commands::CommandArg>,
+    ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>;
 
 /// Type of a function to retrieve help content for a built-in command.
 ///
@@ -72,9 +73,9 @@ pub trait Command: clap::Parser {
     ///
     /// * `context` - The context in which the command is being executed.
     // NOTE: we use desugared async here because we need a Send marker
-    fn execute(
+    fn execute<S: ShellRuntime>(
         &self,
-        context: commands::ExecutionContext<'_>,
+        context: commands::ExecutionContext<'_, S>,
     ) -> impl std::future::Future<Output = Result<results::ExecutionResult, Self::Error>>
     + std::marker::Send;
 
@@ -145,9 +146,9 @@ pub struct ContentOptions {
 
 /// Encapsulates a registration for a built-in command.
 #[derive(Clone)]
-pub struct Registration {
+pub struct Registration<S: ShellRuntime> {
     /// Function to execute the builtin.
-    pub execute_func: CommandExecuteFunc,
+    pub execute_func: CommandExecuteFunc<S>,
 
     /// Function to retrieve the builtin's content/help text.
     pub content_func: CommandContentFunc,
@@ -162,7 +163,7 @@ pub struct Registration {
     pub declaration_builtin: bool,
 }
 
-impl Registration {
+impl<S: ShellRuntime> Registration<S> {
     /// Updates the given registration to mark it for a special builtin.
     #[must_use]
     pub const fn special(self) -> Self {
@@ -362,17 +363,17 @@ pub trait SimpleCommand {
     ) -> Result<String, error::Error>;
 
     /// Executes the built-in command.
-    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
-        context: commands::ExecutionContext<'_>,
+    fn execute<I: Iterator<Item = S>, S: AsRef<str>, SR: ShellRuntime>(
+        context: commands::ExecutionContext<'_, SR>,
         args: I,
     ) -> Result<results::ExecutionResult, error::Error>;
 }
 
 /// Returns a built-in command registration, given an implementation of the
 /// `SimpleCommand` trait.
-pub fn simple_builtin<B: SimpleCommand + Send + Sync>() -> Registration {
+pub fn simple_builtin<B: SimpleCommand + Send + Sync, S: ShellRuntime>() -> Registration<S> {
     Registration {
-        execute_func: exec_simple_builtin::<B>,
+        execute_func: exec_simple_builtin::<B, S>,
         content_func: B::get_content,
         disabled: false,
         special_builtin: false,
@@ -382,9 +383,9 @@ pub fn simple_builtin<B: SimpleCommand + Send + Sync>() -> Registration {
 
 /// Returns a built-in command registration, given an implementation of the
 /// `Command` trait.
-pub fn builtin<B: Command + Send + Sync>() -> Registration {
+pub fn builtin<B: Command + Send + Sync, S: ShellRuntime>() -> Registration<S> {
     Registration {
-        execute_func: exec_builtin::<B>,
+        execute_func: exec_builtin::<B, S>,
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
@@ -395,9 +396,9 @@ pub fn builtin<B: Command + Send + Sync>() -> Registration {
 /// Returns a built-in command registration, given an implementation of the
 /// `DeclarationCommand` trait. Used for select commands that can take parsed
 /// declarations as arguments.
-pub fn decl_builtin<B: DeclarationCommand + Send + Sync>() -> Registration {
+pub fn decl_builtin<B: DeclarationCommand + Send + Sync, S: ShellRuntime>() -> Registration<S> {
     Registration {
-        execute_func: exec_declaration_builtin::<B>,
+        execute_func: exec_declaration_builtin::<B, S>,
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
@@ -412,9 +413,10 @@ pub fn decl_builtin<B: DeclarationCommand + Send + Sync>() -> Registration {
 /// for help/usage information. Arguments are passed directly to the command
 /// via `set_declarations`. This is primarily only expected to be used with
 /// select builtin commands that wrap other builtins (e.g., "builtin").
-pub fn raw_arg_builtin<B: DeclarationCommand + Default + Send + Sync>() -> Registration {
+pub fn raw_arg_builtin<B: DeclarationCommand + Default + Send + Sync, S: ShellRuntime>()
+-> Registration<S> {
     Registration {
-        execute_func: exec_raw_arg_builtin::<B>,
+        execute_func: exec_raw_arg_builtin::<B, S>,
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
@@ -430,16 +432,16 @@ fn get_builtin_content<T: Command + Send + Sync>(
     T::get_content(name, content_type, options)
 }
 
-fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+fn exec_simple_builtin<T: SimpleCommand + Send + Sync, S: ShellRuntime>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_simple_builtin_impl::<T>(context, args).await })
+    Box::pin(async move { exec_simple_builtin_impl::<T, S>(context, args).await })
 }
 
 #[expect(clippy::unused_async)]
-async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync, S: ShellRuntime>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> Result<results::ExecutionResult, error::Error> {
     let plain_args = args.into_iter().map(|arg| match arg {
@@ -450,15 +452,15 @@ async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
     T::execute(context, plain_args)
 }
 
-fn exec_builtin<T: Command + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+fn exec_builtin<T: Command + Send + Sync, S: ShellRuntime>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_builtin_impl::<T>(context, args).await })
+    Box::pin(async move { exec_builtin_impl::<T, S>(context, args).await })
 }
 
-async fn exec_builtin_impl<T: Command + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+async fn exec_builtin_impl<T: Command + Send + Sync, S: ShellRuntime>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> Result<results::ExecutionResult, error::Error> {
     let plain_args = args.into_iter().map(|arg| match arg {
@@ -478,15 +480,15 @@ async fn exec_builtin_impl<T: Command + Send + Sync>(
     call_builtin(command, context).await
 }
 
-fn exec_declaration_builtin<T: DeclarationCommand + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+fn exec_declaration_builtin<T: DeclarationCommand + Send + Sync, S: ShellRuntime>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_declaration_builtin_impl::<T>(context, args).await })
+    Box::pin(async move { exec_declaration_builtin_impl::<T, S>(context, args).await })
 }
 
-async fn exec_declaration_builtin_impl<T: DeclarationCommand + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+async fn exec_declaration_builtin_impl<T: DeclarationCommand + Send + Sync, S: ShellRuntime>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> Result<results::ExecutionResult, error::Error> {
     let mut options = vec![];
@@ -517,15 +519,18 @@ async fn exec_declaration_builtin_impl<T: DeclarationCommand + Send + Sync>(
     call_builtin(command, context).await
 }
 
-fn exec_raw_arg_builtin<T: DeclarationCommand + Default + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+fn exec_raw_arg_builtin<T: DeclarationCommand + Default + Send + Sync, S: ShellRuntime>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_raw_arg_builtin_impl::<T>(context, args).await })
+    Box::pin(async move { exec_raw_arg_builtin_impl::<T, S>(context, args).await })
 }
 
-async fn exec_raw_arg_builtin_impl<T: DeclarationCommand + Default + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
+async fn exec_raw_arg_builtin_impl<
+    T: DeclarationCommand + Default + Send + Sync,
+    S: ShellRuntime,
+>(
+    context: commands::ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> Result<results::ExecutionResult, error::Error> {
     let mut command = T::default();
@@ -534,9 +539,9 @@ async fn exec_raw_arg_builtin_impl<T: DeclarationCommand + Default + Send + Sync
     call_builtin(command, context).await
 }
 
-async fn call_builtin(
+async fn call_builtin<S: ShellRuntime>(
     command: impl Command,
-    context: commands::ExecutionContext<'_>,
+    context: commands::ExecutionContext<'_, S>,
 ) -> Result<results::ExecutionResult, error::Error> {
     let builtin_name = context.command_name.clone();
     let result = command
