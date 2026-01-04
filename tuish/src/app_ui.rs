@@ -337,14 +337,12 @@ impl AppUI {
 
                     // Consistent theme colors
                     let bg_base = Color::Rgb(22, 22, 30);      // Main background
-                    let bg_surface = Color::Rgb(30, 30, 40);   // Elevated surfaces
-                    let bg_highlight = Color::Rgb(45, 45, 60); // Hover/selected
                     let text_muted = Color::Rgb(140, 140, 160);
                     let border_dim = Color::Rgb(55, 55, 75);
 
                     // If region has multiple panes, render a tab bar
                     if pane_ids.len() > 1 {
-                        // Split area for tabs bar + content
+                        // Split area for tabs bar + content (no gap between them)
                         let region_chunks = Layout::default()
                             .direction(Direction::Vertical)
                             .constraints([
@@ -368,45 +366,9 @@ impl AppUI {
                             Color::Rgb(250, 204, 21),  // Yellow
                         ];
 
-                        // Modern tab bar: render as styled spans directly
-                        let mut tab_spans: Vec<Span<'_>> = Vec::new();
-                        
-                        for (i, t) in tab_titles.iter().enumerate() {
-                            let accent = accent_colors[i % accent_colors.len()];
-                            let pane_id = pane_ids[i];
-                            let is_selected = pane_id == focused_pane_id;
-
-                            if is_selected {
-                                // Selected tab: accent color text, subtle background
-                                tab_spans.push(Span::styled(
-                                    format!(" ● {t} "),
-                                    Style::default()
-                                        .fg(accent)
-                                        .bg(bg_highlight)
-                                        .add_modifier(Modifier::BOLD)
-                                ));
-                            } else {
-                                // Unselected tab: muted
-                                tab_spans.push(Span::styled(
-                                    format!("   {t} "),
-                                    Style::default()
-                                        .fg(text_muted)
-                                        .bg(bg_surface)
-                                ));
-                            }
-                        }
-                        
-                        // Fill remaining space with background
-                        let tab_line = Line::from(tab_spans);
-                        let tab_para = Paragraph::new(tab_line)
-                            .style(Style::default().bg(bg_surface));
-                        f.render_widget(tab_para, region_chunks[0]);
-
-                        // Render selected pane content area
+                        // Get selected tab info first for border color
                         let selected_index = pane_ids.iter().position(|&id| id == focused_pane_id).unwrap_or(0);
                         let accent = accent_colors[selected_index % accent_colors.len()];
-                        
-                        // Check if this pane is marked for moving
                         let is_marked = self.marked_pane_for_move == Some(focused_pane_id);
                         
                         let border_color = if is_marked {
@@ -416,6 +378,46 @@ impl AppUI {
                         } else {
                             border_dim
                         };
+
+                        // Tab bar with cohesive styling
+                        // Selected tab uses accent color and content background to visually connect
+                        let mut tab_spans: Vec<Span<'_>> = Vec::new();
+                        
+                        for (i, t) in tab_titles.iter().enumerate() {
+                            let tab_accent = accent_colors[i % accent_colors.len()];
+                            let pane_id = pane_ids[i];
+                            let is_selected = pane_id == focused_pane_id;
+
+                            if is_selected {
+                                // Selected tab: accent dot + name with content background
+                                tab_spans.push(Span::styled(
+                                    format!(" ● {t} "),
+                                    Style::default()
+                                        .fg(tab_accent)
+                                        .bg(bg_base)
+                                        .add_modifier(Modifier::BOLD)
+                                ));
+                            } else {
+                                // Unselected tab: lighter background for contrast with active
+                                let inactive_text = Color::Rgb(100, 100, 120);
+                                let inactive_bg = Color::Rgb(40, 40, 52);     // Lighter than content bg
+                                tab_spans.push(Span::styled(
+                                    format!("   {t} "),
+                                    Style::default()
+                                        .fg(inactive_text)
+                                        .bg(inactive_bg)
+                                ));
+                            }
+                        }
+                        
+                        // Fill remaining with inactive background
+                        let inactive_bg = Color::Rgb(40, 40, 52);
+                        let tab_line = Line::from(tab_spans);
+                        let tab_para = Paragraph::new(tab_line)
+                            .style(Style::default().bg(inactive_bg));
+                        f.render_widget(tab_para, region_chunks[0]);
+
+                        // Render selected pane content area with full border
 
                         // Get title from selected pane
                         // For tabbed panes: only show border_title() if set (avoids redundancy with tab name)
@@ -432,22 +434,22 @@ impl AppUI {
                         };
 
                         let title_style = if is_marked {
-                            Style::default().fg(Color::Rgb(255, 215, 0)).add_modifier(Modifier::BOLD)
+                            Style::default().fg(Color::Rgb(255, 215, 0)).add_modifier(Modifier::BOLD | Modifier::ITALIC)
                         } else if is_focused_region {
                             // Use accent color for title foreground
-                            Style::default().fg(accent).add_modifier(Modifier::BOLD)
+                            Style::default().fg(accent).add_modifier(Modifier::BOLD | Modifier::ITALIC)
                         } else {
-                            Style::default().fg(text_muted)
+                            Style::default().fg(text_muted).add_modifier(Modifier::ITALIC)
                         };
 
-                        // Clean, minimal border - no title icon clutter
+                        // Content pane with full border (cohesive with tab bar above)
                         let mut block = Block::default()
                             .borders(Borders::ALL)
                             .border_type(if is_marked { BorderType::Double } else { BorderType::Rounded })
                             .border_style(Style::default().fg(border_color))
                             .style(Style::default().bg(bg_base));
                         
-                        // Only add title if non-empty (avoids gap in border)
+                        // Title at top when present (e.g., "Running: cmd")
                         if !title.is_empty() {
                             block = block.title(Line::from(format!(" {title} ")).style(title_style));
                         }
@@ -480,17 +482,17 @@ impl AppUI {
                             );
 
                         let title_style = if is_focused_region {
-                            // Use accent color for title foreground
-                            Style::default().fg(accent).add_modifier(Modifier::BOLD)
+                            // Use accent color for title foreground (no background - transparent)
+                            Style::default().fg(accent).add_modifier(Modifier::BOLD | Modifier::ITALIC)
                         } else {
-                            Style::default().fg(text_muted)
+                            Style::default().fg(text_muted).add_modifier(Modifier::ITALIC)
                         };
 
+                        // Block with no background so border/title area is transparent
                         let block = Block::default()
                             .borders(Borders::ALL)
                             .border_type(BorderType::Rounded)
                             .border_style(Style::default().fg(border_color))
-                            .style(Style::default().bg(bg_base))
                             .title(Line::from(format!(" {title} ")).style(title_style));
 
                         let inner = block.inner(rect);
@@ -518,38 +520,37 @@ impl AppUI {
             }
 
             // Render hint bar at bottom (always visible, style changes based on mode)
-            let (hint_text, bg_color, fg_color) = if navigation_mode {
+            // Use Line with Spans for mixed styling (tuish in bold+italic + blue accent)
+            let tuish_color = Color::Rgb(96, 165, 250);  // Blue accent for branding
+            let tuish_style = Style::default().fg(tuish_color).add_modifier(Modifier::BOLD | Modifier::ITALIC);
+            
+            let (hint_line, bg_color) = if navigation_mode {
                 if self.marked_pane_for_move.is_some() {
                     // Gold background when a pane is marked for moving
-                    (
-                        " 󰃀 MARKED: Navigate to target region (n/p) then press Shift+M to MOVE pane here, or Esc to cancel ".to_string(),
-                        Color::Rgb(255, 215, 0),  // Gold
-                        Color::Rgb(0, 0, 0),
-                    )
+                    let line = Line::from(vec![
+                        Span::styled(" tuish ", tuish_style),
+                        Span::styled("│ 󰃀 MARKED: Navigate to target region (n/p) then press Shift+M to MOVE pane here, or Esc to cancel ", Style::default().fg(Color::Black)),
+                    ]);
+                    (line, Color::Rgb(255, 215, 0))  // Gold
                 } else {
                     // Yellow background for normal nav mode
-                    (
-                        " ⚡ NAV: t/e/h/a/f/c=panes, i=input, Tab=cycle, Ctrl+Space=region, v/s=split, m=mark, Esc=exit ".to_string(),
-                        Color::Rgb(250, 204, 21),  // Yellow
-                        Color::Rgb(0, 0, 0),
-                    )
+                    let line = Line::from(vec![
+                        Span::styled(" tuish ", tuish_style),
+                        Span::styled("│ ⚡ NAV: t/e/h/a/f/c=panes, i=input, Tab=cycle, Ctrl+Space=region, v/s=split, m=mark, Esc=exit ", Style::default().fg(Color::Black).add_modifier(Modifier::BOLD)),
+                    ]);
+                    (line, Color::Rgb(250, 204, 21))  // Yellow
                 }
             } else {
                 // Normal mode: muted hint bar
-                (
-                    " Ctrl+Space: switch panes │ Ctrl+B: navigation mode ".to_string(),
-                    Color::Rgb(60, 60, 70),   // Dark gray
-                    Color::Rgb(160, 160, 170), // Light gray text
-                )
+                let line = Line::from(vec![
+                    Span::styled(" tuish ", tuish_style),
+                    Span::styled("│ Ctrl+Space: switch panes │ Ctrl+B: navigation mode ", Style::default().fg(Color::Rgb(160, 160, 170))),
+                ]);
+                (line, Color::Rgb(60, 60, 70))   // Dark gray
             };
 
-            let hint_bar = Paragraph::new(hint_text.as_str())
-                .style(
-                    Style::default()
-                        .bg(bg_color)
-                        .fg(fg_color)
-                        .add_modifier(if navigation_mode { Modifier::BOLD } else { Modifier::empty() })
-                )
+            let hint_bar = Paragraph::new(hint_line)
+                .style(Style::default().bg(bg_color))
                 .alignment(Alignment::Center);
             f.render_widget(hint_bar, hint_bar_area);
         })?;
