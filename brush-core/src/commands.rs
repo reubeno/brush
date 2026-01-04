@@ -583,20 +583,22 @@ pub(crate) fn execute_external_command(
 
     // Set up process group state.
     if new_pg {
-        // We need to set up a new process group.
-        cmd.process_group(0);
+        // Check if we'll be doing terminal control setup (which includes setsid)
+        if child_stdin_is_terminal && context.shell.options().external_cmd_leads_session {
+            // Don't set process_group(0) - setsid() in pre_exec will handle it
+            cmd.lead_session();
+        } else {
+            // Normal case: create new process group in current session
+            cmd.process_group(0);
+            if child_stdin_is_terminal {
+                cmd.take_foreground();
+            }
+        }
     } else {
         // We need to join an established process group.
         if let Some(pgid) = process_group_id {
             cmd.process_group(pgid);
         }
-    }
-
-    // If we're to lead our own process group and stdin is a terminal,
-    // then we need to arrange for the new process to move itself
-    // to the foreground.
-    if new_pg && child_stdin_is_terminal {
-        cmd.take_foreground();
     }
 
     // When tracing is enabled, report.

@@ -56,8 +56,7 @@ impl History {
             // Look for timestamp comments; ignore other comment lines.
             if let Some(comment) = line.strip_prefix("#") {
                 if let Ok(seconds_since_epoch) = comment.trim().parse() {
-                    next_timestamp =
-                        chrono::DateTime::<Utc>::from_timestamp(seconds_since_epoch, 0);
+                    next_timestamp = ItemTimestamp::from_timestamp(seconds_since_epoch, 0);
                 } else {
                     next_timestamp = None;
                 }
@@ -252,6 +251,9 @@ impl History {
     }
 }
 
+/// Represents a timestamp for a history item.
+pub type ItemTimestamp = chrono::DateTime<Utc>;
+
 /// Represents an item in the history.
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -261,7 +263,7 @@ pub struct Item {
     /// The actual command line.
     pub command_line: String,
     /// The timestamp when the command was started.
-    pub timestamp: Option<chrono::DateTime<Utc>>,
+    pub timestamp: Option<ItemTimestamp>,
     /// Whether or not the item is dirty, i.e., has not yet been written to backing storage.
     pub dirty: bool,
 }
@@ -288,9 +290,9 @@ pub struct Query {
     /// Whether to search forward or backward
     pub direction: Direction,
     /// Optionally, clamp results to items with a timestamp strictly after this.
-    pub not_at_or_before_time: Option<chrono::DateTime<Utc>>,
+    pub not_at_or_before_time: Option<ItemTimestamp>,
     /// Optionally, clamp results to items with a timestamp strictly before this.
-    pub not_at_or_after_time: Option<chrono::DateTime<Utc>>,
+    pub not_at_or_after_time: Option<ItemTimestamp>,
     /// Optionally, clamp results to items with an ID equal strictly after this.
     pub not_at_or_before_id: Option<ItemId>,
     /// Optionally, clamp results to items with an ID equal strictly before this.
