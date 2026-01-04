@@ -31,16 +31,16 @@ pub enum CommandWaitResult {
 }
 
 /// Represents the context for executing a command.
-pub struct ExecutionContext<'a> {
+pub struct ExecutionContext<'a, S: ShellRuntime> {
     /// The shell in which the command is being executed.
-    pub shell: &'a mut Shell,
+    pub shell: &'a mut S,
     /// The name of the command being executed.    
     pub command_name: String,
     /// The parameters for the execution.
     pub params: ExecutionParameters,
 }
 
-impl ExecutionContext<'_> {
+impl<S: ShellRuntime> ExecutionContext<'_, S> {
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
         self.params.stdin(self.shell)
@@ -130,23 +130,23 @@ impl CommandArg {
 }
 
 /// Encapsulates a possibly-owned reference to a `Shell` for command execution.
-pub enum ShellForCommand<'a> {
+pub enum ShellForCommand<'a, S: ShellRuntime> {
     /// The command is run in the same shell as its parent; the provided
     /// mutable reference allows modifying the parent shell.
-    ParentShell(&'a mut Shell),
+    ParentShell(&'a mut S),
     /// The command is run in its own owned shell (which is also provided).
     OwnedShell {
         /// The owned shell.
-        target: Box<Shell>,
+        target: Box<S>,
         /// The parent shell.
-        parent: &'a mut Shell,
+        parent: &'a mut S,
     },
 }
 
-impl std::ops::Deref for ShellForCommand<'_> {
-    type Target = Shell;
+impl<S: ShellRuntime> std::ops::Deref for ShellForCommand<'_, S> {
+    type Target = S;
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &S {
         match self {
             ShellForCommand::ParentShell(shell) => shell,
             ShellForCommand::OwnedShell { target, .. } => target,
@@ -154,10 +154,10 @@ impl std::ops::Deref for ShellForCommand<'_> {
     }
 }
 
-impl std::ops::DerefMut for ShellForCommand<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+impl<S: ShellRuntime> std::ops::DerefMut for ShellForCommand<'_, S> {
+    fn deref_mut(&mut self) -> &mut S {
         match self {
-            ShellForCommand::ParentShell(shell) => shell,
+            ShellForCommand::ParentShell(shell) => *shell,
             ShellForCommand::OwnedShell { target, .. } => target,
         }
     }
@@ -176,8 +176,8 @@ impl std::ops::DerefMut for ShellForCommand<'_> {
 /// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
 ///   command will inherit environment variables marked as exported in the provided `Shell`.
 #[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
-pub fn compose_std_command<S: AsRef<OsStr>>(
-    context: &ExecutionContext<'_>,
+pub fn compose_std_command<S: AsRef<OsStr>, SR: ShellRuntime>(
+    context: &ExecutionContext<'_, SR>,
     command_name: &str,
     argv0: &str,
     args: &[S],
@@ -314,9 +314,9 @@ async fn invoke_debug_trap_handler_if_registered(
 }
 
 /// Represents a simple command to be executed.
-pub struct SimpleCommand<'a> {
+pub struct SimpleCommand<'a, S: ShellRuntime> {
     /// The shell to run the command in.
-    shell: ShellForCommand<'a>,
+    shell: ShellForCommand<'a, S>,
 
     /// The execution parameters for the command.
     pub params: ExecutionParameters,
@@ -346,7 +346,7 @@ pub struct SimpleCommand<'a> {
     pub post_execute: Option<fn(&mut Shell) -> Result<(), error::Error>>,
 }
 
-impl<'a> SimpleCommand<'a> {
+impl<'a, S: ShellRuntime> SimpleCommand<'a, S> {
     /// Creates a new `SimpleCommand` instance.
     ///
     /// # Arguments
@@ -356,7 +356,7 @@ impl<'a> SimpleCommand<'a> {
     /// * `command_name` - The name of the command to execute.
     /// * `args` - The arguments to the command, including the command itself.
     pub const fn new(
-        shell: ShellForCommand<'a>,
+        shell: ShellForCommand<'a, S>,
         params: ExecutionParameters,
         command_name: String,
         args: Vec<CommandArg>,
@@ -440,7 +440,7 @@ impl<'a> SimpleCommand<'a> {
 
     async fn execute_via_builtin(
         self,
-        builtin: builtins::Registration,
+        builtin: builtins::Registration<S>,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         match self.shell {
             ShellForCommand::OwnedShell { target, .. } => {
@@ -481,7 +481,7 @@ impl<'a> SimpleCommand<'a> {
 
     async fn execute_via_builtin_in_parent_shell(
         self,
-        builtin: builtins::Registration,
+        builtin: builtins::Registration<S>,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
 
@@ -549,8 +549,8 @@ impl<'a> SimpleCommand<'a> {
     }
 }
 
-pub(crate) fn execute_external_command(
-    context: ExecutionContext<'_>,
+pub(crate) fn execute_external_command<S: ShellRuntime>(
+    context: ExecutionContext<'_, S>,
     executable_path: &str,
     process_group_id: Option<i32>,
     args: &[CommandArg],
@@ -653,17 +653,17 @@ pub(crate) fn execute_external_command(
     }
 }
 
-async fn execute_builtin_command(
-    builtin: &builtins::Registration,
-    context: ExecutionContext<'_>,
+async fn execute_builtin_command<S: ShellRuntime>(
+    builtin: &builtins::Registration<S>,
+    context: ExecutionContext<'_, S>,
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
     (builtin.execute_func)(context, args).await
 }
 
-pub(crate) async fn invoke_shell_function(
+pub(crate) async fn invoke_shell_function<S: ShellRuntime>(
     function: functions::Registration,
-    mut context: ExecutionContext<'_>,
+    mut context: ExecutionContext<'_, S>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function.definition().body;

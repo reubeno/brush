@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use crate::{ExecutionParameters, Shell, ShellRuntime as _, env, expansion, variables};
+use crate::{ExecutionParameters, Shell, ShellRuntime, env, expansion, variables};
 use brush_parser::ast;
 
 /// Represents an error that occurs during evaluation of an arithmetic expression.
@@ -46,7 +46,7 @@ pub enum EvalError {
 }
 
 /// Trait implemented by arithmetic expressions that can be evaluated.
-pub(crate) trait ExpandAndEvaluate {
+pub(crate) trait ExpandAndEvaluate<S: ShellRuntime> {
     /// Evaluate the given expression, returning the resulting numeric value.
     ///
     /// # Arguments
@@ -55,16 +55,16 @@ pub(crate) trait ExpandAndEvaluate {
     /// * `trace_if_needed` - Whether to trace the evaluation.
     async fn eval(
         &self,
-        shell: &mut Shell,
+        shell: &mut S,
         params: &ExecutionParameters,
         trace_if_needed: bool,
     ) -> Result<i64, EvalError>;
 }
 
-impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
+impl<S: ShellRuntime> ExpandAndEvaluate<S> for ast::UnexpandedArithmeticExpr {
     async fn eval(
         &self,
-        shell: &mut Shell,
+        shell: &mut S,
         params: &ExecutionParameters,
         trace_if_needed: bool,
     ) -> Result<i64, EvalError> {
@@ -80,7 +80,7 @@ impl ExpandAndEvaluate for ast::UnexpandedArithmeticExpr {
 /// * `expr` - The unexpanded arithmetic expression to evaluate.
 /// * `trace_if_needed` - Whether to trace the evaluation.
 pub(crate) async fn expand_and_eval(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     expr: &str,
     trace_if_needed: bool,
@@ -111,17 +111,17 @@ pub(crate) async fn expand_and_eval(
 }
 
 /// Trait implemented by evaluatable arithmetic expressions.
-pub trait Evaluatable {
+pub trait Evaluatable<S: ShellRuntime> {
     /// Evaluate the given arithmetic expression, returning the resulting numeric value.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell to use for evaluation.
-    fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError>;
+    fn eval(&self, shell: &mut S) -> Result<i64, EvalError>;
 }
 
-impl Evaluatable for ast::ArithmeticExpr {
-    fn eval(&self, shell: &mut Shell) -> Result<i64, EvalError> {
+impl<S: ShellRuntime> Evaluatable<S> for ast::ArithmeticExpr {
+    fn eval(&self, shell: &mut S) -> Result<i64, EvalError> {
         let value = match self {
             Self::Literal(l) => *l,
             Self::Reference(lvalue) => deref_lvalue(shell, lvalue)?,
@@ -152,7 +152,7 @@ impl Evaluatable for ast::ArithmeticExpr {
     }
 }
 
-fn get_var_value<'a>(shell: &'a Shell, name: &str) -> Result<Cow<'a, str>, EvalError> {
+fn get_var_value<'a, S: ShellRuntime>(shell: &'a S, name: &str) -> Result<Cow<'a, str>, EvalError> {
     let value = shell.env_var(name).map(|var| var.resolve_value(shell));
 
     if let Some(value) = value {
@@ -168,7 +168,10 @@ fn get_var_value<'a>(shell: &'a Shell, name: &str) -> Result<Cow<'a, str>, EvalE
     Ok("".into())
 }
 
-fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64, EvalError> {
+fn deref_lvalue(
+    shell: &mut impl ShellRuntime,
+    lvalue: &ast::ArithmeticTarget,
+) -> Result<i64, EvalError> {
     let value_str: Cow<'_, str> = match lvalue {
         ast::ArithmeticTarget::Variable(name) => get_var_value(shell, name.as_str())?,
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
@@ -193,7 +196,7 @@ fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64
 }
 
 fn apply_unary_op(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     op: ast::UnaryOperator,
     operand: &ast::ArithmeticExpr,
 ) -> Result<i64, EvalError> {
@@ -208,7 +211,7 @@ fn apply_unary_op(
 }
 
 fn apply_binary_op(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     op: ast::BinaryOperator,
     left: &ast::ArithmeticExpr,
     right: &ast::ArithmeticExpr,
@@ -288,7 +291,7 @@ fn apply_binary_op(
 }
 
 fn apply_unary_assignment_op(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     lvalue: &ast::ArithmeticTarget,
     op: ast::UnaryAssignmentOperator,
 ) -> Result<i64, EvalError> {
@@ -318,7 +321,11 @@ fn apply_unary_assignment_op(
     }
 }
 
-fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Result<i64, EvalError> {
+fn assign(
+    shell: &mut impl ShellRuntime,
+    lvalue: &ast::ArithmeticTarget,
+    value: i64,
+) -> Result<i64, EvalError> {
     match lvalue {
         ast::ArithmeticTarget::Variable(name) => {
             shell

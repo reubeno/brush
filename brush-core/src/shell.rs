@@ -72,7 +72,7 @@ impl RcLoadBehavior {
 ///
 /// This trait provides access to the core shell state including variables,
 /// options, builtins, jobs, traps, and other shell infrastructure.
-pub trait ShellRuntime {
+pub trait ShellRuntime: Send {
     /// Returns the shell's official version string (if available).
     fn version(&self) -> &Option<String>;
 
@@ -95,7 +95,7 @@ pub trait ShellRuntime {
     fn set_key_bindings(&mut self, key_bindings: Option<KeyBindingsHelper>);
 
     /// Returns the registered builtins for the shell.
-    fn builtins(&self) -> &HashMap<String, builtins::Registration>;
+    fn builtins(&self) -> &HashMap<String, builtins::Registration<impl ShellRuntime>>;
 
     /// Returns the shell's current working directory.
     fn working_dir(&self) -> &Path;
@@ -252,7 +252,7 @@ pub struct Shell {
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
-    builtins: HashMap<String, builtins::Registration>,
+    builtins: HashMap<String, builtins::Registration<Self>>,
 
     /// Shell program location cache.
     program_location_cache: pathcache::PathCache,
@@ -350,7 +350,7 @@ impl ShellRuntime for Shell {
         self.key_bindings = key_bindings;
     }
 
-    fn builtins(&self) -> &HashMap<String, builtins::Registration> {
+    fn builtins(&self) -> &HashMap<String, builtins::Registration<impl ShellRuntime>> {
         &self.builtins
     }
 
@@ -552,7 +552,7 @@ impl<S: shell_builder::State> ShellBuilder<S> {
     }
 
     /// Add a single builtin registration
-    pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration) -> Self {
+    pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration<Shell>) -> Self {
         self.builtins.insert(name.into(), reg);
         self
     }
@@ -560,7 +560,7 @@ impl<S: shell_builder::State> ShellBuilder<S> {
     /// Add many builtin registrations
     pub fn builtins(
         mut self,
-        builtins: impl IntoIterator<Item = (String, builtins::Registration)>,
+        builtins: impl IntoIterator<Item = (String, builtins::Registration<Shell>)>,
     ) -> Self {
         self.builtins.extend(builtins);
         self
@@ -604,7 +604,7 @@ pub struct CreateOptions {
     pub enabled_shopt_options: Vec<String>,
     /// Registered builtins.
     #[builder(field)]
-    pub builtins: HashMap<String, builtins::Registration>,
+    pub builtins: HashMap<String, builtins::Registration<Shell>>,
     /// Provides a set of variables to be initialized in the shell. If present, they
     /// are assigned *after* inherited or well-known variables are set (when applicable).
     #[builder(field)]
@@ -1720,7 +1720,7 @@ impl Shell {
     pub fn register_builtin<S: Into<String>>(
         &mut self,
         name: S,
-        registration: builtins::Registration,
+        registration: builtins::Registration<Self>,
     ) {
         self.builtins.insert(name.into(), registration);
     }
@@ -1731,7 +1731,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `name` - The name of the builtin to lookup.
-    pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration> {
+    pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration<Self>> {
         self.builtins.get_mut(name)
     }
 
