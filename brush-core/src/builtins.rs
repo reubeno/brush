@@ -12,7 +12,7 @@ use crate::{BuiltinError, CommandArg, ShellRuntime, commands, error, results};
 ///
 /// * The context in which the command is being executed.
 /// * The arguments to the command.
-pub type CommandExecuteFunc<S: ShellRuntime> =
+pub type CommandExecuteFunc<S> =
     fn(
         commands::ExecutionContext<'_, S>,
         Vec<commands::CommandArg>,
@@ -145,7 +145,6 @@ pub struct ContentOptions {
 }
 
 /// Encapsulates a registration for a built-in command.
-#[derive(Clone)]
 pub struct Registration<S: ShellRuntime> {
     /// Function to execute the builtin.
     pub execute_func: CommandExecuteFunc<S>,
@@ -161,6 +160,18 @@ pub struct Registration<S: ShellRuntime> {
 
     /// Is this builtin one that takes specially handled declarations?
     pub declaration_builtin: bool,
+}
+
+impl<S: ShellRuntime> Clone for Registration<S> {
+    fn clone(&self) -> Self {
+        Self {
+            execute_func: self.execute_func,
+            content_func: self.content_func,
+            disabled: self.disabled,
+            special_builtin: self.special_builtin,
+            declaration_builtin: self.declaration_builtin,
+        }
+    }
 }
 
 impl<S: ShellRuntime> Registration<S> {

@@ -157,7 +157,7 @@ impl<S: ShellRuntime> std::ops::Deref for ShellForCommand<'_, S> {
 impl<S: ShellRuntime> std::ops::DerefMut for ShellForCommand<'_, S> {
     fn deref_mut(&mut self) -> &mut S {
         match self {
-            ShellForCommand::ParentShell(shell) => *shell,
+            ShellForCommand::ParentShell(shell) => shell,
             ShellForCommand::OwnedShell { target, .. } => target,
         }
     }
