@@ -713,6 +713,13 @@ pub trait ShellBehavior: Clone + Default + Send + Sync + 'static {
         let _ = shell;
         std::format!("error: {error:#}\n")
     }
+
+    // REMOVE ME
+    /// Do a thing.
+    #[inline]
+    fn frob(&self) {
+        // Default no-op implementation.
+    }
 }
 
 /// Default shell behavior implementation.
@@ -1147,6 +1154,9 @@ impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
     fn set_current_cmd(&mut self, cmd: &impl brush_parser::ast::Node) {
         self.call_stack
             .set_current_pos(cmd.location().map(|span| span.start));
+
+        // REMOVE ME
+        self.behavior.frob();
     }
 
     fn enter_function(
