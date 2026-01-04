@@ -55,8 +55,8 @@ pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{
-    CreateOptions, DefaultShellBehavior, ProfileLoadBehavior, RcLoadBehavior, Shell, ShellBehavior,
-    ShellBuilder, ShellBuilderState, ShellFd, ShellRuntime,
+    CreateOptions, DefaultShellBehavior, DefaultShellRuntime, ProfileLoadBehavior, RcLoadBehavior,
+    Shell, ShellBehavior, ShellBuilder, ShellBuilderState, ShellFd, ShellRuntime,
 };
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};

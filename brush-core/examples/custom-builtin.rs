@@ -16,7 +16,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionContext, ExecutionParameters, ExecutionResult, ShellRuntime, builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
 
 //
 // Step 1 (optional): Define a custom error type for your builtin
@@ -85,9 +85,9 @@ impl builtins::Command for GreetCommand {
     // the default-provided `brush_core::Error` type.
     type Error = GreetError;
 
-    async fn execute<S: ShellRuntime>(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: ExecutionContext<'_, S>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<ExecutionResult, Self::Error> {
         // Additional validation.
         if self.repeat_count == 0 || self.repeat_count > 10 {
@@ -123,7 +123,7 @@ async fn run_example() -> Result<()> {
     let mut shell = brush_core::Shell::builder()
         .builtin(
             "greet",
-            brush_core::builtins::builtin::<GreetCommand, brush_core::Shell>(),
+            brush_core::builtins::builtin::<GreetCommand, brush_core::DefaultShellRuntime>(),
         )
         .build()
         .await?;
@@ -133,7 +133,7 @@ async fn run_example() -> Result<()> {
         .run_string(
             "greet -n 4",
             &brush_core::SourceInfo::default(),
-            &ExecutionParameters::default(),
+            &brush_core::ExecutionParameters::default(),
         )
         .await?;
     println!("Exit code: {}\n", u8::from(result.exit_code));

@@ -66,6 +66,9 @@ impl RcLoadBehavior {
     }
 }
 
+/// Default shell runtime type.
+pub type DefaultShellRuntime = Shell;
+
 /// Trait implemented by shell runtimes.
 ///
 /// This trait provides access to the core shell state including variables,

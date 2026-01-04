@@ -13,8 +13,8 @@ use itertools::Itertools;
 use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
-    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, ShellFd, ShellRuntime,
-    builtins, commands, env, error, escape, functions,
+    DefaultShellRuntime, ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult,
+    ShellFd, ShellRuntime, builtins, commands, env, error, escape, functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -31,7 +31,7 @@ pub enum CommandWaitResult {
 }
 
 /// Represents the context for executing a command.
-pub struct ExecutionContext<'a, S: ShellRuntime> {
+pub struct ExecutionContext<'a, S: ShellRuntime = DefaultShellRuntime> {
     /// The shell in which the command is being executed.
     pub shell: &'a mut S,
     /// The name of the command being executed.    
