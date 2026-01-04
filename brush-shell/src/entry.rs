@@ -21,6 +21,8 @@ use std::io::IsTerminal;
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
     LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
 
+type BrushShell = brush_core::Shell<BrushShellBehavior>;
+
 // WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
 // after the `use clap::Parser`
 impl CommandLineArgs {
@@ -242,7 +244,7 @@ const fn will_run_interactively(args: &CommandLineArgs) -> bool {
 /// * `input_backend` - The input backend to use.
 /// * `ui_options` - The user interface options to use.
 async fn run_in_shell(
-    shell_ref: &brush_interactive::ShellRef,
+    shell_ref: &brush_interactive::ShellRef<impl brush_core::ShellRuntime>,
     args: CommandLineArgs,
     input_backend: &mut impl brush_interactive::InputBackend,
     ui_options: &brush_interactive::UIOptions,
@@ -306,7 +308,7 @@ async fn run_in_shell(
 /// * `shell_ref` - A reference to the shell to initialize.
 /// * `args` - The parsed command-line arguments.
 async fn initialize_shell(
-    shell_ref: &brush_interactive::ShellRef,
+    shell_ref: &brush_interactive::ShellRef<impl brush_core::ShellRuntime>,
     args: &CommandLineArgs,
 ) -> Result<(), brush_interactive::ShellError> {
     // Compute desired profile-loading behavior.
@@ -339,7 +341,7 @@ async fn initialize_shell(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<impl brush_core::ShellRuntime, brush_interactive::ShellError> {
+) -> Result<BrushShell, brush_interactive::ShellError> {
     #[cfg(feature = "experimental-load")]
     if let Some(load_file) = &args.load_file {
         return instantiate_shell_from_file(load_file.as_path());
@@ -351,10 +353,9 @@ async fn instantiate_shell(
 #[cfg(feature = "experimental-load")]
 fn instantiate_shell_from_file(
     file_path: &Path,
-) -> Result<impl brush_core::ShellRuntime, brush_interactive::ShellError> {
-    let mut shell: brush_core::Shell<BrushShellBehavior> =
-        serde_json::from_reader(std::fs::File::open(file_path)?)
-            .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
+) -> Result<BrushShell, brush_interactive::ShellError> {
+    let mut shell: BrushShell = serde_json::from_reader(std::fs::File::open(file_path)?)
+        .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
 
     // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
     // TODO(serde): we should consider whether we could/should at least track *which* are enabled.
@@ -388,7 +389,7 @@ fn instantiate_shell_from_file(
 async fn instantiate_shell_from_args(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<impl brush_core::ShellRuntime, brush_interactive::ShellError> {
+) -> Result<BrushShell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
@@ -434,7 +435,6 @@ async fn instantiate_shell_from_args(
     // Set up our shell behavior object.
     let behavior = BrushShellBehavior {
         use_color: !args.disable_color,
-        ..BrushShellBehavior::default()
     };
 
     // Set up the shell builder with the requested options.
