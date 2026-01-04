@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins, callstack};
+use brush_core::{ExecutionResult, builtins, callstack};
 use clap::Parser;
 use std::io::Write;
 
@@ -12,10 +12,10 @@ pub(crate) struct CallerCommand {
 impl builtins::Command for CallerCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let stack = context.shell.call_stack();
 
         // See how far back we need to look. Frame N represents the Nth caller

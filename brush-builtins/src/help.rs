@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
+use brush_core::{ExecutionResult, builtins};
 use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
@@ -25,9 +25,9 @@ pub(crate) struct HelpCommand {
 impl builtins::Command for HelpCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
@@ -42,8 +42,8 @@ impl builtins::Command for HelpCommand {
 }
 
 impl HelpCommand {
-    fn display_general_help(
-        context: &brush_core::ExecutionContext<'_>,
+    fn display_general_help<S: brush_core::ShellRuntime>(
+        context: &brush_core::ExecutionContext<'_, S>,
     ) -> Result<(), brush_core::Error> {
         const COLUMN_COUNT: usize = 3;
 
@@ -73,9 +73,9 @@ impl HelpCommand {
         Ok(())
     }
 
-    fn display_help_for_topic_pattern(
+    fn display_help_for_topic_pattern<S: brush_core::ShellRuntime>(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, S>,
         topic_pattern: &str,
     ) -> Result<(), brush_core::Error> {
         let pattern = brush_core::patterns::Pattern::from(topic_pattern)
@@ -101,11 +101,11 @@ impl HelpCommand {
         Ok(())
     }
 
-    fn display_help_for_builtin(
+    fn display_help_for_builtin<S: brush_core::ShellRuntime>(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, S>,
         name: &str,
-        registration: &builtins::Registration,
+        registration: &builtins::Registration<S>,
     ) -> Result<(), brush_core::Error> {
         let content_type = if self.short_description {
             builtins::ContentType::ShortDescription
@@ -136,9 +136,9 @@ impl HelpCommand {
     }
 }
 
-fn get_builtins_sorted_by_name<'a>(
-    context: &'a brush_core::ExecutionContext<'_>,
-) -> Vec<(&'a String, &'a builtins::Registration)> {
+fn get_builtins_sorted_by_name<'a, S: brush_core::ShellRuntime>(
+    context: &'a brush_core::ExecutionContext<'_, S>,
+) -> Vec<(&'a String, &'a builtins::Registration<S>)> {
     context
         .shell
         .builtins()

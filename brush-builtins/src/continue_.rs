@@ -13,9 +13,9 @@ pub(crate) struct ContinueCommand {
 impl builtins::Command for ContinueCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        _context: brush_core::ExecutionContext<'_>,
+        _context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // If specified, which_loop needs to be positive.
         if self.which_loop <= 0 {

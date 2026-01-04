@@ -1,6 +1,7 @@
 use std::io::IsTerminal as _;
 use std::io::Write as _;
 
+use brush_core::ExecutionParameters;
 use brush_core::ShellRuntime as _;
 
 use crate::InputBackend;
@@ -179,10 +180,10 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         let mut shell = self.shell.lock().await;
 
         // Run any pre-prompt actions.
-        Self::run_pre_prompt_actions(&mut shell, &self.options).await?;
+        Self::run_pre_prompt_actions(&mut *shell, &self.options).await?;
 
         // Compose the prompt.
-        let prompt = Self::compose_prompt(&mut shell, self.terminal_integration.as_ref()).await?;
+        let prompt = Self::compose_prompt(&mut *shell, self.terminal_integration.as_ref()).await?;
 
         drop(shell);
 
@@ -214,7 +215,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn compose_prompt(
-        shell: &mut brush_core::Shell,
+        shell: &mut impl brush_core::ShellRuntime,
         terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
     ) -> Result<InteractivePrompt, ShellError> {
         // Now that we've done that, compose the prompt.
@@ -276,7 +277,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         // need to do a few more things before executing it.
         if user_input {
             Self::run_pre_exec_actions(
-                &mut shell,
+                &mut *shell,
                 read_result.as_str(),
                 &self.options,
                 self.terminal_integration.as_ref(),
@@ -328,7 +329,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn run_pre_prompt_actions(
-        shell: &mut brush_core::Shell,
+        shell: &mut impl brush_core::ShellRuntime,
         options: &InteractiveOptions,
     ) -> Result<(), ShellError> {
         // Check for any completed jobs.
@@ -378,7 +379,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn run_pre_exec_actions(
-        shell: &mut brush_core::Shell,
+        shell: &mut impl brush_core::ShellRuntime,
         command_line: &str,
         options: &InteractiveOptions,
         terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
@@ -406,7 +407,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
                         .invoke_function(
                             func_name,
                             &[command_line],
-                            &ExecutionParameters::default(),
+                            &brush_core::ExecutionParameters::default(),
                         )
                         .await;
                 }
@@ -426,7 +427,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn run_pre_prompt_command(
-        shell: &mut brush_core::Shell,
+        shell: &mut impl brush_core::ShellRuntime,
         prompt_cmd: String,
     ) -> Result<(), ShellError> {
         // Save (and later restore) the last exit status.
@@ -434,7 +435,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
         let prev_last_pipeline_statuses = shell.last_pipeline_statuses().to_vec();
 
         // Run the command.
-        let params = ExecutionParameters::default();
+        let params = brush_core::ExecutionParameters::default();
         let source_info = brush_core::SourceInfo::from("PROMPT_COMMAND");
         shell.run_string(prompt_cmd, &source_info, &params).await?;
 

@@ -27,7 +27,7 @@ mod unix {
             .unwrap()
     }
 
-    async fn run_one_command(shell: &mut brush_core::Shell, command: &str) {
+    async fn run_one_command(shell: &mut impl brush_core::ShellRuntime, command: &str) {
         let _ = shell
             .run_string(
                 command.to_owned(),
@@ -38,12 +38,12 @@ mod unix {
             .unwrap();
     }
 
-    async fn expand_string(shell: &mut brush_core::Shell, s: &str) {
+    async fn expand_string(shell: &mut impl brush_core::ShellRuntime, s: &str) {
         let params = ExecutionParameters::default();
         let _ = shell.basic_expand_string(&params, s).await.unwrap();
     }
 
-    fn eval_arithmetic_expr(shell: &mut brush_core::Shell, expr: &str) {
+    fn eval_arithmetic_expr(shell: &mut impl brush_core::ShellRuntime, expr: &str) {
         let parsed_expr = brush_parser::arithmetic::parse(expr).unwrap();
         let _ = shell.eval_arithmetic(&parsed_expr).unwrap();
     }

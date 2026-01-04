@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins, error};
+use brush_core::{ExecutionResult, builtins, error};
 
 /// Change the current shell working directory.
 #[derive(Parser)]
@@ -33,10 +33,10 @@ pub(crate) struct CdCommand {
 impl builtins::Command for CdCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // TODO(cd): implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");
@@ -78,7 +78,7 @@ impl builtins::Command for CdCommand {
                 return error::unimp("cd -e");
             }
 
-            target_dir = context.shell.absolute_path(target_dir).canonicalize()?;
+            target_dir = context.shell.absolute_path(&target_dir).canonicalize()?;
         }
 
         context.shell.set_working_dir(&target_dir)?;

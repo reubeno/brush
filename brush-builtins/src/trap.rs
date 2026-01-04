@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
+use brush_core::{ExecutionResult, builtins};
 
 /// Manage signal traps.
 #[derive(Parser)]
@@ -21,10 +21,10 @@ pub(crate) struct TrapCommand {
 impl builtins::Command for TrapCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        mut context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.list_signals {
             brush_core::traps::format_signals(context.stdout(), TrapSignal::iterator())
                 .map(|()| ExecutionResult::success())
@@ -64,8 +64,8 @@ impl builtins::Command for TrapCommand {
 }
 
 impl TrapCommand {
-    fn display_all_handlers(
-        context: &brush_core::ExecutionContext<'_>,
+    fn display_all_handlers<S: brush_core::ShellRuntime>(
+        context: &brush_core::ExecutionContext<'_, S>,
     ) -> Result<(), brush_core::Error> {
         for (signal, _) in context.shell.traps().iter_handlers() {
             Self::display_handlers_for(context, signal)?;
@@ -73,8 +73,8 @@ impl TrapCommand {
         Ok(())
     }
 
-    fn display_handlers_for(
-        context: &brush_core::ExecutionContext<'_>,
+    fn display_handlers_for<S: brush_core::ShellRuntime>(
+        context: &brush_core::ExecutionContext<'_, S>,
         signal_type: TrapSignal,
     ) -> Result<(), brush_core::Error> {
         if let Some(handler) = context.shell.traps().get_handler(signal_type) {
@@ -87,12 +87,15 @@ impl TrapCommand {
         Ok(())
     }
 
-    fn remove_all_handlers(context: &mut brush_core::ExecutionContext<'_>, signal: TrapSignal) {
+    fn remove_all_handlers<S: brush_core::ShellRuntime>(
+        context: &mut brush_core::ExecutionContext<'_, S>,
+        signal: TrapSignal,
+    ) {
         context.shell.traps_mut().remove_handlers(signal);
     }
 
-    fn register_handler(
-        context: &mut brush_core::ExecutionContext<'_>,
+    fn register_handler<S: brush_core::ShellRuntime>(
+        context: &mut brush_core::ExecutionContext<'_, S>,
         signals: Vec<TrapSignal>,
         handler: &str,
     ) {

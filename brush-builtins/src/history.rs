@@ -1,4 +1,4 @@
-use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins, error, history};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, history};
 use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
@@ -53,10 +53,10 @@ struct HistoryConfig {
 impl builtins::Command for HistoryCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
             default_history_file_path: context.shell.history_file_path(),

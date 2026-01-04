@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 
-use brush_core::{ErrorKind, ShellRuntime as _, builtins, env, error, variables};
+use brush_core::{ErrorKind, builtins, env, error, variables};
 
 use std::io::Read;
 
@@ -64,9 +64,9 @@ impl builtins::Command for ReadCommand {
     type Error = brush_core::Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.use_readline {
             return error::unimp("read -e");

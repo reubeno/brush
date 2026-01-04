@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{
-    ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins,
+    ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
     parser::ast,
     variables,
@@ -41,9 +41,9 @@ impl builtins::DeclarationCommand for ExportCommand {
 impl builtins::Command for ExportCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.declarations.is_empty() {
             display_all_exported_vars(&context)?;
@@ -63,9 +63,9 @@ impl builtins::Command for ExportCommand {
 }
 
 impl ExportCommand {
-    fn process_decl(
+    fn process_decl<S: brush_core::ShellRuntime>(
         &self,
-        context: &mut brush_core::ExecutionContext<'_>,
+        context: &mut brush_core::ExecutionContext<'_, S>,
         decl: &brush_core::CommandArg,
     ) -> Result<ExecutionResult, brush_core::Error> {
         match decl {
@@ -139,8 +139,8 @@ impl ExportCommand {
     }
 }
 
-fn display_all_exported_vars(
-    context: &brush_core::ExecutionContext<'_>,
+fn display_all_exported_vars<S: brush_core::ShellRuntime>(
+    context: &brush_core::ExecutionContext<'_, S>,
 ) -> Result<(), brush_core::Error> {
     // Enumerate variables, sorted by key.
     for (name, variable) in context.shell.env().iter().sorted_by_key(|v| v.0) {

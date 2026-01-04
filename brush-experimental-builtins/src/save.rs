@@ -11,9 +11,9 @@ pub(crate) struct SaveCommand {}
 impl builtins::Command for SaveCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<ExecutionResult, Self::Error> {
         let serialized_str = serde_json::to_string(&context.shell).map_err(|e| {
             brush_core::Error::from(brush_core::ErrorKind::InternalError(e.to_string()))

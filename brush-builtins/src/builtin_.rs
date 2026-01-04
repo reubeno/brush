@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
+use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
 #[derive(Default, Parser)]
@@ -18,9 +18,9 @@ impl builtins::DeclarationCommand for BuiltinCommand {
 impl builtins::Command for BuiltinCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.args.is_empty() {
             return Ok(ExecutionResult::success());
