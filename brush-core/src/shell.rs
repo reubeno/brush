@@ -640,7 +640,7 @@ pub trait ShellRuntime: Send + Sync + 'static {
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
-    fn stderr(&self) -> impl std::io::Write + 'static
+    fn stderr(&self) -> impl std::io::Write + Send + 'static
     where
         Self: Sized;
 
@@ -663,6 +663,40 @@ pub trait ShellRuntime: Send + Sync + 'static {
     ///
     /// * `candidate_name` - The name of the file to look for.
     fn find_first_executable_in_path<S: AsRef<str>>(&self, candidate_name: S) -> Option<PathBuf>
+    where
+        Self: Sized;
+
+    /// Updates the shell's internal tracking state to reflect that command
+    /// string mode is being started.
+    fn start_command_string_mode(&mut self);
+
+    /// Updates the shell's internal tracking state to reflect that command
+    /// string mode is ending.
+    fn end_command_string_mode(&mut self) -> Result<(), error::Error>;
+
+    /// Loads and executes standard shell configuration files (i.e., rc and profile).
+    ///
+    /// # Arguments
+    ///
+    /// * `profile_behavior` - Behavior for loading profile files.
+    /// * `rc_behavior` - Behavior for loading rc files.
+    async fn load_config(
+        &mut self,
+        profile_behavior: &ProfileLoadBehavior,
+        rc_behavior: &RcLoadBehavior,
+    ) -> Result<(), error::Error>;
+
+    /// Executes the given script file, returning the resulting exit status.
+    ///
+    /// # Arguments
+    ///
+    /// * `script_path` - The path to the script file to execute.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    async fn run_script<S: AsRef<str>, P: AsRef<Path> + Send, I: Iterator<Item = S> + Send>(
+        &mut self,
+        script_path: P,
+        args: I,
+    ) -> Result<ExecutionResult, error::Error>
     where
         Self: Sized;
 }
@@ -1632,7 +1666,7 @@ impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
         Ok(())
     }
 
-    fn stderr(&self) -> impl std::io::Write + 'static {
+    fn stderr(&self) -> impl std::io::Write + Send + 'static {
         self.open_files.try_stderr().cloned().unwrap()
     }
 
@@ -1673,6 +1707,135 @@ impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
             }
         }
         None
+    }
+
+    fn start_command_string_mode(&mut self) {
+        self.call_stack.push_command_string();
+    }
+
+    fn end_command_string_mode(&mut self) -> Result<(), error::Error> {
+        if self
+            .call_stack
+            .current_frame()
+            .is_none_or(|frame| !frame.frame_type.is_command_string())
+        {
+            return Err(error::ErrorKind::NotExecutingCommandString.into());
+        }
+
+        self.call_stack.pop();
+
+        Ok(())
+    }
+
+    async fn load_config(
+        &mut self,
+        profile_behavior: &ProfileLoadBehavior,
+        rc_behavior: &RcLoadBehavior,
+    ) -> Result<(), error::Error> {
+        let mut params = ExecutionParameters::default();
+        params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
+        if self.options.login_shell {
+            // --noprofile means skip this.
+            if matches!(profile_behavior, ProfileLoadBehavior::Skip) {
+                return Ok(());
+            }
+
+            //
+            // Source /etc/profile if it exists.
+            //
+            // Next source the first of these that exists and is readable (if any):
+            //     * ~/.bash_profile
+            //     * ~/.bash_login
+            //     * ~/.profile
+            //
+            self.source_if_exists(Path::new("/etc/profile"), &params)
+                .await?;
+            if let Some(home_path) = self.home_dir() {
+                if self.options.sh_mode {
+                    self.source_if_exists(home_path.join(".profile").as_path(), &params)
+                        .await?;
+                } else {
+                    if !self
+                        .source_if_exists(home_path.join(".bash_profile").as_path(), &params)
+                        .await?
+                    {
+                        if !self
+                            .source_if_exists(home_path.join(".bash_login").as_path(), &params)
+                            .await?
+                        {
+                            self.source_if_exists(home_path.join(".profile").as_path(), &params)
+                                .await?;
+                        }
+                    }
+                }
+            }
+        } else {
+            if self.options.interactive {
+                match rc_behavior {
+                    _ if self.options.sh_mode => (),
+                    RcLoadBehavior::Skip => (),
+                    RcLoadBehavior::LoadCustom(rc_file) => {
+                        // If an explicit rc file is provided, source it.
+                        self.source_if_exists(rc_file, &params).await?;
+                    }
+                    RcLoadBehavior::LoadDefault => {
+                        //
+                        // Otherwise, for non-login interactive shells, load in this order:
+                        //
+                        //     /etc/bash.bashrc
+                        //     ~/.bashrc
+                        //
+                        self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
+                            .await?;
+                        if let Some(home_path) = self.home_dir() {
+                            self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
+                                .await?;
+                            self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
+                                .await?;
+                        }
+                    }
+                }
+            } else {
+                let env_var_name = if self.options.sh_mode {
+                    "ENV"
+                } else {
+                    "BASH_ENV"
+                };
+
+                if self.env.is_set(env_var_name) {
+                    //
+                    // TODO(well-known-vars): look at $ENV/BASH_ENV; source its expansion if that
+                    // file exists
+                    //
+                    return error::unimp(
+                        "load config from $ENV/BASH_ENV for non-interactive, non-login shell",
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn run_script<S: AsRef<str>, P: AsRef<Path> + Send, I: Iterator<Item = S> + Send>(
+        &mut self,
+        script_path: P,
+        args: I,
+    ) -> Result<ExecutionResult, error::Error> {
+        let params = ExecutionParameters::default();
+        let result = self
+            .parse_and_execute_script_file(
+                script_path.as_ref(),
+                args,
+                &params,
+                callstack::ScriptCallType::Run,
+            )
+            .await?;
+
+        let _ = self.on_exit().await;
+
+        Ok(result)
     }
 }
 
@@ -2034,103 +2197,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         &mut self.working_dir
     }
 
-    /// Loads and executes standard shell configuration files (i.e., rc and profile).
-    ///
-    /// # Arguments
-    ///
-    /// * `profile_behavior` - Behavior for loading profile files.
-    /// * `rc_behavior` - Behavior for loading rc files.
-    pub async fn load_config(
-        &mut self,
-        profile_behavior: &ProfileLoadBehavior,
-        rc_behavior: &RcLoadBehavior,
-    ) -> Result<(), error::Error> {
-        let mut params = ExecutionParameters::default();
-        params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
-
-        if self.options.login_shell {
-            // --noprofile means skip this.
-            if matches!(profile_behavior, ProfileLoadBehavior::Skip) {
-                return Ok(());
-            }
-
-            //
-            // Source /etc/profile if it exists.
-            //
-            // Next source the first of these that exists and is readable (if any):
-            //     * ~/.bash_profile
-            //     * ~/.bash_login
-            //     * ~/.profile
-            //
-            self.source_if_exists(Path::new("/etc/profile"), &params)
-                .await?;
-            if let Some(home_path) = self.home_dir() {
-                if self.options.sh_mode {
-                    self.source_if_exists(home_path.join(".profile").as_path(), &params)
-                        .await?;
-                } else {
-                    if !self
-                        .source_if_exists(home_path.join(".bash_profile").as_path(), &params)
-                        .await?
-                    {
-                        if !self
-                            .source_if_exists(home_path.join(".bash_login").as_path(), &params)
-                            .await?
-                        {
-                            self.source_if_exists(home_path.join(".profile").as_path(), &params)
-                                .await?;
-                        }
-                    }
-                }
-            }
-        } else {
-            if self.options.interactive {
-                match rc_behavior {
-                    _ if self.options.sh_mode => (),
-                    RcLoadBehavior::Skip => (),
-                    RcLoadBehavior::LoadCustom(rc_file) => {
-                        // If an explicit rc file is provided, source it.
-                        self.source_if_exists(rc_file, &params).await?;
-                    }
-                    RcLoadBehavior::LoadDefault => {
-                        //
-                        // Otherwise, for non-login interactive shells, load in this order:
-                        //
-                        //     /etc/bash.bashrc
-                        //     ~/.bashrc
-                        //
-                        self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
-                            .await?;
-                        if let Some(home_path) = self.home_dir() {
-                            self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
-                                .await?;
-                            self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
-                                .await?;
-                        }
-                    }
-                }
-            } else {
-                let env_var_name = if self.options.sh_mode {
-                    "ENV"
-                } else {
-                    "BASH_ENV"
-                };
-
-                if self.env.is_set(env_var_name) {
-                    //
-                    // TODO(well-known-vars): look at $ENV/BASH_ENV; source its expansion if that
-                    // file exists
-                    //
-                    return error::unimp(
-                        "load config from $ENV/BASH_ENV for non-interactive, non-login shell",
-                    );
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     async fn source_if_exists(
         &mut self,
         path: impl AsRef<Path>,
@@ -2263,32 +2329,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         Ok(result)
     }
 
-    /// Executes the given script file, returning the resulting exit status.
-    ///
-    /// # Arguments
-    ///
-    /// * `script_path` - The path to the script file to execute.
-    /// * `args` - The arguments to pass to the script as positional parameters.
-    pub async fn run_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
-        &mut self,
-        script_path: P,
-        args: I,
-    ) -> Result<ExecutionResult, error::Error> {
-        let params = ExecutionParameters::default();
-        let result = self
-            .parse_and_execute_script_file(
-                script_path.as_ref(),
-                args,
-                &params,
-                callstack::ScriptCallType::Run,
-            )
-            .await?;
-
-        let _ = self.on_exit().await;
-
-        Ok(result)
-    }
-
     async fn invoke_exit_trap_handler_if_registered(
         &mut self,
     ) -> Result<ExecutionResult, error::Error> {
@@ -2371,28 +2411,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         self.env_str(name).unwrap_or_else(|| default.into())
     }
 
-    /// Updates the shell's internal tracking state to reflect that command
-    /// string mode is being started.
-    pub fn start_command_string_mode(&mut self) {
-        self.call_stack.push_command_string();
-    }
-
-    /// Updates the shell's internal tracking state to reflect that command
-    /// string mode is ending.
-    pub fn end_command_string_mode(&mut self) -> Result<(), error::Error> {
-        if self
-            .call_stack
-            .current_frame()
-            .is_none_or(|frame| !frame.frame_type.is_command_string())
-        {
-            return Err(error::ErrorKind::NotExecutingCommandString.into());
-        }
-
-        self.call_stack.pop();
-
-        Ok(())
-    }
-
     /// Tries to set a global variable in the shell's environment.
     ///
     /// # Arguments
@@ -2447,6 +2465,7 @@ fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
 }
 
+#[cfg(feature = "serde")]
 fn default_shell_behavior<SB: ShellBehavior>() -> SB {
     SB::default()
 }
