@@ -82,7 +82,7 @@ impl<S: brush_core::ShellRuntime> reedline::Highlighter for ReedlineHighlighter<
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
-        let mut styled_input = StyledInputLine::new(shell.as_ref(), line, cursor);
+        let mut styled_input = StyledInputLine::new(&*shell, line, cursor);
 
         styled_input.style_and_append_program(line, 0);
 
