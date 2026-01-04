@@ -59,7 +59,7 @@ jobs:
         run: mkdir -p ./md ./man
 
       - name: Build markdown info
-        run: cargo xtask docs markdown --out ./md/brush.md
+        run: cargo xtask gen docs markdown --out ./md/brush.md
 
       - name: Upload markdown docs
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -68,7 +68,7 @@ jobs:
           path: md
 
       - name: Build man pages
-        run: cargo xtask docs man --output-dir ./man
+        run: cargo xtask gen docs man --output-dir ./man
 
       - name: Upload man pages
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
