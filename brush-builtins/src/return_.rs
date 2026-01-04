@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Write;
 
 use brush_core::{
-    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ShellRuntime as _,builtins,
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins,
 };
 
 /// Return from the current function.

@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, ShellRuntime as _,builtins};
+use brush_core::{ExecutionResult, ShellRuntime as _, builtins};
 use clap::Parser;
 use std::{borrow::Cow, io::Write, path::Path};
 

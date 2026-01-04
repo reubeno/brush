@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::{ExecutionControlFlow, ExecutionResult, ShellRuntime as _,builtins};
+use brush_core::{ExecutionControlFlow, ExecutionResult, ShellRuntime as _, builtins};
 
 /// Exit the shell.
 #[derive(Parser)]

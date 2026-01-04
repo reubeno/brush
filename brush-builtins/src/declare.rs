@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
 
 use brush_core::{
-    ErrorKind, ExecutionResult, ShellRuntime as _,builtins,
+    ErrorKind, ExecutionResult, ShellRuntime as _, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
     parser::ast,

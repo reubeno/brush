@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashMap, io::Write};
 
 use clap::Parser;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _,builtins, variables};
+use brush_core::{ExecutionExitCode, ExecutionResult, ShellRuntime as _, builtins, variables};
 
 /// Parse command options.
 #[derive(Parser)]

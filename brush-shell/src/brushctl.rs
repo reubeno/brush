@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, ShellRuntime as _,sys};
+use brush_core::{ExecutionResult, ShellRuntime as _, sys};
 use clap::{Parser, Subcommand};
 use std::io::Write;
 
