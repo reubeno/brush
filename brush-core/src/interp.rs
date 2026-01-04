@@ -260,9 +260,9 @@ impl<S: ShellRuntime> Execute<S> for ast::CompoundList {
     }
 }
 
-fn spawn_ao_list_in_task<'a>(
+fn spawn_ao_list_in_task<'a, S: ShellRuntime>(
     ao_list: &ast::AndOrList,
-    shell: &'a mut Shell,
+    shell: &'a mut S,
     params: &ExecutionParameters,
 ) -> &'a jobs::Job {
     // Clone the inputs.
@@ -594,7 +594,7 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::Command {
                 // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
-                        setup_redirect(&mut pipeline_context.shell, &mut params, redirect).await?;
+                        setup_redirect(&mut *pipeline_context.shell, &mut params, redirect).await?;
                     }
                 }
 
@@ -604,21 +604,21 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::Command {
                     .into())
             }
             Self::Function(func) => Ok(func
-                .execute(&mut pipeline_context.shell, &params)
+                .execute(&mut *pipeline_context.shell, &params)
                 .await?
                 .into()),
             Self::ExtendedTest(e, redirects) => {
                 // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
-                        setup_redirect(&mut pipeline_context.shell, &mut params, redirect).await?;
+                        setup_redirect(&mut *pipeline_context.shell, &mut params, redirect).await?;
                     }
                 }
 
                 // Evaluate the extended test expression.
                 let result = if extendedtests::eval_extended_test_expr(
                     &e.expr,
-                    &mut pipeline_context.shell,
+                    &mut *pipeline_context.shell,
                     &params,
                 )
                 .await?
@@ -1048,7 +1048,7 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::SimpleCommand {
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
                     let (installed_fd_num, substitution_file) = setup_process_substitution(
-                        &context.shell,
+                        &*context.shell,
                         &params,
                         kind,
                         subshell_command,
@@ -1073,14 +1073,14 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::SimpleCommand {
                             // well-known builtin that takes arguments that need to function like
                             // assignments (but which are processed by the builtin).
                             let expanded =
-                                expand_assignment(&mut context.shell, &params, assignment).await?;
+                                expand_assignment(&mut *context.shell, &params, assignment).await?;
                             args.push(CommandArg::Assignment(expanded));
                         } else {
                             // This *looks* like an assignment, but it's really a string we should
                             // fully treat as a regular looking
                             // argument.
                             let mut next_args = expansion::full_expand_and_split_word(
-                                &mut context.shell,
+                                &mut *context.shell,
                                 &params,
                                 word,
                             )
@@ -1094,7 +1094,7 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::SimpleCommand {
                 }
                 CommandPrefixOrSuffixItem::Word(arg) => {
                     let mut next_args =
-                        expansion::full_expand_and_split_word(&mut context.shell, &params, arg)
+                        expansion::full_expand_and_split_word(&mut *context.shell, &params, arg)
                             .await?;
 
                     if args.is_empty() {
@@ -1140,7 +1140,7 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::SimpleCommand {
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
-            let mut stderr = params.stderr(&context.shell);
+            let mut stderr = params.stderr(&*context.shell);
 
             let (owned_shell, parent_shell) = match context.shell {
                 commands::ShellForCommand::ParentShell(shell) => (None, shell),
@@ -1179,7 +1179,7 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::SimpleCommand {
                 // at the program level so multiple complete_commands can execute independently.
                 apply_assignment(
                     assignment,
-                    &mut context.shell,
+                    &mut *context.shell,
                     &params,
                     false,
                     None,
@@ -1203,8 +1203,8 @@ impl<S: ShellRuntime> ExecuteInPipeline<S> for ast::SimpleCommand {
     }
 }
 
-async fn execute_command(
-    mut context: PipelineExecutionContext<'_>,
+async fn execute_command<S: ShellRuntime>(
+    mut context: PipelineExecutionContext<'_, S>,
     params: ExecutionParameters,
     cmd_name: String,
     assignments: Vec<&ast::Assignment>,
@@ -1213,7 +1213,7 @@ async fn execute_command(
     // Push a new ephemeral environment scope for the duration of the command. We'll
     // set command-scoped variable assignments after doing so, and revert them before
     // returning.
-    let mut guard = crate::env::ScopeGuard::new(&mut context.shell, EnvironmentScope::Command);
+    let mut guard = crate::env::ScopeGuard::new(&mut *context.shell, EnvironmentScope::Command);
 
     for assignment in &assignments {
         // Ensure it's tagged as exported and created in the command scope.
@@ -1781,7 +1781,7 @@ fn setup_process_substitution(
         // Intentionally ignore the result of the subshell command.
         let _ = subshell_cmd
             .list
-            .execute(&mut subshell, &child_params)
+            .execute(&mut *subshell, &child_params)
             .await;
     });
 

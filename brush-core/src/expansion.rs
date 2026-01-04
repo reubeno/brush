@@ -7,6 +7,7 @@ use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
 use itertools::Itertools;
 
 use crate::ExecutionParameters;
+use crate::ShellRuntime;
 use crate::arithmetic;
 use crate::arithmetic::ExpandAndEvaluate;
 use crate::braceexpansion;
@@ -16,7 +17,6 @@ use crate::error;
 use crate::escape;
 use crate::patterns;
 use crate::prompt;
-use crate::shell::{Shell, ShellRuntime as _};
 use crate::sys;
 use crate::trace_categories;
 use crate::variables::ShellValueUnsetType;
@@ -323,7 +323,7 @@ enum ParameterState {
 /// * `params` - The execution parameters to use during expansion.
 /// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_pattern(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
 ) -> Result<patterns::Pattern, error::Error> {
@@ -339,7 +339,7 @@ pub(crate) async fn basic_expand_pattern(
 /// * `params` - The execution parameters to use during expansion.
 /// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_regex(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
 ) -> Result<crate::regex::Regex, error::Error> {
@@ -359,7 +359,7 @@ pub(crate) async fn basic_expand_regex(
 /// * `params` - The execution parameters to use during expansion.
 /// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_word(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
@@ -376,7 +376,7 @@ pub(crate) async fn basic_expand_word(
 /// * `params` - The execution parameters to use during expansion.
 /// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_word_with_options(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
     options: &ExpanderOptions,
@@ -394,7 +394,7 @@ pub(crate) async fn basic_expand_word_with_options(
 /// * `params` - The execution parameters to use during expansion.
 /// * `word_str` - The word to expand, as a string.
 pub(crate) async fn full_expand_and_split_word(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
 ) -> Result<Vec<String>, error::Error> {
@@ -413,7 +413,7 @@ pub(crate) async fn full_expand_and_split_word(
 /// * `options` - Options to customize the behavior of the expander.
 #[allow(dead_code, reason = "intended future use")]
 pub(crate) async fn full_expand_and_split_word_with_options(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
     options: &ExpanderOptions,
@@ -430,7 +430,7 @@ pub(crate) async fn full_expand_and_split_word_with_options(
 /// * `params` - The execution parameters to use during expansion.
 /// * `word_str` - The word to expand, as a string.
 pub(crate) async fn basic_expand_assignment_word(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
@@ -449,7 +449,7 @@ pub(crate) async fn basic_expand_assignment_word(
 ///   assignable parameter expression (e.g., an array element).
 /// * `value` - The value to assign to the parameter.
 pub async fn assign_to_named_parameter(
-    shell: &mut Shell,
+    shell: &mut impl ShellRuntime,
     params: &ExecutionParameters,
     name: &str,
     value: String,
@@ -460,8 +460,8 @@ pub async fn assign_to_named_parameter(
     expander.assign_to_parameter(&parameter, value).await
 }
 
-struct WordExpander<'a> {
-    shell: &'a mut Shell,
+struct WordExpander<'a, S: ShellRuntime> {
+    shell: &'a mut S,
     params: &'a ExecutionParameters,
     parser_options: brush_parser::ParserOptions,
     force_disable_brace_expansion: bool,
@@ -469,8 +469,8 @@ struct WordExpander<'a> {
     in_double_quotes: bool,
 }
 
-impl<'a> WordExpander<'a> {
-    pub const fn new(shell: &'a mut Shell, params: &'a ExecutionParameters) -> Self {
+impl<'a, S: ShellRuntime> WordExpander<'a, S> {
+    pub const fn new(shell: &'a mut S, params: &'a ExecutionParameters) -> Self {
         let parser_options = shell.parser_options();
         Self {
             shell,
@@ -483,7 +483,7 @@ impl<'a> WordExpander<'a> {
     }
 
     pub const fn new_from_options(
-        shell: &'a mut Shell,
+        shell: &'a mut S,
         params: &'a ExecutionParameters,
         options: &ExpanderOptions,
     ) -> Self {
