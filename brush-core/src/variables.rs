@@ -623,12 +623,12 @@ pub enum ShellValue {
 
 #[cfg(feature = "serde")]
 fn default_dynamic_value_getter() -> DynamicValueGetter {
-    |_shell: &Shell| ShellValue::String(String::new())
+    |_shell: &dyn ShellRuntime| ShellValue::String(String::new())
 }
 
 #[cfg(feature = "serde")]
 fn default_dynamic_value_setter() -> DynamicValueSetter {
-    |_shell: &Shell| {}
+    |_shell: &dyn ShellRuntime| {}
 }
 
 /// The type of an unset shell value.
