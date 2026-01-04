@@ -336,12 +336,9 @@ fn run_tests_with_coverage(
         eprintln!("Running: cargo {}", test_args.join(" "));
     }
 
-    // Run tests - capture exit status but don't fail yet (we want to generate coverage report)
-    let test_output = cmd!(sh, "cargo {test_args...}").ignore_status().output();
-    let test_failed = match &test_output {
-        Ok(output) => !output.status.success(),
-        Err(_) => true,
-    };
+    // Run tests - let output pass through naturally, but continue on failure to generate coverage report
+    let test_result = cmd!(sh, "cargo {test_args...}").run();
+    let test_failed = test_result.is_err();
 
     if test_failed {
         eprintln!("Tests failed, but continuing to generate coverage report...");
