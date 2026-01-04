@@ -56,7 +56,7 @@ async fn apply_unary_predicate(
         shell
             .trace_command(
                 params,
-                std::format!(
+                &std::format!(
                     "[[ {op} {} ]]",
                     escape::quote_if_needed(&expanded_operand, escape::QuoteMode::SingleQuote)
                 ),
@@ -208,7 +208,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {s} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {s} {op} {right} ]]"))
                     .await?;
             }
 
@@ -247,7 +247,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -259,7 +259,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -271,7 +271,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {s} {op} {substring} ]]"))
+                    .trace_command(params, &std::format!("[[ {s} {op} {substring} ]]"))
                     .await?;
             }
 
@@ -283,7 +283,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -295,7 +295,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -307,7 +307,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -319,7 +319,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -332,7 +332,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -347,7 +347,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -361,7 +361,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -375,7 +375,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -389,7 +389,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -403,7 +403,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -417,7 +417,7 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 shell
-                    .trace_command(params, std::format!("[[ {left} {op} {right} ]]"))
+                    .trace_command(params, &std::format!("[[ {left} {op} {right} ]]"))
                     .await?;
             }
 
@@ -442,7 +442,7 @@ async fn apply_binary_predicate(
                     escape::QuoteMode::BackslashEscape,
                 );
                 shell
-                    .trace_command(params, std::format!("[[ {s} {op} {escaped_right} ]]"))
+                    .trace_command(params, &std::format!("[[ {s} {op} {escaped_right} ]]"))
                     .await?;
             }
 
@@ -462,7 +462,7 @@ async fn apply_binary_predicate(
                     escape::QuoteMode::BackslashEscape,
                 );
                 shell
-                    .trace_command(params, std::format!("[[ {s} {op} {escaped_right} ]]"))
+                    .trace_command(params, &std::format!("[[ {s} {op} {escaped_right} ]]"))
                     .await?;
             }
 
