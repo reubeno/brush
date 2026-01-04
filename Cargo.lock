@@ -374,6 +374,7 @@ version = "0.1.0"
 dependencies = [
  "brush-core",
  "clap",
+ "serde",
  "serde_json",
 ]
 

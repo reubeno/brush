@@ -71,18 +71,18 @@ mod styles {
     }
 }
 
-pub(crate) struct ReedlineHighlighter {
-    pub shell: refs::ShellRef,
+pub(crate) struct ReedlineHighlighter<S: brush_core::ShellRuntime> {
+    pub shell: refs::ShellRef<S>,
 }
 
-impl reedline::Highlighter for ReedlineHighlighter {
+impl<S: brush_core::ShellRuntime> reedline::Highlighter for ReedlineHighlighter<S> {
     #[expect(clippy::significant_drop_tightening)]
     fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {
         let shell = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
-        let mut styled_input = StyledInputLine::new(shell.as_ref(), line, cursor);
+        let mut styled_input = StyledInputLine::new(&*shell, line, cursor);
 
         styled_input.style_and_append_program(line, 0);
 
@@ -100,8 +100,8 @@ enum CommandType {
     Unknown,
 }
 
-struct StyledInputLine<'a> {
-    shell: &'a brush_core::Shell,
+struct StyledInputLine<'a, S: brush_core::ShellRuntime> {
+    shell: &'a S,
     cursor: usize,
     styled: reedline::StyledText,
     remaining_chars: Chars<'a>,
@@ -109,8 +109,8 @@ struct StyledInputLine<'a> {
     next_missing_style: Option<Style>,
 }
 
-impl<'a> StyledInputLine<'a> {
-    fn new(shell: &'a brush_core::Shell, input_line: &'a str, cursor: usize) -> Self {
+impl<'a, S: brush_core::ShellRuntime> StyledInputLine<'a, S> {
+    fn new(shell: &'a S, input_line: &'a str, cursor: usize) -> Self {
         Self {
             shell,
             cursor,

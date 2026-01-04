@@ -10,7 +10,8 @@ use std::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    Shell, commands, env, error, escape, expansion, interfaces, jobs, namedoptions, patterns,
+    ExecutionParameters, ShellRuntime, commands, env, error, escape, expansion, interfaces, jobs,
+    namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
@@ -261,7 +262,7 @@ impl Spec {
     #[expect(clippy::too_many_lines)]
     pub async fn get_completions(
         &self,
-        shell: &mut Shell,
+        shell: &mut impl ShellRuntime,
         context: &Context<'_>,
     ) -> Result<Answer, crate::error::Error> {
         // Store the current options in the shell; this is needed since the compopt
@@ -272,7 +273,7 @@ impl Spec {
         // Generate completions based on any provided actions (and on words).
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
-            let params = shell.default_exec_params();
+            let params = ExecutionParameters::default();
             let words =
                 crate::expansion::full_expand_and_split_word(shell, &params, word_list).await?;
             for word in words {
@@ -415,7 +416,7 @@ impl Spec {
     #[expect(clippy::too_many_lines)]
     async fn generate_action_completions(
         &self,
-        shell: &Shell,
+        shell: &impl ShellRuntime,
         context: &Context<'_>,
     ) -> Result<IndexSet<String>, error::Error> {
         let mut candidates = IndexSet::new();
@@ -600,12 +601,12 @@ impl Spec {
 
     async fn call_completion_command(
         &self,
-        shell: &Shell,
+        shell: &impl ShellRuntime,
         command_name: &str,
         context: &Context<'_>,
     ) -> Result<IndexSet<String>, error::Error> {
         // Move to a subshell so we can start filling out variables.
-        let mut shell = shell.clone();
+        let mut shell = shell.clone_subshell();
 
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
@@ -647,7 +648,7 @@ impl Spec {
         }
 
         // Run the command.
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let output =
             commands::invoke_command_in_subshell_and_get_output(&mut shell, &params, command_line)
                 .await?;
@@ -663,7 +664,7 @@ impl Spec {
 
     async fn call_completion_function(
         &self,
-        shell: &mut Shell,
+        shell: &mut impl ShellRuntime,
         function_name: &str,
         context: &Context<'_>,
     ) -> Result<Answer, error::Error> {
@@ -713,7 +714,7 @@ impl Spec {
         // handler depth count to suppress any debug traps.
         shell.enter_trap_handler(None);
 
-        let params = shell.default_exec_params();
+        let params = ExecutionParameters::default();
         let invoke_result = shell
             .invoke_function(function_name, args.iter(), &params)
             .await;
@@ -955,7 +956,7 @@ impl Config {
     #[expect(clippy::string_slice)]
     pub async fn get_completions(
         &self,
-        shell: &mut Shell,
+        shell: &mut impl ShellRuntime,
         input: &str,
         position: usize,
     ) -> Result<Completions, error::Error> {
@@ -1062,8 +1063,8 @@ impl Config {
         }
     }
 
-    fn tokenize_input_for_completion<'a>(
-        shell: &Shell,
+    fn tokenize_input_for_completion<'a, S: ShellRuntime>(
+        shell: &S,
         input: &'a str,
     ) -> Vec<CompletionToken<'a>> {
         const FALLBACK: &str = " \t\n\"\'@><=;|&(:";
@@ -1077,7 +1078,11 @@ impl Config {
         simple_tokenize_by_delimiters(input, delimiters.as_slice())
     }
 
-    async fn get_completions_for_token(&self, shell: &mut Shell, context: Context<'_>) -> Answer {
+    async fn get_completions_for_token(
+        &self,
+        shell: &mut impl ShellRuntime,
+        context: Context<'_>,
+    ) -> Answer {
         // See if we can find a completion spec matching the current command.
         let mut found_spec: Option<&Spec> = None;
 
@@ -1127,20 +1132,19 @@ impl Config {
 }
 
 async fn get_file_completions(
-    shell: &Shell,
+    shell: &impl ShellRuntime,
     token_to_complete: &str,
     must_be_dir: bool,
 ) -> IndexSet<String> {
     // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
-    let mut throwaway_shell = shell.clone();
-    let params = throwaway_shell.default_exec_params();
+    let mut throwaway_shell = shell.clone_subshell();
     let options = expansion::ExpanderOptions {
         execute_command_substitutions: false,
         ..Default::default()
     };
     let expanded_token = expansion::basic_expand_word_with_options(
         &mut throwaway_shell,
-        &params,
+        &ExecutionParameters::default(),
         &unquote_str(token_to_complete),
         &options,
     )
@@ -1166,7 +1170,7 @@ async fn get_file_completions(
         .collect()
 }
 
-fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<String> {
+fn get_command_completions(shell: &impl ShellRuntime, context: &Context<'_>) -> IndexSet<String> {
     let mut candidates = IndexSet::new();
 
     // Look for external commands.
@@ -1182,7 +1186,10 @@ fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<Str
     candidates.into_iter().collect()
 }
 
-async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>) -> Answer {
+async fn get_completions_using_basic_lookup(
+    shell: &impl ShellRuntime,
+    context: &Context<'_>,
+) -> Answer {
     let mut candidates = get_file_completions(shell, context.token_to_complete, false).await;
 
     // If this appears to be the command token (and if there's *some* prefix without
@@ -1340,7 +1347,7 @@ fn completion_filter_pattern_matches(
     pattern: &str,
     candidate: &str,
     token_being_completed: &str,
-    shell: &Shell,
+    shell: &impl ShellRuntime,
 ) -> Result<bool, error::Error> {
     let pattern = replace_unescaped_ampersands(pattern, token_being_completed);
 

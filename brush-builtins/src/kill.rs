@@ -29,9 +29,9 @@ pub(crate) struct KillCommand {
 impl builtins::Command for KillCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Default signal is SIGKILL.
         let mut trap_signal = TrapSignal::Signal(nix::sys::signal::Signal::SIGKILL);
@@ -129,8 +129,8 @@ impl builtins::Command for KillCommand {
     }
 }
 
-fn print_signals(
-    context: &brush_core::ExecutionContext<'_>,
+fn print_signals<S: brush_core::ShellRuntime>(
+    context: &brush_core::ExecutionContext<'_, S>,
     signals: &[String],
 ) -> Result<ExecutionResult, brush_core::Error> {
     let mut exit_code = ExecutionResult::success();

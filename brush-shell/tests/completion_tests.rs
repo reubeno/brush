@@ -7,6 +7,7 @@
 use anyhow::Result;
 use assert_fs::prelude::*;
 use brush_builtins::ShellBuilderExt;
+use brush_core::ShellRuntime as _;
 use std::path::PathBuf;
 
 struct TestShellWithBashCompletion {
@@ -28,7 +29,7 @@ impl TestShellWithBashCompletion {
         let temp_dir = assert_fs::TempDir::new()?;
         let bash_completion_script_path = Self::find_bash_completion_script()?;
 
-        let exec_params = shell.default_exec_params();
+        let exec_params = brush_core::ExecutionParameters::default();
         let source_result = shell
             .source_script(
                 bash_completion_script_path.as_path(),

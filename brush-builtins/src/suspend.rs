@@ -14,10 +14,10 @@ pub(crate) struct SuspendCommand {
 impl builtins::Command for SuspendCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
-    ) -> Result<ExecutionResult, Self::Error> {
+        context: brush_core::ExecutionContext<'_, S>,
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if context.shell.options().login_shell && !self.force {
             writeln!(context.stderr(), "login shell cannot be suspended")?;
             return Ok(ExecutionExitCode::InvalidUsage.into());

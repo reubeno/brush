@@ -1,13 +1,14 @@
 //! Example of instantiating a shell and calling a shell function in it.
 
 use anyhow::Result;
+use brush_core::{ExecutionParameters, ShellRuntime as _};
 
 async fn instantiate_shell() -> Result<brush_core::Shell> {
     let shell = brush_core::Shell::builder().build().await?;
     Ok(shell)
 }
 
-async fn define_func(shell: &mut brush_core::Shell) -> Result<()> {
+async fn define_func(shell: &mut impl brush_core::ShellRuntime) -> Result<()> {
     let script = r#"hello() { echo "Hello, world: $@"; return 42; }
 "#;
 
@@ -15,7 +16,7 @@ async fn define_func(shell: &mut brush_core::Shell) -> Result<()> {
         .run_string(
             script,
             &brush_core::SourceInfo::default(),
-            &shell.default_exec_params(),
+            &ExecutionParameters::default(),
         )
         .await?;
 
@@ -24,8 +25,8 @@ async fn define_func(shell: &mut brush_core::Shell) -> Result<()> {
     Ok(())
 }
 
-async fn run_func(shell: &mut brush_core::Shell, suppress_stdout: bool) -> Result<()> {
-    let mut params = shell.default_exec_params();
+async fn run_func(shell: &mut impl brush_core::ShellRuntime, suppress_stdout: bool) -> Result<()> {
+    let mut params = ExecutionParameters::default();
 
     if suppress_stdout {
         params.set_fd(

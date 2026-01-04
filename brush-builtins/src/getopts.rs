@@ -38,9 +38,9 @@ impl builtins::Command for GetOptsCommand {
     }
 
     #[expect(clippy::too_many_lines)]
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut option_defs = HashMap::<char, bool>::new();
         let mut treat_unknown_options_as_failure = true;
