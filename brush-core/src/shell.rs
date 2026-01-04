@@ -615,6 +615,56 @@ pub trait ShellRuntime: Send + Sync + 'static {
     fn as_serializable(&self) -> &impl serde::Serialize
     where
         Self: Sized;
+
+    /// Increments the interactive line offset in the shell by the indicated number
+    /// of lines.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta` - The number of lines to increment the current line offset by.
+    fn increment_interactive_line_offset(&mut self, delta: usize);
+
+    /// Updates the shell's internal tracking state to reflect that a new interactive
+    /// session is being started.
+    fn start_interactive_session(&mut self) -> Result<(), error::Error>;
+
+    /// Updates the shell's internal tracking state to reflect that the current
+    /// interactive session is ending.
+    fn end_interactive_session(&mut self) -> Result<(), error::Error>;
+
+    /// Runs any exit steps for the shell.
+    async fn on_exit(&mut self) -> Result<(), error::Error>;
+
+    /// Saves history back to any backing storage.
+    fn save_history(&mut self) -> Result<(), error::Error>;
+
+    /// Returns a value that can be used to write to the shell's currently configured
+    /// standard error stream using `write!` et al.
+    fn stderr(&self) -> impl std::io::Write + 'static
+    where
+        Self: Sized;
+
+    /// Updates the shell state to reflect the given edit buffer contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `contents` - The contents of the edit buffer.
+    /// * `cursor` - The cursor position in the edit buffer.
+    fn set_edit_buffer(&mut self, contents: String, cursor: usize) -> Result<(), error::Error>;
+
+    /// Returns the contents of the shell's edit buffer, if any. The buffer
+    /// state is cleared from the shell.
+    fn pop_edit_buffer(&mut self) -> Result<Option<(String, usize)>, error::Error>;
+
+    /// Determines whether the given filename is the name of an executable in one of the
+    /// directories in the shell's current PATH. If found, returns the path.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidate_name` - The name of the file to look for.
+    fn find_first_executable_in_path<S: AsRef<str>>(&self, candidate_name: S) -> Option<PathBuf>
+    where
+        Self: Sized;
 }
 
 /// Trait for defining shell behavior.
@@ -1532,6 +1582,98 @@ impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
     {
         self
     }
+
+    fn increment_interactive_line_offset(&mut self, delta: usize) {
+        self.call_stack.increment_current_line_offset(delta);
+    }
+
+    fn start_interactive_session(&mut self) -> Result<(), error::Error> {
+        self.call_stack.push_interactive_session();
+        Ok(())
+    }
+
+    fn end_interactive_session(&mut self) -> Result<(), error::Error> {
+        if self
+            .call_stack
+            .current_frame()
+            .is_none_or(|frame| !frame.frame_type.is_interactive_session())
+        {
+            return Err(error::ErrorKind::NotInInteractiveSession.into());
+        }
+
+        self.call_stack.pop();
+
+        Ok(())
+    }
+
+    async fn on_exit(&mut self) -> Result<(), error::Error> {
+        self.invoke_exit_trap_handler_if_registered().await?;
+
+        Ok(())
+    }
+
+    fn save_history(&mut self) -> Result<(), error::Error> {
+        if let Some(history_file_path) = self.history_file_path() {
+            if let Some(history) = &mut self.history {
+                // See if there's *any* time format configured. That triggers writing out
+                // timestamps.
+                let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
+
+                // TODO(history): Observe options.append_to_history_file
+                history.flush(
+                    history_file_path,
+                    true, /* append? */
+                    true, /* unsaved items only? */
+                    write_timestamps,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn stderr(&self) -> impl std::io::Write + 'static {
+        self.open_files.try_stderr().cloned().unwrap()
+    }
+
+    fn set_edit_buffer(&mut self, contents: String, cursor: usize) -> Result<(), error::Error> {
+        self.env
+            .set_global("READLINE_LINE", ShellVariable::new(contents))?;
+
+        self.env
+            .set_global("READLINE_POINT", ShellVariable::new(cursor.to_string()))?;
+
+        Ok(())
+    }
+
+    fn pop_edit_buffer(&mut self) -> Result<Option<(String, usize)>, error::Error> {
+        let line = self
+            .env
+            .unset("READLINE_LINE")?
+            .map(|line| line.value().to_cow_str(self).to_string());
+
+        let point = self
+            .env
+            .unset("READLINE_POINT")?
+            .and_then(|point| point.value().to_cow_str(self).parse::<usize>().ok())
+            .unwrap_or(0);
+
+        if let Some(line) = line {
+            Ok(Some((line, point)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn find_first_executable_in_path<S: AsRef<str>>(&self, candidate_name: S) -> Option<PathBuf> {
+        for dir_str in self.env_str("PATH").unwrap_or_default().split(':') {
+            let candidate_path = Path::new(dir_str).join(candidate_name.as_ref());
+            if candidate_path.executable() {
+                return Some(candidate_path);
+            }
+        }
+        None
+    }
 }
 
 pub use shell_builder::State as ShellBuilderState;
@@ -1886,16 +2028,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         Ok(Some(history::History::import(history_file)?))
     }
 
-    /// Increments the interactive line offset in the shell by the indicated number
-    /// of lines.
-    ///
-    /// # Arguments
-    ///
-    /// * `delta` - The number of lines to increment the current line offset by.
-    pub fn increment_interactive_line_offset(&mut self, delta: usize) {
-        self.call_stack.increment_current_line_offset(delta);
-    }
-
     /// Returns a mutable reference to the shell's current working directory.
     /// This is only accessible within the crate.
     pub(crate) const fn working_dir_mut(&mut self) -> &mut PathBuf {
@@ -2157,13 +2289,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         Ok(result)
     }
 
-    /// Runs any exit steps for the shell.
-    pub async fn on_exit(&mut self) -> Result<(), error::Error> {
-        self.invoke_exit_trap_handler_if_registered().await?;
-
-        Ok(())
-    }
-
     async fn invoke_exit_trap_handler_if_registered(
         &mut self,
     ) -> Result<ExecutionResult, error::Error> {
@@ -2246,29 +2371,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         self.env_str(name).unwrap_or_else(|| default.into())
     }
 
-    /// Updates the shell's internal tracking state to reflect that a new interactive
-    /// session is being started.
-    pub fn start_interactive_session(&mut self) -> Result<(), error::Error> {
-        self.call_stack.push_interactive_session();
-        Ok(())
-    }
-
-    /// Updates the shell's internal tracking state to reflect that the current
-    /// interactive session is ending.
-    pub fn end_interactive_session(&mut self) -> Result<(), error::Error> {
-        if self
-            .call_stack
-            .current_frame()
-            .is_none_or(|frame| !frame.frame_type.is_interactive_session())
-        {
-            return Err(error::ErrorKind::NotInInteractiveSession.into());
-        }
-
-        self.call_stack.pop();
-
-        Ok(())
-    }
-
     /// Updates the shell's internal tracking state to reflect that command
     /// string mode is being started.
     pub fn start_command_string_mode(&mut self) {
@@ -2287,27 +2389,6 @@ impl<SB: ShellBehavior> Shell<SB> {
         }
 
         self.call_stack.pop();
-
-        Ok(())
-    }
-
-    /// Saves history back to any backing storage.
-    pub fn save_history(&mut self) -> Result<(), error::Error> {
-        if let Some(history_file_path) = self.history_file_path() {
-            if let Some(history) = &mut self.history {
-                // See if there's *any* time format configured. That triggers writing out
-                // timestamps.
-                let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
-
-                // TODO(history): Observe options.append_to_history_file
-                history.flush(
-                    history_file_path,
-                    true, /* append? */
-                    true, /* unsaved items only? */
-                    write_timestamps,
-                )?;
-            }
-        }
 
         Ok(())
     }
@@ -2336,72 +2417,10 @@ impl<SB: ShellBehavior> Shell<SB> {
         self.builtins.insert(name.into(), registration);
     }
 
-    /// Determines whether the given filename is the name of an executable in one of the
-    /// directories in the shell's current PATH. If found, returns the path.
-    ///
-    /// # Arguments
-    ///
-    /// * `candidate_name` - The name of the file to look for.
-    pub fn find_first_executable_in_path<S: AsRef<str>>(
-        &self,
-        candidate_name: S,
-    ) -> Option<PathBuf> {
-        for dir_str in self.env_str("PATH").unwrap_or_default().split(':') {
-            let candidate_path = Path::new(dir_str).join(candidate_name.as_ref());
-            if candidate_path.executable() {
-                return Some(candidate_path);
-            }
-        }
-        None
-    }
-
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> impl std::io::Write + 'static {
         self.open_files.try_stdout().cloned().unwrap()
-    }
-
-    /// Returns a value that can be used to write to the shell's currently configured
-    /// standard error stream using `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write + 'static {
-        self.open_files.try_stderr().cloned().unwrap()
-    }
-
-    /// Updates the shell state to reflect the given edit buffer contents.
-    ///
-    /// # Arguments
-    ///
-    /// * `contents` - The contents of the edit buffer.
-    /// * `cursor` - The cursor position in the edit buffer.
-    pub fn set_edit_buffer(&mut self, contents: String, cursor: usize) -> Result<(), error::Error> {
-        self.env
-            .set_global("READLINE_LINE", ShellVariable::new(contents))?;
-
-        self.env
-            .set_global("READLINE_POINT", ShellVariable::new(cursor.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Returns the contents of the shell's edit buffer, if any. The buffer
-    /// state is cleared from the shell.
-    pub fn pop_edit_buffer(&mut self) -> Result<Option<(String, usize)>, error::Error> {
-        let line = self
-            .env
-            .unset("READLINE_LINE")?
-            .map(|line| line.value().to_cow_str(self).to_string());
-
-        let point = self
-            .env
-            .unset("READLINE_POINT")?
-            .and_then(|point| point.value().to_cow_str(self).parse::<usize>().ok())
-            .unwrap_or(0);
-
-        if let Some(line) = line {
-            Ok(Some((line, point)))
-        } else {
-            Ok(None)
-        }
     }
 }
 
