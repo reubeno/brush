@@ -261,6 +261,7 @@ impl AppUI {
     /// Writes output to the primary terminal pane.
     ///
     /// This allows the UI to display messages in the terminal between command executions.
+    #[allow(dead_code)]
     pub fn write_to_terminal(&self, data: &[u8]) {
         self.primary_terminal.borrow_mut().process_output(data);
     }
@@ -272,6 +273,15 @@ impl AppUI {
         self.primary_terminal
             .borrow_mut()
             .set_running_command(command);
+    }
+
+    /// Finalizes the current command's output, storing it in history.
+    ///
+    /// Call this when a command finishes execution.
+    pub fn finalize_command(&self, exit_code: Option<u8>) {
+        self.primary_terminal
+            .borrow_mut()
+            .finalize_command(exit_code);
     }
 
     /// Draws the UI with content panes and command input.
@@ -1260,12 +1270,9 @@ impl AppUI {
                     exit_code,
                     should_exit,
                 } => {
-                    // Write a status message to the terminal pane
+                    // Finalize the command output and store in history
                     let code: u8 = (&exit_code).into();
-                    let status_msg = std::format!(
-                        "\r\n----------- [tuish: command exited with code {code}] ----------- \r\n\r\n"
-                    );
-                    self.write_to_terminal(status_msg.as_bytes());
+                    self.finalize_command(Some(code));
 
                     // Check if we should exit the shell
                     if should_exit {
@@ -1273,9 +1280,6 @@ impl AppUI {
                     }
 
                     running_command = None;
-
-                    // Clear the running command display
-                    self.set_running_command(None);
 
                     // Re-enable command input pane and focus it
                     self.command_input_handle.borrow_mut().enable();
