@@ -77,7 +77,7 @@ impl RcLoadBehavior {
 pub trait ShellRuntime: Send + Sync + 'static {
     /// Clones the shell runtime, yielding a subshell instance.
     #[must_use]
-    fn clone(&self) -> Self
+    fn clone_subshell(&self) -> Self
     where
         Self: Sized;
 
@@ -599,6 +599,25 @@ pub trait ShellRuntime: Send + Sync + 'static {
     ///
     /// * `name` - The name of the function to lookup.
     fn func_mut(&mut self, name: &str) -> Option<&mut functions::Registration>;
+
+    /// Applies basic shell expansion to the provided string.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to expand.
+    async fn basic_expand_string<S: AsRef<str> + Send>(
+        &mut self,
+        params: &ExecutionParameters,
+        s: S,
+    ) -> Result<String, error::Error>
+    where
+        Self: Sized;
+
+    /// Returns a serializable representation of the shell.
+    #[cfg(feature = "serde")]
+    fn as_serializable(&self) -> &impl serde::Serialize
+    where
+        Self: Sized;
 }
 
 /// Represents an instance of a shell.
@@ -735,7 +754,7 @@ impl AsMut<Self> for Shell {
 
 #[async_trait]
 impl ShellRuntime for Shell {
-    fn clone(&self) -> Self {
+    fn clone_subshell(&self) -> Self {
         <Self as Clone>::clone(self)
     }
 
@@ -1479,6 +1498,23 @@ impl ShellRuntime for Shell {
     fn func_mut(&mut self, name: &str) -> Option<&mut functions::Registration> {
         self.funcs.get_mut(name)
     }
+
+    async fn basic_expand_string<S: AsRef<str> + Send>(
+        &mut self,
+        params: &ExecutionParameters,
+        s: S,
+    ) -> Result<String, error::Error> {
+        let result = expansion::basic_expand_word(self, params, s.as_ref()).await?;
+        Ok(result)
+    }
+
+    #[cfg(feature = "serde")]
+    fn as_serializable(&self) -> &impl serde::Serialize
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 pub use shell_builder::State as ShellBuilderState;
@@ -2052,20 +2088,6 @@ impl Shell {
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing reader as program...");
         parser.parse_program()
-    }
-
-    /// Applies basic shell expansion to the provided string.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The string to expand.
-    pub async fn basic_expand_string<S: AsRef<str>>(
-        &mut self,
-        params: &ExecutionParameters,
-        s: S,
-    ) -> Result<String, error::Error> {
-        let result = expansion::basic_expand_word(self, params, s.as_ref()).await?;
-        Ok(result)
     }
 
     /// Applies full shell expansion and field splitting to the provided string; returns

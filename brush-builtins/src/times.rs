@@ -10,11 +10,10 @@ pub(crate) struct TimesCommand {}
 impl builtins::Command for TimesCommand {
     type Error = brush_core::Error;
 
-        async fn execute<S: brush_core::ShellRuntime>(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
         context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;
         writeln!(
             context.stdout(),
