@@ -2,7 +2,6 @@ use std::io::IsTerminal as _;
 use std::io::Write as _;
 
 use brush_core::ExecutionParameters;
-use brush_core::ShellRuntime as _;
 
 use crate::InputBackend;
 use crate::InteractivePrompt;
@@ -53,9 +52,9 @@ impl Default for InteractiveOptions {
 }
 
 /// Represents an interactive shell that displays prompts, interactively reads user input, etc.
-pub struct InteractiveShell<'a, IB: InputBackend> {
+pub struct InteractiveShell<'a, IB: InputBackend, S: brush_core::ShellRuntime> {
     /// The underlying shell instance.
-    shell: crate::ShellRef,
+    shell: crate::ShellRef<S>,
     /// The input backend to use.
     input: &'a mut IB,
     /// Terminal integration utility, if any.
@@ -64,7 +63,7 @@ pub struct InteractiveShell<'a, IB: InputBackend> {
     options: InteractiveOptions,
 }
 
-impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
+impl<'a, IB: InputBackend, S: brush_core::ShellRuntime> InteractiveShell<'a, IB, S> {
     /// Creates a new `InteractiveShell` wrapping the given shell instance.
     ///
     /// # Arguments
@@ -73,7 +72,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     /// * `input` - The input backend to use.
     /// * `options` - The user interface options to use.
     pub fn new(
-        shell: &crate::ShellRef,
+        shell: &crate::ShellRef<S>,
         input: &'a mut IB,
         options: &InteractiveOptions,
     ) -> Result<Self, ShellError> {
@@ -138,7 +137,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
                     // Report the error, but continue to execute.
                     let shell = self.shell.lock().await;
                     let mut stderr = shell.stderr();
-                    let _ = shell.display_error(&mut stderr, &err).await;
+                    let _ = shell.display_error(&mut stderr, &err);
 
                     drop(shell);
                 }

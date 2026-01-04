@@ -27,9 +27,6 @@ use crate::{
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 
-/// Type for storing an error formatter.
-pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
-
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
 
@@ -434,7 +431,7 @@ pub trait ShellRuntime: Send + Sync + 'static {
     ///
     /// * `file` - The file to write the error to.
     /// * `err` - The error to display.
-    async fn display_error(
+    fn display_error(
         &self,
         file: &mut (impl std::io::Write + Send),
         err: &error::Error,
@@ -621,7 +618,18 @@ pub trait ShellRuntime: Send + Sync + 'static {
 }
 
 /// Trait for defining shell behavior.
-pub trait ShellBehavior: Clone + Default + Send + Sync + 'static {}
+pub trait ShellBehavior: Clone + Default + Send + Sync + 'static {
+    /// Format the given error for display within the context of the provided shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The error to format
+    /// * `shell` - The shell context in which the error occurred.
+    fn format_error(&self, error: &error::Error, shell: &impl ShellRuntime) -> String {
+        let _ = shell;
+        std::format!("error: {error:#}\n")
+    }
+}
 
 /// Default shell behavior implementation.
 #[derive(Clone, Default)]
@@ -714,10 +722,6 @@ pub struct Shell<SB: ShellBehavior = DefaultShellBehavior> {
 
     /// History of commands executed in the shell.
     history: Option<history::History>,
-
-    /// Error formatter for customizing error display.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
-    error_formatter: ErrorFormatterHelper,
 }
 
 impl<SB: ShellBehavior> Clone for Shell<SB> {
@@ -748,7 +752,6 @@ impl<SB: ShellBehavior> Clone for Shell<SB> {
             last_stopwatch_offset: self.last_stopwatch_offset,
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
-            error_formatter: self.error_formatter.clone(),
             depth: self.depth + 1,
         }
     }
@@ -1271,7 +1274,7 @@ impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
         match result {
             Ok(result) => Ok(result),
             Err(err) => {
-                let _ = self.display_error(&mut params.stderr(self), &err).await;
+                let _ = self.display_error(&mut params.stderr(self), &err);
 
                 let result = err.into_result(self);
                 self.set_last_exit_status(result.exit_code.into());
@@ -1290,12 +1293,12 @@ impl<SB: ShellBehavior> ShellRuntime for Shell<SB> {
         s
     }
 
-    async fn display_error(
+    fn display_error(
         &self,
         file: &mut (impl std::io::Write + Send),
         err: &error::Error,
     ) -> Result<(), error::Error> {
-        let str = self.error_formatter.lock().await.format_error(err);
+        let str = self.behavior.format_error(err, self);
         write!(file, "{str}")?;
 
         Ok(())
@@ -1745,8 +1748,6 @@ pub struct CreateOptions<SB: ShellBehavior = DefaultShellBehavior> {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
-    /// Error formatter helper for the shell to use.
-    pub error_formatter: Option<ErrorFormatterHelper>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
 }
@@ -1780,7 +1781,6 @@ impl<SB: ShellBehavior> Default for Shell<SB> {
             last_stopwatch_offset: 0,
             key_bindings: None,
             history: None,
-            error_formatter: default_error_formatter(),
         }
     }
 }
@@ -1816,9 +1816,6 @@ impl<SB: ShellBehavior> Shell<SB> {
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
             builtins: options.builtins,
             key_bindings: options.key_bindings,
-            error_formatter: options
-                .error_formatter
-                .unwrap_or_else(default_error_formatter),
             ..Self::default()
         };
 
@@ -2429,10 +2426,6 @@ fn create_parser<R: Read>(
 
 fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
-}
-
-fn default_error_formatter() -> ErrorFormatterHelper {
-    Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))
 }
 
 fn default_shell_behavior<SB: ShellBehavior>() -> SB {

@@ -3,9 +3,9 @@
 #![allow(dead_code)]
 
 pub mod args;
+mod behavior;
 mod brushctl;
 pub mod config;
 pub mod entry;
-mod error_formatter;
 pub mod events;
 mod productinfo;

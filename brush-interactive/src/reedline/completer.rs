@@ -3,11 +3,11 @@ use std::borrow::BorrowMut;
 
 use crate::{completion, refs};
 
-pub(crate) struct ReedlineCompleter {
-    pub shell: refs::ShellRef,
+pub(crate) struct ReedlineCompleter<S: brush_core::ShellRuntime> {
+    pub shell: refs::ShellRef<S>,
 }
 
-impl reedline::Completer for ReedlineCompleter {
+impl<S: brush_core::ShellRuntime> reedline::Completer for ReedlineCompleter<S> {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<reedline::Suggestion> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.complete_async(line, pos))
@@ -15,7 +15,7 @@ impl reedline::Completer for ReedlineCompleter {
     }
 }
 
-impl ReedlineCompleter {
+impl<S: brush_core::ShellRuntime> ReedlineCompleter<S> {
     async fn complete_async(&self, line: &str, pos: usize) -> Vec<reedline::Suggestion> {
         let mut shell_guard = self.shell.lock().await;
         let shell = shell_guard.borrow_mut().as_mut();

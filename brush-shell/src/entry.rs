@@ -2,9 +2,9 @@
 
 use crate::args::CommandLineArgs;
 use crate::args::InputBackendType;
+use crate::behavior::BrushShellBehavior;
 use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
 use crate::config;
-use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
@@ -208,7 +208,7 @@ async fn run_async(
         Err(brush_interactive::ShellError::ShellError(e)) => {
             let shell = shell.lock().await;
             let mut stderr = shell.stderr();
-            let _ = shell.display_error(&mut stderr, &e).await;
+            let _ = shell.display_error(&mut stderr, &e);
             drop(shell);
             1
         }
@@ -339,7 +339,7 @@ async fn initialize_shell(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+) -> Result<impl brush_core::ShellRuntime, brush_interactive::ShellError> {
     #[cfg(feature = "experimental-load")]
     if let Some(load_file) = &args.load_file {
         return instantiate_shell_from_file(load_file.as_path());
@@ -351,9 +351,10 @@ async fn instantiate_shell(
 #[cfg(feature = "experimental-load")]
 fn instantiate_shell_from_file(
     file_path: &Path,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
-    let mut shell: brush_core::Shell = serde_json::from_reader(std::fs::File::open(file_path)?)
-        .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
+) -> Result<impl brush_core::ShellRuntime, brush_interactive::ShellError> {
+    let mut shell: brush_core::Shell<BrushShellBehavior> =
+        serde_json::from_reader(std::fs::File::open(file_path)?)
+            .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
 
     // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
     // TODO(serde): we should consider whether we could/should at least track *which* are enabled.
@@ -387,7 +388,7 @@ fn instantiate_shell_from_file(
 async fn instantiate_shell_from_args(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+) -> Result<impl brush_core::ShellRuntime, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
@@ -430,10 +431,16 @@ async fn instantiate_shell_from_args(
         .filter_map(|&fd| brush_core::sys::fd::try_get_file_for_open_fd(fd).map(|file| (fd, file)))
         .collect();
 
+    // Set up our shell behavior object.
+    let behavior = BrushShellBehavior {
+        use_color: !args.disable_color,
+        ..BrushShellBehavior::default()
+    };
+
     // Set up the shell builder with the requested options.
     // NOTE: We skip loading profile and rc files here; that will be handled later after we've
     // fully instantiated everything we want set before running any code.
-    let shell = brush_core::Shell::builder()
+    let shell = brush_core::Shell::builder_with_behavior(behavior)
         .disable_options(args.disabled_options.clone())
         .disable_shopt_options(args.disabled_shopt_options.clone())
         .disallow_overwriting_regular_files_via_output_redirection(
@@ -461,7 +468,6 @@ async fn instantiate_shell_from_args(
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
-        .error_formatter(new_error_formatter(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.
@@ -475,16 +481,6 @@ async fn instantiate_shell_from_args(
     let shell = shell.build().await?;
 
     Ok(shell)
-}
-
-fn new_error_formatter(
-    args: &CommandLineArgs,
-) -> Arc<Mutex<dyn brush_core::error::ErrorFormatter>> {
-    let formatter = error_formatter::Formatter {
-        use_color: !args.disable_color,
-    };
-
-    Arc::new(Mutex::new(formatter))
 }
 
 fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {

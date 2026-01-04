@@ -70,11 +70,11 @@ mod styles {
     }
 }
 
-pub(crate) struct ReedlineHighlighter {
-    pub shell: refs::ShellRef,
+pub(crate) struct ReedlineHighlighter<S: brush_core::ShellRuntime> {
+    pub shell: refs::ShellRef<S>,
 }
 
-impl reedline::Highlighter for ReedlineHighlighter {
+impl<S: brush_core::ShellRuntime> reedline::Highlighter for ReedlineHighlighter<S> {
     #[expect(clippy::significant_drop_tightening)]
     fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {
         let shell = tokio::task::block_in_place(|| {

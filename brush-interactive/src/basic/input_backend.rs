@@ -17,7 +17,7 @@ pub struct BasicInputBackend;
 impl InputBackend for BasicInputBackend {
     fn read_line(
         &mut self,
-        shell: &crate::ShellRef,
+        shell: &crate::ShellRef<impl brush_core::ShellRuntime>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         if std::io::stdin().is_terminal() {
@@ -31,7 +31,7 @@ impl InputBackend for BasicInputBackend {
 impl BasicInputBackend {
     fn read_line_via<R: super::LineReader>(
         &self,
-        shell_ref: &crate::ShellRef,
+        shell_ref: &crate::ShellRef<impl brush_core::ShellRuntime>,
         reader: &R,
         prompt: &InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
