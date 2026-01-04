@@ -245,18 +245,11 @@ impl CommandInput {
     /// # Returns
     /// The cursor position (x, y) if focused, otherwise `None`
     pub fn render_with_cursor(&self, frame: &mut Frame<'_>, area: Rect) -> Option<(u16, u16)> {
-        let bg_color = if !self.enabled {
-            Color::Rgb(30, 30, 40)
-        } else if self.focused {
-            Color::Rgb(30, 25, 40)
-        } else {
-            Color::Rgb(25, 25, 35)
-        };
-
+        // Transparent background - no explicit bg color set
         let para_style = if self.enabled {
-            Style::default().bg(bg_color)
+            Style::default()
         } else {
-            Style::default().fg(Color::DarkGray).bg(bg_color)
+            Style::default().fg(Color::DarkGray)
         };
 
         // Build the input line with syntax highlighting
