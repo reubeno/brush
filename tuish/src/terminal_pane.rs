@@ -6,7 +6,6 @@
 
 use std::sync::{Arc, RwLock};
 
-use ansi_to_tui::IntoText;
 use bytes::Bytes;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::prelude::*;
@@ -145,55 +144,207 @@ impl TerminalPane {
         self.scroll_offset = usize::MAX;
     }
 
-    /// Captures styled output from the vt100 parser.
+    /// Captures styled output from the vt100 parser using cell-by-cell rendering.
     #[allow(clippy::significant_drop_tightening)]
     fn capture_styled_output(parser: &Arc<RwLock<vt100::Parser>>) -> Vec<Line<'static>> {
         let parser_guard = parser.read().unwrap();
         let screen = parser_guard.screen();
-        let formatted = screen.contents_formatted();
-        drop(parser_guard);
+        let size = screen.size();
+        let (rows, cols) = (size.0 as usize, size.1 as usize);
 
-        if let Ok(text) = formatted.into_text() {
-            text.lines
-                .into_iter()
-                .map(|line| {
-                    let owned_spans: Vec<Span<'static>> = line
-                        .spans
-                        .into_iter()
-                        .map(|span| Span::styled(span.content.into_owned(), span.style))
-                        .collect();
-                    Line::from(owned_spans)
-                })
-                .collect()
-        } else {
-            let parser_guard = parser.read().unwrap();
-            let contents = parser_guard.screen().contents();
-            contents.lines().map(|s| Line::raw(s.to_string())).collect()
+        // Theme background - use this when cell has default/black background
+        let theme_bg = Color::Rgb(22, 22, 30);
+
+        let mut lines = Vec::with_capacity(rows);
+
+        for row in 0..rows {
+            let mut spans: Vec<Span<'static>> = Vec::new();
+            let mut current_text = String::new();
+            let mut current_style: Option<Style> = None;
+
+            for col in 0..cols {
+                let cell = screen.cell(row as u16, col as u16);
+                let cell = match cell {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                let ch = cell.contents();
+                let vt_fg = cell.fgcolor();
+                let vt_bg = cell.bgcolor();
+
+                // Convert vt100 colors to ratatui colors
+                let fg = Self::convert_vt100_color(vt_fg);
+                let bg = Self::convert_vt100_color(vt_bg);
+
+                // Replace default/black background with theme background
+                let bg = match bg {
+                    Color::Black | Color::Reset => theme_bg,
+                    other => other,
+                };
+
+                let mut style = Style::default().fg(fg).bg(bg);
+
+                // Apply text modifiers
+                if cell.bold() {
+                    style = style.add_modifier(Modifier::BOLD);
+                }
+                if cell.italic() {
+                    style = style.add_modifier(Modifier::ITALIC);
+                }
+                if cell.underline() {
+                    style = style.add_modifier(Modifier::UNDERLINED);
+                }
+                if cell.inverse() {
+                    style = style.add_modifier(Modifier::REVERSED);
+                }
+
+                // Check if style changed
+                if current_style != Some(style) {
+                    // Flush accumulated text
+                    if !current_text.is_empty() {
+                        spans.push(Span::styled(
+                            std::mem::take(&mut current_text),
+                            current_style.unwrap_or_default(),
+                        ));
+                    }
+                    current_style = Some(style);
+                }
+
+                // Add character (use space if empty)
+                if ch.is_empty() {
+                    current_text.push(' ');
+                } else {
+                    current_text.push_str(&ch);
+                }
+            }
+
+            // Flush final span
+            if !current_text.is_empty() {
+                spans.push(Span::styled(
+                    current_text,
+                    current_style.unwrap_or_default(),
+                ));
+            }
+
+            lines.push(Line::from(spans));
         }
+
+        lines
     }
 
     /// Captures the current live terminal output as styled lines.
+    /// Uses cell-by-cell rendering to preserve spacing and handle backgrounds correctly.
     #[allow(clippy::significant_drop_tightening)]
     fn capture_live_output(&self) -> Vec<Line<'static>> {
         let parser_guard = self.shared_parser.read().unwrap();
         let screen = parser_guard.screen();
-        let formatted = screen.contents_formatted();
-        drop(parser_guard);
+        let size = screen.size();
+        let (rows, cols) = (size.0 as usize, size.1 as usize);
 
-        if let Ok(text) = formatted.into_text() {
-            text.lines
-                .into_iter()
-                .map(|line| {
-                    let owned_spans: Vec<Span<'static>> = line
-                        .spans
-                        .into_iter()
-                        .map(|span| Span::styled(span.content.into_owned(), span.style))
-                        .collect();
-                    Line::from(owned_spans)
-                })
-                .collect()
-        } else {
-            Vec::new()
+        // Theme background - use this when cell has default/black background
+        let theme_bg = Color::Rgb(22, 22, 30);
+
+        let mut lines = Vec::with_capacity(rows);
+
+        for row in 0..rows {
+            let mut spans: Vec<Span<'static>> = Vec::new();
+            let mut current_text = String::new();
+            let mut current_style: Option<Style> = None;
+
+            for col in 0..cols {
+                let cell = screen.cell(row as u16, col as u16);
+                let cell = match cell {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                let ch = cell.contents();
+                let vt_fg = cell.fgcolor();
+                let vt_bg = cell.bgcolor();
+
+                // Convert vt100 colors to ratatui colors
+                let fg = Self::convert_vt100_color(vt_fg);
+                let bg = Self::convert_vt100_color(vt_bg);
+
+                // Replace default/black background with theme background
+                let bg = match bg {
+                    Color::Black | Color::Reset => theme_bg,
+                    other => other,
+                };
+
+                let mut style = Style::default().fg(fg).bg(bg);
+
+                // Apply text modifiers
+                if cell.bold() {
+                    style = style.add_modifier(Modifier::BOLD);
+                }
+                if cell.italic() {
+                    style = style.add_modifier(Modifier::ITALIC);
+                }
+                if cell.underline() {
+                    style = style.add_modifier(Modifier::UNDERLINED);
+                }
+                if cell.inverse() {
+                    style = style.add_modifier(Modifier::REVERSED);
+                }
+
+                // Check if style changed
+                if current_style != Some(style) {
+                    // Flush accumulated text
+                    if !current_text.is_empty() {
+                        spans.push(Span::styled(
+                            std::mem::take(&mut current_text),
+                            current_style.unwrap_or_default(),
+                        ));
+                    }
+                    current_style = Some(style);
+                }
+
+                // Add character (use space if empty)
+                if ch.is_empty() {
+                    current_text.push(' ');
+                } else {
+                    current_text.push_str(&ch);
+                }
+            }
+
+            // Flush final span
+            if !current_text.is_empty() {
+                spans.push(Span::styled(
+                    current_text,
+                    current_style.unwrap_or_default(),
+                ));
+            }
+
+            lines.push(Line::from(spans));
+        }
+
+        lines
+    }
+
+    /// Converts a vt100 color to a ratatui color.
+    fn convert_vt100_color(color: vt100::Color) -> Color {
+        match color {
+            vt100::Color::Default => Color::Reset,
+            vt100::Color::Idx(0) => Color::Black,
+            vt100::Color::Idx(1) => Color::Red,
+            vt100::Color::Idx(2) => Color::Green,
+            vt100::Color::Idx(3) => Color::Yellow,
+            vt100::Color::Idx(4) => Color::Blue,
+            vt100::Color::Idx(5) => Color::Magenta,
+            vt100::Color::Idx(6) => Color::Cyan,
+            vt100::Color::Idx(7) => Color::White,
+            vt100::Color::Idx(8) => Color::DarkGray,
+            vt100::Color::Idx(9) => Color::LightRed,
+            vt100::Color::Idx(10) => Color::LightGreen,
+            vt100::Color::Idx(11) => Color::LightYellow,
+            vt100::Color::Idx(12) => Color::LightBlue,
+            vt100::Color::Idx(13) => Color::LightMagenta,
+            vt100::Color::Idx(14) => Color::LightCyan,
+            vt100::Color::Idx(15) => Color::White,
+            vt100::Color::Idx(idx) => Color::Indexed(idx),
+            vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
         }
     }
 
