@@ -1,12 +1,10 @@
-use brush_core::ShellRuntime as _;
-
 use crate::refs;
 
-pub(crate) struct ReedlineValidator {
-    pub shell: refs::ShellRef,
+pub(crate) struct ReedlineValidator<S: brush_core::ShellRuntime> {
+    pub shell: refs::ShellRef<S>,
 }
 
-impl reedline::Validator for ReedlineValidator {
+impl<S: brush_core::ShellRuntime> reedline::Validator for ReedlineValidator<S> {
     fn validate(&self, line: &str) -> reedline::ValidationResult {
         let shell = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.shell.lock())

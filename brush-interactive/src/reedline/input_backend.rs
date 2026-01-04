@@ -1,4 +1,3 @@
-use brush_core::ShellRuntime as _;
 use nu_ansi_term::Color;
 use reedline::MenuBuilder;
 
@@ -20,7 +19,10 @@ impl ReedlineInputBackend {
     ///
     /// * `options` - Options for creating the input backend.
     /// * `shell_ref` - Shell that the backend will be used with.
-    pub fn new(options: &crate::UIOptions, shell_ref: &refs::ShellRef) -> Result<Self, ShellError> {
+    pub fn new(
+        options: &crate::UIOptions,
+        shell_ref: &refs::ShellRef<impl brush_core::ShellRuntime>,
+    ) -> Result<Self, ShellError> {
         // Set up key bindings.
         let key_bindings = compose_key_bindings(COMPLETION_MENU_NAME);
 
@@ -121,7 +123,7 @@ impl InputBackend for ReedlineInputBackend {
     /// * `prompt` - The prompt to display to the user.
     fn read_line(
         &mut self,
-        _shell: &crate::ShellRef,
+        _shell: &crate::ShellRef<impl brush_core::ShellRuntime>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         if let Some(reedline) = &mut self.reedline {
