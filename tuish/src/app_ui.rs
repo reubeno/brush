@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Tabs},
+    widgets::{Block, BorderType, Borders, Paragraph},
 };
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
@@ -335,6 +335,14 @@ impl AppUI {
                     let pane_ids = region.panes();
                     let focused_pane_id = region.focused_pane();
 
+                    // Consistent theme colors
+                    let bg_base = Color::Rgb(22, 22, 30);      // Main background
+                    let bg_surface = Color::Rgb(30, 30, 40);   // Elevated surfaces
+                    let bg_highlight = Color::Rgb(45, 45, 60); // Hover/selected
+                    let text_primary = Color::Rgb(230, 230, 245);
+                    let text_muted = Color::Rgb(140, 140, 160);
+                    let border_dim = Color::Rgb(55, 55, 75);
+
                     // If region has multiple panes, render a tab bar
                     if pane_ids.len() > 1 {
                         // Split area for tabs bar + content
@@ -351,107 +359,91 @@ impl AppUI {
                             store.get_pane(pane_id).map(|p| p.name().to_string())
                         }).collect();
 
-                        // Gradient colors for tabs
-                        let gradient_colors = [
-                            (Color::Rgb(139, 92, 246), "󰆍 "),  // Purple
-                            (Color::Rgb(34, 211, 238), "󰘚 "),   // Cyan
-                            (Color::Rgb(251, 146, 60), "󱑗 "),  // Orange
-                            (Color::Rgb(236, 72, 153), "󰬪 "),   // Pink
-                            (Color::Rgb(134, 239, 172), "󰊕 "),  // Green
-                            (Color::Rgb(250, 204, 21), "󰜎 "),   // Yellow
+                        // Accent colors for tabs (used as subtle indicators)
+                        let accent_colors = [
+                            Color::Rgb(139, 92, 246),  // Purple
+                            Color::Rgb(34, 211, 238),  // Cyan
+                            Color::Rgb(251, 146, 60),  // Orange
+                            Color::Rgb(236, 72, 153),  // Pink
+                            Color::Rgb(134, 239, 172), // Green
+                            Color::Rgb(250, 204, 21),  // Yellow
                         ];
 
-                        let tabs = Tabs::new(tab_titles.iter().enumerate().map(|(i, t)| {
-                            let (color, icon) = gradient_colors[i % gradient_colors.len()];
+                        // Modern tab bar: render as styled spans directly
+                        let mut tab_spans: Vec<Span<'_>> = Vec::new();
+                        
+                        for (i, t) in tab_titles.iter().enumerate() {
+                            let accent = accent_colors[i % accent_colors.len()];
                             let pane_id = pane_ids[i];
                             let is_selected = pane_id == focused_pane_id;
 
-                            // Build tab text with underlined first character for hotkey hint
-                            let mut spans = vec![Span::raw(format!(" {icon}"))];
-                            if let Some(first_char) = t.chars().next() {
-                                spans.push(Span::styled(
-                                    first_char.to_string(),
-                                    Style::default().add_modifier(Modifier::UNDERLINED)
+                            if is_selected {
+                                // Selected tab: accent color text, subtle background
+                                tab_spans.push(Span::styled(
+                                    format!(" ● {t} "),
+                                    Style::default()
+                                        .fg(accent)
+                                        .bg(bg_highlight)
+                                        .add_modifier(Modifier::BOLD)
                                 ));
-                                spans.push(Span::raw(t.chars().skip(1).collect::<String>()));
                             } else {
-                                spans.push(Span::raw(t.clone()));
+                                // Unselected tab: muted
+                                tab_spans.push(Span::styled(
+                                    format!("   {t} "),
+                                    Style::default()
+                                        .fg(text_muted)
+                                        .bg(bg_surface)
+                                ));
                             }
-                            spans.push(Span::raw(" "));
+                        }
+                        
+                        // Fill remaining space with background
+                        let tab_line = Line::from(tab_spans);
+                        let tab_para = Paragraph::new(tab_line)
+                            .style(Style::default().bg(bg_surface));
+                        f.render_widget(tab_para, region_chunks[0]);
 
-                            let base_style = if is_selected {
-                                Style::default()
-                                    .fg(Color::Rgb(255, 255, 255))
-                                    .bg(color)
-                                    .add_modifier(Modifier::BOLD)
-                            } else {
-                                let dimmed_color = match color {
-                                    Color::Rgb(r, g, b) => Color::Rgb(r / 3, g / 3, b / 3),
-                                    _ => Color::Rgb(40, 42, 54),
-                                };
-                                Style::default()
-                                    .fg(Color::Rgb(200, 200, 220))
-                                    .bg(dimmed_color)
-                            };
-
-                            Line::from(spans).style(base_style)
-                        }))
-                        .select(pane_ids.iter().position(|&id| id == focused_pane_id).unwrap_or(0))
-                        .style(Style::default().bg(Color::Rgb(15, 15, 25)))
-                        .divider("│");
-
-                        f.render_widget(tabs, region_chunks[0]);
-
-                        // Render selected pane with border
+                        // Render selected pane content area
                         let selected_index = pane_ids.iter().position(|&id| id == focused_pane_id).unwrap_or(0);
+                        let accent = accent_colors[selected_index % accent_colors.len()];
                         
                         // Check if this pane is marked for moving
                         let is_marked = self.marked_pane_for_move == Some(focused_pane_id);
                         
                         let border_color = if is_marked {
-                            // Bright yellow/gold when marked for moving
-                            Color::Rgb(255, 215, 0)
+                            Color::Rgb(255, 215, 0) // Gold when marked
                         } else if is_focused_region {
-                            // Bright color when this region is active
-                            gradient_colors[selected_index % gradient_colors.len()].0
+                            accent
                         } else {
-                            // Dimmer color when region is not active
-                            let (r, g, b) = match gradient_colors[selected_index % gradient_colors.len()].0 {
-                                Color::Rgb(r, g, b) => (r / 2, g / 2, b / 2),
-                                _ => (60, 60, 80),
-                            };
-                            Color::Rgb(r, g, b)
+                            border_dim
                         };
 
-                        // Get title from selected pane (shows running command for Terminal)
+                        // Get title from selected pane
                         let mut title = store.get_pane(focused_pane_id)
                             .map_or_else(
                                 || "Pane".to_string(),
                                 |p| p.border_title().unwrap_or_else(|| p.name().to_string())
                             );
                         
-                        // Add MARKED indicator to title
                         if is_marked {
-                            title = format!("󰃀 MARKED: {}", title);
+                            title = format!("󰃀 MARKED: {title}");
                         }
 
-                        let title_color = if is_marked {
-                            Color::Rgb(255, 215, 0) // Bright gold when marked
+                        let title_style = if is_marked {
+                            Style::default().fg(Color::Rgb(255, 215, 0)).add_modifier(Modifier::BOLD)
                         } else if is_focused_region {
-                            Color::Rgb(220, 208, 255) // Bright when focused
+                            Style::default().fg(text_primary).add_modifier(Modifier::BOLD)
                         } else {
-                            Color::Rgb(150, 150, 170) // Dimmer when not focused
+                            Style::default().fg(text_muted)
                         };
 
+                        // Clean, minimal border - no title icon clutter
                         let block = Block::default()
                             .borders(Borders::ALL)
                             .border_type(if is_marked { BorderType::Double } else { BorderType::Rounded })
                             .border_style(Style::default().fg(border_color))
-                            .title(Line::from(format!(" 󰐊 {title} ")).style(
-                                Style::default()
-                                    .fg(title_color)
-                                    .add_modifier(Modifier::BOLD)
-                            ));
+                            .style(Style::default().bg(bg_base))
+                            .title(Line::from(format!(" {title} ")).style(title_style));
 
                         let inner = block.inner(region_chunks[1]);
                         f.render_widget(block, region_chunks[1]);
@@ -465,11 +457,12 @@ impl AppUI {
                     } else {
                         // Single pane in region - render with border
                         let pane_id = focused_pane_id;
+                        let accent = Color::Rgb(139, 92, 246); // Purple accent
 
                         let border_color = if is_focused_region {
-                            Color::Rgb(139, 92, 246) // Bright purple when focused
+                            accent
                         } else {
-                            Color::Rgb(69, 46, 123) // Dimmer purple when not focused
+                            border_dim
                         };
 
                         let title = store.get_pane(pane_id)
@@ -478,21 +471,18 @@ impl AppUI {
                                 |p| p.border_title().unwrap_or_else(|| p.name().to_string())
                             );
 
-                        let title_color = if is_focused_region {
-                            Color::Rgb(220, 208, 255) // Bright when focused
+                        let title_style = if is_focused_region {
+                            Style::default().fg(text_primary).add_modifier(Modifier::BOLD)
                         } else {
-                            Color::Rgb(150, 150, 170) // Dimmer when not focused
+                            Style::default().fg(text_muted)
                         };
 
                         let block = Block::default()
                             .borders(Borders::ALL)
                             .border_type(BorderType::Rounded)
                             .border_style(Style::default().fg(border_color))
-                            .title(Line::from(format!(" 󰐊 {title} ")).style(
-                                Style::default()
-                                    .fg(title_color)
-                                    .add_modifier(Modifier::BOLD)
-                            ));
+                            .style(Style::default().bg(bg_base))
+                            .title(Line::from(format!(" {title} ")).style(title_style));
 
                         let inner = block.inner(rect);
                         f.render_widget(block, rect);

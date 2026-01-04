@@ -228,12 +228,16 @@ impl TerminalPane {
         }
     }
 
-    /// Renders a completed block header.
-    fn render_block_header(block: &CommandOutputBlock, width: u16) -> Line<'static> {
-        let exit_indicator = match block.exit_code {
-            Some(0) => ("✓", Color::Green),
-            Some(_) => ("✗", Color::Red),
-            None => ("⚠", Color::Yellow),
+    /// Renders a completed block header - clean, integrated style.
+    fn render_block_header(block: &CommandOutputBlock, _width: u16) -> Line<'static> {
+        // Theme colors
+        let text_primary = Color::Rgb(220, 220, 235);
+        let text_muted = Color::Rgb(100, 100, 120);
+
+        let (status_char, status_color) = match block.exit_code {
+            Some(0) => ("●", Color::Rgb(134, 239, 172)), // Green dot
+            Some(_) => ("●", Color::Rgb(248, 113, 113)), // Red dot
+            None => ("○", Color::Rgb(250, 204, 21)),     // Yellow hollow
         };
 
         let cmd_display: String = if block.command.chars().count() > MAX_COMMAND_DISPLAY_LENGTH {
@@ -242,80 +246,85 @@ impl TerminalPane {
                 .chars()
                 .take(MAX_COMMAND_DISPLAY_LENGTH)
                 .collect();
-            format!("{truncated}...")
+            format!("{truncated}…")
         } else {
             block.command.clone()
         };
 
         let timestamp = block.timestamp.format("%H:%M:%S").to_string();
-        let remaining_width =
-            (width as usize).saturating_sub(cmd_display.len() + timestamp.len() + 15);
 
+        // Clean format: status dot, command, timestamp - no horizontal lines
         Line::from(vec![
-            Span::styled(
-                format!("─── {} ", exit_indicator.0),
-                Style::default().fg(exit_indicator.1),
-            ),
+            Span::styled(format!("{status_char} "), Style::default().fg(status_color)),
             Span::styled(
                 cmd_display,
                 Style::default()
-                    .fg(Color::Rgb(180, 180, 200))
+                    .fg(text_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!(" [{timestamp}] "),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                "─".repeat(remaining_width),
-                Style::default().fg(Color::Rgb(60, 60, 80)),
-            ),
+            Span::styled(format!("  {timestamp}"), Style::default().fg(text_muted)),
         ])
     }
 
     /// Renders a "running" block header for the current command.
-    fn render_running_header(command: &str, width: u16) -> Line<'static> {
+    fn render_running_header(command: &str, _width: u16) -> Line<'static> {
+        let accent = Color::Rgb(139, 92, 246); // Purple
+        let text_primary = Color::Rgb(220, 220, 235);
+
         let cmd_display: String = if command.chars().count() > MAX_COMMAND_DISPLAY_LENGTH {
             let truncated: String = command.chars().take(MAX_COMMAND_DISPLAY_LENGTH).collect();
-            format!("{truncated}...")
+            format!("{truncated}…")
         } else {
             command.to_string()
         };
 
-        let remaining_width = (width as usize).saturating_sub(cmd_display.len() + 15);
-
+        // Pulsing indicator style for running command
         Line::from(vec![
-            Span::styled("─── ⟳ ", Style::default().fg(Color::Rgb(139, 92, 246))),
+            Span::styled("◉ ", Style::default().fg(accent)),
             Span::styled(
                 cmd_display,
                 Style::default()
-                    .fg(Color::White)
+                    .fg(text_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" [running] ", Style::default().fg(Color::Rgb(139, 92, 246))),
-            Span::styled(
-                "─".repeat(remaining_width),
-                Style::default().fg(Color::Rgb(80, 80, 120)),
-            ),
+            Span::styled("  running", Style::default().fg(accent)),
         ])
     }
 
     /// Builds all lines for the unified scrollable view.
     fn build_all_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut all_lines: Vec<Line<'static>> = Vec::new();
+        let separator_color = Color::Rgb(45, 45, 60);
 
         // Add completed history blocks
-        for block in &self.history {
+        for (i, block) in self.history.iter().enumerate() {
+            // Add thin separator line between blocks (not before first)
+            if i > 0 {
+                let separator_line = Line::from(Span::styled(
+                    "─".repeat(width as usize),
+                    Style::default().fg(separator_color),
+                ));
+                all_lines.push(separator_line);
+            }
+
             all_lines.push(Self::render_block_header(block, width));
             let content_count = block.content_line_count();
             for line in block.lines.iter().take(content_count) {
                 all_lines.push(line.clone());
             }
-            all_lines.push(Line::raw("")); // Separator
         }
 
         // Add running command output if any
         if let Some(ref cmd) = self.running_command {
+            // Separator before running command if there's history
+            if !self.history.is_empty() {
+                let separator_line = Line::from(Span::styled(
+                    "─".repeat(width as usize),
+                    Style::default().fg(separator_color),
+                ));
+                all_lines.push(separator_line);
+            }
+
             all_lines.push(Self::render_running_header(cmd, width));
             let live_lines = self.capture_live_output();
             // Trim trailing empty lines from live output
@@ -563,9 +572,9 @@ impl ContentPane for TerminalPane {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        // Subtle background
-        let bg =
-            ratatui::widgets::Block::default().style(Style::default().bg(Color::Rgb(18, 18, 26)));
+        // Consistent theme background
+        let bg_base = Color::Rgb(22, 22, 30);
+        let bg = ratatui::widgets::Block::default().style(Style::default().bg(bg_base));
         frame.render_widget(bg, area);
 
         // In alternate screen mode (vim, nvim, etc.), render PTY directly fullscreen
