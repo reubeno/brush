@@ -1,5 +1,5 @@
 ---
-source: brush-parser/src/parser.rs
+source: brush-parser/src/parser/mod.rs
 expression: "ParseResult { input, result: &result }"
 ---
 ParseResult(

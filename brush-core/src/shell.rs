@@ -1394,6 +1394,7 @@ impl Shell {
             sh_mode: self.options.sh_mode,
             tilde_expansion_at_word_start: true,
             tilde_expansion_after_colon: false,
+            parser_impl: brush_parser::ParserImpl::Peg,
         }
     }
 

@@ -69,13 +69,13 @@ pub enum WordPiece {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub enum TildeExpr {
-    /// ~
+    /// `~`
     Home,
-    /// ~<user>
+    /// `~<user>`
     UserHome(String),
-    /// ~+
+    /// `~+`
     WorkingDir,
-    /// ~-
+    /// `~-`
     OldWorkingDir,
     /// Represents a tilde expansion of the form `~+N`, referring to the Nth directory in
     /// the shell's directory stack, starting at the top of the stack. Note that the directory

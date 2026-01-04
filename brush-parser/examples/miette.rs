@@ -12,7 +12,7 @@ fn main() -> miette::Result<()> {
 
     let source = std::fs::read_to_string(&f).into_diagnostic()?;
     let reader = Cursor::new(&source);
-    let mut parser = Parser::builder().reader(reader).build();
+    let mut parser = Parser::builder().build(reader);
 
     let ast = parser
         .parse_program()
