@@ -31,6 +31,9 @@ mod prompt;
 mod regex;
 pub mod results;
 mod shell;
+mod shellbehavior;
+mod shellbuilder;
+mod shelltraits;
 pub mod sourceinfo;
 pub mod sys;
 pub mod terminal;
@@ -54,9 +57,11 @@ pub use error::{BuiltinError, Error, ErrorKind};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
-pub use shell::{
-    CreateOptions, DefaultShellBehavior, DefaultShellRuntime, ProfileLoadBehavior, RcLoadBehavior,
-    Shell, ShellBehavior, ShellBuilder, ShellBuilderState, ShellFd, ShellRuntime,
+pub use shell::{DefaultShellRuntime, Shell, ShellFd};
+pub use shellbehavior::{DefaultShellBehavior, ShellBehavior};
+pub use shellbuilder::{
+    CreateOptions, ProfileLoadBehavior, RcLoadBehavior, ShellBuilder, ShellBuilderState,
 };
+pub use shelltraits::ShellRuntime;
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};

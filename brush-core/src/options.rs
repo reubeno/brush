@@ -2,7 +2,7 @@
 
 use itertools::Itertools;
 
-use crate::{CreateOptions, namedoptions, shell::ShellBehavior};
+use crate::{CreateOptions, ShellBehavior, namedoptions};
 
 /// Runtime changeable options for a shell instance.
 #[derive(Clone, Default)]
