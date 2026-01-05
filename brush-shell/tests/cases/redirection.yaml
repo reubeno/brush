@@ -29,6 +29,31 @@ cases:
     stdin: |
       echo hi >&2
 
+  - name: "Redirecting stdout + stderr to file"
+    stdin: |
+      function write_both() {
+        echo "$1"
+        echo "$2" >&2
+      } 
+
+      echo "[Writing]"
+      write_both stdout stderr >& file.txt
+      echo "[Contents of file.txt]"
+      cat file.txt
+
+  - name: "Invalid stdout + stderr redir"
+    ignore_stderr: true
+    stdin: |
+      function write_both() {
+        echo "$1"
+        echo "$2" >&2
+      } 
+
+      echo "[Writing]"
+      write_both stdout stderr 2>& file.txt
+      echo "[Contents of file.txt]"
+      cat file.txt
+
   - name: "Redirecting an fd"
     stdin: |
       echo hi-out 1>stdout.txt

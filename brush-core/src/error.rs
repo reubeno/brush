@@ -120,7 +120,7 @@ pub enum ErrorKind {
     NoCurrentUser,
 
     /// The requested input or output redirection is invalid.
-    #[error("invalid redirection")]
+    #[error("invalid redirection target")]
     InvalidRedirection,
 
     /// An error occurred while redirecting input or output with the given file.

@@ -1495,29 +1495,8 @@ pub(crate) async fn setup_redirect(
                 return Err(error::ErrorKind::InvalidRedirection.into());
             }
 
-            let expanded_file_path: PathBuf =
-                shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
-
-            let mut file_options = std::fs::File::options();
-            file_options
-                .create(true)
-                .write(true)
-                .truncate(!*append)
-                .append(*append);
-
-            let stdout_file = shell
-                .open_file(&file_options, &expanded_file_path, params)
-                .map_err(|err| {
-                    error::ErrorKind::RedirectionFailure(
-                        expanded_file_path.to_string_lossy().to_string(),
-                        err.to_string(),
-                    )
-                })?;
-
-            let stderr_file = stdout_file.try_clone()?;
-
-            params.open_files.set_fd(OpenFiles::STDOUT_FD, stdout_file);
-            params.open_files.set_fd(OpenFiles::STDERR_FD, stderr_file);
+            let expanded_file_path = expanded_fields.remove(0);
+            setup_redirect_output_and_error_to(shell, params, &expanded_file_path, *append)?;
         }
 
         ast::IoRedirect::File(specified_fd_num, kind, target) => {
@@ -1658,6 +1637,11 @@ pub(crate) async fn setup_redirect(
                         };
 
                         params.open_files.set_fd(fd_num, target_file);
+                    } else if fd_num == 1 && !dash {
+                        // Special case for compatibility: redirect stdout and stderr to the file given by `expanded`.
+                        setup_redirect_output_and_error_to(
+                            shell, params, &expanded, false, /*append?*/
+                        )?;
                     } else {
                         return Err(error::ErrorKind::InvalidRedirection.into());
                     }
@@ -1724,6 +1708,46 @@ pub(crate) async fn setup_redirect(
             params.open_files.set_fd(fd_num, f);
         }
     }
+
+    Ok(())
+}
+
+/// Sets up redirection of both stdout and stderr to the same file, given by `file_path`.
+///
+/// # Arguments
+///
+/// * `shell` - The shell instance.
+/// * `params` - The execution parameters to modify.
+/// * `file_path` - The path to the file to redirect output and error to.
+/// * `append` - Whether to append. If `false`, the file will be truncated.
+fn setup_redirect_output_and_error_to(
+    shell: &Shell,
+    params: &mut ExecutionParameters,
+    file_path: &str,
+    append: bool,
+) -> Result<(), error::Error> {
+    let abs_file_path: PathBuf = shell.absolute_path(Path::new(file_path));
+
+    let mut file_options = std::fs::File::options();
+    file_options
+        .create(true)
+        .write(true)
+        .truncate(!append)
+        .append(append);
+
+    let stdout_file = shell
+        .open_file(&file_options, &abs_file_path, params)
+        .map_err(|err| {
+            error::ErrorKind::RedirectionFailure(
+                abs_file_path.to_string_lossy().to_string(),
+                err.to_string(),
+            )
+        })?;
+
+    let stderr_file = stdout_file.try_clone()?;
+
+    params.open_files.set_fd(OpenFiles::STDOUT_FD, stdout_file);
+    params.open_files.set_fd(OpenFiles::STDERR_FD, stderr_file);
 
     Ok(())
 }
