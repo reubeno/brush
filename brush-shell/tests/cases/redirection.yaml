@@ -31,10 +31,6 @@ cases:
 
   - name: "Redirecting stdout + stderr to file"
     stdin: |
-      echo hi >& file.txt
-
-  - name: "Redirecting stdout + stderr to file"
-    stdin: |
       function write_both() {
         echo "$1"
         echo "$2" >&2
