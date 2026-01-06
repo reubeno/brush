@@ -90,7 +90,18 @@ fn format_prompt_piece(
                 "$".to_owned()
             }
         }
-        brush_parser::prompt::PromptPiece::EndNonPrintingSequence => String::new(),
+        // NOTE: We mimic bash and convert \[ into \001, a.k.a. RL_PROMPT_START_IGNORE.
+        // It will need to get removed before it's actually displayed. While present it
+        // also has the important (compatible) side effect of ensuring the text on either
+        // side of it is not concatenated together, potentially resulting in incompatible
+        // variable expansions. Also, we *only* do this if the shell is interactive.
+        brush_parser::prompt::PromptPiece::EndNonPrintingSequence => {
+            if shell.options().interactive {
+                "\x02".to_owned()
+            } else {
+                String::new()
+            }
+        }
         brush_parser::prompt::PromptPiece::EscapeCharacter => "\x1b".to_owned(),
         brush_parser::prompt::PromptPiece::Hostname {
             only_up_to_first_dot,
@@ -126,7 +137,14 @@ fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::ShellVersion => {
             std::format!("{VERSION_MAJOR}.{VERSION_MINOR}")
         }
-        brush_parser::prompt::PromptPiece::StartNonPrintingSequence => String::new(),
+        // NOTE: See above note for EndNonPrintingSequence
+        brush_parser::prompt::PromptPiece::StartNonPrintingSequence => {
+            if shell.options().interactive {
+                "\x01".to_owned()
+            } else {
+                String::new()
+            }
+        }
         brush_parser::prompt::PromptPiece::TerminalDeviceBaseName => {
             return error::unimp("prompt: terminal device base name");
         }

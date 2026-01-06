@@ -3,7 +3,7 @@
 use crate::error;
 
 /// A piece of a prompt string.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
@@ -66,7 +66,7 @@ pub enum PromptPiece {
 }
 
 /// Format for a date in a prompt.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
@@ -79,7 +79,7 @@ pub enum PromptDateFormat {
 }
 
 /// Format for a time in a prompt.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
@@ -156,4 +156,49 @@ peg::parser! {
 pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
     let result = prompt_parser::prompt(s).map_err(|e| error::WordParseError::Prompt(e.into()))?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn basic_prompt() -> Result<()> {
+        assert_eq!(
+            parse(r"\u@\h:\w$ ")?,
+            vec![
+                PromptPiece::CurrentUser,
+                PromptPiece::Literal("@".to_owned()),
+                PromptPiece::Hostname {
+                    only_up_to_first_dot: true
+                },
+                PromptPiece::Literal(":".to_owned()),
+                PromptPiece::CurrentWorkingDirectory {
+                    tilde_replaced: true,
+                    basename: false
+                },
+                PromptPiece::Literal("$ ".to_owned()),
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn brackets_and_vars() -> Result<()> {
+        assert_eq!(
+            parse(r"\[$foo\]\u > ")?,
+            vec![
+                PromptPiece::StartNonPrintingSequence,
+                PromptPiece::Literal("$foo".to_owned()),
+                PromptPiece::EndNonPrintingSequence,
+                PromptPiece::CurrentUser,
+                PromptPiece::Literal(" > ".to_owned()),
+            ]
+        );
+
+        Ok(())
+    }
 }

@@ -186,3 +186,15 @@ cases:
       PS1='$(echo Hello)> '
       false
       echo $?
+
+  - name: "Brackets and var"
+    stdin: |
+      prompt='\[$var\]\u > '
+      echo "Prompt: ${prompt@P}"
+
+  - name: "Brackets and var (interactive mode)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      prompt='\[$var\]\u > '
+      echo "Prompt: ${prompt@P}"

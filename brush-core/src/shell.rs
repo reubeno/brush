@@ -1378,7 +1378,12 @@ impl Shell {
         self.last_pipeline_statuses = prev_last_pipeline_statuses;
         self.set_last_exit_status(prev_last_result);
 
-        result
+        // Strip out special characters that readline would typically drop:
+        // \001 and \002 (start and end of non-printing sequences).
+        let mut expanded = result?;
+        expanded.retain(|c| c != '\x01' && c != '\x02');
+
+        Ok(expanded)
     }
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
