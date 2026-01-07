@@ -150,7 +150,7 @@ cases:
       echo "x = 1 => $((x = 1))"
       echo "x is now $x"
 
-      echo "x += 1 => $((x += 1))"
+      echo "x += 3 => $((x += 3))"
       echo "x is now $x"
 
       echo "x -= 1 => $((x -= 1))"
@@ -169,6 +169,18 @@ cases:
       echo "x is now $x"
 
       echo "--x == $((--x))"
+      echo "x is now $x"
+
+      echo "x |= 3 => $((x |= 3))"
+      echo "x is now $x"
+
+      echo "x &= 12 => $((x &= 12))"
+      echo "x is now $x"
+
+      echo "x %= 8 => $((x %= 8))"
+      echo "x is now $x"
+
+      echo "x ^= 7 => $((x ^= 7))"
       echo "x is now $x"
 
   - name: "Assignment with references"
