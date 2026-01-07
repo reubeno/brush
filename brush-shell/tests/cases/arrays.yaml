@@ -82,6 +82,13 @@ cases:
       echo "var[*]: ${var[*]}"
       declare -p var
 
+  - name: "Array index assignment"
+    stdin: |
+      x=(3 2 1)
+      y[${x[0]}]=10
+      y[x[1]]=11
+      declare -p y
+
   - name: "Replacing array with string"
     stdin: |
       var=(a b c)
