@@ -328,7 +328,9 @@ impl Pattern {
                 }
                 PatternPiece::Literal(s) => {
                     for c in s.chars() {
-                        current_pattern.push('\\');
+                        if crate::regex::regex_char_is_special(c) {
+                            current_pattern.push('\\');
+                        }
                         current_pattern.push(c);
                     }
                 }

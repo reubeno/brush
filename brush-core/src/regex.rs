@@ -172,7 +172,7 @@ fn escape_literal_regex_piece(s: &str) -> Cow<'_, str> {
     result.into()
 }
 
-const fn regex_char_is_special(c: char) -> bool {
+pub(crate) const fn regex_char_is_special(c: char) -> bool {
     matches!(
         c,
         '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '[' | ']' | '{' | '}'
