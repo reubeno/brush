@@ -1,7 +1,7 @@
 //! Terminal utilities.
 
 use crate::{error, openfiles, sys, terminal};
-use std::{io::IsTerminal, os::fd::AsFd};
+use std::{io::IsTerminal, os::fd::AsFd, path::PathBuf};
 
 /// Terminal configuration.
 #[derive(Clone, Debug)]
@@ -110,4 +110,10 @@ pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
     }
 
     Ok(())
+}
+
+/// Tries to get the path of the terminal device associated with the attached terminal.
+/// Returns `None` if there is no terminal attached or the lookup failed.
+pub fn try_get_terminal_device_path() -> Option<PathBuf> {
+    nix::unistd::ttyname(std::io::stdin()).ok()
 }

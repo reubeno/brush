@@ -146,7 +146,9 @@ fn format_prompt_piece(
             }
         }
         brush_parser::prompt::PromptPiece::TerminalDeviceBaseName => {
-            return error::unimp("prompt: terminal device base name");
+            sys::terminal::try_get_terminal_device_path()
+                .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
+                .unwrap_or_default()
         }
         brush_parser::prompt::PromptPiece::Time(time_fmt) => {
             format_time(&chrono::Local::now(), &time_fmt)
