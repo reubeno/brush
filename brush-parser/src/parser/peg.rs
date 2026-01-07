@@ -3,6 +3,7 @@
 use crate::SourceSpan;
 use crate::ast::{self, SeparatorOperator, SourceLocation, maybe_location};
 use crate::tokenizer::Token;
+use crate::word;
 
 use super::{ParserOptions, Tokens};
 
@@ -626,7 +627,7 @@ peg::parser! {
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
             non_posix_extensions_enabled() [Token::Word(w, l)] specific_operator("(") elements:array_elements() end:specific_operator(")") {?
-                let mut parsed = parse_array_assignment(w.as_str(), elements.as_slice())?;
+                let mut parsed = word::parse_array_assignment(w.as_str(), elements.as_slice())?;
 
                 let mut all_as_word = w.to_owned();
                 all_as_word.push('(');
@@ -643,7 +644,7 @@ peg::parser! {
                 Ok((parsed, ast::Word::with_location(&all_as_word, &loc)))
             } /
             [Token::Word(w, l)] {?
-                let mut parsed = parse_assignment_word(w.as_str())?;
+                let mut parsed = word::parse_assignment_word(w.as_str()).map_err(|_| "not assignment word")?;
                 parsed.loc = l.clone();
                 Ok((parsed, ast::Word::with_location(w, l)))
             }
@@ -680,61 +681,6 @@ peg::parser! {
         rule non_posix_extensions_enabled() -> () =
             &[_] {? if !parser_options.sh_mode { Ok(()) } else { Err("posix") } }
     }
-}
-
-peg::parser! {
-    pub grammar assignments() for str {
-        pub(crate) rule name_and_scalar_value() -> ast::Assignment =
-            nae:name_and_equals() value:scalar_value() {
-                let (name, append) = nae;
-                ast::Assignment { name, value, append, loc: SourceSpan::default() }
-            }
-
-        pub(crate) rule name_and_equals() -> (ast::AssignmentName, bool) =
-            name:name() append:("+"?) "=" {
-                (name, append.is_some())
-            }
-
-        pub(crate) rule literal_array_element() -> (Option<String>, String) =
-            "[" inner:$((!"]" [_])*) "]=" value:$([_]*) {
-                (Some(inner.to_owned()), value.to_owned())
-            } /
-            value:$([_]+) {
-                (None, value.to_owned())
-            }
-
-        rule name() -> ast::AssignmentName =
-            aen:array_element_name() {
-                let (name, index) = aen;
-                ast::AssignmentName::ArrayElementName(name.to_owned(), index.to_owned())
-            } /
-            name:scalar_name() {
-                ast::AssignmentName::VariableName(name.to_owned())
-            }
-
-        rule array_element_name() -> (&'input str, &'input str) =
-            name:scalar_name() "[" ai:array_index() "]" { (name, ai) }
-
-        rule array_index() -> &'input str =
-            $((![']'] [_])*)
-
-        rule scalar_name() -> &'input str =
-            $(alpha_or_underscore() non_first_variable_char()*)
-
-        rule non_first_variable_char() -> () =
-            ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z'] {}
-
-        rule alpha_or_underscore() -> () =
-            ['_' | 'a'..='z' | 'A'..='Z'] {}
-
-        rule scalar_value() -> ast::AssignmentValue =
-            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word::from(v.to_owned())) }
-    }
-}
-
-fn parse_assignment_word(word: &str) -> Result<ast::Assignment, &'static str> {
-    let parse_result = assignments::name_and_scalar_value(word);
-    parse_result.map_err(|_| "not assignment word")
 }
 
 // add `2>&1` to the command if the pipeline is `|&`
@@ -774,37 +720,6 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
 #[inline]
 fn locations_are_contiguous(loc_left: &crate::SourceSpan, loc_right: &crate::SourceSpan) -> bool {
     loc_left.end.index == loc_right.start.index
-}
-
-fn parse_array_assignment(
-    word: &str,
-    elements: &[&String],
-) -> Result<ast::Assignment, &'static str> {
-    let (assignment_name, append) =
-        assignments::name_and_equals(word).map_err(|_| "not array assignment word")?;
-
-    let elements = elements
-        .iter()
-        .map(|element| assignments::literal_array_element(element))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| "invalid array element in literal")?;
-
-    let elements_as_words = elements
-        .into_iter()
-        .map(|(key, value)| {
-            (
-                key.map(|k| ast::Word::new(k.as_str())),
-                ast::Word::new(value.as_str()),
-            )
-        })
-        .collect();
-
-    Ok(ast::Assignment {
-        name: assignment_name,
-        value: ast::AssignmentValue::Array(elements_as_words),
-        append,
-        loc: SourceSpan::default(),
-    })
 }
 
 impl peg::Parse for Tokens<'_> {
