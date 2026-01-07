@@ -70,3 +70,10 @@ pub fn move_to_foreground(_pid: sys::process::ProcessId) -> Result<(), error::Er
 pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
     Ok(())
 }
+
+/// Tries to get the path of the terminal device associated with the attached terminal.
+///
+/// This is a stub implementation that always returns `None`.
+pub fn try_get_terminal_device_path() -> Option<std::path::PathBuf> {
+    None
+}
