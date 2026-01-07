@@ -139,3 +139,7 @@ cases:
     stdin: |
       shopt -s extglob
       [[ 'd' == !(*d)d ]] && echo "1. Matched"
+
+  - name: "Pattern matching: quotes in character class"
+    stdin: |
+      [[ f == ['f'] ]] && echo "1. Matched"
