@@ -1,10 +1,11 @@
 use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 
 use brush_core::{ErrorKind, builtins, env, error, variables};
 
-use std::io::Read;
+use std::io::{Read, Write};
 
 /// Parse standard input.
 #[derive(Parser)]
@@ -49,8 +50,8 @@ pub(crate) struct ReadCommand {
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[clap(short = 't', value_name = "SECONDS")]
-    timeout_in_seconds: Option<usize>,
+    #[clap(short = 't', value_name = "SECONDS", allow_hyphen_values = true)]
+    timeout_in_seconds: Option<f64>,
 
     /// File descriptor to read from instead of stdin.
     #[clap(short = 'u', name = "FD")]
@@ -77,8 +78,19 @@ impl builtins::Command for ReadCommand {
         if self.raw_mode {
             tracing::debug!("read -r is not implemented");
         }
-        if self.timeout_in_seconds.is_some() {
-            return error::unimp_with_issue("read -t", 227);
+
+        // Validate timeout value if provided.
+        // TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
+        // This is separate from TMOUT's role in interactive shell idle timeout.
+        if let Some(timeout) = self.timeout_in_seconds {
+            if timeout < 0.0 {
+                writeln!(
+                    context.stderr(),
+                    "{}: -t: {timeout}: invalid timeout specification",
+                    context.command_name
+                )?;
+                return Ok(brush_core::ExecutionResult::general_error());
+            }
         }
 
         // Find the input stream to use.
@@ -96,11 +108,28 @@ impl builtins::Command for ReadCommand {
         // Retrieve effective value of IFS for splitting.
         let ifs = context.shell.ifs();
 
-        let input_line = self.read_line(input_stream, context.stdout())?;
-        let result = if input_line.is_some() {
-            brush_core::ExecutionResult::success()
-        } else {
-            brush_core::ExecutionResult::general_error()
+        // Convert timeout to Duration.
+        let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
+
+        // Perform the read operation (potentially with timeout).
+        let read_result = self.read_line(input_stream, context.stdout(), timeout)?;
+
+        // Extract the input line and determine exit code based on result.
+        let (input_line, result) = match &read_result {
+            ReadResult::Line(line) => (Some(line.clone()), brush_core::ExecutionResult::success()),
+            ReadResult::Eof(Some(line)) => (
+                Some(line.clone()),
+                brush_core::ExecutionResult::general_error(),
+            ),
+            ReadResult::Eof(None) | ReadResult::Interrupted | ReadResult::InputNotReady => {
+                (None, brush_core::ExecutionResult::general_error())
+            }
+            ReadResult::TimedOut(partial) => (
+                partial.clone(),
+                // Bash returns exit code > 128 on timeout (typically 142 = 128 + SIGALRM).
+                brush_core::ExecutionResult::new(142),
+            ),
+            ReadResult::InputReady => (None, brush_core::ExecutionResult::success()),
         };
 
         // If -a was specified, then place the fields as elements into the array.
@@ -188,19 +217,42 @@ impl builtins::Command for ReadCommand {
     }
 }
 
+/// Result of a `read` operation.
+///
+/// This enum clearly represents all possible outcomes of `read_line()`,
+/// making the contract with callers explicit.
+enum ReadResult {
+    /// Successfully read a complete line (delimiter or char limit reached).
+    Line(String),
+    /// Reached end of input. Contains any partial content read before EOF.
+    Eof(Option<String>),
+    /// Input was interrupted (e.g., Ctrl+C). No content is returned.
+    Interrupted,
+    /// The operation timed out. Contains any partial content read before timeout.
+    TimedOut(Option<String>),
+    /// For `-t 0`: input is immediately available (exit 0).
+    InputReady,
+    /// For `-t 0`: no input immediately available (exit 1).
+    InputNotReady,
+}
+
+/// Internal enum for the read loop termination reason.
 enum ReadTermination {
     Delimiter,
     EndOfInput,
     CtrlC,
     Limit,
+    Timeout,
 }
 
 impl ReadCommand {
+    /// Reads a line of input, optionally with a timeout.
     fn read_line(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
         mut output_file: impl std::io::Write,
-    ) -> Result<Option<String>, brush_core::Error> {
+        timeout: Option<Duration>,
+    ) -> Result<ReadResult, brush_core::Error> {
         let _term_mode = self.setup_terminal_settings(&input_file)?;
 
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
@@ -227,10 +279,49 @@ impl ReadCommand {
             output_file.flush()?;
         }
 
+        // Handle -t 0 special case: just check if input is available without reading.
+        // Bash returns 0 if input is available, 1 if not (not 142/timeout).
+        if timeout == Some(Duration::ZERO) {
+            let available =
+                brush_core::sys::poll::poll_for_input(&input_file, Duration::ZERO).unwrap_or(false);
+            return Ok(if available {
+                ReadResult::InputReady
+            } else {
+                ReadResult::InputNotReady
+            });
+        }
+
+        // Track deadline for timeout.
+        let deadline = timeout.map(|t| Instant::now() + t);
+
         let mut line = String::new();
         let mut buffer = [0; 1]; // 1-byte buffer
 
         let reason = loop {
+            // If we have a timeout, poll for input with remaining time.
+            if let Some(deadline) = deadline {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break ReadTermination::Timeout;
+                }
+
+                // Poll for input with remaining timeout.
+                match brush_core::sys::poll::poll_for_input(&input_file, remaining) {
+                    Ok(true) => {
+                        // Data available, proceed with read.
+                    }
+                    Ok(false) => {
+                        // Timeout elapsed.
+                        break ReadTermination::Timeout;
+                    }
+                    Err(e) => {
+                        // Poll failed - propagate the error rather than falling back
+                        // to blocking read where timeout wouldn't work.
+                        return Err(e.into());
+                    }
+                }
+            }
+
             // TODO(read): Figure out how to restore terminal settings on error?
             let n = input_file.read(&mut buffer)?;
             if n == 0 {
@@ -269,20 +360,16 @@ impl ReadCommand {
             }
         };
 
-        match reason {
+        Ok(match reason {
             ReadTermination::EndOfInput => {
-                if line.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(line))
-                }
+                ReadResult::Eof(if line.is_empty() { None } else { Some(line) })
             }
-            ReadTermination::CtrlC => {
-                // Discard the input and return.
-                Ok(None)
+            ReadTermination::CtrlC => ReadResult::Interrupted,
+            ReadTermination::Delimiter | ReadTermination::Limit => ReadResult::Line(line),
+            ReadTermination::Timeout => {
+                ReadResult::TimedOut(if line.is_empty() { None } else { Some(line) })
             }
-            ReadTermination::Delimiter | ReadTermination::Limit => Ok(Some(line)),
-        }
+        })
     }
 
     fn setup_terminal_settings(
