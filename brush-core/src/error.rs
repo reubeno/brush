@@ -303,6 +303,10 @@ pub enum ErrorKind {
     /// History file is too large to import.
     #[error("history file is too large to import")]
     HistoryFileTooLargeToImport,
+
+    /// Too many open files.
+    #[error("too many open files")]
+    TooManyOpenFiles,
 }
 
 impl BuiltinError for Error {}

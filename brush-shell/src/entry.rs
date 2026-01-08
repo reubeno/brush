@@ -471,9 +471,39 @@ async fn instantiate_shell_from_args(
     let shell = shell.experimental_builtins();
 
     // Build the shell.
-    let shell = shell.build().await?;
+    let mut shell = shell.build().await?;
+
+    // Make adjustments.
+    if let Some(xtrace_file_path) = &args.xtrace_file_path {
+        enable_xtrace_to_file(&mut shell, xtrace_file_path)?;
+    }
 
     Ok(shell)
+}
+
+fn enable_xtrace_to_file(
+    shell: &mut brush_core::Shell,
+    file_path: &Path,
+) -> Result<(), brush_interactive::ShellError> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(file_path)
+        .map_err(|e| {
+            brush_interactive::ShellError::FailedToCreateXtraceFile(file_path.to_path_buf(), e)
+        })?;
+
+    let file = brush_core::openfiles::OpenFile::from(file);
+    let file_fd = shell.open_files_mut().add(file)?;
+
+    shell.options_mut().print_commands_and_arguments = true;
+    shell.set_env_global(
+        "BASH_XTRACEFD",
+        brush_core::ShellVariable::new(file_fd.to_string()),
+    )?;
+
+    Ok(())
 }
 
 fn new_error_formatter(
