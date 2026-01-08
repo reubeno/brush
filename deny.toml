@@ -41,6 +41,7 @@ allow = [
     "BSL-1.0",
     "ISC",
     "MIT",
+    "MPL-2.0",
     "NCSA",
     "Unicode-3.0",
     "WTFPL",

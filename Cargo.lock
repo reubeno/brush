@@ -502,7 +502,6 @@ dependencies = [
  "serde",
  "serde_yaml",
  "strip-ansi-escapes",
- "thiserror",
  "tokio",
  "version-compare",
  "walkdir",

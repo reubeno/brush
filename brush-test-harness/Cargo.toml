@@ -36,7 +36,6 @@ regex = "1.12.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
-thiserror = "2.0.17"
 tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread", "sync"] }
 version-compare = "0.2.1"
 walkdir = "2.5.0"

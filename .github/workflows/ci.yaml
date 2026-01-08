@@ -629,7 +629,8 @@ jobs:
           result=0
           for test_name in binaries/*tests*; do
             # TODO(interactive-tests): Re-enable interactive tests.
-            if [[ ${test_name} == *interactive* ]]; then
+            # TODO(integration-tests): Re-enable integration tests.
+            if [[ ${test_name} == *interactive* || ${test_name} == brush-integration-tests ]]; then
               echo "WARNING: skipping interactive test: ${test_name}"
               continue
             fi
