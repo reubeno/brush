@@ -359,3 +359,9 @@ cases:
     stdin: |
       declare 1=x && echo "Set 1"
       declare @=10 && echo "Set @"
+
+  - name: "Declare with variable name"
+    stdin: |
+      varname="myvar"
+      declare "$varname"="somevalue"
+      declare -p myvar

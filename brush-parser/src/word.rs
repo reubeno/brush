@@ -574,6 +574,16 @@ pub fn parse_brace_expansions(
         .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err.into()))
 }
 
+/// Tries to parse the given word as an assignment. Returns `None` if
+/// the word is not a valid assignment.
+///
+/// # Arguments
+///
+/// * `word` - The word to parse.
+pub fn try_parse_as_assignment(word: &str) -> Option<ast::Assignment> {
+    parse_assignment_word(word).ok()
+}
+
 pub(crate) fn parse_assignment_word(
     word: &str,
 ) -> Result<ast::Assignment, peg::error::ParseError<peg::str::LineCol>> {

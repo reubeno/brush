@@ -357,6 +357,10 @@ impl DeclareCommand {
                     name = captures.get(1).unwrap().as_str().to_owned();
                     assigned_index = Some(captures.get(2).unwrap().as_str().to_owned());
                     name_is_array = true;
+                } else if let Some(assignment) = brush_parser::word::try_parse_as_assignment(&s) {
+                    return Self::declaration_to_name_and_value(
+                        &brush_core::CommandArg::Assignment(assignment),
+                    );
                 } else {
                     name = s.clone();
                     assigned_index = None;
