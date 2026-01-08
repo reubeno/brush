@@ -304,3 +304,37 @@ cases:
       # Bash discards a pending backslash when EOF is reached
       printf 'ab\\' | { read var; echo "var='$var'"; }
       printf 'ab\\' | { read -n 5 var; echo "var='$var'"; }
+
+  # Prompt tests (read -p)
+  - name: "read -p reads input correctly"
+    stdin: |
+      # Test that -p option reads input correctly (prompt display behavior
+      # differs between bash and brush when stdin is not a terminal)
+      read -p "Enter: " var <<< "hello"
+      echo "var='$var'"
+
+  # File descriptor tests (read -u)
+  - name: "read -u with valid file descriptor"
+    stdin: |
+      # Read from a specific file descriptor
+      exec 3<<< "from fd 3"
+      read -u 3 var
+      echo "var='$var'"
+      exec 3<&-
+
+  - name: "read -u combined with other options"
+    stdin: |
+      exec 4<<< "hello world test"
+      read -u 4 -a arr
+      declare -p arr
+      exec 4<&-
+
+  # Silent mode tests (read -s)
+  - name: "read -s with pipe input"
+    stdin: |
+      # Silent mode should still read input correctly (just not echo it)
+      echo "secret" | { read -s var; echo "var='$var'"; }
+
+  - name: "read -s with multiple variables"
+    stdin: |
+      echo "a b c" | { read -s v1 v2 v3; echo "v1='$v1' v2='$v2' v3='$v3'"; }

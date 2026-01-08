@@ -79,7 +79,6 @@ pub(crate) struct ReadCommand {
 impl builtins::Command for ReadCommand {
     type Error = brush_core::Error;
 
-    #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
         context: brush_core::ExecutionContext<'_>,
@@ -117,13 +116,15 @@ impl builtins::Command for ReadCommand {
         };
 
         // Retrieve effective value of IFS for splitting.
-        let ifs = context.shell.ifs();
+        // We convert to owned String to release the borrow before the mutable borrow
+        // needed for variable assignment.
+        let ifs = context.shell.ifs().into_owned();
 
         // Convert timeout to Duration.
         let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
 
         // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stdout(), timeout)?;
+        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -146,70 +147,96 @@ impl builtins::Command for ReadCommand {
         };
 
         // Assign input to variables based on options.
-        if let Some(array_variable) = &self.array_variable {
-            let literal_fields =
-                build_array_fields(input_line.as_deref(), &ifs, skip_ifs_splitting);
-            context.shell.env_mut().update_or_add(
-                array_variable,
-                variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-        } else if !self.variable_names.is_empty() {
-            let mut fields = build_variable_fields(
-                input_line.as_deref(),
-                &ifs,
-                skip_ifs_splitting,
-                self.variable_names.len(),
-            );
-
-            for (i, name) in self.variable_names.iter().enumerate() {
-                if fields.is_empty() {
-                    context.shell.env_mut().update_or_add(
-                        name,
-                        variables::ShellValueLiteral::Scalar(String::new()),
-                        |_| Ok(()),
-                        env::EnvironmentLookup::Anywhere,
-                        env::EnvironmentScope::Global,
-                    )?;
-                    continue;
-                }
-
-                let last = i == self.variable_names.len() - 1;
-                if !last {
-                    let next_field = fields.pop_front().unwrap();
-                    context.shell.env_mut().update_or_add(
-                        name,
-                        variables::ShellValueLiteral::Scalar(next_field),
-                        |_| Ok(()),
-                        env::EnvironmentLookup::Anywhere,
-                        env::EnvironmentScope::Global,
-                    )?;
-                } else {
-                    let remaining_fields = fields.into_iter().join(" ");
-                    context.shell.env_mut().update_or_add(
-                        name,
-                        variables::ShellValueLiteral::Scalar(remaining_fields),
-                        |_| Ok(()),
-                        env::EnvironmentLookup::Anywhere,
-                        env::EnvironmentScope::Global,
-                    )?;
-                    break;
-                }
-            }
-        } else {
-            context.shell.env_mut().update_or_add(
-                "REPLY",
-                variables::ShellValueLiteral::Scalar(input_line.unwrap_or_default()),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-        }
+        assign_input_to_variables(
+            context.shell,
+            input_line.as_deref(),
+            &ifs,
+            skip_ifs_splitting,
+            self.array_variable.as_deref(),
+            &self.variable_names,
+        )?;
 
         Ok(result)
     }
+}
+
+/// Assigns read input to shell variables based on the specified options.
+///
+/// This handles three modes:
+/// - Array mode (`-a`): Split input by IFS and assign to array elements
+/// - Named variables: Split input by IFS and assign to each variable, with remainder to last
+/// - Default (`REPLY`): Assign entire input line to the `REPLY` variable
+fn assign_input_to_variables(
+    shell: &mut brush_core::Shell,
+    input_line: Option<&str>,
+    ifs: &str,
+    skip_ifs_splitting: bool,
+    array_variable: Option<&str>,
+    variable_names: &[String],
+) -> Result<(), brush_core::Error> {
+    if let Some(array_variable) = array_variable {
+        let literal_fields = build_array_fields(input_line, ifs, skip_ifs_splitting);
+        shell.env_mut().update_or_add(
+            array_variable,
+            variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
+            |_| Ok(()),
+            env::EnvironmentLookup::Anywhere,
+            env::EnvironmentScope::Global,
+        )?;
+    } else if !variable_names.is_empty() {
+        assign_to_named_variables(shell, input_line, ifs, skip_ifs_splitting, variable_names)?;
+    } else {
+        shell.env_mut().update_or_add(
+            "REPLY",
+            variables::ShellValueLiteral::Scalar(input_line.unwrap_or_default().to_owned()),
+            |_| Ok(()),
+            env::EnvironmentLookup::Anywhere,
+            env::EnvironmentScope::Global,
+        )?;
+    }
+    Ok(())
+}
+
+/// Assigns split fields to named variables.
+///
+/// Fields are assigned one per variable, with any remaining fields joined by space
+/// and assigned to the last variable. If there are more variables than fields,
+/// the extra variables are set to empty strings.
+fn assign_to_named_variables(
+    shell: &mut brush_core::Shell,
+    input_line: Option<&str>,
+    ifs: &str,
+    skip_ifs_splitting: bool,
+    variable_names: &[String],
+) -> Result<(), brush_core::Error> {
+    let mut fields =
+        build_variable_fields(input_line, ifs, skip_ifs_splitting, variable_names.len());
+
+    for (i, name) in variable_names.iter().enumerate() {
+        let is_last = i == variable_names.len() - 1;
+
+        let value = if fields.is_empty() {
+            String::new()
+        } else if is_last {
+            // Last variable gets all remaining fields joined by space.
+            std::mem::take(&mut fields).into_iter().join(" ")
+        } else {
+            fields.pop_front().unwrap_or_default()
+        };
+
+        shell.env_mut().update_or_add(
+            name,
+            variables::ShellValueLiteral::Scalar(value),
+            |_| Ok(()),
+            env::EnvironmentLookup::Anywhere,
+            env::EnvironmentScope::Global,
+        )?;
+
+        if is_last {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Builds array field values from input, optionally splitting by IFS.
@@ -273,7 +300,7 @@ enum ReadResult {
 ///
 /// This separates the concerns of character-level I/O with timeout handling from the
 /// higher-level logic of line building and escape processing.
-struct InputReader<'a> {
+struct InputReader {
     /// The input source.
     input: brush_core::openfiles::OpenFile,
     /// Optional deadline for timeout.
@@ -289,9 +316,10 @@ struct InputReader<'a> {
     /// Terminal mode guard - kept alive for RAII cleanup on drop.
     /// The guard restores original terminal settings when dropped, even though
     /// we don't access the field directly after construction.
+    ///
+    /// The leading underscore suppresses the "unused field" warning while making
+    /// it explicit this field exists solely for its `Drop` implementation.
     _term_mode: Option<brush_core::terminal::AutoModeGuard>,
-    /// Output for prompt display.
-    output: &'a mut dyn std::io::Write,
 }
 
 /// Events that can occur when reading input.
@@ -308,30 +336,19 @@ enum InputEvent {
     CtrlD,
 }
 
-impl<'a> InputReader<'a> {
+impl InputReader {
     /// Creates a new input reader with optional timeout.
     fn new(
         input: brush_core::openfiles::OpenFile,
         timeout: Option<Duration>,
         term_mode: Option<brush_core::terminal::AutoModeGuard>,
-        output: &'a mut dyn std::io::Write,
     ) -> Self {
         Self {
             input,
             deadline: timeout.map(|t| Instant::now() + t),
             buffer: [0; 1],
             _term_mode: term_mode,
-            output,
         }
-    }
-
-    /// Displays a prompt if provided.
-    fn display_prompt(&mut self, prompt: Option<&str>) -> Result<(), brush_core::Error> {
-        if let Some(prompt) = prompt {
-            write!(self.output, "{prompt}")?;
-            self.output.flush()?;
-        }
-        Ok(())
     }
 
     /// Checks if input is immediately available (for `-t 0`).
@@ -392,7 +409,7 @@ struct LineReaderConfig {
 /// - Bash processes: 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) → "abc"
 /// - The backslash is consumed but doesn't count toward the limit
 fn read_line_with_reader(
-    reader: &mut InputReader<'_>,
+    reader: &mut InputReader,
     config: &LineReaderConfig,
 ) -> Result<ReadResult, brush_core::Error> {
     let mut line = String::new();
@@ -502,10 +519,18 @@ impl ReadCommand {
     fn read_line(
         &self,
         input_file: brush_core::openfiles::OpenFile,
-        mut output_file: impl std::io::Write,
+        mut stderr_file: impl std::io::Write,
         timeout: Option<Duration>,
     ) -> Result<ReadResult, brush_core::Error> {
         let term_mode = self.setup_terminal_settings(&input_file)?;
+
+        // Display prompt on stderr, but only if input is from a terminal (per bash behavior).
+        if let Some(prompt) = &self.prompt {
+            if input_file.is_terminal() {
+                write!(stderr_file, "{prompt}")?;
+                stderr_file.flush()?;
+            }
+        }
 
         // Determine delimiter based on options.
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
@@ -525,10 +550,7 @@ impl ReadCommand {
             .or(self.return_after_n_chars);
 
         // Create the input reader.
-        let mut reader = InputReader::new(input_file, timeout, term_mode, &mut output_file);
-
-        // Display prompt if provided.
-        reader.display_prompt(self.prompt.as_deref())?;
+        let mut reader = InputReader::new(input_file, timeout, term_mode);
 
         // Handle -t 0 special case: just check if input is available without reading.
         if timeout == Some(Duration::ZERO) {
@@ -722,5 +744,61 @@ mod tests {
         // Consecutive non-whitespace delimiters create empty fields.
         let result = split_line_by_ifs(",", "a,,b", None);
         assert_equal(result, VecDeque::from(vec!["a", "", "b"]));
+    }
+
+    // ==================== build_array_fields tests ====================
+
+    #[test]
+    fn test_build_array_fields_basic() {
+        let result = build_array_fields(Some("a b c"), " ", false);
+        assert_eq!(
+            result,
+            vec![
+                (None, "a".to_string()),
+                (None, "b".to_string()),
+                (None, "c".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_array_fields_skip_splitting() {
+        // With -N option, entire input goes as single element.
+        let result = build_array_fields(Some("a b c"), " ", true);
+        assert_eq!(result, vec![(None, "a b c".to_string())]);
+    }
+
+    #[test]
+    fn test_build_array_fields_none_input() {
+        let result = build_array_fields(None, " ", false);
+        assert!(result.is_empty());
+    }
+
+    // ==================== build_variable_fields tests ====================
+
+    #[test]
+    fn test_build_variable_fields_basic() {
+        let result = build_variable_fields(Some("a b c"), " ", false, 3);
+        assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
+    }
+
+    #[test]
+    fn test_build_variable_fields_fewer_vars_than_fields() {
+        // Last variable gets remainder.
+        let result = build_variable_fields(Some("a b c d"), " ", false, 2);
+        assert_equal(result, VecDeque::from(vec!["a", "b c d"]));
+    }
+
+    #[test]
+    fn test_build_variable_fields_skip_splitting() {
+        // With -N option, entire input goes to first variable.
+        let result = build_variable_fields(Some("a b c"), " ", true, 3);
+        assert_equal(result, VecDeque::from(vec!["a b c"]));
+    }
+
+    #[test]
+    fn test_build_variable_fields_none_input() {
+        let result = build_variable_fields(None, " ", false, 3);
+        assert!(result.is_empty());
     }
 }
