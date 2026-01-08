@@ -11,6 +11,17 @@ use std::io::{Read, Write};
 /// This is 128 + SIGALRM (14) = 142, matching bash behavior.
 const TIMEOUT_EXIT_CODE: u8 = 142;
 
+/// ASCII control character for Ctrl+C (ETX - End of Text).
+const CTRL_C: char = '\x03';
+/// ASCII control character for Ctrl+D (EOT - End of Transmission).
+const CTRL_D: char = '\x04';
+/// Backslash character used for escape processing.
+const BACKSLASH: char = '\\';
+/// Default line delimiter (newline).
+const DEFAULT_DELIMITER: char = '\n';
+/// NUL character used as delimiter when `-d ''` is specified.
+const NUL_DELIMITER: char = '\0';
+
 /// Parse standard input.
 #[derive(Parser)]
 pub(crate) struct ReadCommand {
@@ -259,14 +270,228 @@ enum ReadResult {
     InputNotReady,
 }
 
-/// Internal enum for the read loop termination reason.
-enum ReadTermination {
-    Delimiter,
-    EndOfInput,
-    CtrlC,
-    CtrlD,
-    Limit,
+/// Helper struct that encapsulates the state for reading input character by character.
+///
+/// This separates the concerns of character-level I/O with timeout handling from the
+/// higher-level logic of line building and escape processing.
+struct InputReader<'a> {
+    /// The input source.
+    input: brush_core::openfiles::OpenFile,
+    /// Optional deadline for timeout.
+    deadline: Option<Instant>,
+    /// Single-byte read buffer.
+    buffer: [u8; 1],
+    /// Terminal mode guard (kept alive for duration of read).
+    _term_mode: Option<brush_core::terminal::AutoModeGuard>,
+    /// Output for prompt display.
+    output: &'a mut dyn std::io::Write,
+}
+
+/// Events that can occur when reading input.
+enum InputEvent {
+    /// A regular character was read.
+    Char(char),
+    /// End of file was reached.
+    Eof,
+    /// The read operation timed out.
     Timeout,
+    /// Ctrl+C was pressed.
+    CtrlC,
+    /// Ctrl+D was pressed.
+    CtrlD,
+}
+
+impl<'a> InputReader<'a> {
+    /// Creates a new input reader with optional timeout.
+    fn new(
+        input: brush_core::openfiles::OpenFile,
+        timeout: Option<Duration>,
+        term_mode: Option<brush_core::terminal::AutoModeGuard>,
+        output: &'a mut dyn std::io::Write,
+    ) -> Self {
+        Self {
+            input,
+            deadline: timeout.map(|t| Instant::now() + t),
+            buffer: [0; 1],
+            _term_mode: term_mode,
+            output,
+        }
+    }
+
+    /// Displays a prompt if provided.
+    fn display_prompt(&mut self, prompt: Option<&str>) -> Result<(), brush_core::Error> {
+        if let Some(prompt) = prompt {
+            write!(self.output, "{prompt}")?;
+            self.output.flush()?;
+        }
+        Ok(())
+    }
+
+    /// Checks if input is immediately available (for `-t 0`).
+    fn check_input_available(&self) -> bool {
+        brush_core::sys::poll::poll_for_input(&self.input, Duration::ZERO).unwrap_or(false)
+    }
+
+    /// Reads the next input event, handling timeout and control characters.
+    fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
+        // Check timeout before attempting read.
+        if let Some(deadline) = self.deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(InputEvent::Timeout);
+            }
+
+            // Poll for input with remaining timeout.
+            match brush_core::sys::poll::poll_for_input(&self.input, remaining) {
+                Ok(true) => { /* Data available, proceed. */ }
+                Ok(false) => return Ok(InputEvent::Timeout),
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        let n = self.input.read(&mut self.buffer)?;
+        if n == 0 {
+            return Ok(InputEvent::Eof);
+        }
+
+        let ch = self.buffer[0] as char;
+
+        // Map control characters to events.
+        Ok(match ch {
+            CTRL_C => InputEvent::CtrlC,
+            CTRL_D => InputEvent::CtrlD,
+            _ => InputEvent::Char(ch),
+        })
+    }
+}
+
+/// Configuration for line reading behavior.
+struct LineReaderConfig {
+    /// Character that terminates input (None for -N mode).
+    delimiter: Option<char>,
+    /// Maximum characters to read (for -n or -N).
+    char_limit: Option<usize>,
+    /// Whether to process backslash escapes (false for -r mode).
+    process_escapes: bool,
+}
+
+/// Reads a complete line of input using the given reader and configuration.
+///
+/// Returns a `ReadResult` indicating success, EOF, timeout, or interruption.
+fn read_line_with_reader(
+    reader: &mut InputReader<'_>,
+    config: &LineReaderConfig,
+) -> Result<ReadResult, brush_core::Error> {
+    let mut line = String::new();
+    let mut pending_backslash = false;
+
+    loop {
+        let event = reader.read_event()?;
+
+        match event {
+            InputEvent::Eof => {
+                // Include pending backslash on EOF.
+                if pending_backslash {
+                    line.push(BACKSLASH);
+                }
+                return Ok(ReadResult::Eof(if line.is_empty() {
+                    None
+                } else {
+                    Some(line)
+                }));
+            }
+
+            InputEvent::Timeout => {
+                // Include pending backslash on timeout.
+                if pending_backslash {
+                    line.push(BACKSLASH);
+                }
+                return Ok(ReadResult::TimedOut(if line.is_empty() {
+                    None
+                } else {
+                    Some(line)
+                }));
+            }
+
+            InputEvent::CtrlC => {
+                return Ok(ReadResult::Interrupted);
+            }
+
+            InputEvent::CtrlD => {
+                // Include pending backslash before checking if line is empty.
+                if pending_backslash {
+                    line.push(BACKSLASH);
+                }
+                // At line start = EOF, mid-input = flush current input.
+                return Ok(if line.is_empty() {
+                    ReadResult::Eof(None)
+                } else {
+                    ReadResult::Line(line)
+                });
+            }
+
+            InputEvent::Char(ch) => {
+                // Handle backslash escape processing (when enabled).
+                if config.process_escapes {
+                    if pending_backslash {
+                        pending_backslash = false;
+
+                        // Backslash-delimiter is line continuation.
+                        if let Some(delim) = config.delimiter {
+                            if ch == delim {
+                                continue; // Line continuation.
+                            }
+                        }
+
+                        // For other chars, remove backslash, add char literally.
+                        line.push(ch);
+
+                        // Check character limit.
+                        if let Some(limit) = config.char_limit {
+                            if line.len() >= limit {
+                                return Ok(ReadResult::Line(line));
+                            }
+                        }
+                        continue;
+                    }
+
+                    if ch == BACKSLASH {
+                        pending_backslash = true;
+                        continue;
+                    }
+                }
+
+                // Check for delimiter.
+                if let Some(delim) = config.delimiter {
+                    if ch == delim {
+                        // Include pending backslash if we had one.
+                        if pending_backslash {
+                            line.push(BACKSLASH);
+                        }
+                        return Ok(ReadResult::Line(line));
+                    }
+                }
+
+                // Ignore non-whitespace control characters.
+                if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
+                    continue;
+                }
+
+                line.push(ch);
+
+                // Check character limit.
+                if let Some(limit) = config.char_limit {
+                    if line.len() >= limit {
+                        // Include pending backslash if we had one.
+                        if pending_backslash {
+                            line.push(BACKSLASH);
+                        }
+                        return Ok(ReadResult::Line(line));
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl ReadCommand {
@@ -275,183 +500,54 @@ impl ReadCommand {
     /// Handles backslash escape processing:
     /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next char
     /// - With `-r`: backslash is treated as a literal character
-    #[allow(clippy::too_many_lines)]
     fn read_line(
         &self,
-        mut input_file: brush_core::openfiles::OpenFile,
+        input_file: brush_core::openfiles::OpenFile,
         mut output_file: impl std::io::Write,
         timeout: Option<Duration>,
     ) -> Result<ReadResult, brush_core::Error> {
-        let _term_mode = self.setup_terminal_settings(&input_file)?;
+        let term_mode = self.setup_terminal_settings(&input_file)?;
 
+        // Determine delimiter based on options.
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
             None
         } else if let Some(delimiter_str) = &self.delimiter {
-            // If the delimiter string is empty, then the docs indicate we need to use
-            // the NUL character as the actual delimiter.
             if delimiter_str.is_empty() {
-                Some('\0')
+                Some(NUL_DELIMITER)
             } else {
-                // In other cases, use the first character in the string as the delimiter.
                 delimiter_str.chars().next()
             }
         } else {
-            Some('\n')
+            Some(DEFAULT_DELIMITER)
         };
 
         let char_limit = self
             .return_after_n_chars_no_delimiter
             .or(self.return_after_n_chars);
 
-        if let Some(prompt) = &self.prompt {
-            write!(output_file, "{prompt}")?;
-            output_file.flush()?;
-        }
+        // Create the input reader.
+        let mut reader = InputReader::new(input_file, timeout, term_mode, &mut output_file);
+
+        // Display prompt if provided.
+        reader.display_prompt(self.prompt.as_deref())?;
 
         // Handle -t 0 special case: just check if input is available without reading.
-        // Bash returns 0 if input is available, 1 if not (not 142/timeout).
         if timeout == Some(Duration::ZERO) {
-            let available =
-                brush_core::sys::poll::poll_for_input(&input_file, Duration::ZERO).unwrap_or(false);
-            return Ok(if available {
+            return Ok(if reader.check_input_available() {
                 ReadResult::InputReady
             } else {
                 ReadResult::InputNotReady
             });
         }
 
-        // Track deadline for timeout.
-        let deadline = timeout.map(|t| Instant::now() + t);
-
-        let mut line = String::new();
-        let mut buffer = [0; 1]; // 1-byte buffer
-        let mut pending_backslash = false; // For escape processing without -r
-
-        let reason = 'outer: loop {
-            // If we have a timeout, poll for input with remaining time.
-            if let Some(deadline) = deadline {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    break ReadTermination::Timeout;
-                }
-
-                // Poll for input with remaining timeout.
-                match brush_core::sys::poll::poll_for_input(&input_file, remaining) {
-                    Ok(true) => {
-                        // Data available, proceed with read.
-                    }
-                    Ok(false) => {
-                        // Timeout elapsed.
-                        break ReadTermination::Timeout;
-                    }
-                    Err(e) => {
-                        // Poll failed - propagate the error rather than falling back
-                        // to blocking read where timeout wouldn't work.
-                        return Err(e.into());
-                    }
-                }
-            }
-
-            let n = input_file.read(&mut buffer)?;
-            if n == 0 {
-                // EOF reached. If we have a pending backslash, include it.
-                if pending_backslash {
-                    line.push('\\');
-                }
-                break ReadTermination::EndOfInput;
-            }
-
-            let ch = buffer[0] as char;
-
-            // Check for Ctrl+C - always interrupts.
-            if ch == '\x03' {
-                break ReadTermination::CtrlC;
-            }
-
-            // Check for Ctrl+D.
-            // Bash behavior: at line start = EOF, mid-input = flush current input.
-            if ch == '\x04' {
-                if pending_backslash {
-                    line.push('\\');
-                }
-                if line.is_empty() {
-                    break ReadTermination::EndOfInput;
-                } else {
-                    break ReadTermination::CtrlD;
-                }
-            }
-
-            // Handle backslash escape processing (when not in raw mode).
-            if !self.raw_mode {
-                if pending_backslash {
-                    pending_backslash = false;
-
-                    // Backslash-newline (or backslash-delimiter) is line continuation.
-                    if let Some(delim) = delimiter {
-                        if ch == delim {
-                            // Line continuation: continue reading without adding anything.
-                            continue 'outer;
-                        }
-                    }
-
-                    // For other characters, the backslash escapes the character.
-                    // The backslash is removed and the character is added literally.
-                    line.push(ch);
-
-                    // Check character limit after adding.
-                    if let Some(limit) = char_limit {
-                        if line.len() >= limit {
-                            break ReadTermination::Limit;
-                        }
-                    }
-                    continue 'outer;
-                }
-
-                if ch == '\\' {
-                    pending_backslash = true;
-                    continue 'outer;
-                }
-            }
-
-            // Check for a delimiter that indicates end-of-input.
-            if let Some(delim) = delimiter {
-                if ch == delim {
-                    break ReadTermination::Delimiter;
-                }
-            }
-
-            // Ignore other control characters without including them in the input.
-            if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
-                continue;
-            }
-
-            line.push(ch);
-
-            // Check to see if we've hit a character limit.
-            if let Some(limit) = char_limit {
-                if line.len() >= limit {
-                    break ReadTermination::Limit;
-                }
-            }
+        // Configure and perform the read.
+        let config = LineReaderConfig {
+            delimiter,
+            char_limit,
+            process_escapes: !self.raw_mode,
         };
 
-        // If we ended with a pending backslash (shouldn't happen normally, but handle it).
-        if pending_backslash && !matches!(reason, ReadTermination::EndOfInput) {
-            line.push('\\');
-        }
-
-        Ok(match reason {
-            ReadTermination::EndOfInput => {
-                ReadResult::Eof(if line.is_empty() { None } else { Some(line) })
-            }
-            ReadTermination::CtrlC => ReadResult::Interrupted,
-            ReadTermination::CtrlD | ReadTermination::Delimiter | ReadTermination::Limit => {
-                ReadResult::Line(line)
-            }
-            ReadTermination::Timeout => {
-                ReadResult::TimedOut(if line.is_empty() { None } else { Some(line) })
-            }
-        })
+        read_line_with_reader(&mut reader, &config)
     }
 
     fn setup_terminal_settings(
@@ -528,7 +624,6 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
                 skipping_ifs_whitespace = true;
             }
             // For non-whitespace delimiters at field boundary, just skip this one char.
-            continue;
         } else {
             in_last_field = at_max_fields;
             current_field.push(c);
