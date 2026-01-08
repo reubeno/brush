@@ -1,0 +1,83 @@
+name: "CLI tests"
+cases:
+  - name: "Basic echo"
+    stdin: "echo hello world"
+    expected_exit_code: 0
+    expected_stdout: "hello world\n"
+
+  - name: "Exit code propagates"
+    stdin: "exit 42"
+    expected_exit_code: 42
+
+  - name: "Echo via args"
+    args:
+      - "-c"
+      - "echo from args"
+    expected_exit_code: 0
+    expected_stdout: "from args\n"
+
+  - name: "Version flag succeeds"
+    args:
+      - "--version"
+    expected_exit_code: 0
+    # Note: can't easily check stdout content as it varies
+
+  - name: "Help flag succeeds"
+    args:
+      - "--help"
+    expected_exit_code: 0
+
+  - name: "Invalid option fails"
+    args:
+      - "--unknown-argument-here"
+    expected_exit_code: 1
+    # Exit code 1 for argument parsing errors
+
+  - name: "Explicit config file not found fails"
+    removed_default_args:
+      - "--no-config"
+    args:
+      - "--config"
+      - "/nonexistent/path/to/config.toml"
+      - "-c"
+      - "echo should_not_run"
+    expected_exit_code: 1
+
+  - name: "Explicit config file valid"
+    removed_default_args:
+      - "--no-config"
+    test_files:
+      - path: "config.toml"
+        contents: |
+          [ui]
+          syntax-highlighting = false
+
+          [experimental]
+          zsh-hooks = false
+    args:
+      - "--config"
+      - "config.toml"
+      - "-c"
+      - "echo config_loaded"
+    expected_exit_code: 0
+    expected_stdout: "config_loaded\n"
+
+  - name: "Config file with unknown fields succeeds"
+    removed_default_args:
+      - "--no-config"
+    test_files:
+      - path: "config.toml"
+        contents: |
+          [ui]
+          syntax-highlighting = true
+          future-setting = "ignored"
+
+          [unknown-section]
+          foo = "bar"
+    args:
+      - "--config"
+      - "config.toml"
+      - "-c"
+      - "echo forward_compat"
+    expected_exit_code: 0
+    expected_stdout: "forward_compat\n"

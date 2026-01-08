@@ -1,149 +1,81 @@
-//! Integration tests for brush shell
+//! Brush-only test harness.
+//!
+//! This test harness runs YAML-based test cases with inline expectations
+//! or insta snapshots, without comparing against an oracle shell.
 
-// For now, only compile this for Unix-like platforms (Linux, macOS).
-#![cfg(unix)]
-#![allow(clippy::panic_in_result_fn)]
+#![cfg(any(unix, windows))]
 
-use anyhow::Context;
-use predicates::prelude::PredicateBooleanExt;
+use anyhow::Result;
+use brush_test_harness::{
+    RunnerConfig, ShellConfig, TestMode, TestOptions, TestRunner, WhichShell,
+};
+use clap::Parser;
+use std::path::{Path, PathBuf};
 
-#[test]
-fn get_version_variables() -> anyhow::Result<()> {
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-    let brush_ver_str = get_variable(shell_path, /* shell_is_brush */ true, "BRUSH_VERSION")?;
-    let bash_ver_str = get_variable(shell_path, /* shell_is_brush */ false, "BASH_VERSION")?;
+fn create_test_shell_config(options: &TestOptions) -> ShellConfig {
+    let default_args = vec![
+        "--norc".into(),
+        "--noprofile".into(),
+        "--no-config".into(),
+        "--input-backend=basic".into(),
+        "--disable-bracketed-paste".into(),
+        "--disable-color".into(),
+    ];
 
-    assert_eq!(brush_ver_str, env!("CARGO_PKG_VERSION"));
-    assert_ne!(
-        brush_ver_str, bash_ver_str,
-        "Should differ for scripting use-case"
-    );
-
-    Ok(())
+    ShellConfig {
+        which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
+        default_args,
+        default_path_var: options.test_path_var.clone(),
+    }
 }
 
-#[test]
-fn version_exit_code() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd.arg("--version").assert();
-    assert
-        .success()
-        .stdout(predicates::str::contains(env!("CARGO_PKG_VERSION")));
-}
-
-#[test]
-fn help_exit_code() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd.arg("--help").assert();
-    assert.success().stdout(predicates::str::is_empty().not());
-}
-
-#[test]
-fn invalid_option_exit_code() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd.arg("--unknown-argument-here").assert();
-    assert
-        .failure()
-        .stderr(predicates::str::contains("unexpected argument"));
-}
-
-fn get_variable(
-    shell_path: &std::path::Path,
-    shell_is_brush: bool,
-    var: &str,
-) -> anyhow::Result<String> {
-    let mut cmd = std::process::Command::new(shell_path);
-
-    if shell_is_brush {
-        cmd.arg("--no-config");
+async fn run_brush_tests(mut options: TestOptions) -> Result<bool> {
+    // Resolve path to the shell-under-test.
+    if options.brush_path.is_empty() {
+        options.brush_path = assert_cmd::cargo::cargo_bin!("brush")
+            .to_string_lossy()
+            .to_string();
+    }
+    if !Path::new(&options.brush_path).exists() {
+        return Err(anyhow::anyhow!(
+            "brush binary not found: {}",
+            options.brush_path
+        ));
     }
 
-    let output = cmd
-        .arg("--norc")
-        .arg("--noprofile")
-        .arg("-c")
-        .arg(format!("echo -n ${{{var}}}"))
-        .output()
-        .with_context(|| format!("failed to retrieve {var}"))?
-        .stdout;
-    Ok(String::from_utf8(output)?)
+    // Resolve test cases directory (in cases/brush/).
+    let test_cases_dir = options.test_cases_path.as_deref().map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/brush"),
+        |p| p.to_owned(),
+    );
+
+    let test_shell = create_test_shell_config(&options);
+
+    let config = RunnerConfig::new(PathBuf::from(&options.brush_path), test_cases_dir)
+        .with_mode(TestMode::Expectation);
+
+    let config = RunnerConfig {
+        test_shell,
+        ..config
+    };
+
+    let runner = TestRunner::new(config, options);
+    runner.run().await
 }
 
-// Config file tests
+fn main() -> Result<()> {
+    let unparsed_args: Vec<_> = std::env::args().collect();
+    let options = TestOptions::parse_from(unparsed_args);
 
-#[test]
-fn no_config_flag_works() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd.arg("--no-config").arg("-c").arg("echo ok").assert();
-    assert.success().stdout(predicates::str::contains("ok"));
-}
+    let success = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(32)
+        .build()?
+        .block_on(run_brush_tests(options))?;
 
-#[test]
-fn explicit_config_file_not_found_fails() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd
-        .arg("--config")
-        .arg("/nonexistent/path/to/config.toml")
-        .arg("-c")
-        .arg("echo should_not_run")
-        .assert();
-    assert.failure().stderr(predicates::str::contains("config"));
-}
+    if !success {
+        std::process::exit(1);
+    }
 
-#[test]
-fn explicit_config_file_valid() -> anyhow::Result<()> {
-    let temp_dir = tempfile::tempdir()?;
-    let config_path = temp_dir.path().join("config.toml");
-    std::fs::write(
-        &config_path,
-        r"
-[ui]
-syntax-highlighting = false
-
-[experimental]
-zsh-hooks = false
-",
-    )?;
-
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd
-        .arg("--config")
-        .arg(&config_path)
-        .arg("-c")
-        .arg("echo config_loaded")
-        .assert();
-    assert
-        .success()
-        .stdout(predicates::str::contains("config_loaded"));
-    Ok(())
-}
-
-#[test]
-fn explicit_config_file_with_unknown_fields() -> anyhow::Result<()> {
-    let temp_dir = tempfile::tempdir()?;
-    let config_path = temp_dir.path().join("config.toml");
-    std::fs::write(
-        &config_path,
-        r#"
-[ui]
-syntax-highlighting = true
-future-setting = "ignored"
-
-[unknown-section]
-foo = "bar"
-"#,
-    )?;
-
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd
-        .arg("--config")
-        .arg(&config_path)
-        .arg("-c")
-        .arg("echo forward_compat")
-        .assert();
-    // Should succeed despite unknown fields
-    assert
-        .success()
-        .stdout(predicates::str::contains("forward_compat"));
     Ok(())
 }

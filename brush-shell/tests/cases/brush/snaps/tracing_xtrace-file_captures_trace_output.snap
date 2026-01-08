@@ -1,0 +1,12 @@
+---
+source: brush-test-harness/src/runner.rs
+expression: snapshot_content
+---
+exit_code: 0
+stdout: |
+  hello
+stderr: ""
+files:
+  trace.txt: |
+    + echo hello
+    + true
