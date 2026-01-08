@@ -91,16 +91,8 @@ impl builtins::Command for ReadCommand {
         }
 
         // Validate timeout value if provided.
-        // TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
-        if let Some(timeout) = self.timeout_in_seconds {
-            if timeout < 0.0 {
-                writeln!(
-                    context.stderr(),
-                    "{}: -t: {timeout}: invalid timeout specification",
-                    context.command_name
-                )?;
-                return Ok(brush_core::ExecutionResult::general_error());
-            }
+        if let Some(result) = self.validate_timeout(&context)? {
+            return Ok(result);
         }
 
         // Find the input stream to use.
@@ -588,6 +580,29 @@ impl ReadCommand {
 
         Ok(mode)
     }
+
+    /// Validates the timeout value and returns an error result if invalid.
+    ///
+    /// Returns `Ok(Some(result))` if the timeout is invalid (caller should return early),
+    /// `Ok(None)` if the timeout is valid or not specified.
+    ///
+    /// TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
+    fn validate_timeout(
+        &self,
+        context: &brush_core::ExecutionContext<'_>,
+    ) -> Result<Option<brush_core::ExecutionResult>, brush_core::Error> {
+        if let Some(timeout) = self.timeout_in_seconds {
+            if timeout < 0.0 {
+                writeln!(
+                    context.stderr(),
+                    "{}: -t: {timeout}: invalid timeout specification",
+                    context.command_name
+                )?;
+                return Ok(Some(brush_core::ExecutionResult::general_error()));
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// Splits a line by IFS (Internal Field Separator) according to shell rules.
@@ -645,11 +660,15 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
             prev_was_non_ws_delim = !consuming_whitespace_run;
         } else if at_field_limit && !collecting_remainder && is_delimiter {
             // At field limit but haven't started last field content yet.
-            // Skip leading delimiters for the final field.
+            // Skip leading IFS whitespace for the final field.
             if is_ifs_whitespace(c) {
                 consuming_whitespace_run = true;
+            } else {
+                // Non-whitespace delimiters at boundary: include in remainder.
+                // e.g., "x::y" with IFS=":" and 2 vars gives ["x", ":y"]
+                collecting_remainder = true;
+                current_field.push(c);
             }
-            // Non-whitespace delimiters at boundary: skip just this one char.
         } else {
             // Regular character: add to current field.
             collecting_remainder = at_field_limit;
@@ -718,6 +737,22 @@ mod tests {
         // With max_fields and non-whitespace delimiter.
         let result = split_line_by_ifs(",", "a,b,c,d", Some(2));
         assert_equal(result, VecDeque::from(vec!["a", "b,c,d"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_consecutive_delimiters_at_boundary() {
+        // Consecutive non-whitespace delimiters at field boundary should be preserved.
+        // e.g., "x::y" with IFS=":" and 2 vars gives ["x", ":y"]
+        let result = split_line_by_ifs(":", "x::y", Some(2));
+        assert_equal(result, VecDeque::from(vec!["x", ":y"]));
+
+        // Triple delimiter at boundary.
+        let result = split_line_by_ifs(":", "x:::y", Some(2));
+        assert_equal(result, VecDeque::from(vec!["x", "::y"]));
+
+        // Delimiter in middle of remainder is also preserved.
+        let result = split_line_by_ifs(":", "x:y:z:w", Some(2));
+        assert_equal(result, VecDeque::from(vec!["x", "y:z:w"]));
     }
 
     #[test]

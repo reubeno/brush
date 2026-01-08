@@ -236,6 +236,23 @@ cases:
       echo "x:y::z:w" | (IFS=':' read a b; echo "a='$a' b='$b'")
       echo "a:b  c:d  e" | (IFS=': ' read v1 v2; echo "v1='$v1' v2='$v2'")
 
+  - name: "read with consecutive delimiters at field boundary"
+    stdin: |
+      # When field limit causes boundary at consecutive delimiters,
+      # extra delimiters should be preserved in remainder.
+      echo "x::y" | (IFS=':' read a b; echo "a='$a' b='$b'")
+      echo "x:::y" | (IFS=':' read a b; echo "a='$a' b='$b'")
+      # Also test with more than 2 variables
+      echo "a::b:c" | (IFS=':' read v1 v2 v3; echo "v1='$v1' v2='$v2' v3='$v3'")
+
+  - name: "read with empty IFS preserves entire line"
+    stdin: |
+      # Empty IFS means no splitting - entire line goes to first variable
+      echo "a b c" | (IFS='' read v1 v2 v3; echo "v1='$v1' v2='$v2' v3='$v3'")
+      echo "a:b:c" | (IFS='' read v1 v2; echo "v1='$v1' v2='$v2'")
+      # With array
+      echo "a b c" | (IFS='' read -a arr; declare -p arr)
+
   - name: "read REPLY preserves leading and trailing whitespace"
     stdin: |
       # When no variable names given, REPLY should preserve whitespace
