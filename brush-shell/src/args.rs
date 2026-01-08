@@ -166,6 +166,10 @@ pub struct CommandLineArgs {
     #[clap(short = 'x', help_heading = HEADING_STANDARD_OPTIONS)]
     pub print_commands_and_arguments: bool,
 
+    /// Enable xtrace and configure for the given output file.
+    #[clap(long = "xtrace-file", value_name = "FILE", help_heading = HEADING_UI_OPTIONS)]
+    pub xtrace_file_path: Option<PathBuf>,
+
     /// Disable bracketed paste.
     #[clap(long = "disable-bracketed-paste", help_heading = HEADING_UI_OPTIONS)]
     pub disable_bracketed_paste: bool,
