@@ -93,7 +93,6 @@ impl builtins::Command for ReadCommand {
 
         // Validate timeout value if provided.
         // TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
-        // This is separate from TMOUT's role in interactive shell idle timeout.
         if let Some(timeout) = self.timeout_in_seconds {
             if timeout < 0.0 {
                 writeln!(
@@ -280,8 +279,16 @@ struct InputReader<'a> {
     /// Optional deadline for timeout.
     deadline: Option<Instant>,
     /// Single-byte read buffer.
+    ///
+    /// TODO(utf-8): This only handles ASCII correctly. Multi-byte UTF-8 characters
+    /// will be read as separate bytes and incorrectly interpreted. To fix this,
+    /// we would need to buffer up to 4 bytes and decode incrementally using
+    /// `std::str::from_utf8`. Note that bash's `-n` counts bytes, not Unicode
+    /// codepoints, so the fix needs to preserve that behavior.
     buffer: [u8; 1],
-    /// Terminal mode guard (kept alive for duration of read).
+    /// Terminal mode guard - kept alive for RAII cleanup on drop.
+    /// The guard restores original terminal settings when dropped, even though
+    /// we don't access the field directly after construction.
     _term_mode: Option<brush_core::terminal::AutoModeGuard>,
     /// Output for prompt display.
     output: &'a mut dyn std::io::Write,
@@ -378,6 +385,12 @@ struct LineReaderConfig {
 /// Reads a complete line of input using the given reader and configuration.
 ///
 /// Returns a `ReadResult` indicating success, EOF, timeout, or interruption.
+///
+/// Note on character counting for `-n` limit:
+/// Bash counts OUTPUT characters (after escape processing) toward the limit.
+/// For example, with `-n 3` and input `a\bc` (4 bytes):
+/// - Bash processes: 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) → "abc"
+/// - The backslash is consumed but doesn't count toward the limit
 fn read_line_with_reader(
     reader: &mut InputReader<'_>,
     config: &LineReaderConfig,
@@ -390,10 +403,7 @@ fn read_line_with_reader(
 
         match event {
             InputEvent::Eof => {
-                // Include pending backslash on EOF.
-                if pending_backslash {
-                    line.push(BACKSLASH);
-                }
+                // Bash discards pending backslash on EOF.
                 return Ok(ReadResult::Eof(if line.is_empty() {
                     None
                 } else {
@@ -402,7 +412,7 @@ fn read_line_with_reader(
             }
 
             InputEvent::Timeout => {
-                // Include pending backslash on timeout.
+                // Include pending backslash on timeout (different from EOF).
                 if pending_backslash {
                     line.push(BACKSLASH);
                 }
@@ -418,12 +428,9 @@ fn read_line_with_reader(
             }
 
             InputEvent::CtrlD => {
-                // Include pending backslash before checking if line is empty.
-                if pending_backslash {
-                    line.push(BACKSLASH);
-                }
                 // At line start = EOF, mid-input = flush current input.
-                return Ok(if line.is_empty() {
+                // Bash discards pending backslash here too.
+                return Ok(if line.is_empty() && !pending_backslash {
                     ReadResult::Eof(None)
                 } else {
                     ReadResult::Line(line)
@@ -443,10 +450,10 @@ fn read_line_with_reader(
                             }
                         }
 
-                        // For other chars, remove backslash, add char literally.
+                        // For other chars, add char literally (backslash consumed).
                         line.push(ch);
 
-                        // Check character limit.
+                        // Check character limit (based on output length).
                         if let Some(limit) = config.char_limit {
                             if line.len() >= limit {
                                 return Ok(ReadResult::Line(line));
@@ -464,10 +471,6 @@ fn read_line_with_reader(
                 // Check for delimiter.
                 if let Some(delim) = config.delimiter {
                     if ch == delim {
-                        // Include pending backslash if we had one.
-                        if pending_backslash {
-                            line.push(BACKSLASH);
-                        }
                         return Ok(ReadResult::Line(line));
                     }
                 }
@@ -479,13 +482,9 @@ fn read_line_with_reader(
 
                 line.push(ch);
 
-                // Check character limit.
+                // Check character limit (based on output length).
                 if let Some(limit) = config.char_limit {
                     if line.len() >= limit {
-                        // Include pending backslash if we had one.
-                        if pending_backslash {
-                            line.push(BACKSLASH);
-                        }
                         return Ok(ReadResult::Line(line));
                     }
                 }
@@ -569,72 +568,77 @@ impl ReadCommand {
     }
 }
 
+/// Splits a line by IFS (Internal Field Separator) according to shell rules.
+///
+/// Shell IFS splitting has special rules:
+/// - Whitespace IFS chars (space, tab, newline) are "IFS whitespace"
+/// - Leading/trailing IFS whitespace is trimmed from the input
+/// - Consecutive IFS whitespace chars act as a single delimiter
+/// - Non-whitespace IFS chars each act as individual delimiters
+/// - Trailing non-whitespace delimiter does NOT create an empty final field
+///
+/// # Arguments
+/// * `ifs` - The IFS string (typically " \t\n")
+/// * `line` - The input line to split
+/// * `max_fields` - Optional limit on number of fields (for `read var1 var2`)
 fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeque<String> {
-    // Separate out the chars to split by.
-    let ifs_chars = ifs.chars().collect::<Vec<_>>();
+    let ifs_chars: Vec<char> = ifs.chars().collect();
 
-    // Compute which IFS characters are one of the default 3 whitespace chars.
-    let ifs_space_chars = ifs_chars
-        .iter()
-        .copied()
-        .filter(|c| *c == ' ' || *c == '\t' || *c == '\n')
-        .collect::<Vec<_>>();
+    // Helper to check if a char is IFS whitespace (space, tab, or newline AND in IFS).
+    let is_ifs_whitespace =
+        |c: char| -> bool { (c == ' ' || c == '\t' || c == '\n') && ifs_chars.contains(&c) };
 
-    // First, trim from the prefix and suffix of the string any matching chars that are
-    // *both* whitespace and present in the IFS string.
-    let trimmed_line = line.trim_matches(ifs_space_chars.as_slice());
+    // Trim leading/trailing IFS whitespace from the input.
+    let trimmed_line = line.trim_matches(&is_ifs_whitespace);
     if trimmed_line.is_empty() {
         return VecDeque::new();
     }
 
     let max_fields = max_fields.unwrap_or(usize::MAX);
 
-    // Now, iterate through the string, manually splitting it by the shell's rules for
-    // honoring IFS. We implement this by hand because we need to ensure that any
-    // IFS character is a valid delimiter, *but* consecutive adjacent IFS characters
-    // are considered a single delimiter if and only if they are one of the 3 default
-    // whitespace characters (i.e., ' ', '\t', or '\n').
+    // State machine for splitting:
+    // - `consuming_whitespace_run`: Currently skipping consecutive IFS whitespace
+    // - `prev_was_non_ws_delim`: Previous char was a non-whitespace delimiter
+    // - `collecting_remainder`: We've hit max_fields, collect everything into last field
     let mut fields = VecDeque::new();
     let mut current_field = String::new();
-    let mut skipping_ifs_whitespace = false;
-    let mut ended_with_non_ws_delimiter = false;
-    let mut in_last_field = false;
+    let mut consuming_whitespace_run = false;
+    let mut prev_was_non_ws_delim = false;
+    let mut collecting_remainder = false;
 
     for c in trimmed_line.chars() {
-        if skipping_ifs_whitespace {
-            if ifs_space_chars.contains(&c) {
-                continue;
-            }
-
-            skipping_ifs_whitespace = false;
+        // Skip consecutive IFS whitespace (they act as single delimiter).
+        if consuming_whitespace_run && is_ifs_whitespace(c) {
+            continue;
         }
+        consuming_whitespace_run = false;
 
-        // Check if we've reached max_fields and should start the last field.
-        let at_max_fields = fields.len() + 1 >= max_fields;
+        let is_delimiter = ifs_chars.contains(&c);
+        let at_field_limit = fields.len() + 1 >= max_fields;
 
-        if !at_max_fields && ifs_chars.contains(&c) {
-            fields.push_back(current_field);
-            current_field = String::new();
-            skipping_ifs_whitespace = ifs_space_chars.contains(&c);
-            ended_with_non_ws_delimiter = !skipping_ifs_whitespace;
-        } else if at_max_fields && !in_last_field && ifs_chars.contains(&c) {
-            // We've hit max_fields but haven't started the last field content yet.
-            // Skip this delimiter. If it's whitespace, continue skipping whitespace.
-            if ifs_space_chars.contains(&c) {
-                skipping_ifs_whitespace = true;
+        if !at_field_limit && is_delimiter {
+            // Normal case: delimiter ends current field, start new one.
+            fields.push_back(std::mem::take(&mut current_field));
+            consuming_whitespace_run = is_ifs_whitespace(c);
+            prev_was_non_ws_delim = !consuming_whitespace_run;
+        } else if at_field_limit && !collecting_remainder && is_delimiter {
+            // At field limit but haven't started last field content yet.
+            // Skip leading delimiters for the final field.
+            if is_ifs_whitespace(c) {
+                consuming_whitespace_run = true;
             }
-            // For non-whitespace delimiters at field boundary, just skip this one char.
+            // Non-whitespace delimiters at boundary: skip just this one char.
         } else {
-            in_last_field = at_max_fields;
+            // Regular character: add to current field.
+            collecting_remainder = at_field_limit;
             current_field.push(c);
-            ended_with_non_ws_delimiter = false;
+            prev_was_non_ws_delim = false;
         }
     }
 
-    // Push the final field. However, bash does not include an empty trailing field
-    // when the input ends with a non-whitespace delimiter.
+    // Finalize: push last field unless it's empty AND we ended with non-ws delimiter.
     // e.g., "a,b,c," with IFS="," gives ["a", "b", "c"], not ["a", "b", "c", ""].
-    if !current_field.is_empty() || !ended_with_non_ws_delimiter {
+    if !current_field.is_empty() || !prev_was_non_ws_delim {
         fields.push_back(current_field);
     }
 
@@ -647,22 +651,22 @@ mod tests {
 
     use super::*;
 
+    // ==================== split_line_by_ifs tests ====================
+
     #[test]
-    fn test_split_line_by_ifs() {
+    fn test_split_line_by_ifs_basic() {
         let result = split_line_by_ifs(",", "a,b,c", None);
         assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
     }
 
     #[test]
     fn test_split_line_by_ifs_leading_or_trailing_space() {
-        // Test with leading or trailing space.
         let result = split_line_by_ifs(" ", "  a b c ", None);
         assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
     }
 
     #[test]
     fn test_split_line_by_ifs_extra_interior_space() {
-        // Test with leading or trailing space.
         let result = split_line_by_ifs(" ", "a  b c", None);
         assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
     }
@@ -678,5 +682,45 @@ mod tests {
         // Bash does NOT include empty trailing field when input ends with non-ws delimiter.
         let result = split_line_by_ifs(",", "a,b,c,", None);
         assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_max_fields() {
+        // With max_fields=2, remainder goes into second field.
+        let result = split_line_by_ifs(" ", "a b c d", Some(2));
+        assert_equal(result, VecDeque::from(vec!["a", "b c d"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_max_fields_with_non_ws_delimiter() {
+        // With max_fields and non-whitespace delimiter.
+        let result = split_line_by_ifs(",", "a,b,c,d", Some(2));
+        assert_equal(result, VecDeque::from(vec!["a", "b,c,d"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_mixed_delimiters() {
+        // Mixed whitespace and non-whitespace in IFS.
+        let result = split_line_by_ifs(": ", "a:b  c:d", None);
+        assert_equal(result, VecDeque::from(vec!["a", "b", "c", "d"]));
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_empty_input() {
+        let result = split_line_by_ifs(" ", "", None);
+        assert_equal(result, VecDeque::<String>::new());
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_whitespace_only() {
+        let result = split_line_by_ifs(" ", "   ", None);
+        assert_equal(result, VecDeque::<String>::new());
+    }
+
+    #[test]
+    fn test_split_line_by_ifs_consecutive_non_ws_delimiters() {
+        // Consecutive non-whitespace delimiters create empty fields.
+        let result = split_line_by_ifs(",", "a,,b", None);
+        assert_equal(result, VecDeque::from(vec!["a", "", "b"]));
     }
 }

@@ -280,3 +280,27 @@ cases:
     stdin: |
       # Complex IFS with fewer variables - verify remainder handling
       echo 'x: y : z : w' | (IFS=': ' read a b; echo "a='$a' b='$b'")
+
+  # Backslash escape counting tests (bash counts OUTPUT chars, not INPUT)
+  - name: "read -n counts output chars after escape processing"
+    stdin: |
+      # Bash counts OUTPUT characters toward -n limit (after escape processing).
+      # Input: a, \, b, c = 4 input bytes. With -n 3:
+      # 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) = "abc"
+      printf 'a\\bc' | { read -n 3 var; echo "var='$var'"; }
+      # Input: \, \, a, b = 4 input bytes. With -n 3:
+      # '\\' → '\' (output 1), 'a' (output 2), 'b' (output 3) = "\ab"
+      printf '\\\\ab' | { read -n 3 var; echo "var='$var'"; }
+
+  - name: "read -n with backslash-newline continuation"
+    stdin: |
+      # Backslash-newline is line continuation (consumes both, outputs nothing).
+      # Input: a, b, \, \n, c = 5 input bytes. With -n 3:
+      # 'a' (output 1), 'b' (output 2), '\n' → continuation, 'c' (output 3) = "abc"
+      printf 'ab\\\nc' | { read -n 3 var; echo "var='$var'"; }
+
+  - name: "read trailing backslash discarded on EOF"
+    stdin: |
+      # Bash discards a pending backslash when EOF is reached
+      printf 'ab\\' | { read var; echo "var='$var'"; }
+      printf 'ab\\' | { read -n 5 var; echo "var='$var'"; }
