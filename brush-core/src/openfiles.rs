@@ -144,8 +144,13 @@ impl OpenFile {
         }
     }
 
+    /// Borrows the open file as a `BorrowedFd`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation is not supported for the underlying file type.
     #[cfg(unix)]
-    pub(crate) fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error> {
+    pub fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error> {
         use std::os::fd::AsFd as _;
 
         match self {

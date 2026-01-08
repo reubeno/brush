@@ -66,6 +66,7 @@ command-fds = "0.3.2"
 libc = "0.2.178"
 nix = { version = "0.30.1", features = [
     "fs",
+    "poll",
     "process",
     "resource",
     "signal",

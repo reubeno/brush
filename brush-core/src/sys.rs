@@ -31,6 +31,7 @@ pub use platform::commands;
 pub use platform::fd;
 pub use platform::input;
 pub(crate) use platform::network;
+pub use platform::poll;
 pub use platform::process;
 pub use platform::resource;
 pub use platform::signal;

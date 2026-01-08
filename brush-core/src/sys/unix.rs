@@ -3,6 +3,7 @@ pub mod fd;
 pub mod fs;
 pub mod input;
 pub(crate) mod network;
+pub mod poll;
 use crate::error;
 pub use crate::sys::tokio_process as process;
 pub mod resource;
