@@ -228,3 +228,55 @@ cases:
   - name: "read assignment to more variables than fields"
     stdin: |
       echo "a b" | { read v1 v2 v3 v4; echo "v1='$v1' v2='$v2' v3='$v3' v4='$v4'"; }
+
+  - name: "read last variable preserves original delimiters"
+    stdin: |
+      # Last variable should get remainder with original delimiters, not re-joined with space
+      echo "x:y:z:w" | (IFS=':' read a b; echo "a='$a' b='$b'")
+      echo "x:y::z:w" | (IFS=':' read a b; echo "a='$a' b='$b'")
+      echo "a:b  c:d  e" | (IFS=': ' read v1 v2; echo "v1='$v1' v2='$v2'")
+
+  - name: "read REPLY preserves leading and trailing whitespace"
+    stdin: |
+      # When no variable names given, REPLY should preserve whitespace
+      read <<< '  hello  world  '
+      echo "REPLY='$REPLY'"
+      read <<< '	tab	separated	'
+      echo "REPLY='$REPLY'"
+
+  - name: "read -a clears pre-existing array elements"
+    stdin: |
+      # Array should be cleared before assignment, not merged
+      arr=(old1 old2 old3 old4 old5)
+      read -a arr <<< 'new1 new2'
+      declare -p arr
+
+  - name: "read -N still processes backslashes without -r"
+    stdin: |
+      # -N ignores delimiter but still does backslash processing
+      printf 'a\\nb' | { read -N 4 var; echo "var='$var'"; }
+      printf 'a\\\\b' | { read -N 4 var; echo "var='$var'"; }
+
+  - name: "read -r -N for truly raw fixed-length reads"
+    stdin: |
+      # -r -N should preserve backslashes exactly
+      printf 'a\\nb' | { read -r -N 4 var; echo "var='$var'"; }
+      printf 'a\\\\b' | { read -r -N 4 var; echo "var='$var'"; }
+
+  - name: "read -u with invalid file descriptor"
+    ignore_stderr: true
+    stdin: |
+      read -u 99 var
+      echo "exit: $?"
+
+  - name: "read into readonly variable"
+    ignore_stderr: true
+    stdin: |
+      readonly myvar="original"
+      echo "test" | read myvar
+      echo "exit: $?, myvar='$myvar'"
+
+  - name: "read with mixed IFS into fewer variables"
+    stdin: |
+      # Complex IFS with fewer variables - verify remainder handling
+      echo 'x: y : z : w' | (IFS=': ' read a b; echo "a='$a' b='$b'")

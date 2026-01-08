@@ -502,6 +502,7 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
     let mut current_field = String::new();
     let mut skipping_ifs_whitespace = false;
     let mut ended_with_non_ws_delimiter = false;
+    let mut in_last_field = false;
 
     for c in trimmed_line.chars() {
         if skipping_ifs_whitespace {
@@ -512,12 +513,24 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
             skipping_ifs_whitespace = false;
         }
 
-        if fields.len() + 1 < max_fields && ifs_chars.contains(&c) {
+        // Check if we've reached max_fields and should start the last field.
+        let at_max_fields = fields.len() + 1 >= max_fields;
+
+        if !at_max_fields && ifs_chars.contains(&c) {
             fields.push_back(current_field);
             current_field = String::new();
             skipping_ifs_whitespace = ifs_space_chars.contains(&c);
             ended_with_non_ws_delimiter = !skipping_ifs_whitespace;
+        } else if at_max_fields && !in_last_field && ifs_chars.contains(&c) {
+            // We've hit max_fields but haven't started the last field content yet.
+            // Skip this delimiter. If it's whitespace, continue skipping whitespace.
+            if ifs_space_chars.contains(&c) {
+                skipping_ifs_whitespace = true;
+            }
+            // For non-whitespace delimiters at field boundary, just skip this one char.
+            continue;
         } else {
+            in_last_field = at_max_fields;
             current_field.push(c);
             ended_with_non_ws_delimiter = false;
         }
