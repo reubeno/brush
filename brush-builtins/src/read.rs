@@ -7,6 +7,10 @@ use brush_core::{ErrorKind, builtins, env, error, variables};
 
 use std::io::{Read, Write};
 
+/// Exit code returned when `read` times out.
+/// This is 128 + SIGALRM (14) = 142, matching bash behavior.
+const TIMEOUT_EXIT_CODE: u8 = 142;
+
 /// Parse standard input.
 #[derive(Parser)]
 pub(crate) struct ReadCommand {
@@ -75,9 +79,6 @@ impl builtins::Command for ReadCommand {
         if self.initial_text.is_some() {
             return error::unimp("read -i");
         }
-        if self.raw_mode {
-            tracing::debug!("read -r is not implemented");
-        }
 
         // Validate timeout value if provided.
         // TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
@@ -114,6 +115,9 @@ impl builtins::Command for ReadCommand {
         // Perform the read operation (potentially with timeout).
         let read_result = self.read_line(input_stream, context.stdout(), timeout)?;
 
+        // Determine whether to skip IFS splitting (for -N option).
+        let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
+
         // Extract the input line and determine exit code based on result.
         let (input_line, result) = match &read_result {
             ReadResult::Line(line) => (Some(line.clone()), brush_core::ExecutionResult::success()),
@@ -126,26 +130,15 @@ impl builtins::Command for ReadCommand {
             }
             ReadResult::TimedOut(partial) => (
                 partial.clone(),
-                // Bash returns exit code > 128 on timeout (typically 142 = 128 + SIGALRM).
-                brush_core::ExecutionResult::new(142),
+                brush_core::ExecutionResult::new(TIMEOUT_EXIT_CODE),
             ),
             ReadResult::InputReady => (None, brush_core::ExecutionResult::success()),
         };
 
-        // If -a was specified, then place the fields as elements into the array.
+        // Assign input to variables based on options.
         if let Some(array_variable) = &self.array_variable {
-            let literal_fields = if let Some(input_line) = input_line {
-                let fields: VecDeque<_> = split_line_by_ifs(
-                    ifs.as_ref(),
-                    input_line.as_str(),
-                    None, /* max_fields */
-                );
-
-                fields.into_iter().map(|f| (None, f)).collect()
-            } else {
-                vec![]
-            };
-
+            let literal_fields =
+                build_array_fields(input_line.as_deref(), &ifs, skip_ifs_splitting);
             context.shell.env_mut().update_or_add(
                 array_variable,
                 variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
@@ -154,19 +147,15 @@ impl builtins::Command for ReadCommand {
                 env::EnvironmentScope::Global,
             )?;
         } else if !self.variable_names.is_empty() {
-            let mut fields: VecDeque<_> = if let Some(input_line) = input_line {
-                split_line_by_ifs(
-                    ifs.as_ref(),
-                    input_line.as_str(),
-                    /* max_fields */ Some(self.variable_names.len()),
-                )
-            } else {
-                VecDeque::new()
-            };
+            let mut fields = build_variable_fields(
+                input_line.as_deref(),
+                &ifs,
+                skip_ifs_splitting,
+                self.variable_names.len(),
+            );
 
             for (i, name) in self.variable_names.iter().enumerate() {
                 if fields.is_empty() {
-                    // Ensure the var is empty.
                     context.shell.env_mut().update_or_add(
                         name,
                         variables::ShellValueLiteral::Scalar(String::new()),
@@ -200,13 +189,9 @@ impl builtins::Command for ReadCommand {
                 }
             }
         } else {
-            let input_line = input_line.unwrap_or_default();
-
-            // If no variable names were specified, then place everything into the
-            // REPLY variable.
             context.shell.env_mut().update_or_add(
                 "REPLY",
-                variables::ShellValueLiteral::Scalar(input_line),
+                variables::ShellValueLiteral::Scalar(input_line.unwrap_or_default()),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -214,6 +199,44 @@ impl builtins::Command for ReadCommand {
         }
 
         Ok(result)
+    }
+}
+
+/// Builds array field values from input, optionally splitting by IFS.
+fn build_array_fields(
+    input_line: Option<&str>,
+    ifs: &str,
+    skip_ifs_splitting: bool,
+) -> Vec<(Option<String>, String)> {
+    match input_line {
+        Some(line) if skip_ifs_splitting => {
+            // With -N, don't split - put entire input as single element.
+            vec![(None, line.to_string())]
+        }
+        Some(line) => {
+            let fields: VecDeque<_> = split_line_by_ifs(ifs, line, None /* max_fields */);
+            fields.into_iter().map(|f| (None, f)).collect()
+        }
+        None => vec![],
+    }
+}
+
+/// Builds field values from input for assignment to named variables.
+fn build_variable_fields(
+    input_line: Option<&str>,
+    ifs: &str,
+    skip_ifs_splitting: bool,
+    num_variables: usize,
+) -> VecDeque<String> {
+    match input_line {
+        Some(line) if skip_ifs_splitting => {
+            // With -N, don't split - put entire input in first variable.
+            let mut fields = VecDeque::new();
+            fields.push_back(line.to_string());
+            fields
+        }
+        Some(line) => split_line_by_ifs(ifs, line, Some(num_variables)),
+        None => VecDeque::new(),
     }
 }
 
@@ -241,12 +264,18 @@ enum ReadTermination {
     Delimiter,
     EndOfInput,
     CtrlC,
+    CtrlD,
     Limit,
     Timeout,
 }
 
 impl ReadCommand {
     /// Reads a line of input, optionally with a timeout.
+    ///
+    /// Handles backslash escape processing:
+    /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next char
+    /// - With `-r`: backslash is treated as a literal character
+    #[allow(clippy::too_many_lines)]
     fn read_line(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
@@ -296,8 +325,9 @@ impl ReadCommand {
 
         let mut line = String::new();
         let mut buffer = [0; 1]; // 1-byte buffer
+        let mut pending_backslash = false; // For escape processing without -r
 
-        let reason = loop {
+        let reason = 'outer: loop {
             // If we have a timeout, poll for input with remaining time.
             if let Some(deadline) = deadline {
                 let remaining = deadline.saturating_duration_since(Instant::now());
@@ -322,25 +352,70 @@ impl ReadCommand {
                 }
             }
 
-            // TODO(read): Figure out how to restore terminal settings on error?
             let n = input_file.read(&mut buffer)?;
             if n == 0 {
-                break ReadTermination::EndOfInput; // EOF reached.
+                // EOF reached. If we have a pending backslash, include it.
+                if pending_backslash {
+                    line.push('\\');
+                }
+                break ReadTermination::EndOfInput;
             }
 
             let ch = buffer[0] as char;
 
-            // Check for Ctrl+C.
+            // Check for Ctrl+C - always interrupts.
             if ch == '\x03' {
                 break ReadTermination::CtrlC;
-            } else if ch == '\x04' {
-                // Ctrl+D is EOF.
-                break ReadTermination::EndOfInput;
+            }
+
+            // Check for Ctrl+D.
+            // Bash behavior: at line start = EOF, mid-input = flush current input.
+            if ch == '\x04' {
+                if pending_backslash {
+                    line.push('\\');
+                }
+                if line.is_empty() {
+                    break ReadTermination::EndOfInput;
+                } else {
+                    break ReadTermination::CtrlD;
+                }
+            }
+
+            // Handle backslash escape processing (when not in raw mode).
+            if !self.raw_mode {
+                if pending_backslash {
+                    pending_backslash = false;
+
+                    // Backslash-newline (or backslash-delimiter) is line continuation.
+                    if let Some(delim) = delimiter {
+                        if ch == delim {
+                            // Line continuation: continue reading without adding anything.
+                            continue 'outer;
+                        }
+                    }
+
+                    // For other characters, the backslash escapes the character.
+                    // The backslash is removed and the character is added literally.
+                    line.push(ch);
+
+                    // Check character limit after adding.
+                    if let Some(limit) = char_limit {
+                        if line.len() >= limit {
+                            break ReadTermination::Limit;
+                        }
+                    }
+                    continue 'outer;
+                }
+
+                if ch == '\\' {
+                    pending_backslash = true;
+                    continue 'outer;
+                }
             }
 
             // Check for a delimiter that indicates end-of-input.
-            if let Some(delimiter) = delimiter {
-                if ch == delimiter {
+            if let Some(delim) = delimiter {
+                if ch == delim {
                     break ReadTermination::Delimiter;
                 }
             }
@@ -353,19 +428,26 @@ impl ReadCommand {
             line.push(ch);
 
             // Check to see if we've hit a character limit.
-            if let Some(char_limit) = char_limit {
-                if line.len() >= char_limit {
+            if let Some(limit) = char_limit {
+                if line.len() >= limit {
                     break ReadTermination::Limit;
                 }
             }
         };
+
+        // If we ended with a pending backslash (shouldn't happen normally, but handle it).
+        if pending_backslash && !matches!(reason, ReadTermination::EndOfInput) {
+            line.push('\\');
+        }
 
         Ok(match reason {
             ReadTermination::EndOfInput => {
                 ReadResult::Eof(if line.is_empty() { None } else { Some(line) })
             }
             ReadTermination::CtrlC => ReadResult::Interrupted,
-            ReadTermination::Delimiter | ReadTermination::Limit => ReadResult::Line(line),
+            ReadTermination::CtrlD | ReadTermination::Delimiter | ReadTermination::Limit => {
+                ReadResult::Line(line)
+            }
             ReadTermination::Timeout => {
                 ReadResult::TimedOut(if line.is_empty() { None } else { Some(line) })
             }
@@ -419,6 +501,7 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
     let mut fields = VecDeque::new();
     let mut current_field = String::new();
     let mut skipping_ifs_whitespace = false;
+    let mut ended_with_non_ws_delimiter = false;
 
     for c in trimmed_line.chars() {
         if skipping_ifs_whitespace {
@@ -433,12 +516,19 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
             fields.push_back(current_field);
             current_field = String::new();
             skipping_ifs_whitespace = ifs_space_chars.contains(&c);
+            ended_with_non_ws_delimiter = !skipping_ifs_whitespace;
         } else {
             current_field.push(c);
+            ended_with_non_ws_delimiter = false;
         }
     }
 
-    fields.push_back(current_field);
+    // Push the final field. However, bash does not include an empty trailing field
+    // when the input ends with a non-whitespace delimiter.
+    // e.g., "a,b,c," with IFS="," gives ["a", "b", "c"], not ["a", "b", "c", ""].
+    if !current_field.is_empty() || !ended_with_non_ws_delimiter {
+        fields.push_back(current_field);
+    }
 
     fields
 }
@@ -477,7 +567,8 @@ mod tests {
 
     #[test]
     fn test_split_line_by_ifs_trailing_non_space_delimiter() {
+        // Bash does NOT include empty trailing field when input ends with non-ws delimiter.
         let result = split_line_by_ifs(",", "a,b,c,", None);
-        assert_equal(result, VecDeque::from(vec!["a", "b", "c", ""]));
+        assert_equal(result, VecDeque::from(vec!["a", "b", "c"]));
     }
 }

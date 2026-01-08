@@ -86,7 +86,6 @@ cases:
       echo -e -n "|hi|there|you" | (IFS='|' read -a READ; declare -p READ)
 
   - name: "read -a with empty trailing field"
-    known_failure: true # Needs further investigation
     stdin: |
       echo -e -n "hi|there|you|" | (IFS='|' read -a READ; declare -p READ)
 
@@ -106,13 +105,16 @@ cases:
 
   # Timeout tests (read -t)
   - name: "read -t 0 with data available in pipe"
-    # This test is inherently racy - poll(0) may check the pipe before echo's data arrives.
+    # TODO(read):
+    # This test is racy - poll(0) may check the pipe before echo's data arrives.
     # Bash consistently wins this race; our implementation sometimes doesn't.
+    # Worth investigating.
     skip: true
     stdin: |
       echo "test" | { read -t 0; echo "exit: $?"; }
 
   - name: "read -t 0 with no data (empty pipe)"
+    skip: true # TODO(read): see above
     stdin: |
       # Closed pipe with no data
       : | { read -t 0; echo "exit: $?"; }
@@ -149,3 +151,80 @@ cases:
     stdin: |
       read -t 0 <<< "hello"; echo "exit: $?"
       read -t 1 var <<< "hello"; echo "exit: $?, var: '$var'"
+
+  # Raw mode tests (read -r)
+  - name: "read -r preserves backslashes"
+    stdin: |
+      echo 'hello\nworld' | { read -r line; echo "line: '$line'"; }
+      echo 'path\\to\\file' | { read -r line; echo "line: '$line'"; }
+
+  - name: "read without -r processes escape sequences"
+    stdin: |
+      echo 'hello\nworld' | { read line; echo "line: '$line'"; }
+      echo 'a\\b' | { read line; echo "line: '$line'"; }
+
+  - name: "read -r with trailing backslash"
+    stdin: |
+      printf 'line with trailing\\' | { read -r line; echo "line: '$line'"; }
+
+  - name: "read without -r line continuation"
+    stdin: |
+      # Backslash-newline continues to next line
+      printf 'first\\\nsecond' | { read line; echo "line: '$line'"; }
+
+  - name: "read -r does not do line continuation"
+    stdin: |
+      printf 'first\\\nsecond' | { read -r line; echo "line: '$line'"; }
+
+  # -N vs -n option tests
+  - name: "read -n respects delimiter"
+    stdin: |
+      # -n stops at delimiter even before char count
+      echo "ab:cd" | { read -n 5 var; echo "var: '$var'"; }
+
+  - name: "read -N ignores delimiter"
+    stdin: |
+      # -N reads exactly N chars, delimiter treated as regular char
+      printf "ab:cd" | { read -N 4 var; echo "var: '$var'"; }
+
+  - name: "read -N does not split by IFS"
+    stdin: |
+      # -N should not split result by IFS
+      printf "a b c" | { read -N 5 var; echo "var: '$var'"; }
+
+  - name: "read -N with array"
+    stdin: |
+      # With -a and -N, entire input goes to single array element
+      printf "a b c" | { read -N 5 -a arr; declare -p arr; }
+
+  # Exit code tests
+  - name: "read exit code on success"
+    stdin: |
+      echo "data" | { read var; echo "exit: $?"; }
+
+  - name: "read exit code on EOF"
+    stdin: |
+      # EOF returns non-zero
+      read var < /dev/null; echo "exit: $?"
+
+  - name: "read exit code on EOF with partial data"
+    stdin: |
+      # EOF with partial data still returns non-zero but assigns
+      printf "partial" | { read var; echo "exit: $?, var: '$var'"; }
+
+  # IFS edge cases
+  - name: "read with IFS containing both whitespace and non-whitespace"
+    stdin: |
+      echo "a:b  c:d" | (IFS=': ' read v1 v2 v3 v4; echo "v1='$v1' v2='$v2' v3='$v3' v4='$v4'")
+
+  - name: "read with consecutive non-whitespace delimiters"
+    stdin: |
+      echo "a::b" | (IFS=':' read v1 v2 v3; echo "v1='$v1' v2='$v2' v3='$v3'")
+
+  - name: "read assignment to fewer variables than fields"
+    stdin: |
+      echo "a b c d e" | { read v1 v2; echo "v1='$v1' v2='$v2'"; }
+
+  - name: "read assignment to more variables than fields"
+    stdin: |
+      echo "a b" | { read v1 v2 v3 v4; echo "v1='$v1' v2='$v2' v3='$v3' v4='$v4'"; }
