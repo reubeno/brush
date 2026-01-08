@@ -15,9 +15,9 @@ pub(crate) struct PopdCommand {
 impl builtins::Command for PopdCommand {
     type Error = crate::dirs::DirError;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(popped) = context.shell.directory_stack_mut().pop() {
             if !self.no_directory_change {

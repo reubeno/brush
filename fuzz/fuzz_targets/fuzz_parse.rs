@@ -2,6 +2,7 @@
 #![allow(missing_docs)]
 
 use anyhow::Result;
+use brush_core::ShellRuntime;
 use libfuzzer_sys::fuzz_target;
 use std::sync::LazyLock;
 
@@ -26,7 +27,7 @@ async fn parse_async(shell: brush_core::Shell, input: String) -> Result<()> {
     //
     // Instantiate a brush shell with defaults, then try to parse the input.
     //
-    let our_parse_result = shell.parse_string(input.clone());
+    let our_parse_result = ShellRuntime::parse_string(&shell, input.clone());
 
     //
     // Now run it under 'bash -n -t' as a crude way to see if it's at least valid syntax.
@@ -76,6 +77,6 @@ fuzz_target!(|input: String| {
         return;
     }
 
-    let shell = SHELL_TEMPLATE.clone();
+    let shell = Clone::clone(&*SHELL_TEMPLATE);
     TOKIO_RT.block_on(parse_async(shell, input)).unwrap();
 });

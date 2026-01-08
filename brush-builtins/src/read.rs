@@ -64,9 +64,9 @@ impl builtins::Command for ReadCommand {
     type Error = brush_core::Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.use_readline {
             return error::unimp("read -e");

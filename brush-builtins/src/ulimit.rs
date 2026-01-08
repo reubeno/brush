@@ -280,7 +280,11 @@ impl ResourceDescription {
     }
 
     /// Print either soft or hard limit
-    fn print(&self, context: &brush_core::ExecutionContext<'_>, hard: bool) -> io::Result<()> {
+    fn print<S: brush_core::ShellRuntime>(
+        &self,
+        context: &brush_core::ExecutionContext<'_, S>,
+        hard: bool,
+    ) -> io::Result<()> {
         if !self.resource.is_supported() {
             return Ok(());
         }
@@ -432,9 +436,9 @@ pub(crate) struct ULimitCommand {
 impl builtins::Command for ULimitCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<S: brush_core::ShellRuntime>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, S>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let exit_code = ExecutionResult::success();
         let mut resources_to_set = Vec::new();

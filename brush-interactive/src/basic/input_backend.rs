@@ -1,6 +1,6 @@
 use std::io::IsTerminal;
 
-use brush_core::Shell;
+use brush_core::ShellRuntime;
 
 use crate::{
     InputBackend, ShellError, completion,
@@ -17,7 +17,7 @@ pub struct BasicInputBackend;
 impl InputBackend for BasicInputBackend {
     fn read_line(
         &mut self,
-        shell: &crate::ShellRef,
+        shell: &crate::ShellRef<impl brush_core::ShellRuntime>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         if std::io::stdin().is_terminal() {
@@ -31,7 +31,7 @@ impl InputBackend for BasicInputBackend {
 impl BasicInputBackend {
     fn read_line_via<R: super::LineReader>(
         &self,
-        shell_ref: &crate::ShellRef,
+        shell_ref: &crate::ShellRef<impl brush_core::ShellRuntime>,
         reader: &R,
         prompt: &InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
@@ -44,7 +44,7 @@ impl BasicInputBackend {
                     tokio::runtime::Handle::current().block_on(shell_ref.lock())
                 });
 
-                Self::generate_completions(&mut shell, line, cursor)
+                Self::generate_completions(&mut *shell, line, cursor)
             })? {
                 ReadResult::Input(s) => {
                     result.push_str(s.as_str());
@@ -53,9 +53,11 @@ impl BasicInputBackend {
                         tokio::runtime::Handle::current().block_on(shell_ref.lock())
                     });
 
-                    if Self::is_valid_input(&shell, result.as_str()) {
+                    if Self::is_valid_input(&*shell, result.as_str()) {
                         break;
                     }
+
+                    drop(shell);
 
                     prompt_to_use = None;
                 }
@@ -81,7 +83,7 @@ impl BasicInputBackend {
         std::io::stdin().is_terminal()
     }
 
-    fn is_valid_input(shell: &Shell, input: &str) -> bool {
+    fn is_valid_input(shell: &impl brush_core::ShellRuntime, input: &str) -> bool {
         match shell.parse_string(input.to_owned()) {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>
@@ -94,7 +96,7 @@ impl BasicInputBackend {
     }
 
     fn generate_completions(
-        shell: &mut Shell,
+        shell: &mut impl ShellRuntime,
         line: &str,
         cursor: usize,
     ) -> Result<brush_core::completion::Completions, ShellError> {
@@ -105,7 +107,7 @@ impl BasicInputBackend {
     }
 
     async fn generate_completions_async(
-        shell: &mut Shell,
+        shell: &mut impl ShellRuntime,
         line: &str,
         cursor: usize,
     ) -> Result<brush_core::completion::Completions, ShellError> {

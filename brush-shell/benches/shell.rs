@@ -5,6 +5,7 @@
 #[cfg(unix)]
 mod unix {
     use brush_builtins::ShellBuilderExt;
+    use brush_core::ShellRuntime as _;
     use brush_parser::SourceSpan;
     use criterion::Criterion;
     use std::hint::black_box;
@@ -27,23 +28,23 @@ mod unix {
             .unwrap()
     }
 
-    async fn run_one_command(shell: &mut brush_core::Shell, command: &str) {
+    async fn run_one_command(shell: &mut impl brush_core::ShellRuntime, command: &str) {
         let _ = shell
             .run_string(
                 command.to_owned(),
                 &brush_core::SourceInfo::default(),
-                &shell.default_exec_params(),
+                &brush_core::ExecutionParameters::default(),
             )
             .await
             .unwrap();
     }
 
-    async fn expand_string(shell: &mut brush_core::Shell, s: &str) {
-        let params = shell.default_exec_params();
+    async fn expand_string(shell: &mut impl brush_core::ShellRuntime, s: &str) {
+        let params = brush_core::ExecutionParameters::default();
         let _ = shell.basic_expand_string(&params, s).await.unwrap();
     }
 
-    fn eval_arithmetic_expr(shell: &mut brush_core::Shell, expr: &str) {
+    fn eval_arithmetic_expr(shell: &mut impl brush_core::ShellRuntime, expr: &str) {
         let parsed_expr = brush_parser::arithmetic::parse(expr).unwrap();
         let _ = shell.eval_arithmetic(&parsed_expr).unwrap();
     }

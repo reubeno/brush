@@ -1,5 +1,6 @@
-use crate::{highlighting, refs};
 use nu_ansi_term::{Color, Style};
+
+use crate::{highlighting, refs};
 
 mod styles {
     use super::{Color, Style};
@@ -69,18 +70,18 @@ mod styles {
     }
 }
 
-pub(crate) struct ReedlineHighlighter {
-    pub shell: refs::ShellRef,
+pub(crate) struct ReedlineHighlighter<S: brush_core::ShellRuntime> {
+    pub shell: refs::ShellRef<S>,
 }
 
-impl reedline::Highlighter for ReedlineHighlighter {
+impl<S: brush_core::ShellRuntime> reedline::Highlighter for ReedlineHighlighter<S> {
     #[expect(clippy::significant_drop_tightening)]
     fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {
         let shell = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
-        let spans = highlighting::highlight_command(shell.as_ref(), line, cursor);
+        let spans = highlighting::highlight_command(&*shell, line, cursor);
 
         let mut styled = reedline::StyledText::new();
         for span in spans {

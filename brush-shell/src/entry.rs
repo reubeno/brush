@@ -2,12 +2,13 @@
 
 use crate::args::CommandLineArgs;
 use crate::args::InputBackendType;
+use crate::behavior::BrushShellBehavior;
 use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
 use crate::config;
-use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
+use brush_core::ShellRuntime as _;
 #[cfg(feature = "experimental-builtins")]
 use brush_experimental_builtins::ShellBuilderExt as _;
 use std::sync::LazyLock;
@@ -19,6 +20,8 @@ use std::io::IsTerminal;
 
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
     LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
+
+type BrushShell = brush_core::Shell<BrushShellBehavior>;
 
 // WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
 // after the `use clap::Parser`
@@ -207,7 +210,7 @@ async fn run_async(
         Err(brush_interactive::ShellError::ShellError(e)) => {
             let shell = shell.lock().await;
             let mut stderr = shell.stderr();
-            let _ = shell.display_error(&mut stderr, &e).await;
+            let _ = shell.display_error(&mut stderr, &e);
             drop(shell);
             1
         }
@@ -241,7 +244,7 @@ const fn will_run_interactively(args: &CommandLineArgs) -> bool {
 /// * `input_backend` - The input backend to use.
 /// * `ui_options` - The user interface options to use.
 async fn run_in_shell(
-    shell_ref: &brush_interactive::ShellRef,
+    shell_ref: &brush_interactive::ShellRef<impl brush_core::ShellRuntime>,
     args: CommandLineArgs,
     input_backend: &mut impl brush_interactive::InputBackend,
     ui_options: &brush_interactive::UIOptions,
@@ -256,7 +259,7 @@ async fn run_in_shell(
         shell.start_command_string_mode();
 
         // Execute the command string.
-        let params = shell.default_exec_params();
+        let params = brush_core::ExecutionParameters::default();
         let source_info = brush_core::SourceInfo::from("-c");
         let _ = shell.run_string(command, &source_info, &params).await?;
 
@@ -305,7 +308,7 @@ async fn run_in_shell(
 /// * `shell_ref` - A reference to the shell to initialize.
 /// * `args` - The parsed command-line arguments.
 async fn initialize_shell(
-    shell_ref: &brush_interactive::ShellRef,
+    shell_ref: &brush_interactive::ShellRef<impl brush_core::ShellRuntime>,
     args: &CommandLineArgs,
 ) -> Result<(), brush_interactive::ShellError> {
     // Compute desired profile-loading behavior.
@@ -338,7 +341,7 @@ async fn initialize_shell(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+) -> Result<BrushShell, brush_interactive::ShellError> {
     #[cfg(feature = "experimental-load")]
     if let Some(load_file) = &args.load_file {
         return instantiate_shell_from_file(load_file.as_path());
@@ -350,8 +353,8 @@ async fn instantiate_shell(
 #[cfg(feature = "experimental-load")]
 fn instantiate_shell_from_file(
     file_path: &Path,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
-    let mut shell: brush_core::Shell = serde_json::from_reader(std::fs::File::open(file_path)?)
+) -> Result<BrushShell, brush_interactive::ShellError> {
+    let mut shell: BrushShell = serde_json::from_reader(std::fs::File::open(file_path)?)
         .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
 
     // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
@@ -386,7 +389,7 @@ fn instantiate_shell_from_file(
 async fn instantiate_shell_from_args(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+) -> Result<BrushShell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
@@ -429,10 +432,15 @@ async fn instantiate_shell_from_args(
         .filter_map(|&fd| brush_core::sys::fd::try_get_file_for_open_fd(fd).map(|file| (fd, file)))
         .collect();
 
+    // Set up our shell behavior object.
+    let behavior = BrushShellBehavior {
+        use_color: !args.disable_color,
+    };
+
     // Set up the shell builder with the requested options.
     // NOTE: We skip loading profile and rc files here; that will be handled later after we've
     // fully instantiated everything we want set before running any code.
-    let shell = brush_core::Shell::builder()
+    let shell = brush_core::Shell::builder_with_behavior(behavior)
         .disable_options(args.disabled_options.clone())
         .disable_shopt_options(args.disabled_shopt_options.clone())
         .disallow_overwriting_regular_files_via_output_redirection(
@@ -460,7 +468,6 @@ async fn instantiate_shell_from_args(
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
-        .error_formatter(new_error_formatter(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.
@@ -474,16 +481,6 @@ async fn instantiate_shell_from_args(
     let shell = shell.build().await?;
 
     Ok(shell)
-}
-
-fn new_error_formatter(
-    args: &CommandLineArgs,
-) -> Arc<Mutex<dyn brush_core::error::ErrorFormatter>> {
-    let formatter = error_formatter::Formatter {
-        use_color: !args.disable_color,
-    };
-
-    Arc::new(Mutex::new(formatter))
 }
 
 fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {
