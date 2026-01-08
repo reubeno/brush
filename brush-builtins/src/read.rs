@@ -343,7 +343,8 @@ impl InputReader {
         }
     }
 
-    /// Checks if input is immediately available (for `-t 0`).
+    /// Checks if input is immediately available (for `-t 0`). Returns `false` if an error
+    /// occurs while checking for available input.
     fn check_input_available(&self) -> bool {
         brush_core::sys::poll::poll_for_input(&self.input, Duration::ZERO).unwrap_or(false)
     }
@@ -595,7 +596,7 @@ impl ReadCommand {
             if timeout < 0.0 {
                 writeln!(
                     context.stderr(),
-                    "{}: -t: {timeout}: invalid timeout specification",
+                    "{}: -t: invalid timeout specification",
                     context.command_name
                 )?;
                 return Ok(Some(brush_core::ExecutionResult::general_error()));
