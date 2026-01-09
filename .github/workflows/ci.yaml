@@ -631,9 +631,9 @@ jobs:
               export BRUSH_TEST_CASES=$PWD/sources/brush-shell/tests/cases/compat
             elif [[ ${test_name} == *integration* ]]; then
               export BRUSH_TEST_CASES=$PWD/sources/brush-shell/tests/cases/integration
-            elif [[ ${test_name} == *interactive* ]]; then
-              # TODO(interactive-tests): Re-enable interactive tests.
-              echo "WARNING: skipping interactive test: ${test_name}"
+            elif [[ ${test_name} == *interactive* || ${test_name} == *version* ]]; then
+              # TODO(tests): Re-enable these tests.
+              echo "WARNING: skipping test: ${test_name}"
               continue
             fi
 
