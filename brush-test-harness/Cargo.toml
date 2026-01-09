@@ -11,6 +11,9 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+[lib]
+bench = false
+
 [lints]
 workspace = true
 

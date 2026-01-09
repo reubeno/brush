@@ -590,7 +590,7 @@ jobs:
           echo "BASH_COMPLETION_PATH=$(nix path-info 'nixpkgs#bash-completion')/share/bash-completion/bash_completion">>"$GITHUB_ENV"
 
           # Forcibly add system paths
-          echo "BRUSH_COMPAT_TEST_PATH_VAR=$PATH">>"$GITHUB_ENV"
+          echo "BRUSH_TEST_PATH_VAR=$PATH">>"$GITHUB_ENV"
 
       # Checkout sources for YAML-based test cases
       - name: Checkout
@@ -623,14 +623,16 @@ jobs:
         shell: bash
         run: |
           export BRUSH_PATH=$PWD/binaries/brush
-          export BRUSH_COMPAT_TEST_CASES=$PWD/sources/brush-shell/tests/cases
           export BRUSH_VERBOSE=true
 
           result=0
           for test_name in binaries/*tests*; do
-            # TODO(interactive-tests): Re-enable interactive tests.
-            # TODO(integration-tests): Re-enable integration tests.
-            if [[ ${test_name} == *interactive* || ${test_name} == brush-integration-tests ]]; then
+            if [[ ${test_name} == *compat* ]]; then
+              export BRUSH_TEST_CASES=$PWD/sources/brush-shell/tests/cases/compat
+            elif [[ ${test_name} == *integration* ]]; then
+              export BRUSH_TEST_CASES=$PWD/sources/brush-shell/tests/cases/integration
+            elif [[ ${test_name} == *interactive* ]]; then
+              # TODO(interactive-tests): Re-enable interactive tests.
               echo "WARNING: skipping interactive test: ${test_name}"
               continue
             fi

@@ -207,11 +207,11 @@ pub struct TestOptions {
     pub brush_path: String,
 
     /// Optionally specify path to test cases.
-    #[clap(long = "test-cases-path", env = "BRUSH_COMPAT_TEST_CASES")]
+    #[clap(long = "test-cases-path", env = "BRUSH_TEST_CASES")]
     pub test_cases_path: Option<PathBuf>,
 
     /// Optionally specify PATH variable to use in shells.
-    #[clap(long = "test-path-var", env = "BRUSH_COMPAT_TEST_PATH_VAR")]
+    #[clap(long = "test-path-var", env = "BRUSH_TEST_PATH_VAR")]
     pub test_path_var: Option<String>,
 
     /// Show output from test cases (for compatibility only, has no effect).
