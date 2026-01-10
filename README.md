@@ -10,8 +10,8 @@
   <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/v/brush-shell?style=flat-square"/></a>
   <!-- msrv badge -->
   <img src="https://img.shields.io/crates/msrv/brush-shell"/>
-  <!-- LoC badge: badge generation seems broken; temporarily disabled -->
-  <!-- <img src="https://tokei.rs/b1/github/reubeno/brush?category=code"/> -->
+  <!-- compat tests badge -->
+  <img src="https://img.shields.io/badge/compat_tests-1400%2B-brightgreen?style=flat-square" alt="1400+ compatibility tests"/>
   <!-- license badge -->
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
   <!-- CI status badge -->
@@ -31,34 +31,61 @@
   </a>
 </p>
 
-<a href="https://repology.org/project/brush/versions">
-</a>
-
-</p>
-
 <hr/>
 
-`brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) and [bash-](https://www.gnu.org/software/bash/)compatible shell,
-implemented in Rust. At its core is an embeddable shell interpreter published for reuse
-in other Rust projects. It's built and tested on Linux, macOS, and WSL. Native Windows
-support is experimental.
+`brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a modern [bash-](https://www.gnu.org/software/bash/) and [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html)compatible shell
+written in Rust. It can be used as an interactive shell, to run scripts, or embedded as a library in other Rust applications.
+Built and tested on Linux, macOS, and WSL, with experimental Windows and WebAssembly (WASM) support.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52" width="80%"/>
 </p>
 
-`brush` is functional for interactive use as a daily driver! It executes most `sh` and `bash` scripts we've
-encountered. Known limitations are tracked with filed issues. Out of an abundance of caution,
-we wouldn't recommend using it yet in _production_ scenarios in case it doesn't behave identically
-to your existing stable shell. (If you do find any behavioral differences, though, please report them with an
-issue!)
-
-Contributions and feedback of all kinds are welcome! For more guidance, please consult our
-[contribution guidelines](CONTRIBUTING.md). For more technical details, please consult the
-[documentation](docs/README.md) in this repo.
+`brush` is ready for use as a daily driver! It runs most `sh` and `bash` scripts we've encountered.
+We validate compatibility through [1400+ test cases](brush-shell/tests/cases) that compare behavior against `bash`.
+If you find any behavioral differences, please [report them](https://github.com/reubeno/brush/issues)—battle-testing is welcome!
 
 This project was originally borne out of curiosity and a desire to learn. We're doing our best to keep that
 attitude :).
+
+## ✨ Features
+
+### 🐚 `bash` Compatibility
+
+| | Feature | Description |
+|--|---------|-------------|
+| ✅ | **50+ builtins** | `echo`, `declare`, `read`, `complete`, `fc`, `history`, `ulimit`, `mapfile`, `bind`, `trap`, ... |
+| ✅ | **Full expansions** | Brace, parameter, command substitution, arithmetic, process substitution, tilde, `extglob`, `globstar`, ... |
+| ✅ | **Control flow** | `if`/`then`/`else`, `for`, arithmetic `for`, `while`, `until`, `case`, `&&`, `\|\|`, subshells, pipelines, ... |
+| ✅ | **Redirection** | Here documents, here strings, fd duplication (`>&`, `<&`), process substitution redirects, `\|&`, ... |
+| ✅ | **Dynamic variables** | Rust-backed magic variables: `RANDOM`, `SRANDOM`, `LINENO`, `EPOCHSECONDS`, `EPOCHREALTIME`, `SECONDS`, ... |
+| ✅ | **Programmable completion** | Compatible with [bash-completion](https://github.com/scop/bash-completion) — git, docker, etc. work out of the box |
+| ✅ | **Job control** | Background jobs, suspend/resume (`Ctrl+Z`), `fg`/`bg`/`jobs`, process groups |
+| ✅ | **Arrays** | Indexed and associative arrays with slicing, subscripts, `${!prefix@}`, etc. |
+| 🔷 | **Traps** | `trap` support for `EXIT`, `DEBUG`; signal traps are in progress |
+| 🔷 | **Key bindings** | Partial `bind` support including `bind -x` for custom key-bound commands |
+| 🔷 | **Shell options** | Common options (`errexit`, `pipefail`, `extglob`, ...) work; less common options are in progress |
+
+### ⌨️ User Experience
+
+| | Feature | Description |
+|--|---------|-------------|
+| ✅ | **Syntax highlighting** | Real-time highlighting as you type (powered by [reedline](https://github.com/nushell/reedline)) |
+| ✅ | **Autosuggestions** | History-based command suggestions (powered by [reedline](https://github.com/nushell/reedline)) |
+| ✅ | **Rich prompts** | `PS0`/`PS1`/`PS2`/`PS4` plus right-side prompts, `PROMPT_COMMAND` support; works with [starship](https://starship.rs) |
+| ✅ | **TOML configuration** | Optional `~/.config/brush/config.toml` for persistent settings |
+| 🧪 | **ZSH-style hooks** | `precmd`/`preexec` hooks for prompt customization |
+| 🧪 | **Terminal integration** | Terminal integration sequences (`OSC 633`) for VS Code and compatible terminals |
+| 🧪 | **History extensions** | Basic support for [`fzf`](https://github.com/junegunn/fzf), [`atuin`](https://github.com/atuinsh/atuin), and similar tools |
+
+### 🔧 For Developers
+
+| | Feature | Description |
+|--|---------|-------------|
+| ✅ | **Embeddable API** | `Shell::builder()` for integration into Rust applications |
+| ✅ | **Cross-platform** | Full support for Linux and macOS; Windows and WASM are experimental |
+| 🔷 | **Rich error diagnostics** | Optional [`miette`](https://github.com/zkat/miette) integration for pretty parse errors |
+| 🚧 | **Custom shell extensions** | Zero-overhead hooks on key internal Shell events via extension traits |
 
 <br/>
 
@@ -148,15 +175,37 @@ brew install brush
 
 `brush` has a community Discord server, available [here](https://discord.gg/kPRgC9j3Tj).
 
-## 🧪 Testing strategy
+## 🛠️ For Developers
 
-This project is primarily tested by comparing its behavior with other existing shells, leveraging the latter as test oracles. The integration tests implemented in this repo include [900+ test cases](brush-shell/tests/cases) run on both this shell and an oracle, comparing standard output and exit codes.
+Contributions and feedback are welcome! Resources for contributors:
 
-For more details, please consult the [reference documentation on integration testing](docs/reference/integration-testing.md).
+* [Building from source](docs/how-to/build.md) — includes test commands and development workflow
+* [Contribution guidelines](CONTRIBUTING.md) — how to submit changes
+* [Technical documentation](docs/README.md) — architecture and reference docs
+* [Agent development guide](AGENTS.md) — for AI-assisted development
+
+The project uses 1400+ compatibility tests comparing behavior against bash. Run them with:
+
+```bash
+cargo test --test brush-compat-tests
+```
+
+## 🔗 Related Projects
+
+Other POSIX-ish shells implemented in non-C/C++ languages that inspired or relate to this project:
+
+* [`nushell`](https://www.nushell.sh/) — modern Rust shell (provides the `reedline` crate we use)
+* [`fish`](https://fishshell.com) — user-friendly shell ([Rust port in 4.0](https://fishshell.com/blog/rustport/))
+* [`Oils`](https://github.com/oils-for-unix/oils) — bash-compatible with new Oil language
+* [`mvdan/sh`](https://github.com/mvdan/sh) — Go implementation
+* [`rusty_bash`](https://github.com/shellgei/rusty_bash) — another Rust-implemented bash-like shell
 
 ## 🙏 Credits
 
-There's a long list of OSS crates whose shoulders this project rests on. Notably, the following crates are directly relied on for major portions of shell functionality:
+<details>
+<summary>Key dependencies and acknowledgments</summary>
+
+This project relies on many excellent OSS crates. Notable dependencies for core shell functionality:
 
 * [`reedline`](https://github.com/nushell/reedline) - for readline-like input and interactive usage
 * [`clap`](https://github.com/clap-rs/clap) - command-line parsing, used both by the top-level brush CLI as well as built-in commands
@@ -169,14 +218,4 @@ For testing, performance benchmarking, and other important engineering support, 
 * [`criterion.rs`](https://github.com/bheisler/criterion.rs) - for statistics-based benchmarking
 * [`bash-completion`](https://github.com/scop/bash-completion) - for its completion test suite and general completion support!
 
-## 🔗 Links: other shell implementations
-
-There are a number of other POSIX-ish shells implemented in a non-C/C++ implementation language. Some inspirational examples include:
-
-* [`nushell`](https://www.nushell.sh/) - modern Rust-implemented shell (which also provides the `reedline` crate we use!)
-* [`rusty_bash`](https://github.com/shellgei/rusty_bash)
-* [`mvdan/sh`](https://github.com/mvdan/sh)
-* [`Oils`](https://github.com/oils-for-unix/oils)
-* [`fish`](https://fishshell.com) ([as of 4.0](https://fishshell.com/blog/rustport/))
-
-We're sure there are plenty more; we're happy to include links to them as well.
+</details>
