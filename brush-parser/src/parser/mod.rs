@@ -14,9 +14,12 @@ pub mod winnow_str;
 /// Parser implementation to use
 #[derive(Clone, Eq, Hash, PartialEq, Default)]
 pub enum ParserImpl {
-    /// PEG-based parser
+    /// PEG-based parser (token-based)
     #[default]
     Peg,
+    /// Winnow-based parser (string-based, direct)
+    #[cfg(feature = "use-winnow-parser")]
+    Winnow,
 }
 
 /// Options used to control the behavior of the parser.
@@ -148,9 +151,29 @@ impl<R: std::io::BufRead> Parser<R> {
         //   * https://aosabook.org/en/v1/bash.html
         //   * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
         //
+        match self.options.parser_impl {
+            ParserImpl::Peg => {
+                let tokens = self.tokenize()?;
+                parse_tokens(&tokens, &self.options)
+            }
+            #[cfg(feature = "use-winnow-parser")]
+            ParserImpl::Winnow => {
+                // Read entire input to string for winnow_str parser
+                let mut input_str = String::new();
+                std::io::Read::read_to_string(&mut self.reader, &mut input_str)
+                    .map_err(|e| crate::error::ParseError::Tokenizing {
+                        inner: crate::tokenizer::TokenizerError::from(e),
+                        position: None,
+                    })?;
 
-        let tokens = self.tokenize()?;
-        parse_tokens(&tokens, &self.options)
+                winnow_str::parse_program(&input_str, &self.options, &SourceInfo::default())
+                    .map_err(|_e| {
+                        // Convert winnow error to ParseError
+                        // TODO: Extract position information from winnow error
+                        crate::error::ParseError::ParsingAtEndOfInput
+                    })
+            }
+        }
     }
 
     /// Parses a function definition body from the input. The body is expected to be
@@ -280,6 +303,26 @@ esac\
             input,
             result: &result
         });
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "use-winnow-parser")]
+    fn parse_with_winnow() -> Result<()> {
+        let input = "echo hello world";
+
+        let mut parser = Parser::builder()
+            .parser_impl(ParserImpl::Winnow)
+            .build(std::io::Cursor::new(input));
+        let result = parser.parse_program()?;
+
+        // Basic validation - should have one complete command
+        assert_eq!(result.complete_commands.len(), 1);
+
+        // Just check that it successfully parsed
+        // More detailed validation can be added later
+        assert!(!result.complete_commands.is_empty());
 
         Ok(())
     }
