@@ -95,6 +95,16 @@ done
 process_file "input.txt" && echo "Success" || echo "Failed"
 "#;
 
+    const NESTED_EXPANSIONS_SCRIPT: &str = r#"
+# Script with deeply nested expansions (tests balanced delimiter parsing)
+result=$(echo $(echo $((1 + (2 * (3 - 4))))))
+fallback=${foo:-${bar:-${baz}}}
+arithmetic=$((1 + (2 * (3 + (4 - 5)))))
+command_subst=$(ls $(pwd))
+mixed=$(echo $((1 + 2)) | cat)
+backtick=`echo (nested parens)`
+"#;
+
     fn benchmark_parsing_script_using_caches(c: &mut Criterion, script_path: &std::path::Path) {
         let contents = std::fs::read_to_string(script_path).unwrap();
         let filename = script_path.file_name().unwrap().to_string_lossy();
@@ -239,6 +249,19 @@ process_file "input.txt" && echo "Success" || echo "Failed"
         #[cfg(feature = "use-winnow-parser")]
         c.bench_function("full_winnow_str_complex", |b| {
             b.iter(|| parse_winnow_str(COMPLEX_SCRIPT))
+        });
+
+        // Nested expansions (balanced delimiter parsing stress test)
+        c.bench_function("full_peg_nested_expansions", |b| {
+            b.iter(|| tokenize_and_parse_peg(NESTED_EXPANSIONS_SCRIPT))
+        });
+        #[cfg(feature = "use-winnow-parser")]
+        c.bench_function("full_winnow_nested_expansions", |b| {
+            b.iter(|| tokenize_and_parse_winnow(NESTED_EXPANSIONS_SCRIPT))
+        });
+        #[cfg(feature = "use-winnow-parser")]
+        c.bench_function("full_winnow_str_nested_expansions", |b| {
+            b.iter(|| parse_winnow_str(NESTED_EXPANSIONS_SCRIPT))
         });
     }
 }
