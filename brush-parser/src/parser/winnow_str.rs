@@ -150,25 +150,66 @@ fn peek_char<'a>() -> impl Parser<StrStream<'a>, char, PError> {
 /// Returns the entire pattern including the prefix and parentheses
 fn extglob_pattern<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
     move |input: &mut StrStream<'a>| {
-        // Save starting checkpoint
+        // Save starting checkpoint to capture the prefix char too
         let start = input.checkpoint();
 
         // Match the prefix character (@, !, ?, +, *)
         let _prefix_char = winnow::token::one_of(['@', '!', '?', '+', '*']).parse_next(input)?;
 
-        // Must be followed by '('
-        '('.parse_next(input)?;
+        // Use the helper to parse balanced parens starting from the '('
+        let _balanced = parse_balanced_delimiters("(", Some('('), ')', 1).parse_next(input)?;
 
-        // Now parse the balanced parentheses
-        let mut paren_depth = 1;
+        // Get the full pattern including prefix character
+        let end = input.checkpoint();
+        let consumed_len = end.offset_from(&start);
 
-        while paren_depth > 0 {
+        input.reset(&start);
+        let pattern = winnow::token::take(consumed_len).parse_next(input)?;
+
+        Ok(pattern)
+    }
+}
+
+// ============================================================================
+// Helper: Balanced Delimiter Parsing
+// ============================================================================
+
+/// Parse content with balanced delimiters (parentheses, braces, backticks)
+/// Returns the full slice including opening and closing delimiters
+///
+/// # Parameters
+/// - `prefix`: The opening delimiter(s) to match first (e.g., "$(", "${", "`")
+/// - `open_char`: Character that increases depth (e.g., '(' or '{'), or None for backticks
+/// - `close_char`: Character that decreases depth (e.g., ')' or '}' or '`')
+/// - `initial_depth`: Starting depth (e.g., 1 for most, 2 for arithmetic `$((`)
+///
+/// # Examples
+/// - Command substitution: `parse_balanced_delimiters("$(", Some('('), ')', 1)`
+/// - Arithmetic: `parse_balanced_delimiters("$((", Some('('), ')', 2)`
+/// - Braced variable: `parse_balanced_delimiters("${", Some('{'), '}', 1)`
+/// - Backtick: `parse_balanced_delimiters("`", None, '`', 1)`
+fn parse_balanced_delimiters<'a>(
+    prefix: &'a str,
+    open_char: Option<char>,
+    close_char: char,
+    initial_depth: usize,
+) -> impl Parser<StrStream<'a>, &'a str, PError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        let start = input.checkpoint();
+
+        // Match opening prefix - use winnow's literal parser
+        winnow::token::literal(prefix).parse_next(input)?;
+
+        // Parse balanced delimiters
+        let mut depth = initial_depth;
+
+        while depth > 0 {
             match winnow::token::any::<_, PError>.parse_next(input) {
-                Ok('(') => {
-                    paren_depth += 1;
+                Ok(ch) if Some(ch) == open_char => {
+                    depth += 1;
                 }
-                Ok(')') => {
-                    paren_depth -= 1;
+                Ok(ch) if ch == close_char => {
+                    depth -= 1;
                 }
                 Ok('\\') => {
                     // Skip escaped character
@@ -178,21 +219,20 @@ fn extglob_pattern<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
                     // Regular character
                 }
                 Err(_) => {
-                    // Hit end of input without closing paren
+                    // Hit end of input without closing delimiter
                     return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
                 }
             }
         }
 
-        // Calculate the consumed length
+        // Get the full slice from start to current position
         let end = input.checkpoint();
         let consumed_len = end.offset_from(&start);
 
-        // Reset to start and consume the exact amount to get the slice
         input.reset(&start);
-        let pattern = winnow::token::take(consumed_len).parse_next(input)?;
+        let result = winnow::token::take(consumed_len).parse_next(input)?;
 
-        Ok(pattern)
+        Ok(result)
     }
 }
 
@@ -399,13 +439,13 @@ pub fn simple_variable<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
 /// Parse a braced variable reference: ${VAR}
 /// Returns the expansion text including ${ }
 pub fn braced_variable<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    ("${", take_while(0.., |c: char| c != '}'), '}').take()
+    parse_balanced_delimiters("${", Some('{'), '}', 1)
 }
 
 /// Parse an arithmetic expansion: $((expr))
 /// Returns the expansion text including $(( ))
 pub fn arithmetic_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    ("$((", take_while(0.., |c: char| c != ')'), "))").take()
+    parse_balanced_delimiters("$((", Some('('), ')', 2)
 }
 
 /// Parse a command substitution: $(cmd)
@@ -414,14 +454,14 @@ pub fn command_substitution<'a>() -> impl Parser<StrStream<'a>, &'a str, PError>
     // Need to be careful: $(( is arithmetic, $( is command substitution
     winnow::combinator::preceded(
         winnow::combinator::peek(winnow::combinator::not("$((")),
-        ("$(", take_while(0.., |c: char| c != ')'), ')').take(),
+        parse_balanced_delimiters("$(", Some('('), ')', 1),
     )
 }
 
 /// Parse a backtick command substitution: `cmd`
 /// Returns the expansion text including backticks
 pub fn backtick_substitution<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    ('`', take_while(0.., |c: char| c != '`'), '`').take()
+    parse_balanced_delimiters("`", None, '`', 1)
 }
 
 /// Parse special parameter: $0, $1, $?, $@, etc.
@@ -8084,6 +8124,180 @@ mod tests {
             let pipe = result.unwrap();
             // Should have timed set
             assert!(pipe.timed.is_some());
+        }
+    }
+
+    // ============================================================================
+    // 19. NESTED EXPANSIONS
+    // ============================================================================
+    // Tests for nested parentheses and braces in various expansion types.
+    // These test cases expose bugs in simple take_while parsers that don't
+    // handle balanced delimiters.
+
+    mod nested_expansions {
+        use super::*;
+
+        #[test]
+        fn test_command_substitution_with_nested_parens() {
+            // Bug: take_while stops at first ')', missing nested parens
+            let input_str = r#"echo $(echo (foo))"#;
+            let mut input = LocatingSlice::new(r#"echo $(echo (foo))"#);
+            let tracker = make_tracker(input_str);
+            let options = crate::parser::ParserOptions::default();
+            let source_info = crate::parser::SourceInfo::default();
+            let ctx = ParseContext {
+                options: &options,
+                source_info: &source_info,
+            };
+            let result = command(&ctx, &tracker).parse_next(&mut input);
+            assert!(result.is_ok(), "Should parse command substitution with nested parens");
+
+            // Verify it parsed the complete word including the entire $(echo (foo))
+            let cmd = result.unwrap();
+            match cmd {
+                ast::Command::Simple(simple) => {
+                    let suffix = simple.suffix.as_ref().unwrap();
+                    assert_eq!(suffix.0.len(), 1);
+                    match &suffix.0[0] {
+                        ast::CommandPrefixOrSuffixItem::Word(w) => {
+                            // Should contain the full expansion including nested parens
+                            assert!(w.value.contains("$(echo (foo))"),
+                                "Expected full command substitution, got: {}", w.value);
+                        }
+                        _ => panic!("Expected Word with expansion"),
+                    }
+                }
+                _ => panic!("Expected Simple command"),
+            }
+        }
+
+        #[test]
+        fn test_command_substitution_with_subshell() {
+            // Subshells use parentheses too
+            let input_str = r#"echo $(( cd /tmp; ls ))"#;
+            let mut input = LocatingSlice::new(r#"echo $(( cd /tmp; ls ))"#);
+            let tracker = make_tracker(input_str);
+            let options = crate::parser::ParserOptions::default();
+            let source_info = crate::parser::SourceInfo::default();
+            let ctx = ParseContext {
+                options: &options,
+                source_info: &source_info,
+            };
+            let result = command(&ctx, &tracker).parse_next(&mut input);
+            assert!(result.is_ok(), "Should parse command substitution with subshell");
+        }
+
+        #[test]
+        fn test_arithmetic_expansion_with_nested_parens() {
+            // Bug: Arithmetic expressions can have nested parens
+            let input_str = r#"echo $((1 + (2 * 3)))"#;
+            let mut input = LocatingSlice::new(r#"echo $((1 + (2 * 3)))"#);
+            let tracker = make_tracker(input_str);
+            let options = crate::parser::ParserOptions::default();
+            let source_info = crate::parser::SourceInfo::default();
+            let ctx = ParseContext {
+                options: &options,
+                source_info: &source_info,
+            };
+            let result = command(&ctx, &tracker).parse_next(&mut input);
+            assert!(result.is_ok(), "Should parse arithmetic with nested parens");
+
+            let cmd = result.unwrap();
+            match cmd {
+                ast::Command::Simple(simple) => {
+                    let suffix = simple.suffix.as_ref().unwrap();
+                    assert_eq!(suffix.0.len(), 1);
+                    match &suffix.0[0] {
+                        ast::CommandPrefixOrSuffixItem::Word(w) => {
+                            assert!(w.value.contains("$((1 + (2 * 3)))"),
+                                "Expected full arithmetic expansion, got: {}", w.value);
+                        }
+                        _ => panic!("Expected Word with expansion"),
+                    }
+                }
+                _ => panic!("Expected Simple command"),
+            }
+        }
+
+        #[test]
+        fn test_backtick_with_nested_parens() {
+            // Bug: Backticks can contain commands with parens
+            let input_str = r#"echo `echo (test)`"#;
+            let mut input = LocatingSlice::new(r#"echo `echo (test)`"#);
+            let tracker = make_tracker(input_str);
+            let options = crate::parser::ParserOptions::default();
+            let source_info = crate::parser::SourceInfo::default();
+            let ctx = ParseContext {
+                options: &options,
+                source_info: &source_info,
+            };
+            let result = command(&ctx, &tracker).parse_next(&mut input);
+            assert!(result.is_ok(), "Should parse backtick with nested parens");
+        }
+
+        #[test]
+        fn test_braced_variable_with_nested_braces() {
+            // Bug: Variable expansions can have nested braces in parameter expansion
+            // e.g., ${var:-${default}}
+            let input_str = r#"echo ${foo:-${bar}}"#;
+            let mut input = LocatingSlice::new(r#"echo ${foo:-${bar}}"#);
+            let tracker = make_tracker(input_str);
+            let options = crate::parser::ParserOptions::default();
+            let source_info = crate::parser::SourceInfo::default();
+            let ctx = ParseContext {
+                options: &options,
+                source_info: &source_info,
+            };
+            let result = command(&ctx, &tracker).parse_next(&mut input);
+            assert!(result.is_ok(), "Should parse nested braced variables");
+
+            let cmd = result.unwrap();
+            match cmd {
+                ast::Command::Simple(simple) => {
+                    let suffix = simple.suffix.as_ref().unwrap();
+                    assert_eq!(suffix.0.len(), 1);
+                    match &suffix.0[0] {
+                        ast::CommandPrefixOrSuffixItem::Word(w) => {
+                            assert!(w.value.contains("${foo:-${bar}}"),
+                                "Expected full nested expansion, got: {}", w.value);
+                        }
+                        _ => panic!("Expected Word with expansion"),
+                    }
+                }
+                _ => panic!("Expected Simple command"),
+            }
+        }
+
+        #[test]
+        fn test_deeply_nested_arithmetic() {
+            // Multiple levels of nesting
+            let input_str = r#"echo $(( (1 + (2 * (3 - 4))) ))"#;
+            let mut input = LocatingSlice::new(r#"echo $(( (1 + (2 * (3 - 4))) ))"#);
+            let tracker = make_tracker(input_str);
+            let options = crate::parser::ParserOptions::default();
+            let source_info = crate::parser::SourceInfo::default();
+            let ctx = ParseContext {
+                options: &options,
+                source_info: &source_info,
+            };
+            let result = command(&ctx, &tracker).parse_next(&mut input);
+            assert!(result.is_ok(), "Should parse deeply nested arithmetic");
+        }
+
+        #[test]
+        fn test_mixed_expansions() {
+            // Command substitution containing arithmetic
+            let input_str = r#"echo $(echo $((1+2)))"#;
+            let mut input = LocatingSlice::new(r#"echo $(echo $((1+2)))"#);
+            let tracker = make_tracker(input_str);
+            let options = crate::parser::ParserOptions::default();
+            let source_info = crate::parser::SourceInfo::default();
+            let ctx = ParseContext {
+                options: &options,
+                source_info: &source_info,
+            };
+            let result = command(&ctx, &tracker).parse_next(&mut input);
+            assert!(result.is_ok(), "Should parse mixed expansions");
         }
     }
 }
