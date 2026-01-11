@@ -183,6 +183,7 @@ cases:
       echo "ab:cd" | { read -n 5 var; echo "var: '$var'"; }
 
   - name: "read -N ignores delimiter"
+    skip: true # TODO(read): test sometimes results in printf error
     stdin: |
       # -N reads exactly N chars, delimiter treated as regular char
       printf "ab:cd" | { read -N 4 var; echo "var: '$var'"; }

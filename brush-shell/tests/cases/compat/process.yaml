@@ -1,7 +1,7 @@
 name: "Process"
 common_test_files:
   - path: "process-helpers.sh"
-    source_path: "../utils/process-helpers.sh"
+    source_path: "../../utils/process-helpers.sh"
 
 cases:
   - name: "Basic process"
