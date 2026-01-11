@@ -178,9 +178,9 @@ fn extglob_pattern<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
 /// Returns the full slice including opening and closing delimiters
 ///
 /// # Parameters
-/// - `prefix`: The opening delimiter(s) to match first (e.g., "$(", "${", "`")
+/// - `prefix`: The opening delimiter(s) to match first (e.g., "$(", "${", backtick)
 /// - `open_char`: Character that increases depth (e.g., '(' or '{'), or None for backticks
-/// - `close_char`: Character that decreases depth (e.g., ')' or '}' or '`')
+/// - `close_char`: Character that decreases depth (e.g., ')' or '}' or backtick)
 /// - `initial_depth`: Starting depth (e.g., 1 for most, 2 for arithmetic `$((`)
 ///
 /// # Examples
@@ -272,6 +272,7 @@ fn comment<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 }
 
 /// Parse optional whitespace and comments (spaces, tabs, and comments, but NOT newlines)
+///
 /// Handles both inter-token spaces and inline comments like: echo hello # comment
 /// This is needed to separate tokens on the same line
 #[inline]
@@ -370,7 +371,7 @@ fn separator<'a>() -> impl Parser<StrStream<'a>, Option<SeparatorOperator>, PErr
 /// A word character is anything that's NOT:
 /// - Whitespace: ' ', '\t', '\n', '\r'
 /// - Operators: '|', '&', ';', '<', '>', '(', ')'
-/// - Quote/expansion starters: '$', '`', '\'', '"', '\\'
+/// - Quote/expansion starters: '$', backtick, '\'', '"', '\\'
 ///
 /// Note: '{' and '}' ARE allowed in words for brace expansion (e.g., {1..10}, {a,b,c})
 /// Brace groups ({ commands; }) are distinguished by requiring whitespace after '{' and before '}'
@@ -996,10 +997,8 @@ fn assignment_word<'a>() -> impl Parser<StrStream<'a>, (ast::Assignment, ast::Wo
                     full_word.push('[');
                     full_word.push_str(&index.value);
                     full_word.push_str("]=");
-                    full_word.push_str(&elem.1.value);
-                } else {
-                    full_word.push_str(&elem.1.value);
                 }
+                full_word.push_str(&elem.1.value);
 
                 elements.push(elem);
             }
@@ -1454,6 +1453,7 @@ pub fn and_or<'a>(
 // ============================================================================
 
 /// Parse a compound list (used inside subshells, brace groups, etc.)
+///
 /// Similar to `complete_command` but with optional leading linebreaks and more flexible separators
 /// Corresponds to: winnow.rs `compound_list()`
 pub fn compound_list<'a>(
@@ -1490,14 +1490,15 @@ pub fn compound_list<'a>(
             // Sequence)
             let sep = sep_opt.unwrap_or(ast::SeparatorOperator::Sequence);
 
+            // Push current and_or with its separator
+            items.push(ast::CompoundListItem(current_ao, sep));
+
             // We have a separator, check if there's another and_or after it
             if let Ok(next_ao) = and_or(ctx, tracker).parse_next(input) {
-                // Push current and_or with its separator, then move to next
-                items.push(ast::CompoundListItem(current_ao, sep));
+                // Move to next
                 current_ao = next_ao;
             } else {
-                // Trailing separator - push current and_or with the separator
-                items.push(ast::CompoundListItem(current_ao, sep));
+                // Trailing separator
                 break;
             }
         }
@@ -2264,14 +2265,14 @@ fn ext_test_word<'a>() -> impl Parser<StrStream<'a>, String, PError> {
                 let quote = '\''.parse_next(input)?;
                 let content = take_while(0.., |c: char| c != '\'').parse_next(input)?;
                 let end_quote = '\''.parse_next(input)?;
-                Ok(format!("{}{}{}", quote, content, end_quote))
+                Ok(format!("{quote}{content}{end_quote}"))
             }
             '"' => {
                 // Double quoted: capture with quotes (simplified, no escape handling for now)
                 let quote = '"'.parse_next(input)?;
                 let content = take_while(0.., |c: char| c != '"' && c != '\\').parse_next(input)?;
                 let end_quote = '"'.parse_next(input)?;
-                Ok(format!("{}{}{}", quote, content, end_quote))
+                Ok(format!("{quote}{content}{end_quote}"))
             }
             _ => {
                 // Bare word: collect characters manually to handle special cases

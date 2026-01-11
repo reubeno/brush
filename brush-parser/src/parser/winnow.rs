@@ -90,7 +90,7 @@ pub fn matches_word(w: &str) -> impl Parser<&[Token], &Token, PError> + '_ {
 fn peek_operator<'a>() -> impl Parser<&'a [Token], &'a str, PError> {
     winnow::combinator::peek(take(1usize)).verify_map(|slice: &[Token]| match &slice[0] {
         Token::Operator(_, _) => Some(slice[0].to_str()),
-        _ => None,
+        Token::Word(..) => None,
     })
 }
 
@@ -424,8 +424,8 @@ fn parse_scalar_assignment(tok: &Token) -> Option<AssignmentResult> {
     // Check for array element assignment VAR[index]=value
     if let Some(bracket_pos) = var_part.find('[') {
         if let Some(with_bracket) = var_part.strip_suffix(']') {
-            let var_name = &with_bracket[..bracket_pos];
-            let index = &with_bracket[bracket_pos + 1..];
+            let var_name = with_bracket.get(..bracket_pos).unwrap_or("");
+            let index = with_bracket.get(bracket_pos + 1..).unwrap_or("");
 
             if is_valid_name(var_name) {
                 return Some((
@@ -492,7 +492,7 @@ pub fn array_assignment_word<'a>() -> impl Parser<&'a [Token], AssignmentResult,
     )
         .map(|(name_tok, _, elements, end_tok)| {
             let s = name_tok.to_str();
-            let var_name = &s[..s.len() - 1];
+            let var_name = s.get(..s.len().saturating_sub(1)).unwrap_or(s);
             let start_loc = name_tok.location();
             let end_loc = end_tok.location();
 
@@ -532,14 +532,10 @@ pub fn assignment_word<'a>() -> impl Parser<&'a [Token], AssignmentResult, PErro
     // If we see VAR= followed by '(', try array first (to avoid scalar consuming VAR= with empty
     // value) Otherwise try scalar first (99% of cases)
     |input: &mut &'a [Token]| {
-        let try_array_first = if let Some(first) = input.first() {
-            if let Token::Word(w, _) = first {
-                // Check if word ends with '=' and is followed by '('
-                w.ends_with('=')
-                    && matches!(input.get(1), Some(Token::Operator(op, _)) if op == "(")
-            } else {
-                false
-            }
+        let try_array_first = if let Some(Token::Word(w, _)) = input.first() {
+            // Check if word ends with '=' and is followed by '('
+            w.ends_with('=')
+                && matches!(input.get(1), Some(Token::Operator(op, _)) if op == "(")
         } else {
             false
         };
@@ -591,9 +587,8 @@ pub fn cmd_word<'a>() -> impl Parser<&'a [Token], &'a Token, PError> {
         // Valid patterns: VAR=value, VAR+=value, VAR[idx]=value
 
         // Split at first '=' to check assignment pattern
-        let (before_eq, _value) = match s.split_once('=') {
-            Some(parts) => parts,
-            None => return true, // No '=' found, not an assignment
+        let Some((before_eq, _value)) = s.split_once('=') else {
+            return true; // No '=' found, not an assignment
         };
 
         // Check for VAR+= (append assignment)
@@ -605,7 +600,7 @@ pub fn cmd_word<'a>() -> impl Parser<&'a [Token], &'a Token, PError> {
         } else if let Some(bracket) = before_eq.find('[') {
             // Check for VAR[idx]= (array element assignment)
             if let Some(with_bracket) = before_eq.strip_suffix(']') {
-                &with_bracket[..bracket]
+                with_bracket.get(..bracket).unwrap_or("")
             } else {
                 // Malformed, not valid assignment
                 return true;
