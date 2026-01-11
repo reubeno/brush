@@ -55,6 +55,10 @@ impl JobTask {
         }
     }
 
+    /// Polls the task for completion. Returns `Some(result)` if the task has completed,
+    /// or `None` if it is still running. The result is the execution result of the task.
+    /// Behaves in a best-effort manner; if an internal error occurs during polling,
+    /// it will return `None`.
     fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
             Self::External(process) => {

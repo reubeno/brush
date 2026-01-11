@@ -111,18 +111,16 @@ fn waitid_all(
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
     // SAFETY:
     // Code copied from nix::sys::wait implementation of waitid for other platforms.
-    let siginfo = unsafe {
-        // Memory is zeroed rather than uninitialized, as not all platforms
-        // initialize the memory in the StillAlive case
-        let mut siginfo: nix::libc::siginfo_t = std::mem::zeroed();
-        nix::errno::Errno::result(nix::libc::waitid(
-            nix::libc::P_ALL,
-            0,
-            &raw mut siginfo,
-            flags.bits(),
-        ))?;
-        siginfo
-    };
+    // The siginfo structure is valid when filled with zeroes. Memory is zeroed
+    // rather than uninitialized, as not all platforms initialize the memory in
+    // the StillAlive case.
+    let mut siginfo: nix::libc::siginfo_t = unsafe { std::mem::zeroed() };
+
+    // SAFETY:
+    // Code copied from nix::sys::wait implementation of waitid for other platforms.
+    nix::errno::Errno::result(unsafe {
+        nix::libc::waitid(nix::libc::P_ALL, 0, &raw mut siginfo, flags.bits())
+    })?;
 
     siginfo_to_wait_status(siginfo)
 }

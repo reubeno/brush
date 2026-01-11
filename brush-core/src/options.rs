@@ -289,10 +289,6 @@ impl RuntimeOptions {
     }
 
     /// Returns a string representing the current `set`-style option flags set in the shell.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "these unwrap calls should not panic"
-    )]
     pub fn option_flags(&self) -> String {
         let mut cs = vec![];
 

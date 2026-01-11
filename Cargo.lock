@@ -487,7 +487,6 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
- "brush-shell",
  "clap",
  "colored",
  "descape",
