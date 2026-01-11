@@ -6,16 +6,28 @@ use std::io::Write;
 
 use crate::{BuiltinError, CommandArg, commands, error, results};
 
-/// Type of a function implementing a built-in command.
+/// Type of async function implementing a built-in command.
 ///
 /// # Arguments
 ///
 /// * The context in which the command is being executed.
 /// * The arguments to the command.
-pub type CommandExecuteFunc = fn(
+pub type AsyncCommandExecuteFunc =
+    fn(
+        commands::ExecutionContext<'_>,
+        Vec<commands::CommandArg>,
+    ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>;
+
+/// Type of synchornous function implementing a built-in command.
+///
+/// # Arguments
+///
+/// * The context in which the command is being executed.
+/// * The arguments to the command.
+pub type SyncCommandExecuteFunc = fn(
     commands::ExecutionContext<'_>,
     Vec<commands::CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>;
+) -> Result<results::ExecutionResult, error::Error>;
 
 /// Type of a function to retrieve help content for a built-in command.
 ///
@@ -141,6 +153,15 @@ pub enum ContentType {
 pub struct ContentOptions {
     /// Whether or not the content should be colorized.
     pub colorized: bool,
+}
+
+/// Type of a function implementing a built-in command.
+#[derive(Clone)]
+pub enum CommandExecuteFunc {
+    /// An asynchronous command execution function.
+    Async(AsyncCommandExecuteFunc),
+    /// A synchronous command execution function.
+    Sync(SyncCommandExecuteFunc),
 }
 
 /// Encapsulates a registration for a built-in command.
@@ -372,7 +393,7 @@ pub trait SimpleCommand {
 /// `SimpleCommand` trait.
 pub fn simple_builtin<B: SimpleCommand + Send + Sync>() -> Registration {
     Registration {
-        execute_func: exec_simple_builtin::<B>,
+        execute_func: CommandExecuteFunc::Sync(exec_simple_builtin::<B>),
         content_func: B::get_content,
         disabled: false,
         special_builtin: false,
@@ -384,7 +405,7 @@ pub fn simple_builtin<B: SimpleCommand + Send + Sync>() -> Registration {
 /// `Command` trait.
 pub fn builtin<B: Command + Send + Sync>() -> Registration {
     Registration {
-        execute_func: exec_builtin::<B>,
+        execute_func: CommandExecuteFunc::Async(exec_builtin::<B>),
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
@@ -397,7 +418,7 @@ pub fn builtin<B: Command + Send + Sync>() -> Registration {
 /// declarations as arguments.
 pub fn decl_builtin<B: DeclarationCommand + Send + Sync>() -> Registration {
     Registration {
-        execute_func: exec_declaration_builtin::<B>,
+        execute_func: CommandExecuteFunc::Async(exec_declaration_builtin::<B>),
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
@@ -414,7 +435,7 @@ pub fn decl_builtin<B: DeclarationCommand + Send + Sync>() -> Registration {
 /// select builtin commands that wrap other builtins (e.g., "builtin").
 pub fn raw_arg_builtin<B: DeclarationCommand + Default + Send + Sync>() -> Registration {
     Registration {
-        execute_func: exec_raw_arg_builtin::<B>,
+        execute_func: CommandExecuteFunc::Async(exec_raw_arg_builtin::<B>),
         content_func: get_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
@@ -431,14 +452,6 @@ fn get_builtin_content<T: Command + Send + Sync>(
 }
 
 fn exec_simple_builtin<T: SimpleCommand + Send + Sync>(
-    context: commands::ExecutionContext<'_>,
-    args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_simple_builtin_impl::<T>(context, args).await })
-}
-
-#[expect(clippy::unused_async)]
-async fn exec_simple_builtin_impl<T: SimpleCommand + Send + Sync>(
     context: commands::ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<results::ExecutionResult, error::Error> {
