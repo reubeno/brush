@@ -347,6 +347,34 @@ cases:
       exec 0<&-
       echo "after closing stdin"
 
+  - name: "Failing special built-in (non-POSIX mode, non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      . ./non-existent-file
+      echo "after builtin call (status $?)"
+
+  - name: "Failing special built-in (non-POSIX mode, interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      . ./non-existent-file
+      echo "after builtin call (status $?)"
+
+  - name: "Failing special built-in (POSIX mode, non-interactive)"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      . ./non-existent-file
+      echo "after builtin call (status $?)"
+
+  - name: "Failing special built-in (POSIX mode, interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      . ./non-existent-file
+      echo "after builtin call (status $?)"
+
   - name: "errexit with failing command (non-interactive)"
     stdin: |
       set -e

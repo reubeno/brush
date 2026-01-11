@@ -997,6 +997,23 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
+        let func_name = self.fname.value.clone();
+
+        // In POSIX mode, function names can't shadow special builtins.
+        if shell.options().posix_mode
+            && shell
+                .builtins()
+                .get(&func_name)
+                .is_some_and(|r| r.special_builtin)
+        {
+            return Err(
+                error::Error::from(error::ErrorKind::FunctionNameShadowsSpecialBuiltin {
+                    name: func_name,
+                })
+                .into_fatal(),
+            );
+        }
+
         // The function definition's source context should be the same as the current frame
         // so we directly pass that through.
         let source_info = shell
@@ -1005,7 +1022,7 @@ impl Execute for ast::FunctionDefinition {
             .map_or_else(crate::SourceInfo::default, |frame| {
                 frame.adjusted_source_info()
             });
-        shell.define_func(self.fname.value.clone(), self.clone(), &source_info);
+        shell.define_func(func_name, self.clone(), &source_info);
 
         let result = ExecutionResult::success();
         shell.set_last_exit_status(result.exit_code.into());
