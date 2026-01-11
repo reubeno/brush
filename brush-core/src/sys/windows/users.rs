@@ -43,7 +43,7 @@ pub(crate) fn get_effective_gid() -> Result<u32, error::Error> {
 }
 
 pub(crate) fn get_current_username() -> Result<String, error::Error> {
-    let username = whoami::fallible::username()?;
+    let username = whoami::username().map_err(std::io::Error::from)?;
     Ok(username)
 }
 
