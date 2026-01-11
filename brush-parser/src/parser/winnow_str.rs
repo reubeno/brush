@@ -2249,253 +2249,241 @@ fn parse_binary_operator(op: &str) -> Option<ast::BinaryPredicate> {
     }
 }
 
-/// Token type for extended test expressions
-#[derive(Debug, Clone, PartialEq)]
-enum ExtTestToken {
-    Word(String),
-    And,    // &&
-    Or,     // ||
-    Not,    // !
-    LParen, // (
-    RParen, // )
-}
+// ----------------------------------------------------------------------------
+// Winnow-based Extended Test Expression Parsers
+// ----------------------------------------------------------------------------
 
-/// Tokenize content between [[ and ]] for extended test expressions
-fn tokenize_extended_test(
-    content: &str,
-) -> Result<Vec<ExtTestToken>, winnow::error::ErrMode<ContextError>> {
-    let mut tokens = Vec::new();
-    let mut current_word = String::new();
-    let mut in_quotes = false;
-    let mut quote_char = ' ';
-    let mut chars = content.chars().peekable();
+/// Parse a word in extended test context (bare word or quoted string with quotes preserved)
+fn ext_test_word<'a>() -> impl Parser<StrStream<'a>, String, PError> {
+    move |input: &mut StrStream<'a>| {
+        let ch = peek_char().parse_next(input)?;
 
-    // Helper to push current word as token
-    let push_word = |word: &mut String, tokens: &mut Vec<ExtTestToken>| {
-        if !word.is_empty() {
-            tokens.push(ExtTestToken::Word(word.clone()));
-            word.clear();
-        }
-    };
-
-    while let Some(ch) = chars.next() {
         match ch {
-            '"' | '\'' if !in_quotes => {
-                in_quotes = true;
-                quote_char = ch;
-                current_word.push(ch);
+            '\'' => {
+                // Single quoted: capture with quotes
+                let quote = '\''.parse_next(input)?;
+                let content = take_while(0.., |c: char| c != '\'').parse_next(input)?;
+                let end_quote = '\''.parse_next(input)?;
+                Ok(format!("{}{}{}", quote, content, end_quote))
             }
-            '"' | '\'' if in_quotes && ch == quote_char => {
-                in_quotes = false;
-                current_word.push(ch);
-            }
-            ' ' | '\t' | '\n' if !in_quotes => {
-                push_word(&mut current_word, &mut tokens);
-            }
-            '&' if !in_quotes && chars.peek() == Some(&'&') => {
-                push_word(&mut current_word, &mut tokens);
-                chars.next(); // consume second &
-                tokens.push(ExtTestToken::And);
-            }
-            '|' if !in_quotes && chars.peek() == Some(&'|') => {
-                push_word(&mut current_word, &mut tokens);
-                chars.next(); // consume second |
-                tokens.push(ExtTestToken::Or);
-            }
-            '!' if !in_quotes
-                && chars.peek() != Some(&'=')
-                && (current_word.is_empty() || chars.peek().is_none_or(|&c| c.is_whitespace())) =>
-            {
-                push_word(&mut current_word, &mut tokens);
-                tokens.push(ExtTestToken::Not);
-            }
-            '(' if !in_quotes => {
-                push_word(&mut current_word, &mut tokens);
-                tokens.push(ExtTestToken::LParen);
-            }
-            ')' if !in_quotes => {
-                push_word(&mut current_word, &mut tokens);
-                tokens.push(ExtTestToken::RParen);
+            '"' => {
+                // Double quoted: capture with quotes (simplified, no escape handling for now)
+                let quote = '"'.parse_next(input)?;
+                let content = take_while(0.., |c: char| c != '"' && c != '\\').parse_next(input)?;
+                let end_quote = '"'.parse_next(input)?;
+                Ok(format!("{}{}{}", quote, content, end_quote))
             }
             _ => {
-                current_word.push(ch);
-            }
-        }
-    }
+                // Bare word: collect characters manually to handle special cases
+                let mut word = String::new();
 
-    push_word(&mut current_word, &mut tokens);
-    Ok(tokens)
-}
-
-/// Precedence parser for extended test expressions
-/// Implements the precedence hierarchy from PEG parser
-struct ExtTestParser {
-    tokens: Vec<ExtTestToken>,
-    pos: usize,
-}
-
-impl ExtTestParser {
-    const fn new(tokens: Vec<ExtTestToken>) -> Self {
-        Self { tokens, pos: 0 }
-    }
-
-    const fn is_at_end(&self) -> bool {
-        self.pos >= self.tokens.len()
-    }
-
-    fn peek(&self) -> Option<&ExtTestToken> {
-        self.tokens.get(self.pos)
-    }
-
-    fn advance(&mut self) -> Option<ExtTestToken> {
-        if self.is_at_end() {
-            None
-        } else {
-            let token = self.tokens[self.pos].clone();
-            self.pos += 1;
-            Some(token)
-        }
-    }
-
-    fn expect_word(&mut self) -> Result<String, winnow::error::ErrMode<ContextError>> {
-        match self.advance() {
-            Some(ExtTestToken::Word(w)) => Ok(w),
-            _ => Err(winnow::error::ErrMode::Backtrack(ContextError::default())),
-        }
-    }
-
-    /// Expect a regex word - allows | ( ) in the pattern
-    /// Corresponds to: peg.rs `regex_word()`
-    fn expect_regex_word(&mut self) -> Result<String, winnow::error::ErrMode<ContextError>> {
-        let mut result = String::new();
-        let mut found_something = false;
-        let mut last_was_word = false;
-
-        // Collect tokens that are part of the regex word
-        // Stop at: &&, ||, end of tokens, or other test operators
-        while let Some(token) = self.peek() {
-            match token {
-                ExtTestToken::Word(w) => {
-                    // Add space only between consecutive word tokens
-                    if last_was_word {
-                        result.push(' ');
+                while let Ok(ch) = peek_char().parse_next(input) {
+                    match ch {
+                        // Stop on whitespace
+                        ' ' | '\t' | '\n' => break,
+                        // Stop on parentheses (used for grouping)
+                        '(' | ')' => break,
+                        // & is only valid if followed by another & (&&), otherwise stop
+                        '&' => {
+                            let checkpoint = input.checkpoint();
+                            winnow::token::any.parse_next(input)?;
+                            if peek_char().parse_next(input).ok() == Some('&') {
+                                // This is &&, stop here
+                                input.reset(&checkpoint);
+                                break;
+                            }
+                            // Single &, include it
+                            input.reset(&checkpoint);
+                            word.push('&');
+                            winnow::token::any.parse_next(input)?;
+                        }
+                        // | is only valid if NOT followed by another | (||), otherwise stop
+                        '|' => {
+                            let checkpoint = input.checkpoint();
+                            winnow::token::any.parse_next(input)?;
+                            if peek_char().parse_next(input).ok() == Some('|') {
+                                // This is ||, stop here
+                                input.reset(&checkpoint);
+                                break;
+                            }
+                            // Single |, include it
+                            input.reset(&checkpoint);
+                            word.push('|');
+                            winnow::token::any.parse_next(input)?;
+                        }
+                        // ! is special: if followed by =, it's part of the word (!=)
+                        // Otherwise it's the NOT operator, so stop
+                        '!' => {
+                            let checkpoint = input.checkpoint();
+                            winnow::token::any.parse_next(input)?;
+                            if peek_char().parse_next(input).ok() == Some('=') {
+                                // This is !=, include both characters
+                                word.push('!');
+                                word.push('=');
+                                winnow::token::any.parse_next(input)?;
+                            } else {
+                                // Standalone !, stop here
+                                input.reset(&checkpoint);
+                                break;
+                            }
+                        }
+                        // Any other character is part of the word
+                        _ => {
+                            word.push(ch);
+                            winnow::token::any.parse_next(input)?;
+                        }
                     }
-                    result.push_str(w);
-                    found_something = true;
-                    last_was_word = true;
-                    self.advance();
                 }
-                ExtTestToken::LParen => {
-                    result.push('(');
-                    found_something = true;
-                    last_was_word = false;
-                    self.advance();
+
+                if word.is_empty() {
+                    Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                } else {
+                    Ok(word)
                 }
-                ExtTestToken::RParen => {
-                    result.push(')');
-                    found_something = true;
-                    last_was_word = false;
-                    self.advance();
+            }
+        }
+    }
+}
+
+/// Parse a regex word in extended test context (allows | ( ) [ ] in the pattern)
+fn ext_test_regex_word<'a>() -> impl Parser<StrStream<'a>, String, PError> {
+    move |input: &mut StrStream<'a>| {
+        let mut result = String::new();
+
+        loop {
+            // Skip whitespace between parts
+            if result.is_empty() {
+                spaces().parse_next(input)?;
+            }
+
+            let checkpoint = input.checkpoint();
+
+            // Check if we hit a stop condition (&&, ||, ]], or end)
+            if winnow::combinator::opt::<_, _, PError, _>(
+                winnow::combinator::alt((
+                    ("&", "&").map(|_| ()),
+                    ("|", "|").map(|_| ()),
+                    ("]", "]").map(|_| ()),  // ]] stops the regex
+                ))
+            )
+            .parse_next(input)?
+            .is_some()
+            {
+                input.reset(&checkpoint);
+                break;
+            }
+
+            // Try to parse next component
+            if let Ok(ch) = peek_char().parse_next(input) {
+                match ch {
+                    '\'' | '"' => {
+                        // Quoted string
+                        if !result.is_empty() {
+                            result.push(' ');
+                        }
+                        let word = ext_test_word().parse_next(input)?;
+                        result.push_str(&word);
+                    }
+                    '(' | ')' | '[' | ']' => {
+                        // These are allowed in regex patterns
+                        result.push(ch);
+                        winnow::token::any.parse_next(input)?;
+                    }
+                    '|' if input.peek_token().is_some() => {
+                        // Single | (not ||) is allowed in regex
+                        let next_checkpoint = input.checkpoint();
+                        winnow::token::any.parse_next(input)?;
+                        if peek_char().parse_next(input).ok() == Some('|') {
+                            // This is ||, backtrack
+                            input.reset(&next_checkpoint);
+                            break;
+                        }
+                        result.push('|');
+                    }
+                    ' ' | '\t' | '\n' if !result.is_empty() => {
+                        // Stop on whitespace after we've collected something
+                        break;
+                    }
+                    _ => {
+                        // Regular word character
+                        // Add space only if the last character was a regular word character
+                        if !result.is_empty() {
+                            let last_ch = result.chars().last();
+                            // Don't add space after structural characters: ( ) [ ] |
+                            if !matches!(last_ch, Some('(' | ')' | '[' | ']' | '|')) {
+                                result.push(' ');
+                            }
+                        }
+                        let word = take_while(1.., |c: char| {
+                            !matches!(c, ' ' | '\t' | '\n' | '&' | '|' | '(' | ')' | '[' | ']')
+                        })
+                        .parse_next(input)?;
+                        result.push_str(word);
+                    }
                 }
-                // Stop at logical operators
-                ExtTestToken::And | ExtTestToken::Or | ExtTestToken::Not => break,
+            } else {
+                break;
             }
         }
 
-        if found_something {
-            Ok(result)
-        } else {
+        if result.is_empty() {
             Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+        } else {
+            Ok(result)
         }
     }
+}
 
-    /// Parse top-level expression (handles ||)
-    fn parse(&mut self) -> Result<ast::ExtendedTestExpr, winnow::error::ErrMode<ContextError>> {
-        self.parse_or()
-    }
+/// Parse primary extended test expression (parentheses, binary/unary tests, or word)
+fn ext_test_primary<'a>() -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> {
+    move |input: &mut StrStream<'a>| {
+        spaces().parse_next(input)?;
 
-    /// Parse OR expressions (lowest precedence)
-    fn parse_or(&mut self) -> Result<ast::ExtendedTestExpr, winnow::error::ErrMode<ContextError>> {
-        let mut left = self.parse_and()?;
-
-        while matches!(self.peek(), Some(ExtTestToken::Or)) {
-            self.advance(); // consume ||
-            let right = self.parse_and()?;
-            left = ast::ExtendedTestExpr::Or(Box::new(left), Box::new(right));
-        }
-
-        Ok(left)
-    }
-
-    /// Parse AND expressions
-    fn parse_and(&mut self) -> Result<ast::ExtendedTestExpr, winnow::error::ErrMode<ContextError>> {
-        let mut left = self.parse_not()?;
-
-        while matches!(self.peek(), Some(ExtTestToken::And)) {
-            self.advance(); // consume &&
-            let right = self.parse_not()?;
-            left = ast::ExtendedTestExpr::And(Box::new(left), Box::new(right));
-        }
-
-        Ok(left)
-    }
-
-    /// Parse NOT expressions
-    fn parse_not(&mut self) -> Result<ast::ExtendedTestExpr, winnow::error::ErrMode<ContextError>> {
-        if matches!(self.peek(), Some(ExtTestToken::Not)) {
-            self.advance(); // consume !
-            let expr = self.parse_not()?; // NOT is right-associative
-            return Ok(ast::ExtendedTestExpr::Not(Box::new(expr)));
-        }
-
-        self.parse_primary()
-    }
-
-    /// Parse primary expressions (parentheses, binary tests, unary tests, words)
-    fn parse_primary(
-        &mut self,
-    ) -> Result<ast::ExtendedTestExpr, winnow::error::ErrMode<ContextError>> {
         // Try parenthesized expression
-        if matches!(self.peek(), Some(ExtTestToken::LParen)) {
-            self.advance(); // consume (
-            let expr = self.parse_or()?; // Parse full expression inside
-            if !matches!(self.peek(), Some(ExtTestToken::RParen)) {
-                return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
-            }
-            self.advance(); // consume )
+        if winnow::combinator::opt::<_, _, PError, _>('(')
+            .parse_next(input)?
+            .is_some()
+        {
+            spaces().parse_next(input)?;
+            let expr = ext_test_or_expr().parse_next(input)?;
+            spaces().parse_next(input)?;
+            ')'.parse_next(input)?;
             return Ok(ast::ExtendedTestExpr::Parenthesized(Box::new(expr)));
         }
 
         // Try unary test (operator + operand)
-        if let Some(ExtTestToken::Word(op_word)) = self.peek() {
-            if let Some(unary_pred) = parse_unary_operator(op_word) {
-                self.advance(); // consume operator
-                let operand = self.expect_word()?;
+        let checkpoint = input.checkpoint();
+        if let Ok(op_word) = ext_test_word().parse_next(input) {
+            if let Some(unary_pred) = parse_unary_operator(&op_word) {
+                spaces().parse_next(input)?;
+                let operand = ext_test_word().parse_next(input)?;
                 return Ok(ast::ExtendedTestExpr::UnaryTest(
                     unary_pred,
                     ast::Word::from(operand),
                 ));
             }
         }
+        input.reset(&checkpoint);
 
         // Try binary test (operand + operator + operand)
-        let left_word = self.expect_word()?;
+        let left_word = ext_test_word().parse_next(input)?;
+        spaces().parse_next(input)?;
 
-        // Check if there's an operator following
-        if let Some(ExtTestToken::Word(op_word)) = self.peek() {
-            if let Some(mut binary_pred) = parse_binary_operator(op_word) {
+        // Check for binary operator
+        let checkpoint2 = input.checkpoint();
+        if let Ok(op_word) = ext_test_word().parse_next(input) {
+            if let Some(mut binary_pred) = parse_binary_operator(&op_word) {
                 let is_regex_op = matches!(binary_pred, ast::BinaryPredicate::StringMatchesRegex);
-                self.advance(); // consume operator
+                spaces().parse_next(input)?;
 
                 // For =~ operator, use regex word parser that allows | ( )
                 let right_word = if is_regex_op {
-                    self.expect_regex_word()?
+                    ext_test_regex_word().parse_next(input)?
                 } else {
-                    self.expect_word()?
+                    ext_test_word().parse_next(input)?
                 };
 
-                // Special case: =~ with quoted string should use StringContainsSubstring instead of
-                // StringMatchesRegex
+                // Special case: =~ with quoted string should use StringContainsSubstring
                 if is_regex_op && (right_word.starts_with('\'') || right_word.starts_with('"')) {
                     binary_pred = ast::BinaryPredicate::StringContainsSubstring;
                 }
@@ -2507,6 +2495,7 @@ impl ExtTestParser {
                 ));
             }
         }
+        input.reset(&checkpoint2);
 
         // Fallback: single word tests for non-zero length
         Ok(ast::ExtendedTestExpr::UnaryTest(
@@ -2516,18 +2505,82 @@ impl ExtTestParser {
     }
 }
 
-/// Parse extended test expression from content string
-fn parse_extended_test_expr(
-    content: &str,
-) -> Result<ast::ExtendedTestExpr, winnow::error::ErrMode<ContextError>> {
-    let tokens = tokenize_extended_test(content)?;
+/// Parse NOT expression (right-associative)
+fn ext_test_not_expr<'a>() -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> {
+    move |input: &mut StrStream<'a>| {
+        spaces().parse_next(input)?;
 
-    if tokens.is_empty() {
-        return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+        // Check for NOT operator
+        let checkpoint = input.checkpoint();
+        if winnow::combinator::opt::<_, _, PError, _>('!')
+            .parse_next(input)?
+            .is_some()
+        {
+            // Make sure it's not != operator
+            if peek_char().parse_next(input).ok() == Some('=') {
+                input.reset(&checkpoint);
+                return ext_test_primary().parse_next(input);
+            }
+
+            // Parse NOT recursively (right-associative)
+            let expr = ext_test_not_expr().parse_next(input)?;
+            return Ok(ast::ExtendedTestExpr::Not(Box::new(expr)));
+        }
+
+        ext_test_primary().parse_next(input)
     }
+}
 
-    let mut parser = ExtTestParser::new(tokens);
-    parser.parse()
+/// Parse AND expression (left-associative)
+fn ext_test_and_expr<'a>() -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> {
+    move |input: &mut StrStream<'a>| {
+        let mut left = ext_test_not_expr().parse_next(input)?;
+
+        loop {
+            spaces().parse_next(input)?;
+            let checkpoint = input.checkpoint();
+
+            // Check for && operator
+            if winnow::combinator::opt::<_, _, PError, _>(("&", "&"))
+                .parse_next(input)?
+                .is_some()
+            {
+                let right = ext_test_not_expr().parse_next(input)?;
+                left = ast::ExtendedTestExpr::And(Box::new(left), Box::new(right));
+            } else {
+                input.reset(&checkpoint);
+                break;
+            }
+        }
+
+        Ok(left)
+    }
+}
+
+/// Parse OR expression (left-associative, lowest precedence)
+fn ext_test_or_expr<'a>() -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> {
+    move |input: &mut StrStream<'a>| {
+        let mut left = ext_test_and_expr().parse_next(input)?;
+
+        loop {
+            spaces().parse_next(input)?;
+            let checkpoint = input.checkpoint();
+
+            // Check for || operator
+            if winnow::combinator::opt::<_, _, PError, _>(("|", "|"))
+                .parse_next(input)?
+                .is_some()
+            {
+                let right = ext_test_and_expr().parse_next(input)?;
+                left = ast::ExtendedTestExpr::Or(Box::new(left), Box::new(right));
+            } else {
+                input.reset(&checkpoint);
+                break;
+            }
+        }
+
+        Ok(left)
+    }
 }
 
 /// Parse extended test command: [[ expression ]]
@@ -2545,36 +2598,14 @@ pub fn extended_test_command<'a>(
 
         spaces().parse_next(input)?;
 
-        // Collect content until ]]
-        let mut content = String::new();
+        // Parse the expression directly using winnow parsers
+        let expr = ext_test_or_expr().parse_next(input)?;
 
-        loop {
-            // Check for ]]
-            let checkpoint = input.checkpoint();
-            spaces().parse_next(input)?;
+        spaces().parse_next(input)?;
 
-            if winnow::combinator::opt::<_, _, PError, _>((']', ']'))
-                .parse_next(input)?
-                .is_some()
-            {
-                // Found closing ]]
-                break;
-            }
-
-            input.reset(&checkpoint);
-
-            // Check if we've run out of input
-            if input.is_empty() {
-                return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
-            }
-
-            // Collect character
-            let ch: char = winnow::token::any.parse_next(input)?;
-            content.push(ch);
-        }
-
-        // Parse the expression from content
-        let expr = parse_extended_test_expr(&content)?;
+        // Parse ]]
+        ']'.parse_next(input)?;
+        ']'.parse_next(input)?;
 
         let end_offset = tracker.offset_from_locating(input);
         let loc = tracker.range_to_span(start_offset..end_offset);

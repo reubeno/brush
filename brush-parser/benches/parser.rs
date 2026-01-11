@@ -105,6 +105,15 @@ mixed=$(echo $((1 + 2)) | cat)
 backtick=`echo (nested parens)`
 "#;
 
+    // Extended test expression benchmarks - various patterns
+    const EXTENDED_TEST_SIMPLE: &str = "[[ -f file.txt ]]";
+    const EXTENDED_TEST_BINARY: &str = "[[ $a == $b ]]";
+    const EXTENDED_TEST_REGEX: &str = "[[ $str =~ ^[0-9]+$ ]]";
+    const EXTENDED_TEST_COMPLEX_REGEX: &str = "[[ $input =~ ^(foo|bar)[0-9]+(baz|qux)$ ]]";
+    const EXTENDED_TEST_LOGICAL: &str = "[[ -f file.txt && -r file.txt || -w other.txt ]]";
+    const EXTENDED_TEST_NESTED: &str = "[[ ( -f $file && -r $file ) || ( -d $dir && -x $dir ) ]]";
+    const EXTENDED_TEST_COMPLEX: &str = "[[ ! ( $a -eq 5 && $b -gt 10 ) || ( $c =~ pattern && -f $file ) ]]";
+
     fn benchmark_parsing_script_using_caches(c: &mut Criterion, script_path: &std::path::Path) {
         let contents = std::fs::read_to_string(script_path).unwrap();
         let filename = script_path.file_name().unwrap().to_string_lossy();
@@ -263,6 +272,43 @@ backtick=`echo (nested parens)`
         c.bench_function("full_winnow_str_nested_expansions", |b| {
             b.iter(|| parse_winnow_str(NESTED_EXPANSIONS_SCRIPT))
         });
+
+        // ========================================================================
+        // EXTENDED TEST EXPRESSION BENCHMARKS
+        // ========================================================================
+        // Benchmarks for the refactored extended test ([[ ]]) parser
+        // Tests various patterns: simple, binary, regex, logical operators, nesting
+
+        #[cfg(feature = "winnow-parser")]
+        {
+            c.bench_function("extended_test_simple", |b| {
+                b.iter(|| parse_winnow_str(EXTENDED_TEST_SIMPLE))
+            });
+
+            c.bench_function("extended_test_binary", |b| {
+                b.iter(|| parse_winnow_str(EXTENDED_TEST_BINARY))
+            });
+
+            c.bench_function("extended_test_regex", |b| {
+                b.iter(|| parse_winnow_str(EXTENDED_TEST_REGEX))
+            });
+
+            c.bench_function("extended_test_complex_regex", |b| {
+                b.iter(|| parse_winnow_str(EXTENDED_TEST_COMPLEX_REGEX))
+            });
+
+            c.bench_function("extended_test_logical", |b| {
+                b.iter(|| parse_winnow_str(EXTENDED_TEST_LOGICAL))
+            });
+
+            c.bench_function("extended_test_nested", |b| {
+                b.iter(|| parse_winnow_str(EXTENDED_TEST_NESTED))
+            });
+
+            c.bench_function("extended_test_complex", |b| {
+                b.iter(|| parse_winnow_str(EXTENDED_TEST_COMPLEX))
+            });
+        }
     }
 }
 
