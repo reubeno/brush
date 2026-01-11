@@ -246,7 +246,7 @@ pub fn parse_tokens(
 /// * `options` - The options to use when parsing.
 #[cfg(feature = "winnow-parser")]
 pub fn parse_tokens(
-    tokens: &Vec<Token>,
+    tokens: &[Token],
     options: &ParserOptions,
 ) -> Result<ast::Program, crate::error::ParseError> {
     winnow::parse_program(tokens, options, &SourceInfo::default())
