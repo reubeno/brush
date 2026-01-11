@@ -571,29 +571,24 @@ pub fn word_as_ast<'a>(
 
         // Check for tilde at word start if enabled
         let mut value = String::new();
+        let mut last_char = None;
+
         if ctx.options.tilde_expansion_at_word_start {
             if peek_char().parse_next(input).ok() == Some('~') {
                 if let Ok(tilde_expr) = tilde_expansion().parse_next(input) {
                     value.push_str(tilde_expr);
+                    last_char = tilde_expr.chars().last();
                 }
             }
         }
 
         // Parse remaining word parts, tracking last character for tilde-after-colon detection
-        loop {
-            // Get the last character we've accumulated (for tilde-after-colon detection)
-            let last_char = value.chars().last();
-
-            // Try to parse next word part
-            match word_part(ctx, last_char).parse_next(input) {
-                Ok(part) => {
-                    value.push_str(&part);
-                }
-                Err(_) => {
-                    // No more parts
-                    break;
-                }
-            }
+        // Note: We can't use repeat() here because each word_part depends on the last_char
+        // from the previous part (for tilde-after-colon detection)
+        while let Ok(part) = word_part(ctx, last_char).parse_next(input) {
+            // Update last_char efficiently - just get the last char of the new part
+            last_char = part.chars().last().or(last_char);
+            value.push_str(&part);
         }
 
         // Must have at least one character
