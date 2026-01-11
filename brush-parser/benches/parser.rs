@@ -2,8 +2,8 @@
 //!
 //! Compares three parsing approaches:
 //! 1. PEG parser (tokenize + peg parse)
-//! 2. Winnow parser (tokenize + winnow parse) - when use-winnow-parser feature enabled
-//! 3. Winnow_str parser (direct string parse) - when use-winnow-parser feature enabled
+//! 2. Winnow parser (tokenize + winnow parse) - when winnow-parser feature enabled
+//! 3. Winnow_str parser (direct string parse) - when winnow-parser feature enabled
 
 #![allow(missing_docs)]
 
@@ -26,13 +26,13 @@ mod unix {
         brush_parser::parse_tokens(tokens, &brush_parser::ParserOptions::default()).unwrap()
     }
 
-    #[cfg(feature = "use-winnow-parser")]
+    #[cfg(feature = "winnow-parser")]
     fn parse_winnow(tokens: &Vec<Token>) -> brush_parser::ast::Program {
         use brush_parser::{ParserOptions, SourceInfo, winnow};
         winnow::parse_program(tokens, &ParserOptions::default(), &SourceInfo::default()).unwrap()
     }
 
-    #[cfg(feature = "use-winnow-parser")]
+    #[cfg(feature = "winnow-parser")]
     fn parse_winnow_str(content: &str) -> brush_parser::ast::Program {
         use brush_parser::{ParserOptions, SourceInfo, winnow_str};
         winnow_str::parse_program(content, &ParserOptions::default(), &SourceInfo::default())
@@ -45,7 +45,7 @@ mod unix {
         parse_peg(&tokens)
     }
 
-    #[cfg(feature = "use-winnow-parser")]
+    #[cfg(feature = "winnow-parser")]
     fn tokenize_and_parse_winnow(content: &str) -> brush_parser::ast::Program {
         let tokens = uncached_tokenize(content);
         parse_winnow(&tokens)
@@ -113,7 +113,7 @@ backtick=`echo (nested parens)`
             b.iter(|| parse_peg(&cacheable_tokenize(contents.as_str())))
         });
 
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function(std::format!("parse_winnow_{}", filename).as_str(), |b| {
             b.iter(|| parse_winnow(&cacheable_tokenize(contents.as_str())))
         });
@@ -131,11 +131,11 @@ backtick=`echo (nested parens)`
         // Simple script benchmarks
         let simple_tokens = uncached_tokenize(SIMPLE_SCRIPT);
         c.bench_function("parse_peg_simple", |b| b.iter(|| parse_peg(&simple_tokens)));
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_simple", |b| {
             b.iter(|| parse_winnow(&simple_tokens))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_str_simple", |b| {
             b.iter(|| parse_winnow_str(SIMPLE_SCRIPT))
         });
@@ -145,11 +145,11 @@ backtick=`echo (nested parens)`
         c.bench_function("parse_peg_pipeline", |b| {
             b.iter(|| parse_peg(&pipeline_tokens))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_pipeline", |b| {
             b.iter(|| parse_winnow(&pipeline_tokens))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_str_pipeline", |b| {
             b.iter(|| parse_winnow_str(PIPELINE_SCRIPT))
         });
@@ -159,11 +159,11 @@ backtick=`echo (nested parens)`
         c.bench_function("parse_peg_for_loop", |b| {
             b.iter(|| parse_peg(&sample_tokens))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_for_loop", |b| {
             b.iter(|| parse_winnow(&sample_tokens))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_str_for_loop", |b| {
             b.iter(|| parse_winnow_str(SAMPLE_SCRIPT))
         });
@@ -173,11 +173,11 @@ backtick=`echo (nested parens)`
         c.bench_function("parse_peg_complex", |b| {
             b.iter(|| parse_peg(&complex_tokens))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_complex", |b| {
             b.iter(|| parse_winnow(&complex_tokens))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("parse_winnow_str_complex", |b| {
             b.iter(|| parse_winnow_str(COMPLEX_SCRIPT))
         });
@@ -203,11 +203,11 @@ backtick=`echo (nested parens)`
         c.bench_function("full_peg_simple", |b| {
             b.iter(|| tokenize_and_parse_peg(SIMPLE_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_simple", |b| {
             b.iter(|| tokenize_and_parse_winnow(SIMPLE_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_str_simple", |b| {
             b.iter(|| parse_winnow_str(SIMPLE_SCRIPT))
         });
@@ -216,11 +216,11 @@ backtick=`echo (nested parens)`
         c.bench_function("full_peg_pipeline", |b| {
             b.iter(|| tokenize_and_parse_peg(PIPELINE_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_pipeline", |b| {
             b.iter(|| tokenize_and_parse_winnow(PIPELINE_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_str_pipeline", |b| {
             b.iter(|| parse_winnow_str(PIPELINE_SCRIPT))
         });
@@ -229,11 +229,11 @@ backtick=`echo (nested parens)`
         c.bench_function("full_peg_for_loop", |b| {
             b.iter(|| tokenize_and_parse_peg(SAMPLE_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_for_loop", |b| {
             b.iter(|| tokenize_and_parse_winnow(SAMPLE_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_str_for_loop", |b| {
             b.iter(|| parse_winnow_str(SAMPLE_SCRIPT))
         });
@@ -242,11 +242,11 @@ backtick=`echo (nested parens)`
         c.bench_function("full_peg_complex", |b| {
             b.iter(|| tokenize_and_parse_peg(COMPLEX_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_complex", |b| {
             b.iter(|| tokenize_and_parse_winnow(COMPLEX_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_str_complex", |b| {
             b.iter(|| parse_winnow_str(COMPLEX_SCRIPT))
         });
@@ -255,11 +255,11 @@ backtick=`echo (nested parens)`
         c.bench_function("full_peg_nested_expansions", |b| {
             b.iter(|| tokenize_and_parse_peg(NESTED_EXPANSIONS_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_nested_expansions", |b| {
             b.iter(|| tokenize_and_parse_winnow(NESTED_EXPANSIONS_SCRIPT))
         });
-        #[cfg(feature = "use-winnow-parser")]
+        #[cfg(feature = "winnow-parser")]
         c.bench_function("full_winnow_str_nested_expansions", |b| {
             b.iter(|| parse_winnow_str(NESTED_EXPANSIONS_SCRIPT))
         });

@@ -22,7 +22,7 @@ arbitrary = ["dep:arbitrary"]
 debug-tracing = ["peg/trace"]
 diagnostics = ["dep:miette"]
 serde = ["dep:serde"]
-use-winnow-parser = ["dep:winnow"]
+winnow-parser = ["dep:winnow"]
 
 [dependencies]
 arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }

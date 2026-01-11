@@ -6,9 +6,9 @@ use crate::ast;
 use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
 
 pub mod peg;
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 pub mod winnow;
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 pub mod winnow_str;
 
 /// Parser implementation to use
@@ -18,7 +18,7 @@ pub enum ParserImpl {
     #[default]
     Peg,
     /// Winnow-based parser (string-based, direct)
-    #[cfg(feature = "use-winnow-parser")]
+    #[cfg(feature = "winnow-parser")]
     Winnow,
 }
 
@@ -156,7 +156,7 @@ impl<R: std::io::BufRead> Parser<R> {
                 let tokens = self.tokenize()?;
                 parse_tokens(&tokens, &self.options)
             }
-            #[cfg(feature = "use-winnow-parser")]
+            #[cfg(feature = "winnow-parser")]
             ParserImpl::Winnow => {
                 // Read entire input to string for winnow_str parser
                 let mut input_str = String::new();
@@ -229,7 +229,7 @@ impl<R: std::io::BufRead> Parser<R> {
 ///
 /// * `tokens` - The tokens to parse.
 /// * `options` - The options to use when parsing.
-#[cfg(not(feature = "use-winnow-parser"))]
+#[cfg(not(feature = "winnow-parser"))]
 pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
@@ -244,7 +244,7 @@ pub fn parse_tokens(
 ///
 /// * `tokens` - The tokens to parse.
 /// * `options` - The options to use when parsing.
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
@@ -309,7 +309,7 @@ esac\
     }
 
     #[test]
-    #[cfg(feature = "use-winnow-parser")]
+    #[cfg(feature = "winnow-parser")]
     fn parse_with_winnow() -> Result<()> {
         let input = "echo hello world";
 

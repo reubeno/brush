@@ -1864,7 +1864,7 @@ pub fn parse_program<'a>(
 }
 
 // Test helper functions with common signatures
-#[cfg(all(test, feature = "use-winnow-parser"))]
+#[cfg(all(test, feature = "winnow-parser"))]
 pub(super) fn test_case_clause(
     tokens: &[Token],
     options: &ParserOptions,
@@ -1885,7 +1885,7 @@ pub(super) fn test_case_clause(
     }
 }
 
-#[cfg(all(test, feature = "use-winnow-parser"))]
+#[cfg(all(test, feature = "winnow-parser"))]
 pub(super) fn test_program(
     tokens: &[Token],
     options: &ParserOptions,
@@ -1906,7 +1906,7 @@ pub(super) fn test_program(
     }
 }
 
-#[cfg(all(test, feature = "use-winnow-parser"))]
+#[cfg(all(test, feature = "winnow-parser"))]
 pub(super) fn test_pipe_sequence(
     tokens: &[Token],
     options: &ParserOptions,
@@ -1927,7 +1927,7 @@ pub(super) fn test_pipe_sequence(
     }
 }
 
-#[cfg(all(test, feature = "use-winnow-parser"))]
+#[cfg(all(test, feature = "winnow-parser"))]
 mod tests {
     use super::*;
     use crate::{SourcePosition, SourceSpan};

@@ -1,9 +1,9 @@
 //! Test that winnow parser produces same results as PEG parser
 
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 use brush_parser::{ParserOptions, parse_tokens, tokenize_str};
 
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 #[test]
 fn test_winnow_vs_peg_simple_commands() {
     let test_cases = vec![
@@ -21,7 +21,7 @@ fn test_winnow_vs_peg_simple_commands() {
     }
 }
 
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 #[test]
 fn test_winnow_vs_peg_pipelines() {
     let test_cases = vec![
@@ -37,7 +37,7 @@ fn test_winnow_vs_peg_pipelines() {
     }
 }
 
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 #[test]
 fn test_winnow_vs_peg_redirects() {
     let test_cases = vec![

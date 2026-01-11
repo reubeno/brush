@@ -24,7 +24,7 @@ pub use error::{
 pub use error::miette::PrettyError;
 
 pub use parser::{Parser, ParserBuilder, ParserImpl, ParserOptions, SourceInfo, parse_tokens};
-#[cfg(feature = "use-winnow-parser")]
+#[cfg(feature = "winnow-parser")]
 pub use parser::{winnow, winnow_str};
 
 pub use source::{SourcePosition, SourcePositionOffset, SourceSpan};
