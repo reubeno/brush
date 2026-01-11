@@ -258,7 +258,7 @@ fn tilde_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
 
 /// Parse a newline character
 /// Corresponds to: `matches_operator("\n`") in winnow.rs
-#[inline(always)]
+#[inline]
 pub fn newline<'a>() -> impl Parser<StrStream<'a>, char, PError> {
     '\n'
 }
@@ -274,7 +274,7 @@ fn comment<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 /// Parse optional whitespace and comments (spaces, tabs, and comments, but NOT newlines)
 /// Handles both inter-token spaces and inline comments like: echo hello # comment
 /// This is needed to separate tokens on the same line
-#[inline(always)]
+#[inline]
 pub fn spaces<'a>() -> impl Parser<StrStream<'a>, (), PError> {
     (
         take_while(0.., |c: char| c == ' ' || c == '\t'), // Leading spaces
@@ -284,7 +284,7 @@ pub fn spaces<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 }
 
 /// Parse required whitespace (at least one space or tab, optionally followed by comment)
-#[inline(always)]
+#[inline]
 pub fn spaces1<'a>() -> impl Parser<StrStream<'a>, (), PError> {
     (
         take_while(1.., |c: char| c == ' ' || c == '\t'), // Required spaces
@@ -2304,8 +2304,7 @@ fn tokenize_extended_test(
             }
             '!' if !in_quotes
                 && chars.peek() != Some(&'=')
-                && (current_word.is_empty()
-                    || chars.peek().is_none_or(|&c| c.is_whitespace())) =>
+                && (current_word.is_empty() || chars.peek().is_none_or(|&c| c.is_whitespace())) =>
             {
                 push_word(&mut current_word, &mut tokens);
                 tokens.push(ExtTestToken::Not);
