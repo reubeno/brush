@@ -307,6 +307,13 @@ pub enum ErrorKind {
     /// Too many open files.
     #[error("too many open files")]
     TooManyOpenFiles,
+
+    /// The function name shadows a special built-in command.
+    #[error("function name '{}' shadows a special built-in command", .name)]
+    FunctionNameShadowsSpecialBuiltin {
+        /// Name of the function.
+        name: String,
+    },
 }
 
 impl BuiltinError for Error {}
@@ -340,6 +347,7 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
             ErrorKind::TestCommandParseError(..) => Self::InvalidUsage,
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
+            ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
             ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
             _ => Self::GeneralError,
         }

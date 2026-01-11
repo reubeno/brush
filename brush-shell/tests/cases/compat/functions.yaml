@@ -108,3 +108,28 @@ cases:
       }
 
       my/func
+
+  - name: "Functions shadowing builtins"
+    stdin: |
+      .() {
+          echo "In custom dot function"
+      }
+
+      echo "Func result: $?"
+
+      .
+      echo "Call result: $?"
+
+  - name: "Functions shadowing builtins (POSIX mode)"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+
+      .() {
+          echo "In custom dot function"
+      }
+
+      echo "Func result: $?"
+
+      .
+      echo "Call result: $?"

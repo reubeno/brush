@@ -386,10 +386,12 @@ impl<'a> SimpleCommand<'a> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 
-        // If we found a special builtin (that's not disabled), then invoke it.
-        if builtin
-            .as_ref()
-            .is_some_and(|r| !r.disabled && r.special_builtin)
+        // If we're in POSIX mode and found a special builtin (that's not disabled), then invoke it
+        // without considering functions.
+        if self.shell.options().posix_mode
+            && builtin
+                .as_ref()
+                .is_some_and(|r| !r.disabled && r.special_builtin)
         {
             #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
             let builtin = builtin.unwrap();
@@ -406,7 +408,8 @@ impl<'a> SimpleCommand<'a> {
             }
         }
 
-        // If we found a (non-special) builtin and it's not disabled, then invoke it.
+        // If we haven't yet resolved the command name and found a builtin that's not disabled,
+        // then invoke it.
         if let Some(builtin) = builtin {
             if !builtin.disabled {
                 return self.execute_via_builtin(builtin).await;
@@ -663,7 +666,12 @@ async fn execute_builtin_command(
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
-    (builtin.execute_func)(context, args).await
+    // In POSIX mode, special builtins that return errors are to be treated as fatal.
+    let mark_errors_fatal = builtin.special_builtin && context.shell.options().posix_mode;
+
+    (builtin.execute_func)(context, args)
+        .await
+        .map_err(|e| if mark_errors_fatal { e.into_fatal() } else { e })
 }
 
 pub(crate) async fn invoke_shell_function(
