@@ -2,6 +2,7 @@
 
 // For now, only compile this for Linux.
 #![cfg(target_os = "linux")]
+#![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Result;

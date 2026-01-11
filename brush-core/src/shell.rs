@@ -16,7 +16,7 @@ use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
     ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history, interfaces,
-    pathcache, pathsearch, trace_categories, wellknownvars,
+    ioutils, pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
@@ -1870,13 +1870,17 @@ impl Shell {
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> impl std::io::Write + 'static {
-        self.open_files.try_stdout().cloned().unwrap()
+        self.open_files.try_stdout().cloned().unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard output not available").into()
+        })
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write + 'static {
-        self.open_files.try_stderr().cloned().unwrap()
+        self.open_files.try_stderr().cloned().unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard error not available").into()
+        })
     }
 
     /// Outputs `set -x` style trace output for a command.

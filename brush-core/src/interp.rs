@@ -44,7 +44,9 @@ impl ExecutionParameters {
     ///
     /// * `shell` - The shell context.
     pub fn stdin(&self, shell: &Shell) -> impl std::io::Read + 'static {
-        self.try_stdin(shell).unwrap()
+        self.try_stdin(shell).unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard input not available").into()
+        })
     }
 
     /// Tries to retrieve the standard input file. Returns `None` if not set.
@@ -381,10 +383,9 @@ impl Execute for ast::Pipeline {
         }
 
         // If requested, report timing.
-        if let Some(timed) = &self.timed {
+        if let (Some(timed), Some(stopwatch)) = (&self.timed, &stopwatch) {
             if let Some(mut stderr) = params.try_fd(shell, openfiles::OpenFiles::STDERR_FD) {
-                let timing = stopwatch.unwrap().stop()?;
-
+                let timing = stopwatch.stop()?;
                 if timed.is_posix_output() {
                     std::write!(
                         stderr,

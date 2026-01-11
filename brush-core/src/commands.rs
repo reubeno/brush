@@ -378,6 +378,10 @@ impl<'a> SimpleCommand<'a> {
     /// The command may be a builtin, a shell function, or an externally
     /// executed command. This function's implementation is responsible for
     /// dispatching it appropriately according to the context provided.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "these unwrap calls should not panic"
+    )]
     pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
@@ -387,6 +391,7 @@ impl<'a> SimpleCommand<'a> {
             .as_ref()
             .is_some_and(|r| !r.disabled && r.special_builtin)
         {
+            #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
             let builtin = builtin.unwrap();
             return self.execute_via_builtin(builtin).await;
         }

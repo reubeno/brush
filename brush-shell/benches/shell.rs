@@ -1,6 +1,7 @@
 //! Benchmarks for the brush-shell crate.
 
 #![allow(missing_docs)]
+#![allow(clippy::unwrap_used)]
 
 #[cfg(unix)]
 mod unix {

@@ -1,5 +1,8 @@
 //! Implements a tokenizer and parsers for POSIX / bash shell syntax.
 
+// TODO(unwrap): remove or scope this allow attribute
+#![allow(clippy::unwrap_used)]
+
 pub mod arithmetic;
 pub mod ast;
 pub mod pattern;

@@ -107,7 +107,11 @@ impl builtins::Command for GetOptsCommand {
                     });
 
                 // Find the char.
-                let c = arg.chars().nth(next_char_index).unwrap();
+                let Some(c) = arg.chars().nth(next_char_index) else {
+                    // No more characters in this option; the index was invalid.
+                    return Ok(ExecutionResult::general_error());
+                };
+
                 let mut is_last_char_in_option = next_char_index == arg.len() - 1;
 
                 // Look up the char.

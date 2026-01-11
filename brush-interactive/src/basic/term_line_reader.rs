@@ -216,7 +216,6 @@ impl<'a> ReadLineState<'a> {
         }
     }
 
-    #[allow(clippy::unwrap_in_result)]
     #[expect(
         clippy::string_slice,
         reason = "all offsets are expected to be at char boundaries"
@@ -225,8 +224,10 @@ impl<'a> ReadLineState<'a> {
         &mut self,
         completions: &brush_core::completion::Completions,
     ) -> Result<(), ShellError> {
-        // Apply replacement directly.
-        let candidate = completions.candidates.iter().next().unwrap();
+        let Some(candidate) = completions.candidates.iter().next() else {
+            return Ok(());
+        };
+
         if completions.insertion_index + completions.delete_count != self.cursor {
             return Ok(());
         }

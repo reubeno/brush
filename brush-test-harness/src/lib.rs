@@ -16,6 +16,8 @@
 //!    Both must pass for the test to succeed.
 
 #![cfg(any(unix, windows))]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::unwrap_used)]
 
 mod comparison;
 mod config;

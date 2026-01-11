@@ -294,7 +294,9 @@ impl RuntimeOptions {
 
         for o in namedoptions::options(namedoptions::ShellOptionKind::Set).iter() {
             if o.definition.get(self) {
-                cs.push(o.name.chars().next().unwrap());
+                if let Some(c) = o.name.chars().next() {
+                    cs.push(c);
+                }
             }
         }
 

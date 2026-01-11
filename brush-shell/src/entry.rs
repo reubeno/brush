@@ -83,11 +83,12 @@ pub fn run() {
     #[cfg(not(any(unix, windows)))]
     let mut builder = tokio::runtime::Builder::new_current_thread();
 
-    let result = builder
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(run_async(args, parsed_args));
+    let Ok(runtime) = builder.enable_all().build() else {
+        tracing::error!("error: failed to create Tokio runtime");
+        std::process::exit(1);
+    };
+
+    let result = runtime.block_on(run_async(args, parsed_args));
 
     let exit_code = match result {
         Ok(code) => code,
@@ -147,7 +148,7 @@ async fn run_async(
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
-    let mut event_config = TRACE_EVENT_CONFIG.try_lock().unwrap();
+    let mut event_config = TRACE_EVENT_CONFIG.lock().await;
     *event_config = Some(events::TraceEventConfig::init(
         &args.enabled_debug_events,
         &args.disabled_events,

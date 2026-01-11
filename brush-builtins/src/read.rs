@@ -96,16 +96,15 @@ impl builtins::Command for ReadCommand {
         }
 
         // Find the input stream to use.
-        let input_stream = if let Some(fd_num) = self.fd_num_to_read {
-            let fd_num = brush_core::ShellFd::from(fd_num);
-            context
-                .try_fd(fd_num)
-                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?
-        } else {
-            context
-                .try_fd(brush_core::openfiles::OpenFiles::STDIN_FD)
-                .unwrap()
-        };
+        let fd_num = self.fd_num_to_read.map_or(
+            brush_core::openfiles::OpenFiles::STDIN_FD,
+            brush_core::ShellFd::from,
+        );
+
+        // Retrieve the file.
+        let input_stream = context
+            .try_fd(fd_num)
+            .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
 
         // Retrieve effective value of IFS for splitting.
         // We convert to owned String to release the borrow before the mutable borrow

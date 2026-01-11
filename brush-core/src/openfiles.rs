@@ -94,6 +94,8 @@ pub fn null() -> Result<OpenFile, error::Error> {
 
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
+        // TODO(unwrap): Need to revisit what we can do here.
+        #[allow(clippy::unwrap_used)]
         self.try_clone().unwrap()
     }
 }

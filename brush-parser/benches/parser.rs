@@ -1,6 +1,7 @@
 //! Benchmarks for the brush-parser crate.
 
 #![allow(missing_docs)]
+#![allow(clippy::unwrap_used)]
 
 #[cfg(unix)]
 mod unix {

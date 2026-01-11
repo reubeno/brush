@@ -5,6 +5,7 @@
 
 // For now, only compile this for Unix-like platforms (Linux, macOS).
 #![cfg(unix)]
+#![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Context;
