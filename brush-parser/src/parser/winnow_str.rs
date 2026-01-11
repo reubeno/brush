@@ -520,38 +520,42 @@ fn word_part<'a>(
     last_char: Option<char>,
 ) -> impl Parser<StrStream<'a>, Cow<'a, str>, PError> + 'a {
     move |input: &mut StrStream<'a>| {
-        // Check for tilde after colon if enabled and last char was ':'
-        if ctx.options.tilde_expansion_after_colon && last_char == Some(':') {
-            if peek_char().parse_next(input).ok() == Some('~') {
-                if let Ok(tilde_expr) = tilde_expansion().parse_next(input) {
-                    return Ok(Cow::Borrowed(tilde_expr));
-                }
-            }
-        }
+        // Fast path: dispatch on first character
+        let ch = peek_char().parse_next(input)?;
 
-        // Check for extended glob pattern if enabled
-        if ctx.options.enable_extended_globbing {
-            if let Some(pattern) = winnow::combinator::opt(extglob_pattern()).parse_next(input)? {
-                return Ok(Cow::Borrowed(pattern));
-            }
-        }
-
-        // Otherwise use standard dispatch
-        dispatch! {peek_char();
-            '\'' => single_quoted_string().map(Cow::Owned),
-            '"' => double_quoted_string().map(Cow::Owned),
+        match ch {
+            '\'' => single_quoted_string().map(Cow::Owned).parse_next(input),
+            '"' => double_quoted_string().map(Cow::Owned).parse_next(input),
             '$' => winnow::combinator::alt((
                 arithmetic_expansion(),      // $(( before $(
                 command_substitution(),       // $(
                 braced_variable(),            // ${ before $
                 special_parameter(),          // $1, $?, etc. before simple $VAR
                 simple_variable(),            // $VAR
-            )).map(Cow::Borrowed),
-            '`' => backtick_substitution().map(Cow::Borrowed),
-            '\\' => escape_sequence().map(|c| Cow::Owned(c.to_string())),
-            _ => bare_word().map(Cow::Borrowed),
+            )).map(Cow::Borrowed).parse_next(input),
+            '`' => backtick_substitution().map(Cow::Borrowed).parse_next(input),
+            '\\' => escape_sequence().map(|c| Cow::Owned(c.to_string())).parse_next(input),
+            _ => {
+                // Slow path: check for special cases, then fall back to bare_word
+
+                // Check for tilde after colon if enabled and last char was ':'
+                if ctx.options.tilde_expansion_after_colon && last_char == Some(':') && ch == '~' {
+                    if let Ok(tilde_expr) = tilde_expansion().parse_next(input) {
+                        return Ok(Cow::Borrowed(tilde_expr));
+                    }
+                }
+
+                // Check for extended glob pattern if enabled
+                if ctx.options.enable_extended_globbing {
+                    if let Some(pattern) = winnow::combinator::opt(extglob_pattern()).parse_next(input)? {
+                        return Ok(Cow::Borrowed(pattern));
+                    }
+                }
+
+                // Default: parse as bare word
+                bare_word().map(Cow::Borrowed).parse_next(input)
+            }
         }
-        .parse_next(input)
     }
 }
 
