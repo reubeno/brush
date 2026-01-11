@@ -49,13 +49,13 @@ pub struct PositionTracker {
     /// Cached positions of all newline characters in the input.
     /// Allows O(log m) line number lookup via binary search.
     line_breaks: Vec<usize>,
-    /// Cache original length for manual offset calculations (when not using LocatingSlice)
+    /// Cache original length for manual offset calculations (when not using `LocatingSlice`)
     #[allow(dead_code)]
     original_len: usize,
 }
 
 impl PositionTracker {
-    /// Creates a new PositionTracker for the given input string.
+    /// Creates a new `PositionTracker` for the given input string.
     ///
     /// Performs a one-time O(n) scan to cache all line break positions,
     /// enabling O(log m) line number lookups for the rest of parsing.
@@ -75,9 +75,9 @@ impl PositionTracker {
         }
     }
 
-    /// Get current offset from LocatingSlice
+    /// Get current offset from `LocatingSlice`
     #[inline]
-    fn offset_from_locating<'a>(&self, input: &LocatingSlice<&'a str>) -> usize {
+    fn offset_from_locating(&self, input: &LocatingSlice<&str>) -> usize {
         self.original_len - input.len()
     }
 
@@ -111,9 +111,9 @@ impl PositionTracker {
         }
     }
 
-    /// Convert a byte range to a SourceSpan (for use with LocatingSlice)
+    /// Convert a byte range to a `SourceSpan` (for use with `LocatingSlice`)
     ///
-    /// This is the primary method when using LocatingSlice.with_span()
+    /// This is the primary method when using `LocatingSlice.with_span()`
     #[inline]
     fn range_to_span(&self, range: std::ops::Range<usize>) -> SourceSpan {
         SourceSpan {
@@ -141,7 +141,7 @@ fn peek_op3<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
     }))
 }
 
-/// Helper: Peek at first character for word_part dispatch
+/// Helper: Peek at first character for `word_part` dispatch
 fn peek_char<'a>() -> impl Parser<StrStream<'a>, char, PError> {
     peek(winnow::token::any)
 }
@@ -238,7 +238,7 @@ fn parse_balanced_delimiters<'a>(
 
 /// Check if character is valid in a username for tilde expansion
 /// POSIX portable filename characters: alphanumeric, dot, underscore, hyphen, plus
-fn is_username_char(c: char) -> bool {
+const fn is_username_char(c: char) -> bool {
     matches!(c, 'A'..='Z' | 'a'..='z' | '0'..='9' | '.' | '_' | '-' | '+')
 }
 
@@ -257,7 +257,7 @@ fn tilde_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
 }
 
 /// Parse a newline character
-/// Corresponds to: matches_operator("\n") in winnow.rs
+/// Corresponds to: `matches_operator("\n`") in winnow.rs
 #[inline(always)]
 pub fn newline<'a>() -> impl Parser<StrStream<'a>, char, PError> {
     '\n'
@@ -298,7 +298,7 @@ pub fn spaces1<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 // ============================================================================
 
 /// Parse linebreak (zero or more newlines, with optional comments before each newline)
-/// Corresponds to: winnow.rs linebreak()
+/// Corresponds to: winnow.rs `linebreak()`
 /// Handles blank lines, comment-only lines, and lines with inline comments
 #[inline]
 pub fn linebreak<'a>() -> impl Parser<StrStream<'a>, (), PError> {
@@ -314,7 +314,7 @@ pub fn linebreak<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 }
 
 /// Parse newline list (one or more newlines, with optional comments before each newline)
-/// Corresponds to: winnow.rs newline_list()
+/// Corresponds to: winnow.rs `newline_list()`
 /// Handles blank lines, comment-only lines, and lines with inline comments
 #[inline]
 pub fn newline_list<'a>() -> impl Parser<StrStream<'a>, (), PError> {
@@ -331,7 +331,7 @@ pub fn newline_list<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 
 /// Parse separator operator (';' or '&')
 /// Must NOT be part of a longer operator like ';;', ';&', '&&', etc.
-/// Corresponds to: winnow.rs separator_op()
+/// Corresponds to: winnow.rs `separator_op()`
 #[inline]
 pub fn separator_op<'a>() -> impl Parser<StrStream<'a>, SeparatorOperator, PError> {
     winnow::combinator::alt((
@@ -347,16 +347,16 @@ pub fn separator_op<'a>() -> impl Parser<StrStream<'a>, SeparatorOperator, PErro
     ))
 }
 
-/// Parse separator (separator_op with linebreak, or newline_list)
+/// Parse separator (`separator_op` with linebreak, or `newline_list`)
 /// Returns Option<SeparatorOperator> - None means it was just newlines
-/// Corresponds to: winnow.rs separator() and peg.rs separator()
+/// Corresponds to: winnow.rs `separator()` and peg.rs `separator()`
 #[inline]
 fn separator<'a>() -> impl Parser<StrStream<'a>, Option<SeparatorOperator>, PError> {
     winnow::combinator::alt((
         // separator_op followed by optional linebreaks
-        (separator_op(), linebreak()).map(|(sep, _)| Some(sep)),
+        (separator_op(), linebreak()).map(|(sep, ())| Some(sep)),
         // OR just one or more newlines (acts as sequence separator)
-        newline_list().map(|_| None),
+        newline_list().map(|()| None),
     ))
 }
 
@@ -365,7 +365,7 @@ fn separator<'a>() -> impl Parser<StrStream<'a>, Option<SeparatorOperator>, PErr
 // ============================================================================
 
 /// Parse a bare word (literal characters only, no quotes or expansions)
-/// Corresponds to the literal_chars part of tokenizer's word parsing
+/// Corresponds to the `literal_chars` part of tokenizer's word parsing
 ///
 /// A word character is anything that's NOT:
 /// - Whitespace: ' ', '\t', '\n', '\r'
@@ -377,8 +377,8 @@ fn separator<'a>() -> impl Parser<StrStream<'a>, Option<SeparatorOperator>, PErr
 ///
 /// Note: Shell keywords (if, then, fi, etc.) are NOT excluded here because they
 /// can be used as regular words in non-keyword contexts (e.g., "echo done").
-/// The command() parser tries compound commands first, so keywords in keyword
-/// positions will be matched by compound command parsers before bare_word sees them.
+/// The `command()` parser tries compound commands first, so keywords in keyword
+/// positions will be matched by compound command parsers before `bare_word` sees them.
 pub fn bare_word<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
     take_while(1.., |c: char| {
         !matches!(
@@ -394,7 +394,7 @@ pub fn bare_word<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
 ///
 /// Note: This list includes "time" and "coproc" which are bash reserved words
 /// but are not included in the PEG parser's reserved word list. This is
-/// intentional - winnow_str is more accurate to actual bash behavior.
+/// intentional - `winnow_str` is more accurate to actual bash behavior.
 fn is_reserved_word(s: &str) -> bool {
     matches!(
         s,
@@ -514,7 +514,7 @@ pub fn escape_sequence<'a>() -> impl Parser<StrStream<'a>, char, PError> {
 
 /// Parse a word part (bare text, single quote, double quote, escape, or expansion)
 /// Returns the string value of the part
-/// The last_char parameter helps detect tilde-after-colon
+/// The `last_char` parameter helps detect tilde-after-colon
 fn word_part<'a>(
     ctx: &'a ParseContext<'a>,
     last_char: Option<char>,
@@ -567,7 +567,7 @@ fn word_part<'a>(
 
 /// Parse a word (one or more word parts combined)
 /// Handles quoted strings, escapes, and bare text
-/// Corresponds to: tokenizer's word parsing + winnow.rs word_as_ast()
+/// Corresponds to: tokenizer's word parsing + winnow.rs `word_as_ast()`
 pub fn word_as_ast<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -613,7 +613,7 @@ pub fn word_as_ast<'a>(
 }
 
 /// Parse a wordlist (one or more words separated by spaces)
-/// Corresponds to: winnow.rs wordlist()
+/// Corresponds to: winnow.rs `wordlist()`
 pub fn wordlist<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -628,7 +628,7 @@ pub fn wordlist<'a>(
 // ============================================================================
 
 /// Parse an I/O file descriptor number (0-9)
-/// Corresponds to: winnow.rs io_number()
+/// Corresponds to: winnow.rs `io_number()`
 pub fn io_number<'a>() -> impl Parser<StrStream<'a>, i32, PError> {
     winnow::token::take_while(1.., |c: char| c.is_ascii_digit())
         .verify(|s: &str| s.len() == 1) // Only single digit fd numbers
@@ -636,7 +636,7 @@ pub fn io_number<'a>() -> impl Parser<StrStream<'a>, i32, PError> {
 }
 
 /// Parse redirect operator and return the redirect kind
-/// Corresponds to: winnow.rs io_file() dispatcher
+/// Corresponds to: winnow.rs `io_file()` dispatcher
 fn redirect_operator<'a>() -> impl Parser<StrStream<'a>, ast::IoFileRedirectKind, PError> {
     dispatch! {peek_op2();
         ">>" => ">>".value(ast::IoFileRedirectKind::Append),
@@ -651,7 +651,7 @@ fn redirect_operator<'a>() -> impl Parser<StrStream<'a>, ast::IoFileRedirectKind
 }
 
 /// Parse a here-document delimiter, handling quotes
-/// Returns (delimiter_text, requires_expansion)
+/// Returns (`delimiter_text`, `requires_expansion`)
 fn here_document_delimiter<'a>() -> impl Parser<StrStream<'a>, (String, bool), PError> {
     move |input: &mut StrStream<'a>| {
         let mut delimiter = String::new();
@@ -812,7 +812,7 @@ fn here_document<'a>() -> impl Parser<StrStream<'a>, (Option<i32>, ast::IoHereDo
 }
 
 /// Parse a file redirect (e.g., "> file", "2>&1", "< input")
-/// Corresponds to: winnow.rs io_file() + io_redirect()
+/// Corresponds to: winnow.rs `io_file()` + `io_redirect()`
 pub fn io_redirect<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -871,7 +871,7 @@ pub fn io_redirect<'a>(
 }
 
 /// Parse a redirect list (one or more redirects)
-/// Corresponds to: winnow.rs redirect_list()
+/// Corresponds to: winnow.rs `redirect_list()`
 pub fn redirect_list<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -939,7 +939,7 @@ fn array_element<'a>() -> impl Parser<StrStream<'a>, (Option<ast::Word>, ast::Wo
 }
 
 /// Parse an assignment word (VAR=value or VAR+=value or VAR=(array elements))
-/// Returns (Assignment, original word as ast::Word)
+/// Returns (Assignment, original word as `ast::Word`)
 fn assignment_word<'a>() -> impl Parser<StrStream<'a>, (ast::Assignment, ast::Word), PError> {
     move |input: &mut StrStream<'a>| {
         // Parse variable name (must start with letter or underscore)
@@ -966,7 +966,7 @@ fn assignment_word<'a>() -> impl Parser<StrStream<'a>, (ast::Assignment, ast::Wo
             // Parse array elements
             let mut elements = Vec::new();
             let mut full_word = String::with_capacity(var_name.len() + 16);
-            full_word.push_str(&var_name);
+            full_word.push_str(var_name);
             if append {
                 full_word.push_str("+=(");
             } else {
@@ -1032,7 +1032,7 @@ fn assignment_word<'a>() -> impl Parser<StrStream<'a>, (ast::Assignment, ast::Wo
 
         // Construct the full assignment word for AST
         let mut full_word = String::with_capacity(var_name.len() + value_str.len() + 2);
-        full_word.push_str(&var_name);
+        full_word.push_str(var_name);
         if append {
             full_word.push_str("+=");
         } else {
@@ -1053,8 +1053,8 @@ fn assignment_word<'a>() -> impl Parser<StrStream<'a>, (ast::Assignment, ast::Wo
     }
 }
 
-/// Parse cmd_prefix (assignments and redirects before command name)
-/// Corresponds to: peg.rs cmd_prefix()
+/// Parse `cmd_prefix` (assignments and redirects before command name)
+/// Corresponds to: peg.rs `cmd_prefix()`
 pub fn cmd_prefix<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1077,9 +1077,9 @@ pub fn cmd_prefix<'a>(
     }
 }
 
-/// Parse cmd_suffix (arguments and redirections)
+/// Parse `cmd_suffix` (arguments and redirections)
 /// Now supports words, redirections, and process substitutions
-/// Corresponds to: winnow.rs cmd_suffix()
+/// Corresponds to: winnow.rs `cmd_suffix()`
 pub fn cmd_suffix<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1108,7 +1108,7 @@ pub fn cmd_suffix<'a>(
 
 /// Parse a simple command (command name + optional arguments)
 /// Now supports: prefix (assignments/redirects) + optional command + optional suffix
-/// Corresponds to: peg.rs simple_command()
+/// Corresponds to: peg.rs `simple_command()`
 pub fn simple_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1118,11 +1118,7 @@ pub fn simple_command<'a>(
         let prefix = winnow::combinator::opt(cmd_prefix(ctx, tracker)).parse_next(input)?;
 
         // Try to parse optional command name (must not be reserved word)
-        let word_or_name = if let Ok(name) = non_reserved_word(ctx, tracker).parse_next(input) {
-            Some(name)
-        } else {
-            None
-        };
+        let word_or_name = non_reserved_word(ctx, tracker).parse_next(input).ok();
 
         // Try to parse optional suffix (args and/or redirects)
         let suffix = winnow::combinator::opt(cmd_suffix(ctx, tracker)).parse_next(input)?;
@@ -1155,8 +1151,7 @@ fn optional_redirects<'a>(
         let has_redirect = remaining
             .chars()
             .next()
-            .map(|c| c == '<' || c == '>' || c.is_ascii_digit())
-            .unwrap_or(false);
+            .is_some_and(|c| c == '<' || c == '>' || c.is_ascii_digit());
 
         if has_redirect {
             winnow::combinator::opt(redirect_list(ctx, tracker)).parse_next(input)
@@ -1167,7 +1162,7 @@ fn optional_redirects<'a>(
 }
 
 /// Parse a command (simple or compound)
-/// Corresponds to: winnow.rs command()
+/// Corresponds to: winnow.rs `command()`
 pub fn command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1249,7 +1244,7 @@ pub fn command<'a>(
 // ============================================================================
 
 /// Parse pipe operator ('|' or '|&')
-/// Corresponds to: winnow.rs pipe_operator()
+/// Corresponds to: winnow.rs `pipe_operator()`
 /// Returns true if it's |& (pipe stderr too)
 #[inline]
 pub fn pipe_operator<'a>() -> impl Parser<StrStream<'a>, bool, PError> {
@@ -1303,7 +1298,7 @@ fn add_pipe_extension_redirect(cmd: &mut ast::Command) {
 }
 
 /// Parse pipe sequence (command | command | command)
-/// Corresponds to: winnow.rs pipe_sequence()
+/// Corresponds to: winnow.rs `pipe_sequence()`
 pub fn pipe_sequence<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1373,7 +1368,7 @@ fn pipeline_bang<'a>() -> impl Parser<StrStream<'a>, usize, PError> {
 }
 
 /// Parse a pipeline
-/// Corresponds to: winnow.rs pipeline() with full support for time and bang
+/// Corresponds to: winnow.rs `pipeline()` with full support for time and bang
 pub fn pipeline<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1400,7 +1395,7 @@ pub fn pipeline<'a>(
 // ============================================================================
 
 /// Parse and/or operator ('&&' or '||')
-/// Corresponds to: winnow.rs and_or_op()
+/// Corresponds to: winnow.rs `and_or_op()`
 /// Returns true for And (&&), false for Or (||)
 #[inline]
 pub fn and_or_op<'a>() -> impl Parser<StrStream<'a>, bool, PError> {
@@ -1412,7 +1407,7 @@ pub fn and_or_op<'a>() -> impl Parser<StrStream<'a>, bool, PError> {
 }
 
 /// Parse and/or continuation (operator + pipeline)
-/// Corresponds to: winnow.rs and_or_continuation()
+/// Corresponds to: winnow.rs `and_or_continuation()`
 fn and_or_continuation<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1434,7 +1429,7 @@ fn and_or_continuation<'a>(
 }
 
 /// Parse and/or list (pipelines connected with && or ||)
-/// Corresponds to: winnow.rs and_or()
+/// Corresponds to: winnow.rs `and_or()`
 pub fn and_or<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1459,8 +1454,8 @@ pub fn and_or<'a>(
 // ============================================================================
 
 /// Parse a compound list (used inside subshells, brace groups, etc.)
-/// Similar to complete_command but with optional leading linebreaks and more flexible separators
-/// Corresponds to: winnow.rs compound_list()
+/// Similar to `complete_command` but with optional leading linebreaks and more flexible separators
+/// Corresponds to: winnow.rs `compound_list()`
 pub fn compound_list<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1479,19 +1474,16 @@ pub fn compound_list<'a>(
             // Try to get separator after current and_or (handles both ; & and newlines)
             spaces().parse_next(input)?;
 
-            let sep_opt = match separator().parse_next(input) {
-                Ok(sep_opt) => {
-                    spaces().parse_next(input)?;
-                    sep_opt
-                }
-                Err(_) => {
-                    // No separator - add current and_or with default separator and we're done
-                    items.push(ast::CompoundListItem(
-                        current_ao,
-                        ast::SeparatorOperator::Sequence,
-                    ));
-                    break;
-                }
+            let sep_opt = if let Ok(sep_opt) = separator().parse_next(input) {
+                spaces().parse_next(input)?;
+                sep_opt
+            } else {
+                // No separator - add current and_or with default separator and we're done
+                items.push(ast::CompoundListItem(
+                    current_ao,
+                    ast::SeparatorOperator::Sequence,
+                ));
+                break;
             };
 
             // Convert Option<SeparatorOperator> to SeparatorOperator (None means newline, treat as
@@ -1499,17 +1491,14 @@ pub fn compound_list<'a>(
             let sep = sep_opt.unwrap_or(ast::SeparatorOperator::Sequence);
 
             // We have a separator, check if there's another and_or after it
-            match and_or(ctx, tracker).parse_next(input) {
-                Ok(next_ao) => {
-                    // Push current and_or with its separator, then move to next
-                    items.push(ast::CompoundListItem(current_ao, sep));
-                    current_ao = next_ao;
-                }
-                Err(_) => {
-                    // Trailing separator - push current and_or with the separator
-                    items.push(ast::CompoundListItem(current_ao, sep));
-                    break;
-                }
+            if let Ok(next_ao) = and_or(ctx, tracker).parse_next(input) {
+                // Push current and_or with its separator, then move to next
+                items.push(ast::CompoundListItem(current_ao, sep));
+                current_ao = next_ao;
+            } else {
+                // Trailing separator - push current and_or with the separator
+                items.push(ast::CompoundListItem(current_ao, sep));
+                break;
             }
         }
 
@@ -1518,7 +1507,7 @@ pub fn compound_list<'a>(
 }
 
 /// Parse a subshell: ( commands )
-/// Corresponds to: winnow.rs subshell()
+/// Corresponds to: winnow.rs `subshell()`
 pub fn subshell<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1540,7 +1529,7 @@ pub fn subshell<'a>(
 }
 
 /// Parse a brace group: { commands; }
-/// Corresponds to: winnow.rs brace_group()
+/// Corresponds to: winnow.rs `brace_group()`
 pub fn brace_group<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1575,7 +1564,7 @@ pub fn brace_group<'a>(
 }
 
 /// Parse process substitution: <(command) or >(command)
-/// Corresponds to: peg.rs process_substitution()
+/// Corresponds to: peg.rs `process_substitution()`
 pub fn process_substitution<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1611,7 +1600,7 @@ pub fn process_substitution<'a>(
 // ============================================================================
 
 /// Parse a sequential separator (semicolon or newlines)
-/// Corresponds to: winnow.rs sequential_sep()
+/// Corresponds to: winnow.rs `sequential_sep()`
 #[inline]
 pub fn sequential_sep<'a>() -> impl Parser<StrStream<'a>, (), PError> {
     winnow::combinator::alt(((';', linebreak()).void(), newline_list().void()))
@@ -1635,7 +1624,7 @@ fn is_valid_name(s: &str) -> bool {
 }
 
 /// Parse a valid variable name
-/// Corresponds to: winnow.rs name()
+/// Corresponds to: winnow.rs `name()`
 pub fn name<'a>() -> impl Parser<StrStream<'a>, String, PError> {
     winnow::combinator::preceded(spaces(), bare_word())
         .verify(|s: &str| is_valid_name(s))
@@ -1664,7 +1653,7 @@ fn keyword<'a>(word: &'static str) -> impl Parser<StrStream<'a>, &'a str, PError
 }
 
 /// Parse a do group: do ... done
-/// Corresponds to: winnow.rs do_group()
+/// Corresponds to: winnow.rs `do_group()`
 pub fn do_group<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1718,7 +1707,7 @@ fn else_clause<'a>(
 }
 
 /// Parse an if clause: if ... then ... [elif ... then ...]* [else ...] fi
-/// Corresponds to: winnow.rs if_clause()
+/// Corresponds to: winnow.rs `if_clause()`
 pub fn if_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1755,7 +1744,7 @@ pub fn if_clause<'a>(
 }
 
 /// Parse a while clause: while ... do ... done
-/// Corresponds to: winnow.rs while_clause()
+/// Corresponds to: winnow.rs `while_clause()`
 pub fn while_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1775,7 +1764,7 @@ pub fn while_clause<'a>(
 }
 
 /// Parse an until clause: until ... do ... done
-/// Corresponds to: winnow.rs until_clause()
+/// Corresponds to: winnow.rs `until_clause()`
 pub fn until_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1799,7 +1788,7 @@ pub fn until_clause<'a>(
 // ============================================================================
 
 /// Parse a for clause: for var in list; do ... done
-/// Corresponds to: winnow.rs for_clause()
+/// Corresponds to: winnow.rs `for_clause()`
 pub fn for_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1935,7 +1924,7 @@ fn case_list<'a>(
 }
 
 /// Parse a case clause: case word in patterns) commands ;; esac
-/// Corresponds to: winnow.rs case_clause()
+/// Corresponds to: winnow.rs `case_clause()`
 pub fn case_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -1974,7 +1963,7 @@ pub fn case_clause<'a>(
 
 /// Parse arithmetic expression inside (( ))
 /// Collects all content until ")) or ; (at depth 0) is found, tracking paren depth
-/// Corresponds to: winnow.rs arithmetic_expression()
+/// Corresponds to: winnow.rs `arithmetic_expression()`
 fn arithmetic_expression<'a>() -> impl Parser<StrStream<'a>, ast::UnexpandedArithmeticExpr, PError>
 {
     move |input: &mut StrStream<'a>| {
@@ -2050,7 +2039,7 @@ fn arithmetic_expression<'a>() -> impl Parser<StrStream<'a>, ast::UnexpandedArit
 }
 
 /// Parse arithmetic command (( expr ))
-/// Corresponds to: winnow.rs arithmetic_command()
+/// Corresponds to: winnow.rs `arithmetic_command()`
 pub fn arithmetic_command<'a>(
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::ArithmeticCommand, PError> + 'a {
@@ -2077,7 +2066,7 @@ pub fn arithmetic_command<'a>(
 }
 
 /// Parse commands starting with '(' - either arithmetic (( )) or subshell ( )
-/// Corresponds to: winnow.rs paren_compound()
+/// Corresponds to: winnow.rs `paren_compound()`
 fn paren_compound<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2105,8 +2094,8 @@ fn paren_compound<'a>(
 // Tier 16: Arithmetic For Loops
 // ============================================================================
 
-/// Parse arithmetic for body (do_group or brace_group)
-/// Corresponds to: winnow.rs arithmetic_for_body() and peg.rs arithmetic_for_body()
+/// Parse arithmetic for body (`do_group` or `brace_group`)
+/// Corresponds to: winnow.rs `arithmetic_for_body()` and peg.rs `arithmetic_for_body()`
 /// Accepts: "; do", "\n do", or just " do" (spaces are consumed by keyword("do"))
 fn arithmetic_for_body<'a>(
     ctx: &'a ParseContext<'a>,
@@ -2129,7 +2118,7 @@ fn arithmetic_for_body<'a>(
 }
 
 /// Parse arithmetic for clause: for (( init; cond; update )) body
-/// Corresponds to: winnow.rs arithmetic_for_clause()
+/// Corresponds to: winnow.rs `arithmetic_for_clause()`
 pub fn arithmetic_for_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2176,7 +2165,7 @@ pub fn arithmetic_for_clause<'a>(
 }
 
 /// Parse commands starting with 'for' - either regular for or arithmetic for
-/// Corresponds to: winnow.rs for_or_arithmetic_for()
+/// Corresponds to: winnow.rs `for_or_arithmetic_for()`
 fn for_or_arithmetic_for<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2205,7 +2194,7 @@ fn for_or_arithmetic_for<'a>(
 // ============================================================================
 
 /// Parse a unary test operator (-f, -z, -n, etc.)
-/// Corresponds to: winnow.rs parse_unary_operator()
+/// Corresponds to: winnow.rs `parse_unary_operator()`
 fn parse_unary_operator(op: &str) -> Option<ast::UnaryPredicate> {
     use ast::UnaryPredicate;
     match op {
@@ -2238,7 +2227,7 @@ fn parse_unary_operator(op: &str) -> Option<ast::UnaryPredicate> {
 }
 
 /// Parse a binary test operator (=, !=, -eq, -lt, etc.)
-/// Corresponds to: winnow.rs parse_binary_operator()
+/// Corresponds to: winnow.rs `parse_binary_operator()`
 fn parse_binary_operator(op: &str) -> Option<ast::BinaryPredicate> {
     use ast::BinaryPredicate;
     match op {
@@ -2316,7 +2305,7 @@ fn tokenize_extended_test(
             '!' if !in_quotes
                 && chars.peek() != Some(&'=')
                 && (current_word.is_empty()
-                    || chars.peek().map_or(true, |&c| c.is_whitespace())) =>
+                    || chars.peek().is_none_or(|&c| c.is_whitespace())) =>
             {
                 push_word(&mut current_word, &mut tokens);
                 tokens.push(ExtTestToken::Not);
@@ -2347,11 +2336,11 @@ struct ExtTestParser {
 }
 
 impl ExtTestParser {
-    fn new(tokens: Vec<ExtTestToken>) -> Self {
+    const fn new(tokens: Vec<ExtTestToken>) -> Self {
         Self { tokens, pos: 0 }
     }
 
-    fn is_at_end(&self) -> bool {
+    const fn is_at_end(&self) -> bool {
         self.pos >= self.tokens.len()
     }
 
@@ -2377,7 +2366,7 @@ impl ExtTestParser {
     }
 
     /// Expect a regex word - allows | ( ) in the pattern
-    /// Corresponds to: peg.rs regex_word()
+    /// Corresponds to: peg.rs `regex_word()`
     fn expect_regex_word(&mut self) -> Result<String, winnow::error::ErrMode<ContextError>> {
         let mut result = String::new();
         let mut found_something = false;
@@ -2543,7 +2532,7 @@ fn parse_extended_test_expr(
 }
 
 /// Parse extended test command: [[ expression ]]
-/// Corresponds to: winnow.rs extended_test_command()
+/// Corresponds to: winnow.rs `extended_test_command()`
 pub fn extended_test_command<'a>(
     _ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2600,7 +2589,7 @@ pub fn extended_test_command<'a>(
 // ============================================================================
 
 /// Parse a compound command - tries all compound command types
-/// Corresponds to: winnow.rs compound_command()
+/// Corresponds to: winnow.rs `compound_command()`
 pub fn compound_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2624,7 +2613,7 @@ pub fn compound_command<'a>(
 }
 
 /// Parse function body (compound command with optional redirects)
-/// Corresponds to: winnow.rs function_body()
+/// Corresponds to: winnow.rs `function_body()`
 fn function_body<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2642,7 +2631,7 @@ fn function_body<'a>(
 }
 
 /// Parse function definition
-/// Corresponds to: winnow.rs function_definition()
+/// Corresponds to: winnow.rs `function_definition()`
 pub fn function_definition<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2697,7 +2686,7 @@ pub fn function_definition<'a>(
 // ============================================================================
 
 /// Parse a complete command (and/or lists with separators)
-/// Corresponds to: winnow.rs complete_command()
+/// Corresponds to: winnow.rs `complete_command()`
 pub fn complete_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2748,7 +2737,7 @@ pub fn complete_command<'a>(
 }
 
 /// Parse a newline-separated complete command continuation
-/// Corresponds to: winnow.rs complete_command_continuation()
+/// Corresponds to: winnow.rs `complete_command_continuation()`
 fn complete_command_continuation<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2760,7 +2749,7 @@ fn complete_command_continuation<'a>(
 }
 
 /// Parse multiple complete commands separated by newlines
-/// Corresponds to: winnow.rs complete_commands()
+/// Corresponds to: winnow.rs `complete_commands()`
 pub fn complete_commands<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2783,7 +2772,7 @@ pub fn complete_commands<'a>(
 }
 
 /// Parse a complete program
-/// Corresponds to: winnow.rs program()
+/// Corresponds to: winnow.rs `program()`
 pub fn program<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
@@ -2794,7 +2783,7 @@ pub fn program<'a>(
             complete_commands(ctx, tracker),
         )
             .map(
-                |(_, complete_commands): ((), Vec<ast::CompleteCommand>)| ast::Program {
+                |((), complete_commands): ((), Vec<ast::CompleteCommand>)| ast::Program {
                     complete_commands,
                 },
             )
@@ -2804,17 +2793,17 @@ pub fn program<'a>(
 
 /// Parse a shell program from a string with full source location tracking
 ///
-/// This is the main entry point for parsing shell scripts using the winnow_str parser.
-/// It creates a PositionTracker for efficient line/column lookup and parses the entire program.
+/// This is the main entry point for parsing shell scripts using the `winnow_str` parser.
+/// It creates a `PositionTracker` for efficient line/column lookup and parses the entire program.
 ///
 /// # Arguments
 /// * `input` - The shell script source code to parse
-/// * `_options` - Parser options (not yet used by winnow_str parser)
-/// * `_source_info` - Source file information (not yet used by winnow_str parser)
+/// * `_options` - Parser options (not yet used by `winnow_str` parser)
+/// * `_source_info` - Source file information (not yet used by `winnow_str` parser)
 ///
-/// Note: The winnow_str parser currently doesn't implement extended globbing, tilde expansion,
+/// Note: The `winnow_str` parser currently doesn't implement extended globbing, tilde expansion,
 /// or POSIX/SH mode differences, so the options parameter is accepted for API compatibility
-/// but not used. Similarly, source_info is not yet used for error reporting.
+/// but not used. Similarly, `source_info` is not yet used for error reporting.
 ///
 /// # Example
 /// ```ignore

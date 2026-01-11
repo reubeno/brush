@@ -51,7 +51,7 @@ pub type TokenStream<'a> = &'a [Token];
 pub type StatefulStream<'a> = Stateful<&'a [Token], ParserContext<'a>>;
 
 /// Create a stateful stream from tokens and context
-pub fn make_stream<'a>(tokens: &'a [Token], ctx: ParserContext<'a>) -> StatefulStream<'a> {
+pub const fn make_stream<'a>(tokens: &'a [Token], ctx: ParserContext<'a>) -> StatefulStream<'a> {
     Stateful {
         input: tokens,
         state: ctx,
@@ -71,7 +71,7 @@ pub fn word<'a>() -> impl Parser<&'a [Token], &'a Token, PError> {
 }
 
 /// Match specific operator
-pub fn matches_operator<'a>(op: &'a str) -> impl Parser<&'a [Token], &'a Token, PError> + 'a {
+pub fn matches_operator(op: &str) -> impl Parser<&[Token], &Token, PError> + '_ {
     take(1usize).verify_map(move |slice: &[Token]| match &slice[0] {
         token @ Token::Operator(s, _) if s == op => Some(token),
         _ => None,
@@ -79,7 +79,7 @@ pub fn matches_operator<'a>(op: &'a str) -> impl Parser<&'a [Token], &'a Token, 
 }
 
 /// Match specific word
-pub fn matches_word<'a>(w: &'a str) -> impl Parser<&'a [Token], &'a Token, PError> + 'a {
+pub fn matches_word(w: &str) -> impl Parser<&[Token], &Token, PError> + '_ {
     take(1usize).verify_map(move |slice: &[Token]| match &slice[0] {
         token @ Token::Word(s, _) if s == w => Some(token),
         _ => None,
@@ -113,8 +113,8 @@ pub fn newline_list<'a>() -> impl Parser<&'a [Token], (), PError> {
 }
 
 /// Helper function to map an operator to a value
-/// This is a convenience wrapper around matches_operator(op).value(value)
-fn op_value<'a, T>(op: &'a str, value: T) -> impl Parser<&'a [Token], T, PError>
+/// This is a convenience wrapper around `matches_operator(op).value(value)`
+fn op_value<T>(op: &str, value: T) -> impl Parser<&[Token], T, PError>
 where
     T: Clone,
 {
@@ -138,25 +138,25 @@ pub fn separator_op<'a>() -> impl Parser<&'a [Token], SeparatorOperator, PError>
     }
 }
 
-/// Parse separator (separator_op with linebreak, or newline_list)
+/// Parse separator (`separator_op` with linebreak, or `newline_list`)
 /// Returns Option<SeparatorOperator> - None means it was just newlines
 pub fn separator<'a>() -> impl Parser<&'a [Token], Option<SeparatorOperator>, PError> {
     alt((
-        (separator_op(), linebreak()).map(|(s, _)| Some(s)),
-        newline_list().map(|_| None),
+        (separator_op(), linebreak()).map(|(s, ())| Some(s)),
+        newline_list().map(|()| None),
     ))
 }
 
-/// Parse sequential separator (; followed by linebreak, or newline_list)
+/// Parse sequential separator (; followed by linebreak, or `newline_list`)
 pub fn sequential_sep<'a>() -> impl Parser<&'a [Token], (), PError> {
     alt((
         (matches_operator(";"), linebreak()).map(|_| ()),
-        newline_list().map(|_| ()),
+        newline_list().map(|()| ()),
     ))
 }
 
 /// Parse AND/OR operator (&& or ||)
-/// Returns a function that wraps a Pipeline into an AndOr variant
+/// Returns a function that wraps a Pipeline into an `AndOr` variant
 pub fn and_or_op<'a>()
 -> impl Parser<&'a [Token], fn(crate::ast::Pipeline) -> crate::ast::AndOr, PError> {
     dispatch! {peek_operator();
@@ -366,11 +366,11 @@ where
 }
 
 /// Inner function for heredoc parsing that handles the complete parsing pipeline
-/// Takes the heredoc operator and remove_tabs flag, returns a parser
-fn io_here_inner<'a>(
-    op: &'a str,
+/// Takes the heredoc operator and `remove_tabs` flag, returns a parser
+fn io_here_inner(
+    op: &str,
     remove_tabs: bool,
-) -> impl Parser<&'a [Token], crate::ast::IoHereDocument, PError> {
+) -> impl Parser<&[Token], crate::ast::IoHereDocument, PError> {
     (matches_operator(op), cut_err((word(), word(), word()))).verify_map(
         move |(_, (tag, doc, closing))| {
             if tag.to_str() == closing.to_str() {
@@ -484,7 +484,7 @@ pub fn array_assignment_word<'a>() -> impl Parser<&'a [Token], AssignmentResult,
         word().verify(|tok: &&Token| {
             tok.to_str()
                 .strip_suffix('=')
-                .map_or(false, |name| is_valid_name(name))
+                .is_some_and(is_valid_name)
         }),
         matches_operator("("),
         array_elements(),
@@ -564,13 +564,13 @@ pub fn any<'a>() -> impl Parser<&'a [Token], &'a Token, PError> {
 }
 
 /// Parse command name (non-reserved word)
-/// cmd_name is just an alias for non_reserved_word in POSIX grammar
+/// `cmd_name` is just an alias for `non_reserved_word` in POSIX grammar
 pub fn cmd_name<'a>() -> impl Parser<&'a [Token], &'a Token, PError> {
     non_reserved_word()
 }
 
 /// Parse command word - a non-reserved word that is NOT an assignment
-/// This is used after cmd_prefix to get the actual command name
+/// This is used after `cmd_prefix` to get the actual command name
 pub fn cmd_word<'a>() -> impl Parser<&'a [Token], &'a Token, PError> {
     // Optimized: Fast path check instead of expensive parse_scalar_assignment()
     word().verify(|tok: &&Token| {
@@ -674,7 +674,7 @@ pub fn cmd_suffix<'a>() -> impl Parser<&'a [Token], crate::ast::CommandSuffix, P
 }
 
 /// Parse a simple command
-/// Grammar: cmd_prefix (cmd_word cmd_suffix?)? | cmd_name cmd_suffix?
+/// Grammar: `cmd_prefix` (`cmd_word` `cmd_suffix`?)? | `cmd_name` `cmd_suffix`?
 pub fn simple_command<'a>() -> impl Parser<&'a [Token], crate::ast::SimpleCommand, PError> {
     // Use lookahead to determine which form to try first
     // If the first token looks like an assignment or redirect, try Form 1 (prefix) first
@@ -957,7 +957,7 @@ pub fn extended_test_command<'a>()
             test_tokens.push(any().parse_next(input)?.clone());
         }
 
-        let end = test_tokens.last().unwrap_or(&start);
+        let end = test_tokens.last().unwrap_or(start);
 
         // Parse the test expression
         let expr = parse_extended_test_tokens(&test_tokens)?;
@@ -1043,7 +1043,7 @@ fn and_or_continuation<'a>() -> impl Parser<StatefulStream<'a>, crate::ast::AndO
     }
 }
 
-/// Parse and_or list (pipelines connected with && or ||)
+/// Parse `and_or` list (pipelines connected with && or ||)
 pub fn and_or<'a>() -> impl Parser<StatefulStream<'a>, crate::ast::AndOrList, StatefulError> {
     move |input: &mut StatefulStream<'a>| {
         let first = pipeline().parse_next(input)?;
@@ -1241,7 +1241,7 @@ pub fn arithmetic_for_clause<'a>()
     }
 }
 
-/// Parse arithmetic for body (do_group or brace_group)
+/// Parse arithmetic for body (`do_group` or `brace_group`)
 // TODO peek() on sequential_sep()
 fn arithmetic_for_body<'a>()
 -> impl Parser<StatefulStream<'a>, crate::ast::DoGroupCommand, StatefulError> {
@@ -1719,21 +1719,18 @@ pub fn pipe_sequence<'a>()
             linebreak().parse_next(&mut input.input)?;
 
             // Try to parse the next command
-            match command().parse_next(input) {
-                Ok(cmd) => {
-                    // If |& was used, add stderr->stdout redirect to previous command
-                    if is_pipe_and {
-                        if let Some(last_cmd) = commands.last_mut() {
-                            add_stderr_redirect(last_cmd);
-                        }
+            if let Ok(cmd) = command().parse_next(input) {
+                // If |& was used, add stderr->stdout redirect to previous command
+                if is_pipe_and {
+                    if let Some(last_cmd) = commands.last_mut() {
+                        add_stderr_redirect(last_cmd);
                     }
-                    commands.push(cmd);
                 }
-                Err(_) => {
-                    // No command after pipe - restore and break
-                    input.reset(&checkpoint);
-                    break;
-                }
+                commands.push(cmd);
+            } else {
+                // No command after pipe - restore and break
+                input.reset(&checkpoint);
+                break;
             }
         }
 
@@ -1741,7 +1738,7 @@ pub fn pipe_sequence<'a>()
     }
 }
 
-/// Parse a separator followed by and_or
+/// Parse a separator followed by `and_or`
 fn separated_and_or<'a>()
 -> impl Parser<StatefulStream<'a>, (SeparatorOperator, crate::ast::AndOrList), StatefulError> {
     move |input: &mut StatefulStream<'a>| {
@@ -1810,12 +1807,9 @@ pub fn program<'a>() -> impl Parser<StatefulStream<'a>, crate::ast::Program, Sta
 
         let complete_commands_result = {
             let checkpoint = input.checkpoint();
-            match complete_commands().parse_next(input) {
-                Ok(cmds) => Some(cmds),
-                Err(_) => {
-                    input.reset(&checkpoint);
-                    None
-                }
+            if let Ok(cmds) = complete_commands().parse_next(input) { Some(cmds) } else {
+                input.reset(&checkpoint);
+                None
             }
         };
 
