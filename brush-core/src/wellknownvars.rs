@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use rand::Rng;
 
 use crate::{Shell, ShellValue, ShellVariable, error, sys, variables};
@@ -24,7 +26,9 @@ pub(crate) fn inherit_env_vars(shell: &mut Shell) -> Result<(), error::Error> {
                 // Intentionally best-effort; don't fail out of the shell if we can't
                 // parse an incoming function.
                 if shell.define_func_from_str(func_name, v.as_str()).is_ok() {
-                    shell.func_mut(func_name).unwrap().export();
+                    if let Some(func) = shell.func_mut(func_name) {
+                        func.export();
+                    }
                 }
 
                 continue;
@@ -91,7 +95,8 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
                         .collect::<Vec<_>>(),
                 );
 
-                ShellValue::associative_array_from_literals(values).unwrap()
+                ShellValue::associative_array_from_literals(values)
+                    .unwrap_or_else(|_error| ShellValue::AssociativeArray(BTreeMap::new()))
             },
             setter: |_| (),
         }),
@@ -118,7 +123,12 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     shell.env_mut().set_global(
         "BASH_CMDS",
         ShellVariable::new(ShellValue::Dynamic {
-            getter: |shell| shell.program_location_cache().to_value().unwrap(),
+            getter: |shell| {
+                shell
+                    .program_location_cache()
+                    .to_value()
+                    .unwrap_or_else(|_error| ShellValue::AssociativeArray(BTreeMap::new()))
+            },
             setter: |_| (),
         }),
     )?;

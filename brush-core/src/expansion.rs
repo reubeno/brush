@@ -848,8 +848,14 @@ impl<'a> WordExpander<'a> {
                 Expansion::from(ExpansionPiece::Splittable(cmd_output))
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
-                let expanded = s.strip_prefix('\\').unwrap();
-                Expansion::from(ExpansionPiece::Unsplittable(expanded.to_owned()))
+                if let Some(escaped) = s.strip_prefix('\\') {
+                    // We expect a backslash here; remove it.
+                    Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                } else {
+                    // We don't ever expect this case, as it breaks our invariant--but
+                    // we handle it to avoid panicking.
+                    Expansion::from(ExpansionPiece::Unsplittable(s))
+                }
             }
             brush_parser::word::WordPiece::ArithmeticExpression(e) => Expansion::from(
                 ExpansionPiece::Splittable(self.expand_arithmetic_expr(e).await?),
@@ -1232,8 +1238,9 @@ impl<'a> WordExpander<'a> {
                     .try_resolve_parameter_to_variable(&parameter, indirect)
                     .await?
                 {
-                    let assignable_value_str =
-                        var.value().to_assignable_str(index.as_deref(), self.shell);
+                    let assignable_value_str = var
+                        .value()
+                        .to_assignable_str(index.as_deref(), self.shell)?;
 
                     let mut attr_str = var.attribute_flags(self.shell);
                     if attr_str.is_empty() {
@@ -1739,7 +1746,6 @@ impl<'a> WordExpander<'a> {
         Ok(value.to_string())
     }
 
-    #[allow(clippy::unwrap_in_result)]
     #[expect(clippy::ref_option)]
     fn uppercase_first_char(
         s: String,
@@ -1753,19 +1759,18 @@ impl<'a> WordExpander<'a> {
             };
 
             if applicable {
-                let mut result = String::new();
-                result.push(first_char.to_uppercase().next().unwrap());
-                result.push_str(s.get(1..).unwrap());
-                Ok(result)
-            } else {
-                Ok(s)
+                if let Some(upper_char) = first_char.to_uppercase().next() {
+                    let mut result = upper_char.to_string();
+                    let rest: String = s.chars().skip(1).collect();
+                    result.push_str(&rest);
+                    return Ok(result);
+                }
             }
-        } else {
-            Ok(s)
         }
+
+        Ok(s)
     }
 
-    #[allow(clippy::unwrap_in_result)]
     #[expect(clippy::ref_option)]
     fn lowercase_first_char(
         s: String,
@@ -1779,16 +1784,16 @@ impl<'a> WordExpander<'a> {
             };
 
             if applicable {
-                let mut result = String::new();
-                result.push(first_char.to_lowercase().next().unwrap());
-                result.push_str(s.get(1..).unwrap());
-                Ok(result)
-            } else {
-                Ok(s)
+                if let Some(lower_char) = first_char.to_lowercase().next() {
+                    let mut result = lower_char.to_string();
+                    let rest: String = s.chars().skip(1).collect();
+                    result.push_str(&rest);
+                    return Ok(result);
+                }
             }
-        } else {
-            Ok(s)
         }
+
+        Ok(s)
     }
 
     #[expect(clippy::ref_option)]

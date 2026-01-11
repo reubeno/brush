@@ -42,6 +42,12 @@ cases:
       echo "3."
       (echo "a b") | while read -a arr; do declare -p arr; done
 
+  - name: "read with closed stdin"
+    ignore_stderr: true
+    stdin: |
+      echo 1 | read <&-
+      echo "result: $?"
+
   - name: "read from here string"
     stdin: |
       read myvar <<< "hello"

@@ -289,12 +289,18 @@ impl RuntimeOptions {
     }
 
     /// Returns a string representing the current `set`-style option flags set in the shell.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "these unwrap calls should not panic"
+    )]
     pub fn option_flags(&self) -> String {
         let mut cs = vec![];
 
         for o in namedoptions::options(namedoptions::ShellOptionKind::Set).iter() {
             if o.definition.get(self) {
-                cs.push(o.name.chars().next().unwrap());
+                if let Some(c) = o.name.chars().next() {
+                    cs.push(c);
+                }
             }
         }
 

@@ -1,5 +1,6 @@
 #![no_main]
 #![allow(missing_docs)]
+#![allow(clippy::unwrap_used)]
 
 use anyhow::Result;
 use libfuzzer_sys::fuzz_target;

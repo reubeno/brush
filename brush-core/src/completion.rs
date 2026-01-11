@@ -921,6 +921,11 @@ impl Config {
     /// # Arguments
     ///
     /// * `name` - The name of the command.
+    #[allow(
+        clippy::missing_panics_doc,
+        clippy::unwrap_used,
+        reason = "these unwrap calls should not fail"
+    )]
     pub fn get_or_add_mut(&mut self, name: &str) -> &mut Spec {
         match name {
             EMPTY_COMMAND => {

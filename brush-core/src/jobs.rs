@@ -55,7 +55,6 @@ impl JobTask {
         }
     }
 
-    #[allow(clippy::unwrap_in_result)]
     fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
             Self::External(process) => {
@@ -64,7 +63,7 @@ impl JobTask {
             }
             Self::Internal(handle) => {
                 let checkable_handle = handle;
-                checkable_handle.now_or_never().map(|r| r.unwrap())
+                checkable_handle.now_or_never().and_then(|r| r.ok())
             }
         }
     }
@@ -82,6 +81,10 @@ impl JobManager {
     /// # Arguments
     ///
     /// * `job` - The job to add.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "push() guarantees the vector length is >= 1"
+    )]
     pub fn add_as_current(&mut self, mut job: Job) -> &Job {
         for j in &mut self.jobs {
             if matches!(j.annotation, JobAnnotation::Current) {
@@ -94,6 +97,8 @@ impl JobManager {
         job.id = id;
         job.annotation = JobAnnotation::Current;
         self.jobs.push(job);
+
+        #[allow(clippy::unwrap_used, reason = "we just pushed an element")]
         self.jobs.last().unwrap()
     }
 

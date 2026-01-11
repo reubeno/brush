@@ -229,6 +229,10 @@ impl CommandLineArgs {
     /// This is useful for detecting which CLI arguments were explicitly provided
     /// vs. which retained their default values (e.g., for config file merging).
     #[must_use]
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "parsing defaults should not panic"
+    )]
     pub fn default_values() -> Self {
         use clap::Parser;
         // Parse with just the program name to get all defaults.
