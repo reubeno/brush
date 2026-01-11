@@ -160,11 +160,12 @@ impl<R: std::io::BufRead> Parser<R> {
             ParserImpl::Winnow => {
                 // Read entire input to string for winnow_str parser
                 let mut input_str = String::new();
-                std::io::Read::read_to_string(&mut self.reader, &mut input_str)
-                    .map_err(|e| crate::error::ParseError::Tokenizing {
+                std::io::Read::read_to_string(&mut self.reader, &mut input_str).map_err(|e| {
+                    crate::error::ParseError::Tokenizing {
                         inner: crate::tokenizer::TokenizerError::from(e),
                         position: None,
-                    })?;
+                    }
+                })?;
 
                 winnow_str::parse_program(&input_str, &self.options, &SourceInfo::default())
                     .map_err(|_e| {

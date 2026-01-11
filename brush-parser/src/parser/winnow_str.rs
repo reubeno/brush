@@ -527,14 +527,18 @@ fn word_part<'a>(
             '\'' => single_quoted_string().map(Cow::Owned).parse_next(input),
             '"' => double_quoted_string().map(Cow::Owned).parse_next(input),
             '$' => winnow::combinator::alt((
-                arithmetic_expansion(),      // $(( before $(
-                command_substitution(),       // $(
-                braced_variable(),            // ${ before $
-                special_parameter(),          // $1, $?, etc. before simple $VAR
-                simple_variable(),            // $VAR
-            )).map(Cow::Borrowed).parse_next(input),
+                arithmetic_expansion(), // $(( before $(
+                command_substitution(), // $(
+                braced_variable(),      // ${ before $
+                special_parameter(),    // $1, $?, etc. before simple $VAR
+                simple_variable(),      // $VAR
+            ))
+            .map(Cow::Borrowed)
+            .parse_next(input),
             '`' => backtick_substitution().map(Cow::Borrowed).parse_next(input),
-            '\\' => escape_sequence().map(|c| Cow::Owned(c.to_string())).parse_next(input),
+            '\\' => escape_sequence()
+                .map(|c| Cow::Owned(c.to_string()))
+                .parse_next(input),
             _ => {
                 // Slow path: check for special cases, then fall back to bare_word
 
@@ -547,7 +551,9 @@ fn word_part<'a>(
 
                 // Check for extended glob pattern if enabled
                 if ctx.options.enable_extended_globbing {
-                    if let Some(pattern) = winnow::combinator::opt(extglob_pattern()).parse_next(input)? {
+                    if let Some(pattern) =
+                        winnow::combinator::opt(extglob_pattern()).parse_next(input)?
+                    {
                         return Ok(Cow::Borrowed(pattern));
                     }
                 }
@@ -8149,7 +8155,10 @@ mod tests {
                 source_info: &source_info,
             };
             let result = command(&ctx, &tracker).parse_next(&mut input);
-            assert!(result.is_ok(), "Should parse command substitution with nested parens");
+            assert!(
+                result.is_ok(),
+                "Should parse command substitution with nested parens"
+            );
 
             // Verify it parsed the complete word including the entire $(echo (foo))
             let cmd = result.unwrap();
@@ -8160,8 +8169,11 @@ mod tests {
                     match &suffix.0[0] {
                         ast::CommandPrefixOrSuffixItem::Word(w) => {
                             // Should contain the full expansion including nested parens
-                            assert!(w.value.contains("$(echo (foo))"),
-                                "Expected full command substitution, got: {}", w.value);
+                            assert!(
+                                w.value.contains("$(echo (foo))"),
+                                "Expected full command substitution, got: {}",
+                                w.value
+                            );
                         }
                         _ => panic!("Expected Word with expansion"),
                     }
@@ -8183,7 +8195,10 @@ mod tests {
                 source_info: &source_info,
             };
             let result = command(&ctx, &tracker).parse_next(&mut input);
-            assert!(result.is_ok(), "Should parse command substitution with subshell");
+            assert!(
+                result.is_ok(),
+                "Should parse command substitution with subshell"
+            );
         }
 
         #[test]
@@ -8208,8 +8223,11 @@ mod tests {
                     assert_eq!(suffix.0.len(), 1);
                     match &suffix.0[0] {
                         ast::CommandPrefixOrSuffixItem::Word(w) => {
-                            assert!(w.value.contains("$((1 + (2 * 3)))"),
-                                "Expected full arithmetic expansion, got: {}", w.value);
+                            assert!(
+                                w.value.contains("$((1 + (2 * 3)))"),
+                                "Expected full arithmetic expansion, got: {}",
+                                w.value
+                            );
                         }
                         _ => panic!("Expected Word with expansion"),
                     }
@@ -8257,8 +8275,11 @@ mod tests {
                     assert_eq!(suffix.0.len(), 1);
                     match &suffix.0[0] {
                         ast::CommandPrefixOrSuffixItem::Word(w) => {
-                            assert!(w.value.contains("${foo:-${bar}}"),
-                                "Expected full nested expansion, got: {}", w.value);
+                            assert!(
+                                w.value.contains("${foo:-${bar}}"),
+                                "Expected full nested expansion, got: {}",
+                                w.value
+                            );
                         }
                         _ => panic!("Expected Word with expansion"),
                     }
