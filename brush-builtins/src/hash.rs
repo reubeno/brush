@@ -86,16 +86,6 @@ impl builtins::Command for HashCommand {
             for name in &self.names {
                 // Remove from the cache if already hashed.
                 let _ = context.shell.program_location_cache_mut().unset(name);
-
-                // Hash the path.
-                if context
-                    .shell
-                    .find_first_executable_in_path_using_cache(name)
-                    .is_none()
-                {
-                    writeln!(context.stderr(), "{name}: not found")?;
-                    result = ExecutionResult::general_error();
-                }
             }
         }
 
