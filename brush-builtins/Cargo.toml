@@ -142,7 +142,7 @@ thiserror = "2.0.17"
 tracing = "0.1.44"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.48.0", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.49.0", features = ["io-util", "macros", "rt"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 tokio = { version = "1.48.0", features = [

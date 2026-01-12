@@ -84,7 +84,7 @@ human-panic = "2.0.5"
 brush-interactive = { version = "^0.3.0", path = "../brush-interactive", features = [
     "minimal",
 ] }
-tokio = { version = "1.48.0", features = ["rt", "sync"] }
+tokio = { version = "1.49.0", features = ["rt", "sync"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 brush-interactive = { version = "^0.3.0", path = "../brush-interactive", features = [
