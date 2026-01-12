@@ -87,7 +87,12 @@ impl builtins::Command for HashCommand {
                 // Remove from the cache if already hashed.
                 let _ = context.shell.program_location_cache_mut().unset(name);
 
-                // Hash the path.
+                // Names with slashes are accepted silently
+                if name.contains('/') {
+                    continue;
+                }
+
+                // Hash the path
                 if context
                     .shell
                     .find_first_executable_in_path_using_cache(name)
