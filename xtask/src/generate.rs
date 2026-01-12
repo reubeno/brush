@@ -24,6 +24,8 @@ pub enum GenCommand {
     /// Generate JSON schemas.
     #[clap(subcommand)]
     Schema(SchemaCommand),
+    /// Generate third-party license notices using cargo-about.
+    Licenses(GenerateLicensesArgs),
 }
 
 /// Documentation generation commands.
@@ -99,6 +101,14 @@ pub struct GenerateSchemaArgs {
     output_path: PathBuf,
 }
 
+/// Arguments for third-party license generation.
+#[derive(Parser)]
+pub struct GenerateLicensesArgs {
+    /// Output file path for the license notices (defaults to `THIRD_PARTY_LICENSES.html`).
+    #[clap(long = "out", short = 'o', default_value = "THIRD_PARTY_LICENSES.html")]
+    output_path: PathBuf,
+}
+
 /// Run a generation command.
 pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
     match cmd {
@@ -121,6 +131,7 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
         GenCommand::Schema(schema_cmd) => match schema_cmd {
             SchemaCommand::Config(args) => gen_config_schema(args, verbose),
         },
+        GenCommand::Licenses(args) => gen_licenses(args, verbose),
     }
 }
 
@@ -277,5 +288,58 @@ fn gen_docs_dist(args: &GenerateDistArgs, verbose: bool) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Generate third-party license notices using cargo-about.
+///
+/// This generates an HTML file containing license information for all
+/// third-party dependencies. Requires `cargo-about` to be installed:
+/// `cargo install cargo-about`
+fn gen_licenses(args: &GenerateLicensesArgs, verbose: bool) -> Result<()> {
+    let sh = Shell::new()?;
+
+    // Check if cargo-about is installed
+    if cmd!(sh, "cargo about --version").read().is_err() {
+        anyhow::bail!(
+            "cargo-about is not installed. Please install it with:\n\n  \
+             cargo install cargo-about\n\n\
+             For more information, see: https://github.com/EmbarkStudios/cargo-about"
+        );
+    }
+
+    let output_path = args.output_path.display().to_string();
+
+    if verbose {
+        eprintln!("Generating third-party licenses to: {output_path}");
+    }
+
+    // Run cargo-about from brush-shell directory where about.toml and about.hbs are located
+    let workspace_root = crate::common::find_workspace_root()?;
+    let brush_shell_dir = workspace_root.join("brush-shell");
+
+    let _dir = sh.push_dir(&brush_shell_dir);
+
+    // Generate the license notices
+    if verbose {
+        eprintln!("Running: cargo about generate -o {output_path} about.hbs");
+    }
+
+    // Get absolute path for output
+    let absolute_output = if args.output_path.is_absolute() {
+        args.output_path.clone()
+    } else {
+        std::env::current_dir()?.join(&args.output_path)
+    };
+    let absolute_output_str = absolute_output.display().to_string();
+
+    cmd!(
+        sh,
+        "cargo about generate -o {absolute_output_str} about.hbs"
+    )
+    .run()
+    .context("Failed to generate license notices. Is cargo-about installed?")?;
+
+    eprintln!("Generated: {}", absolute_output.display());
     Ok(())
 }

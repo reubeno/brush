@@ -94,6 +94,12 @@ pub enum TestSubcommand {
     /// the brush binary (compat tests, interactive tests, completion tests).
     Integration(IntegrationTestArgs),
 
+    /// Run a quick smoke test to verify the brush binary is functional.
+    ///
+    /// This is useful for package maintainers to verify a built binary works.
+    /// Runs `brush --version` and `brush -c 'echo ok'` to ensure basic functionality.
+    Smoke,
+
     /// Run external test suites.
     #[clap(subcommand)]
     External(ExternalTestCommand),
@@ -169,6 +175,7 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
         TestSubcommand::Integration(args) => {
             run_integration_tests(&sh, &cmd.binary_args, args, verbose)
         }
+        TestSubcommand::Smoke => run_smoke_test(&sh, &cmd.binary_args, verbose),
         TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh, verbose),
     }
 }
@@ -240,6 +247,48 @@ pub fn run_integration_tests(
         eprintln!("Integration tests passed.");
         Ok(())
     }
+}
+
+/// Run a quick smoke test to verify the brush binary is functional.
+///
+/// This test is designed for package maintainers to quickly verify that
+/// a built binary works correctly. It runs:
+/// 1. `brush --version` - Verifies the binary can start and report version
+/// 2. `brush -c 'echo ok'` - Verifies basic command execution works
+pub fn run_smoke_test(sh: &Shell, binary_args: &BinaryArgs, verbose: bool) -> Result<()> {
+    let brush_path = binary_args.find_brush_binary()?;
+    let brush = brush_path.display().to_string();
+
+    eprintln!("Running smoke test with: {brush}");
+
+    // Test 1: Version check
+    if verbose {
+        eprintln!("Running: {brush} --version");
+    }
+    let version_output = cmd!(sh, "{brush} --version")
+        .read()
+        .context("Failed to run 'brush --version'")?;
+    eprintln!("  brush --version: {version_output}");
+
+    // Test 2: Basic command execution
+    if verbose {
+        eprintln!("Running: {brush} -c 'echo ok'");
+    }
+    let script = "echo ok";
+    let echo_output = cmd!(sh, "{brush} -c {script}")
+        .read()
+        .context("Failed to run 'brush -c \"echo ok\"'")?;
+
+    if echo_output.trim() != "ok" {
+        anyhow::bail!(
+            "Smoke test failed: expected 'ok', got '{}'",
+            echo_output.trim()
+        );
+    }
+    eprintln!("  brush -c 'echo ok': ok");
+
+    eprintln!("Smoke test passed.");
+    Ok(())
 }
 
 /// Run cargo nextest with optional filter expression.
