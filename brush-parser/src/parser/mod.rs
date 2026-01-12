@@ -1,16 +1,25 @@
-use crate::ast;
-use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
+use std::path::PathBuf;
 
 use bon::bon;
 
+use crate::ast;
+use crate::tokenizer::{Token, TokenEndReason, Tokenizer, TokenizerOptions, Tokens};
+
 pub mod peg;
+#[cfg(feature = "winnow-parser")]
+pub mod winnow;
+#[cfg(feature = "winnow-parser")]
+pub mod winnow_str;
 
 /// Parser implementation to use
 #[derive(Clone, Eq, Hash, PartialEq, Default)]
 pub enum ParserImpl {
-    /// PEG-based parser
+    /// PEG-based parser (token-based)
     #[default]
     Peg,
+    /// Winnow-based parser (string-based, direct)
+    #[cfg(feature = "winnow-parser")]
+    Winnow,
 }
 
 /// Options used to control the behavior of the parser.
@@ -50,6 +59,22 @@ impl ParserOptions {
             enable_extended_globbing: self.enable_extended_globbing,
             posix_mode: self.posix_mode,
             sh_mode: self.sh_mode,
+        }
+    }
+}
+
+/// Information about the source of tokens.
+#[derive(Clone, Debug, Default)]
+#[allow(dead_code)]
+pub struct SourceInfo {
+    /// The source of the tokens.
+    pub source: String,
+}
+
+impl From<PathBuf> for SourceInfo {
+    fn from(path: PathBuf) -> Self {
+        Self {
+            source: path.to_string_lossy().to_string(),
         }
     }
 }
@@ -126,9 +151,30 @@ impl<R: std::io::BufRead> Parser<R> {
         //   * https://aosabook.org/en/v1/bash.html
         //   * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
         //
+        match self.options.parser_impl {
+            ParserImpl::Peg => {
+                let tokens = self.tokenize()?;
+                parse_tokens(&tokens, &self.options)
+            }
+            #[cfg(feature = "winnow-parser")]
+            ParserImpl::Winnow => {
+                // Read entire input to string for winnow_str parser
+                let mut input_str = String::new();
+                std::io::Read::read_to_string(&mut self.reader, &mut input_str).map_err(|e| {
+                    crate::error::ParseError::Tokenizing {
+                        inner: crate::tokenizer::TokenizerError::from(e),
+                        position: None,
+                    }
+                })?;
 
-        let tokens = self.tokenize()?;
-        parse_tokens(&tokens, &self.options)
+                winnow_str::parse_program(&input_str, &self.options, &SourceInfo::default())
+                    .map_err(|_e| {
+                        // Convert winnow error to ParseError
+                        // TODO: Extract position information from winnow error
+                        crate::error::ParseError::ParsingAtEndOfInput
+                    })
+            }
+        }
     }
 
     /// Parses a function definition body from the input. The body is expected to be
@@ -183,12 +229,27 @@ impl<R: std::io::BufRead> Parser<R> {
 ///
 /// * `tokens` - The tokens to parse.
 /// * `options` - The options to use when parsing.
+#[cfg(not(feature = "winnow-parser"))]
 pub fn parse_tokens(
     tokens: &Vec<Token>,
     options: &ParserOptions,
 ) -> Result<ast::Program, crate::error::ParseError> {
     let parse_result = peg::token_parser::program(&Tokens { tokens }, options);
     parse_result_to_error(parse_result, tokens)
+}
+
+/// Parses a sequence of tokens into the abstract syntax tree (AST) of a shell program.
+///
+/// # Arguments
+///
+/// * `tokens` - The tokens to parse.
+/// * `options` - The options to use when parsing.
+#[cfg(feature = "winnow-parser")]
+pub fn parse_tokens(
+    tokens: &[Token],
+    options: &ParserOptions,
+) -> Result<ast::Program, crate::error::ParseError> {
+    winnow::parse_program(tokens, options, &SourceInfo::default())
 }
 
 fn parse_result_to_error<R>(
@@ -243,6 +304,26 @@ esac\
             input,
             result: &result
         });
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "winnow-parser")]
+    fn parse_with_winnow() -> Result<()> {
+        let input = "echo hello world";
+
+        let mut parser = Parser::builder()
+            .parser_impl(ParserImpl::Winnow)
+            .build(std::io::Cursor::new(input));
+        let result = parser.parse_program()?;
+
+        // Basic validation - should have one complete command
+        assert_eq!(result.complete_commands.len(), 1);
+
+        // Just check that it successfully parsed
+        // More detailed validation can be added later
+        assert!(!result.complete_commands.is_empty());
 
         Ok(())
     }
