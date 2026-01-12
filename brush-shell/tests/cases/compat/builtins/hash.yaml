@@ -61,3 +61,9 @@ cases:
       hash -r && echo "3. Result: $?"
       hash -t somecmd1 && echo "4. Result: $?"
       hash -t somecmd2 && echo "5. Result: $?"
+
+  - name: "Hash file path"
+    ignore_stderr: true
+    stdin: |
+      hash /dev/null && echo "1. Result: $?"
+      hash /dev/nulll && echo "2. Result: $?"
