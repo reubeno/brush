@@ -1,44 +1,44 @@
-# quickstart.tape - Quick intro for README
+# quickstart.tape - Hero GIF for README
 # Works with https://github.com/charmbracelet/vhs
+# Run with: docker run --rm -v $PWD:/vhs -v $PWD/target/debug/brush:/usr/bin/brush vhs-fedora docs/demos/quickstart.tape
 
-Output quickstart.gif
+Output docs/demos/quickstart.gif
 
-Set FontFamily "CaskaydiaMono Nerd Font Mono"
-Set FontSize 24
-Set Theme "Monokai Pro"
-Set Width 1200
-Set Height 400
+Set FontSize 22
+Set Theme "Catppuccin Mocha"
+Set Width 900
+Set Height 340
 Set CursorBlink false
+Set TypingSpeed 50ms
 
+# Set prompt BEFORE launching brush (so it inherits it cleanly)
 Env HISTFILE ""
-Env PS1 '$ '
+Env PS1 "brush$ "
 
-Type `# Install brush`
+# Launch brush with highlighting enabled
+Hide
+Type "brush --enable-highlighting --norc --noprofile"
 Enter
 Sleep 0.5s
-Type `cargo binstall brush-shell`
-Enter
-Sleep 1.5s
+Show
 
-Type `# Launch the shell`
-Enter
-Sleep 0.3s
-Type `brush`
-Enter
+# Syntax highlighting on a for loop
+Type "for f in *.md; do echo Found: $f; done"
 Sleep 0.8s
-
-Env PS1 'brush$ '
-Type `echo "Hello from brush!"`
 Enter
+Sleep 1.2s
+
+# Show brace expansion (bash power feature)
+Type "echo {a,b,c}-{1..3}"
 Sleep 0.8s
-
-Type `# Your .bashrc just works`
-Enter
-Sleep 0.5s
-Type `type ls  # aliases are loaded`
 Enter
 Sleep 1s
 
-Type `# 1400+ compatibility tests against bash`
+# Command with pipes and highlighting  
+Type "ls -la | head -5"
+Sleep 0.6s
 Enter
-Sleep 2s
+Sleep 1.2s
+
+# Final pause
+Sleep 1s
