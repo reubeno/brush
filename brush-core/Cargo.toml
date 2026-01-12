@@ -44,7 +44,7 @@ thiserror = "2.0.17"
 tracing = "0.1.44"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.48.0", features = ["io-util", "macros", "rt", "sync"] }
+tokio = { version = "1.49.0", features = ["io-util", "macros", "rt", "sync"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 hostname = "0.4.2"
@@ -63,7 +63,7 @@ whoami = "1.6.1"
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.2"
-libc = "0.2.178"
+libc = "0.2.179"
 nix = { version = "0.30.1", features = [
     "fs",
     "poll",
