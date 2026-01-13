@@ -714,11 +714,11 @@ impl Execute for ast::ForClauseCommand {
                                 unexpanded_values.iter().join(" ")
                             ),
                         )
-                        .await?;
+                        .await;
                 } else {
                     shell
                         .trace_command(params, std::format!("for {}", self.variable_name,))
-                        .await?;
+                        .await;
                 }
             }
 
@@ -762,7 +762,7 @@ impl Execute for ast::CaseClauseCommand {
         if shell.options().print_commands_and_arguments {
             shell
                 .trace_command(params, std::format!("case {} in", &self.value))
-                .await?;
+                .await;
         }
 
         let expanded_value = expansion::basic_expand_word(shell, params, &self.value).await?;
@@ -1248,7 +1248,7 @@ async fn execute_command(
                 &params,
                 args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
             )
-            .await?;
+            .await;
     }
 
     guard.detach();
@@ -1408,7 +1408,7 @@ async fn apply_assignment(
         let op = if assignment.append { "+=" } else { "=" };
         shell
             .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
-            .await?;
+            .await;
     }
 
     // See if we need to eval an array index.
