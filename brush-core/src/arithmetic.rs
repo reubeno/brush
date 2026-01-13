@@ -36,10 +36,6 @@ pub enum EvalError {
     #[error("failed to parse expression: {0}")]
     ParseError(String),
 
-    /// Failed to trace an arithmetic expression.
-    #[error("failed tracing expression")]
-    TraceError,
-
     /// Error expanding an unset variable.
     #[error("expanding unset variable: {0}")]
     ExpandingUnsetVariable(String),
@@ -102,8 +98,7 @@ pub(crate) async fn expand_and_eval(
     if trace_if_needed && shell.options().print_commands_and_arguments {
         shell
             .trace_command(params, std::format!("(( {expr} ))"))
-            .await
-            .map_err(|_err| EvalError::TraceError)?;
+            .await;
     }
 
     // Now evaluate.

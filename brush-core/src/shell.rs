@@ -1883,7 +1883,10 @@ impl Shell {
         })
     }
 
-    /// Outputs `set -x` style trace output for a command.
+    /// Outputs `set -x` style trace output for a command. Intentionally does not return
+    /// a result or error to avoid risk that a caller treats an error as fatal. Tracing
+    /// failure should generally always be ignored to avoid interfering with execution
+    /// flows.
     ///
     /// # Arguments
     ///
@@ -1892,10 +1895,13 @@ impl Shell {
         &mut self,
         params: &ExecutionParameters,
         command: S,
-    ) -> Result<(), error::Error> {
+    ) {
         // Expand the PS4 prompt variable to get our prefix.
-        let ps4 = self.as_mut().expand_prompt_var("PS4", "").await?;
-        let mut prefix = ps4;
+        let mut prefix = self
+            .as_mut()
+            .expand_prompt_var("PS4", "")
+            .await
+            .unwrap_or_default();
 
         // Add additional depth-based prefixes using the first character of PS4.
         let additional_depth = self.call_stack.script_source_depth() + self.depth;
@@ -1920,11 +1926,10 @@ impl Shell {
 
         // If we have a valid trace file, write to it.
         if let Some(trace_file) = trace_file {
-            let mut trace_file = trace_file.try_clone()?;
-            writeln!(trace_file, "{prefix}{}", command.as_ref())?;
+            if let Ok(mut trace_file) = trace_file.try_clone() {
+                let _ = writeln!(trace_file, "{prefix}{}", command.as_ref());
+            }
         }
-
-        Ok(())
     }
 
     /// Returns the keywords that are reserved by the shell.

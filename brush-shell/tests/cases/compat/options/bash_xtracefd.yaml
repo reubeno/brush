@@ -69,3 +69,16 @@ cases:
 
       set -x
       echo "should go to stderr"
+
+  - name: "redirect to file that fails writes"
+    stdin: |
+      # This test relies on /dev/full being present. We degrade gracefully
+      # if it doesn't.
+      [[ -e /dev/full ]] || exit
+
+      exec 3>/dev/full
+      BASH_XTRACEFD=3
+
+      set -x
+      echo "first echo"
+      echo "first echo result: $?"
