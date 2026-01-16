@@ -184,7 +184,7 @@ impl<R: std::io::BufRead> Parser<R> {
 /// * `tokens` - The tokens to parse.
 /// * `options` - The options to use when parsing.
 pub fn parse_tokens(
-    tokens: &Vec<Token>,
+    tokens: &[Token],
     options: &ParserOptions,
 ) -> Result<ast::Program, crate::error::ParseError> {
     let parse_result = peg::token_parser::program(&Tokens { tokens }, options);
@@ -193,7 +193,7 @@ pub fn parse_tokens(
 
 fn parse_result_to_error<R>(
     parse_result: Result<R, ::peg::error::ParseError<usize>>,
-    tokens: &Vec<Token>,
+    tokens: &[Token],
 ) -> Result<R, crate::error::ParseError>
 where
     R: std::fmt::Debug,
@@ -205,10 +205,7 @@ where
         }
         Err(parse_error) => {
             tracing::debug!(target: "parse", "Parse error: {:?}", parse_error);
-            Err(crate::error::convert_peg_parse_error(
-                &parse_error,
-                tokens.as_slice(),
-            ))
+            Err(crate::error::convert_peg_parse_error(&parse_error, tokens))
         }
     }
 }

@@ -168,7 +168,7 @@ mod tests {
     fn basic_prompt() -> Result<()> {
         assert_eq!(
             parse(r"\u@\h:\w$ ")?,
-            vec![
+            &[
                 PromptPiece::CurrentUser,
                 PromptPiece::Literal("@".to_owned()),
                 PromptPiece::Hostname {
@@ -190,7 +190,7 @@ mod tests {
     fn brackets_and_vars() -> Result<()> {
         assert_eq!(
             parse(r"\[$foo\]\u > ")?,
-            vec![
+            &[
                 PromptPiece::StartNonPrintingSequence,
                 PromptPiece::Literal("$foo".to_owned()),
                 PromptPiece::EndNonPrintingSequence,
