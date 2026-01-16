@@ -16,7 +16,7 @@ Env PS1 '$0$ '
 
 # Launch brush and set up bash-completion
 Hide
-Type `brush --enable-highlighting --norc --noprofile`
+Type `brush --enable-highlighting --norc --noprofile --no-config`
 Enter
 Show
 

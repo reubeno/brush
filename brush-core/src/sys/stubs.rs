@@ -12,6 +12,7 @@ pub mod fs;
 pub mod input;
 pub(crate) mod network;
 pub(crate) mod pipes;
+pub mod poll;
 pub mod process;
 pub mod resource;
 pub mod signal;

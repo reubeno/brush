@@ -2,6 +2,7 @@
 
 // For now, only compile this for Linux.
 #![cfg(target_os = "linux")]
+#![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Result;
@@ -19,8 +20,8 @@ const DEFAULT_BASH_COMPLETION_SCRIPT: &str = "/usr/share/bash-completion/bash_co
 impl TestShellWithBashCompletion {
     async fn new() -> Result<Self> {
         let mut shell = brush_core::Shell::builder()
-            .no_profile(true)
-            .no_rc(true)
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await?;
@@ -74,7 +75,7 @@ impl TestShellWithBashCompletion {
 
     pub fn set_var(&mut self, name: &str, value: &str) -> Result<()> {
         self.shell
-            .env
+            .env_mut()
             .set_global(name, brush_core::ShellVariable::new(value))?;
         Ok(())
     }
@@ -101,7 +102,10 @@ async fn complete_relative_file_path() -> Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn complete_relative_file_path_ignoring_case() -> Result<()> {
     let mut test_shell = TestShellWithBashCompletion::new().await?;
-    test_shell.shell.options.case_insensitive_pathname_expansion = true;
+    test_shell
+        .shell
+        .options_mut()
+        .case_insensitive_pathname_expansion = true;
 
     // Create file and dir.
     test_shell.temp_dir.child("ITEM1").touch()?;
@@ -357,6 +361,32 @@ async fn complete_find_command() -> Result<()> {
     let results = test_shell.complete_end_of_line("find . -na").await?;
 
     assert_eq!(results, ["-name"]);
+
+    Ok(())
+}
+
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
+#[tokio::test(flavor = "multi_thread")]
+async fn complete_quoted_filenames() -> Result<()> {
+    let mut test_shell = TestShellWithBashCompletion::new().await?;
+
+    test_shell.temp_dir.child("item1 item2").touch()?;
+    test_shell.temp_dir.child("item1'item2").touch()?;
+
+    let mut results = test_shell.complete_end_of_line("ls item1\\ ").await?;
+    assert_eq!(results, ["item1 item2"]);
+
+    results = test_shell.complete_end_of_line("ls item1'").await?;
+    assert_eq!(results, ["item1 item2", "item1'item2"]);
+
+    results = test_shell.complete_end_of_line("ls item1").await?;
+    assert_eq!(results, ["item1 item2", "item1'item2"]);
+
+    results = test_shell.complete_end_of_line("ls 'item1 ").await?;
+    assert_eq!(results, ["item1 item2"]);
+
+    results = test_shell.complete_end_of_line("ls \"item1 ").await?;
+    assert_eq!(results, ["item1 item2"]);
 
     Ok(())
 }

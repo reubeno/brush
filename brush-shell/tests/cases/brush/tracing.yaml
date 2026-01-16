@@ -1,0 +1,9 @@
+name: "Tracing tests"
+cases:
+  - name: "xtrace-file captures trace output"
+    args: ["--xtrace-file", "trace.txt"]
+    stdin: |
+        echo hello
+        true
+    expected_exit_code: 0
+    snapshot: true

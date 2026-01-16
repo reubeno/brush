@@ -1,0 +1,22 @@
+# Sample brush configuration file
+# Copy this file to ~/.config/brush/config.toml on Linux/macOS
+# or %APPDATA%\brush\config.toml on Windows
+#
+# For schema-based validation in VS Code (with Even Better TOML extension):
+#:schema https://raw.githubusercontent.com/reubeno/brush/main/schemas/config.schema.json
+
+# User interface settings
+[ui]
+# Enable syntax highlighting in the input line.
+# Default: false (true when built with the 'experimental' feature)
+syntax-highlighting = true
+
+# Experimental features (may change or be removed in future versions)
+[experimental]
+# Enable zsh-style preexec/precmd hooks.
+# Default: false
+zsh-hooks = false
+
+# Enable terminal shell integration (for terminals that support it).
+# Default: false
+terminal-shell-integration = false

@@ -30,16 +30,14 @@ peg::parser! {
 
         rule two_arg_expr() -> ast::TestExpr =
             ["!"] e:one_arg_expr() { ast::TestExpr::Not(Box::from(e)) } /
-            op:unary_op() [s] { ast::TestExpr::UnaryTest(op, s.to_owned()) } /
-            [_] [_] { ast::TestExpr::False }
+            op:unary_op() [s] { ast::TestExpr::UnaryTest(op, s.to_owned()) }
 
         rule three_arg_expr() -> ast::TestExpr =
             [left] ["-a"] [right] { ast::TestExpr::And(Box::from(ast::TestExpr::Literal(left.to_owned())), Box::from(ast::TestExpr::Literal(right.to_owned()))) } /
             [left] ["-o"] [right] { ast::TestExpr::Or(Box::from(ast::TestExpr::Literal(left.to_owned())), Box::from(ast::TestExpr::Literal(right.to_owned()))) } /
             [left] op:binary_op() [right] { ast::TestExpr::BinaryTest(op, left.to_owned(), right.to_owned()) } /
             ["!"] e:two_arg_expr() { ast::TestExpr::Not(Box::from(e)) } /
-            ["("] e:one_arg_expr() [")"] { e } /
-            [_] [_] [_] { ast::TestExpr::False }
+            ["("] e:one_arg_expr() [")"] { e }
 
         rule four_arg_expr() -> ast::TestExpr =
             ["!"] e:three_arg_expr() { ast::TestExpr::Not(Box::from(e)) }

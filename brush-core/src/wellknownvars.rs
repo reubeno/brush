@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use rand::Rng;
 
 use crate::{Shell, ShellValue, ShellVariable, error, sys, variables};
@@ -24,7 +26,9 @@ pub(crate) fn inherit_env_vars(shell: &mut Shell) -> Result<(), error::Error> {
                 // Intentionally best-effort; don't fail out of the shell if we can't
                 // parse an incoming function.
                 if shell.define_func_from_str(func_name, v.as_str()).is_ok() {
-                    shell.func_mut(func_name).unwrap().export();
+                    if let Some(func) = shell.func_mut(func_name) {
+                        func.export();
+                    }
                 }
 
                 continue;
@@ -38,7 +42,7 @@ pub(crate) fn inherit_env_vars(shell: &mut Shell) -> Result<(), error::Error> {
 
         let mut var = ShellVariable::new(ShellValue::String(v));
         var.export();
-        shell.env.set_global(k, var)?;
+        shell.env_mut().set_global(k, var)?;
     }
 
     Ok(())
@@ -47,7 +51,7 @@ pub(crate) fn inherit_env_vars(shell: &mut Shell) -> Result<(), error::Error> {
 #[expect(clippy::too_many_lines)]
 pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error> {
     let shell_version = shell.version().clone();
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BRUSH_VERSION",
         ShellVariable::new(shell_version.unwrap_or_default()),
     )?;
@@ -55,19 +59,19 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     // TODO(#479): implement $_
 
     // BASH
-    if let Some(shell_name) = shell.current_shell_name() {
+    if let Some(shell_name) = shell.current_shell_name().map(|s| s.to_string()) {
         shell
-            .env
-            .set_global("BASH", ShellVariable::new(shell_name.as_ref()))?;
+            .env_mut()
+            .set_global("BASH", ShellVariable::new(shell_name))?;
     }
 
     // BASHOPTS
     let mut bashopts_var = ShellVariable::new(ShellValue::Dynamic {
-        getter: |shell| shell.options.shopt_optstr().into(),
+        getter: |shell| shell.options().shopt_optstr().into(),
         setter: |_| (),
     });
     bashopts_var.set_readonly();
-    shell.env.set_global("BASHOPTS", bashopts_var)?;
+    shell.env_mut().set_global("BASHOPTS", bashopts_var)?;
 
     // BASHPID
     #[cfg(not(target_family = "wasm"))]
@@ -75,23 +79,24 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
         let mut bashpid_var =
             ShellVariable::new(ShellValue::String(std::process::id().to_string()));
         bashpid_var.treat_as_integer();
-        shell.env.set_global("BASHPID", bashpid_var)?;
+        shell.env_mut().set_global("BASHPID", bashpid_var)?;
     }
 
     // BASH_ALIASES
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BASH_ALIASES",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
                 let values = variables::ArrayLiteral(
                     shell
-                        .aliases
+                        .aliases()
                         .iter()
                         .map(|(k, v)| (Some(k.to_owned()), v.to_owned()))
                         .collect::<Vec<_>>(),
                 );
 
-                ShellValue::associative_array_from_literals(values).unwrap()
+                ShellValue::associative_array_from_literals(values)
+                    .unwrap_or_else(|_error| ShellValue::AssociativeArray(BTreeMap::new()))
             },
             setter: |_| (),
         }),
@@ -102,7 +107,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     // TODO(vars): implement BASH_ARGV
 
     // BASH_ARGV0
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BASH_ARGV0",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
@@ -115,10 +120,15 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     )?;
 
     // TODO(vars): implement mutation of BASH_CMDS
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BASH_CMDS",
         ShellVariable::new(ShellValue::Dynamic {
-            getter: |shell| shell.program_location_cache.to_value().unwrap(),
+            getter: |shell| {
+                shell
+                    .program_location_cache()
+                    .to_value()
+                    .unwrap_or_else(|_error| ShellValue::AssociativeArray(BTreeMap::new()))
+            },
             setter: |_| (),
         }),
     )?;
@@ -127,7 +137,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     // TODO(vars): implement BASH_EXECUTION_STRING
 
     // BASH_LINENO
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BASH_LINENO",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| get_bash_lineno_value(shell),
@@ -136,7 +146,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     )?;
 
     // BASH_SOURCE
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BASH_SOURCE",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| get_bash_source_value(shell),
@@ -145,7 +155,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     )?;
 
     // BASH_SUBSHELL
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BASH_SUBSHELL",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| shell.depth().to_string().into(),
@@ -166,11 +176,13 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
         .as_slice(),
     ));
     bash_versinfo_var.set_readonly();
-    shell.env.set_global("BASH_VERSINFO", bash_versinfo_var)?;
+    shell
+        .env_mut()
+        .set_global("BASH_VERSINFO", bash_versinfo_var)?;
 
     // BASH_VERSION
     // This is the Bash interface version. See BRUSH_VERSION for its implementation version.
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "BASH_VERSION",
         ShellVariable::new(std::format!(
             "{BASH_MAJOR}.{BASH_MINOR}.{BASH_PATCH}({BASH_BUILD})-{BASH_RELEASE}"
@@ -179,22 +191,22 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
 
     // COMP_WORDBREAKS
     let mut default_comp_wordbreaks = String::from(" \t\n\"\'><=;|&(:");
-    if shell.options.enable_hostname_completion {
+    if shell.options().enable_hostname_completion {
         default_comp_wordbreaks.push('@');
     }
 
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "COMP_WORDBREAKS",
         ShellVariable::new(default_comp_wordbreaks),
     )?;
 
     // DIRSTACK
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "DIRSTACK",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
                 shell
-                    .directory_stack
+                    .directory_stack()
                     .iter()
                     .map(|p| p.to_string_lossy().to_string())
                     .collect::<Vec<_>>()
@@ -205,7 +217,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     )?;
 
     // EPOCHREALTIME
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "EPOCHREALTIME",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |_shell| {
@@ -220,7 +232,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     )?;
 
     // EPOCHSECONDS
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "EPOCHSECONDS",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |_shell| {
@@ -238,11 +250,11 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     if let Ok(euid) = sys::users::get_effective_uid() {
         let mut euid_var = ShellVariable::new(ShellValue::String(format!("{euid}")));
         euid_var.treat_as_integer().set_readonly();
-        shell.env.set_global("EUID", euid_var)?;
+        shell.env_mut().set_global("EUID", euid_var)?;
     }
 
     // FUNCNAME
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "FUNCNAME",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| get_funcname_value(shell),
@@ -253,7 +265,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     // GROUPS
     // N.B. We could compute this up front, but we choose to make it dynamic so that we
     // don't have to make costly system calls if the user never accesses it.
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "GROUPS",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |_shell| {
@@ -276,13 +288,13 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
         setter: |_| (),
     });
     histcmd_var.treat_as_integer();
-    shell.env.set_global("HISTCMD", histcmd_var)?;
+    shell.env_mut().set_global("HISTCMD", histcmd_var)?;
 
     // HISTFILE (if not already set)
-    if !shell.env.is_set("HISTFILE") {
+    if !shell.env().is_set("HISTFILE") {
         if let Some(home_dir) = shell.home_dir() {
             let histfile = home_dir.join(".brush_history");
-            shell.env.set_global(
+            shell.env_mut().set_global(
                 "HISTFILE",
                 ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
             )?;
@@ -290,7 +302,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     }
 
     // HOSTNAME
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "HOSTNAME",
         ShellVariable::new(
             sys::network::get_hostname()
@@ -301,16 +313,18 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     )?;
 
     // HOSTTYPE
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "HOSTTYPE",
         ShellVariable::new(std::env::consts::ARCH.to_string()),
     )?;
 
     // IFS
-    shell.env.set_global("IFS", ShellVariable::new(" \t\n"))?;
+    shell
+        .env_mut()
+        .set_global("IFS", ShellVariable::new(" \t\n"))?;
 
     // LINENO
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "LINENO",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| get_lineno(shell).to_string().into(),
@@ -320,24 +334,26 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
 
     // MACHTYPE
     shell
-        .env
+        .env_mut()
         .set_global("MACHTYPE", ShellVariable::new(BASH_MACHINE))?;
 
     // OLDPWD (initialization)
-    if !shell.env.is_set("OLDPWD") {
+    if !shell.env().is_set("OLDPWD") {
         let mut oldpwd_var =
             ShellVariable::new(ShellValue::Unset(variables::ShellValueUnsetType::Untyped));
         oldpwd_var.export();
-        shell.env.set_global("OLDPWD", oldpwd_var)?;
+        shell.env_mut().set_global("OLDPWD", oldpwd_var)?;
     }
 
     // OPTERR
-    shell.env.set_global("OPTERR", ShellVariable::new("1"))?;
+    shell
+        .env_mut()
+        .set_global("OPTERR", ShellVariable::new("1"))?;
 
     // OPTIND
     let mut optind_var = ShellVariable::new("1");
     optind_var.treat_as_integer();
-    shell.env.set_global("OPTIND", optind_var)?;
+    shell.env_mut().set_global("OPTIND", optind_var)?;
 
     // OSTYPE
     let os_type = match std::env::consts::OS {
@@ -346,26 +362,26 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
         _ => "unknown",
     };
     shell
-        .env
+        .env_mut()
         .set_global("OSTYPE", ShellVariable::new(os_type))?;
 
     // PATH (if not already set)
-    if !shell.env.is_set("PATH") {
+    if !shell.env().is_set("PATH") {
         let default_path_str = sys::fs::get_default_executable_search_paths().join(":");
         shell
-            .env
+            .env_mut()
             .set_global("PATH", ShellVariable::new(default_path_str))?;
     }
 
     // PIPESTATUS
     // TODO(well-known-vars): Investigate what happens if this gets unset.
     // TODO(well-known-vars): Investigate if this needs to be saved/preserved across prompt display.
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "PIPESTATUS",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
                 ShellValue::indexed_array_from_strings(
-                    shell.last_pipeline_statuses.iter().map(|s| s.to_string()),
+                    shell.last_pipeline_statuses().iter().map(|s| s.to_string()),
                 )
             },
             setter: |_| (),
@@ -376,7 +392,7 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     if let Some(ppid) = sys::terminal::get_parent_process_id() {
         let mut ppid_var = ShellVariable::new(ppid.to_string());
         ppid_var.treat_as_integer().set_readonly();
-        shell.env.set_global("PPID", ppid_var)?;
+        shell.env_mut().set_global("PPID", ppid_var)?;
     }
 
     // RANDOM
@@ -385,10 +401,10 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
         setter: |_| (),
     });
     random_var.treat_as_integer();
-    shell.env.set_global("RANDOM", random_var)?;
+    shell.env_mut().set_global("RANDOM", random_var)?;
 
     // SECONDS
-    shell.env.set_global(
+    shell.env_mut().set_global(
         "SECONDS",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
@@ -405,10 +421,10 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     )?;
 
     // SHELL (if not already set)
-    if !shell.env.is_set("SHELL") {
+    if !shell.env().is_set("SHELL") {
         // Per docs, this should be the user's default login shell -- not the current shell.
         if let Some(default_shell) = sys::users::get_current_user_default_shell() {
-            shell.env.set_global(
+            shell.env_mut().set_global(
                 "SHELL",
                 ShellVariable::new(default_shell.to_string_lossy().to_string()),
             )?;
@@ -417,18 +433,18 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
 
     // SHELLOPTS
     let mut shellopts_var = ShellVariable::new(ShellValue::Dynamic {
-        getter: |shell| shell.options.seto_optstr().into(),
+        getter: |shell| shell.options().seto_optstr().into(),
         setter: |_| (),
     });
     shellopts_var.set_readonly();
-    shell.env.set_global("SHELLOPTS", shellopts_var)?;
+    shell.env_mut().set_global("SHELLOPTS", shellopts_var)?;
 
     // SHLVL
     let input_shlvl = shell.env_str("SHLVL").unwrap_or_else(|| "0".into());
     let updated_shlvl = input_shlvl.as_ref().parse::<u32>().unwrap_or(0) + 1;
     let mut shlvl_var = ShellVariable::new(updated_shlvl.to_string());
     shlvl_var.export();
-    shell.env.set_global("SHLVL", shlvl_var)?;
+    shell.env_mut().set_global("SHLVL", shlvl_var)?;
 
     // SRANDOM
     let mut random_var = ShellVariable::new(ShellValue::Dynamic {
@@ -436,24 +452,28 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
         setter: |_| (),
     });
     random_var.treat_as_integer();
-    shell.env.set_global("SRANDOM", random_var)?;
+    shell.env_mut().set_global("SRANDOM", random_var)?;
 
     // PS1 / PS2
-    if shell.options.interactive {
-        if !shell.env.is_set("PS1") {
+    if shell.options().interactive {
+        if !shell.env().is_set("PS1") {
             shell
-                .env
+                .env_mut()
                 .set_global("PS1", ShellVariable::new(r"\s-\v\$ "))?;
         }
 
-        if !shell.env.is_set("PS2") {
-            shell.env.set_global("PS2", ShellVariable::new("> "))?;
+        if !shell.env().is_set("PS2") {
+            shell
+                .env_mut()
+                .set_global("PS2", ShellVariable::new("> "))?;
         }
     }
 
     // PS4
-    if !shell.env.is_set("PS4") {
-        shell.env.set_global("PS4", ShellVariable::new("+ "))?;
+    if !shell.env().is_set("PS4") {
+        shell
+            .env_mut()
+            .set_global("PS4", ShellVariable::new("+ "))?;
     }
 
     //
@@ -466,13 +486,13 @@ pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error
     let pwd = shell.working_dir().to_string_lossy().to_string();
     let mut pwd_var = ShellVariable::new(pwd);
     pwd_var.export();
-    shell.env.set_global("PWD", pwd_var)?;
+    shell.env_mut().set_global("PWD", pwd_var)?;
 
     // UID
     if let Ok(uid) = sys::users::get_current_uid() {
         let mut uid_var = ShellVariable::new(ShellValue::String(format!("{uid}")));
         uid_var.treat_as_integer().set_readonly();
-        shell.env.set_global("UID", uid_var)?;
+        shell.env_mut().set_global("UID", uid_var)?;
     }
 
     Ok(())

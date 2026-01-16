@@ -1,6 +1,7 @@
 //! Benchmarks for the brush-parser crate.
 
 #![allow(missing_docs)]
+#![allow(clippy::unwrap_used)]
 
 #[cfg(unix)]
 mod unix {
@@ -63,7 +64,7 @@ done
 #[cfg(unix)]
 criterion::criterion_group! {
     name = benches;
-    config = criterion::Criterion::default().with_profiler(pprof::criterion::PProfProfiler::new(100, pprof::criterion::Output::Flamegraph(None)));
+    config = criterion::Criterion::default();
     targets = unix::criterion_benchmark
 }
 

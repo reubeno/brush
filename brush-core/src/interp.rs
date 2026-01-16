@@ -44,7 +44,9 @@ impl ExecutionParameters {
     ///
     /// * `shell` - The shell context.
     pub fn stdin(&self, shell: &Shell) -> impl std::io::Read + 'static {
-        self.try_stdin(shell).unwrap()
+        self.try_stdin(shell).unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard input not available").into()
+        })
     }
 
     /// Tries to retrieve the standard input file. Returns `None` if not set.
@@ -56,7 +58,10 @@ impl ExecutionParameters {
         self.try_fd(shell, openfiles::OpenFiles::STDIN_FD)
     }
 
-    /// Returns the standard output file; usable with `write!` et al.
+    /// Returns the standard output file; usable with `write!` et al. In the event that
+    /// no such file is available, returns a valid implementation of `std::io::Write`
+    /// that fails all I/O requests.
+    ///
     ///
     /// # Arguments
     ///
@@ -76,13 +81,17 @@ impl ExecutionParameters {
         self.try_fd(shell, openfiles::OpenFiles::STDOUT_FD)
     }
 
-    /// Returns the standard error file; usable with `write!` et al.
+    /// Returns the standard error file; usable with `write!` et al. In the event that
+    /// no such file is available, returns a valid implementation of `std::io::Write`
+    /// that fails all I/O requests.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell context.
     pub fn stderr(&self, shell: &Shell) -> impl std::io::Write + 'static {
-        self.try_stderr(shell).unwrap()
+        self.try_stderr(shell).unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard error not available").into()
+        })
     }
 
     /// Tries to retrieve the standard error file. Returns `None` if not set.
@@ -227,7 +236,7 @@ impl Execute for ast::CompoundList {
                 let job = spawn_ao_list_in_task(ao_list, shell, params);
                 let job_formatted = job.to_pid_style_string();
 
-                if shell.options.interactive && !shell.is_subshell() {
+                if shell.options().interactive && !shell.is_subshell() {
                     writeln!(params.stderr(shell), "{job_formatted}")?;
                 }
 
@@ -259,7 +268,7 @@ fn spawn_ao_list_in_task<'a>(
     let cloned_ao_list = ao_list.clone();
 
     // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
-    cloned_shell.options.interactive = false;
+    cloned_shell.options_mut().interactive = false;
 
     let join_handle = tokio::spawn(async move {
         cloned_ao_list
@@ -267,7 +276,7 @@ fn spawn_ao_list_in_task<'a>(
             .await
     });
 
-    shell.jobs.add_as_current(jobs::Job::new(
+    shell.jobs_mut().add_as_current(jobs::Job::new(
         [jobs::JobTask::Internal(join_handle)],
         ao_list.to_string(),
         jobs::JobState::Running,
@@ -374,10 +383,9 @@ impl Execute for ast::Pipeline {
         }
 
         // If requested, report timing.
-        if let Some(timed) = &self.timed {
+        if let (Some(timed), Some(stopwatch)) = (&self.timed, &stopwatch) {
             if let Some(mut stderr) = params.try_fd(shell, openfiles::OpenFiles::STDERR_FD) {
-                let timing = stopwatch.unwrap().stop()?;
-
+                let timing = stopwatch.stop()?;
                 if timed.is_posix_output() {
                     std::write!(
                         stderr,
@@ -437,8 +445,8 @@ async fn spawn_pipeline_processes(
 
         let run_in_current_shell = pipeline_len == 1
             || (current_pipeline_index == pipeline_len - 1
-                && shell.options.run_last_pipeline_cmd_in_current_shell
-                && !shell.options.enable_job_control);
+                && shell.options().run_last_pipeline_cmd_in_current_shell
+                && !shell.options().enable_job_control);
 
         // Set up parameters appropriate for this command.
         let mut cmd_params = params.clone();
@@ -499,7 +507,7 @@ async fn wait_for_pipeline_processes_and_update_status(
     let mut last_failure_exit_code: Option<ExecutionExitCode> = None;
 
     // Clear our the pipeline status so we can start filling it out.
-    shell.last_pipeline_statuses.clear();
+    shell.last_pipeline_statuses_mut().clear();
 
     while let Some(child) = process_spawn_results.pop_front() {
         let wait_result = if !stopped_children.is_empty() {
@@ -512,7 +520,9 @@ async fn wait_for_pipeline_processes_and_update_status(
             ExecutionWaitResult::Completed(current_result) => {
                 result = current_result;
                 shell.set_last_exit_status(result.exit_code.into());
-                shell.last_pipeline_statuses.push(result.exit_code.into());
+                shell
+                    .last_pipeline_statuses_mut()
+                    .push(result.exit_code.into());
 
                 // Track the last failure for pipefail option
                 if !result.is_success() {
@@ -522,7 +532,9 @@ async fn wait_for_pipeline_processes_and_update_status(
             ExecutionWaitResult::Stopped(child) => {
                 result = ExecutionResult::stopped();
                 shell.set_last_exit_status(result.exit_code.into());
-                shell.last_pipeline_statuses.push(result.exit_code.into());
+                shell
+                    .last_pipeline_statuses_mut()
+                    .push(result.exit_code.into());
 
                 stopped_children.push(jobs::JobTask::External(child));
             }
@@ -530,20 +542,20 @@ async fn wait_for_pipeline_processes_and_update_status(
     }
 
     // Apply pipefail semantics if enabled
-    if shell.options.return_last_failure_from_pipeline {
+    if shell.options().return_last_failure_from_pipeline {
         if let Some(failure_exit_code) = last_failure_exit_code {
             result.exit_code = failure_exit_code;
         }
     }
 
-    if shell.options.interactive {
+    if shell.options().interactive {
         sys::terminal::move_self_to_foreground()?;
     }
 
     // If there were stopped jobs, then encapsulate the pipeline as a managed job and hand it
     // off to the job manager.
     if !stopped_children.is_empty() {
-        let job = shell.jobs.add_as_current(jobs::Job::new(
+        let job = shell.jobs_mut().add_as_current(jobs::Job::new(
             stopped_children,
             pipeline.to_string(),
             jobs::JobState::Stopped,
@@ -565,7 +577,7 @@ impl ExecuteInPipeline for ast::Command {
         mut pipeline_context: PipelineExecutionContext<'_>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
-        if pipeline_context.shell.options.do_not_execute_commands {
+        if pipeline_context.shell.options().do_not_execute_commands {
             return Ok(ExecutionSpawnResult::Completed(ExecutionResult::success()));
         }
 
@@ -691,7 +703,7 @@ impl Execute for ast::ForClauseCommand {
         }
 
         for value in expanded_values {
-            if shell.options.print_commands_and_arguments {
+            if shell.options().print_commands_and_arguments {
                 if let Some(unexpanded_values) = &self.values {
                     shell
                         .trace_command(
@@ -702,16 +714,16 @@ impl Execute for ast::ForClauseCommand {
                                 unexpanded_values.iter().join(" ")
                             ),
                         )
-                        .await?;
+                        .await;
                 } else {
                     shell
                         .trace_command(params, std::format!("for {}", self.variable_name,))
-                        .await?;
+                        .await;
                 }
             }
 
             // Update the variable.
-            shell.env.update_or_add(
+            shell.env_mut().update_or_add(
                 &self.variable_name,
                 ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
@@ -747,10 +759,10 @@ impl Execute for ast::CaseClauseCommand {
     ) -> Result<ExecutionResult, error::Error> {
         // N.B. One would think it makes sense to trace the expanded value being switched
         // on, but that's not it.
-        if shell.options.print_commands_and_arguments {
+        if shell.options().print_commands_and_arguments {
             shell
                 .trace_command(params, std::format!("case {} in", &self.value))
-                .await?;
+                .await;
         }
 
         let expanded_value = expansion::basic_expand_word(shell, params, &self.value).await?;
@@ -765,8 +777,8 @@ impl Execute for ast::CaseClauseCommand {
                 for pattern in &case.patterns {
                     let expanded_pattern = expansion::basic_expand_pattern(shell, params, pattern)
                         .await?
-                        .set_extended_globbing(shell.options.extended_globbing)
-                        .set_case_insensitive(shell.options.case_insensitive_conditionals);
+                        .set_extended_globbing(shell.options().extended_globbing)
+                        .set_case_insensitive(shell.options().case_insensitive_conditionals);
 
                     if expanded_pattern.exactly_matches(expanded_value.as_str())? {
                         matches = true;
@@ -985,6 +997,23 @@ impl Execute for ast::FunctionDefinition {
         shell: &mut Shell,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
+        let func_name = self.fname.value.clone();
+
+        // In POSIX mode, function names can't shadow special builtins.
+        if shell.options().posix_mode
+            && shell
+                .builtins()
+                .get(&func_name)
+                .is_some_and(|r| r.special_builtin)
+        {
+            return Err(
+                error::Error::from(error::ErrorKind::FunctionNameShadowsSpecialBuiltin {
+                    name: func_name,
+                })
+                .into_fatal(),
+            );
+        }
+
         // The function definition's source context should be the same as the current frame
         // so we directly pass that through.
         let source_info = shell
@@ -993,7 +1022,7 @@ impl Execute for ast::FunctionDefinition {
             .map_or_else(crate::SourceInfo::default, |frame| {
                 frame.adjusted_source_info()
             });
-        shell.define_func(self.fname.value.clone(), self.clone(), &source_info);
+        shell.define_func(func_name, self.clone(), &source_info);
 
         let result = ExecutionResult::success();
         shell.set_last_exit_status(result.exit_code.into());
@@ -1083,7 +1112,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 
                     if args.is_empty() {
                         if let Some(cmd_name) = next_args.first() {
-                            if let Some(alias_value) = context.shell.aliases.get(cmd_name.as_str())
+                            if let Some(alias_value) =
+                                context.shell.aliases().get(cmd_name.as_str())
                             {
                                 //
                                 // TODO(#57): This is a total hack; aliases are supposed to be
@@ -1211,14 +1241,14 @@ async fn execute_command(
         .await?;
     }
 
-    if guard.shell().options.print_commands_and_arguments {
+    if guard.shell().options().print_commands_and_arguments {
         guard
             .shell()
             .trace_command(
                 &params,
                 args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
             )
-            .await?;
+            .await;
     }
 
     guard.detach();
@@ -1229,7 +1259,7 @@ async fn execute_command(
     cmd.process_group_id = context.process_group_id;
 
     // Arrange to pop off that ephemeral environment scope.
-    cmd.post_execute = Some(|shell| shell.env.pop_scope(EnvironmentScope::Command));
+    cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
 
     // Run through any pre-execution hooks as best effort.
     let _ = commands::on_preexecute(&mut cmd).await;
@@ -1260,12 +1290,12 @@ async fn basic_expand_assignment_name(
 ) -> Result<ast::AssignmentName, error::Error> {
     match name {
         ast::AssignmentName::VariableName(name) => {
-            let expanded = expansion::basic_expand_str(shell, params, name).await?;
+            let expanded = expansion::basic_expand_word(shell, params, name).await?;
             Ok(ast::AssignmentName::VariableName(expanded))
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded_name = expansion::basic_expand_str(shell, params, name).await?;
-            let expanded_index = expansion::basic_expand_str(shell, params, index).await?;
+            let expanded_name = expansion::basic_expand_word(shell, params, name).await?;
+            let expanded_index = expansion::basic_expand_word(shell, params, index).await?;
             Ok(ast::AssignmentName::ArrayElementName(
                 expanded_name,
                 expanded_index,
@@ -1331,7 +1361,7 @@ async fn apply_assignment(
             name
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded = expansion::basic_expand_str(shell, params, index).await?;
+            let expanded = expansion::basic_expand_word(shell, params, index).await?;
             array_index = Some(expanded);
             name
         }
@@ -1374,16 +1404,17 @@ async fn apply_assignment(
         }
     };
 
-    if shell.options.print_commands_and_arguments {
+    if shell.options().print_commands_and_arguments {
         let op = if assignment.append { "+=" } else { "=" };
         shell
             .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
-            .await?;
+            .await;
     }
 
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
-        let will_be_indexed_array = if let Some((_, existing_value)) = shell.env.get(variable_name)
+        let will_be_indexed_array = if let Some((_, existing_value)) =
+            shell.env().get(variable_name)
         {
             matches!(
                 existing_value.value(),
@@ -1402,8 +1433,12 @@ async fn apply_assignment(
         }
     }
 
+    // Read option before taking mutable borrow on env.
+    let export_variables_on_modification = shell.options().export_variables_on_modification;
+
     // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) = shell.env.get_mut(variable_name.as_str())
+    if let Some((existing_value_scope, existing_value)) =
+        shell.env_mut().get_mut(variable_name.as_str())
     {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {
@@ -1417,7 +1452,7 @@ async fn apply_assignment(
                 }
             } else {
                 if !export
-                    && shell.options.export_variables_on_modification
+                    && export_variables_on_modification
                     && !matches!(new_value, ShellValueLiteral::Array(_))
                 {
                     export = true;
@@ -1448,7 +1483,7 @@ async fn apply_assignment(
     } else {
         match new_value {
             ShellValueLiteral::Scalar(s) => {
-                export = export || shell.options.export_variables_on_modification;
+                export = export || shell.options().export_variables_on_modification;
                 ShellValue::String(s)
             }
             ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values),
@@ -1461,7 +1496,7 @@ async fn apply_assignment(
         new_var.export();
     }
 
-    shell.env.add(variable_name, new_var, creation_scope)
+    shell.env_mut().add(variable_name, new_var, creation_scope)
 }
 
 #[expect(clippy::too_many_lines)]
@@ -1478,29 +1513,8 @@ pub(crate) async fn setup_redirect(
                 return Err(error::ErrorKind::InvalidRedirection.into());
             }
 
-            let expanded_file_path: PathBuf =
-                shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
-
-            let mut file_options = std::fs::File::options();
-            file_options
-                .create(true)
-                .write(true)
-                .truncate(!*append)
-                .append(*append);
-
-            let stdout_file = shell
-                .open_file(&file_options, &expanded_file_path, params)
-                .map_err(|err| {
-                    error::ErrorKind::RedirectionFailure(
-                        expanded_file_path.to_string_lossy().to_string(),
-                        err.to_string(),
-                    )
-                })?;
-
-            let stderr_file = stdout_file.try_clone()?;
-
-            params.open_files.set_fd(OpenFiles::STDOUT_FD, stdout_file);
-            params.open_files.set_fd(OpenFiles::STDERR_FD, stderr_file);
+            let expanded_file_path = expanded_fields.remove(0);
+            setup_redirect_output_and_error_to(shell, params, &expanded_file_path, *append)?;
         }
 
         ast::IoRedirect::File(specified_fd_num, kind, target) => {
@@ -1525,7 +1539,7 @@ pub(crate) async fn setup_redirect(
                         }
                         ast::IoFileRedirectKind::Write => {
                             if shell
-                                .options
+                                .options()
                                 .disallow_overwriting_regular_files_via_output_redirection
                             {
                                 // First check to see if the path points to an existing regular
@@ -1641,6 +1655,11 @@ pub(crate) async fn setup_redirect(
                         };
 
                         params.open_files.set_fd(fd_num, target_file);
+                    } else if fd_num == 1 && !dash {
+                        // Special case for compatibility: redirect stdout and stderr to the file given by `expanded`.
+                        setup_redirect_output_and_error_to(
+                            shell, params, &expanded, false, /*append?*/
+                        )?;
                     } else {
                         return Err(error::ErrorKind::InvalidRedirection.into());
                     }
@@ -1707,6 +1726,46 @@ pub(crate) async fn setup_redirect(
             params.open_files.set_fd(fd_num, f);
         }
     }
+
+    Ok(())
+}
+
+/// Sets up redirection of both stdout and stderr to the same file, given by `file_path`.
+///
+/// # Arguments
+///
+/// * `shell` - The shell instance.
+/// * `params` - The execution parameters to modify.
+/// * `file_path` - The path to the file to redirect output and error to.
+/// * `append` - Whether to append. If `false`, the file will be truncated.
+fn setup_redirect_output_and_error_to(
+    shell: &Shell,
+    params: &mut ExecutionParameters,
+    file_path: &str,
+    append: bool,
+) -> Result<(), error::Error> {
+    let abs_file_path: PathBuf = shell.absolute_path(Path::new(file_path));
+
+    let mut file_options = std::fs::File::options();
+    file_options
+        .create(true)
+        .write(true)
+        .truncate(!append)
+        .append(append);
+
+    let stdout_file = shell
+        .open_file(&file_options, &abs_file_path, params)
+        .map_err(|err| {
+            error::ErrorKind::RedirectionFailure(
+                abs_file_path.to_string_lossy().to_string(),
+                err.to_string(),
+            )
+        })?;
+
+    let stderr_file = stdout_file.try_clone()?;
+
+    params.open_files.set_fd(OpenFiles::STDOUT_FD, stdout_file);
+    params.open_files.set_fd(OpenFiles::STDERR_FD, stderr_file);
 
     Ok(())
 }

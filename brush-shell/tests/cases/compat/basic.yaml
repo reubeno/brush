@@ -1,0 +1,121 @@
+name: "Basic tests"
+cases:
+  - name: "Basic -c usage"
+    args:
+      - "-c"
+      - "echo hi"
+
+  - name: "Basic -c usage: output"
+    stdin: |
+      # Capture raw output of command
+      raw_output=$($0 -c 'echo hi')
+
+      # Dump raw output as characters
+      echo "[Character output]"
+      for ((i = 0; i < ${#raw_output}; i++)); do
+        char="${raw_output:i:1}"
+        printf '%c' "$char"
+      done
+      printf '\n\n'
+
+      # Dump raw output as hex
+      echo "[Hex output]"
+      for ((i = 0; i < ${#raw_output}; i++)); do
+        if (( i % 16 == 0 )); then
+          printf '%04x: ' "$i"
+        fi
+
+        char="${raw_output:i:1}"
+        printf '%02x ' "'$char"
+
+        if (( (i + 1) % 16 == 0 )); then
+          printf '\n'
+        fi
+      done
+
+      printf '\n'
+
+  - name: "Basic stdin usage"
+    stdin: |
+      echo hi
+
+  - name: "Basic sequence"
+    stdin: |
+      echo 'hi'; echo 'there'
+
+  - name: "Basic -s usage with -c"
+    args: ["-s", "-c", "echo hi1 hi2"]
+    stdin: |
+      [[ $(type -P $0) == $(type -P $BASH) ]] && echo '$0 matches $BASH'
+      echo "\$1: $1"
+      echo "\$2: $2"
+      echo "\$3: $3"
+
+  - name: "Basic -s usage with positional args"
+    args: ["-s", "arg1", "arg2", "arg3"]
+    stdin: |
+      [[ $(type -P $0) == $(type -P $BASH) ]] && echo '$0 matches $BASH'
+      echo "\$1: $1"
+      echo "\$2: $2"
+      echo "\$3: $3"
+
+  - name: "Basic -i usage with commands via stdin"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      echo hi
+      echo there
+
+  - name: "Basic script execution"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "ARGS: $@"
+          exit 22
+    args: ["./script.sh", 1, 2, 3]
+
+  - name: "Passing option-like arg to script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "ARGS: $@"
+          exit 22
+    args: ["./script.sh", "-v"]
+
+  - name: "Ensure ~ is resolvable"
+    stdin: "test ~"
+
+  - name: "Rc file loading (interactive)"
+    ignore_stderr: true
+    removed_default_args: ["--norc"] # Need to cancel this out so we can override
+    args: ["--rcfile", "testrc", "-i"]
+    env:
+      PS1: ""
+    test_files:
+      - path: "testrc"
+        contents: |
+          echo "Executing in rc file"
+    stdin: |
+      echo "Executing in main script body"
+
+  - name: "Rc file loading (non-interactive)"
+    ignore_stderr: true
+    removed_default_args: ["--norc"] # Need to cancel this out so we can override
+    args: ["--rcfile", "testrc"]
+    env:
+      PS1: ""
+    test_files:
+      - path: "testrc"
+        contents: |
+          echo "Executing in rc file"
+    stdin: |
+      echo "Executing in main script body"
+
+  - name: "Missing rc file"
+    ignore_stderr: true
+    removed_default_args: ["--norc"] # Need to cancel this out so we can override
+    args: ["--rcfile", "non-existent-file", "-i"]
+    env:
+      PS1: ""
+    stdin: |
+      echo "Executing in main script body"

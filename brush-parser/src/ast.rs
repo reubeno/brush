@@ -1969,6 +1969,12 @@ impl From<String> for Word {
     }
 }
 
+impl AsRef<str> for Word {
+    fn as_ref(&self) -> &str {
+        &self.value
+    }
+}
+
 impl Word {
     /// Constructs a new `Word` from a given string.
     pub fn new(s: &str) -> Self {

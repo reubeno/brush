@@ -16,7 +16,7 @@ use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
     ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history, interfaces,
-    pathcache, pathsearch, trace_categories, wellknownvars,
+    ioutils, pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, extensions, functions, jobs, keywords,
@@ -38,11 +38,47 @@ pub struct ScriptArgs<'a> {
     pub args: Vec<&'a str>,
 }
 
+/// Behavior for loading profile files.
+#[derive(Default)]
+pub enum ProfileLoadBehavior {
+    /// Load the default profile files.
+    #[default]
+    LoadDefault,
+    /// Skip loading profile files.
+    Skip,
+}
+
+impl ProfileLoadBehavior {
+    /// Returns whether profile loading should be skipped.
+    pub const fn skip(&self) -> bool {
+        matches!(self, Self::Skip)
+    }
+}
+
+/// Behavior for loading rc files.
+#[derive(Default)]
+pub enum RcLoadBehavior {
+    /// Load the default rc files.
+    #[default]
+    LoadDefault,
+    /// Load a custom rc file; do not load defaults.
+    LoadCustom(PathBuf),
+    /// Skip loading rc files.
+    Skip,
+}
+
+impl RcLoadBehavior {
+    /// Returns whether rc loading should be skipped.
+    pub const fn skip(&self) -> bool {
+        matches!(self, Self::Skip)
+    }
+}
+
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell {
     /// Trap handler configuration for the shell.
-    pub traps: traps::TrapHandlerConfig,
+    traps: traps::TrapHandlerConfig,
 
     /// Manages files opened and accessible via redirection operators.
     open_files: openfiles::OpenFiles,
@@ -51,21 +87,21 @@ pub struct Shell {
     working_dir: PathBuf,
 
     /// The shell environment, containing shell variables.
-    pub env: ShellEnvironment,
+    env: ShellEnvironment,
 
     /// Shell function definitions.
     funcs: functions::FunctionEnv,
 
     /// Runtime shell options.
-    pub options: RuntimeOptions,
+    options: RuntimeOptions,
 
     /// State of managed jobs.
     /// TODO(serde): Need to warn somehow that jobs cannot be serialized.
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub jobs: jobs::JobManager,
+    jobs: jobs::JobManager,
 
     /// Shell aliases.
-    pub aliases: HashMap<String, String>,
+    aliases: HashMap<String, String>,
 
     /// The status of the last completed command.
     last_exit_status: u8,
@@ -74,7 +110,7 @@ pub struct Shell {
     last_exit_status_change_count: usize,
 
     /// The status of each of the commands in the last pipeline.
-    pub last_pipeline_statuses: Vec<u8>,
+    last_pipeline_statuses: Vec<u8>,
 
     /// Clone depth from the original ancestor shell.
     depth: usize,
@@ -95,17 +131,17 @@ pub struct Shell {
     call_stack: callstack::CallStack,
 
     /// Directory stack used by pushd et al.
-    pub directory_stack: Vec<PathBuf>,
+    directory_stack: Vec<PathBuf>,
 
     /// Completion configuration.
-    pub completion_config: completion::Config,
+    completion_config: completion::Config,
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
     builtins: HashMap<String, builtins::Registration>,
 
     /// Shell program location cache.
-    pub program_location_cache: pathcache::PathCache,
+    program_location_cache: pathcache::PathCache,
 
     /// Last "SECONDS" captured time.
     last_stopwatch_time: std::time::SystemTime,
@@ -178,18 +214,15 @@ impl<S: shell_builder::IsComplete> ShellBuilder<S> {
     pub async fn build(self) -> Result<Shell, error::Error> {
         let mut options = self.build_settings();
 
-        let no_profile = options.no_profile;
-        let no_rc = options.no_rc;
-        let rc_file = std::mem::take(&mut options.rc_file);
+        let profile = std::mem::take(&mut options.profile);
+        let rc = std::mem::take(&mut options.rc);
 
         // Construct the shell.
         let mut shell = Shell::new(options)?;
 
         // Load profiles/configuration, unless skipped.
-        if !no_profile || !no_rc {
-            shell
-                .load_config(no_profile, no_rc, rc_file.as_deref())
-                .await?;
+        if !profile.skip() || !rc.skip() {
+            shell.load_config(&profile, &rc).await?;
         }
 
         Ok(shell)
@@ -325,14 +358,12 @@ pub struct CreateOptions {
     /// Whether to skip using a readline-like interface for input.
     #[builder(default)]
     pub no_editing: bool,
-    /// Whether to skip sourcing the system profile.
+    /// System profile loading behavior.
     #[builder(default)]
-    pub no_profile: bool,
-    /// Whether to skip sourcing the user's rc file.
+    pub profile: ProfileLoadBehavior,
+    /// Rc file loading behavior.
     #[builder(default)]
-    pub no_rc: bool,
-    /// Explicit override of rc file to load in interactive mode.
-    pub rc_file: Option<PathBuf>,
+    pub rc: RcLoadBehavior,
     /// Whether to skip inheriting environment variables from the calling process.
     #[builder(default)]
     pub do_not_inherit_env: bool,
@@ -342,6 +373,9 @@ pub struct CreateOptions {
     /// Provides a set of initial open files to be tracked by the shell.
     #[builder(default)]
     pub fds: HashMap<ShellFd, openfiles::OpenFile>,
+    /// Whether to launch external commands as session leaders.
+    #[builder(default)]
+    pub external_cmd_leads_session: bool,
     /// Initial working dir for the shell. If left unspecified, will be populated from
     /// the host environment.
     pub working_dir: Option<PathBuf>,
@@ -468,25 +502,49 @@ impl Shell {
             shell.env.set_global(var_name, var_value)?;
         }
 
-        // Set up history, if relevant.
+        // Set up history, if relevant. Do NOT fail if we can't load history.
         if shell.options.enable_command_history {
-            if let Some(history_path) = shell.history_file_path() {
-                let mut options = std::fs::File::options();
-                options.read(true);
-
-                if let Ok(history_file) =
-                    shell.open_file(&options, history_path, &shell.default_exec_params())
-                {
-                    shell.history = Some(history::History::import(history_file)?);
-                }
-            }
-
-            if shell.history.is_none() {
-                shell.history = Some(history::History::default());
-            }
+            shell.history = shell
+                .load_history()
+                .unwrap_or_default()
+                .or_else(|| Some(history::History::default()));
         }
 
         Ok(shell)
+    }
+
+    fn load_history(&self) -> Result<Option<history::History>, error::Error> {
+        const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
+
+        let Some(history_path) = self.history_file_path() else {
+            return Ok(None);
+        };
+
+        let mut options = std::fs::File::options();
+        options.read(true);
+
+        let mut history_file =
+            self.open_file(&options, history_path, &self.default_exec_params())?;
+
+        // Check on the file's size.
+        if let openfiles::OpenFile::File(file) = &mut history_file {
+            let file_metadata = file.metadata()?;
+            let file_size = file_metadata.len();
+
+            // If the file is empty, no reason to try reading it. Note that this will also
+            // end up excluding non-regular files that report a 0 file size but appear
+            // to have contents when read.
+            if file_size == 0 {
+                return Ok(None);
+            }
+
+            // Bail if the file is unrealistically large. For now we just refuse to import it.
+            if file_size > MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
+                return Err(error::ErrorKind::HistoryFileTooLargeToImport.into());
+            }
+        }
+
+        Ok(Some(history::History::import(history_file)?))
     }
 
     /// Returns the shell's official version string (if available).
@@ -643,6 +701,11 @@ impl Shell {
         &self.funcs
     }
 
+    /// Returns a mutable reference to the function definition environment for this shell.
+    pub const fn funcs_mut(&mut self) -> &mut functions::FunctionEnv {
+        &mut self.funcs
+    }
+
     /// Tries to undefine a function in the shell's environment. Returns whether or
     /// not a definition was removed.
     ///
@@ -651,6 +714,106 @@ impl Shell {
     /// * `name` - The name of the function to undefine.
     pub fn undefine_func(&mut self, name: &str) -> bool {
         self.funcs.remove(name).is_some()
+    }
+
+    /// Returns the shell environment containing variables.
+    pub const fn env(&self) -> &ShellEnvironment {
+        &self.env
+    }
+
+    /// Returns a mutable reference to the shell environment.
+    pub const fn env_mut(&mut self) -> &mut ShellEnvironment {
+        &mut self.env
+    }
+
+    /// Returns the shell's runtime options.
+    pub const fn options(&self) -> &RuntimeOptions {
+        &self.options
+    }
+
+    /// Returns a mutable reference to the shell's runtime options.
+    pub const fn options_mut(&mut self) -> &mut RuntimeOptions {
+        &mut self.options
+    }
+
+    /// Returns the shell's aliases.
+    pub const fn aliases(&self) -> &HashMap<String, String> {
+        &self.aliases
+    }
+
+    /// Returns a mutable reference to the shell's aliases.
+    pub const fn aliases_mut(&mut self) -> &mut HashMap<String, String> {
+        &mut self.aliases
+    }
+
+    /// Returns the shell's job manager.
+    pub const fn jobs(&self) -> &jobs::JobManager {
+        &self.jobs
+    }
+
+    /// Returns a mutable reference to the shell's job manager.
+    pub const fn jobs_mut(&mut self) -> &mut jobs::JobManager {
+        &mut self.jobs
+    }
+
+    /// Returns the shell's trap handler configuration.
+    pub const fn traps(&self) -> &traps::TrapHandlerConfig {
+        &self.traps
+    }
+
+    /// Returns a mutable reference to the shell's trap handler configuration.
+    pub const fn traps_mut(&mut self) -> &mut traps::TrapHandlerConfig {
+        &mut self.traps
+    }
+
+    /// Returns the shell's directory stack.
+    pub fn directory_stack(&self) -> &[PathBuf] {
+        &self.directory_stack
+    }
+
+    /// Returns a mutable reference to the shell's directory stack.
+    pub const fn directory_stack_mut(&mut self) -> &mut Vec<PathBuf> {
+        &mut self.directory_stack
+    }
+
+    /// Returns the statuses of commands in the last pipeline.
+    pub fn last_pipeline_statuses(&self) -> &[u8] {
+        &self.last_pipeline_statuses
+    }
+
+    /// Returns a mutable reference to the statuses of commands in the last pipeline.
+    pub const fn last_pipeline_statuses_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.last_pipeline_statuses
+    }
+
+    /// Returns the shell's program location cache.
+    pub const fn program_location_cache(&self) -> &pathcache::PathCache {
+        &self.program_location_cache
+    }
+
+    /// Returns a mutable reference to the shell's program location cache.
+    pub const fn program_location_cache_mut(&mut self) -> &mut pathcache::PathCache {
+        &mut self.program_location_cache
+    }
+
+    /// Returns the shell's completion configuration.
+    pub const fn completion_config(&self) -> &completion::Config {
+        &self.completion_config
+    }
+
+    /// Returns a mutable reference to the shell's completion configuration.
+    pub const fn completion_config_mut(&mut self) -> &mut completion::Config {
+        &mut self.completion_config
+    }
+
+    /// Returns the shell's open files.
+    pub const fn open_files(&self) -> &openfiles::OpenFiles {
+        &self.open_files
+    }
+
+    /// Returns a mutable reference to the shell's open files.
+    pub const fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles {
+        &mut self.open_files
     }
 
     /// Defines a function in the shell's environment. If a function already exists
@@ -724,21 +887,19 @@ impl Shell {
     ///
     /// # Arguments
     ///
-    /// * `skip_profile` - Whether to skip loading profile files.
-    /// * `skip_rc` - Whether to skip loading rc files.
-    /// * `rc_file` - Optionally provides non-default path to rc file to load.
+    /// * `profile_behavior` - Behavior for loading profile files.
+    /// * `rc_behavior` - Behavior for loading rc files.
     pub async fn load_config(
         &mut self,
-        skip_profile: bool,
-        skip_rc: bool,
-        rc_file: Option<&Path>,
+        profile_behavior: &ProfileLoadBehavior,
+        rc_behavior: &RcLoadBehavior,
     ) -> Result<(), error::Error> {
         let mut params = self.default_exec_params();
         params.process_group_policy = interp::ProcessGroupPolicy::SameProcessGroup;
 
         if self.options.login_shell {
             // --noprofile means skip this.
-            if skip_profile {
+            if matches!(profile_behavior, ProfileLoadBehavior::Skip) {
                 return Ok(());
             }
 
@@ -773,29 +934,28 @@ impl Shell {
             }
         } else {
             if self.options.interactive {
-                // --norc means skip this. Also skip in sh mode.
-                if skip_rc || self.options.sh_mode {
-                    return Ok(());
-                }
-
-                // If an rc file was specified, then source it.
-                if let Some(rc_file) = rc_file {
-                    // If an explicit rc file is provided, source it.
-                    self.source_if_exists(rc_file, &params).await?;
-                } else {
-                    //
-                    // Otherwise, for non-login interactive shells, load in this order:
-                    //
-                    //     /etc/bash.bashrc
-                    //     ~/.bashrc
-                    //
-                    self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
-                        .await?;
-                    if let Some(home_path) = self.home_dir() {
-                        self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
+                match rc_behavior {
+                    _ if self.options.sh_mode => (),
+                    RcLoadBehavior::Skip => (),
+                    RcLoadBehavior::LoadCustom(rc_file) => {
+                        // If an explicit rc file is provided, source it.
+                        self.source_if_exists(rc_file, &params).await?;
+                    }
+                    RcLoadBehavior::LoadDefault => {
+                        //
+                        // Otherwise, for non-login interactive shells, load in this order:
+                        //
+                        //     /etc/bash.bashrc
+                        //     ~/.bashrc
+                        //
+                        self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
                             .await?;
-                        self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
-                            .await?;
+                        if let Some(home_path) = self.home_dir() {
+                            self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
+                                .await?;
+                            self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
+                                .await?;
+                        }
                     }
                 }
             } else {
@@ -1069,7 +1229,7 @@ impl Shell {
         params: &ExecutionParameters,
         s: S,
     ) -> Result<String, error::Error> {
-        let result = expansion::basic_expand_str(self, params, s.as_ref()).await?;
+        let result = expansion::basic_expand_word(self, params, s.as_ref()).await?;
         Ok(result)
     }
 
@@ -1084,7 +1244,7 @@ impl Shell {
         params: &ExecutionParameters,
         s: S,
     ) -> Result<Vec<String>, error::Error> {
-        let result = expansion::full_expand_and_split_str(self, params, s.as_ref()).await?;
+        let result = expansion::full_expand_and_split_word(self, params, s.as_ref()).await?;
         Ok(result)
     }
 
@@ -1252,7 +1412,12 @@ impl Shell {
         self.last_pipeline_statuses = prev_last_pipeline_statuses;
         self.set_last_exit_status(prev_last_result);
 
-        result
+        // Strip out special characters that readline would typically drop:
+        // \001 and \002 (start and end of non-printing sequences).
+        let mut expanded = result?;
+        expanded.retain(|c| c != '\x01' && c != '\x02');
+
+        Ok(expanded)
     }
 
     fn parameter_or_default<'a>(&'a self, name: &str, default: &'a str) -> Cow<'a, str> {
@@ -1268,6 +1433,7 @@ impl Shell {
             sh_mode: self.options.sh_mode,
             tilde_expansion_at_word_start: true,
             tilde_expansion_after_colon: false,
+            parser_impl: brush_parser::ParserImpl::Peg,
         }
     }
 
@@ -1738,16 +1904,23 @@ impl Shell {
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard output stream using `write!` at al.
     pub fn stdout(&self) -> impl std::io::Write + 'static {
-        self.open_files.try_stdout().cloned().unwrap()
+        self.open_files.try_stdout().cloned().unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard output not available").into()
+        })
     }
 
     /// Returns a value that can be used to write to the shell's currently configured
     /// standard error stream using `write!` et al.
     pub fn stderr(&self) -> impl std::io::Write + 'static {
-        self.open_files.try_stderr().cloned().unwrap()
+        self.open_files.try_stderr().cloned().unwrap_or_else(|| {
+            ioutils::FailingReaderWriter::new("standard error not available").into()
+        })
     }
 
-    /// Outputs `set -x` style trace output for a command.
+    /// Outputs `set -x` style trace output for a command. Intentionally does not return
+    /// a result or error to avoid risk that a caller treats an error as fatal. Tracing
+    /// failure should generally always be ignored to avoid interfering with execution
+    /// flows.
     ///
     /// # Arguments
     ///
@@ -1756,10 +1929,13 @@ impl Shell {
         &mut self,
         params: &ExecutionParameters,
         command: S,
-    ) -> Result<(), error::Error> {
+    ) {
         // Expand the PS4 prompt variable to get our prefix.
-        let ps4 = self.as_mut().expand_prompt_var("PS4", "").await?;
-        let mut prefix = ps4;
+        let mut prefix = self
+            .as_mut()
+            .expand_prompt_var("PS4", "")
+            .await
+            .unwrap_or_default();
 
         // Add additional depth-based prefixes using the first character of PS4.
         let additional_depth = self.call_stack.script_source_depth() + self.depth;
@@ -1784,11 +1960,10 @@ impl Shell {
 
         // If we have a valid trace file, write to it.
         if let Some(trace_file) = trace_file {
-            let mut trace_file = trace_file.try_clone()?;
-            writeln!(trace_file, "{prefix}{}", command.as_ref())?;
+            if let Ok(mut trace_file) = trace_file.try_clone() {
+                let _ = writeln!(trace_file, "{prefix}{}", command.as_ref());
+            }
         }
-
-        Ok(())
     }
 
     /// Returns the keywords that are reserved by the shell.

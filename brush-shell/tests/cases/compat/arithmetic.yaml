@@ -1,0 +1,247 @@
+name: "Arithmetic"
+cases:
+  - name: "Empty expression"
+    stdin: |
+      echo $(())
+
+  - name: "Unquoted arithmetic"
+    stdin: |
+      echo $((1+1))
+
+  - name: "Arithmetic literals"
+    stdin: |
+      echo "$((0))"
+      echo "$((1))"
+      echo "$((10))"
+      echo "$((010))"
+      echo "$((0010))"
+      echo "$((0x10))"
+      echo "$((0x010))"
+
+  - name: "Arithmetic literals with explicit bases"
+    stdin: |
+      echo "$((2#1010))"
+      echo "$((8#16))"
+      echo "$((16#faf))"
+      echo "$((36#vvv))"
+
+  - name: "Arithmetic literals with base 64 encoding"
+    known_failure: true # Not currently handled.
+    stdin: |
+      echo "$((64#zzz))"
+
+  - name: "Unary arithmetic operators with space"
+    stdin: |
+      echo "$(( - 1 ))"
+      echo "$(( + 1 ))"
+      echo "$(( ~ 10 ))"
+      echo "$(( ! 10 ))"
+
+  - name: "Parentheses"
+    stdin: |
+      echo "$(((10)))"
+      echo "$((((10))))"
+      echo "$(((((10)))))"
+
+      echo "$(( (10) ))"
+      echo "$(( (1+2) ))"
+      echo "$(( (1 + 2) ))"
+
+      echo "$(( ((1+2)) ))"
+      echo "$(( ((1 + 2)) ))"
+
+      echo "$(((1+2)*3))"
+      echo "$(((1 + 2) * 3))"
+      echo "$(( (1 + 2) * 3 ))"
+
+      echo "$((((1+2)*3)))"
+      echo "$(( ((1 + 2) * 3) ))"
+      echo "$(( ( (1 + 2) * 3 ) ))"
+
+  - name: "Basic quoted arithmetic"
+    stdin: |
+      echo " 1  + 1 == $((1+1))"
+      echo " 2  * 3 == $((2*3))"
+      echo " 9  / 3 == $((9/3))"
+      echo "10  % 3 == $((10%3))"
+      echo " 2 ** 3 == $((2**3))"
+      echo " 2  | 4 == $((2|4))"
+      echo " 2  & 4 == $((2&4))"
+      echo " 2  ^ 3 == $((2^3))"
+      echo " 1 && 1 == $((1&&1))"
+      echo " 1 && 0 == $((1&&0))"
+      echo " 1 || 0 == $((1||0))"
+      echo " 0 || 1 == $((1||0))"
+      echo " 1  , 2 == $((1,2))"
+
+  - name: "Unary operators"
+    stdin: |
+      echo "     -1 == $((-1))"
+      echo "     +1 == $((+1))"
+      echo "    ~10 == $((~10))"
+      echo "    !10 == $((!10))"
+
+  - name: "Conditional operator"
+    stdin: |
+      echo "1 ? 2 : 3 == $((1?2:3))"
+      echo "0 ? 2 : 3 == $((0?2:3))"
+
+  - name: "Arithmetic with spacing"
+    stdin: |
+      echo $(( 75 + 68 ))
+
+  - name: "Divide by zero"
+    ignore_stderr: true
+    stdin: |
+      echo "1 / 0 == $((1/0))"
+      echo "Result: $?"
+
+      echo "1 % 0 == $((1%0))"
+      echo "Result: $?"
+
+  - name: "Shift arithmetic"
+    stdin: |
+      echo "32 >> 2 == $((32>>2))"
+      echo " 1 << 4 == $((1<<4))"
+
+  - name: Shift arithmetic in conditional"
+    stdin: |
+      (( 1 >> 1 )) && echo "1. true"
+      (( 1 << 1 )) && echo "2. true"
+
+  - name: "Variable references"
+    stdin: |
+      x=10
+      echo "x => $((x))"
+      echo "x + 1 => $((x+1))"
+
+      y=
+      echo "y => $((y))"
+      echo "y + 1 => $((y+1))"
+
+      z=notnumber
+      echo "z => $((z))"
+      echo "z + 1 => $((z+1))"
+
+  - name: "Complex variable references"
+    stdin: |
+      x=10
+      y=20
+      z=x+y
+      a=z+z
+
+      echo "z => $((z))"
+      echo "a => $((a))"
+
+  - name: "Nested expressions"
+    stdin: |
+      echo "1: $(($(echo -n 1; echo 2) + 37))"
+
+      op="+"
+      echo "2: $((10 ${op} 20))"
+
+      expr="13 * 7"
+      echo "3: $(($expr))"
+
+  - name: "Assignment arithmetic"
+    stdin: |
+      x=0
+
+      echo "x = 1 => $((x = 1))"
+      echo "x is now $x"
+
+      echo "x += 3 => $((x += 3))"
+      echo "x is now $x"
+
+      echo "x -= 1 => $((x -= 1))"
+      echo "x is now $x"
+
+      echo "x *= 2 => $((x *= 2))"
+      echo "x is now $x"
+
+      echo "x++ == $((x++))"
+      echo "x is now $x"
+
+      echo "++x == $((++x))"
+      echo "x is now $x"
+
+      echo "x-- == $((x--))"
+      echo "x is now $x"
+
+      echo "--x == $((--x))"
+      echo "x is now $x"
+
+      echo "x |= 3 => $((x |= 3))"
+      echo "x is now $x"
+
+      echo "x &= 12 => $((x &= 12))"
+      echo "x is now $x"
+
+      echo "x %= 8 => $((x %= 8))"
+      echo "x is now $x"
+
+      echo "x ^= 7 => $((x ^= 7))"
+      echo "x is now $x"
+
+  - name: "Assignment with references"
+    stdin: |
+      x=10+3
+      echo "y = x => $((y = x))"
+      echo "y is now $y"
+
+  - name: "Assignments in logical boolean expressions"
+    stdin: |
+      x=0
+      echo "0 && x+=1 => $(( 0 && (x+=1) ))"
+      echo "x: $x"
+
+      x=0
+      echo "1 && x+=1 => $(( 1 && (x+=1) ))"
+      echo "x: $x"
+
+      x=0
+      echo "0 || x+=1 => $(( 0 || (x+=1) ))"
+      echo "x: $x"
+
+      x=0
+      echo "1 || x+=1 => $(( 1 || (x+=1) ))"
+      echo "x: $x"
+
+  - name: "Array arithmetic"
+    stdin: |
+      a=(1 2 3)
+      declare -p a
+      echo "a[0]: $((a[0]))"
+      echo "a[2]: $((a[2]))"
+      echo "a[3]: $((a[3]))"
+
+      echo "b[2]: $((b[2]))"
+
+      echo "a[1]=4 => $((a[1]=4))"
+      echo "a[1]: $((a[1]))"
+
+      echo "a[1]+=1 => $((a[1]+=1))"
+      echo "a[1]: $((a[1]))"
+
+      echo "c[1] += 3 => $((c[1] += 3))"
+
+  - name: "Basic arithmetic comparison"
+    stdin: |
+      echo "0  < 1: $((0 < 1))"
+      echo "0 <= 1: $((0 <= 1))"
+      echo "0 == 1: $((0 == 1))"
+      echo "0 != 1: $((0 != 1))"
+      echo "0  > 1: $((0 > 1))"
+      echo "0 >= 1: $((0 >= 1))"
+      echo "0  < 0: $((0 < 0))"
+      echo "0 <= 0: $((0 <= 0))"
+      echo "0 == 0: $((0 == 0))"
+      echo "0 != 0: $((0 != 0))"
+      echo "0  > 0: $((0 > 0))"
+      echo "0 >= 0: $((0 >= 0))"
+      echo "1  < 0: $((1 < 0))"
+      echo "1 <= 0: $((1 <= 0))"
+      echo "1 == 0: $((1 == 0))"
+      echo "1 != 0: $((1 != 0))"
+      echo "1  > 0: $((1 > 0))"
+      echo "1 >= 0: $((1 >= 0))"

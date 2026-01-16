@@ -1,12 +1,14 @@
 //! Benchmarks for the brush-shell crate.
 
 #![allow(missing_docs)]
+#![allow(clippy::unwrap_used)]
 
 #[cfg(unix)]
 mod unix {
     use brush_builtins::ShellBuilderExt;
     use brush_parser::SourceSpan;
-    use criterion::{Criterion, black_box};
+    use criterion::Criterion;
+    use std::hint::black_box;
 
     async fn instantiate_shell() -> brush_core::Shell {
         brush_core::Shell::builder()
@@ -161,8 +163,7 @@ mod unix {
 criterion::criterion_group! {
     name = benches;
     config = criterion::Criterion::default()
-                .measurement_time(std::time::Duration::from_secs(10))
-                .with_profiler(pprof::criterion::PProfProfiler::new(100, pprof::criterion::Output::Flamegraph(None)));
+                .measurement_time(std::time::Duration::from_secs(10));
     targets = unix::criterion_benchmark
 }
 

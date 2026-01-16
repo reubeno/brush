@@ -39,17 +39,17 @@ impl builtins::Command for HashCommand {
         let mut result = ExecutionResult::success();
 
         if self.remove_all {
-            context.shell.program_location_cache.reset();
+            context.shell.program_location_cache_mut().reset();
         } else if self.remove {
             for name in &self.names {
-                if !context.shell.program_location_cache.unset(name) {
+                if !context.shell.program_location_cache_mut().unset(name) {
                     writeln!(context.stderr(), "{name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
         } else if self.display_paths {
             for name in &self.names {
-                if let Some(path) = context.shell.program_location_cache.get(name) {
+                if let Some(path) = context.shell.program_location_cache().get(name) {
                     if self.display_as_usable_input {
                         writeln!(
                             context.stdout(),
@@ -77,14 +77,22 @@ impl builtins::Command for HashCommand {
             }
         } else if let Some(path) = &self.path_to_use {
             for name in &self.names {
-                context.shell.program_location_cache.set(name, path.clone());
+                context
+                    .shell
+                    .program_location_cache_mut()
+                    .set(name, path.clone());
             }
         } else {
             for name in &self.names {
                 // Remove from the cache if already hashed.
-                let _ = context.shell.program_location_cache.unset(name);
+                let _ = context.shell.program_location_cache_mut().unset(name);
 
-                // Hash the path.
+                // Names with slashes are accepted silently
+                if name.contains('/') {
+                    continue;
+                }
+
+                // Hash the path
                 if context
                     .shell
                     .find_first_executable_in_path_using_cache(name)

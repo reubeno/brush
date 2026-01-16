@@ -67,7 +67,7 @@ impl TrapCommand {
     fn display_all_handlers(
         context: &brush_core::ExecutionContext<'_>,
     ) -> Result<(), brush_core::Error> {
-        for (signal, _) in context.shell.traps.iter_handlers() {
+        for (signal, _) in context.shell.traps().iter_handlers() {
             Self::display_handlers_for(context, signal)?;
         }
         Ok(())
@@ -77,7 +77,7 @@ impl TrapCommand {
         context: &brush_core::ExecutionContext<'_>,
         signal_type: TrapSignal,
     ) -> Result<(), brush_core::Error> {
-        if let Some(handler) = context.shell.traps.get_handler(signal_type) {
+        if let Some(handler) = context.shell.traps().get_handler(signal_type) {
             writeln!(
                 context.stdout(),
                 "trap -- '{}' {signal_type}",
@@ -88,7 +88,7 @@ impl TrapCommand {
     }
 
     fn remove_all_handlers(context: &mut brush_core::ExecutionContext<'_>, signal: TrapSignal) {
-        context.shell.traps.remove_handlers(signal);
+        context.shell.traps_mut().remove_handlers(signal);
     }
 
     fn register_handler(
@@ -102,10 +102,11 @@ impl TrapCommand {
         let source_info = context.shell.call_stack().current_pos_as_source_info();
 
         for signal in signals {
-            context
-                .shell
-                .traps
-                .register_handler(signal, handler.to_owned(), source_info.clone());
+            context.shell.traps_mut().register_handler(
+                signal,
+                handler.to_owned(),
+                source_info.clone(),
+            );
         }
     }
 }

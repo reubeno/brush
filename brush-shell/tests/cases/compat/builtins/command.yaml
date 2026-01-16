@@ -1,0 +1,88 @@
+name: "Builtins: command"
+cases:
+  - name: "Basic command usage"
+    ignore_stderr: true
+    stdin: |
+      echo "Executing echo built-in"
+      command echo "Hello"
+
+      echo "Executing ls using name"
+      command ls -d /
+
+      echo "Executing ls using absolute path"
+      command $(which ls) -d /
+
+      echo "Executing non-existent command by name"
+      command non-existent
+
+      echo "Executing non-existent command by path"
+      command /usr/bin/non-existent
+
+  - name: "Non-executable command"
+    ignore_stderr: true
+    stdin: |
+      mkdir subdir
+
+      echo "Before executing"
+      ./subdir
+      echo "After executing: result=$?"
+
+      echo "Before and-or list execution"
+      ./subdir || true
+      echo "After and-or list execution: result=$?"
+
+  - name: "command -v"
+    stdin: |
+      echo "PATH: $PATH"
+
+      echo "[echo]"
+      command -v echo
+
+      echo "[non-existent]"
+      command -v non-existent || echo "1. Not found"
+
+      echo "[/usr/bin/non-existent]"
+      command -v /usr/bin/non-existent || echo "2. Not found"
+
+  - name: "command -v -p"
+    stdin: |
+      unset PATH
+
+      echo "[no -p]"
+      command -v cat
+
+      echo "[-p]"
+      command -v -p cat
+
+  - name: "command -v with full paths"
+    stdin: |
+      echo "[cat]"
+      command -v cat
+
+      echo "[\$(command -v cat)]"
+      command -v $(command -v cat)
+
+  - name: "command -V"
+    ignore_stderr: true
+    stdin: |
+      command -V echo
+      command -V ls
+      command -V $(which ls)
+
+      command -V non-existent || echo "1. Not found"
+      command -V /usr/bin/non-existent || echo "2. Not found"
+
+  - name: "command with --"
+    stdin: |
+      command -- ls
+
+  - name: "command with --help"
+    stdin: |
+      command ls --help
+
+  - name: "command with -p"
+    ignore_stderr: true # In case it fails on the oracle as well, ignore the specific error message.
+    stdin: |
+      unset PATH
+
+      command -p -- ls

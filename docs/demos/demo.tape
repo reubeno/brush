@@ -15,7 +15,7 @@ Env PS1 '$0$ '
 
 # Launch brush and set up bash-completion
 Hide
-Type `brush --enable-highlighting --norc --noprofile`
+Type `brush --enable-highlighting --norc --noprofile --no-config`
 Enter
 Type `source /usr/share/bash-completion/bash_completion && clear`
 Enter

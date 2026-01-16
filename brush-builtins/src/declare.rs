@@ -211,7 +211,7 @@ impl DeclareCommand {
                 // For some reason, bash does not print an error message in this case.
                 Ok(false)
             }
-        } else if let Some(variable) = context.shell.env.get_using_policy(name, lookup) {
+        } else if let Some(variable) = context.shell.env().get_using_policy(name, lookup) {
             let mut cs = variable.attribute_flags(context.shell);
             if cs.is_empty() {
                 cs.push('-');
@@ -282,7 +282,7 @@ impl DeclareCommand {
         // Look up the variable.
         if let Some(var) = context
             .shell
-            .env
+            .env_mut()
             .get_mut_using_policy(name.as_str(), lookup)
         {
             if self.make_associative_array.is_some() {
@@ -319,7 +319,7 @@ impl DeclareCommand {
                 var.assign(initial_value, false)?;
             }
 
-            if context.shell.options.export_variables_on_modification && !var.value().is_array() {
+            if context.shell.options().export_variables_on_modification && !var.value().is_array() {
                 var.export();
             }
 
@@ -331,13 +331,12 @@ impl DeclareCommand {
                 EnvironmentScope::Global
             };
 
-            context.shell.env.add(name, var, scope)?;
+            context.shell.env_mut().add(name, var, scope)?;
         }
 
         Ok(true)
     }
 
-    #[allow(clippy::unwrap_in_result)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), brush_core::Error> {
@@ -351,11 +350,24 @@ impl DeclareCommand {
                 // We need to handle the case of someone invoking `declare array[index]`.
                 // In such case, we ignore the index and treat it as a declaration of
                 // the array.
+                #[allow(
+                    clippy::unwrap_in_result,
+                    clippy::unwrap_used,
+                    reason = "regex is valid and should not fail"
+                )]
                 static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
                     LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
+
                 if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
-                    name = captures.get(1).unwrap().as_str().to_owned();
-                    assigned_index = Some(captures.get(2).unwrap().as_str().to_owned());
+                    name = captures
+                        .get(1)
+                        .ok_or_else(|| {
+                            brush_core::ErrorKind::InternalError("declaration parse error".into())
+                        })?
+                        .as_str()
+                        .to_owned();
+
+                    assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
                     name_is_array = true;
                 } else {
                     name = s.clone();
@@ -490,7 +502,7 @@ impl DeclareCommand {
         // environment.
         for (name, variable) in context
             .shell
-            .env
+            .env()
             .iter_using_policy(iter_policy)
             .filter(|pair| filters.iter().all(|f| f(*pair)))
             .sorted_by_key(|v| v.0)

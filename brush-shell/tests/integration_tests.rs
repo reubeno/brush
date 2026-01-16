@@ -1,60 +1,81 @@
-//! Integration tests for brush shell
+//! Brush-only test harness.
+//!
+//! This test harness runs YAML-based test cases with inline expectations
+//! or insta snapshots, without comparing against an oracle shell.
 
-// For now, only compile this for Unix-like platforms (Linux, macOS).
-#![cfg(unix)]
-#![allow(clippy::panic_in_result_fn)]
+#![cfg(any(unix, windows))]
 
-use anyhow::Context;
-use predicates::prelude::PredicateBooleanExt;
+use anyhow::Result;
+use brush_test_harness::{
+    RunnerConfig, ShellConfig, TestMode, TestOptions, TestRunner, WhichShell,
+};
+use clap::Parser;
+use std::path::{Path, PathBuf};
 
-#[test]
-fn get_version_variables() -> anyhow::Result<()> {
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-    let brush_ver_str = get_variable(shell_path, "BRUSH_VERSION")?;
-    let bash_ver_str = get_variable(shell_path, "BASH_VERSION")?;
+fn create_test_shell_config(options: &TestOptions) -> ShellConfig {
+    let default_args = vec![
+        "--norc".into(),
+        "--noprofile".into(),
+        "--no-config".into(),
+        "--input-backend=basic".into(),
+        "--disable-bracketed-paste".into(),
+        "--disable-color".into(),
+    ];
 
-    assert_eq!(brush_ver_str, env!("CARGO_PKG_VERSION"));
-    assert_ne!(
-        brush_ver_str, bash_ver_str,
-        "Should differ for scripting use-case"
+    ShellConfig {
+        which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
+        default_args,
+        default_path_var: options.test_path_var.clone(),
+    }
+}
+
+async fn run_brush_tests(mut options: TestOptions) -> Result<bool> {
+    // Resolve path to the shell-under-test.
+    if options.brush_path.is_empty() {
+        options.brush_path = assert_cmd::cargo::cargo_bin!("brush")
+            .to_string_lossy()
+            .to_string();
+    }
+    if !Path::new(&options.brush_path).exists() {
+        return Err(anyhow::anyhow!(
+            "brush binary not found: {}",
+            options.brush_path
+        ));
+    }
+
+    // Resolve test cases directory (in cases/brush/).
+    let test_cases_dir = options.test_cases_path.as_deref().map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/brush"),
+        |p| p.to_owned(),
     );
 
+    let test_shell = create_test_shell_config(&options);
+
+    let config = RunnerConfig::new(PathBuf::from(&options.brush_path), test_cases_dir)
+        .with_mode(TestMode::Expectation);
+
+    let config = RunnerConfig {
+        test_shell,
+        ..config
+    };
+
+    let runner = TestRunner::new(config, options);
+    runner.run().await
+}
+
+fn main() -> Result<()> {
+    let unparsed_args: Vec<_> = std::env::args().collect();
+    let options = TestOptions::parse_from(unparsed_args);
+
+    let success = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(32)
+        .build()?
+        .block_on(run_brush_tests(options))?;
+
+    if !success {
+        std::process::exit(1);
+    }
+
     Ok(())
-}
-
-#[test]
-fn version_exit_code() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd.arg("--version").assert();
-    assert
-        .success()
-        .stdout(predicates::str::contains(env!("CARGO_PKG_VERSION")));
-}
-
-#[test]
-fn help_exit_code() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd.arg("--help").assert();
-    assert.success().stdout(predicates::str::is_empty().not());
-}
-
-#[test]
-fn invalid_option_exit_code() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("brush");
-    let assert = cmd.arg("--unknown-argument-here").assert();
-    assert
-        .failure()
-        .stderr(predicates::str::contains("unexpected argument"));
-}
-
-fn get_variable(shell_path: &std::path::Path, var: &str) -> anyhow::Result<String> {
-    let output = std::process::Command::new(shell_path)
-        .arg("--norc")
-        .arg("--noprofile")
-        .arg("-c")
-        .arg(format!("echo -n ${{{var}}}"))
-        .output()
-        .with_context(|| format!("failed to retrieve {var}"))?
-        .stdout;
-    Ok(String::from_utf8(output)?)
 }

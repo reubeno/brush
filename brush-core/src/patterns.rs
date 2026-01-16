@@ -139,7 +139,6 @@ impl Pattern {
     /// * `working_dir` - The current working directory, used for relative paths.
     /// * `path_filter` - Optionally provides a function that filters paths after expansion.
     #[expect(clippy::too_many_lines)]
-    #[allow(clippy::unwrap_in_result)]
     pub(crate) fn expand<PF>(
         &self,
         working_dir: &Path,
@@ -289,7 +288,9 @@ impl Pattern {
                 let mut path_ref = path_str.as_ref();
 
                 if let Some(prefix_to_remove) = &prefix_to_remove {
-                    path_ref = path_ref.strip_prefix(prefix_to_remove).unwrap();
+                    if let Some(stripped) = path_ref.strip_prefix(prefix_to_remove) {
+                        path_ref = stripped;
+                    }
                 }
 
                 Some(path_ref.to_string())
@@ -328,7 +329,9 @@ impl Pattern {
                 }
                 PatternPiece::Literal(s) => {
                     for c in s.chars() {
-                        current_pattern.push('\\');
+                        if crate::regex::regex_char_is_special(c) {
+                            current_pattern.push('\\');
+                        }
                         current_pattern.push(c);
                     }
                 }

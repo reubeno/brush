@@ -1,5 +1,6 @@
 #![no_main]
 #![allow(missing_docs)]
+#![allow(clippy::unwrap_used)]
 
 use std::sync::LazyLock;
 
@@ -14,8 +15,8 @@ static SHELL_TEMPLATE: LazyLock<brush_core::Shell> = LazyLock::new(|| {
     TOKIO_RT
         .block_on(
             brush_core::Shell::builder()
-                .no_profile(true)
-                .no_rc(true)
+                .profile(brush_core::ProfileLoadBehavior::Skip)
+                .rc(brush_core::RcLoadBehavior::Skip)
                 .build(),
         )
         .unwrap()

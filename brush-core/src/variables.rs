@@ -1004,21 +1004,29 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `index` - The index at which to retrieve the value, if indexing is to be performed.
-    pub fn to_assignable_str(&self, index: Option<&str>, shell: &Shell) -> String {
+    pub fn to_assignable_str(
+        &self,
+        index: Option<&str>,
+        shell: &Shell,
+    ) -> Result<String, error::Error> {
         match self {
-            Self::Unset(_) => String::new(),
-            Self::String(s) => escape::force_quote(s.as_str(), escape::QuoteMode::SingleQuote),
+            Self::Unset(_) => Ok(String::new()),
+            Self::String(s) => Ok(escape::force_quote(
+                s.as_str(),
+                escape::QuoteMode::SingleQuote,
+            )),
             Self::AssociativeArray(_) | Self::IndexedArray(_) => {
                 if let Some(index) = index {
                     if let Ok(Some(value)) = self.get_at(index, shell) {
-                        escape::force_quote(value.as_ref(), escape::QuoteMode::SingleQuote)
+                        Ok(escape::force_quote(
+                            value.as_ref(),
+                            escape::QuoteMode::SingleQuote,
+                        ))
                     } else {
-                        String::new()
+                        Ok(String::new())
                     }
                 } else {
-                    self.format(FormatStyle::DeclarePrint, shell)
-                        .unwrap()
-                        .into_owned()
+                    Ok(self.format(FormatStyle::DeclarePrint, shell)?.into_owned())
                 }
             }
             Self::Dynamic { getter, .. } => getter(shell).to_assignable_str(index, shell),

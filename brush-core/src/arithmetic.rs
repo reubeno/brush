@@ -36,10 +36,6 @@ pub enum EvalError {
     #[error("failed to parse expression: {0}")]
     ParseError(String),
 
-    /// Failed to trace an arithmetic expression.
-    #[error("failed tracing expression")]
-    TraceError,
-
     /// Error expanding an unset variable.
     #[error("expanding unset variable: {0}")]
     ExpandingUnsetVariable(String),
@@ -86,7 +82,11 @@ pub(crate) async fn expand_and_eval(
     trace_if_needed: bool,
 ) -> Result<i64, EvalError> {
     // Per documentation, first shell-expand it.
-    let expanded_self = expansion::basic_expand_str_without_tilde(shell, params, expr)
+    let options = expansion::ExpanderOptions {
+        tilde_expand: false,
+        ..Default::default()
+    };
+    let expanded_self = expansion::basic_expand_word_with_options(shell, params, expr, &options)
         .await
         .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
 
@@ -95,11 +95,10 @@ pub(crate) async fn expand_and_eval(
         .map_err(|_e| EvalError::ParseError(expanded_self))?;
 
     // Trace if applicable.
-    if trace_if_needed && shell.options.print_commands_and_arguments {
+    if trace_if_needed && shell.options().print_commands_and_arguments {
         shell
             .trace_command(params, std::format!("(( {expr} ))"))
-            .await
-            .map_err(|_err| EvalError::TraceError)?;
+            .await;
     }
 
     // Now evaluate.
@@ -157,7 +156,7 @@ fn get_var_value<'a>(shell: &'a Shell, name: &str) -> Result<Cow<'a, str>, EvalE
         }
     }
 
-    if shell.options.treat_unset_variables_as_error {
+    if shell.options().treat_unset_variables_as_error {
         return Err(EvalError::ExpandingUnsetVariable(name.into()));
     }
 
@@ -171,7 +170,7 @@ fn deref_lvalue(shell: &mut Shell, lvalue: &ast::ArithmeticTarget) -> Result<i64
             let index_str = index_expr.eval(shell)?.to_string();
 
             shell
-                .env
+                .env()
                 .get(name)
                 .map_or_else(
                     || Ok(None),
@@ -318,7 +317,7 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
     match lvalue {
         ast::ArithmeticTarget::Variable(name) => {
             shell
-                .env
+                .env_mut()
                 .update_or_add(
                     name.as_str(),
                     variables::ShellValueLiteral::Scalar(value.to_string()),
@@ -332,7 +331,7 @@ fn assign(shell: &mut Shell, lvalue: &ast::ArithmeticTarget, value: i64) -> Resu
             let index_str = index_expr.eval(shell)?.to_string();
 
             shell
-                .env
+                .env_mut()
                 .update_or_add_array_element(
                     name.as_str(),
                     index_str,

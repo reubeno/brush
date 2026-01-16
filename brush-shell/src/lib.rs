@@ -4,6 +4,7 @@
 
 pub mod args;
 mod brushctl;
+pub mod config;
 pub mod entry;
 mod error_formatter;
 pub mod events;

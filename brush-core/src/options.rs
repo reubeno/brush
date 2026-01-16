@@ -196,6 +196,8 @@ pub struct RuntimeOptions {
     pub command_string_mode: bool,
     /// Whether or not the shell is in maximal `sh` compatibility mode.    
     pub sh_mode: bool,
+    /// Whether to treat external commands as session leaders.
+    pub external_cmd_leads_session: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
 }
@@ -224,6 +226,7 @@ impl RuntimeOptions {
             print_shell_input_lines: create_options.verbose,
             treat_unset_variables_as_error: create_options.treat_unset_variables_as_error,
             exit_on_nonzero_command_exit: create_options.exit_on_nonzero_command_exit,
+            external_cmd_leads_session: create_options.external_cmd_leads_session,
             remember_command_locations: true,
             check_window_size_after_external_commands: true,
             save_multiline_cmds_in_history: true,
@@ -291,7 +294,9 @@ impl RuntimeOptions {
 
         for o in namedoptions::options(namedoptions::ShellOptionKind::Set).iter() {
             if o.definition.get(self) {
-                cs.push(o.name.chars().next().unwrap());
+                if let Some(c) = o.name.chars().next() {
+                    cs.push(c);
+                }
             }
         }
 

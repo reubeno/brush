@@ -4,6 +4,7 @@ pub use crate::sys::stubs::fs;
 pub use crate::sys::stubs::input;
 pub(crate) use crate::sys::stubs::network;
 pub(crate) use crate::sys::stubs::pipes;
+pub use crate::sys::stubs::poll;
 pub use crate::sys::stubs::process;
 pub use crate::sys::stubs::resource;
 pub use crate::sys::stubs::signal;

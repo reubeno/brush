@@ -10,11 +10,12 @@ use std::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    Shell, commands, env, error, escape, interfaces, jobs, namedoptions, patterns,
+    Shell, commands, env, error, escape, expansion, interfaces, jobs, namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValueLiteral},
 };
+use brush_parser::unquote_str;
 
 /// Type of action to take to generate completion candidates.
 #[derive(Clone, Debug, ValueEnum)]
@@ -266,14 +267,14 @@ impl Spec {
         // Store the current options in the shell; this is needed since the compopt
         // built-in has the ability of modifying the options for an in-flight
         // completion process.
-        shell.completion_config.current_completion_options = Some(self.options.clone());
+        shell.completion_config_mut().current_completion_options = Some(self.options.clone());
 
         // Generate completions based on any provided actions (and on words).
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
             let params = shell.default_exec_params();
             let words =
-                crate::expansion::full_expand_and_split_str(shell, &params, word_list).await?;
+                crate::expansion::full_expand_and_split_word(shell, &params, word_list).await?;
             for word in words {
                 if word.starts_with(context.token_to_complete) {
                     candidates.insert(word);
@@ -283,8 +284,8 @@ impl Spec {
 
         if let Some(glob_pattern) = &self.glob_pattern {
             let pattern = patterns::Pattern::from(glob_pattern.as_str())
-                .set_extended_globbing(shell.options.extended_globbing)
-                .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
+                .set_extended_globbing(shell.options().extended_globbing)
+                .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
             let expansions = pattern.expand(
                 shell.working_dir(),
@@ -355,7 +356,7 @@ impl Spec {
         // Now apply options
         //
 
-        let options = if let Some(options) = &shell.completion_config.current_completion_options {
+        let options = if let Some(options) = &shell.completion_config().current_completion_options {
             options
         } else {
             &self.options
@@ -398,7 +399,7 @@ impl Spec {
                 get_file_completions(shell, context.token_to_complete, must_be_dir).await;
             candidates.append(&mut default_candidates);
 
-            if shell.completion_config.fallback_options.mark_directories {
+            if shell.completion_config().fallback_options.mark_directories {
                 processing_options.treat_as_filenames = true;
             }
         }
@@ -424,14 +425,14 @@ impl Spec {
         for action in &self.actions {
             match action {
                 CompleteAction::Alias => {
-                    for name in shell.aliases.keys() {
+                    for name in shell.aliases().keys() {
                         if name.starts_with(token) {
                             candidates.insert(name.clone());
                         }
                     }
                 }
                 CompleteAction::ArrayVar => {
-                    for (name, var) in shell.env.iter() {
+                    for (name, var) in shell.env().iter() {
                         if var.value().is_array() && name.starts_with(token) {
                             candidates.insert(name.to_owned());
                         }
@@ -476,7 +477,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Export => {
-                    for (key, value) in shell.env.iter() {
+                    for (key, value) in shell.env().iter() {
                         if value.is_exported() && key.starts_with(token) {
                             candidates.insert(key.to_owned());
                         }
@@ -517,7 +518,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Job => {
-                    for job in &shell.jobs.jobs {
+                    for job in &shell.jobs().jobs {
                         let command_name = job.command_name();
                         if command_name.starts_with(token) {
                             candidates.insert(command_name.to_owned());
@@ -532,7 +533,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Running => {
-                    for job in &shell.jobs.jobs {
+                    for job in &shell.jobs().jobs {
                         if matches!(job.state, jobs::JobState::Running) {
                             let command_name = job.command_name();
                             if command_name.starts_with(token) {
@@ -568,7 +569,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Stopped => {
-                    for job in &shell.jobs.jobs {
+                    for job in &shell.jobs().jobs {
                         if matches!(job.state, jobs::JobState::Stopped) {
                             let command_name = job.command_name();
                             if command_name.starts_with(token) {
@@ -585,7 +586,7 @@ impl Spec {
                     }
                 }
                 CompleteAction::Variable => {
-                    for (key, _) in shell.env.iter() {
+                    for (key, _) in shell.env().iter() {
                         if key.starts_with(token) {
                             candidates.insert(key.to_owned());
                         }
@@ -615,7 +616,7 @@ impl Spec {
 
         // Fill out variables.
         for (var, value) in vars_and_values {
-            shell.env.update_or_add(
+            shell.env_mut().update_or_add(
                 var,
                 value,
                 |v| {
@@ -689,7 +690,7 @@ impl Spec {
 
         let mut vars_to_remove = vec![];
         for (var, value) in vars_and_values {
-            shell.env.update_or_add(
+            shell.env_mut().update_or_add(
                 var,
                 value,
                 |_| Ok(()),
@@ -722,7 +723,7 @@ impl Spec {
 
         // Make a best-effort attempt to unset the temporary variables.
         for var_name in vars_to_remove {
-            let _ = shell.env.unset(var_name);
+            let _ = shell.env_mut().unset(var_name);
         }
 
         let result = invoke_result.unwrap_or_else(|e| {
@@ -735,7 +736,7 @@ impl Spec {
         if result == 124 {
             Ok(Answer::RestartCompletionProcess)
         } else {
-            if let Some(reply) = shell.env.unset("COMPREPLY")? {
+            if let Some(reply) = shell.env_mut().unset("COMPREPLY")? {
                 tracing::debug!(target: trace_categories::COMPLETION, "[completion function yielded: {reply:?}]");
 
                 match reply.value() {
@@ -920,6 +921,11 @@ impl Config {
     /// # Arguments
     ///
     /// * `name` - The name of the command.
+    #[allow(
+        clippy::missing_panics_doc,
+        clippy::unwrap_used,
+        reason = "these unwrap calls should not fail"
+    )]
     pub fn get_or_add_mut(&mut self, name: &str) -> &mut Spec {
         match name {
             EMPTY_COMMAND => {
@@ -1086,11 +1092,11 @@ impl Config {
                     found_spec = Some(spec);
                 }
             } else {
-                if let Some(spec) = shell.completion_config.commands.get(command_name) {
+                if let Some(spec) = shell.completion_config().commands.get(command_name) {
                     found_spec = Some(spec);
                 } else if let Some(file_name) = PathBuf::from(command_name).file_name() {
                     if let Some(spec) = shell
-                        .completion_config
+                        .completion_config()
                         .commands
                         .get(&file_name.to_string_lossy().to_string())
                     {
@@ -1133,18 +1139,26 @@ async fn get_file_completions(
     // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
     let mut throwaway_shell = shell.clone();
     let params = throwaway_shell.default_exec_params();
-    let expanded_token = throwaway_shell
-        .basic_expand_string(&params, token_to_complete)
-        .await
-        .unwrap_or_else(|_err| token_to_complete.to_owned());
+    let options = expansion::ExpanderOptions {
+        execute_command_substitutions: false,
+        ..Default::default()
+    };
+    let expanded_token = expansion::basic_expand_word_with_options(
+        &mut throwaway_shell,
+        &params,
+        &unquote_str(token_to_complete),
+        &options,
+    )
+    .await
+    .unwrap_or_else(|_err| token_to_complete.to_owned());
 
     let glob = std::format!("{expanded_token}*");
 
     let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
 
     let pattern = patterns::Pattern::from(glob)
-        .set_extended_globbing(shell.options.extended_globbing)
-        .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
+        .set_extended_globbing(shell.options().extended_globbing)
+        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
     pattern
         .expand(
@@ -1163,7 +1177,7 @@ fn get_command_completions(shell: &Shell, context: &Context<'_>) -> IndexSet<Str
     // Look for external commands.
     for path in shell.find_executables_in_path_with_prefix(
         context.token_to_complete,
-        shell.options.case_insensitive_pathname_expansion,
+        shell.options().case_insensitive_pathname_expansion,
     ) {
         if let Some(file_name) = path.file_name() {
             candidates.insert(file_name.to_string_lossy().to_string());
@@ -1205,7 +1219,7 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
         }
 
         // Add aliases.
-        for name in shell.aliases.keys() {
+        for name in shell.aliases().keys() {
             if name.starts_with(context.token_to_complete) {
                 candidates.insert(name.to_owned());
             }
@@ -1244,9 +1258,33 @@ fn simple_tokenize_by_delimiters<'a>(
     let mut tokens = vec![];
     let mut word_start = None;
     let mut word_is_delimiters = false;
+    let mut quote_char: Option<char> = None;
+    let mut escaped = false;
 
     for (i, c) in input.char_indices() {
-        if delimiters.contains(&c) {
+        let mut is_active_delimiter = false;
+        if escaped {
+            escaped = false;
+        } else if let Some(q) = quote_char {
+            if c == '\\' && q == '"' {
+                // an escape in double-quoted string works as an escape.
+                escaped = true;
+            } else if c == q {
+                // end of quote.
+                quote_char = None;
+            }
+        } else {
+            if c == '\\' {
+                escaped = true;
+            } else if word_start.is_none() && (c == '\'' || c == '\"') {
+                // start a new quote.
+                quote_char = Some(c);
+            } else {
+                is_active_delimiter = delimiters.contains(&c);
+            }
+        }
+
+        if is_active_delimiter {
             // If we were building a regular word and this is a delimiter, then finish it.
             // Similarly, if this is a whitespace delimiter, finish any delimiter sequence.
             if let Some(start) = word_start {
@@ -1316,8 +1354,8 @@ fn completion_filter_pattern_matches(
     //
 
     let pattern = patterns::Pattern::from(pattern.as_ref())
-        .set_extended_globbing(shell.options.extended_globbing)
-        .set_case_insensitive(shell.options.case_insensitive_pathname_expansion);
+        .set_extended_globbing(shell.options().extended_globbing)
+        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
     let matches = pattern.exactly_matches(candidate)?;
 
@@ -1456,6 +1494,56 @@ mod tests {
                     text: "three",
                     start: 8,
                 }
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one'two", &['\'']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "'",
+                    start: 3,
+                },
+                CompletionToken {
+                    text: "two",
+                    start: 4,
+                },
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one 'two:three'", &[':', ' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "'two:three'",
+                    start: 4,
+                },
+            ]
+        );
+
+        assert_matches!(
+            simple_tokenize_by_delimiters("one \\'two \"two four\"", &[':', ' ']).as_slice(),
+            [
+                CompletionToken {
+                    text: "one",
+                    start: 0,
+                },
+                CompletionToken {
+                    text: "\\'two",
+                    start: 4,
+                },
+                CompletionToken {
+                    text: "\"two four\"",
+                    start: 10,
+                },
             ]
         );
     }

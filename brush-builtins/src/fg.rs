@@ -19,13 +19,16 @@ impl builtins::Command for FgCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut stderr = context.stdout();
 
+        // Read interactive option before taking mutable borrow on jobs
+        let is_interactive = context.shell.options().interactive;
+
         if let Some(job_spec) = &self.job_spec {
-            if let Some(job) = context.shell.jobs.resolve_job_spec(job_spec) {
+            if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
                 job.move_to_foreground()?;
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
-                if context.shell.options.interactive {
+                if is_interactive {
                     sys::terminal::move_self_to_foreground()?;
                 }
 
@@ -45,12 +48,12 @@ impl builtins::Command for FgCommand {
                 Ok(ExecutionResult::general_error())
             }
         } else {
-            if let Some(job) = context.shell.jobs.current_job_mut() {
+            if let Some(job) = context.shell.jobs_mut().current_job_mut() {
                 job.move_to_foreground()?;
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
-                if context.shell.options.interactive {
+                if is_interactive {
                     sys::terminal::move_self_to_foreground()?;
                 }
 

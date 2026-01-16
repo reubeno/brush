@@ -252,18 +252,11 @@ jobs:
         run: |
           set -euxo pipefail
 
-          # Set us up to use cargo-llvm-cov
-          source <(cargo llvm-cov show-env --export-prefix)
-          cargo llvm-cov clean --workspace
-
-          # Run the tests
+          # Run tests with coverage collection
           result=0
-          cargo nextest run --workspace --no-fail-fast || result=$?
+          cargo xtask test integration --coverage --coverage-output ./codecov-${VARIANT}.xml || result=$?
 
-          # Generate code coverage report
-          cargo llvm-cov report --cobertura --output-path ./codecov-${VARIANT}.xml || result=$?
-
-          # Rename test results.
+          # Rename test results for CI reporting
           mv target/nextest/default/test-results.xml ./test-results-${VARIANT}.xml
 
           # Report the actual test results
@@ -328,10 +321,10 @@ jobs:
           cache-all-crates: true
 
       - name: Format check
-        run: cargo fmt --check --all
+        run: cargo xtask check fmt
 
       - name: Check
-        run: cargo check --all-features --all-targets
+        run: cargo xtask check build
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
@@ -339,11 +332,11 @@ jobs:
           tool: cargo-deny
 
       - name: Deny check
-        run: cargo deny --all-features check all
+        run: cargo xtask check deps
 
       - name: Clippy check
         if: matrix.rust-version == 'stable'
-        run: cargo clippy --workspace --all-features --all-targets
+        run: cargo xtask check lint
 
   # Check for unneeded dependencies.
   check-deps:
@@ -366,7 +359,28 @@ jobs:
           tool: cargo-udeps
 
       - name: Check for unused dependencies
-        run: cargo udeps --workspace --all-targets --all-features
+        run: cargo xtask check unused-deps
+
+  # Check that generated schemas are up-to-date
+  check-schemas:
+    name: "Check generated schemas"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Enable cargo cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+
+      - name: Check generated schemas
+        run: cargo xtask check schemas
 
   # Analyze public API surface
   analyze-public-api:
@@ -392,29 +406,10 @@ jobs:
       - name: Set up branches
         run: |
           set -euo pipefail
-
-          git checkout -b target
           git fetch origin main
 
       - name: Compare public APIs with main
-        run: |
-          set -euxo pipefail
-
-          mkdir diffs
-          mkdir reports
-
-          for crate in $(./scripts/enum-lib-crates.sh); do
-            diff=./diffs/${crate}.txt
-            report=./reports/api-diff-${crate}.md
-
-            cargo public-api diff -sss -p $crate origin/main..target >${diff}
-            ./scripts/format-api-diff-report.py ${diff} -p ${crate} >${report}
-
-            # If the report is empty, remove it.
-            if [[ ! -s ${report} ]]; then
-              rm -f ${report}
-            fi
-          done
+        run: cargo xtask analyze public-api --base origin/main --output-dir reports
 
       - name: Upload test report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -454,15 +449,11 @@ jobs:
             ./main
 
       - name: Performance analysis on PR
-        run: |
-          set -euo pipefail
-          cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
+        run: cargo xtask analyze bench --output benchmarks.txt
         working-directory: pr
 
       - name: Performance analysis on main
-        run: |
-          set -euo pipefail
-          cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
+        run: cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: main
 
       - name: Compare benchmark results
@@ -516,27 +507,15 @@ jobs:
           sudo apt-get install -y python3
           python3 -m pip install --user pytest pytest-xdist pytest-md-report pytest-json-report
 
-      # - name: "Run test suite (oracle)"
-      #   working-directory: bash-completion/test
-      #   run: |
-      #     pytest -n 128 --no-summary ./t || true
-
       - name: "Run test suite (brush)"
-        env:
-          BASH_COMPLETION_TEST_BASH: ${{ github.workspace }}/binaries/brush --noprofile --input-backend=basic
-        working-directory: bash-completion/test
+        working-directory: brush
         run: |
-          pytest -n 128 \
-              --json-report \
-              --json-report-file=$GITHUB_WORKSPACE/test-results-bash-completion.json \
-              ./t || true
-
-      - name: "Generate report summary"
-        run: |
-          python3 brush/scripts/summarize-pytest-results.py \
-            -r $GITHUB_WORKSPACE/test-results-bash-completion.json \
-            --title="Test Summary: bash-completion test suite" \
-            >$GITHUB_WORKSPACE/test-results-bash-completion.md
+          cargo xtask test \
+              --brush-path $GITHUB_WORKSPACE/binaries/brush \
+              external bash-completion \
+              --bash-completion-path $GITHUB_WORKSPACE/bash-completion \
+              --output $GITHUB_WORKSPACE/test-results-bash-completion.json \
+              --summary-output $GITHUB_WORKSPACE/test-results-bash-completion.md || true
 
       - name: Upload test report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -611,7 +590,7 @@ jobs:
           echo "BASH_COMPLETION_PATH=$(nix path-info 'nixpkgs#bash-completion')/share/bash-completion/bash_completion">>"$GITHUB_ENV"
 
           # Forcibly add system paths
-          echo "BRUSH_COMPAT_TEST_PATH_VAR=$PATH">>"$GITHUB_ENV"
+          echo "BRUSH_TEST_PATH_VAR=$PATH">>"$GITHUB_ENV"
 
       # Checkout sources for YAML-based test cases
       - name: Checkout
@@ -644,14 +623,17 @@ jobs:
         shell: bash
         run: |
           export BRUSH_PATH=$PWD/binaries/brush
-          export BRUSH_COMPAT_TEST_CASES=$PWD/sources/brush-shell/tests/cases
           export BRUSH_VERBOSE=true
 
           result=0
           for test_name in binaries/*tests*; do
-            # TODO(interactive-tests): Re-enable interactive tests.
-            if [[ ${test_name} == *interactive* ]]; then
-              echo "WARNING: skipping interactive test: ${test_name}"
+            if [[ ${test_name} == *compat* ]]; then
+              export BRUSH_TEST_CASES=$PWD/sources/brush-shell/tests/cases/compat
+            elif [[ ${test_name} == *integration* ]]; then
+              export BRUSH_TEST_CASES=$PWD/sources/brush-shell/tests/cases/brush
+            elif [[ ${test_name} == *interactive* || ${test_name} == *version* ]]; then
+              # TODO(tests): Re-enable these tests.
+              echo "WARNING: skipping test: ${test_name}"
               continue
             fi
 

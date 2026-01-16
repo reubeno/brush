@@ -46,7 +46,7 @@ impl builtins::Command for JobsCommand {
         }
 
         if self.job_specs.is_empty() {
-            for job in &context.shell.jobs.jobs {
+            for job in &context.shell.jobs().jobs {
                 self.display_job(&context, job)?;
             }
         } else {

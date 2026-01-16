@@ -64,7 +64,7 @@ impl builtins::Command for ShoptCommand {
             };
 
             for option in options {
-                let option_value = option.definition.get(&context.shell.options);
+                let option_value = option.definition.get(context.shell.options());
                 if self.set && !option_value {
                     continue;
                 }
@@ -106,11 +106,11 @@ impl builtins::Command for ShoptCommand {
 
                 if let Some(option_definition) = option_definition {
                     if self.set {
-                        option_definition.set(&mut context.shell.options, true);
+                        option_definition.set(context.shell.options_mut(), true);
                     } else if self.unset {
-                        option_definition.set(&mut context.shell.options, false);
+                        option_definition.set(context.shell.options_mut(), false);
                     } else {
-                        let option_value = option_definition.get(&context.shell.options);
+                        let option_value = option_definition.get(context.shell.options());
                         if !option_value {
                             return_value = ExecutionResult::general_error();
                         }

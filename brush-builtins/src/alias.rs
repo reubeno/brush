@@ -25,7 +25,7 @@ impl builtins::Command for AliasCommand {
         let mut exit_code = ExecutionResult::success();
 
         if self.print || self.aliases.is_empty() {
-            for (name, value) in &context.shell.aliases {
+            for (name, value) in context.shell.aliases() {
                 writeln!(context.stdout(), "alias {name}='{value}'")?;
             }
         } else {
@@ -33,9 +33,9 @@ impl builtins::Command for AliasCommand {
                 if let Some((name, unexpanded_value)) = alias.split_once('=') {
                     context
                         .shell
-                        .aliases
+                        .aliases_mut()
                         .insert(name.to_owned(), unexpanded_value.to_owned());
-                } else if let Some(value) = context.shell.aliases.get(alias) {
+                } else if let Some(value) = context.shell.aliases().get(alias) {
                     writeln!(context.stdout(), "alias {alias}='{value}'")?;
                 } else {
                     writeln!(

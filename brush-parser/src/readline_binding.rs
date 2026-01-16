@@ -28,8 +28,8 @@ pub struct KeySequenceReadlineBinding {
 pub enum ReadlineTarget {
     /// A named readline function.
     Function(String),
-    /// A readline command.
-    Command(String),
+    /// A readline command macro.
+    Macro(String),
 }
 
 /// Represents a key sequence.
@@ -59,6 +59,16 @@ pub struct KeyStroke {
     pub control: bool,
     /// Primary key code
     pub key_code: Vec<u8>,
+}
+
+/// Parses a key sequence.
+///
+/// # Arguments
+///
+/// * `input` - The input string to parse
+pub fn parse_key_sequence(input: &str) -> Result<KeySequence, error::BindingParseError> {
+    readline_binding::key_sequence(input)
+        .map_err(|_err| error::BindingParseError::Unknown(input.to_owned()))
 }
 
 /// Parses a binding specification that maps a key sequence
@@ -99,8 +109,10 @@ pub fn key_sequence_to_strokes(
     let mut current_stroke = KeyStroke::default();
 
     for item in &seq.0 {
-        if matches!(item, KeySequenceItem::Control | KeySequenceItem::Meta)
-            && !current_stroke.key_code.is_empty()
+        if matches!(
+            item,
+            KeySequenceItem::Control | KeySequenceItem::Meta | KeySequenceItem::Byte(b'\x1b')
+        ) && !current_stroke.key_code.is_empty()
         {
             strokes.push(current_stroke);
             current_stroke = KeyStroke::default();
@@ -109,7 +121,15 @@ pub fn key_sequence_to_strokes(
         match item {
             KeySequenceItem::Control => current_stroke.control = true,
             KeySequenceItem::Meta => current_stroke.meta = true,
-            KeySequenceItem::Byte(b) => current_stroke.key_code.push(*b),
+            KeySequenceItem::Byte(b) => {
+                current_stroke.key_code.push(*b);
+                // If this is a control or meta stroke, the modifier only applies to this one byte,
+                // so we need to push the stroke and start fresh for subsequent bytes.
+                if current_stroke.control || current_stroke.meta {
+                    strokes.push(current_stroke);
+                    current_stroke = KeyStroke::default();
+                }
+            }
         }
     }
 
@@ -133,7 +153,7 @@ peg::parser! {
 
         pub rule key_sequence_readline_binding() -> KeySequenceReadlineBinding =
             _ "\"" seq:key_sequence() "\"" _ ":" _ "\"" cmd:readline_cmd() "\"" _ {
-                KeySequenceReadlineBinding { seq, target: ReadlineTarget::Command(cmd) }
+                KeySequenceReadlineBinding { seq, target: ReadlineTarget::Macro(cmd) }
             } /
             _ "\"" seq:key_sequence() "\"" _ ":" _ func:readline_function() _ {
                 KeySequenceReadlineBinding { seq, target: ReadlineTarget::Function(func) }
@@ -144,7 +164,7 @@ peg::parser! {
         rule readline_function() -> String = s:$([_]*) { s.to_string() }
 
         // Main rule for parsing a key sequence
-        rule key_sequence() -> KeySequence =
+        pub rule key_sequence() -> KeySequence =
             items:key_sequence_item()* { KeySequence(items) }
 
         rule key_sequence_item() -> KeySequenceItem =
@@ -214,7 +234,7 @@ mod tests {
             binding.seq.0,
             [KeySequenceItem::Control, KeySequenceItem::Byte(b'k')]
         );
-        assert_eq!(binding.target, ReadlineTarget::Command(String::from("xyz")));
+        assert_eq!(binding.target, ReadlineTarget::Macro(String::from("xyz")));
 
         Ok(())
     }

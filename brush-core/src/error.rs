@@ -120,7 +120,7 @@ pub enum ErrorKind {
     NoCurrentUser,
 
     /// The requested input or output redirection is invalid.
-    #[error("invalid redirection")]
+    #[error("invalid redirection target")]
     InvalidRedirection,
 
     /// An error occurred while redirecting input or output with the given file.
@@ -201,7 +201,7 @@ pub enum ErrorKind {
     WordParseError(#[from] crate::parser::WordParseError),
 
     /// Unable to parse a test command.
-    #[error(transparent)]
+    #[error("invalid test command")]
     TestCommandParseError(#[from] crate::parser::TestCommandParseError),
 
     /// Unable to parse a key binding specification.
@@ -276,10 +276,6 @@ pub enum ErrorKind {
     #[error("command history is not enabled in this shell")]
     HistoryNotEnabled,
 
-    /// Unknown key binding function.
-    #[error("unknown key binding function: {0}")]
-    UnknownKeyBindingFunction(String),
-
     /// Expanding an unset variable.
     #[error("expanding unset variable: {0}")]
     ExpandingUnsetVariable(String),
@@ -303,6 +299,21 @@ pub enum ErrorKind {
     /// Cannot convert open file to native file descriptor.
     #[error("cannot convert open file to native file descriptor")]
     CannotConvertToNativeFd,
+
+    /// History file is too large to import.
+    #[error("history file is too large to import")]
+    HistoryFileTooLargeToImport,
+
+    /// Too many open files.
+    #[error("too many open files")]
+    TooManyOpenFiles,
+
+    /// The function name shadows a special built-in command.
+    #[error("function name '{}' shadows a special built-in command", .name)]
+    FunctionNameShadowsSpecialBuiltin {
+        /// Name of the function.
+        name: String,
+    },
 }
 
 impl BuiltinError for Error {}
@@ -334,7 +345,9 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             }
             ErrorKind::ParseError(..) => Self::InvalidUsage,
             ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
+            ErrorKind::TestCommandParseError(..) => Self::InvalidUsage,
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
+            ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
             ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
             _ => Self::GeneralError,
         }
@@ -384,7 +397,7 @@ impl Error {
     ///
     /// * `shell` - The shell instance, used to check interactive mode and script call stack.
     pub const fn to_control_flow(&self, shell: &Shell) -> results::ExecutionControlFlow {
-        if self.is_fatal() && !shell.options.interactive {
+        if self.is_fatal() && !shell.options().interactive {
             results::ExecutionControlFlow::ExitShell
         } else {
             results::ExecutionControlFlow::Normal

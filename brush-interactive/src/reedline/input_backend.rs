@@ -195,6 +195,16 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
         reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::Undo]),
     );
 
+    // Capitalize.
+    key_bindings.add_binding(
+        reedline::KeyModifiers::ALT,
+        reedline::KeyCode::Char('c'),
+        reedline::ReedlineEvent::Edit(vec![
+            reedline::EditCommand::CapitalizeChar,
+            reedline::EditCommand::MoveWordRight { select: false },
+        ]),
+    );
+
     // Add comment.
     key_bindings.add_binding(
         reedline::KeyModifiers::ALT,

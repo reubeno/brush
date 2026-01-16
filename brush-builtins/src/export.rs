@@ -87,7 +87,7 @@ impl ExportCommand {
                 }
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
-                else if let Some((_, variable)) = context.shell.env.get_mut(s) {
+                else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
                     if self.unexport {
                         variable.unexport();
                     } else {
@@ -118,7 +118,7 @@ impl ExportCommand {
                 };
 
                 // Update the variable with the provided value and then mark it exported.
-                context.shell.env.update_or_add(
+                context.shell.env_mut().update_or_add(
                     name,
                     value,
                     |var| {
@@ -143,7 +143,7 @@ fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_>,
 ) -> Result<(), brush_core::Error> {
     // Enumerate variables, sorted by key.
-    for (name, variable) in context.shell.env.iter().sorted_by_key(|v| v.0) {
+    for (name, variable) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if variable.is_exported() {
             let value = variable.value().try_get_cow_str(context.shell);
             if let Some(value) = value {

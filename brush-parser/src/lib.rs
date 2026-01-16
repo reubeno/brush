@@ -1,5 +1,8 @@
 //! Implements a tokenizer and parsers for POSIX / bash shell syntax.
 
+// TODO(unwrap): remove or scope this allow attribute
+#![allow(clippy::unwrap_used)]
+
 pub mod arithmetic;
 pub mod ast;
 pub mod pattern;
@@ -23,7 +26,7 @@ pub use error::{
 #[cfg(feature = "diagnostics")]
 pub use error::miette::PrettyError;
 
-pub use parser::{Parser, ParserBuilder, ParserOptions, parse_tokens};
+pub use parser::{Parser, ParserBuilder, ParserImpl, ParserOptions, parse_tokens};
 pub use source::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use tokenizer::{
     Token, TokenLocation, TokenizerError, TokenizerOptions, tokenize_str,

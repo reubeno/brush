@@ -1,0 +1,155 @@
+name: "Builtins: bind"
+cases:
+  - name: "bind -l"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    min_oracle_version: "5.3" # Added functions in 5.3
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # List bindable actions but ignore brush custom entries
+          echo "[bind -l]"
+          bind -l | grep -v brush- | sort
+          echo "bind -l result: ${PIPESTATUS[@]}"
+
+  - name: "bind -q/-P/-p"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Basic-check some known bindings
+          well_known_func="clear-screen"
+
+          echo "[bind -q]"
+          bind -q ${well_known_func}
+          echo "bind -q result: ${PIPESTATUS[@]}"
+
+          echo "[bind -P]"
+          bind -P | grep ${well_known_func}
+          echo "bind -P result: ${PIPESTATUS[@]}"
+
+          echo "[bind -p]"
+          bind -p | grep ${well_known_func}
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+  - name: "bind -x/-X/-r/-u"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    min_oracle_version: "5.3" # -X output changed in 5.3
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Bind a key and check it
+          echo "[bind -x]"
+          bind -x '"\C-t":echo hi'
+          echo "bind -x result: $?"
+
+          echo "[bind -X]"
+          bind -X
+          echo "bind -X result: $?"
+
+          # Unbind it via -r
+          echo "[bind -r]"
+          bind -r '\C-t'
+          echo "bind -r result: $?"
+          bind -X
+          echo "bind -X result: $?"
+          echo "[bind -r (again)]"
+          bind -r '\C-t'
+          echo "bind -r (again) result: $?"
+
+          # Unbind via -u
+          well_known_func="clear-screen"
+          echo "[bind -u]"
+          bind -u ${well_known_func}
+          echo "bind -u result: $?"
+          echo "[bind -q (after -u)]"
+          bind -q ${well_known_func}
+          echo "bind -q (after -u) result: $?"
+
+  - name: "bind keyseq"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          well_known_func="clear-screen"
+          bind -u ${well_known_func} # Ensure it's unbound first
+
+          # Bind a keyseq
+          echo "[bind keyseq]"
+          bind '"\C-t":clear-screen'
+          echo "bind keyseq result: $?"
+
+          # List current bindings
+          bind -q ${well_known_func}
+          echo "bind -q result: $?"
+
+  - name: "bind macro 1"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          key_to_bind='\C-r'
+
+          echo "[bind -S (pre)]"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S result: ${PIPESTATUS[@]}"
+
+          echo "[bind -s (pre)]"
+          bind -s | grep "${key_to_bind}"
+          echo "bind -s result: ${PIPESTATUS[@]}"
+
+          echo "[bind macro]"
+          bind '"\C-r": "\e[0;1A\e[0;0A"'
+          echo "bind macro result: $?"
+
+          echo "[bind -S]"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S result: ${PIPESTATUS[@]}"
+
+          echo "[bind -s]"
+          bind -s | grep "${key_to_bind}"
+          echo "bind -s result: ${PIPESTATUS[@]}"
+
+          echo "[bind -r]"
+          bind -r "${key_to_bind}"
+          echo "bind -r result: ${PIPESTATUS[@]}"
+
+          echo "[bind -s (after -r)]"
+          bind -s | grep "${key_to_bind}"
+          echo "bind -s (after -r) result: ${PIPESTATUS[@]}"
+
+          echo "[bind -S (after -r)]"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S (after -r) result: ${PIPESTATUS[@]}"
+
+  - name: "bind macro 2"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          key_to_bind='\ec'
+
+          echo "[bind macro]"
+          bind '"\ec": " \C-b\C-k`something`\e\C-e"'
+          echo "bind macro result: $?"
+
+          echo "[bind -S]"
+          bind -S | grep "${key_to_bind}"
+          echo "bind -S result: ${PIPESTATUS[@]}"

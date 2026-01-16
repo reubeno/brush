@@ -3,6 +3,7 @@ pub use crate::sys::stubs::fd;
 pub use crate::sys::stubs::fs;
 pub use crate::sys::stubs::input;
 pub(crate) mod network;
+pub use crate::sys::stubs::poll;
 pub use crate::sys::stubs::resource;
 
 /// Signal processing utilities

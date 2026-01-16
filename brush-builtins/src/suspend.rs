@@ -18,7 +18,7 @@ impl builtins::Command for SuspendCommand {
         &self,
         context: brush_core::ExecutionContext<'_>,
     ) -> Result<ExecutionResult, Self::Error> {
-        if context.shell.options.login_shell && !self.force {
+        if context.shell.options().login_shell && !self.force {
             writeln!(context.stderr(), "login shell cannot be suspended")?;
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }

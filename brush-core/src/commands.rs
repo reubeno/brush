@@ -75,7 +75,7 @@ impl ExecutionContext<'_> {
     }
 
     pub(crate) const fn should_cmd_lead_own_process_group(&self) -> bool {
-        self.shell.options.interactive
+        self.shell.options().interactive
             && matches!(
                 self.params.process_group_policy,
                 ProcessGroupPolicy::NewProcessGroup
@@ -203,7 +203,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
 
     // Add in exported variables.
     if !empty_env {
-        for (k, v) in context.shell.env.iter_exported() {
+        for (k, v) in context.shell.env().iter_exported() {
             // NOTE: To match bash behavior, we only include exported variables
             // that are set (i.e., have a value). This means a variable that
             // shows up in `declare -p` but has no *set* value will be omitted.
@@ -279,7 +279,7 @@ async fn invoke_debug_trap_handler_if_registered(
         return Ok(());
     }
 
-    let Some(debug_trap_handler) = shell.traps.get_handler(traps::TrapSignal::Debug).cloned()
+    let Some(debug_trap_handler) = shell.traps().get_handler(traps::TrapSignal::Debug).cloned()
     else {
         return Ok(());
     };
@@ -292,7 +292,7 @@ async fn invoke_debug_trap_handler_if_registered(
     let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
 
     // TODO(well-known-vars): This shouldn't *just* be set in a trap situation.
-    shell.env.update_or_add(
+    shell.env_mut().update_or_add(
         "BASH_COMMAND",
         variables::ShellValueLiteral::Scalar(full_cmd),
         |_| Ok(()),
@@ -400,11 +400,14 @@ impl<'a> SimpleCommand<'a> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 
-        // If we found a special builtin (that's not disabled), then invoke it.
-        if builtin
-            .as_ref()
-            .is_some_and(|r| !r.disabled && r.special_builtin)
+        // If we're in POSIX mode and found a special builtin (that's not disabled), then invoke it
+        // without considering functions.
+        if self.shell.options().posix_mode
+            && builtin
+                .as_ref()
+                .is_some_and(|r| !r.disabled && r.special_builtin)
         {
+            #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
             let builtin = builtin.unwrap();
             return self.execute_via_builtin(builtin).await;
         }
@@ -419,7 +422,8 @@ impl<'a> SimpleCommand<'a> {
             }
         }
 
-        // If we found a (non-special) builtin and it's not disabled, then invoke it.
+        // If we haven't yet resolved the command name and found a builtin that's not disabled,
+        // then invoke it.
         if let Some(builtin) = builtin {
             if !builtin.disabled {
                 return self.execute_via_builtin(builtin).await;
@@ -612,20 +616,22 @@ pub(crate) async fn execute_external_command(
 
     // Set up process group state.
     if new_pg {
-        // We need to set up a new process group.
-        cmd.process_group(0);
+        // Check if we'll be doing terminal control setup (which includes setsid)
+        if child_stdin_is_terminal && context.shell.options().external_cmd_leads_session {
+            // Don't set process_group(0) - setsid() in pre_exec will handle it
+            cmd.lead_session();
+        } else {
+            // Normal case: create new process group in current session
+            cmd.process_group(0);
+            if child_stdin_is_terminal {
+                cmd.take_foreground();
+            }
+        }
     } else {
         // We need to join an established process group.
         if let Some(pgid) = process_group_id {
             cmd.process_group(pgid);
         }
-    }
-
-    // If we're to lead our own process group and stdin is a terminal,
-    // then we need to arrange for the new process to move itself
-    // to the foreground.
-    if new_pg && child_stdin_is_terminal {
-        cmd.take_foreground();
     }
 
     // When tracing is enabled, report.
@@ -665,7 +671,7 @@ pub(crate) async fn execute_external_command(
             ))
         }
         Err(spawn_err) => {
-            if context.shell.options.interactive {
+            if context.shell.options().interactive {
                 sys::terminal::move_self_to_foreground()?;
             }
 
@@ -707,7 +713,12 @@ async fn execute_builtin_command(
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
-    (builtin.execute_func)(context, args).await
+    // In POSIX mode, special builtins that return errors are to be treated as fatal.
+    let mark_errors_fatal = builtin.special_builtin && context.shell.options().posix_mode;
+
+    (builtin.execute_func)(context, args)
+        .await
+        .map_err(|e| if mark_errors_fatal { e.into_fatal() } else { e })
 }
 
 pub(crate) async fn invoke_shell_function(
@@ -775,8 +786,8 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     // Command substitutions don't inherit errexit by default. Only inherit it when
     // command_subst_inherits_errexit is enabled, otherwise disable errexit in the subshell.
-    if !shell.options.command_subst_inherits_errexit {
-        subshell.options.exit_on_nonzero_command_exit = false;
+    if !shell.options().command_subst_inherits_errexit {
+        subshell.options_mut().exit_on_nonzero_command_exit = false;
     }
 
     // Get our own set of parameters we can customize and use.

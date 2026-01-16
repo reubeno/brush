@@ -94,6 +94,8 @@ pub fn null() -> Result<OpenFile, error::Error> {
 
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
+        // TODO(unwrap): Need to revisit what we can do here.
+        #[allow(clippy::unwrap_used)]
         self.try_clone().unwrap()
     }
 }
@@ -144,8 +146,13 @@ impl OpenFile {
         }
     }
 
+    /// Borrows the open file as a `BorrowedFd`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation is not supported for the underlying file type.
     #[cfg(unix)]
-    pub(crate) fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error> {
+    pub fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error> {
         use std::os::fd::AsFd as _;
 
         match self {
@@ -311,6 +318,11 @@ impl OpenFiles {
     /// File descriptor used for standard error.
     pub const STDERR_FD: ShellFd = 2;
 
+    /// First file descriptor available for non-stdio files.
+    const FIRST_NON_STDIO_FD: ShellFd = 3;
+    /// Maximum file descriptor number allowed.
+    const MAX_FD: ShellFd = 1024;
+
     /// Creates a new `OpenFiles` instance populated with stdin, stdout, and stderr
     /// from the host environment.
     pub(crate) fn new() -> Self {
@@ -408,6 +420,26 @@ impl OpenFiles {
         self.files
             .iter()
             .filter_map(|(fd, file)| file.as_ref().map(|f| (*fd, f)))
+    }
+
+    /// Adds a new open file, returning the assigned file descriptor.
+    ///
+    /// # Arguments
+    ///
+    /// * `file`: The open file to add.
+    pub fn add(&mut self, file: OpenFile) -> Result<ShellFd, error::Error> {
+        // Start searching for free file descriptors after the standard ones.
+        let mut fd = Self::FIRST_NON_STDIO_FD;
+        while self.files.contains_key(&fd) {
+            if fd >= Self::MAX_FD {
+                return Err(error::ErrorKind::TooManyOpenFiles.into());
+            }
+
+            fd += 1;
+        }
+
+        self.files.insert(fd, Some(file));
+        Ok(fd)
     }
 }
 

@@ -125,7 +125,8 @@ pub struct TerminalInfo {
     /// Whether the terminal supports OSC 119 sequences: resetting highlight foreground color
     pub supports_osc_119: bool,
 
-    /// Whether the terminal supports OSC 133 sequences: shell integration (input, output, and prompt zones).
+    /// Whether the terminal supports OSC 133 sequences: shell integration (input, output, and
+    /// prompt zones).
     pub supports_osc_133: bool,
 
     /// Whether the terminal supports OSC 176 sequences: setting app ID.
@@ -146,7 +147,8 @@ pub struct TerminalInfo {
     /// Whether the terminal supports OSC 5113 sequences: file transfer (Kitty extension).
     pub supports_osc_5113: bool,
 
-    /// Whether the terminal supports OSC 5522 sequences: advanced clipboard interaction (Kitty extension).
+    /// Whether the terminal supports OSC 5522 sequences: advanced clipboard interaction (Kitty
+    /// extension).
     pub supports_osc_5522: bool,
 
     /// Whether the terminal supports OSC 9001 sequences: Windows Terminal extensions.
@@ -322,7 +324,6 @@ pub(crate) fn get_terminal_info(env: &impl TerminalEnvironment) -> TerminalInfo 
 /// # Arguments
 ///
 /// * `env` - An implementation of `TerminalEnvironment` to access environment variables.
-///
 pub(crate) fn try_detect_terminal(env: &impl TerminalEnvironment) -> Option<KnownTerminal> {
     if let Some(detected) = try_detect_terminal_from_prog_var(env) {
         Some(detected)

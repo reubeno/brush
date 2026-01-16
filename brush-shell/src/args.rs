@@ -1,7 +1,8 @@
 //! Types for brush command-line parsing.
 
 use clap::{Parser, builder::styling};
-use std::{io::IsTerminal, path::PathBuf};
+use std::io::IsTerminal;
+use std::path::PathBuf;
 
 use crate::{events, productinfo};
 
@@ -25,6 +26,8 @@ const VERSION: &str = const_format::concatcp!(
 );
 
 const HEADING_STANDARD_OPTIONS: &str = "Standard shell options";
+
+const HEADING_CONFIG_OPTIONS: &str = "Configuration options";
 
 const HEADING_UI_OPTIONS: &str = "User interface options";
 
@@ -60,6 +63,14 @@ pub struct CommandLineArgs {
     /// Display shell version.
     #[clap(long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
+
+    /// Path to TOML-based `brush` config file (overrides default location).
+    #[clap(long = "config", value_name = "FILE", help_heading = HEADING_CONFIG_OPTIONS)]
+    pub config_file: Option<PathBuf>,
+
+    /// Disable loading of TOML-based `brush` config file.
+    #[clap(long = "no-config", help_heading = HEADING_CONFIG_OPTIONS)]
+    pub no_config: bool,
 
     /// Enable `noclobber` shell option.
     #[arg(short = 'C', help_heading = HEADING_STANDARD_OPTIONS)]
@@ -155,6 +166,10 @@ pub struct CommandLineArgs {
     #[clap(short = 'x', help_heading = HEADING_STANDARD_OPTIONS)]
     pub print_commands_and_arguments: bool,
 
+    /// Enable xtrace and configure for the given output file.
+    #[clap(long = "xtrace-file", value_name = "FILE", help_heading = HEADING_UI_OPTIONS)]
+    pub xtrace_file_path: Option<PathBuf>,
+
     /// Disable bracketed paste.
     #[clap(long = "disable-bracketed-paste", help_heading = HEADING_UI_OPTIONS)]
     pub disable_bracketed_paste: bool,
@@ -170,6 +185,10 @@ pub struct CommandLineArgs {
     /// Enable terminal integration (**experimental**).
     #[clap(long = "enable-terminal-integration", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub terminal_shell_integration: bool,
+
+    /// Enable zsh-style preexec/precmd hooks (**experimental**).
+    #[clap(long = "enable-zsh-hooks", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    pub zsh_style_hooks: bool,
 
     /// Input backend.
     #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
@@ -205,6 +224,23 @@ pub struct CommandLineArgs {
 }
 
 impl CommandLineArgs {
+    /// Returns a `CommandLineArgs` with all clap-defined default values.
+    ///
+    /// This is useful for detecting which CLI arguments were explicitly provided
+    /// vs. which retained their default values (e.g., for config file merging).
+    #[must_use]
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "parsing defaults should not panic"
+    )]
+    pub fn default_values() -> Self {
+        use clap::Parser;
+        // Parse with just the program name to get all defaults.
+        // This won't fail because all arguments have defaults or are optional.
+        #[allow(clippy::expect_used)]
+        Self::try_parse_from(["brush"]).expect("parsing defaults should never fail")
+    }
+
     /// Returns whether or not the arguments indicate that the shell should run in interactive mode.
     pub fn is_interactive(&self) -> bool {
         // If -i is provided, then that overrides any further consideration; it forces
@@ -240,4 +276,19 @@ fn brush_help_styles() -> clap::builder::Styles {
         .usage(styling::AnsiColor::Green.on_default() | styling::Effects::BOLD)
         .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
         .placeholder(styling::AnsiColor::Cyan.on_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_values() {
+        let args = CommandLineArgs::default_values();
+        // Verify some basic defaults
+        assert!(!args.interactive);
+        assert!(!args.login);
+        assert!(args.command.is_none());
+        assert!(args.script_args.is_empty());
+    }
 }

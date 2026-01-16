@@ -2,6 +2,7 @@
 
 // For now, only compile this for Unix-like platforms (Linux, macOS).
 #![cfg(unix)]
+#![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Context;
@@ -161,6 +162,7 @@ fn start_shell_session() -> anyhow::Result<ShellSession> {
     cmd.args([
         "--norc",
         "--noprofile",
+        "--no-config",
         "--disable-bracketed-paste",
         "--disable-color",
         "--input-backend=basic",

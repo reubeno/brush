@@ -13,6 +13,7 @@ use std::fmt::Debug;
 use std::fmt::Display;
 
 use crate::ParserOptions;
+use crate::SourceSpan;
 use crate::ast;
 use crate::error;
 
@@ -69,13 +70,13 @@ pub enum WordPiece {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub enum TildeExpr {
-    /// ~
+    /// `~`
     Home,
-    /// ~<user>
+    /// `~<user>`
     UserHome(String),
-    /// ~+
+    /// `~+`
     WorkingDir,
-    /// ~-
+    /// `~-`
     OldWorkingDir,
     /// Represents a tilde expansion of the form `~+N`, referring to the Nth directory in
     /// the shell's directory stack, starting at the top of the stack. Note that the directory
@@ -573,6 +574,43 @@ pub fn parse_brace_expansions(
         .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err.into()))
 }
 
+pub(crate) fn parse_assignment_word(
+    word: &str,
+) -> Result<ast::Assignment, peg::error::ParseError<peg::str::LineCol>> {
+    expansion_parser::name_equals_scalar_value(word, &ParserOptions::default())
+}
+
+pub(crate) fn parse_array_assignment(
+    word: &str,
+    elements: &[&String],
+) -> Result<ast::Assignment, &'static str> {
+    let (assignment_name, append) = expansion_parser::name_equals(word, &ParserOptions::default())
+        .map_err(|_| "not array assignment word")?;
+
+    let elements = elements
+        .iter()
+        .map(|element| expansion_parser::literal_array_element(element, &ParserOptions::default()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "invalid array element in literal")?;
+
+    let elements_as_words = elements
+        .into_iter()
+        .map(|(key, value)| {
+            (
+                key.map(|k| ast::Word::new(k.as_str())),
+                ast::Word::new(value.as_str()),
+            )
+        })
+        .collect();
+
+    Ok(ast::Assignment {
+        name: assignment_name,
+        value: ast::AssignmentValue::Array(elements_as_words),
+        append,
+        loc: SourceSpan::default(),
+    })
+}
+
 peg::parser! {
     grammar expansion_parser(parser_options: &ParserOptions) for str {
         // Helper rule that enables pegviz to be used to visualize debug peg traces.
@@ -666,7 +704,7 @@ peg::parser! {
         pub(crate) rule is_arithmetic_word() =
             arithmetic_word(<![_]>)
 
-            // N.B. We don't bother returning the word pieces, as all users of this rule
+        // N.B. We don't bother returning the word pieces, as all users of this rule
         // only try to extract the consumed input string and not the parse result.
         rule arithmetic_word<T>(stop_condition: rule<T>) =
             arithmetic_word_piece(<stop_condition()>)* {}
@@ -684,6 +722,9 @@ peg::parser! {
             // into us, because if we see an opening parenthesis then we *must* find its closing
             // partner.
             "(" arithmetic_word_plus_right_paren() {} /
+            // This branch handles the case where we have an array element name with square brackets,
+            // which may (legitimately) contain the stop condition.
+            array_element_name() {} /
             // This branch matches any standard piece of a word, stopping as soon as we reach
             // either the overall stop condition *OR* an opening parenthesis. We add this latter
             // condition to ensure that *we* handle matching parentheses.
@@ -696,7 +737,7 @@ peg::parser! {
 
         // This rule matches an arithmetic word followed by a right parenthesis. It must consume the right parenthesis.
         rule arithmetic_word_plus_right_paren() =
-            arithmetic_word(<[')']>) ")" /
+            arithmetic_word(<[')']>) ")"
 
         rule word_piece_with_source<T>(stop_condition: rule<T>, in_command: bool) -> WordPieceWithSource =
             start_index:position!() piece:word_piece(<stop_condition()>, in_command) end_index:position!() {
@@ -958,7 +999,7 @@ peg::parser! {
             p:special_parameter() { Parameter::Special(p) } /
             non_posix_extensions_enabled() p:variable_name() "[@]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: false } } /
             non_posix_extensions_enabled() p:variable_name() "[*]" { Parameter::NamedWithAllIndices { name: p.to_owned(), concatenate: true } } /
-            non_posix_extensions_enabled() p:variable_name() "[" index:$(arithmetic_word(<"]">)) "]" {?
+            non_posix_extensions_enabled() p:variable_name() "[" index:array_index() "]" {?
                 Ok(Parameter::NamedWithIndex { name: p.to_owned(), index: index.to_owned() })
             } /
             p:variable_name() { Parameter::Named(p.to_owned()) }
@@ -1030,7 +1071,53 @@ peg::parser! {
         rule tilde_exprs_after_colon_enabled() -> () =
             &[_] {? if parser_options.tilde_expansion_after_colon { Ok(()) } else { Err("no tilde expansion after colon") } }
 
+        // Assignment rules.
 
+        pub(crate) rule name_equals_scalar_value() -> ast::Assignment =
+            nae:name_equals() value:assigned_scalar_value() {
+                let (name, append) = nae;
+                ast::Assignment { name, value, append, loc: SourceSpan::default() }
+            }
+
+        pub(crate) rule name_equals() -> (ast::AssignmentName, bool) =
+            name:assignment_name() append:("+"?) "=" {
+                (name, append.is_some())
+            }
+
+        pub(crate) rule literal_array_element() -> (Option<String>, String) =
+            "[" inner:$((!"]" [_])*) "]=" value:$([_]*) {
+                (Some(inner.to_owned()), value.to_owned())
+            } /
+            value:$([_]+) {
+                (None, value.to_owned())
+            }
+
+        rule assignment_name() -> ast::AssignmentName =
+            aen:array_element_name() {
+                let (name, index) = aen;
+                ast::AssignmentName::ArrayElementName(name.to_owned(), index.to_owned())
+            } /
+            name:assigned_scalar_name() {
+                ast::AssignmentName::VariableName(name.to_owned())
+            }
+
+        rule array_element_name() -> (&'input str, &'input str) =
+            name:assigned_scalar_name() "[" ai:array_index() "]" { (name, ai) }
+
+        rule array_index() -> &'input str =
+            $(arithmetic_word(<"]">))
+
+        rule assigned_scalar_name() -> &'input str =
+            $(alpha_or_underscore() non_first_variable_char()*)
+
+        rule non_first_variable_char() -> () =
+            ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z'] {}
+
+        rule alpha_or_underscore() -> () =
+            ['_' | 'a'..='z' | 'A'..='Z'] {}
+
+        rule assigned_scalar_value() -> ast::AssignmentValue =
+            v:$([_]*) { ast::AssignmentValue::Scalar(ast::Word::from(v.to_owned())) }
     }
 }
 
@@ -1204,6 +1291,16 @@ mod tests {
             )?);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn parse_assignment_word() -> Result<()> {
+        super::parse_assignment_word("x=3")?;
+        super::parse_assignment_word("x=")?;
+        super::parse_assignment_word("x[3]=a")?;
+        super::parse_assignment_word("x[${y[3]}]=a")?;
+        super::parse_assignment_word("x[y[3]]=a")?;
         Ok(())
     }
 }

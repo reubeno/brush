@@ -58,7 +58,7 @@ impl<'a> ScopeGuard<'a> {
     /// * `shell` - The shell whose environment to modify.
     /// * `scope_type` - The type of scope to push.
     pub fn new(shell: &'a mut crate::Shell, scope_type: EnvironmentScope) -> Self {
-        shell.env.push_scope(scope_type);
+        shell.env_mut().push_scope(scope_type);
         Self {
             scope_type,
             shell,
@@ -80,7 +80,7 @@ impl<'a> ScopeGuard<'a> {
 impl Drop for ScopeGuard<'_> {
     fn drop(&mut self) {
         if !self.detached {
-            let _ = self.shell.env.pop_scope(self.scope_type);
+            let _ = self.shell.env_mut().pop_scope(self.scope_type);
         }
     }
 }
