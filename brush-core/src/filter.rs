@@ -3,6 +3,39 @@
 //! This module provides a mechanism for intercepting and modifying shell operations
 //! at key execution points. It is only available when the `experimental-filters` feature
 //! is enabled.
+//!
+//! # Overview
+//!
+//! The filter system allows extensions to:
+//!
+//! - Intercept operations before they execute (pre-filters)
+//! - Modify inputs before processing
+//! - Short-circuit operations with custom results
+//! - Transform outputs after processing (post-filters)
+//!
+//! # Key Types
+//!
+//! - [`FilterableOp`]: Trait defining input/output types for filterable operations
+//! - [`PreFilterResult`]: Result of a pre-operation filter (continue or return early)
+//! - [`PostFilterResult`]: Result of a post-operation filter
+//!
+//! # The `with_filter!` Macro
+//!
+//! The [`with_filter!`] macro handles all the boilerplate of checking for extensions,
+//! cloning them, and calling pre/post filter methods. See the macro documentation
+//! for usage examples.
+//!
+//! # Performance Characteristics
+//!
+//! - When no extension modifies behavior, overhead is minimal (method calls with default returns)
+//! - Extensions are cloned once per filtered operation to avoid lifetime issues
+//! - The macro ensures proper ordering: pre-filter → body → post-filter
+//!
+//! # Feature Gating
+//!
+//! This entire module is gated behind the `experimental-filters` feature flag.
+//! When disabled, a no-op version of `with_filter!` is provided that compiles
+//! to zero overhead.
 
 /// Trait that defines the input and output types for a filterable operation.
 ///

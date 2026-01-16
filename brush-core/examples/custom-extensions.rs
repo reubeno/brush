@@ -31,7 +31,10 @@ impl extensions::ShellExtensions for LoggingExtensions {
     ) -> PreFilterResult<SimpleCommand<'a>> {
         // Increment and log command count
         let count_val = {
-            let mut count = self.command_count.lock().unwrap();
+            let Ok(mut count) = self.command_count.lock() else {
+                // Mutex poisoned, just continue without logging
+                return PreFilterResult::Continue(input);
+            };
             *count += 1;
             *count
         };

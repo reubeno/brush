@@ -863,20 +863,27 @@ impl<'a> WordExpander<'a> {
             brush_parser::word::WordPiece::ParameterExpansion(p) => {
                 self.expand_parameter_expr(p).await?
             }
-            brush_parser::word::WordPiece::BackquotedCommandSubstitution(s)
-            | brush_parser::word::WordPiece::CommandSubstitution(s) => {
-                let mut cmd_output = if !self.disable_command_substitutions {
-                    commands::invoke_command_in_subshell_and_get_output(self.shell, self.params, s)
+            brush_parser::word::WordPiece::BackquotedCommandSubstitution(s) => {
+                #[cfg(feature = "experimental-filters")]
+                {
+                    self.expand_command_substitution(s, commands::SubstitutionSyntax::Backticks)
                         .await?
-                } else {
-                    String::new()
-                };
-
-                // We trim trailing newlines, per spec.
-                let trimmed_len = cmd_output.trim_end_matches('\n').len();
-                cmd_output.truncate(trimmed_len);
-
-                Expansion::from(ExpansionPiece::Splittable(cmd_output))
+                }
+                #[cfg(not(feature = "experimental-filters"))]
+                {
+                    self.expand_command_substitution(s).await?
+                }
+            }
+            brush_parser::word::WordPiece::CommandSubstitution(s) => {
+                #[cfg(feature = "experimental-filters")]
+                {
+                    self.expand_command_substitution(s, commands::SubstitutionSyntax::DollarParen)
+                        .await?
+                }
+                #[cfg(not(feature = "experimental-filters"))]
+                {
+                    self.expand_command_substitution(s).await?
+                }
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
                 if let Some(escaped) = s.strip_prefix('\\') {
@@ -951,6 +958,79 @@ impl<'a> WordExpander<'a> {
                 Ok(std::format!("~{plus_or_nothing}{n}"))
             }
         }
+    }
+
+    /// Expands a command substitution, invoking the pre-command-substitution hook
+    /// when the `experimental-filters` feature is enabled.
+    ///
+    /// This method handles both `$(...)` and backtick substitutions, calling the
+    /// policy hook before executing the substitution body.
+    #[cfg(feature = "experimental-filters")]
+    async fn expand_command_substitution(
+        &mut self,
+        body: String,
+        syntax: commands::SubstitutionSyntax,
+    ) -> Result<Expansion, error::Error> {
+        // If command substitutions are disabled, return empty string.
+        if self.disable_command_substitutions {
+            return Ok(Expansion::from(ExpansionPiece::Splittable(String::new())));
+        }
+
+        // Build the context for the pre-command-substitution hook.
+        // We use Cow::Owned here since we need to potentially move `body` later.
+        let context = commands::CommandSubstitutionContext {
+            raw_body: Some(Cow::Owned(body.clone())),
+            syntax,
+        };
+
+        // Invoke the pre-command-substitution hook.
+        let decision = self.shell.extensions().pre_command_substitution(&context);
+
+        // Handle the decision.
+        let mut cmd_output = match decision {
+            commands::CommandSubstitutionDecision::Allow => {
+                // Execute the substitution body normally.
+                commands::invoke_command_in_subshell_and_get_output(self.shell, self.params, body)
+                    .await?
+            }
+            commands::CommandSubstitutionDecision::ReplaceOutput { output } => {
+                // Use the replacement output instead of executing.
+                output
+            }
+            commands::CommandSubstitutionDecision::Error(err) => {
+                // Abort expansion with the provided error.
+                return Err(err);
+            }
+        };
+
+        // We trim trailing newlines, per spec.
+        let trimmed_len = cmd_output.trim_end_matches('\n').len();
+        cmd_output.truncate(trimmed_len);
+
+        Ok(Expansion::from(ExpansionPiece::Splittable(cmd_output)))
+    }
+
+    /// Expands a command substitution without the policy hook.
+    ///
+    /// This is the fallback implementation when the `experimental-filters` feature
+    /// is not enabled.
+    #[cfg(not(feature = "experimental-filters"))]
+    async fn expand_command_substitution(
+        &mut self,
+        body: String,
+    ) -> Result<Expansion, error::Error> {
+        let mut cmd_output = if !self.disable_command_substitutions {
+            commands::invoke_command_in_subshell_and_get_output(self.shell, self.params, body)
+                .await?
+        } else {
+            String::new()
+        };
+
+        // We trim trailing newlines, per spec.
+        let trimmed_len = cmd_output.trim_end_matches('\n').len();
+        cmd_output.truncate(trimmed_len);
+
+        Ok(Expansion::from(ExpansionPiece::Splittable(cmd_output)))
     }
 
     /// Helper function to process pieces within a double-quoted sequence.
