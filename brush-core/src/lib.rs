@@ -67,6 +67,13 @@ pub use variables::{ShellValue, ShellVariable};
 #[cfg(feature = "experimental-filters")]
 pub use shell::ScriptArgs;
 
+#[cfg(feature = "experimental-filters")]
+pub use commands::{
+    CommandContext, CommandSubstitutionContext, CommandSubstitutionDecision, DispatchTarget,
+    PipelineContext, PolicyDecision, RedirectionInfo, RedirectionMode, RedirectionTarget,
+    SubstitutionSyntax,
+};
+
 /// No-op version of `with_filter!` when experimental-filters is disabled.
 ///
 /// This macro expands directly to the body with zero overhead.

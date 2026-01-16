@@ -25,6 +25,311 @@ use crate::{
 #[cfg(feature = "experimental-filters")]
 use crate::{filter, results};
 
+//
+// Post-expansion policy hook types (experimental-filters)
+//
+
+/// Context describing a command after expansion but before dispatch.
+///
+/// This type is used by the post-expansion policy hook to provide comprehensive
+/// information about a command for security/policy decisions. It borrows from
+/// the finalized `SimpleCommand` and tracks additional execution metadata.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of the borrowed data
+/// from the expanded command (executable, arguments, raw command, redirections).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug)]
+pub struct CommandContext<'a> {
+    /// The executable name (the first expanded word, argv[0]).
+    pub executable: &'a str,
+
+    /// The arguments list (expanded argv excluding the executable, argv[1..]).
+    pub arguments: &'a [CommandArg],
+
+    /// The raw command string before expansion, when available.
+    ///
+    /// This represents user input prior to expansion and splitting.
+    /// It is `None` when the raw command cannot be preserved.
+    pub raw_command: Option<Cow<'a, str>>,
+
+    /// Pipeline information when the command is part of a pipeline.
+    ///
+    /// This is `None` when the command is not part of a pipeline.
+    pub pipeline: Option<PipelineContext>,
+
+    /// The list of redirections associated with the command.
+    ///
+    /// Redirections preserve source order. The container is owned but
+    /// elements may borrow strings from the expanded redirect targets.
+    pub redirections: Vec<RedirectionInfo<'a>>,
+
+    /// The resolved dispatch target (builtin, function, or external).
+    ///
+    /// This classification is computed without unbounded filesystem probing.
+    pub dispatch_target: DispatchTarget,
+}
+
+/// Context describing a command's position within a pipeline.
+///
+/// For a pipeline like `cmd1 | cmd2 | cmd3`, each command receives a
+/// `PipelineContext` with its zero-indexed position and the total length.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineContext {
+    /// Zero-indexed position of the command in the pipeline.
+    ///
+    /// For `cmd1 | cmd2 | cmd3`:
+    /// - `cmd1` has position 0
+    /// - `cmd2` has position 1
+    /// - `cmd3` has position 2
+    pub position: usize,
+
+    /// Total number of commands in the pipeline.
+    ///
+    /// For a pipeline with N commands (N > 1), this equals N for all commands.
+    pub length: usize,
+}
+
+/// Structured representation of a single I/O redirection.
+///
+/// This type captures the destination file descriptor, what it redirects to,
+/// and how the redirection operates.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of borrowed strings
+/// in the redirection target (e.g., file paths, here-doc content).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedirectionInfo<'a> {
+    /// Destination file descriptor number.
+    ///
+    /// Common values:
+    /// - 0 = stdin
+    /// - 1 = stdout
+    /// - 2 = stderr
+    pub fd: i32,
+
+    /// What the file descriptor redirects to.
+    pub target: RedirectionTarget<'a>,
+
+    /// How the redirection operates.
+    pub mode: RedirectionMode,
+}
+
+/// What a file descriptor redirects to.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of borrowed strings
+/// (file paths, here-doc content, here-string content).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RedirectionTarget<'a> {
+    /// Redirect to/from a file path (expanded value).
+    ///
+    /// Examples: `< input.txt`, `> output.txt`, `>> log.txt`
+    FilePath(Cow<'a, str>),
+
+    /// Redirect to/from another file descriptor.
+    ///
+    /// Examples: `2>&1` (stderr to stdout), `1>&2` (stdout to stderr)
+    FileDescriptor(i32),
+
+    /// Here-document content.
+    ///
+    /// Example:
+    /// ```sh
+    /// cat <<EOF
+    /// content here
+    /// EOF
+    /// ```
+    HereDoc(Cow<'a, str>),
+
+    /// Here-string content.
+    ///
+    /// Example: `cat <<< "hello world"`
+    HereString(Cow<'a, str>),
+}
+
+/// How a redirection operates.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedirectionMode {
+    /// Open for reading (`<`).
+    Read,
+
+    /// Open for writing, truncate (`>`).
+    Write,
+
+    /// Open for writing, append (`>>`).
+    Append,
+
+    /// Open for both reading and writing (`<>`).
+    ReadWrite,
+
+    /// Force overwrite even with `noclobber` (`>|`).
+    Clobber,
+}
+
+/// Dispatch classification for a command.
+///
+/// This indicates whether a command will dispatch to a builtin, function,
+/// or external executable. The classification is computed without unbounded
+/// filesystem probing.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DispatchTarget {
+    /// The command dispatches to a shell builtin.
+    Builtin,
+
+    /// The command dispatches to a shell function.
+    Function,
+
+    /// The command dispatches to an external executable.
+    ///
+    /// If the resolved path is already known without extra filesystem probing
+    /// (e.g., the executable contains a `/` and can be treated as a path),
+    /// it may be included.
+    External {
+        /// The resolved path to the external executable, if known without
+        /// additional filesystem probing.
+        resolved_path: Option<PathBuf>,
+    },
+}
+
+/// Policy decision returned by the post-expansion policy hook.
+///
+/// This type indicates whether command execution should continue or be
+/// short-circuited with an early return.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+pub enum PolicyDecision {
+    /// Proceed with command dispatch/execution.
+    Continue,
+
+    /// Skip dispatch/execution and return the provided result.
+    ///
+    /// The shell will use this result as if the command had executed
+    /// and returned it.
+    Return(ExecutionResult),
+}
+
+#[cfg(feature = "experimental-filters")]
+impl std::fmt::Debug for PolicyDecision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Continue => write!(f, "Continue"),
+            Self::Return(result) => write!(f, "Return(exit_code={:?})", result.exit_code),
+        }
+    }
+}
+
+/// Context passed to the pre-command-substitution policy hook.
+///
+/// This type provides information about a command substitution before
+/// its body is executed, allowing policy hooks to inspect or block
+/// substitution execution.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of borrowed strings
+/// (the raw substitution body).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug)]
+pub struct CommandSubstitutionContext<'a> {
+    /// Raw source text of the substitution body, when available.
+    ///
+    /// This allows policy hooks to inspect the unevaluated command text.
+    /// If source spans are unavailable, this is `None`.
+    pub raw_body: Option<Cow<'a, str>>,
+
+    /// The syntax used for the command substitution.
+    pub syntax: SubstitutionSyntax,
+}
+
+/// The syntax form used for a command substitution.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubstitutionSyntax {
+    /// Modern `$(...)` syntax.
+    DollarParen,
+
+    /// Legacy backtick `` `...` `` syntax.
+    Backticks,
+}
+
+/// Decision returned by the pre-command-substitution policy hook.
+///
+/// This type indicates how the shell should handle a command substitution:
+/// execute it normally, replace its output, or abort with an error.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug)]
+pub enum CommandSubstitutionDecision {
+    /// Execute the substitution body normally.
+    ///
+    /// The shell will execute the command and use its output as the
+    /// substitution result.
+    Allow,
+
+    /// Do not execute the substitution body; use the provided output instead.
+    ///
+    /// This allows policy hooks to short-circuit substitution execution
+    /// and provide a replacement value.
+    ReplaceOutput {
+        /// The string to use as the substitution result instead of
+        /// executing the command.
+        output: String,
+    },
+
+    /// Abort the expansion with an error.
+    ///
+    /// This prevents the substitution from executing and propagates
+    /// the error to the caller.
+    Error(error::Error),
+}
+
 /// Encapsulates the result of waiting for a command to complete.
 pub enum CommandWaitResult {
     /// The command completed.
