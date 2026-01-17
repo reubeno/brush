@@ -309,8 +309,8 @@ pub(crate) fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
     }
 
     match options.preferred_mode {
-        QuoteMode::BackslashEscape => backslash_escape(s).into(),
-        QuoteMode::SingleQuote => single_quote(s).into(),
+        QuoteMode::BackslashEscape => backslash_escape(s),
+        QuoteMode::SingleQuote => single_quote(s),
         QuoteMode::DoubleQuote => double_quote(s).into(),
     }
 }
@@ -348,13 +348,11 @@ pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
 }
 
 fn backslash_escape(s: &str) -> Cow<'_, str> {
-    let mut chars = s.chars();
-
-    if !chars.any(needs_escaping) {
+    if !s.chars().any(needs_escaping) {
         Cow::Borrowed(s)
     } else {
         let mut output = String::with_capacity(s.len());
-        for c in chars {
+        for c in s.chars() {
             if needs_escaping(c) {
                 output.push('\\');
             }

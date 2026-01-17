@@ -8,7 +8,8 @@ use crate::{ast, error};
 ///
 /// * `input` - The test command expression to parse, in string form.
 pub fn parse<S: AsRef<str>>(input: &[S]) -> Result<ast::TestExpr, error::TestCommandParseError> {
-    let expr = test_command::full_expression(&input.iter().map(AsRef::as_ref).collect::<Vec<&str>>())?;
+    let expr =
+        test_command::full_expression(&input.iter().map(AsRef::as_ref).collect::<Vec<&str>>())?;
 
     Ok(expr)
 }
