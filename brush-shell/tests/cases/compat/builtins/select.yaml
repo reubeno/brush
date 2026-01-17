@@ -1,0 +1,5 @@
+name: "select (){ ;: }"
+cases:
+  - name: "select (){ ;: }"
+    stdin: |
+      select (){ :; }; echo "select (){ :; }" => $?"

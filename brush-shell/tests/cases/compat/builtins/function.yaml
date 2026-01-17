@@ -1,0 +1,5 @@
+name: "function (){ ;: }"
+cases:
+  - name: "function (){ ;: }"
+    stdin: |
+      function (){ :; }; echo "function (){ :; }" => $?"

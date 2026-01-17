@@ -1,0 +1,5 @@
+name: "while (){ ;: }"
+cases:
+  - name: "while (){ ;: }"
+    stdin: |
+      while (){ :; }; echo "while (){ :; }" => $?"

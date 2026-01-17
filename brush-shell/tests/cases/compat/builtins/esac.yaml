@@ -1,0 +1,5 @@
+name: "esac (){ ;: }"
+cases:
+  - name: "esac (){ ;: }"
+    stdin: |
+      esac (){ :; }; echo "esac (){ :; }" => $?"

@@ -1,0 +1,5 @@
+name: "until (){ ;: }"
+cases:
+  - name: "until (){ ;: }"
+    stdin: |
+      until (){ :; }; echo "until (){ :; }" => $?"
