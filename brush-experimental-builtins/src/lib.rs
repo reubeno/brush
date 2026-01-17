@@ -23,7 +23,9 @@ pub trait ShellBuilderExt {
     fn experimental_builtins(self) -> Self;
 }
 
-impl<S: brush_core::ShellBuilderState> ShellBuilderExt for brush_core::ShellBuilder<S> {
+impl<EB: brush_core::extensions::ErrorBehavior, S: brush_core::ShellBuilderState> ShellBuilderExt
+    for brush_core::ShellBuilder<EB, S>
+{
     fn experimental_builtins(self) -> Self {
         self.builtins(crate::experimental_builtins())
     }

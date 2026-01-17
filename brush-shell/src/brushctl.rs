@@ -11,7 +11,9 @@ pub(crate) trait ShellBuilderBrushBuiltinExt {
     fn brush_builtins(self) -> Self;
 }
 
-impl<S: brush_core::ShellBuilderState> ShellBuilderBrushBuiltinExt for brush_core::ShellBuilder<S> {
+impl<EB: brush_core::extensions::ErrorBehavior, S: brush_core::ShellBuilderState>
+    ShellBuilderBrushBuiltinExt for brush_core::ShellBuilder<EB, S>
+{
     fn brush_builtins(self) -> Self {
         // For compatibility with previous releases, we register the command under both
         // `brushctl` and `brushinfo` names. It will behave identically across the two.

@@ -12,6 +12,7 @@ pub mod error;
 pub mod escape;
 pub mod expansion;
 mod extendedtests;
+pub mod extensions;
 pub mod functions;
 pub mod history;
 pub mod int_utils;
@@ -51,6 +52,7 @@ pub mod parser {
 
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::{BuiltinError, Error, ErrorKind};
+pub use extensions::{DefaultErrorBehavior, ErrorBehavior};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};

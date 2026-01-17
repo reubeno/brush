@@ -15,19 +15,16 @@ use crate::results::ExecutionWaitResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history, interfaces,
-    ioutils, pathcache, pathsearch, trace_categories, wellknownvars,
+    ErrorBehavior, ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history,
+    interfaces, ioutils, pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
-    builtins, commands, completion, env, error, expansion, functions, jobs, keywords, openfiles,
-    prompt, sys::users, traps,
+    builtins, commands, completion, env, error, expansion, extensions, functions, jobs, keywords,
+    openfiles, prompt, sys::users, traps,
 };
 
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
-
-/// Type for storing an error formatter.
-pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
@@ -68,9 +65,82 @@ impl RcLoadBehavior {
     }
 }
 
+/// A trait for constrained access to shell state.
+pub trait ShellState {
+    /// Returns the last "SECONDS" captured time.
+    fn last_stopwatch_time(&self) -> std::time::SystemTime;
+
+    /// Returns the last "SECONDS" offset requested.
+    fn last_stopwatch_offset(&self) -> u32;
+
+    /// Returns the shell environment containing variables.
+    fn env(&self) -> &ShellEnvironment;
+
+    /// Returns a mutable reference to the shell environment.
+    fn env_mut(&mut self) -> &mut ShellEnvironment;
+
+    /// Returns the shell's runtime options.
+    fn options(&self) -> &RuntimeOptions;
+
+    /// Returns a mutable reference to the shell's runtime options.
+    fn options_mut(&mut self) -> &mut RuntimeOptions;
+
+    /// Returns the shell's aliases.
+    fn aliases(&self) -> &HashMap<String, String>;
+
+    /// Returns a mutable reference to the shell's aliases.
+    fn aliases_mut(&mut self) -> &mut HashMap<String, String>;
+
+    /// Returns the shell's job manager.
+    fn jobs(&self) -> &jobs::JobManager;
+
+    /// Returns a mutable reference to the shell's job manager.
+    fn jobs_mut(&mut self) -> &mut jobs::JobManager;
+
+    /// Returns the shell's trap handler configuration.
+    fn traps(&self) -> &traps::TrapHandlerConfig;
+
+    /// Returns a mutable reference to the shell's trap handler configuration.
+    fn traps_mut(&mut self) -> &mut traps::TrapHandlerConfig;
+
+    /// Returns the shell's directory stack.
+    fn directory_stack(&self) -> &[PathBuf];
+
+    /// Returns a mutable reference to the shell's directory stack.
+    fn directory_stack_mut(&mut self) -> &mut Vec<PathBuf>;
+
+    /// Returns the statuses of commands in the last pipeline.
+    fn last_pipeline_statuses(&self) -> &[u8];
+
+    /// Returns a mutable reference to the statuses of commands in the last pipeline.
+    fn last_pipeline_statuses_mut(&mut self) -> &mut Vec<u8>;
+
+    /// Returns the shell's program location cache.
+    fn program_location_cache(&self) -> &pathcache::PathCache;
+
+    /// Returns a mutable reference to the shell's program location cache.
+    fn program_location_cache_mut(&mut self) -> &mut pathcache::PathCache;
+
+    /// Returns the shell's completion configuration.
+    fn completion_config(&self) -> &completion::Config;
+
+    /// Returns a mutable reference to the shell's completion configuration.
+    fn completion_config_mut(&mut self) -> &mut completion::Config;
+
+    /// Returns the shell's open files.
+    fn open_files(&self) -> &openfiles::OpenFiles;
+
+    /// Returns a mutable reference to the shell's open files.
+    fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles;
+}
+
 /// Represents an instance of a shell.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Shell {
+pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExtensions> {
+    /// Injected error behavior.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_behavior"))]
+    error_behavior: SE::ErrorBehavior,
+
     /// Trap handler configuration for the shell.
     traps: traps::TrapHandlerConfig,
 
@@ -132,7 +202,7 @@ pub struct Shell {
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
-    builtins: HashMap<String, builtins::Registration>,
+    builtins: HashMap<String, builtins::Registration<SE>>,
 
     /// Shell program location cache.
     program_location_cache: pathcache::PathCache,
@@ -149,15 +219,12 @@ pub struct Shell {
 
     /// History of commands executed in the shell.
     history: Option<history::History>,
-
-    /// Error formatter for customizing error display.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
-    error_formatter: ErrorFormatterHelper,
 }
 
-impl Clone for Shell {
+impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
+            error_behavior: self.error_behavior.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -182,19 +249,18 @@ impl Clone for Shell {
             last_stopwatch_offset: self.last_stopwatch_offset,
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
-            error_formatter: self.error_formatter.clone(),
             depth: self.depth + 1,
         }
     }
 }
 
-impl AsRef<Self> for Shell {
+impl<SE: extensions::ShellExtensions> AsRef<Self> for Shell<SE> {
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl AsMut<Self> for Shell {
+impl<SE: extensions::ShellExtensions> AsMut<Self> for Shell<SE> {
     fn as_mut(&mut self) -> &mut Self {
         self
     }
@@ -202,10 +268,12 @@ impl AsMut<Self> for Shell {
 
 pub use shell_builder::State as ShellBuilderState;
 
-impl<S: shell_builder::IsComplete> ShellBuilder<S> {
+impl<EB: extensions::ErrorBehavior, S: shell_builder::IsComplete> ShellBuilder<EB, S> {
     /// Returns a new shell instance created with the options provided. Runs any
     /// configuration loading as well.
-    pub async fn build(self) -> Result<Shell, error::Error> {
+    pub async fn build(
+        self,
+    ) -> Result<Shell<extensions::ConstructedShellExtensions<EB>>, error::Error> {
         let mut options = self.build_settings();
 
         let profile = std::mem::take(&mut options.profile);
@@ -223,7 +291,7 @@ impl<S: shell_builder::IsComplete> ShellBuilder<S> {
     }
 }
 
-impl<S: shell_builder::State> ShellBuilder<S> {
+impl<EB: extensions::ErrorBehavior, S: shell_builder::State> ShellBuilder<EB, S> {
     /// Add a disabled option
     pub fn disable_option(mut self, option: impl Into<String>) -> Self {
         self.disabled_options.push(option.into());
@@ -277,7 +345,11 @@ impl<S: shell_builder::State> ShellBuilder<S> {
     }
 
     /// Add a single builtin registration
-    pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration) -> Self {
+    pub fn builtin(
+        mut self,
+        name: impl Into<String>,
+        reg: builtins::Registration<impl extensions::ShellExtensions>,
+    ) -> Self {
         self.builtins.insert(name.into(), reg);
         self
     }
@@ -285,7 +357,12 @@ impl<S: shell_builder::State> ShellBuilder<S> {
     /// Add many builtin registrations
     pub fn builtins(
         mut self,
-        builtins: impl IntoIterator<Item = (String, builtins::Registration)>,
+        builtins: impl IntoIterator<
+            Item = (
+                String,
+                builtins::Registration<impl extensions::ShellExtensions>,
+            ),
+        >,
     ) -> Self {
         self.builtins.extend(builtins);
         self
@@ -314,7 +391,10 @@ impl<S: shell_builder::State> ShellBuilder<S> {
         vis = "pub(self)"
     )
 )]
-pub struct CreateOptions {
+pub struct CreateOptions<EB: extensions::ErrorBehavior = extensions::DefaultErrorBehavior> {
+    /// Error behavior implementation.
+    #[builder(start_fn)]
+    pub error_behavior: EB,
     /// Disabled options.
     #[builder(field)]
     pub disabled_options: Vec<String>,
@@ -329,7 +409,8 @@ pub struct CreateOptions {
     pub enabled_shopt_options: Vec<String>,
     /// Registered builtins.
     #[builder(field)]
-    pub builtins: HashMap<String, builtins::Registration>,
+    pub builtins:
+        HashMap<String, builtins::Registration<extensions::ConstructedShellExtensions<EB>>>,
     /// Provides a set of variables to be initialized in the shell. If present, they
     /// are assigned *after* inherited or well-known variables are set (when applicable).
     #[builder(field)]
@@ -407,15 +488,14 @@ pub struct CreateOptions {
     pub max_function_call_depth: Option<usize>,
     /// Key bindings helper for the shell to use.
     pub key_bindings: Option<KeyBindingsHelper>,
-    /// Error formatter helper for the shell to use.
-    pub error_formatter: Option<ErrorFormatterHelper>,
     /// Brush implementation version.
     pub shell_version: Option<String>,
 }
 
-impl Default for Shell {
+impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
     fn default() -> Self {
         Self {
+            error_behavior: SE::ErrorBehavior::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: PathBuf::default(),
@@ -441,26 +521,28 @@ impl Default for Shell {
             last_stopwatch_offset: 0,
             key_bindings: None,
             history: None,
-            error_formatter: default_error_formatter(),
         }
     }
 }
 
 impl Shell {
     /// Create an instance of [Shell] using the builder syntax
-    pub fn builder() -> ShellBuilder<shell_builder::Empty> {
-        CreateOptions::builder()
+    pub fn builder() -> ShellBuilder<extensions::DefaultErrorBehavior, shell_builder::Empty> {
+        CreateOptions::builder(crate::DefaultErrorBehavior)
     }
+}
 
+impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Returns a new shell instance created with the given options.
     /// Does *not* load any configuration files (e.g., bashrc).
     ///
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub(crate) fn new(options: CreateOptions) -> Result<Self, error::Error> {
+    pub(crate) fn new(options: CreateOptions<SE::ErrorBehavior>) -> Result<Self, error::Error> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
+            error_behavior: options.error_behavior,
             open_files: openfiles::OpenFiles::new(),
             options: RuntimeOptions::defaults_from(&options),
             name: options.shell_name,
@@ -470,9 +552,6 @@ impl Shell {
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
             builtins: options.builtins,
             key_bindings: options.key_bindings,
-            error_formatter: options
-                .error_formatter
-                .unwrap_or_else(default_error_formatter),
             ..Self::default()
         };
 
@@ -508,7 +587,9 @@ impl Shell {
 
         Ok(shell)
     }
+}
 
+impl<SE: extensions::ShellExtensions> Shell<SE> {
     fn load_history(&self) -> Result<Option<history::History>, error::Error> {
         const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
 
@@ -541,16 +622,6 @@ impl Shell {
         }
 
         Ok(Some(history::History::import(history_file)?))
-    }
-
-    /// Returns the shell's official version string (if available).
-    pub const fn version(&self) -> &Option<String> {
-        &self.version
-    }
-
-    /// Returns the call stack for the shell.
-    pub const fn call_stack(&self) -> &callstack::CallStack {
-        &self.call_stack
     }
 
     /// Increments the interactive line offset in the shell by the indicated number
@@ -626,21 +697,6 @@ impl Shell {
         &mut self.args
     }
 
-    /// Returns the exit status of the last command executed in this shell.
-    pub const fn last_exit_status(&self) -> u8 {
-        self.last_exit_status
-    }
-
-    pub(crate) const fn last_exit_status_change_count(&self) -> usize {
-        self.last_exit_status_change_count
-    }
-
-    /// Updates the last exit status.
-    pub const fn set_last_exit_status(&mut self, status: u8) {
-        self.last_exit_status = status;
-        self.last_exit_status_change_count += 1;
-    }
-
     /// Applies errexit semantics to a result if enabled and appropriate.
     /// This should be called at "statement boundaries" where errexit should be checked.
     ///
@@ -656,6 +712,31 @@ impl Shell {
         }
     }
 
+    /// Returns the shell's official version string (if available).
+    pub const fn version(&self) -> &Option<String> {
+        &self.version
+    }
+
+    /// Returns the call stack for the shell.
+    pub const fn call_stack(&self) -> &callstack::CallStack {
+        &self.call_stack
+    }
+
+    /// Returns the exit status of the last command executed in this shell.
+    pub const fn last_exit_status(&self) -> u8 {
+        self.last_exit_status
+    }
+
+    pub(crate) const fn last_exit_status_change_count(&self) -> usize {
+        self.last_exit_status_change_count
+    }
+
+    /// Updates the last exit status.
+    pub const fn set_last_exit_status(&mut self, status: u8) {
+        self.last_exit_status = status;
+        self.last_exit_status_change_count += 1;
+    }
+
     /// Returns the key bindings helper for the shell.
     pub const fn key_bindings(&self) -> &Option<KeyBindingsHelper> {
         &self.key_bindings
@@ -667,7 +748,7 @@ impl Shell {
     }
 
     /// Returns the registered builtins for the shell.
-    pub const fn builtins(&self) -> &HashMap<String, builtins::Registration> {
+    pub const fn builtins(&self) -> &HashMap<String, builtins::Registration<SE>> {
         &self.builtins
     }
 
@@ -705,106 +786,6 @@ impl Shell {
     /// * `name` - The name of the function to undefine.
     pub fn undefine_func(&mut self, name: &str) -> bool {
         self.funcs.remove(name).is_some()
-    }
-
-    /// Returns the shell environment containing variables.
-    pub const fn env(&self) -> &ShellEnvironment {
-        &self.env
-    }
-
-    /// Returns a mutable reference to the shell environment.
-    pub const fn env_mut(&mut self) -> &mut ShellEnvironment {
-        &mut self.env
-    }
-
-    /// Returns the shell's runtime options.
-    pub const fn options(&self) -> &RuntimeOptions {
-        &self.options
-    }
-
-    /// Returns a mutable reference to the shell's runtime options.
-    pub const fn options_mut(&mut self) -> &mut RuntimeOptions {
-        &mut self.options
-    }
-
-    /// Returns the shell's aliases.
-    pub const fn aliases(&self) -> &HashMap<String, String> {
-        &self.aliases
-    }
-
-    /// Returns a mutable reference to the shell's aliases.
-    pub const fn aliases_mut(&mut self) -> &mut HashMap<String, String> {
-        &mut self.aliases
-    }
-
-    /// Returns the shell's job manager.
-    pub const fn jobs(&self) -> &jobs::JobManager {
-        &self.jobs
-    }
-
-    /// Returns a mutable reference to the shell's job manager.
-    pub const fn jobs_mut(&mut self) -> &mut jobs::JobManager {
-        &mut self.jobs
-    }
-
-    /// Returns the shell's trap handler configuration.
-    pub const fn traps(&self) -> &traps::TrapHandlerConfig {
-        &self.traps
-    }
-
-    /// Returns a mutable reference to the shell's trap handler configuration.
-    pub const fn traps_mut(&mut self) -> &mut traps::TrapHandlerConfig {
-        &mut self.traps
-    }
-
-    /// Returns the shell's directory stack.
-    pub fn directory_stack(&self) -> &[PathBuf] {
-        &self.directory_stack
-    }
-
-    /// Returns a mutable reference to the shell's directory stack.
-    pub const fn directory_stack_mut(&mut self) -> &mut Vec<PathBuf> {
-        &mut self.directory_stack
-    }
-
-    /// Returns the statuses of commands in the last pipeline.
-    pub fn last_pipeline_statuses(&self) -> &[u8] {
-        &self.last_pipeline_statuses
-    }
-
-    /// Returns a mutable reference to the statuses of commands in the last pipeline.
-    pub const fn last_pipeline_statuses_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.last_pipeline_statuses
-    }
-
-    /// Returns the shell's program location cache.
-    pub const fn program_location_cache(&self) -> &pathcache::PathCache {
-        &self.program_location_cache
-    }
-
-    /// Returns a mutable reference to the shell's program location cache.
-    pub const fn program_location_cache_mut(&mut self) -> &mut pathcache::PathCache {
-        &mut self.program_location_cache
-    }
-
-    /// Returns the shell's completion configuration.
-    pub const fn completion_config(&self) -> &completion::Config {
-        &self.completion_config
-    }
-
-    /// Returns a mutable reference to the shell's completion configuration.
-    pub const fn completion_config_mut(&mut self) -> &mut completion::Config {
-        &mut self.completion_config
-    }
-
-    /// Returns the shell's open files.
-    pub const fn open_files(&self) -> &openfiles::OpenFiles {
-        &self.open_files
-    }
-
-    /// Returns a mutable reference to the shell's open files.
-    pub const fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles {
-        &mut self.open_files
     }
 
     /// Defines a function in the shell's environment. If a function already exists
@@ -862,16 +843,6 @@ impl Shell {
         self.define_func(name, def, &crate::SourceInfo::default());
 
         Ok(())
-    }
-
-    /// Returns the last "SECONDS" captured time.
-    pub const fn last_stopwatch_time(&self) -> std::time::SystemTime {
-        self.last_stopwatch_time
-    }
-
-    /// Returns the last "SECONDS" offset requested.
-    pub const fn last_stopwatch_offset(&self) -> u32 {
-        self.last_stopwatch_offset
     }
 
     /// Loads and executes standard shell configuration files (i.e., rc and profile).
@@ -1297,7 +1268,7 @@ impl Shell {
         match result {
             Ok(result) => Ok(result),
             Err(err) => {
-                let _ = self.display_error(&mut params.stderr(self), &err).await;
+                let _ = self.display_error(&mut params.stderr(self), &err);
 
                 let result = err.into_result(self);
                 self.set_last_exit_status(result.exit_code.into());
@@ -1616,7 +1587,7 @@ impl Shell {
     pub fn register_builtin<S: Into<String>>(
         &mut self,
         name: S,
-        registration: builtins::Registration,
+        registration: builtins::Registration<SE>,
     ) {
         self.builtins.insert(name.into(), registration);
     }
@@ -1627,7 +1598,7 @@ impl Shell {
     /// # Arguments
     ///
     /// * `name` - The name of the builtin to lookup.
-    pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration> {
+    pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration<SE>> {
         self.builtins.get_mut(name)
     }
 
@@ -2038,15 +2009,128 @@ impl Shell {
     ///
     /// * `file_table` - The open file table to use for any file descriptor references.
     /// * `err` - The error to display.
-    pub async fn display_error(
+    pub fn display_error(
         &self,
         file: &mut impl std::io::Write,
         err: &error::Error,
     ) -> Result<(), error::Error> {
-        let str = self.error_formatter.lock().await.format_error(err, self);
+        let str = self.error_behavior.format_error(err, self);
         write!(file, "{str}")?;
 
         Ok(())
+    }
+}
+
+#[inherent::inherent]
+impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
+    /// Returns the last "SECONDS" captured time.
+    pub fn last_stopwatch_time(&self) -> std::time::SystemTime {
+        self.last_stopwatch_time
+    }
+
+    /// Returns the last "SECONDS" offset requested.
+    pub fn last_stopwatch_offset(&self) -> u32 {
+        self.last_stopwatch_offset
+    }
+
+    /// Returns the shell environment containing variables.
+    pub fn env(&self) -> &ShellEnvironment {
+        &self.env
+    }
+
+    /// Returns a mutable reference to the shell environment.
+    pub fn env_mut(&mut self) -> &mut ShellEnvironment {
+        &mut self.env
+    }
+
+    /// Returns the shell's runtime options.
+    pub fn options(&self) -> &RuntimeOptions {
+        &self.options
+    }
+
+    /// Returns a mutable reference to the shell's runtime options.
+    pub fn options_mut(&mut self) -> &mut RuntimeOptions {
+        &mut self.options
+    }
+
+    /// Returns the shell's aliases.
+    pub fn aliases(&self) -> &HashMap<String, String> {
+        &self.aliases
+    }
+
+    /// Returns a mutable reference to the shell's aliases.
+    pub fn aliases_mut(&mut self) -> &mut HashMap<String, String> {
+        &mut self.aliases
+    }
+
+    /// Returns the shell's job manager.
+    pub fn jobs(&self) -> &jobs::JobManager {
+        &self.jobs
+    }
+
+    /// Returns a mutable reference to the shell's job manager.
+    pub fn jobs_mut(&mut self) -> &mut jobs::JobManager {
+        &mut self.jobs
+    }
+
+    /// Returns the shell's trap handler configuration.
+    pub fn traps(&self) -> &traps::TrapHandlerConfig {
+        &self.traps
+    }
+
+    /// Returns a mutable reference to the shell's trap handler configuration.
+    pub fn traps_mut(&mut self) -> &mut traps::TrapHandlerConfig {
+        &mut self.traps
+    }
+
+    /// Returns the shell's directory stack.
+    pub fn directory_stack(&self) -> &[PathBuf] {
+        &self.directory_stack
+    }
+
+    /// Returns a mutable reference to the shell's directory stack.
+    pub fn directory_stack_mut(&mut self) -> &mut Vec<PathBuf> {
+        &mut self.directory_stack
+    }
+
+    /// Returns the statuses of commands in the last pipeline.
+    pub fn last_pipeline_statuses(&self) -> &[u8] {
+        &self.last_pipeline_statuses
+    }
+
+    /// Returns a mutable reference to the statuses of commands in the last pipeline.
+    pub fn last_pipeline_statuses_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.last_pipeline_statuses
+    }
+
+    /// Returns the shell's program location cache.
+    pub fn program_location_cache(&self) -> &pathcache::PathCache {
+        &self.program_location_cache
+    }
+
+    /// Returns a mutable reference to the shell's program location cache.
+    pub fn program_location_cache_mut(&mut self) -> &mut pathcache::PathCache {
+        &mut self.program_location_cache
+    }
+
+    /// Returns the shell's completion configuration.
+    pub fn completion_config(&self) -> &completion::Config {
+        &self.completion_config
+    }
+
+    /// Returns a mutable reference to the shell's completion configuration.
+    pub fn completion_config_mut(&mut self) -> &mut completion::Config {
+        &mut self.completion_config
+    }
+
+    /// Returns the shell's open files.
+    pub fn open_files(&self) -> &openfiles::OpenFiles {
+        &self.open_files
+    }
+
+    /// Returns a mutable reference to the shell's open files.
+    pub fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles {
+        &mut self.open_files
     }
 }
 
@@ -2073,6 +2157,7 @@ fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
 }
 
-fn default_error_formatter() -> ErrorFormatterHelper {
-    Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))
+#[cfg(feature = "serde")]
+fn default_error_behavior<EB: crate::ErrorBehavior>() -> EB {
+    EB::default()
 }

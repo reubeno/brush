@@ -1,6 +1,6 @@
 //! Shell test conditional expressions
 
-use crate::{ExecutionParameters, Shell, error, extendedtests};
+use crate::{ExecutionParameters, Shell, error, extendedtests, extensions};
 
 /// Evaluate the given test expression within the provided shell and
 /// execution context. Returns true if the expression evaluates to true,
@@ -13,7 +13,7 @@ use crate::{ExecutionParameters, Shell, error, extendedtests};
 /// * `params` - The execution parameters to use during evaluation.
 pub fn eval_expr(
     expr: &brush_parser::ast::TestExpr,
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
 ) -> Result<bool, error::Error> {
     match expr {

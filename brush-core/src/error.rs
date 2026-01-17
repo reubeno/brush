@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Shell, ShellFd, results, sys};
+use crate::{Shell, ShellFd, extensions, results, sys};
 
 /// Unified error type for this crate. Contains just a kind for now,
 /// but will be extended later with additional context.
@@ -396,7 +396,10 @@ impl Error {
     /// # Arguments
     ///
     /// * `shell` - The shell instance, used to check interactive mode and script call stack.
-    pub const fn to_control_flow(&self, shell: &Shell) -> results::ExecutionControlFlow {
+    pub fn to_control_flow(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> results::ExecutionControlFlow {
         if self.is_fatal() && !shell.options().interactive {
             results::ExecutionControlFlow::ExitShell
         } else {
@@ -409,7 +412,10 @@ impl Error {
     /// # Arguments
     ///
     /// * `shell` - The shell instance, used to determine control flow.
-    pub fn into_result(self, shell: &Shell) -> results::ExecutionResult {
+    pub fn into_result(
+        self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> results::ExecutionResult {
         let next_control_flow = self.to_control_flow(shell);
         let exit_code = results::ExecutionExitCode::from(&self);
 
@@ -429,7 +435,11 @@ pub trait ErrorFormatter: Send {
     ///
     /// * `error` - The error to format.
     /// * `shell` - The shell in which the error occurred.
-    fn format_error(&self, error: &Error, shell: &Shell) -> String;
+    fn format_error(
+        &self,
+        error: &Error,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> String;
 }
 
 /// Default implementation of the [`ErrorFormatter`] trait.
@@ -442,7 +452,11 @@ impl DefaultErrorFormatter {
 }
 
 impl ErrorFormatter for DefaultErrorFormatter {
-    fn format_error(&self, err: &Error, _shell: &Shell) -> String {
+    fn format_error(
+        &self,
+        err: &Error,
+        _shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> String {
         std::format!("error: {err:#}\n")
     }
 }
