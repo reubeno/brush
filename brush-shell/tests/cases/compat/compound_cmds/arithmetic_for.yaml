@@ -19,7 +19,6 @@ cases:
     echo "Result: $?"
 
   - name: "Arithmetic for loop with ;;"
-    known_failure: true
     stdin: |
       for ((;;)); do
         echo "In loop; status: $?"

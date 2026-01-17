@@ -1,0 +1,114 @@
+---
+source: brush-parser/src/parser/tests/winnow_issues.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "x=(3 2 1)\ny[${x[0]}]=10\ny[x[1]]=11\ndeclare -p y",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("x"),
+                    value: Array([
+                      (None, Word(
+                        value: "3",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "2",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "1",
+                        loc: "[location]",
+                      )),
+                    ]),
+                    loc: "[location]",
+                  ), Word(
+                    value: "x=(3 2 1)",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: ArrayElementName("y", "${x[0]}"),
+                    value: Scalar(Word(
+                      value: "10",
+                      loc: "[location]",
+                    )),
+                    loc: "[location]",
+                  ), Word(
+                    value: "y[${x[0]}]=10",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: ArrayElementName("y", "x[1]"),
+                    value: Scalar(Word(
+                      value: "11",
+                      loc: "[location]",
+                    )),
+                    loc: "[location]",
+                  ), Word(
+                    value: "y[x[1]]=11",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "declare",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "-p",
+                    loc: "[location]",
+                  )),
+                  Word(Word(
+                    value: "y",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
