@@ -4,6 +4,9 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "experimental-filters")]
+use std::sync::Arc;
+
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
@@ -29,6 +32,9 @@ struct PipelineExecutionContext<'a> {
     /// and `None` when the command is not part of a pipeline (single command).
     #[cfg(feature = "experimental-filters")]
     pipeline_info: Option<commands::PipelineContext>,
+    /// Raw pipeline text for policy hooks.
+    #[cfg(feature = "experimental-filters")]
+    raw_command: Option<Arc<str>>,
 }
 
 /// Parameters for execution.
@@ -440,6 +446,10 @@ async fn spawn_pipeline_processes(
         pipe_readers.push(None);
     }
 
+    // Capture the raw pipeline text for policy hooks.
+    #[cfg(feature = "experimental-filters")]
+    let raw_pipeline: Option<Arc<str>> = Some(Arc::from(pipeline.to_string()));
+
     for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
         //
         // We run a command directly in the current shell if either of the following is true:
@@ -491,6 +501,8 @@ async fn spawn_pipeline_processes(
                 process_group_id,
                 #[cfg(feature = "experimental-filters")]
                 pipeline_info,
+                #[cfg(feature = "experimental-filters")]
+                raw_command: raw_pipeline.clone(),
             }
         } else {
             PipelineExecutionContext {
@@ -498,6 +510,8 @@ async fn spawn_pipeline_processes(
                 process_group_id,
                 #[cfg(feature = "experimental-filters")]
                 pipeline_info,
+                #[cfg(feature = "experimental-filters")]
+                raw_command: raw_pipeline.clone(),
             }
         };
 
@@ -1210,6 +1224,8 @@ impl ExecuteInPipeline for ast::SimpleCommand {
                 process_group_id: context.process_group_id,
                 #[cfg(feature = "experimental-filters")]
                 pipeline_info: context.pipeline_info,
+                #[cfg(feature = "experimental-filters")]
+                raw_command: context.raw_command,
             };
 
             #[cfg(feature = "experimental-filters")]
@@ -1316,6 +1332,7 @@ async fn execute_command(
     #[cfg(feature = "experimental-filters")]
     {
         cmd.pipeline_info = context.pipeline_info;
+        cmd.raw_command = context.raw_command;
         cmd.redirections = captured_redirections;
     }
 

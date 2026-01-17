@@ -50,6 +50,9 @@ use std::{
     process::Stdio,
 };
 
+#[cfg(feature = "experimental-filters")]
+use std::sync::Arc;
+
 use brush_parser::ast;
 use itertools::Itertools;
 use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
@@ -822,6 +825,13 @@ pub struct SimpleCommand<'a> {
     #[cfg(feature = "experimental-filters")]
     pub pipeline_info: Option<PipelineContext>,
 
+    /// Raw pipeline text for policy hooks.
+    ///
+    /// When available, this contains the user-entered pipeline string (prior to
+    /// expansion) so filters can inspect the full pipeline layout.
+    #[cfg(feature = "experimental-filters")]
+    pub raw_command: Option<Arc<str>>,
+
     /// Captured redirections for the post-expansion policy hook.
     ///
     /// These are the redirections associated with the command, converted from
@@ -876,6 +886,8 @@ impl<'a> SimpleCommand<'a> {
             process_group_id: None,
             #[cfg(feature = "experimental-filters")]
             pipeline_info: None,
+            #[cfg(feature = "experimental-filters")]
+            raw_command: None,
             #[cfg(feature = "experimental-filters")]
             redirections: vec![],
             post_execute: None,
@@ -976,7 +988,7 @@ impl<'a> SimpleCommand<'a> {
         CommandContext {
             executable,
             arguments,
-            raw_command: None, // Raw command is not available at this point.
+            raw_command: self.raw_command.as_deref().map(Cow::Borrowed),
             pipeline: self.pipeline_info, // Pipeline info from the execution context.
             redirections,
             dispatch_target,
