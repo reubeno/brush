@@ -564,12 +564,16 @@ pub(crate) fn execute_external_command(
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Filter out the args; we only want strings.
-    let mut cmd_args = vec![];
-    for arg in args {
-        if let CommandArg::String(s) = arg {
-            cmd_args.push(s);
-        }
-    }
+    let cmd_args = args
+        .iter()
+        .filter_map(|e| {
+            if let CommandArg::String(s) = e {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
 
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
     let child_stdin_is_terminal = context

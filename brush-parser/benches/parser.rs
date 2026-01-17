@@ -18,7 +18,7 @@ mod unix {
             .unwrap()
     }
 
-    fn parse(tokens: &Vec<Token>) -> brush_parser::ast::Program {
+    fn parse(tokens: &[Token]) -> brush_parser::ast::Program {
         parse_tokens(tokens, &brush_parser::ParserOptions::default()).unwrap()
     }
 
