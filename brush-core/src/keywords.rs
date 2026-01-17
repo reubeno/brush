@@ -1,37 +1,37 @@
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-fn get_keywords(sh_mode_only: bool) -> HashSet<String> {
+fn get_keywords(sh_mode_only: bool) -> HashSet<&'static str> {
     let mut keywords = HashSet::new();
-    keywords.insert(String::from("!"));
-    keywords.insert(String::from("{"));
-    keywords.insert(String::from("}"));
-    keywords.insert(String::from("case"));
-    keywords.insert(String::from("do"));
-    keywords.insert(String::from("done"));
-    keywords.insert(String::from("elif"));
-    keywords.insert(String::from("else"));
-    keywords.insert(String::from("esac"));
-    keywords.insert(String::from("fi"));
-    keywords.insert(String::from("for"));
-    keywords.insert(String::from("if"));
-    keywords.insert(String::from("in"));
-    keywords.insert(String::from("then"));
-    keywords.insert(String::from("until"));
-    keywords.insert(String::from("while"));
+    keywords.insert("!");
+    keywords.insert("{");
+    keywords.insert("}");
+    keywords.insert("case");
+    keywords.insert("do");
+    keywords.insert("done");
+    keywords.insert("elif");
+    keywords.insert("else");
+    keywords.insert("esac");
+    keywords.insert("fi");
+    keywords.insert("for");
+    keywords.insert("if");
+    keywords.insert("in");
+    keywords.insert("then");
+    keywords.insert("until");
+    keywords.insert("while");
 
     if !sh_mode_only {
-        keywords.insert(String::from("[["));
-        keywords.insert(String::from("]]"));
-        keywords.insert(String::from("coproc"));
-        keywords.insert(String::from("function"));
-        keywords.insert(String::from("select"));
-        keywords.insert(String::from("time"));
+        keywords.insert("[[");
+        keywords.insert("]]");
+        keywords.insert("coproc");
+        keywords.insert("function");
+        keywords.insert("select");
+        keywords.insert("time");
     }
 
     keywords
 }
 
-pub(crate) static SH_MODE_KEYWORDS: LazyLock<HashSet<String>> =
+pub(crate) static SH_MODE_KEYWORDS: LazyLock<HashSet<&'static str>> =
     LazyLock::new(|| get_keywords(true));
-pub(crate) static KEYWORDS: LazyLock<HashSet<String>> = LazyLock::new(|| get_keywords(false));
+pub(crate) static KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| get_keywords(false));

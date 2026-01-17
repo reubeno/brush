@@ -528,7 +528,7 @@ impl Spec {
                 CompleteAction::Keyword => {
                     for keyword in shell.get_keywords() {
                         if keyword.starts_with(token) {
-                            candidates.insert(keyword.clone());
+                            candidates.insert(keyword.to_string());
                         }
                     }
                 }
@@ -688,7 +688,7 @@ impl Spec {
         tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
             vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
 
-        let mut vars_to_remove = vec![];
+        let mut vars_to_remove = Vec::with_capacity(vars_and_values.len());
         for (var, value) in vars_and_values {
             shell.env_mut().update_or_add(
                 var,
@@ -1228,7 +1228,7 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
         // Add keywords.
         for keyword in shell.get_keywords() {
             if keyword.starts_with(context.token_to_complete) {
-                candidates.insert(keyword.clone());
+                candidates.insert(keyword.to_string());
             }
         }
 
