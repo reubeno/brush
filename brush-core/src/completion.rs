@@ -688,7 +688,7 @@ impl Spec {
         tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
             vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
 
-        let mut vars_to_remove = vec![];
+        let mut vars_to_remove = Vec::with_capacity(vars_and_values.len());
         for (var, value) in vars_and_values {
             shell.env_mut().update_or_add(
                 var,
