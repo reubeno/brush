@@ -16,6 +16,10 @@ pub struct Error {
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+
+    /// Whether the error has already been displayed by an extension and the
+    /// core should suppress further printing.
+    suppress_display: bool,
 }
 
 /// Monolithic error type for the shell
@@ -368,6 +372,7 @@ where
         Self {
             kind: convertible_to_kind.into(),
             fatal: false,
+            suppress_display: false,
         }
     }
 }
@@ -417,6 +422,20 @@ impl Error {
             next_control_flow,
             exit_code,
         }
+    }
+
+    /// Marks this error as already displayed by an extension; the core should
+    /// suppress any further printing when this flag is set.
+    #[must_use]
+    pub fn mark_displayed(mut self) -> Self {
+        self.suppress_display = true;
+        self
+    }
+
+    /// Returns true if this error was marked as already displayed by an
+    /// extension and the core should suppress printing.
+    pub const fn is_suppressed(&self) -> bool {
+        self.suppress_display
     }
 }
 

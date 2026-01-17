@@ -2077,6 +2077,12 @@ impl Shell {
         file: &mut impl std::io::Write,
         err: &error::Error,
     ) -> Result<(), error::Error> {
+        // If the error has already been reported by an extension, suppress
+        // additional printing to avoid duplicate/confusing diagnostics.
+        if err.is_suppressed() {
+            return Ok(());
+        }
+
         let str = self.extensions.format_error(err, self);
         write!(file, "{str}")?;
 

@@ -74,6 +74,14 @@ pub use commands::{
     SubstitutionSyntax,
 };
 
+/// Compatibility utilities module used by doctests and older call sites.
+pub mod utils {
+    pub use crate::int_utils::parse as parse_int;
+}
+
+/// Re-export `parse_known` at the crate root for convenience.
+pub use builtins::parse_known;
+
 /// No-op version of `with_filter!` when experimental-filters is disabled.
 ///
 /// This macro expands directly to the body with zero overhead.

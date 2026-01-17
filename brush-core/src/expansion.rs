@@ -1001,6 +1001,12 @@ impl<'a> WordExpander<'a> {
                 // Abort expansion with the provided error.
                 return Err(err);
             }
+            commands::CommandSubstitutionDecision::ErrorReported(err) => {
+                // The extension has already displayed an explanatory message for
+                // this error. Mark the error as displayed so the core suppresses
+                // any additional printing, then propagate it to abort expansion.
+                return Err(err.mark_displayed());
+            }
         };
 
         // We trim trailing newlines, per spec.
