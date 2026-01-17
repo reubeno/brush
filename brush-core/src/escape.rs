@@ -26,7 +26,7 @@ pub fn expand_backslash_escapes(
     s: &str,
     mode: EscapeExpansionMode,
 ) -> Result<(Vec<u8>, bool), error::Error> {
-    let mut result: Vec<u8> = vec![];
+    let mut result: Vec<u8> = Vec::with_capacity(s.len());
     let mut it = s.chars();
     while let Some(c) = it.next() {
         if c != '\\' {
@@ -347,30 +347,30 @@ pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
     quote(s, &options)
 }
 
-fn backslash_escape(s: &str) -> String {
-    let mut output = String::new();
+fn backslash_escape(s: &str) -> Cow<'_, str> {
+    let mut chars = s.chars();
 
-    // TODO(escape): Handle other interesting sequences.
-    for c in s.chars() {
-        match c {
-            c if needs_escaping(c) => {
+    if !chars.any(needs_escaping) {
+        Cow::Borrowed(s)
+    } else {
+        let mut output = String::with_capacity(s.len());
+        for c in chars {
+            if needs_escaping(c) {
                 output.push('\\');
-                output.push(c);
             }
-            c => output.push(c),
+            output.push(c);
         }
+        Cow::Owned(output)
     }
-
-    output
 }
 
-fn single_quote(s: &str) -> String {
+fn single_quote(s: &str) -> Cow<'_, str> {
     // Special-case the empty string.
     if s.is_empty() {
-        return "''".into();
+        return Cow::Borrowed("''");
     }
 
-    let mut result = String::new();
+    let mut result = String::with_capacity(s.len());
 
     // Go through the string; put everything in single quotes except for
     // the single quote character itself. It will get escaped outside
@@ -391,11 +391,11 @@ fn single_quote(s: &str) -> String {
         }
     }
 
-    result
+    Cow::Owned(result)
 }
 
 fn double_quote(s: &str) -> String {
-    let mut result = String::new();
+    let mut result = String::with_capacity(s.len());
 
     result.push('"');
 
@@ -413,8 +413,7 @@ fn double_quote(s: &str) -> String {
 }
 
 fn ansi_c_quote(s: &str) -> String {
-    let mut result = String::new();
-
+    let mut result = String::with_capacity(s.len());
     result.push_str("$'");
 
     for c in s.chars() {
