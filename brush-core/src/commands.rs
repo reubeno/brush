@@ -368,18 +368,18 @@ pub enum CommandSubstitutionDecision {
         output: String,
     },
 
-        /// Abort the expansion with an error.
-        ///
-        /// This prevents the substitution from executing and propagates
-        /// the error to the caller.
-        Error(error::Error),
+    /// Abort the expansion with an error.
+    ///
+    /// This prevents the substitution from executing and propagates
+    /// the error to the caller.
+    Error(error::Error),
 
-        /// Abort the expansion with an error which has already been handled by
-        /// the extension (for example, the extension printed its own diagnostic
-        /// message). When this variant is returned the core should propagate a
-        /// silent failure to abort execution without printing an additional
-        /// top-level error message.
-        ErrorReported(error::Error),
+    /// Abort the expansion with an error which has already been handled by
+    /// the extension (for example, the extension printed its own diagnostic
+    /// message). When this variant is returned the core should propagate a
+    /// silent failure to abort execution without printing an additional
+    /// top-level error message.
+    ErrorReported(error::Error),
 }
 
 /// Converts an AST I/O redirection to a `RedirectionInfo` with an expanded target.
