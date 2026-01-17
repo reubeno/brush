@@ -1,0 +1,10 @@
+---
+source: brush-parser/src/parser/tests/complex.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "# hello\n",
+  result: Program(
+    complete_commands: [],
+  ),
+)

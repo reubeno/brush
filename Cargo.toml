@@ -96,6 +96,8 @@ extend-ignore-re = [
     "-ot",
     # Ignore 2-letter string literals, which show up in testing a fair bit.
     '"[a-zA-Z]{2}"',
+    # e.g. mis-parsing
+    "mis-[a-zA-Z]*",
 ]
 
 [workspace.metadata.typos.default.extend-words]
