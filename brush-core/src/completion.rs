@@ -528,7 +528,7 @@ impl Spec {
                 CompleteAction::Keyword => {
                     for keyword in shell.get_keywords() {
                         if keyword.starts_with(token) {
-                            candidates.insert(keyword.clone());
+                            candidates.insert(keyword.to_string());
                         }
                     }
                 }
@@ -1228,7 +1228,7 @@ async fn get_completions_using_basic_lookup(shell: &Shell, context: &Context<'_>
         // Add keywords.
         for keyword in shell.get_keywords() {
             if keyword.starts_with(context.token_to_complete) {
-                candidates.insert(keyword.clone());
+                candidates.insert(keyword.to_string());
             }
         }
 

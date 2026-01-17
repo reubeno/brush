@@ -1933,7 +1933,7 @@ impl Shell {
     }
 
     /// Returns the keywords that are reserved by the shell.
-    pub(crate) fn get_keywords(&self) -> Vec<String> {
+    pub(crate) fn get_keywords(&self) -> Vec<&str> {
         if self.options.sh_mode {
             keywords::SH_MODE_KEYWORDS.iter().cloned().collect()
         } else {
